@@ -191,6 +191,11 @@ struct CurvePointData {
     float phase = 0.0f;    // 0.0 to 1.0, position in cycle
     float value = 0.5f;    // 0.0 to 1.0, output value
     float tension = 0.0f;  // -3 to +3, curve tension
+    int curveType = 0;     // 0=Linear, 1=Bezier, 2=Step, 3=HardCorner
+    float inHandleX = 0.0f;
+    float inHandleY = 0.0f;
+    float outHandleX = 0.0f;
+    float outHandleY = 0.0f;
 };
 
 /**
@@ -264,6 +269,47 @@ struct ModInfo {
     // Audio trigger envelope settings (serialized)
     float audioAttackMs = 1.0f;     // Envelope follower attack time (ms)
     float audioReleaseMs = 100.0f;  // Envelope follower release time (ms)
+
+    // ADSR envelope generator settings (type == Envelope; serialized).
+    // Defaults mirror te::ADSRModifier's parameter defaults.
+    float envAttackMs = 10.0f;    // Attack time (ms when !tempoSync)
+    float envDecayMs = 200.0f;    // Decay time (ms when !tempoSync)
+    float envSustain = 0.7f;      // Sustain level held while gated (0-1)
+    float envReleaseMs = 300.0f;  // Release time (ms when !tempoSync)
+    float envAttackCurve = 0.0f;  // -0.5 to 0.5, segment curvature (log..exp)
+    float envDecayCurve = 0.0f;
+    float envReleaseCurve = 0.0f;
+
+    // ADSR runtime state (not serialized)
+    int envStage = 0;  // Current te::ADSRModifier::Stage ordinal, for the UI display
+
+    // Random modulator settings (type == Random; serialized).
+    // Defaults mirror te::RandomModifier's parameter defaults. Timing reuses
+    // the shared rate / tempoSync / syncDivision / triggerMode fields above,
+    // and modulation depth/bipolarity come from the per-link amount/bipolar
+    // (like the LFO path), so only the distribution shape lives here.
+    int randomType = 0;            // 0 = random (stepped), 1 = noise
+    float randomShape = 0.0f;      // 0..1, hold (0) -> ramp (1) within each step
+    float randomSmooth = 0.0f;     // 0..1, S-curve smoothing of the phase ramp
+    float randomStepDepth = 1.0f;  // 0..1, range of variation per step
+
+    // Envelope follower settings (type == Follower; serialized). Defaults
+    // mirror te::EnvelopeFollowerModifier's parameter defaults. The follower
+    // tracks the amplitude of its host scope's (post-FX) audio; modulation
+    // depth comes from the per-link amount (like the other modulators).
+    float followerGainDb = 0.0f;       // Input gain before detection (dB)
+    float followerAttackMs = 100.0f;   // Envelope attack time (ms)
+    float followerHoldMs = 0.0f;       // Envelope hold time (ms)
+    float followerReleaseMs = 500.0f;  // Envelope release time (ms)
+
+    // Band-limit detection: filter the raw source audio BEFORE peak detection so
+    // the follower can track just part of the spectrum (e.g. only the bass).
+    // Applied by the post-FX FollowerSourceTapPlugin, not TE's own post-rectify
+    // filters (which can't see frequency content of a detected level).
+    bool followerHpEnabled = false;  // High-pass the source before detection
+    float followerHpFreq = 200.0f;   // High-pass cutoff (Hz)
+    bool followerLpEnabled = false;  // Low-pass the source before detection
+    float followerLpFreq = 2000.0f;  // Low-pass cutoff (Hz)
 
     // Audio trigger runtime state (not serialized)
     float audioEnvLevel = 0.0f;  // Current smoothed envelope level

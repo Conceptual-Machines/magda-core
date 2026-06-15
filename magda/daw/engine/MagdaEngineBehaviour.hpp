@@ -5,12 +5,14 @@
 #include "../audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
+#include "../audio/plugins/FollowerSourceTapPlugin.hpp"
 #include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "../audio/plugins/LevelsPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/plugins/MidiChordEnginePlugin.hpp"
 #include "../audio/plugins/MidiReceivePlugin.hpp"
 #include "../audio/plugins/OscilloscopePlugin.hpp"
+#include "../audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
@@ -102,6 +104,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating AudioSidechainMonitorPlugin");
             return new AudioSidechainMonitorPlugin(info);
         }
+        if (type == FollowerSourceTapPlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating FollowerSourceTapPlugin");
+            return new FollowerSourceTapPlugin(info);
+        }
         if (type == daw::audio::FaustPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");
             return new daw::audio::FaustPlugin(info);
@@ -124,6 +130,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::StepSequencerPlugin::xmlTypeName) {
             return new daw::audio::StepSequencerPlugin(info);
+        }
+        if (type == daw::audio::PolyStepSequencerPlugin::xmlTypeName) {
+            return new daw::audio::PolyStepSequencerPlugin(info);
         }
         if (type == daw::audio::OscilloscopePlugin::xmlTypeName) {
             return new daw::audio::OscilloscopePlugin(info);

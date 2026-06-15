@@ -1,5 +1,6 @@
 #include "modifiers/ModifierSync.hpp"
 
+#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 
 namespace magda {
@@ -79,17 +80,59 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
         }
         case ModType::Random: {
             juce::ValueTree randomState(te::IDs::RANDOM);
-            modifier = modList.insertModifier(randomState, -1, nullptr);
+            auto randomMod = modList.insertModifier(randomState, -1, nullptr);
+            if (!randomMod)
+                break;
+
+            if (auto* rnd = dynamic_cast<te::RandomModifier*>(randomMod.get()))
+                applyRandomProperties(rnd, modInfo);
+            modifier = randomMod;
             break;
         }
         case ModType::Follower: {
             juce::ValueTree envState(te::IDs::ENVELOPEFOLLOWER);
-            modifier = modList.insertModifier(envState, -1, nullptr);
+            auto efMod = modList.insertModifier(envState, -1, nullptr);
+            if (!efMod)
+                break;
+
+            if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(efMod.get())) {
+                applyFollowerProperties(ef, modInfo);
+                // Always externally driven: a FollowerSourceTapPlugin streams the
+                // band-limited post-FX level of the source track (own track in
+                // self-mode, the sidechain source in cross-track mode). TE's
+                // pc.destBuffer path isn't the track audio at the modifier's
+                // position in our graph, so self-mode would otherwise stay silent.
+                ef->setUsesExternalInput(true);
+                MAGDA_ADSR_AUDIO_LOG(
+                    "follower-sync create modId="
+                    << static_cast<int>(modInfo.id) << " gainDb=" << modInfo.followerGainDb
+                    << " hpOn=" << static_cast<int>(modInfo.followerHpEnabled)
+                    << " hpHz=" << modInfo.followerHpFreq
+                    << " lpOn=" << static_cast<int>(modInfo.followerLpEnabled)
+                    << " lpHz=" << modInfo.followerLpFreq << " attack=" << modInfo.followerAttackMs
+                    << " hold=" << modInfo.followerHoldMs
+                    << " release=" << modInfo.followerReleaseMs
+                    << " usesExternal=" << static_cast<int>(ef->getUsesExternalInput()));
+            }
+            modifier = efMod;
             break;
         }
-        case ModType::Envelope:
-            // TE has no dedicated envelope generator — currently unsupported.
+        case ModType::Envelope: {
+            juce::ValueTree adsrState(te::IDs::ADSR);
+            auto adsrMod = modList.insertModifier(adsrState, -1, nullptr);
+            if (!adsrMod)
+                break;
+
+            if (auto* adsr = dynamic_cast<te::ADSRModifier*>(adsrMod.get())) {
+                // applyADSRProperties updates parameters and the non-audio gate modes.
+                // Audio mode starts gated here, then the audio monitor owns the gate.
+                applyADSRProperties(adsr, modInfo);
+                if (modInfo.triggerMode == LFOTriggerMode::Audio)
+                    adsr->setGated(true);
+            }
+            modifier = adsrMod;
             break;
+        }
     }
 
     return modifier;
@@ -316,6 +359,26 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 // MIDI gate state is part of the MAGDA model and is applied
                 // above. Audio-trigger gate state remains owned by the audio
                 // sidechain path.
+            } else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(modifier.get())) {
+                applyADSRProperties(adsr, modInfo);
+            } else if (auto* rnd = dynamic_cast<te::RandomModifier*>(modifier.get())) {
+                applyRandomProperties(rnd, modInfo);
+            } else if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*>(modifier.get())) {
+                applyFollowerProperties(ef, modInfo);
+                // Always external-input driven (fed by FollowerSourceTapPlugin),
+                // matching syncStructure - keep self-mode working after a param
+                // tweak, which takes this in-place path (no link-fingerprint change).
+                ef->setUsesExternalInput(true);
+                MAGDA_ADSR_AUDIO_LOG(
+                    "follower-sync update modId="
+                    << static_cast<int>(modInfo.id) << " gainDb=" << modInfo.followerGainDb
+                    << " hpOn=" << static_cast<int>(modInfo.followerHpEnabled)
+                    << " hpHz=" << modInfo.followerHpFreq
+                    << " lpOn=" << static_cast<int>(modInfo.followerLpEnabled)
+                    << " lpHz=" << modInfo.followerLpFreq << " attack=" << modInfo.followerAttackMs
+                    << " hold=" << modInfo.followerHoldMs
+                    << " release=" << modInfo.followerReleaseMs
+                    << " usesExternal=" << static_cast<int>(ef->getUsesExternalInput()));
             }
 
             for (const auto& link : modInfo.links) {

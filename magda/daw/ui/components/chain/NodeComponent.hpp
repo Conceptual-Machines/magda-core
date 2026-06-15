@@ -352,6 +352,9 @@ class NodeComponent : public juce::Component,
     }
     virtual void onModAudioAttackChangedInternal(int /*modIndex*/, float /*ms*/) {}
     virtual void onModAudioReleaseChangedInternal(int /*modIndex*/, float /*ms*/) {}
+    virtual void onModEnvelopeChangedInternal(int /*modIndex*/, const magda::ModInfo& /*mod*/) {}
+    virtual void onModRandomChangedInternal(int /*modIndex*/, const magda::ModInfo& /*mod*/) {}
+    virtual void onModFollowerChangedInternal(int /*modIndex*/, const magda::ModInfo& /*mod*/) {}
     virtual void onModCurveChangedInternal(int /*modIndex*/) {}
     // Contextual link callbacks (when param is selected and mod amount slider is used)
     virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,

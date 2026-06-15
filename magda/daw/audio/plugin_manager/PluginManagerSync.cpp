@@ -701,17 +701,13 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Sync sidechain routing for plugins that support it
     syncSidechains(trackId, teTrack);
 
-    // Sidechain monitors: insert on tracks that are sidechain sources.
-    // MIDI monitor at position 0 (before instruments), audio monitor near end (after instruments).
+    // MIDI sidechain monitors sit at the front so they see MIDI before instruments consume it.
+    // Audio trigger monitors are reconciled after plugin ordering is stable below, because their
+    // correct tap point can be after a source instrument/rack.
     if (trackNeedsSidechainMonitor(trackId))
         ensureSidechainMonitor(trackId);
     else
         removeSidechainMonitor(trackId);
-
-    if (trackNeedsAudioSidechainMonitor(trackId))
-        ensureAudioSidechainMonitor(trackId);
-    else
-        removeAudioSidechainMonitor(trackId);
 
     // Create TE plugins for post-FX devices (flat list, no racks/instruments).
     // Inserted at -1 (append); the reorder pass below places them after the fx
@@ -848,8 +844,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     if (pluginOrderChanged)
         requestPluginOrderGraphRestart(trackId, "track-plugin-order");
 
-    // Rebuild sidechain LFO cache so audio/MIDI threads see current state
-    rebuildSidechainLFOCache();
+    // Rebuild trigger cache and reconcile audio trigger monitors after user plugin order is stable.
+    refreshAudioSidechainMonitors();
 }
 
 // =============================================================================

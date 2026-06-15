@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 
 #include "../magda/daw/audio/modifiers/CurveSnapshot.hpp"
 
@@ -200,6 +201,36 @@ TEST_CASE("CurveSnapshot::evaluate - tension curves interpolation", "[curve][eva
     }
 }
 
+TEST_CASE("CurveSnapshot::evaluate - hard corner uses two straight segments through tension handle",
+          "[curve][evaluate]") {
+    CurveSnapshot snap;
+    snap.count = 2;
+    snap.points[0] = {0.0f, 0.0f, 2.0f, 3};
+    snap.points[1] = {1.0f, 1.0f, 0.0f, 0};
+
+    REQUIRE(snap.evaluate(0.0f) == Approx(0.0f));
+    REQUIRE(snap.evaluate(0.5f) == Approx(0.03125f));
+    REQUIRE(snap.evaluate(1.0f) == Approx(1.0f));
+
+    const float firstQuarter = snap.evaluate(0.25f);
+    REQUIRE(firstQuarter == Approx(0.015625f));
+    REQUIRE(firstQuarter > std::pow(0.25f, 5.0f));
+}
+
+TEST_CASE("CurveSnapshot::evaluate - hard corner uses Retrospect-style shaper handle",
+          "[curve][evaluate]") {
+    CurveSnapshot snap;
+    snap.count = 2;
+    snap.points[0] = {0.0f, 0.0f, 0.0f, 3, 0.0f, 0.0f, 0.25f, 0.9f};
+    snap.points[1] = {1.0f, 1.0f, 0.0f, 0, -0.75f, -0.1f, 0.0f, 0.0f};
+
+    REQUIRE(snap.evaluate(0.0f) == Approx(0.0f));
+    REQUIRE(snap.evaluate(0.125f) == Approx(0.45f));
+    REQUIRE(snap.evaluate(0.25f) == Approx(0.9f));
+    REQUIRE(snap.evaluate(0.625f) == Approx(0.95f));
+    REQUIRE(snap.evaluate(1.0f) == Approx(1.0f));
+}
+
 // ============================================================================
 // CurveSnapshotHolder - double buffered update
 // ============================================================================
@@ -223,6 +254,7 @@ TEST_CASE("CurveSnapshotHolder - update from ModInfo", "[curve][holder]") {
     REQUIRE(snap->points[1].phase == Approx(0.5f));
     REQUIRE(snap->points[1].value == Approx(1.0f));
     REQUIRE(snap->points[1].tension == Approx(0.5f));
+    REQUIRE(snap->points[1].curveType == 0);
 }
 
 TEST_CASE("CurveSnapshotHolder - double buffer swaps", "[curve][holder]") {
@@ -332,6 +364,54 @@ TEST_CASE("CurveSnapshotHolder - one-shot with custom points", "[curve][oneshot]
     const CurveSnapshot* snap = holder.active.load();
     float expected = snap->evaluate(0.999999f);
     REQUIRE(held == Approx(expected));
+}
+
+// ============================================================================
+// MSEG loop region
+// ============================================================================
+
+TEST_CASE("CurveSnapshotHolder - MSEG loop region repeats after intro", "[curve][mseg]") {
+    CurveSnapshotHolder holder;
+
+    ModInfo mod;
+    mod.curvePreset = CurvePreset::RampUp;  // value == phase, easy to assert
+    mod.useLoopRegion = true;
+    mod.loopStart = 0.25f;
+    mod.loopEnd = 0.75f;
+    holder.update(mod);
+
+    // First call seeds previousPhase (no accumulation yet).
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.0f, &holder) == Approx(0.0f));
+    // Intro segment [0, loopStart) plays through linearly.
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.2f, &holder) == Approx(0.2f));
+    // Inside the loop region the cumulative position maps straight through.
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.4f, &holder) == Approx(0.4f));
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.7f, &holder) == Approx(0.7f));
+    // A phase wrap pushes cumulative past loopEnd; it folds back into the
+    // region (cum 1.0 -> 0.25 + fmod(0.75, 0.5) = 0.5).
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.0f, &holder) == Approx(0.5f));
+
+    // Once past the intro the output never escapes [loopStart, loopEnd].
+    for (float p : {0.2f, 0.4f, 0.6f, 0.8f, 0.0f, 0.3f}) {
+        float v = CurveSnapshotHolder::evaluateCallback(p, &holder);
+        REQUIRE(v >= 0.25f - 1.0e-4f);
+        REQUIRE(v <= 0.75f + 1.0e-4f);
+    }
+}
+
+TEST_CASE("CurveSnapshotHolder - loop disabled plays the full curve", "[curve][mseg]") {
+    CurveSnapshotHolder holder;
+
+    ModInfo mod;
+    mod.curvePreset = CurvePreset::RampUp;
+    mod.useLoopRegion = false;  // region present but inactive
+    mod.loopStart = 0.25f;
+    mod.loopEnd = 0.75f;
+    holder.update(mod);
+
+    // Without looping the raw phase passes straight through (no remap).
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.1f, &holder) == Approx(0.1f));
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.9f, &holder) == Approx(0.9f));
 }
 
 TEST_CASE("CurveSnapshotHolder - disabling oneShot resets completed state", "[curve][oneshot]") {

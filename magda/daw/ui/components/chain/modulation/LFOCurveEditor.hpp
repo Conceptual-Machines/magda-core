@@ -4,8 +4,10 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <vector>
 
+#include "core/ChainNodePath.hpp"
 #include "core/ModInfo.hpp"
 #include "ui/components/common/curve/CurveEditorBase.hpp"
 
@@ -32,18 +34,30 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     ModInfo* getModInfo() const {
         return modInfo_;
     }
+    void setUndoTarget(const ChainNodePath& ownerPath, int modIndex);
 
     // Sync local points from modInfo (for external editor sync without rebuild)
     void syncFromModInfo();
 
     // CurveEditorBase coordinate interface
     double getPixelsPerX() const override;
+    double getPixelsPerY() const override;
     double pixelToX(int px) const override;
     int xToPixel(double x) const override;
+    double xToPixelF(double x) const override;
+    double pixelToY(int py) const override;
+    int yToPixel(double y) const override;
+    double yToPixelF(double y) const override;
 
     // LFO loops seamlessly
     bool shouldLoop() const override {
         return true;
+    }
+
+    // Adding a point is a deliberate double-click; a single click on empty
+    // canvas just clears the selection (avoids stray points).
+    bool addsPointOnSingleClick() const override {
+        return false;
     }
 
     // CurveEditorBase data access
@@ -95,6 +109,14 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
         return snapY_;
     }
 
+    // Snap loop-region markers to the X grid divisions while dragging.
+    void setSnapLoop(bool snap) {
+        snapLoop_ = snap;
+    }
+    bool getSnapLoop() const {
+        return snapLoop_;
+    }
+
     // Show/hide loop region markers
     void setShowLoopRegion(bool show) {
         showLoopRegion_ = show;
@@ -107,15 +129,26 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     // Load a preset curve shape
     void loadPreset(CurvePreset preset);
 
+    // Load an arbitrary saved curve point set
+    void loadCurvePoints(const std::vector<CurvePointData>& points);
+
   protected:
     // CurveEditorBase data mutation callbacks
     void onPointAdded(double x, double y, CurveType curveType) override;
     void onPointMoved(uint32_t pointId, double newX, double newY) override;
     void onPointDeleted(uint32_t pointId) override;
+    void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) override;
+    void onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
+                       double prevValue) override;
     void onPointSelected(uint32_t pointId) override;
     void onTensionChanged(uint32_t pointId, double tension) override;
     void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                           const CurveHandleData& outHandle) override;
+    void onSegmentShaperChanged(uint32_t leftPointId, const CurveHandleData& leftInHandle,
+                                const CurveHandleData& leftOutHandle, uint32_t rightPointId,
+                                const CurveHandleData& rightInHandle,
+                                const CurveHandleData& rightOutHandle, bool isPreview) override;
+    void onPointCurveTypeChanged(uint32_t pointId, CurveType newType) override;
 
     // Constrain edge points to x=0 and x=1
     void constrainPointPosition(uint32_t pointId, double& x, double& y) override;
@@ -130,12 +163,22 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     // Handle C key for crosshair toggle
     bool keyPressed(const juce::KeyPress& key) override;
 
+    // Intercept loop-region marker drags before the base class point editing.
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
   private:
     void timerCallback() override;
     void paintPhaseIndicator(juce::Graphics& g);
     juce::Rectangle<int> getIndicatorBounds() const;
 
     ModInfo* modInfo_ = nullptr;
+    ChainNodePath undoOwnerPath_;
+    int undoModIndex_ = -1;
+    bool segmentShaperUndoActive_ = false;
+    CurvePreset segmentShaperUndoBeforePreset_ = CurvePreset::Custom;
+    std::vector<CurvePointData> segmentShaperUndoBeforePoints_;
 
     // Local curve points for custom waveform
     mutable std::vector<CurvePoint> points_;
@@ -160,11 +203,19 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     // Snap settings
     bool snapX_ = false;
     bool snapY_ = false;
+    bool snapLoop_ = true;  // loop markers snap to the X grid by default
 
-    // Loop region display
+    // Loop region display + drag state (0 = none, 1 = start marker, 2 = end)
     bool showLoopRegion_ = false;
+    int draggingLoopMarker_ = 0;
+    // Hit-test the loop markers at a pixel position (grabbed via the handles in
+    // the top strip so the rest of the curve stays free for points); 0/1/2.
+    int loopMarkerAtPixel(int px, int py) const;
 
     void notifyWaveformChanged();
+    std::vector<CurvePointData> snapshotCurvePoints() const;
+    void commitUndoableCurveEdit(const std::vector<CurvePointData>& beforePoints,
+                                 CurvePreset beforePreset, const juce::String& description);
     void paintLoopRegion(juce::Graphics& g);
 };
 

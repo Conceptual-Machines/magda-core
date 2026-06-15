@@ -14,8 +14,8 @@ SidechainRoutingManager::SidechainRoutingManager(PluginManager& pluginManager,
 void SidechainRoutingManager::refreshAllSourceMonitors() {
     for (const auto& track : TrackManager::getInstance().getTracks()) {
         pluginManager_.checkSidechainMonitor(track.id);
-        pluginManager_.checkAudioSidechainMonitor(track.id);
     }
+    pluginManager_.refreshAudioSidechainMonitors();
 }
 
 void SidechainRoutingManager::handleDeviceSidechainChanged(TrackId destinationTrackId,

@@ -4,8 +4,10 @@
 
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 #include "DeviceInfo.hpp"
+#include "ModInfo.hpp"
 #include "RackInfo.hpp"
 #include "TrackInfo.hpp"
 #include "TypeIds.hpp"
@@ -48,6 +50,11 @@ class PresetManager {
      * @brief Get the devices presets directory
      */
     juce::File getDevicesDirectory() const;
+
+    /**
+     * @brief Get the LFO curve presets directory
+     */
+    juce::File getCurvesDirectory() const;
 
     // ========================================================================
     // Chain Presets
@@ -155,6 +162,14 @@ class PresetManager {
                             const juce::String& newRelativePath);
 
     // ========================================================================
+    // Curve Presets
+    // ========================================================================
+
+    bool saveCurvePreset(const std::vector<CurvePointData>& points, const juce::String& presetName);
+    bool loadCurvePreset(const juce::String& presetName, std::vector<CurvePointData>& outPoints);
+    juce::StringArray getCurvePresets() const;
+
+    // ========================================================================
     // Preset Classification
     // ========================================================================
 
@@ -167,7 +182,7 @@ class PresetManager {
      * remaining relative path accepted by loadDevicePreset.
      */
     struct PresetRef {
-        enum class Kind { Chain, Rack, Device };
+        enum class Kind { Chain, Rack, Device, Curve };
         Kind kind{};
         juce::String name;
         juce::String pluginFolder;  // device only; empty for chain/rack

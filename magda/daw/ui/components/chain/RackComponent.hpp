@@ -155,6 +155,9 @@ class RackComponent : public NodeComponent, public juce::Timer {
     void onModTriggerModeChangedInternal(int modIndex, magda::LFOTriggerMode mode) override;
     void onModAudioAttackChangedInternal(int modIndex, float ms) override;
     void onModAudioReleaseChangedInternal(int modIndex, float ms) override;
+    void onModEnvelopeChangedInternal(int modIndex, const magda::ModInfo& mod) override;
+    void onModRandomChangedInternal(int modIndex, const magda::ModInfo& mod) override;
+    void onModFollowerChangedInternal(int modIndex, const magda::ModInfo& mod) override;
     void onModCurveChangedInternal(int modIndex) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
     void onMacroTargetChangedInternal(int macroIndex, magda::ControlTarget target) override;

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 #include <map>
 
@@ -46,6 +47,19 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
             return;
         const float centerY = height * 0.5f;
 
+        // ADSR envelopes draw their shape instead of a periodic waveform.
+        if (mod_->type == magda::ModType::Envelope) {
+            paintEnvelope(g, bounds);
+            return;
+        }
+
+        // Random and envelope-follower modulators draw a scrolling history of
+        // their output instead of a periodic waveform.
+        if (mod_->type == magda::ModType::Random || mod_->type == magda::ModType::Follower) {
+            paintRandom(g, bounds);
+            return;
+        }
+
         // Draw waveform path
         juce::Path waveformPath;
         const int numPoints = 50;  // Fewer points for mini display
@@ -79,12 +93,101 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
     }
 
   private:
+    // Compact ADSR shape with a dot at the current value (overlaid from the
+    // live TE modifier via mod_->value / mod_->envStage).
+    void paintEnvelope(juce::Graphics& g, juce::Rectangle<float> bounds) {
+        const float top = bounds.getY() + 1.0f;
+        const float bottom = bounds.getBottom() - 1.0f;
+        const float h = bottom - top;
+        const float w = bounds.getWidth();
+
+        constexpr float kSustainFrac = 0.22f;
+        const float timed = w * (1.0f - kSustainFrac);
+        const float a = juce::jmax(mod_->envAttackMs, 1.0f);
+        const float d = juce::jmax(mod_->envDecayMs, 1.0f);
+        const float r = juce::jmax(mod_->envReleaseMs, 1.0f);
+        const float sum = a + d + r;
+        const float xA = bounds.getX() + timed * (a / sum);
+        const float xD = xA + timed * (d / sum);
+        const float xS = xD + w * kSustainFrac;
+        const float xR = xS + timed * (r / sum);
+        const float sustainY = bottom - mod_->envSustain * h;
+
+        juce::Path path;
+        path.startNewSubPath(bounds.getX(), bottom);
+        path.lineTo(xA, top);
+        path.lineTo(xD, sustainY);
+        path.lineTo(xS, sustainY);
+        path.lineTo(xR, bottom);
+
+        g.setColour(juce::Colours::orange.withAlpha(0.5f));
+        g.strokePath(path, juce::PathStrokeType(1.0f));
+
+        if (mod_->envStage != 0) {
+            const float v = juce::jlimit(0.0f, 1.0f, mod_->value);
+            float dotX = bounds.getX();
+            switch (mod_->envStage) {
+                case 1:
+                    dotX = bounds.getX() + (xA - bounds.getX()) * v;
+                    break;
+                case 2:
+                    dotX = (xA + xD) * 0.5f;
+                    break;
+                case 3:
+                    dotX = (xD + xS) * 0.5f;
+                    break;
+                case 4:
+                    dotX = (xS + xR) * 0.5f;
+                    break;
+                default:
+                    break;
+            }
+            g.setColour(juce::Colours::orange);
+            g.fillEllipse(dotX - 2.0f, (bottom - v * h) - 2.0f, 4.0f, 4.0f);
+        }
+    }
+
+    // Compact scrolling trace of the random output (oldest -> newest), fed
+    // from mod_->value (overlaid from the live TE modifier) each tick.
+    void paintRandom(juce::Graphics& g, juce::Rectangle<float> bounds) {
+        const float w = bounds.getWidth();
+        const float h = bounds.getHeight() - 2.0f;
+        const float x0 = bounds.getX();
+        const float bottom = bounds.getBottom() - 1.0f;
+
+        juce::Path path;
+        const int n = static_cast<int>(randomHistory_.size());
+        for (int i = 0; i < n; ++i) {
+            const int idx = (randomWritePos_ + i) % n;  // randomWritePos_ = oldest slot
+            const float v = juce::jlimit(0.0f, 1.0f, randomHistory_[static_cast<size_t>(idx)]);
+            const float x = x0 + (static_cast<float>(i) / static_cast<float>(n - 1)) * w;
+            const float y = bottom - v * h;
+            if (i == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        g.setColour(juce::Colours::orange.withAlpha(0.5f));
+        g.strokePath(path, juce::PathStrokeType(1.0f));
+
+        const float v = juce::jlimit(0.0f, 1.0f, mod_->value);
+        g.setColour(juce::Colours::orange);
+        g.fillEllipse(bounds.getRight() - 3.0f, bottom - v * h - 2.0f, 4.0f, 4.0f);
+    }
+
     void timerCallback() override {
+        if (mod_ &&
+            (mod_->type == magda::ModType::Random || mod_->type == magda::ModType::Follower)) {
+            randomHistory_[static_cast<size_t>(randomWritePos_)] = mod_->value;
+            randomWritePos_ = (randomWritePos_ + 1) % static_cast<int>(randomHistory_.size());
+        }
         if (getWidth() > 0 && getHeight() > 0)
             repaint();
     }
 
     const magda::ModInfo* mod_ = nullptr;
+    std::array<float, 48> randomHistory_{};
+    int randomWritePos_ = 0;
 };
 
 /**

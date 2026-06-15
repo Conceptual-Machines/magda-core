@@ -22,6 +22,11 @@ struct CurveSnapshot {
         float phase = 0.0f;
         float value = 0.5f;
         float tension = 0.0f;
+        int curveType = 0;
+        float inHandleX = 0.0f;
+        float inHandleY = 0.0f;
+        float outHandleX = 0.0f;
+        float outHandleY = 0.0f;
     };
 
     std::array<Point, kMaxPoints> points{};
@@ -29,6 +34,12 @@ struct CurveSnapshot {
     CurvePreset preset = CurvePreset::Triangle;
     bool hasCustomPoints = false;
     bool oneShot = false;
+
+    // MSEG loop region. When useLoopRegion is set, the intro [0, loopStart)
+    // plays once, then [loopStart, loopEnd] repeats indefinitely.
+    bool useLoopRegion = false;
+    float loopStart = 0.0f;
+    float loopEnd = 1.0f;
 
     /**
      * @brief Generate a preset curve value (no custom points).
@@ -108,6 +119,12 @@ struct CurveSnapshot {
             p2 = &points[0];
         }
 
+        // Step: the segment holds p1's value until the next point (sample &
+        // hold / rectangular steps).
+        constexpr int kStepCurveType = 2;
+        if (p1->curveType == kStepCurveType)
+            return p1->value;
+
         float phaseSpan;
         float localPhase;
         if (p2->phase < p1->phase) {
@@ -125,14 +142,77 @@ struct CurveSnapshot {
         t = std::clamp(t, 0.0f, 1.0f);
 
         float tension = p1->tension;
+        auto applyTension = [tension](float input) {
+            if (std::abs(tension) < 0.001f)
+                return input;
+            if (tension > 0)
+                return std::pow(input, 1.0f + tension * 2.0f);
+            return 1.0f - std::pow(1.0f - input, 1.0f - tension * 2.0f);
+        };
+
+        auto getShaper = [&]() {
+            struct Shaper {
+                float t = 0.5f;
+                float value = 0.5f;
+                bool stored = false;
+            };
+
+            constexpr float kHandleEpsilon = 0.000001f;
+            const bool hasStoredShaper =
+                p2->phase > p1->phase && (std::abs(p1->outHandleX) > kHandleEpsilon ||
+                                          std::abs(p1->outHandleY) > kHandleEpsilon ||
+                                          std::abs(p2->inHandleX) > kHandleEpsilon ||
+                                          std::abs(p2->inHandleY) > kHandleEpsilon);
+
+            if (hasStoredShaper) {
+                const float shaperPhase =
+                    std::clamp(p1->phase + p1->outHandleX, p1->phase, p2->phase);
+                const float shaperT = (p2->phase - p1->phase > 0.0001f)
+                                          ? ((shaperPhase - p1->phase) / (p2->phase - p1->phase))
+                                          : 0.5f;
+                return Shaper{std::clamp(shaperT, 0.001f, 0.999f),
+                              std::clamp(p1->value + p1->outHandleY, 0.0f, 1.0f), true};
+            }
+
+            constexpr float cornerT = 0.5f;
+            return Shaper{cornerT, p1->value + applyTension(cornerT) * (p2->value - p1->value),
+                          false};
+        };
+
+        constexpr int kHardCornerCurveType = 3;
+        if (p1->curveType == kHardCornerCurveType) {
+            const auto shaper = getShaper();
+            if (t <= shaper.t) {
+                const float u = t / shaper.t;
+                return p1->value + u * (shaper.value - p1->value);
+            }
+            const float u = (t - shaper.t) / (1.0f - shaper.t);
+            return shaper.value + u * (p2->value - shaper.value);
+        }
+
+        const auto shaper = getShaper();
+        if (shaper.stored) {
+            float uLow = 0.0f;
+            float uHigh = 1.0f;
+            float u = t;
+            for (int i = 0; i < 10; ++i) {
+                u = (uLow + uHigh) * 0.5f;
+                const float oneMinusU = 1.0f - u;
+                const float x = 2.0f * oneMinusU * u * shaper.t + u * u;
+                if (x < t)
+                    uLow = u;
+                else
+                    uHigh = u;
+            }
+            const float oneMinusU = 1.0f - u;
+            return oneMinusU * oneMinusU * p1->value + 2.0f * oneMinusU * u * shaper.value +
+                   u * u * p2->value;
+        }
+
         if (std::abs(tension) < 0.001f) {
             return p1->value + t * (p2->value - p1->value);
         } else {
-            float curvedT;
-            if (tension > 0)
-                curvedT = std::pow(t, 1.0f + tension * 2.0f);
-            else
-                curvedT = 1.0f - std::pow(1.0f - t, 1.0f - tension * 2.0f);
+            float curvedT = applyTension(t);
             return p1->value + curvedT * (p2->value - p1->value);
         }
     }
@@ -161,6 +241,9 @@ struct CurveSnapshotHolder {
     std::atomic<float> previousPhase_{-1.0f};
     std::atomic<bool> oneShotCompleted_{false};
     std::atomic<int> evalLogCount_{0};  // throttle DBG spam in evaluateCallback
+    // Last remapped (looped) phase, published for the UI phase indicator so the
+    // dot follows the loop region instead of TE's raw 0..1 sweep.
+    std::atomic<float> lastEffectivePhase_{0.0f};
 
     /**
      * @brief Message thread: copy curve data from ModInfo into the inactive
@@ -175,6 +258,9 @@ struct CurveSnapshotHolder {
         back->preset = modInfo.curvePreset;
         back->hasCustomPoints = !modInfo.curvePoints.empty();
         back->oneShot = modInfo.oneShot;
+        back->useLoopRegion = modInfo.useLoopRegion;
+        back->loopStart = modInfo.loopStart;
+        back->loopEnd = modInfo.loopEnd;
         back->count =
             std::min(static_cast<int>(modInfo.curvePoints.size()), CurveSnapshot::kMaxPoints);
 
@@ -184,6 +270,11 @@ struct CurveSnapshotHolder {
             dst.phase = src.phase;
             dst.value = src.value;
             dst.tension = src.tension;
+            dst.curveType = src.curveType;
+            dst.inHandleX = src.inHandleX;
+            dst.inHandleY = src.inHandleY;
+            dst.outHandleX = src.outHandleX;
+            dst.outHandleY = src.outHandleY;
         }
 
         // Swap: audio thread will now read from the newly written buffer
@@ -220,7 +311,14 @@ struct CurveSnapshotHolder {
             return 0.0f;
         const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
 
-        if (snap->oneShot) {
+        const float loopLen = snap->loopEnd - snap->loopStart;
+        const bool looping = snap->useLoopRegion && loopLen > 1.0e-4f;
+
+        // Both one-shot completion tracking and MSEG looping integrate the
+        // incoming phase into a cumulative position. Looping additionally
+        // remaps that position so the [loopStart, loopEnd] region repeats once
+        // the intro (0 -> loopStart) has played through.
+        if (snap->oneShot || looping) {
             // Consume pending reset from resetOneShot() on this thread,
             // so cumulativePhase_/previousPhase_ are only written by one thread.
             bool wasReset = holder->pendingReset_.exchange(false, std::memory_order_acquire);
@@ -231,16 +329,17 @@ struct CurveSnapshotHolder {
                 holder->evalLogCount_.store(0, std::memory_order_relaxed);
             }
 
-            bool alreadyCompleted = holder->oneShotCompleted_.load(std::memory_order_relaxed);
-            if (alreadyCompleted) {
-                float ev = snap->endValue();
-                return ev;
-            }
+            // A one-shot without a sustain loop holds its end value once it has
+            // played through. With a loop, the region sustains instead.
+            if (snap->oneShot && !looping &&
+                holder->oneShotCompleted_.load(std::memory_order_relaxed))
+                return snap->endValue();
 
-            // Accumulate phase delta to detect when one full cycle has elapsed.
+            // Accumulate phase delta to advance the cumulative position.
             float prev = holder->previousPhase_.load(std::memory_order_relaxed);
             holder->previousPhase_.store(phase, std::memory_order_relaxed);
 
+            float cum = holder->cumulativePhase_.load(std::memory_order_relaxed);
             if (prev >= 0.0f) {
                 float delta = phase - prev;
                 // Normal forward movement: delta is small positive.
@@ -248,13 +347,25 @@ struct CurveSnapshotHolder {
                 if (delta < -0.5f)
                     delta += 1.0f;
                 if (delta > 0.0f) {
-                    float cum = holder->cumulativePhase_.load(std::memory_order_relaxed) + delta;
+                    cum += delta;
+                    // Keep the cumulative position bounded inside the loop so a
+                    // long-running LFO never loses float precision.
+                    if (looping && cum >= snap->loopEnd)
+                        cum = snap->loopStart + std::fmod(cum - snap->loopStart, loopLen);
                     holder->cumulativePhase_.store(cum, std::memory_order_relaxed);
-                    if (cum >= 1.0f) {
+                    if (snap->oneShot && !looping && cum >= 1.0f) {
                         holder->oneShotCompleted_.store(true, std::memory_order_relaxed);
                         return snap->endValue();
                     }
                 }
+            }
+
+            if (looping) {
+                const float eff = (cum < snap->loopStart)
+                                      ? cum  // intro segment, plays once
+                                      : snap->loopStart + std::fmod(cum - snap->loopStart, loopLen);
+                holder->lastEffectivePhase_.store(eff, std::memory_order_relaxed);
+                return snap->evaluate(eff);
             }
         }
 

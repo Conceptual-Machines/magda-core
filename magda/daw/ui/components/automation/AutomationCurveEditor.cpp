@@ -181,6 +181,10 @@ int AutomationCurveEditor::xToPixel(double x) const {
     return static_cast<int>(std::round((x - clipOffset_) * pixelsPerBeat_));
 }
 
+double AutomationCurveEditor::xToPixelF(double x) const {
+    return (x - clipOffset_) * pixelsPerBeat_;
+}
+
 void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     if (!lane) {
@@ -492,6 +496,20 @@ void AutomationCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
     }
 }
 
+void AutomationCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType) {
+    AutomationCurveType autoCurveType = toAutomationCurveType(newType);
+    if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetAutomationPointCurveTypeCommand>(
+                laneId_, clipId_, static_cast<AutomationPointId>(pointId), autoCurveType));
+    } else {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetAutomationPointCurveTypeCommand>(
+                laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(pointId),
+                autoCurveType));
+    }
+}
+
 void AutomationCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                              const CurveHandleData& outHandle) {
     // Convert CurveHandleData to BezierHandle
@@ -663,6 +681,8 @@ AutomationCurveType AutomationCurveEditor::toAutomationCurveType(CurveType type)
             return AutomationCurveType::Bezier;
         case CurveType::Step:
             return AutomationCurveType::Step;
+        case CurveType::HardCorner:
+            return AutomationCurveType::Linear;
     }
     return AutomationCurveType::Linear;
 }

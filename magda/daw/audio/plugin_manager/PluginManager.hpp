@@ -387,6 +387,19 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void gateSidechainLFOs(TrackId sourceTrackId);
 
     /**
+     * @brief Feed a source track's post-FX audio to every envelope-follower whose
+     *        audio source is this track (audio thread, called per block by
+     *        FollowerSourceTapPlugin). For each follower this applies its own
+     *        pre-detection gain and HP/LP band-limit filters to the raw mono
+     *        samples, takes the band-limited peak, and pushes it via
+     *        setExternalInput(). The follower then applies attack/hold/release.
+     *
+     * @param mono unrectified mono downmix of the source audio (length numSamples)
+     */
+    void pushFollowerSourceBuffer(TrackId sourceTrackId, const float* mono, int numSamples,
+                                  double sampleRate);
+
+    /**
      * @brief Rebuild the sidechain LFO cache for all tracks
      *
      * Must be called on the message thread after sidechain config, modifier,
@@ -503,8 +516,18 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param trackId The track to check
      */
     void checkAudioSidechainMonitor(TrackId trackId);
+    void refreshAudioSidechainMonitors();
     void ensureAudioSidechainMonitor(TrackId sourceTrackId);
     void removeAudioSidechainMonitor(TrackId sourceTrackId);
+
+    /**
+     * @brief Insert/remove the post-FX FollowerSourceTapPlugin for a track,
+     *        depending on whether any envelope follower keys off its audio.
+     *        Mirrors the audio-monitor lifecycle but taps the END of the chain.
+     */
+    void ensureFollowerSourceTap(TrackId sourceTrackId);
+    void removeFollowerSourceTap(TrackId sourceTrackId);
+    bool trackNeedsFollowerSourceTap(TrackId trackId) const;
 
     /**
      * @brief Ensure the always-on per-track measurement tap exists (issue #1388).
@@ -661,6 +684,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Audio sidechain monitor plugins (sourceTrackId → AudioSidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> audioSidechainMonitors_;
 
+    // Post-FX follower source taps (sourceTrackId -> FollowerSourceTapPlugin).
+    // Feeds gain-scaled, band-limited audio levels to followers keying off the track.
+    std::map<TrackId, te::Plugin::Ptr> followerSourceTaps_;
+
     // Per-track measurement taps (trackId → TrackMeasurementPlugin), issue #1388.
     // MASTER_TRACK_ID keys the master tap. Lazily inserted on first enable.
     std::map<TrackId, te::Plugin::Ptr> trackMeasurementTaps_;
@@ -669,11 +696,57 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Double-buffered: message thread writes to inactive buffer then atomically
     // swaps the pointer. Audio thread reads through the atomic pointer with no lock.
     struct PerTrackEntry {
-        static constexpr int kMaxLFOs = 64;
-        std::array<te::LFOModifier*, kMaxLFOs> lfos{};
-        std::array<bool, kMaxLFOs> isCrossTrack{};  // true = sidechain destination on another track
-        std::array<LFOTriggerMode, kMaxLFOs> trigMode{};  // trigger mode of corresponding MAGDA mod
+        static constexpr int kMaxMods = 64;
+        // Holds both LFO and ADSR modifiers (the audio-trigger gate API is
+        // shared); dynamic_cast at trigger/gate time picks the right call.
+        std::array<te::Modifier*, kMaxMods> mods{};
+        std::array<bool, kMaxMods> isCrossTrack{};  // true = sidechain destination on another track
+        std::array<LFOTriggerMode, kMaxMods> trigMode{};  // trigger mode of corresponding MAGDA mod
         int count = 0;
+        bool hasAudioTrigger = false;
+
+        // Envelope followers whose audio source is this track (self-mode on this
+        // track, or cross-track sidechained from it). Fed post-FX by the
+        // FollowerSourceTapPlugin, which applies source gain and band-limits per
+        // follower before peak detection. Config comes from the MAGDA ModInfo; the
+        // IIRFilters are audio-thread state (reset on cache rebuild - benign,
+        // rebuilds only happen on edits, not during steady playback).
+        static constexpr int kMaxFollowers = 16;
+        // Copyable biquad (Direct Form II Transposed, matching juce::IIRFilter).
+        // juce::IIRFilter itself can't live here - it holds a lock and so deletes
+        // its copy-assignment, which the double-buffered cache relies on.
+        struct Biquad {
+            juce::IIRCoefficients coeffs;  // plain float array - copyable
+            float v1 = 0.0f;
+            float v2 = 0.0f;
+            void process(float* d, int n) {
+                const float c0 = coeffs.coefficients[0], c1 = coeffs.coefficients[1],
+                            c2 = coeffs.coefficients[2], c3 = coeffs.coefficients[3],
+                            c4 = coeffs.coefficients[4];
+                for (int i = 0; i < n; ++i) {
+                    const float in = d[i];
+                    const float out = c0 * in + v1;
+                    v1 = c1 * in - c3 * out + v2;
+                    v2 = c2 * in - c4 * out;
+                    d[i] = out;
+                }
+            }
+        };
+        struct FollowerSlot {
+            te::EnvelopeFollowerModifier* mod = nullptr;
+            bool hpEnabled = false;
+            bool lpEnabled = false;
+            float gain = 1.0f;
+            float hpFreq = 200.0f;
+            float lpFreq = 2000.0f;
+            float curHpFreq = 0.0f;  // last cutoff the filter coeffs were set for
+            float curLpFreq = 0.0f;
+            Biquad hp;
+            Biquad lp;
+        };
+        std::array<FollowerSlot, kMaxFollowers> followers{};
+        int followerCount = 0;
+        bool hasFollowerSource = false;  // any follower keys off this track's audio
     };
     static constexpr int kMaxCacheTracks = 512;
     struct SidechainCache {
@@ -681,6 +754,11 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     };
     SidechainCache cacheBuffers_[2];
     std::atomic<SidechainCache*> activeCache_{&cacheBuffers_[0]};
+
+    // Audio-thread scratch for per-follower gain and band-limit processing in
+    // pushFollowerSourceBuffer(). Sized to cover any realistic block; longer
+    // blocks are clamped (envelope detection tolerates a shorter window).
+    std::array<float, 32768> followerScratch_{};
     int writeCacheIndex_ =
         1;  // message thread only — starts at 1 so first write goes to inactive buffer
 
@@ -691,6 +769,14 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Holders are moved here after clearing LFO callbacks, then drained at the
     // start of the next sync operation (by which time the audio thread has moved on).
     std::vector<std::unique_ptr<CurveSnapshotHolder>> deferredHolders_;
+
+    // Deferred envelope-follower destruction to prevent audio-thread use-after-free.
+    // FollowerSourceTapPlugin dereferences follower pointers from the sidechain
+    // cache every block; a structural resync during playback tears down and
+    // recreates the TE modifier. Holding a Ptr keeps the old follower alive one
+    // teardown-generation past the cache rebuild, so the audio thread never
+    // dereferences freed memory. Released at the next syncDeviceModifiers.
+    std::vector<te::Modifier::Ptr> deferredFollowers_;
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

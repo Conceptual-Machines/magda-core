@@ -1,5 +1,6 @@
 #include "modulation/LFOCurveEditorWindow.hpp"
 
+#include "core/PresetManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -16,6 +17,7 @@ LFOCurveEditorContent::LFOCurveEditorContent(magda::ModInfo* modInfo,
                                              std::function<void()> onDragPreview)
     : modInfo_(modInfo) {
     // Configure the curve editor
+    curveEditor_.setName("popupLFO");
     curveEditor_.setModInfo(modInfo);
     curveEditor_.setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     curveEditor_.onWaveformChanged = std::move(onWaveformChanged);
@@ -144,13 +146,6 @@ void LFOCurveEditorContent::setupControls() {
     addAndMakeVisible(msegToggle_);
 
     // Preset selector
-    presetCombo_.addItem("Triangle", static_cast<int>(magda::CurvePreset::Triangle) + 1);
-    presetCombo_.addItem("Sine", static_cast<int>(magda::CurvePreset::Sine) + 1);
-    presetCombo_.addItem("Ramp Up", static_cast<int>(magda::CurvePreset::RampUp) + 1);
-    presetCombo_.addItem("Ramp Down", static_cast<int>(magda::CurvePreset::RampDown) + 1);
-    presetCombo_.addItem("S-Curve", static_cast<int>(magda::CurvePreset::SCurve) + 1);
-    presetCombo_.addItem("Exp", static_cast<int>(magda::CurvePreset::Exponential) + 1);
-    presetCombo_.addItem("Log", static_cast<int>(magda::CurvePreset::Logarithmic) + 1);
     presetCombo_.setTextWhenNothingSelected("Preset");
     presetCombo_.setColour(juce::ComboBox::backgroundColourId,
                            DarkTheme::getColour(DarkTheme::SURFACE));
@@ -160,11 +155,26 @@ void LFOCurveEditorContent::setupControls() {
     presetCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     presetCombo_.onChange = [this]() {
         int id = presetCombo_.getSelectedId();
-        if (id > 0) {
+        if (id >= USER_PRESET_ID_BASE) {
+            const int index = id - USER_PRESET_ID_BASE;
+            if (index >= 0 && index < userCurvePresets_.size()) {
+                std::vector<magda::CurvePointData> points;
+                auto& presetManager = magda::PresetManager::getInstance();
+                if (!presetManager.loadCurvePreset(userCurvePresets_[index], points)) {
+                    showPresetError("Load Curve Preset Failed", presetManager.getLastError());
+                    return;
+                }
+
+                currentUserCurvePreset_ = userCurvePresets_[index];
+                curveEditor_.loadCurvePoints(points);
+            }
+        } else if (id > 0) {
+            currentUserCurvePreset_.clear();
             auto preset = static_cast<magda::CurvePreset>(id - 1);
             curveEditor_.loadPreset(preset);
         }
     };
+    rebuildPresetCombo();
     addAndMakeVisible(presetCombo_);
 
     // Save preset button
@@ -172,10 +182,23 @@ void LFOCurveEditorContent::setupControls() {
                                                            BinaryData::save_svgSize);
     savePresetButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     savePresetButton_->setHoverColor(DarkTheme::getTextColour());
-    savePresetButton_->onClick = []() {
-        // TODO: Show save preset dialog
-    };
+    savePresetButton_->setTooltip("Save curve preset");
+    savePresetButton_->onClick = [this]() { showSaveCurvePresetDialog(); };
     addAndMakeVisible(savePresetButton_.get());
+
+    // Reset button
+    resetButton_ = std::make_unique<magda::SvgButton>("Reset Curve", BinaryData::refresh_svg,
+                                                      BinaryData::refresh_svgSize);
+    resetButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    resetButton_->setHoverColor(DarkTheme::getTextColour());
+    resetButton_->setTooltip("Reset curve");
+    resetButton_->onClick = [this]() {
+        currentUserCurvePreset_.clear();
+        curveEditor_.loadPreset(magda::CurvePreset::Triangle);
+        presetCombo_.setSelectedId(static_cast<int>(magda::CurvePreset::Triangle) + 1,
+                                   juce::dontSendNotification);
+    };
+    addAndMakeVisible(resetButton_.get());
 
     // Grid label
     gridLabel_.setText("Grid:", juce::dontSendNotification);
@@ -243,6 +266,24 @@ void LFOCurveEditorContent::setupControls() {
     snapYToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     snapYToggle_.onClick = [this]() { curveEditor_.setSnapY(snapYToggle_.getToggleState()); };
     addAndMakeVisible(snapYToggle_);
+
+    // Loop-marker snap toggle (snaps loop points to the X grid)
+    loopSnapToggle_.setButtonText("Lp");
+    loopSnapToggle_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    loopSnapToggle_.setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    loopSnapToggle_.setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getSecondaryTextColour());
+    loopSnapToggle_.setColour(juce::TextButton::textColourOnId,
+                              DarkTheme::getColour(DarkTheme::BACKGROUND));
+    loopSnapToggle_.setClickingTogglesState(true);
+    loopSnapToggle_.setToggleState(curveEditor_.getSnapLoop(), juce::dontSendNotification);
+    loopSnapToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    loopSnapToggle_.onClick = [this]() {
+        curveEditor_.setSnapLoop(loopSnapToggle_.getToggleState());
+    };
+    addAndMakeVisible(loopSnapToggle_);
 }
 
 void LFOCurveEditorContent::updateControlsFromModInfo() {
@@ -267,6 +308,151 @@ void LFOCurveEditorContent::updateControlsFromModInfo() {
     curveEditor_.setShowLoopRegion(modInfo_->useLoopRegion);
 }
 
+void LFOCurveEditorContent::rebuildPresetCombo(const juce::String& selectedUserPreset) {
+    presetCombo_.clear(juce::dontSendNotification);
+
+    presetCombo_.addSectionHeading("Factory");
+    presetCombo_.addItem("Triangle", static_cast<int>(magda::CurvePreset::Triangle) + 1);
+    presetCombo_.addItem("Sine", static_cast<int>(magda::CurvePreset::Sine) + 1);
+    presetCombo_.addItem("Ramp Up", static_cast<int>(magda::CurvePreset::RampUp) + 1);
+    presetCombo_.addItem("Ramp Down", static_cast<int>(magda::CurvePreset::RampDown) + 1);
+    presetCombo_.addItem("S-Curve", static_cast<int>(magda::CurvePreset::SCurve) + 1);
+    presetCombo_.addItem("Exp", static_cast<int>(magda::CurvePreset::Exponential) + 1);
+    presetCombo_.addItem("Log", static_cast<int>(magda::CurvePreset::Logarithmic) + 1);
+
+    userCurvePresets_ = magda::PresetManager::getInstance().getCurvePresets();
+    if (!userCurvePresets_.isEmpty()) {
+        presetCombo_.addSectionHeading("User");
+        for (int i = 0; i < userCurvePresets_.size(); ++i)
+            presetCombo_.addItem(userCurvePresets_[i], USER_PRESET_ID_BASE + i);
+    }
+
+    if (selectedUserPreset.isNotEmpty()) {
+        const int index = userCurvePresets_.indexOf(selectedUserPreset);
+        if (index >= 0) {
+            presetCombo_.setSelectedId(USER_PRESET_ID_BASE + index, juce::dontSendNotification);
+            return;
+        }
+    }
+
+    if (modInfo_ && modInfo_->curvePreset != magda::CurvePreset::Custom) {
+        presetCombo_.setSelectedId(static_cast<int>(modInfo_->curvePreset) + 1,
+                                   juce::dontSendNotification);
+    }
+}
+
+void LFOCurveEditorContent::showPresetError(const juce::String& title,
+                                            const juce::String& message) {
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                     .withTitle(title)
+                                     .withMessage(message)
+                                     .withButton("OK"),
+                                 nullptr);
+}
+
+void LFOCurveEditorContent::showSaveCurvePresetDialog() {
+    auto* alert = new juce::AlertWindow("Save Curve Preset", "Enter a name for this curve preset:",
+                                        juce::MessageBoxIconType::NoIcon);
+
+    juce::String defaultName = currentUserCurvePreset_;
+    juce::String defaultCategory;
+    const auto slash = defaultName.lastIndexOfChar('/');
+    if (slash > 0) {
+        defaultCategory = defaultName.substring(0, slash);
+        defaultName = defaultName.substring(slash + 1);
+    }
+    if (defaultName.isEmpty())
+        defaultName = "Custom Curve";
+
+    alert->addTextEditor("category", defaultCategory, "Category (optional):");
+    alert->addTextEditor("name", defaultName, "Name:");
+    alert->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<LFOCurveEditorContent> safeThis(this);
+    alert->enterModalState(
+        true, juce::ModalCallbackFunction::create([safeThis, alert](int result) {
+            if (result != 1) {
+                delete alert;
+                return;
+            }
+
+            auto category = alert->getTextEditorContents("category").trim();
+            auto name = alert->getTextEditorContents("name").trim();
+            delete alert;
+
+            if (safeThis == nullptr || name.isEmpty())
+                return;
+
+            juce::StringArray categoryParts;
+            categoryParts.addTokens(category, "/", "");
+            juce::StringArray cleanedCategoryParts;
+            for (const auto& part : categoryParts) {
+                auto trimmed = part.trim();
+                if (trimmed.isNotEmpty())
+                    cleanedCategoryParts.add(trimmed);
+            }
+
+            const auto cleanCategory = cleanedCategoryParts.joinIntoString("/");
+            const auto fullName = cleanCategory.isEmpty() ? name : (cleanCategory + "/" + name);
+
+            auto doSave = [safeThis, fullName]() {
+                if (safeThis != nullptr)
+                    safeThis->saveCurvePreset(fullName);
+            };
+
+            if (magda::PresetManager::getInstance().getCurvePresets().contains(fullName)) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions()
+                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                        .withTitle("Overwrite Preset?")
+                        .withMessage("\"" + fullName + "\" already exists. Overwrite?")
+                        .withButton("Overwrite")
+                        .withButton("Cancel"),
+                    [doSave](int choice) {
+                        if (choice == 1)
+                            doSave();
+                    });
+            } else {
+                doSave();
+            }
+        }));
+}
+
+void LFOCurveEditorContent::saveCurvePreset(const juce::String& presetName) {
+    std::vector<magda::CurvePointData> points;
+    const auto& editorPoints = curveEditor_.getPoints();
+    points.reserve(editorPoints.size());
+
+    for (const auto& point : editorPoints) {
+        magda::CurvePointData data;
+        data.phase = static_cast<float>(point.x);
+        data.value = static_cast<float>(point.y);
+        data.tension = static_cast<float>(point.tension);
+        data.curveType = magda::curveTypeToInt(point.curveType);
+        data.inHandleX = static_cast<float>(point.inHandle.x);
+        data.inHandleY = static_cast<float>(point.inHandle.y);
+        data.outHandleX = static_cast<float>(point.outHandle.x);
+        data.outHandleY = static_cast<float>(point.outHandle.y);
+        points.push_back(data);
+    }
+
+    if (points.size() < 2) {
+        showPresetError("Save Curve Preset Failed", "Curve needs at least two points.");
+        return;
+    }
+
+    auto& presetManager = magda::PresetManager::getInstance();
+    if (!presetManager.saveCurvePreset(points, presetName)) {
+        showPresetError("Save Curve Preset Failed", presetManager.getLastError());
+        return;
+    }
+
+    currentUserCurvePreset_ = presetName;
+    rebuildPresetCombo(currentUserCurvePreset_);
+}
+
 void LFOCurveEditorContent::paint(juce::Graphics& g) {
     // Header background
     auto headerBounds = getLocalBounds().removeFromTop(HEADER_HEIGHT);
@@ -289,12 +475,14 @@ void LFOCurveEditorContent::paint(juce::Graphics& g) {
 void LFOCurveEditorContent::resized() {
     auto bounds = getLocalBounds();
 
-    // Header at top with preset selector and save button
+    // Header at top with preset selector, save button, and reset button
     auto header = bounds.removeFromTop(HEADER_HEIGHT);
     header.reduce(6, 3);
     presetCombo_.setBounds(header.removeFromLeft(90));
     header.removeFromLeft(4);  // Gap
     savePresetButton_->setBounds(header.removeFromLeft(18));
+    header.removeFromLeft(4);
+    resetButton_->setBounds(header.removeFromLeft(18));
 
     // Footer at bottom
     auto footer = bounds.removeFromBottom(FOOTER_HEIGHT);
@@ -333,6 +521,8 @@ void LFOCurveEditorContent::resized() {
     snapXToggle_.setBounds(footer.removeFromLeft(snapWidth));
     footer.removeFromLeft(4);
     snapYToggle_.setBounds(footer.removeFromLeft(snapWidth));
+    footer.removeFromLeft(4);
+    loopSnapToggle_.setBounds(footer.removeFromLeft(snapWidth));
 
     // Curve editor takes remaining space (between header and footer)
     // Only expand horizontally, not vertically (to avoid overlapping header/footer)

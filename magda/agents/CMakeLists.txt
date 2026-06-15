@@ -53,6 +53,14 @@ dsl_grammar.hpp
     four_osc_agent.cpp
     four_osc_apply.hpp
     four_osc_apply.cpp
+    poly_step_sequencer_agent.hpp
+    poly_step_sequencer_agent.cpp
+    poly_step_sequencer_apply.hpp
+    poly_step_sequencer_apply.cpp
+    step_sequencer_agent.hpp
+    step_sequencer_agent.cpp
+    step_sequencer_apply.hpp
+    step_sequencer_apply.cpp
     faust_agent.hpp
     faust_agent.cpp
     device_ai_agent.hpp

@@ -461,6 +461,31 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     SER(audioReleaseMs);
     SER(curvePreset);
 
+    // ADSR envelope generator (type == Envelope)
+    SER(envAttackMs);
+    SER(envDecayMs);
+    SER(envSustain);
+    SER(envReleaseMs);
+    SER(envAttackCurve);
+    SER(envDecayCurve);
+    SER(envReleaseCurve);
+
+    // Random modulator (type == Random)
+    SER(randomType);
+    SER(randomShape);
+    SER(randomSmooth);
+    SER(randomStepDepth);
+
+    // Envelope follower (type == Follower)
+    SER(followerGainDb);
+    SER(followerAttackMs);
+    SER(followerHoldMs);
+    SER(followerReleaseMs);
+    SER(followerHpEnabled);
+    SER(followerHpFreq);
+    SER(followerLpEnabled);
+    SER(followerLpFreq);
+
     // Curve points
     juce::Array<juce::var> curvePointsArray;
     for (const auto& point : mod.curvePoints) {
@@ -509,6 +534,54 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     DESER(audioAttackMs);
     DESER(audioReleaseMs);
     DESER(curvePreset);
+
+    // ADSR envelope generator (type == Envelope). Guarded so projects and
+    // mods saved without these fields keep ModInfo's defaults instead of
+    // reading 0 from a missing property.
+    if (obj->hasProperty("envAttackMs"))
+        DESER(envAttackMs);
+    if (obj->hasProperty("envDecayMs"))
+        DESER(envDecayMs);
+    if (obj->hasProperty("envSustain"))
+        DESER(envSustain);
+    if (obj->hasProperty("envReleaseMs"))
+        DESER(envReleaseMs);
+    if (obj->hasProperty("envAttackCurve"))
+        DESER(envAttackCurve);
+    if (obj->hasProperty("envDecayCurve"))
+        DESER(envDecayCurve);
+    if (obj->hasProperty("envReleaseCurve"))
+        DESER(envReleaseCurve);
+
+    // Random modulator (type == Random). Guarded so mods saved without these
+    // fields keep ModInfo's defaults instead of reading 0 from a missing
+    // property.
+    if (obj->hasProperty("randomType"))
+        DESER(randomType);
+    if (obj->hasProperty("randomShape"))
+        DESER(randomShape);
+    if (obj->hasProperty("randomSmooth"))
+        DESER(randomSmooth);
+    if (obj->hasProperty("randomStepDepth"))
+        DESER(randomStepDepth);
+
+    // Envelope follower (type == Follower).
+    if (obj->hasProperty("followerGainDb"))
+        DESER(followerGainDb);
+    if (obj->hasProperty("followerAttackMs"))
+        DESER(followerAttackMs);
+    if (obj->hasProperty("followerHoldMs"))
+        DESER(followerHoldMs);
+    if (obj->hasProperty("followerReleaseMs"))
+        DESER(followerReleaseMs);
+    if (obj->hasProperty("followerHpEnabled"))
+        DESER(followerHpEnabled);
+    if (obj->hasProperty("followerHpFreq"))
+        DESER(followerHpFreq);
+    if (obj->hasProperty("followerLpEnabled"))
+        DESER(followerLpEnabled);
+    if (obj->hasProperty("followerLpFreq"))
+        DESER(followerLpFreq);
 
     // Curve points
     auto curvePointsVar = obj->getProperty("curvePoints");
@@ -672,6 +745,11 @@ juce::var ProjectSerializer::serializeCurvePointData(const CurvePointData& data)
     SER(phase);
     SER(value);
     SER(tension);
+    SER(curveType);
+    SER(inHandleX);
+    SER(inHandleY);
+    SER(outHandleX);
+    SER(outHandleY);
     return juce::var(obj);
 }
 
@@ -684,6 +762,17 @@ bool ProjectSerializer::deserializeCurvePointData(const juce::var& json, CurvePo
     DESER(phase);
     DESER(value);
     DESER(tension);
+    // curveType defaults to 0 (Linear) when absent (old project files)
+    if (obj->hasProperty("curveType"))
+        DESER(curveType);
+    if (obj->hasProperty("inHandleX"))
+        DESER(inHandleX);
+    if (obj->hasProperty("inHandleY"))
+        DESER(inHandleY);
+    if (obj->hasProperty("outHandleX"))
+        DESER(outHandleX);
+    if (obj->hasProperty("outHandleY"))
+        DESER(outHandleY);
     return true;
 }
 

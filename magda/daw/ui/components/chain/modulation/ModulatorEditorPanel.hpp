@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 
@@ -15,8 +16,11 @@
 #include "ui/components/chain/modulation/LFOCurveEditorWindow.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
+
+class FollowerEditorPanel;
 
 /**
  * @brief Animated waveform display component
@@ -137,6 +141,218 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
 };
 
 /**
+ * @brief Animated ADSR envelope display.
+ *
+ * Draws the attack/decay/sustain/release shape from the mod's envelope fields
+ * and a moving dot at the current value, with the active stage shown as a
+ * label. Read-only (the A/D/S/R/curve sliders edit the values); the stage and
+ * value are overlaid from the live TE modifier by the audio bridge.
+ */
+class EnvelopeDisplay : public juce::Component, private juce::Timer {
+  public:
+    EnvelopeDisplay() {
+        startTimer(33);  // 30 FPS animation
+    }
+
+    ~EnvelopeDisplay() override {
+        stopTimer();
+    }
+
+    void setModInfo(const magda::ModInfo* mod,
+                    std::function<const magda::ModInfo*()> getter = nullptr) {
+        mod_ = mod;
+        modGetter_ = std::move(getter);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
+        if (!mod)
+            return;
+
+        auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+        const float w = bounds.getWidth();
+        const float top = bounds.getY();
+        const float bottom = bounds.getBottom();
+        const float h = bottom - top;
+
+        // Distribute the horizontal space: a fixed slice for the sustain hold,
+        // the rest shared by attack/decay/release in proportion to their times
+        // (with a floor so a zero-length stage is still visible).
+        constexpr float kSustainFrac = 0.22f;
+        const float timed = w * (1.0f - kSustainFrac);
+        const float a = juce::jmax(mod->envAttackMs, 1.0f);
+        const float d = juce::jmax(mod->envDecayMs, 1.0f);
+        const float r = juce::jmax(mod->envReleaseMs, 1.0f);
+        const float sum = a + d + r;
+        const float aw = timed * (a / sum);
+        const float dw = timed * (d / sum);
+        const float rw = timed * (r / sum);
+        const float sw = w * kSustainFrac;
+
+        const float x0 = bounds.getX();
+        const float xA = x0 + aw;  // end of attack (peak)
+        const float xD = xA + dw;  // end of decay (sustain level)
+        const float xS = xD + sw;  // end of sustain hold
+        const float xR = xS + rw;  // end of release (zero)
+        const float sustainY = bottom - mod->envSustain * h;
+
+        auto yAt = [&](float v) { return bottom - juce::jlimit(0.0f, 1.0f, v) * h; };
+
+        juce::Path path;
+        path.startNewSubPath(x0, bottom);
+        appendCurve(path, x0, bottom, xA, top, mod->envAttackCurve);
+        appendCurve(path, xA, top, xD, sustainY, mod->envDecayCurve);
+        path.lineTo(xS, sustainY);
+        appendCurve(path, xS, sustainY, xR, bottom, mod->envReleaseCurve);
+
+        g.setColour(juce::Colours::orange.withAlpha(0.7f));
+        g.strokePath(path, juce::PathStrokeType(1.5f));
+
+        // Stage breakpoint markers
+        g.setColour(juce::Colours::orange.withAlpha(0.25f));
+        for (float x : {xA, xD, xS}) {
+            for (float y = top; y < bottom; y += 4.0f)
+                g.drawLine(x, y, x, juce::jmin(y + 2.0f, bottom), 1.0f);
+        }
+
+        // Current-value dot, placed on the segment for the active stage.
+        // Stage ordinals match te::ADSRModifier::Stage (idle/attack/decay/
+        // sustain/release).
+        const float v = mod->value;
+        float dotX = x0;
+        switch (mod->envStage) {
+            case 1:
+                dotX = x0 + aw * juce::jlimit(0.0f, 1.0f, v);
+                break;
+            case 2: {
+                const float denom = juce::jmax(1.0f - mod->envSustain, 1e-3f);
+                dotX = xA + dw * juce::jlimit(0.0f, 1.0f, (1.0f - v) / denom);
+                break;
+            }
+            case 3:
+                dotX = (xD + xS) * 0.5f;
+                break;
+            case 4: {
+                const float denom = juce::jmax(mod->envSustain, 1e-3f);
+                dotX = xS + rw * juce::jlimit(0.0f, 1.0f, (mod->envSustain - v) / denom);
+                break;
+            }
+            default:
+                dotX = x0;
+                break;
+        }
+        if (mod->envStage != 0) {
+            g.setColour(juce::Colours::orange);
+            g.fillEllipse(dotX - 3.0f, yAt(v) - 3.0f, 6.0f, 6.0f);
+        }
+
+        // Active-stage label
+        static const char* kStageNames[] = {"Idle", "Attack", "Decay", "Sustain", "Release"};
+        const int s = juce::jlimit(0, 4, mod->envStage);
+        g.setColour(juce::Colours::orange.withAlpha(0.6f));
+        g.setFont(FontManager::getInstance().getUIFont(8.0f));
+        g.drawText(kStageNames[s], bounds.toNearestInt().removeFromTop(12),
+                   juce::Justification::topRight);
+    }
+
+  private:
+    // Append a quadratic segment whose bow is controlled by `curve` (-0.5..0.5,
+    // matching the TE convention). Zero curve draws a straight line.
+    static void appendCurve(juce::Path& p, float x1, float y1, float x2, float y2, float curve) {
+        if (std::abs(curve) < 1e-3f) {
+            p.lineTo(x2, y2);
+            return;
+        }
+        const float cx = (x1 + x2) * 0.5f - (x2 - x1) * curve;
+        const float cy = (y1 + y2) * 0.5f + (y2 - y1) * curve;
+        p.quadraticTo(cx, cy, x2, y2);
+    }
+
+    void timerCallback() override {
+        repaint();
+    }
+
+    const magda::ModInfo* mod_ = nullptr;
+    std::function<const magda::ModInfo*()> modGetter_;
+};
+
+/**
+ * @brief Scrolling history display for the Random modulator's live output.
+ *
+ * The random output has no deterministic waveform to draw, so we scroll a
+ * short ring buffer of recent output values left-to-right (oldest -> newest),
+ * fed from ModInfo::value (overlaid from te::RandomModifier on the audio
+ * thread) on each 30fps tick.
+ */
+class RandomDisplay : public juce::Component, private juce::Timer {
+  public:
+    RandomDisplay() {
+        history_.fill(0.0f);
+        startTimer(33);  // 30 FPS
+    }
+
+    ~RandomDisplay() override {
+        stopTimer();
+    }
+
+    void setModInfo(const magda::ModInfo* mod,
+                    std::function<const magda::ModInfo*()> getter = nullptr) {
+        mod_ = mod;
+        modGetter_ = std::move(getter);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
+        if (!mod)
+            return;
+
+        auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+        const float w = bounds.getWidth();
+        const float h = bounds.getHeight();
+        const float x0 = bounds.getX();
+        const float bottom = bounds.getBottom();
+
+        // Plot the value history oldest -> newest, newest at the right edge.
+        juce::Path path;
+        const int n = static_cast<int>(history_.size());
+        for (int i = 0; i < n; ++i) {
+            const int idx = (writePos_ + i) % n;  // writePos_ is the oldest slot
+            const float v = juce::jlimit(0.0f, 1.0f, history_[static_cast<size_t>(idx)]);
+            const float x = x0 + (static_cast<float>(i) / static_cast<float>(n - 1)) * w;
+            const float y = bottom - v * h;
+            if (i == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        g.setColour(juce::Colours::orange.withAlpha(0.7f));
+        g.strokePath(path, juce::PathStrokeType(1.5f));
+
+        // Current value dot on the right edge.
+        const float v = juce::jlimit(0.0f, 1.0f, mod->value);
+        g.setColour(juce::Colours::orange);
+        g.fillEllipse(bounds.getRight() - 4.0f, bottom - v * h - 3.0f, 6.0f, 6.0f);
+    }
+
+  private:
+    void timerCallback() override {
+        const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
+        if (mod) {
+            history_[static_cast<size_t>(writePos_)] = mod->value;
+            writePos_ = (writePos_ + 1) % static_cast<int>(history_.size());
+        }
+        repaint();
+    }
+
+    const magda::ModInfo* mod_ = nullptr;
+    std::function<const magda::ModInfo*()> modGetter_;
+    std::array<float, 96> history_{};
+    int writePos_ = 0;
+};
+
+/**
  * @brief Scrollable content component for the mod matrix
  *
  * Displays all parameter links for the selected mod.
@@ -237,6 +453,15 @@ class ModulatorEditorPanel : public juce::Component,
     std::function<void()> onAdvancedClicked;
     std::function<void(float ms)> onAudioAttackChanged;
     std::function<void(float ms)> onAudioReleaseChanged;
+    // Fires when any ADSR envelope control changes; the passed ModInfo carries
+    // the updated env* fields (the rest mirrors the current mod).
+    std::function<void(const magda::ModInfo& mod)> onEnvelopeChanged;
+    // Fires when any Random control changes; the passed ModInfo carries the
+    // updated random* fields (the rest mirrors the current mod).
+    std::function<void(const magda::ModInfo& mod)> onRandomChanged;
+    // Fires when any envelope follower control changes. The follower has its own
+    // editor (FollowerEditorPanel) embedded here; this just forwards its change.
+    std::function<void(const magda::ModInfo& mod)> onFollowerChanged;
     std::function<void(int modIndex, magda::ControlTarget target)> onModLinkDeleted;
     std::function<void(int modIndex, magda::ControlTarget target, bool bipolar)>
         onModLinkBipolarChanged;
@@ -322,6 +547,29 @@ class ModulatorEditorPanel : public juce::Component,
     TextSlider audioAttackSlider_{TextSlider::Format::Decimal};
     TextSlider audioReleaseSlider_{TextSlider::Format::Decimal};
 
+    // ADSR envelope controls (shown only when currentMod_.type == Envelope)
+    EnvelopeDisplay envelopeDisplay_;
+    TextSlider envAttackSlider_{TextSlider::Format::Decimal};
+    TextSlider envDecaySlider_{TextSlider::Format::Decimal};
+    TextSlider envSustainSlider_{TextSlider::Format::Decimal};
+    TextSlider envReleaseSlider_{TextSlider::Format::Decimal};
+    TextSlider envAttackCurveSlider_{TextSlider::Format::Decimal};
+    TextSlider envDecayCurveSlider_{TextSlider::Format::Decimal};
+    TextSlider envReleaseCurveSlider_{TextSlider::Format::Decimal};
+    bool isEnvelopeMode_ = false;
+    // Helper: push the current env fields out via onEnvelopeChanged.
+    void fireEnvelopeChanged();
+
+    // Random modulator controls (shown only when currentMod_.type == Random)
+    RandomDisplay randomDisplay_;
+    juce::ComboBox randomTypeCombo_;  // Random / Noise distribution
+    TextSlider randomShapeSlider_{TextSlider::Format::Decimal};
+    TextSlider randomSmoothSlider_{TextSlider::Format::Decimal};
+    TextSlider randomStepDepthSlider_{TextSlider::Format::Decimal};
+    bool isRandomMode_ = false;
+    // Helper: push the current random fields out via onRandomChanged.
+    void fireRandomChanged();
+
     void updateFromMod();
     void onNameLabelEdited();
     void updateModMatrix();
@@ -330,6 +578,14 @@ class ModulatorEditorPanel : public juce::Component,
     // Mod matrix
     juce::Viewport modMatrixViewport_;
     ModMatrixContent modMatrixContent_;
+
+    // The envelope follower is different enough (continuous audio tracking, no
+    // waveform/rate/trigger/MIDI) that it gets its own editor, embedded here
+    // and shown on top in follower mode. updateFromMod()/resized() delegate to
+    // it and hide the generator controls.
+    bool isFollowerMode_ = false;
+    std::unique_ptr<FollowerEditorPanel> followerEditorPanel_;
+    void setGeneratorControlsVisible(bool visible);
     std::function<juce::String(magda::DeviceId, int)> paramNameResolver_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModulatorEditorPanel)

@@ -44,9 +44,12 @@ class LFOCurveEditorContent : public juce::Component {
     juce::TextButton loopOneShotToggle_;
     juce::TextButton msegToggle_;
 
-    // Preset selector and save button
+    // Preset selector, save button, and reset button
     juce::ComboBox presetCombo_;
     std::unique_ptr<magda::SvgButton> savePresetButton_;
+    std::unique_ptr<magda::SvgButton> resetButton_;
+    juce::StringArray userCurvePresets_;
+    juce::String currentUserCurvePreset_;
 
     // Grid controls
     juce::Label gridLabel_;
@@ -54,12 +57,18 @@ class LFOCurveEditorContent : public juce::Component {
     juce::ComboBox gridYCombo_;
     juce::TextButton snapXToggle_;
     juce::TextButton snapYToggle_;
+    juce::TextButton loopSnapToggle_;
 
     void setupControls();
     void updateControlsFromModInfo();
+    void rebuildPresetCombo(const juce::String& selectedUserPreset = {});
+    void showSaveCurvePresetDialog();
+    void saveCurvePreset(const juce::String& presetName);
+    void showPresetError(const juce::String& title, const juce::String& message);
 
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int FOOTER_HEIGHT = 28;
+    static constexpr int USER_PRESET_ID_BASE = 1000;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LFOCurveEditorContent)
 };

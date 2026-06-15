@@ -15,6 +15,7 @@ constexpr const char* kPresetExtension = ".mps";
 constexpr const char* kKindChain = "chain";
 constexpr const char* kKindRack = "rack";
 constexpr const char* kKindDevice = "device";
+constexpr const char* kKindCurve = "curve";
 
 // Mirror a freshly-written preset file into the media DB. Best-effort —
 // failures are logged but don't fail the save, since the on-disk file
@@ -181,6 +182,7 @@ PresetManager::PresetManager() {
     ensureDirectoryExists(getChainsDirectory());
     ensureDirectoryExists(getRacksDirectory());
     ensureDirectoryExists(getDevicesDirectory());
+    ensureDirectoryExists(getCurvesDirectory());
 }
 
 // ============================================================================
@@ -201,6 +203,10 @@ juce::File PresetManager::getRacksDirectory() const {
 
 juce::File PresetManager::getDevicesDirectory() const {
     return getPresetsDirectory().getChildFile("Devices");
+}
+
+juce::File PresetManager::getCurvesDirectory() const {
+    return getPresetsDirectory().getChildFile("Curves");
 }
 
 // ============================================================================
@@ -306,6 +312,9 @@ std::optional<PresetManager::PresetRef> PresetManager::classifyPresetFile(
         }
         return PresetRef{PresetRef::Kind::Device, rel.substring(slash + 1),
                          rel.substring(0, slash)};
+    }
+    if (file.isAChildOf(getCurvesDirectory())) {
+        return PresetRef{PresetRef::Kind::Curve, relName(getCurvesDirectory()), {}};
     }
     return std::nullopt;
 }
@@ -415,6 +424,66 @@ bool PresetManager::renameDevicePreset(const juce::String& pluginFolder,
     auto source = pluginDir.getChildFile(sanitizeRelativePath(oldRelativePath) + kPresetExtension);
     auto dest = pluginDir.getChildFile(sanitizeRelativePath(newRelativePath) + kPresetExtension);
     return renamePresetFile(getPresetsDirectory(), source, dest, lastError_);
+}
+
+// ============================================================================
+// Curve Presets
+// ============================================================================
+
+bool PresetManager::saveCurvePreset(const std::vector<CurvePointData>& points,
+                                    const juce::String& presetName) {
+    juce::Array<juce::var> pointsArray;
+    for (const auto& point : points)
+        pointsArray.add(ProjectSerializer::serializeCurvePointData(point));
+
+    auto* payload = new juce::DynamicObject();
+    payload->setProperty("points", juce::var(pointsArray));
+
+    auto target =
+        getCurvesDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
+    if (!writePresetFile(target, kKindCurve, juce::var(payload), lastError_))
+        return false;
+
+    mirrorToMediaDb(getPresetsDirectory(), target);
+    return true;
+}
+
+bool PresetManager::loadCurvePreset(const juce::String& presetName,
+                                    std::vector<CurvePointData>& outPoints) {
+    auto source =
+        getCurvesDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
+    juce::var payload;
+    if (!readPresetFile(source, kKindCurve, payload, lastError_))
+        return false;
+
+    if (!payload.isObject()) {
+        lastError_ = "Curve preset payload is not an object";
+        return false;
+    }
+
+    auto pointsVar = payload.getDynamicObject()->getProperty("points");
+    if (!pointsVar.isArray()) {
+        lastError_ = "Curve preset 'points' is not an array";
+        return false;
+    }
+
+    outPoints.clear();
+    for (const auto& pointVar : *pointsVar.getArray()) {
+        CurvePointData point;
+        if (!ProjectSerializer::deserializeCurvePointData(pointVar, point)) {
+            lastError_ = "Failed to deserialize curve point: " + ProjectSerializer::getLastError();
+            outPoints.clear();
+            return false;
+        }
+        outPoints.push_back(point);
+    }
+    return true;
+}
+
+juce::StringArray PresetManager::getCurvePresets() const {
+    juce::StringArray out;
+    collectPresetsRecursive(getCurvesDirectory(), "", out);
+    return out;
 }
 
 // ============================================================================

@@ -87,13 +87,27 @@ class CurveEditorBase : public juce::Component {
     }
 
     virtual double pixelToX(int px) const = 0;  // Convert pixel to X coordinate
-    virtual int xToPixel(double x) const = 0;   // Convert X to pixel
-    double pixelToY(int py) const;              // Convert pixel to Y (value 0-1)
-    int yToPixel(double y) const;               // Convert Y to pixel
+    virtual int xToPixel(double x) const = 0;   // Convert X to pixel (hit-test / handle placement)
+    virtual double pixelToY(int py) const;      // Convert pixel to Y (value 0-1)
+    virtual int yToPixel(double y) const;       // Convert Y to pixel (hit-test / handle placement)
+
+    // Float-precision coordinate mapping for rendering only.
+    // Default implementations delegate to getPixelsPerX/Y() / getContentBounds().
+    // Subclasses override xToPixelF / yToPixelF to mirror their integer mapping math
+    // without int truncation (and to include any edge-inset padding).
+    virtual double xToPixelF(double x) const;
+    virtual double yToPixelF(double y) const;
 
     // Loop behavior - override for LFO to enable seamless looping
     virtual bool shouldLoop() const {
         return false;
+    }
+
+    // When true, a single click on empty canvas adds a point (automation
+    // lanes). Override to false so adding requires a deliberate double-click
+    // and a single click just clears the selection (LFO curve editor).
+    virtual bool addsPointOnSingleClick() const {
+        return true;
     }
 
     // Format a value label for a given normalized Y (0-1). Override in subclasses.
@@ -116,6 +130,13 @@ class CurveEditorBase : public juce::Component {
     std::function<double(double)> snapYToGrid;  // Snap a normalized Y (0-1) to grid
     std::function<double()> getGridSpacingX;    // Returns grid step size in X units
 
+    // Additional horizontal inset so extreme points (x=0 / x=max) are not
+    // flush against the content border.  Set to half the HIT_SIZE so the full
+    // hit-test area of an edge point remains within the component.
+    // Subclasses that override xToPixel / xToPixelF / pixelToX should add
+    // this to their content.getX() origin and subtract it from the right edge.
+    static constexpr int kEdgePadding = 8;  // pixels; matches CurvePointComponent::HIT_SIZE / 2
+
   protected:
     CurveDrawMode drawMode_ = CurveDrawMode::Select;
     juce::Colour curveColour_{0xFF6688CC};  // Default curve color
@@ -134,6 +155,7 @@ class CurveEditorBase : public juce::Component {
 
     // Drawing state
     bool isDrawing_ = false;
+    bool isRightClickPending_ = false;  // Set by right-click mouseDown; cleared by mouseUp
     std::vector<juce::Point<int>> drawingPath_;
     juce::Point<int> lineStartPoint_;
 
@@ -158,6 +180,9 @@ class CurveEditorBase : public juce::Component {
     // Tension preview state
     uint32_t tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
     double tensionPreviewValue_ = 0.0;
+    uint32_t shaperPreviewPointId_ = INVALID_CURVE_POINT_ID;
+    double shaperPreviewX_ = 0.0;
+    double shaperPreviewY_ = 0.0;
 
     // Cursor — keep in sync with real modifier state from both keyboard
     // events and mouse moves (modifierKeysChanged alone is unreliable once
@@ -173,6 +198,12 @@ class CurveEditorBase : public juce::Component {
     virtual void paintCurve(juce::Graphics& g);
     virtual void paintGrid(juce::Graphics& g);
     void paintDrawingPreview(juce::Graphics& g);
+    uint32_t findSegmentOwnerAt(double x) const;
+    void toggleSegmentHardCorner(uint32_t pointId);
+    std::pair<double, double> getSegmentShaperPosition(const CurvePoint& p1, const CurvePoint& p2,
+                                                       double effectiveTension) const;
+    void updateSegmentShaperFromPixel(uint32_t pointId, double pixelX, double pixelY,
+                                      bool isPreview);
 
     // Data mutation callbacks - must be implemented by subclasses
     virtual void onPointAdded(double x, double y, CurveType curveType) = 0;
@@ -182,6 +213,22 @@ class CurveEditorBase : public juce::Component {
     virtual void onTensionChanged(uint32_t pointId, double tension) = 0;
     virtual void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                   const CurveHandleData& outHandle) = 0;
+    virtual void onSegmentShaperChanged(uint32_t leftPointId, const CurveHandleData& leftInHandle,
+                                        const CurveHandleData& leftOutHandle, uint32_t rightPointId,
+                                        const CurveHandleData& rightInHandle,
+                                        const CurveHandleData& rightOutHandle, bool isPreview) {
+        juce::ignoreUnused(isPreview);
+        onHandlesChanged(leftPointId, leftInHandle, leftOutHandle);
+        onHandlesChanged(rightPointId, rightInHandle, rightOutHandle);
+    }
+
+    // Called when the user changes a segment's curve type.
+    // Subclasses that support curve-type persistence override this.
+    // The base no-op is sufficient for subclasses (e.g. CCLaneComponent) that
+    // do not expose curve-type editing.
+    virtual void onPointCurveTypeChanged(uint32_t pointId, CurveType newType) {
+        juce::ignoreUnused(pointId, newType);
+    }
 
     // Batch selection callback for lasso - override in subclasses
     virtual void onPointsSelected(const std::vector<uint32_t>& pointIds) {

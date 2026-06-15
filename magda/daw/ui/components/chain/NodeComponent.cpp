@@ -1535,7 +1535,23 @@ void NodeComponent::initializeModsMacrosPanels() {
             onModAudioReleaseChangedInternal(selectedModIndex_, ms);
         }
     };
+    modulatorEditorPanel_->onEnvelopeChanged = [this](const magda::ModInfo& mod) {
+        if (selectedModIndex_ >= 0) {
+            onModEnvelopeChangedInternal(selectedModIndex_, mod);
+        }
+    };
+    modulatorEditorPanel_->onRandomChanged = [this](const magda::ModInfo& mod) {
+        if (selectedModIndex_ >= 0) {
+            onModRandomChangedInternal(selectedModIndex_, mod);
+        }
+    };
+    modulatorEditorPanel_->onFollowerChanged = [this](const magda::ModInfo& mod) {
+        if (selectedModIndex_ >= 0) {
+            onModFollowerChangedInternal(selectedModIndex_, mod);
+        }
+    };
     modulatorEditorPanel_->onCurveChanged = [this]() {
+        DBG("[HardCorner] NodeComponent onCurveChanged selectedModIndex=" << selectedModIndex_);
         // Force repaint of waveform displays for immediate curve editor sync
         if (modsPanel_) {
             modsPanel_->repaintWaveforms();
@@ -1555,11 +1571,14 @@ void NodeComponent::initializeModsMacrosPanels() {
         const auto& sidechain = device ? device->sidechain : rack->sidechain;
         const auto& mods = device ? device->mods : rack->mods;
 
-        // Pick sidechain type from the selected modulator's trigger mode.
-        // Advanced is only enabled in MIDI/Audio modes, so the fallback is fine.
+        // Pick sidechain type from the selected modulator. The envelope follower
+        // always sources audio; otherwise it follows the LFO's trigger mode.
+        const bool selValid = selectedModIndex_ >= 0 && selectedModIndex_ < (int)mods.size();
+        const bool isFollower =
+            selValid && mods[(size_t)selectedModIndex_].type == magda::ModType::Follower;
         const bool isAudioMode =
-            (selectedModIndex_ >= 0 && selectedModIndex_ < (int)mods.size() &&
-             mods[(size_t)selectedModIndex_].triggerMode == magda::LFOTriggerMode::Audio);
+            isFollower || (selValid && mods[(size_t)selectedModIndex_].triggerMode ==
+                                           magda::LFOTriggerMode::Audio);
         const auto sidechainType =
             isAudioMode ? magda::SidechainConfig::Type::Audio : magda::SidechainConfig::Type::MIDI;
 
