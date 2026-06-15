@@ -11,6 +11,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../timeline/TimeRuler.hpp"
+#include "WarpedWaveformRenderer.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipOperations.hpp"
 
@@ -478,168 +479,26 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
 void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::ClipInfo& clip,
                                                 juce::Rectangle<int> waveformRect,
                                                 juce::Colour waveColour, float vertZoom) {
+    // Warp rendering goes through the shared renderer so the editor and the
+    // arrangement clip can never drift. The editor is a source-domain view: a
+    // single pass, no loop tiling. warpToPixelX maps a marker's warp-time through
+    // the same tempo-aware sourceToTimeline() used everywhere else.
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
-    double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
+    const double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
+    const double displayStartTime = getDisplayStartTime();
 
-    double displayStartTime = getDisplayStartTime();
-
-    // TE's warp markers include boundary markers at (0,0) and (sourceLen,sourceLen) in source
-    // file coordinates. But when a clip has sourceStart (trimmed start), the visible region
-    // starts at sourceStart, not 0. We must clamp warp points to the visible source range
-    // BEFORE converting to display coordinates to avoid negative display positions.
-
-    struct WarpPoint {
-        double sourceTime;
-        double warpTime;
+    WarpedWaveformSpec spec;
+    spec.clipArea = waveformRect.getIntersection(getLocalBounds()).reduced(0, 4);
+    spec.warpToPixelX = [this, displayStartTime](double warpSeconds) {
+        return (double)timeToPixel(displayInfo_.sourceToTimeline(warpSeconds) + displayStartTime);
     };
-
-    // Use full file range so pre-offset / pre-loopStart audio is visible.
-    double visibleStart = displayInfo_.sourceFileStart;
-    double visibleEnd = displayInfo_.sourceFileEnd;
-
-    // First, collect and sort all markers by warpTime
-    std::vector<WarpPoint> allMarkers;
-    allMarkers.reserve(warpMarkers_.size());
-    for (const auto& m : warpMarkers_) {
-        allMarkers.push_back({m.sourceTime, m.warpTime});
-    }
-
-    if (allMarkers.size() < 2) {
-        return;
-    }
-
-    std::sort(allMarkers.begin(), allMarkers.end(),
-              [](const WarpPoint& a, const WarpPoint& b) { return a.warpTime < b.warpTime; });
-
-    // Build points list clamped to visible range, with interpolated boundaries
-    std::vector<WarpPoint> points;
-    points.reserve(allMarkers.size() + 2);
-
-    // Helper lambda to interpolate a point at a given warpTime between two markers
-    auto interpolateAt = [](const WarpPoint& before, const WarpPoint& after,
-                            double targetWarpTime) -> WarpPoint {
-        double warpDuration = after.warpTime - before.warpTime;
-        if (warpDuration <= 0.0) {
-            return {before.sourceTime, targetWarpTime};
-        }
-        double ratio = (targetWarpTime - before.warpTime) / warpDuration;
-        double interpSource = before.sourceTime + ratio * (after.sourceTime - before.sourceTime);
-        return {interpSource, targetWarpTime};
-    };
-
-    // Check if we need to interpolate a start boundary
-    if (allMarkers.front().warpTime < visibleStart) {
-        // Find the two markers that span visibleStart
-        for (size_t i = 0; i + 1 < allMarkers.size(); ++i) {
-            if (allMarkers[i].warpTime <= visibleStart &&
-                allMarkers[i + 1].warpTime >= visibleStart) {
-                if (allMarkers[i].warpTime == visibleStart) {
-                    points.push_back(allMarkers[i]);
-                } else {
-                    points.push_back(interpolateAt(allMarkers[i], allMarkers[i + 1], visibleStart));
-                }
-                break;
-            }
-        }
-    }
-
-    // Add all markers within the visible range
-    for (const auto& m : allMarkers) {
-        if (m.warpTime >= visibleStart && m.warpTime <= visibleEnd) {
-            // Avoid duplicating the start boundary if we just added it
-            if (points.empty() || m.warpTime > points.back().warpTime) {
-                points.push_back(m);
-            }
-        }
-    }
-
-    // Check if we need to interpolate an end boundary
-    if (allMarkers.back().warpTime > visibleEnd) {
-        // Find the two markers that span visibleEnd
-        for (size_t i = 0; i + 1 < allMarkers.size(); ++i) {
-            if (allMarkers[i].warpTime <= visibleEnd && allMarkers[i + 1].warpTime >= visibleEnd) {
-                if (allMarkers[i + 1].warpTime == visibleEnd) {
-                    if (points.empty() || points.back().warpTime < visibleEnd) {
-                        points.push_back(allMarkers[i + 1]);
-                    }
-                } else {
-                    auto interpPoint = interpolateAt(allMarkers[i], allMarkers[i + 1], visibleEnd);
-                    if (points.empty() || points.back().warpTime < visibleEnd) {
-                        points.push_back(interpPoint);
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    // Need at least 2 points to draw segments
-    if (points.size() < 2) {
-        return;
-    }
-
-    // Draw each segment between consecutive warp points
-    // Now all warpTimes are within [visibleStart, visibleEnd], so display coords will be valid
-    auto componentBounds = getLocalBounds();
-    for (size_t i = 0; i + 1 < points.size(); ++i) {
-        double srcStart = points[i].sourceTime;
-        double srcEnd = points[i + 1].sourceTime;
-        double warpStart = points[i].warpTime;
-        double warpEnd = points[i + 1].warpTime;
-
-        // Convert warp times to display times
-        // Position 0 = file start, warp times are in source file seconds
-        double dispStart = displayInfo_.sourceToTimeline(warpStart) + displayStartTime;
-        double dispEnd = displayInfo_.sourceToTimeline(warpEnd) + displayStartTime;
-
-        int pixStart = timeToPixel(dispStart);
-        int pixEnd = timeToPixel(dispEnd);
-        int segWidth = pixEnd - pixStart;
-        if (segWidth <= 0)
-            continue;
-
-        // Skip segments entirely outside the visible viewport
-        if (pixEnd < componentBounds.getX() || pixStart > componentBounds.getRight())
-            continue;
-
-        auto segRect =
-            juce::Rectangle<int>(pixStart, waveformRect.getY(), segWidth, waveformRect.getHeight());
-
-        // Clip to waveform bounds AND visible viewport
-        auto clippedRect = segRect.getIntersection(waveformRect).getIntersection(componentBounds);
-        if (clippedRect.isEmpty())
-            continue;
-
-        // Adjust source range if clipping occurred
-        double srcDuration = srcEnd - srcStart;
-        double clippedSrcStart = srcStart;
-        double clippedSrcEnd = srcEnd;
-
-        if (clippedRect != segRect && segWidth > 0 && srcDuration > 0.0) {
-            int clippedFromLeft = clippedRect.getX() - segRect.getX();
-            int clippedFromRight = segRect.getRight() - clippedRect.getRight();
-
-            double leftRatio = static_cast<double>(clippedFromLeft) / segWidth;
-            double rightRatio = static_cast<double>(clippedFromRight) / segWidth;
-
-            clippedSrcStart = srcStart + srcDuration * leftRatio;
-            clippedSrcEnd = srcEnd - srcDuration * rightRatio;
-        }
-
-        auto drawRect = clippedRect.reduced(0, 4);
-        if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
-            // Clamp source range to file duration
-            double finalSrcStart = juce::jmax(0.0, clippedSrcStart);
-            double finalSrcEnd =
-                fileDuration > 0.0 ? juce::jmin(clippedSrcEnd, fileDuration) : clippedSrcEnd;
-            if (finalSrcEnd > finalSrcStart) {
-                thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath,
-                                              finalSrcStart, finalSrcEnd, waveColour, vertZoom,
-                                              true);
-            }
-        }
-    }
+    spec.fileDuration = fileDuration;
+    spec.colour = waveColour;
+    spec.verticalScale = vertZoom;
+    spec.useHighRes = true;
+    spec.looped = false;  // source-domain view: one pass, arrangement handles tiling
+    drawWarpedWaveform(g, thumbnailManager, clip.audio().source.filePath, warpMarkers_, spec);
 }
 
 void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {

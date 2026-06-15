@@ -15,6 +15,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../tracks/TrackContentPanel.hpp"
+#include "../waveform/WarpedWaveformRenderer.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
@@ -462,49 +463,40 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
         }
     }
 
-    if (useWarpedDraw && !di.isLooped()) {
-        std::sort(warpMarkers.begin(), warpMarkers.end(),
-                  [](const auto& a, const auto& b) { return a.warpTime < b.warpTime; });
-
-        for (size_t i = 0; i + 1 < warpMarkers.size(); ++i) {
-            double srcStart = warpMarkers[i].sourceTime;
-            double srcEnd = warpMarkers[i + 1].sourceTime;
-            double warpStart = warpMarkers[i].warpTime;
-            double warpEnd = warpMarkers[i + 1].warpTime;
-
-            double dispStart = warpStart - displayOffset;
-            double dispEnd = warpEnd - displayOffset;
-            if (dispEnd <= 0.0 || dispStart >= clipDisplayLength)
-                continue;
-            if (dispStart < 0.0) {
-                double ratio = -dispStart / (dispEnd - dispStart);
-                srcStart += ratio * (srcEnd - srcStart);
-                dispStart = 0.0;
-            }
-            if (dispEnd > clipDisplayLength) {
-                double ratio = (clipDisplayLength - dispStart) / (dispEnd - dispStart);
-                srcEnd = srcStart + ratio * (srcEnd - srcStart);
-                dispEnd = clipDisplayLength;
-            }
-
-            int pixStart =
-                waveformArea.getX() + static_cast<int>(dispStart * pixelsPerSecond + 0.5);
-            int pixEnd = waveformArea.getX() + static_cast<int>(dispEnd * pixelsPerSecond + 0.5);
-            int segWidth = pixEnd - pixStart;
-            if (segWidth <= 0)
-                continue;
-
-            auto drawRect = juce::Rectangle<int>(pixStart, waveformArea.getY(), segWidth,
-                                                 waveformArea.getHeight());
-            double finalSrcStart = juce::jmax(0.0, srcStart);
-            double finalSrcEnd = fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
-            if (finalSrcEnd > finalSrcStart &&
-                clipToVisible(drawRect, finalSrcStart, finalSrcEnd)) {
-                thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath,
-                                              finalSrcStart, finalSrcEnd, waveColour, gainLinear,
-                                              true, selected);
-            }
+    if (useWarpedDraw) {
+        // Warp takes priority over loop tiling, through the SAME shared renderer
+        // the warp editor uses -- so the arrangement and editor can never drift.
+        // Audio clips default to loopEnabled (autoTempo beat clips especially), so
+        // the old !isLooped() gate dropped every warped clip into the loop-tiling
+        // path below, which ignores warp markers entirely. Looped warp clips now
+        // tile the warped content; non-looped draw a single pass. The transform is
+        // tempo-aware (sourceToTimeline), matching the editor.
+        double minWarp = warpMarkers.front().warpTime;
+        double maxWarp = warpMarkers.front().warpTime;
+        for (const auto& m : warpMarkers) {
+            minWarp = std::min(minWarp, m.warpTime);
+            maxWarp = std::max(maxWarp, m.warpTime);
         }
+
+        daw::ui::WarpedWaveformSpec spec;
+        spec.clipArea = juce::Rectangle<int>(
+            waveformArea.getX(), waveformArea.getY(),
+            juce::jmin(waveformArea.getWidth(),
+                       static_cast<int>(clipDisplayLength * pixelsPerSecond + 0.5)),
+            waveformArea.getHeight());
+        spec.warpToPixelX = [&](double warpSeconds) {
+            return waveformArea.getX() +
+                   di.sourceToTimeline(warpSeconds - displayOffset) * pixelsPerSecond;
+        };
+        spec.fileDuration = fileDuration;
+        spec.colour = waveColour;
+        spec.verticalScale = gainLinear;
+        spec.useHighRes = true;
+        spec.thick = selected;
+        spec.looped = di.isLooped();
+        spec.cycleWarp = maxWarp - minWarp;
+        daw::ui::drawWarpedWaveform(g, thumbnailManager, clip.audio().source.filePath, warpMarkers,
+                                    spec);
     } else if (di.isLooped()) {
         double sourceDurationForBeats = clip.audio().source.durationSeconds;
         if (sourceDurationForBeats <= 0.0 && fileDuration > 0.0)
