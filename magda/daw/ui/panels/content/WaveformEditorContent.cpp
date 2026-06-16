@@ -10,6 +10,7 @@
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/CompService.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipPropertyCommands.hpp"
@@ -580,6 +581,17 @@ WaveformEditorContent::WaveformEditorContent() {
         clip->audio().currentTakeIndex = takeIndex;
         clip->audio().source.filePath = clip->audio().takes[takeIndex].filePath;
         cm.forceNotifyClipPropertyChanged(editingClipId_);
+    };
+
+    // Comping: a swipe across a take lane assigns that range of the comp to the
+    // swiped take. CompService edits the comp section list and re-renders.
+    gridComponent_->onCompSectionSet = [this](double startSeconds, double endSeconds,
+                                              int takeIndex) {
+        magda::CompService::getInstance().setSection(editingClipId_, startSeconds, endSeconds,
+                                                     takeIndex);
+    };
+    gridComponent_->onCompClear = [this]() {
+        magda::CompService::getInstance().clearComp(editingClipId_);
     };
 
     // Zoom drag on waveform body, resolved through GestureRouter.

@@ -143,6 +143,19 @@ struct AudioTake {
     double durationSeconds = 0.0;
 };
 
+/**
+ * @brief One comp section: the take that plays over [startSeconds, endSeconds).
+ *
+ * Comp sections tile the comp timeline (source-domain seconds, take 0 at t=0).
+ * They are kept sorted and contiguous; a comp is the ordered list of sections.
+ * takeIndex points into AudioClipModel::takes.
+ */
+struct CompSection {
+    double startSeconds = 0.0;
+    double endSeconds = 0.0;
+    int takeIndex = 0;
+};
+
 struct AudioClipModel {
     AudioSourceFacts source;
     AudioSourceInterpretation interpretation;
@@ -152,6 +165,12 @@ struct AudioClipModel {
     // (the active take that plays back).
     std::vector<AudioTake> takes;
     int currentTakeIndex = 0;
+
+    // Comping. When compActive is true the clip plays a rendered composite
+    // (source.filePath points at the comp render) assembled from `comp`, which
+    // assigns a take to each region of the comp timeline. Empty comp = no comp.
+    std::vector<CompSection> comp;
+    bool compActive = false;
 };
 
 struct MidiClipModel {
