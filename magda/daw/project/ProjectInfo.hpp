@@ -2,10 +2,20 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdint>
+#include <vector>
+
 #include "../core/TempoUtils.hpp"
 #include "version.hpp"
 
 namespace magda {
+
+struct ProjectTimelineMarker {
+    int id = 0;
+    double positionBeats = 0.0;
+    juce::String name;
+    std::uint32_t colourArgb = 0xFFFFC857;
+};
 
 /**
  * @brief Project metadata and settings
@@ -32,6 +42,9 @@ struct ProjectInfo {
     bool loopEnabled = false;
     double loopStartBeats = 0.0;
     double loopEndBeats = 0.0;
+
+    // Named timeline markers (positions are stored in beats)
+    std::vector<ProjectTimelineMarker> markers;
 
     // Zoom/scroll state
     double horizontalZoom = -1.0;  // Pixels per beat (-1 = use default)

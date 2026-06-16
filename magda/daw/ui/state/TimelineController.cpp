@@ -824,6 +824,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         extraFlags |= static_cast<uint32_t>(ChangeFlags::Sections);
     }
 
+    // --- Named markers ---
+    if (!state.markers.empty()) {
+        for (auto& marker : state.markers) {
+            marker.setFromBeats(marker.positionBeats, newBpm);
+        }
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Markers);
+    }
+
     // Sync updated loop to ProjectManager
     if (state.loop.isValid()) {
         ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
@@ -1091,6 +1099,123 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SelectSect
     return ChangeFlags::Sections;
 }
 
+// ===== Marker Event Handlers =====
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const AddMarkerBeatsEvent& e) {
+    TimelineMarker marker;
+    marker.id = state.nextMarkerId++;
+    marker.name = e.name.isNotEmpty() ? e.name : "Marker " + juce::String(marker.id);
+    marker.colour = e.colour;
+    marker.setFromBeats(juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats),
+                        state.tempo.bpm);
+
+    auto insertPos =
+        std::lower_bound(state.markers.begin(), state.markers.end(), marker.positionBeats,
+                         [](const TimelineMarker& existing, double positionBeats) {
+                             return existing.positionBeats < positionBeats;
+                         });
+    state.markers.insert(insertPos, marker);
+    state.selectedMarkerId = marker.id;
+    ProjectManager::getInstance().markDirty();
+    return ChangeFlags::Markers;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const AddMarkerEvent& e) {
+    return handleEvent(AddMarkerBeatsEvent{state.secondsToBeats(e.positionTime), e.name, e.colour});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const UpdateMarkerEvent& e) {
+    auto it = std::find_if(state.markers.begin(), state.markers.end(),
+                           [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    if (it == state.markers.end())
+        return ChangeFlags::None;
+
+    it->name = e.name.isNotEmpty() ? e.name : it->name;
+    it->colour = e.colour;
+    it->setFromBeats(juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats),
+                     state.tempo.bpm);
+
+    std::sort(state.markers.begin(), state.markers.end(),
+              [](const TimelineMarker& a, const TimelineMarker& b) {
+                  return a.positionBeats < b.positionBeats;
+              });
+    ProjectManager::getInstance().markDirty();
+    return ChangeFlags::Markers;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveMarkerEvent& e) {
+    auto oldSize = state.markers.size();
+    state.markers.erase(
+        std::remove_if(state.markers.begin(), state.markers.end(),
+                       [&](const TimelineMarker& marker) { return marker.id == e.markerId; }),
+        state.markers.end());
+    if (state.markers.size() == oldSize)
+        return ChangeFlags::None;
+
+    if (state.selectedMarkerId == e.markerId)
+        state.selectedMarkerId = 0;
+    ProjectManager::getInstance().markDirty();
+    return ChangeFlags::Markers;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const SelectMarkerEvent& e) {
+    if (e.markerId != 0) {
+        auto it =
+            std::find_if(state.markers.begin(), state.markers.end(),
+                         [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+        if (it == state.markers.end())
+            return ChangeFlags::None;
+    }
+
+    if (state.selectedMarkerId == e.markerId)
+        return ChangeFlags::None;
+
+    state.selectedMarkerId = e.markerId;
+    return ChangeFlags::Markers;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const GoToMarkerEvent& e) {
+    auto it = std::find_if(state.markers.begin(), state.markers.end(),
+                           [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    if (it == state.markers.end())
+        return ChangeFlags::None;
+
+    auto changes = handleEvent(SetEditPositionBeatsEvent{it->positionBeats});
+    if (state.selectedMarkerId != it->id) {
+        state.selectedMarkerId = it->id;
+        changes = changes | ChangeFlags::Markers;
+    }
+    return changes;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const GoToNextMarkerEvent& /*e*/) {
+    if (state.markers.empty())
+        return ChangeFlags::None;
+
+    const double current = state.playhead.getCurrentPositionBeats();
+    auto it =
+        std::find_if(state.markers.begin(), state.markers.end(), [&](const TimelineMarker& marker) {
+            return marker.positionBeats > current + 0.000001;
+        });
+    if (it == state.markers.end())
+        it = state.markers.begin();
+
+    return handleEvent(GoToMarkerEvent{it->id});
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(
+    const GoToPreviousMarkerEvent& /*e*/) {
+    if (state.markers.empty())
+        return ChangeFlags::None;
+
+    const double current = state.playhead.getCurrentPositionBeats();
+    auto it = std::find_if(
+        state.markers.rbegin(), state.markers.rend(),
+        [&](const TimelineMarker& marker) { return marker.positionBeats < current - 0.000001; });
+    const int markerId = it != state.markers.rend() ? it->id : state.markers.back().id;
+    return handleEvent(GoToMarkerEvent{markerId});
+}
+
 // ===== Viewport Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const ViewportResizedEvent& e) {
@@ -1184,7 +1309,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
 
 void TimelineController::restoreProjectState(double tempo, int timeSigNum, int timeSigDen,
                                              bool loopEnabled, double loopStartBeats,
-                                             double loopEndBeats) {
+                                             double loopEndBeats,
+                                             const std::vector<ProjectTimelineMarker>& markers) {
     // Unconditionally set state — no early returns
     state.tempo.bpm = clampBpm(tempo);
     state.tempo.timeSignatureNumerator = clampTimeSignatureValue(timeSigNum);
@@ -1206,6 +1332,29 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
         state.loop.clear();
     }
 
+    state.markers.clear();
+    state.selectedMarkerId = 0;
+    state.nextMarkerId = 1;
+    for (const auto& projectMarker : markers) {
+        if (projectMarker.id <= 0)
+            continue;
+
+        TimelineMarker marker;
+        marker.id = projectMarker.id;
+        marker.name = projectMarker.name.isNotEmpty() ? projectMarker.name
+                                                      : "Marker " + juce::String(marker.id);
+        marker.colour = juce::Colour(projectMarker.colourArgb);
+        marker.setFromBeats(
+            juce::jlimit(0.0, state.timelineLengthBeats, projectMarker.positionBeats),
+            state.tempo.bpm);
+        state.markers.push_back(marker);
+        state.nextMarkerId = juce::jmax(state.nextMarkerId, marker.id + 1);
+    }
+    std::sort(state.markers.begin(), state.markers.end(),
+              [](const TimelineMarker& a, const TimelineMarker& b) {
+                  return a.positionBeats < b.positionBeats;
+              });
+
     // Notify audio engine unconditionally
     for (auto* listener : audioEngineListeners) {
         listener->onTempoChanged(state.tempo.bpm);
@@ -1218,7 +1367,7 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
     }
 
     // Notify UI listeners
-    notifyListeners(ChangeFlags::Tempo | ChangeFlags::Loop);
+    notifyListeners(ChangeFlags::Tempo | ChangeFlags::Loop | ChangeFlags::Markers);
 }
 
 // ===== Notification Helpers =====

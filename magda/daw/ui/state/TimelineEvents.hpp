@@ -481,6 +481,61 @@ struct SelectSectionEvent {
     int index;  // -1 to deselect
 };
 
+// ===== Marker Events =====
+
+/**
+ * @brief Add a named timeline marker in beats
+ */
+struct AddMarkerBeatsEvent {
+    double positionBeats;
+    juce::String name = {};
+    juce::Colour colour = juce::Colour(0xFFFFC857);
+};
+
+/**
+ * @brief Add a named timeline marker in seconds (compatibility boundary)
+ */
+struct AddMarkerEvent {
+    double positionTime;
+    juce::String name = {};
+    juce::Colour colour = juce::Colour(0xFFFFC857);
+};
+
+/**
+ * @brief Update an existing marker
+ */
+struct UpdateMarkerEvent {
+    int markerId;
+    double positionBeats;
+    juce::String name;
+    juce::Colour colour;
+};
+
+/**
+ * @brief Remove an existing marker
+ */
+struct RemoveMarkerEvent {
+    int markerId;
+};
+
+/**
+ * @brief Select an existing marker, or clear selection with 0
+ */
+struct SelectMarkerEvent {
+    int markerId;
+};
+
+/**
+ * @brief Jump the edit/playhead position to a marker
+ */
+struct GoToMarkerEvent {
+    int markerId;
+};
+
+struct GoToNextMarkerEvent {};
+
+struct GoToPreviousMarkerEvent {};
+
 // ===== Viewport Events =====
 
 /**
@@ -541,6 +596,9 @@ using TimelineEvent = std::variant<
     // Section events
     AddSectionBeatsEvent, AddSectionEvent, RemoveSectionEvent, MoveSectionBeatsEvent,
     MoveSectionEvent, ResizeSectionBeatsEvent, ResizeSectionEvent, SelectSectionEvent,
+    // Marker events
+    AddMarkerBeatsEvent, AddMarkerEvent, UpdateMarkerEvent, RemoveMarkerEvent, SelectMarkerEvent,
+    GoToMarkerEvent, GoToNextMarkerEvent, GoToPreviousMarkerEvent,
     // Viewport events
     ViewportResizedEvent, SetTimelineLengthBeatsEvent, SetTimelineLengthEvent>;
 

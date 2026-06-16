@@ -110,7 +110,7 @@ void MainWindow::openProjectFile(const juce::File& file) {
             auto& tc = safeThis->mainComponent->mainView->getTimelineController();
             tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
                                    info.timeSignatureDenominator, info.loopEnabled,
-                                   info.loopStartBeats, info.loopEndBeats);
+                                   info.loopStartBeats, info.loopEndBeats, info.markers);
         },
         [safeThis, file](bool success, const juce::String& error) {
             if (!safeThis)
@@ -634,6 +634,22 @@ void MainWindow::setupMenuCallbacks() {
             double lengthBeats = tc.getState().timelineLengthBeats;
             tc.dispatch(SetEditPositionBeatsEvent{lengthBeats});
         }
+    };
+
+    callbacks.onAddMarker = [this]() {
+        if (mainComponent)
+            mainComponent->getCommandManager().invokeDirectly(CommandIDs::addMarker, false);
+    };
+
+    callbacks.onGoToPreviousMarker = [this]() {
+        if (mainComponent)
+            mainComponent->getCommandManager().invokeDirectly(CommandIDs::goToPreviousMarker,
+                                                              false);
+    };
+
+    callbacks.onGoToNextMarker = [this]() {
+        if (mainComponent)
+            mainComponent->getCommandManager().invokeDirectly(CommandIDs::goToNextMarker, false);
     };
 
     // Track menu callbacks - all track operations go through the undo system
