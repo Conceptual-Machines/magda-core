@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/ClipManager.hpp"
+#include "core/CompSectionMath.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -23,41 +24,21 @@ double compLengthSeconds(const AudioClipModel& audio) {
 }
 
 // Rebuild the comp section list so [a, b) plays `take`, splitting/merging as
-// needed. Sections stay sorted, contiguous and cover [0, compLen).
+// needed. Sections stay sorted, contiguous and cover [0, compLen). Delegates to
+// the shared (domain-neutral) algorithm; CompSection (seconds) <-> CompSpan.
 std::vector<CompSection> assignSection(const std::vector<CompSection>& existing, double compLen,
                                        int baseTake, double a, double b, int take) {
-    a = juce::jlimit(0.0, compLen, a);
-    b = juce::jlimit(0.0, compLen, b);
-    if (b <= a)
-        return existing;
+    std::vector<CompSpan> spans;
+    spans.reserve(existing.size());
+    for (const auto& s : existing)
+        spans.push_back({s.startSeconds, s.endSeconds, s.takeIndex});
 
-    auto takeAtOld = [&](double mid) -> int {
-        for (const auto& s : existing)
-            if (mid >= s.startSeconds && mid < s.endSeconds)
-                return s.takeIndex;
-        return baseTake;
-    };
-
-    std::set<double> boundarySet{0.0, compLen, a, b};
-    for (const auto& s : existing) {
-        boundarySet.insert(s.startSeconds);
-        boundarySet.insert(s.endSeconds);
-    }
-    std::vector<double> bounds(boundarySet.begin(), boundarySet.end());
+    const auto out = assignCompSections(spans, compLen, baseTake, a, b, take);
 
     std::vector<CompSection> result;
-    for (size_t i = 0; i + 1 < bounds.size(); ++i) {
-        double x = bounds[i];
-        double y = bounds[i + 1];
-        if (y - x < 1.0e-6)
-            continue;
-        double mid = 0.5 * (x + y);
-        int t = (x >= a - 1.0e-9 && y <= b + 1.0e-9) ? take : takeAtOld(mid);
-        if (!result.empty() && result.back().takeIndex == t)
-            result.back().endSeconds = y;
-        else
-            result.push_back({x, y, t});
-    }
+    result.reserve(out.size());
+    for (const auto& s : out)
+        result.push_back({s.start, s.end, s.takeIndex});
     return result;
 }
 
@@ -206,10 +187,12 @@ void CompService::setSection(ClipId clipId, double startSeconds, double endSecon
     if (takeIndex < 0 || takeIndex >= static_cast<int>(audio.takes.size()))
         return;
 
+    ClipInfo before = *clip;
     audio.comp = assignSection(audio.comp, compLen, audio.currentTakeIndex, startSeconds,
                                endSeconds, takeIndex);
     audio.compActive = true;
     renderComp(clipId);
+    cm.pushClipTakeUndo("Comp Section", before);
 }
 
 void CompService::clearComp(ClipId clipId) {
@@ -219,6 +202,9 @@ void CompService::clearComp(ClipId clipId) {
         return;
 
     auto& audio = clip->audio();
+    if (!audio.compActive && audio.comp.empty())
+        return;
+    ClipInfo before = *clip;
     audio.comp.clear();
     audio.compActive = false;
     const int idx = juce::jlimit(0, juce::jmax(0, static_cast<int>(audio.takes.size()) - 1),
@@ -226,6 +212,7 @@ void CompService::clearComp(ClipId clipId) {
     if (idx < static_cast<int>(audio.takes.size()))
         audio.source.filePath = audio.takes[idx].filePath;
     cm.forceNotifyClipPropertyChanged(clipId);
+    cm.pushClipTakeUndo("Clear Comp", before);
 }
 
 void CompService::renderComp(ClipId clipId) {

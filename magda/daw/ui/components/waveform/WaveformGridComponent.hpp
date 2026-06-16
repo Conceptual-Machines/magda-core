@@ -212,6 +212,9 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     // Fired from the context menu to drop the comp and revert to a single take.
     std::function<void()> onCompClear;
 
+    // Fired from a take lane's context menu to delete that take.
+    std::function<void(int takeIndex)> onTakeDelete;
+
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 

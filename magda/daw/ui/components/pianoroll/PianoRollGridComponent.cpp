@@ -355,7 +355,52 @@ void PianoRollGridComponent::setOverlayTracks(std::vector<TrackId> trackIds) {
     repaint();
 }
 
+void PianoRollGridComponent::setOverlayNotes(std::vector<MidiNote> notes, juce::Colour colour) {
+    overlayNotes_ = std::move(notes);
+    overlayNotesColour_ = colour;
+    repaint();
+}
+
+void PianoRollGridComponent::clearOverlayNotes() {
+    if (overlayNotes_.empty())
+        return;
+    overlayNotes_.clear();
+    repaint();
+}
+
+void PianoRollGridComponent::paintOverlayNoteSet(juce::Graphics& g) {
+    if (overlayNotes_.empty())
+        return;
+    const auto visibleArea = g.getClipBounds();
+    for (const auto& note : overlayNotes_) {
+        // Comp-take notes are relative to the clip; place them like the active
+        // notes (content-relative beats, shifted by clipStartBeats_ in absolute
+        // mode).
+        const double displayBeat =
+            relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat);
+        const int x = beatToPixel(displayBeat);
+        const int w = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+        if (x + w < visibleArea.getX() || x > visibleArea.getRight())
+            continue;
+        if (foldMap_ && foldMap_->isActive() &&
+            foldMap_->noteForRow(foldMap_->rowForNote(note.noteNumber)) != note.noteNumber)
+            continue;
+        const int y = noteNumberToY(note.noteNumber);
+        if (y + noteHeight_ < visibleArea.getY() || y > visibleArea.getBottom())
+            continue;
+        const auto rect =
+            juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y + 1),
+                                   static_cast<float>(w), static_cast<float>(noteHeight_ - 2));
+        g.setColour(overlayNotesColour_.withAlpha(0.22f));
+        g.fillRoundedRectangle(rect, 2.0f);
+        g.setColour(overlayNotesColour_.withAlpha(0.5f));
+        g.drawRoundedRectangle(rect, 2.0f, 1.0f);
+    }
+}
+
 void PianoRollGridComponent::paintOverlayNotes(juce::Graphics& g) {
+    paintOverlayNoteSet(g);
+
     if (overlayTrackIds_.empty())
         return;
 

@@ -1842,14 +1842,21 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
     menu.addItem(7, "Slice at Grid In Place", canSliceAtGrid);
     menu.addItem(9, "Slice at Grid to Drum Grid", canSliceAtGrid);
 
+    int deleteLane = -1;
     if (const auto* clip = getClip(); clip && clip->isAudio() && clip->audio().takes.size() > 1) {
         menu.addSeparator();
         menu.addItem(11, clip->takesExpanded ? "Collapse Takes" : "Expand Takes");
         if (clip->audio().compActive)
             menu.addItem(10, "Clear Comp");
+        if (clip->takesExpanded) {
+            deleteLane = takeLaneAtY(event.y, computeWaveformLayout(*clip),
+                                     static_cast<int>(clip->audio().takes.size()));
+            if (deleteLane >= 0)
+                menu.addItem(12, "Delete Take " + juce::String(deleteLane + 1));
+        }
     }
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex](int result) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex, deleteLane](int result) {
         if (result == 2) {
             if (timeRuler_)
                 timeRuler_->setBarOrigin(0.0);
@@ -1872,6 +1879,8 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
             onSliceAtGridToDrumGrid();
         } else if (result == 10 && onCompClear) {
             onCompClear();
+        } else if (result == 12 && deleteLane >= 0 && onTakeDelete) {
+            onTakeDelete(deleteLane);
         } else if (result == 11) {
             if (auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
                 clip && clip->isAudio()) {

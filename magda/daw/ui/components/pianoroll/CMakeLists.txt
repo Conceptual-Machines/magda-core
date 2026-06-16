@@ -4,6 +4,7 @@ target_sources(magda_daw_app PRIVATE
     PianoRollKeyboard.cpp
     OctaveLabelStrip.cpp
     PitchFoldMap.cpp
+    MidiTakeLanesComponent.cpp
     VelocityLaneComponent.cpp
     CCLaneComponent.cpp
     MidiDrawerComponent.cpp

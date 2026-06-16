@@ -109,9 +109,46 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             obj->setProperty("loopStartBeats", clip.loopStartBeats);
         if (clip.loopLengthBeats > 0.0)
             obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
-        if (clip.midi().sourceFilePath.isNotEmpty()) {
+        const auto& midi = clip.midi();
+        if (midi.sourceFilePath.isNotEmpty() || !midi.takes.empty()) {
             auto* midiObj = new juce::DynamicObject();
-            midiObj->setProperty("sourceFilePath", clip.midi().sourceFilePath);
+            if (midi.sourceFilePath.isNotEmpty())
+                midiObj->setProperty("sourceFilePath", midi.sourceFilePath);
+            // Loop-record takes (one note set per pass).
+            if (!midi.takes.empty()) {
+                juce::Array<juce::var> takesArray;
+                for (const auto& take : midi.takes) {
+                    auto* takeObj = new juce::DynamicObject();
+                    juce::Array<juce::var> notes;
+                    for (const auto& n : take.notes)
+                        notes.add(serializeMidiNote(n));
+                    juce::Array<juce::var> ccs;
+                    for (const auto& cc : take.cc)
+                        ccs.add(serializeMidiCCData(cc));
+                    juce::Array<juce::var> pbs;
+                    for (const auto& pb : take.pitchBend)
+                        pbs.add(serializeMidiPitchBendData(pb));
+                    takeObj->setProperty("notes", juce::var(notes));
+                    takeObj->setProperty("cc", juce::var(ccs));
+                    takeObj->setProperty("pitchBend", juce::var(pbs));
+                    takesArray.add(juce::var(takeObj));
+                }
+                midiObj->setProperty("takes", juce::var(takesArray));
+                midiObj->setProperty("currentTakeIndex", midi.currentTakeIndex);
+            }
+            // Comp sections (beats). Active note list is persisted via midiNotes.
+            if (!midi.comp.empty()) {
+                juce::Array<juce::var> compArray;
+                for (const auto& sec : midi.comp) {
+                    auto* secObj = new juce::DynamicObject();
+                    secObj->setProperty("startBeat", sec.startBeat);
+                    secObj->setProperty("endBeat", sec.endBeat);
+                    secObj->setProperty("takeIndex", sec.takeIndex);
+                    compArray.add(juce::var(secObj));
+                }
+                midiObj->setProperty("comp", juce::var(compArray));
+                midiObj->setProperty("compActive", midi.compActive);
+            }
             obj->setProperty("midi", juce::var(midiObj));
         }
     }
@@ -381,6 +418,60 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
         if (auto* midiObj = obj->getProperty("midi").getDynamicObject()) {
             outClip.midi().sourceFilePath = midiObj->getProperty("sourceFilePath").toString();
+
+            // Loop-record takes
+            auto takesVar = midiObj->getProperty("takes");
+            if (takesVar.isArray()) {
+                auto& takes = outClip.midi().takes;
+                for (const auto& takeVar : *takesVar.getArray()) {
+                    auto* takeObj = takeVar.getDynamicObject();
+                    if (takeObj == nullptr)
+                        continue;
+                    MidiTake take;
+                    if (auto* notes = takeObj->getProperty("notes").getArray()) {
+                        for (const auto& nv : *notes) {
+                            MidiNote n;
+                            if (deserializeMidiNote(nv, n))
+                                take.notes.push_back(n);
+                        }
+                    }
+                    if (auto* ccs = takeObj->getProperty("cc").getArray()) {
+                        for (const auto& cv : *ccs) {
+                            MidiCCData cc;
+                            if (deserializeMidiCCData(cv, cc))
+                                take.cc.push_back(cc);
+                        }
+                    }
+                    if (auto* pbs = takeObj->getProperty("pitchBend").getArray()) {
+                        for (const auto& pv : *pbs) {
+                            MidiPitchBendData pb;
+                            if (deserializeMidiPitchBendData(pv, pb))
+                                take.pitchBend.push_back(pb);
+                        }
+                    }
+                    takes.push_back(std::move(take));
+                }
+                if (!takes.empty())
+                    outClip.midi().currentTakeIndex =
+                        juce::jlimit(0, static_cast<int>(takes.size()) - 1,
+                                     static_cast<int>(midiObj->getProperty("currentTakeIndex")));
+            }
+
+            // Comp sections
+            auto compVar = midiObj->getProperty("comp");
+            if (compVar.isArray()) {
+                for (const auto& secVar : *compVar.getArray()) {
+                    if (auto* secObj = secVar.getDynamicObject()) {
+                        MidiCompSection sec;
+                        sec.startBeat = secObj->getProperty("startBeat");
+                        sec.endBeat = secObj->getProperty("endBeat");
+                        sec.takeIndex = static_cast<int>(secObj->getProperty("takeIndex"));
+                        outClip.midi().comp.push_back(sec);
+                    }
+                }
+                outClip.midi().compActive = !outClip.midi().comp.empty() &&
+                                            static_cast<bool>(midiObj->getProperty("compActive"));
+            }
         }
     }
 

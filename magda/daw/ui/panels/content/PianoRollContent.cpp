@@ -24,6 +24,7 @@
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
+#include "ui/components/pianoroll/MidiTakeLanesComponent.hpp"
 #include "ui/components/pianoroll/OctaveLabelStrip.hpp"
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
 #include "ui/components/pianoroll/PianoRollKeyboard.hpp"
@@ -52,6 +53,21 @@ PianoRollContent::PianoRollContent() {
         applyFold();
     };
     addAndMakeVisible(foldToggle_.get());
+
+    // Create take-lanes toggle button (show/hide the comp take-lanes strip).
+    // Only relevant for a MIDI clip with takes; shown contextually.
+    takeLanesToggle_ = std::make_unique<magda::SvgButton>("TakeLanesToggle", BinaryData::lanes_svg,
+                                                          BinaryData::lanes_svgSize);
+    takeLanesToggle_->setTooltip("Show take lanes");
+    takeLanesToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    takeLanesToggle_->onClick = [this]() {
+        auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip == nullptr)
+            return;
+        clip->takesExpanded = !clip->takesExpanded;
+        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
+    };
+    addChildComponent(takeLanesToggle_.get());
 
     // Create chord toggle button
     chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordboldm_svg,
@@ -218,6 +234,39 @@ PianoRollContent::PianoRollContent() {
 
     setupGridCallbacks();
 
+    // Folded take-lanes strip below the grid (MIDI comping, #1466).
+    takeLanes_ = std::make_unique<MidiTakeLanesComponent>();
+    takeLanes_->setLeftPadding(GRID_LEFT_PADDING);
+    takeLanes_->onTakeSelected = [this](int takeIndex) {
+        magda::ClipManager::getInstance().setMidiClipCurrentTake(editingClipId_, takeIndex);
+    };
+    takeLanes_->onCompSectionSet = [this](double startBeat, double endBeat, int takeIndex) {
+        magda::ClipManager::getInstance().setMidiCompSection(editingClipId_, startBeat, endBeat,
+                                                             takeIndex);
+    };
+    takeLanes_->onCompClear = [this]() {
+        magda::ClipManager::getInstance().clearMidiComp(editingClipId_);
+    };
+    takeLanes_->onDeleteTake = [this](int takeIndex) {
+        magda::ClipManager::getInstance().deleteClipTake(editingClipId_, takeIndex);
+    };
+    takeLanes_->onTakeHovered = [this](int takeIndex) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!gridComponent_ || clip == nullptr || !clip->isMidi()) {
+            if (gridComponent_)
+                gridComponent_->clearOverlayNotes();
+            return;
+        }
+        const auto& takes = clip->midi().takes;
+        if (takeIndex >= 0 && takeIndex < static_cast<int>(takes.size()))
+            gridComponent_->setOverlayNotes(takes[static_cast<size_t>(takeIndex)].notes,
+                                            clip->colour);
+        else
+            gridComponent_->clearOverlayNotes();
+    };
+    addChildComponent(takeLanes_.get());
+    viewport_->componentsToRepaint.push_back(takeLanes_.get());
+
     // Apply any overlay tracks chosen in another editor session
     applyOverlayTracks();
 
@@ -242,6 +291,23 @@ PianoRollContent::PianoRollContent() {
 void PianoRollContent::applyOverlayTracks() {
     if (gridComponent_)
         gridComponent_->setOverlayTracks(overlayTrackIds_);
+}
+
+bool PianoRollContent::takeLanesVisible() const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    return clip != nullptr && clip->isMidi() && clip->midi().takes.size() >= 2 &&
+           clip->takesExpanded;
+}
+
+void PianoRollContent::refreshTakeLanes() {
+    if (!takeLanes_)
+        return;
+    takeLanes_->setClip(editingClipId_);
+    takeLanes_->setPixelsPerBeat(horizontalZoom_);
+    takeLanes_->setRelativeMode(relativeTimeMode_);
+    takeLanes_->setGridResolutionBeats(gridResolutionBeats_);
+    takeLanes_->setSnapEnabled(snapEnabled_);
+    takeLanes_->setScrollOffset(viewport_ ? viewport_->getViewPositionX() : 0);
 }
 
 void PianoRollContent::rebuildFoldMap() {
@@ -701,6 +767,8 @@ void PianoRollContent::setupGridCallbacks() {
 void PianoRollContent::setGridPixelsPerBeat(double ppb) {
     if (gridComponent_)
         gridComponent_->setPixelsPerBeat(ppb);
+    if (takeLanes_)
+        takeLanes_->setPixelsPerBeat(ppb);
     if (showChordRow_)
         repaint();
 }
@@ -724,6 +792,8 @@ void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {
     } else if (velocityLane_) {
         velocityLane_->setScrollOffset(scrollX);
     }
+    if (takeLanes_)
+        takeLanes_->setScrollOffset(scrollX);
 }
 
 void PianoRollContent::onGridResolutionChanged() {
@@ -802,6 +872,17 @@ void PianoRollContent::resized() {
     // Fold toggle directly below the chord toggle
     if (foldToggle_)
         foldToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
+    // Take-lanes toggle below the fold toggle (only when the clip has takes)
+    if (takeLanesToggle_) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        const bool hasTakes = clip != nullptr && clip->isMidi() && clip->midi().takes.size() >= 2;
+        takeLanesToggle_->setVisible(hasTakes);
+        if (hasTakes) {
+            takeLanesToggle_->setActive(clip->takesExpanded);
+            takeLanesToggle_->setBounds(padding, chordToggleY + 2 * (iconSize + padding), iconSize,
+                                        iconSize);
+        }
+    }
     // Lane buttons stacked at the bottom, top to bottom: MPE, CC, velocity
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
     ccLanesBtn_->setBounds(padding, getHeight() - 2 * (iconSize + padding), iconSize, iconSize);
@@ -842,6 +923,23 @@ void PianoRollContent::resized() {
             midiDrawer_->setVisible(false);
         if (velocityLane_)
             velocityLane_->setVisible(false);
+    }
+
+    // Folded take-lanes strip (MIDI comping) — directly above the drawer, below
+    // the grid, aligned to the grid's time axis.
+    if (takeLanesVisible() && takeLanes_) {
+        int stripH =
+            juce::jmin(takeLanes_->preferredHeight(), juce::jmax(0, bounds.getHeight() / 2));
+        auto stripArea = bounds.removeFromBottom(stripH);
+        // Span the octave-label + keyboard columns too, used as a fixed left
+        // gutter for the take name (aligned with the keyboard).
+        stripArea.removeFromLeft(ZOOM_STRIP_WIDTH);
+        takeLanes_->setLabelGutter(OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
+        takeLanes_->setBounds(stripArea);
+        takeLanes_->setVisible(true);
+        refreshTakeLanes();
+    } else if (takeLanes_) {
+        takeLanes_->setVisible(false);
     }
 
     // Ruler row
@@ -1035,6 +1133,9 @@ void PianoRollContent::updateGridSize() {
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
     }
+
+    if (takeLanes_)
+        refreshTakeLanes();
 }
 
 // Loop region is now handled by MidiEditorContent::updateTimeRuler()
@@ -1267,6 +1368,9 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                 self->applyClipGridSettings();
                 self->loadNoteHeightFromClip(self->editingClipId_);
                 self->updateGridSize();
+                // Relayout so the take-lanes strip appears/resizes when takes or
+                // the takesExpanded toggle change.
+                self->resized();
                 self->updateTimeRuler();
                 self->updateVelocityLane();
                 if (placementMoved)

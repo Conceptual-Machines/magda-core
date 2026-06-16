@@ -248,11 +248,13 @@ void ClipInspector::updateFromSelectedClip() {
         if (isAudioClip)
             clipFilePathLabel_.setVisible(showAudioProps);
 
-        // Loop-record takes section (shared component; visible inside the
-        // expanded Audio Properties section).
+        // Loop-record takes section (shared component). Audio shows it inside
+        // the expanded Audio Properties section; MIDI has no such section, so
+        // show it at top level whenever the MIDI clip has takes.
         if (takesSection_) {
             takesSection_->setSelectedClips(selectedClipIds_);
-            takesSection_->setVisible(showAudioProps);
+            const bool showMidiTakes = !isAudioClip && takesSection_->hasContent();
+            takesSection_->setVisible(showAudioProps || showMidiTakes);
         }
 
         if (isAudioClip) {

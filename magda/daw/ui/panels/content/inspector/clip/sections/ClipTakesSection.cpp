@@ -39,18 +39,16 @@ void ClipTakesSection::initControls() {
     takesCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     takesCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     takesCombo_.onChange = [this]() {
-        auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (clip == nullptr || !clip->isAudio())
+        auto& clipManager = magda::ClipManager::getInstance();
+        auto* clip = clipManager.getClip(primaryClipId());
+        if (clip == nullptr)
             return;
         const int idx = takesCombo_.getSelectedId() - 1;  // combo id = take index + 1
-        if (idx < 0 || idx >= static_cast<int>(clip->audio().takes.size()))
-            return;
-        // Picking a take exits any active comp and fronts that take.
-        clip->audio().compActive = false;
-        clip->audio().comp.clear();
-        clip->audio().currentTakeIndex = idx;
-        clip->audio().source.filePath = clip->audio().takes[idx].filePath;
-        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
+        if (clip->isAudio()) {
+            clipManager.setAudioClipCurrentTake(primaryClipId(), idx);
+        } else if (clip->isMidi()) {
+            clipManager.setMidiClipCurrentTake(primaryClipId(), idx);
+        }
     };
     addChildComponent(takesCombo_);
 
@@ -59,7 +57,7 @@ void ClipTakesSection::initControls() {
         BinaryData::collapse_svgSize);
     expandButton_->onClick = [this]() {
         auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (clip == nullptr || !clip->isAudio())
+        if (clip == nullptr)
             return;
         clip->takesExpanded = !clip->takesExpanded;
         magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
@@ -73,19 +71,38 @@ void ClipTakesSection::initControls() {
     clearCompButton_.setColour(juce::TextButton::textColourOffId,
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clearCompButton_.onClick = [this]() {
-        magda::CompService::getInstance().clearComp(primaryClipId());
+        auto& clipManager = magda::ClipManager::getInstance();
+        const auto* clip = clipManager.getClip(primaryClipId());
+        if (clip == nullptr)
+            return;
+        if (clip->isMidi())
+            clipManager.clearMidiComp(primaryClipId());
+        else
+            magda::CompService::getInstance().clearComp(primaryClipId());
     };
     addChildComponent(clearCompButton_);
 }
 
 bool ClipTakesSection::hasTakes() const {
     const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-    return clip != nullptr && clip->isAudio() && clip->audio().takes.size() > 1;
+    if (clip == nullptr)
+        return false;
+    if (clip->isAudio())
+        return clip->audio().takes.size() > 1;
+    if (clip->isMidi())
+        return clip->midi().takes.size() > 1;
+    return false;
 }
 
 bool ClipTakesSection::compActive() const {
     const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-    return clip != nullptr && clip->isAudio() && clip->audio().compActive;
+    if (clip == nullptr)
+        return false;
+    if (clip->isAudio())
+        return clip->audio().compActive;
+    if (clip->isMidi())
+        return clip->midi().compActive;
+    return false;
 }
 
 void ClipTakesSection::setClip(magda::ClipId clipId) {
@@ -102,25 +119,35 @@ void ClipTakesSection::setSelectedClips(const std::unordered_set<magda::ClipId>&
 
 void ClipTakesSection::update() {
     const bool show = hasTakes();
+    const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
+
     sectionLabel_.setVisible(show);
     takesCombo_.setVisible(show);
     if (expandButton_)
         expandButton_->setVisible(show);
     clearCompButton_.setVisible(show && compActive());
 
-    if (!show)
+    if (!show || clip == nullptr)
         return;
 
-    const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-    const auto& audio = clip->audio();
-    const int numTakes = static_cast<int>(audio.takes.size());
-    const bool comp = audio.compActive;
+    int numTakes = 0;
+    int currentTakeIndex = 0;
+    bool comp = false;
+    if (clip->isAudio()) {
+        numTakes = static_cast<int>(clip->audio().takes.size());
+        currentTakeIndex = clip->audio().currentTakeIndex;
+        comp = clip->audio().compActive;
+    } else if (clip->isMidi()) {
+        numTakes = static_cast<int>(clip->midi().takes.size());
+        currentTakeIndex = clip->midi().currentTakeIndex;
+        comp = clip->midi().compActive;
+    }
 
     takesCombo_.clear(juce::dontSendNotification);
     for (int i = 0; i < numTakes; ++i)
         takesCombo_.addItem("Take " + juce::String(i + 1) + " / " + juce::String(numTakes), i + 1);
     takesCombo_.setTextWhenNothingSelected(comp ? "Comp" : "");
-    takesCombo_.setSelectedId(comp ? 0 : audio.currentTakeIndex + 1, juce::dontSendNotification);
+    takesCombo_.setSelectedId(comp ? 0 : currentTakeIndex + 1, juce::dontSendNotification);
 
     if (expandButton_) {
         expandButton_->setActive(clip->takesExpanded);
@@ -143,7 +170,7 @@ void ClipTakesSection::resized() {
     area.removeFromTop(GAP);
 
     auto row = area.removeFromTop(ROW_H);
-    if (expandButton_) {
+    if (expandButton_ && expandButton_->isVisible()) {
         expandButton_->setBounds(
             row.removeFromRight(EXPAND_W).withSizeKeepingCentre(EXPAND_W, EXPAND_W));
         row.removeFromRight(4);

@@ -735,43 +735,70 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
     double startSeconds = midiClip->getPosition().getStart().inSeconds();
     double lengthSeconds = midiClip->getPosition().getLength().inSeconds();
 
-    std::vector<MidiNote> recordedNotes;
-    std::vector<MidiCCData> recordedCC;
-    std::vector<MidiPitchBendData> recordedPB;
+    // Extract a TE MidiList (one take's sequence) into a MAGDA MidiTake.
+    auto extractTake = [](tracktion::MidiList& midiList) {
+        MidiTake take;
+        for (auto* note : midiList.getNotes()) {
+            if (!note)
+                continue;
+            MidiNote mn;
+            mn.noteNumber = note->getNoteNumber();
+            mn.velocity = note->getVelocity();
+            mn.startBeat = note->getStartBeat().inBeats();
+            mn.lengthBeats = note->getLengthBeats().inBeats();
+            take.notes.push_back(mn);
+        }
+        for (auto* ce : midiList.getControllerEvents()) {
+            if (!ce)
+                continue;
+            int eventType = ce->getType();
+            if (eventType == tracktion::MidiControllerEvent::pitchWheelType) {
+                MidiPitchBendData pb;
+                pb.value = ce->getControllerValue();
+                pb.beatPosition = ce->getBeatPosition().inBeats();
+                take.pitchBend.push_back(pb);
+            } else if (eventType < 128) {
+                MidiCCData cc;
+                cc.controller = eventType;
+                cc.value = ce->getControllerValue();
+                cc.beatPosition = ce->getBeatPosition().inBeats();
+                take.cc.push_back(cc);
+            }
+        }
+        return take;
+    };
 
-    auto& midiList = midiClip->getSequence();
-    for (auto* note : midiList.getNotes()) {
-        if (!note)
-            continue;
-        MidiNote mn;
-        mn.noteNumber = note->getNoteNumber();
-        mn.velocity = note->getVelocity();
-        mn.startBeat = note->getStartBeat().inBeats();
-        mn.lengthBeats = note->getLengthBeats().inBeats();
-        recordedNotes.push_back(mn);
-    }
-
-    for (auto* ce : midiList.getControllerEvents()) {
-        if (!ce)
-            continue;
-        int eventType = ce->getType();
-        if (eventType == tracktion::MidiControllerEvent::pitchWheelType) {
-            MidiPitchBendData pb;
-            pb.value = ce->getControllerValue();
-            pb.beatPosition = ce->getBeatPosition().inBeats();
-            recordedPB.push_back(pb);
-        } else if (eventType < 128) {
-            MidiCCData cc;
-            cc.controller = eventType;
-            cc.value = ce->getControllerValue();
-            cc.beatPosition = ce->getBeatPosition().inBeats();
-            recordedCC.push_back(cc);
+    // Loop recording: each pass is a TE take (channelSequence entry). Harvest
+    // them all so no pass is lost; a single (non-loop) recording has none, in
+    // which case the active sequence is the only content.
+    std::vector<MidiTake> takes;
+    if (midiClip->hasAnyTakes()) {
+        const int numTakes = midiClip->getNumTakes(/*includeComps=*/false);
+        for (int i = 0; i < numTakes; ++i) {
+            if (auto* takeList = midiClip->getTakeSequence(i))
+                takes.push_back(extractTake(*takeList));
         }
     }
 
-    DBG("finalizeMidiRecording: track=" << trackId << " notes=" << (int)recordedNotes.size()
-                                        << " cc=" << (int)recordedCC.size()
-                                        << " pb=" << (int)recordedPB.size());
+    // Active take = the last full pass. Only the final pass can be partial (a
+    // mid-loop stop); if it has fewer notes than the prior pass, fall back to
+    // that one. Mirrors the audio take heuristic.
+    int activeTakeIndex = 0;
+    if (takes.size() > 1) {
+        activeTakeIndex = static_cast<int>(takes.size()) - 1;
+        if (takes[activeTakeIndex].notes.size() <
+            takes[static_cast<size_t>(activeTakeIndex) - 1].notes.size())
+            activeTakeIndex -= 1;
+    }
+
+    // The content the clip plays: the active take, or the single recorded
+    // sequence when there are no takes.
+    MidiTake active = takes.empty() ? extractTake(midiClip->getSequence())
+                                    : takes[static_cast<size_t>(activeTakeIndex)];
+
+    DBG("finalizeMidiRecording: track=" << trackId << " takes=" << (int)takes.size()
+                                        << " active=" << activeTakeIndex
+                                        << " notes=" << (int)active.notes.size());
 
     midiClip->removeFromParent();
 
@@ -781,9 +808,13 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
     activeRecordingClips_[trackId] = clipId;
 
     if (auto* clipInfo = clipManager.getClip(clipId)) {
-        clipInfo->midiNotes = std::move(recordedNotes);
-        clipInfo->midiCCData = std::move(recordedCC);
-        clipInfo->midiPitchBendData = std::move(recordedPB);
+        clipInfo->midiNotes = active.notes;
+        clipInfo->midiCCData = active.cc;
+        clipInfo->midiPitchBendData = active.pitchBend;
+        if (takes.size() > 1) {
+            clipInfo->midi().takes = std::move(takes);
+            clipInfo->midi().currentTakeIndex = activeTakeIndex;
+        }
     }
 
     if (audioBridge_)

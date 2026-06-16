@@ -18,6 +18,8 @@ struct MidiNoteEvent;
 
 namespace magda::daw::ui {
 
+class MidiTakeLanesComponent;
+
 /**
  * @brief Piano roll editor for MIDI clips
  *
@@ -142,6 +144,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
     std::unique_ptr<magda::SvgButton> foldToggle_;
+    std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
@@ -175,6 +178,12 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     }
 
     std::unique_ptr<magda::OctaveLabelStrip> octaveLabelStrip_;
+
+    // Folded take-lanes strip below the grid (MIDI comping, #1466). Visible when
+    // the clip has >=2 takes and clip->takesExpanded.
+    std::unique_ptr<MidiTakeLanesComponent> takeLanes_;
+    bool takeLanesVisible() const;
+    void refreshTakeLanes();
 
     // Center the view on middle C (C4)
     void centerOnNote(int noteNumber);
