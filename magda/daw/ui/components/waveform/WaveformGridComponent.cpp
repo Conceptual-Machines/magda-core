@@ -106,10 +106,11 @@ void WaveformGridComponent::paintWaveform(juce::Graphics& g, const magda::ClipIn
     if (layout.rect.isEmpty())
         return;
 
-    // Loop-record takes: show each pass as its own stacked lane instead of the
-    // single active-take waveform. Editing overlays (warp/transients) are not
-    // drawn in this mode — they apply per-take and belong to a later pass.
-    if (clip.audio().takes.size() > 1) {
+    // Loop-record takes: when expanded, show each pass as its own stacked lane
+    // instead of the single active-take waveform. Editing overlays
+    // (warp/transients) are not drawn in this mode. Collapsed falls through to
+    // the normal single-waveform view.
+    if (clip.audio().takes.size() > 1 && clip.takesExpanded) {
         paintTakeLanes(g, clip, layout);
         return;
     }
@@ -1131,7 +1132,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     // Loop-record takes: a click on a lane selects the active take; a horizontal
     // swipe assigns that range of the comp to the swiped take. Begin the gesture
     // here; it resolves in mouseUp.
-    if (clip->audio().takes.size() > 1) {
+    if (clip->audio().takes.size() > 1 && clip->takesExpanded) {
         auto layout = computeWaveformLayout(*clip);
         int lane = takeLaneAtY(event.y, layout, static_cast<int>(clip->audio().takes.size()));
         if (lane >= 0) {
@@ -1610,7 +1611,7 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
 
     // Take lanes (multi-take clip): click selects a take, swipe comps a range.
     // Use an I-beam so the waveform zoom cursor doesn't bleed over the lanes.
-    if (clip->audio().takes.size() > 1) {
+    if (clip->audio().takes.size() > 1 && clip->takesExpanded) {
         auto layout = computeWaveformLayout(*clip);
         if (takeLaneAtY(event.y, layout, static_cast<int>(clip->audio().takes.size())) >= 0) {
             setMouseCursor(juce::MouseCursor::IBeamCursor);
@@ -1841,9 +1842,11 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
     menu.addItem(7, "Slice at Grid In Place", canSliceAtGrid);
     menu.addItem(9, "Slice at Grid to Drum Grid", canSliceAtGrid);
 
-    if (const auto* clip = getClip(); clip && clip->isAudio() && clip->audio().compActive) {
+    if (const auto* clip = getClip(); clip && clip->isAudio() && clip->audio().takes.size() > 1) {
         menu.addSeparator();
-        menu.addItem(10, "Clear Comp");
+        menu.addItem(11, clip->takesExpanded ? "Collapse Takes" : "Expand Takes");
+        if (clip->audio().compActive)
+            menu.addItem(10, "Clear Comp");
     }
 
     menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex](int result) {
@@ -1869,6 +1872,14 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
             onSliceAtGridToDrumGrid();
         } else if (result == 10 && onCompClear) {
             onCompClear();
+        } else if (result == 11) {
+            if (auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+                clip && clip->isAudio()) {
+                clip->takesExpanded = !clip->takesExpanded;
+                updateGridSize();
+                magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
+                repaint();
+            }
         }
     });
 }

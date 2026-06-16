@@ -1180,6 +1180,25 @@ void WaveformEditorContent::setSnapEnabledFromUI(bool enabled) {
         timeRuler_->setSnapEnabled(enabled);
 }
 
+bool WaveformEditorContent::editingClipHasMultipleTakes() const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    return clip && clip->isAudio() && clip->audio().takes.size() > 1;
+}
+
+bool WaveformEditorContent::areTakesExpanded() const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    return clip && clip->isAudio() && clip->takesExpanded;
+}
+
+void WaveformEditorContent::setTakesExpanded(bool expanded) {
+    auto& cm = magda::ClipManager::getInstance();
+    auto* clip = cm.getClip(editingClipId_);
+    if (!clip || !clip->isAudio())
+        return;
+    clip->takesExpanded = expanded;
+    cm.forceNotifyClipPropertyChanged(editingClipId_);
+}
+
 // ============================================================================
 // Private Helpers
 // ============================================================================

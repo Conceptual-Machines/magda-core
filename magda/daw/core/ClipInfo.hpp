@@ -229,6 +229,11 @@ struct ClipInfo {
         content = MidiClipModel{};
     }
 
+    // Transient UI: whether the loop-record take lanes are expanded in the
+    // waveform editor (collapsed = the normal single active-take waveform).
+    // Not serialized.
+    bool takesExpanded = true;
+
     // Derived timeline seconds cache. Kept only for bridge/UI call sites that
     // have not moved to beats yet; do not treat these as model authority.
     double startTime = 0.0;
