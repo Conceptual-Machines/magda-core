@@ -489,7 +489,7 @@ struct SelectSectionEvent {
 struct AddMarkerBeatsEvent {
     double positionBeats;
     juce::String name = {};
-    juce::Colour colour = juce::Colour(0xFFFFC857);
+    juce::Colour colour = juce::Colour(0xFF9E9E9E);
 };
 
 /**
@@ -498,7 +498,7 @@ struct AddMarkerBeatsEvent {
 struct AddMarkerEvent {
     double positionTime;
     juce::String name = {};
-    juce::Colour colour = juce::Colour(0xFFFFC857);
+    juce::Colour colour = juce::Colour(0xFF9E9E9E);
 };
 
 /**

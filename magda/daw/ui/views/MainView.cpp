@@ -384,6 +384,18 @@ void MainView::setupComponents() {
     };
     markerLaneToggleButton->setTooltip("Hide marker lane");
 
+    setupCornerButton(secondsRulerToggleButton, "SecondsRulerToggle", BinaryData::clock_svg,
+                      BinaryData::clock_svgSize);
+    secondsRulerToggleButton->setClickingTogglesState(true);
+    secondsRulerToggleButton->setToggleState(secondsRulerVisible_, juce::dontSendNotification);
+    secondsRulerToggleButton->onClick = [this]() {
+        secondsRulerVisible_ = secondsRulerToggleButton->getToggleState();
+        secondsRulerToggleButton->setTooltip(secondsRulerVisible_ ? "Hide seconds ruler"
+                                                                  : "Show seconds ruler");
+        timeline->setSecondsRulerVisible(secondsRulerVisible_);
+    };
+    secondsRulerToggleButton->setTooltip("Show seconds ruler");
+
     setupCornerButton(zoomLoopButton, "ZoomLoop", BinaryData::fit_loop_svg,
                       BinaryData::fit_loop_svgSize);
     zoomLoopButton->onClick = [this]() {
@@ -1020,6 +1032,8 @@ void MainView::resized() {
         zoomLoopButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
         markerLaneToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        btnSide.removeSpacing(topRow, gap);
+        secondsRulerToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         axisSide.removeSpacing(topRow, gap);
         hAxisIcon->setBounds(axisSide.removeFrom(topRow, btnSize));
 

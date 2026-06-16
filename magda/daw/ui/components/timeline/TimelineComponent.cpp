@@ -230,8 +230,7 @@ void TimelineComponent::paint(juce::Graphics& g) {
     }
 
     // Draw separator line above ticks
-    int tickAreaTop =
-        arrangementTop + arrangementHeight + layout.timeRulerHeight - layout.rulerMajorTickHeight;
+    int tickAreaTop = getBarsRulerBottom() - layout.rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawLine(visibleLeft, static_cast<float>(tickAreaTop), visibleRight,
                static_cast<float>(tickAreaTop), 1.0f);
@@ -350,6 +349,12 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
         if (snapEnabled)
             beats = snapBeatsToGrid(beats);
 
+        // Don't offer Add Marker where one already sits (positions are unique).
+        for (const auto& marker : markers_) {
+            if (std::abs(marker.positionBeats - beats) <= 1e-6)
+                return;
+        }
+
         juce::PopupMenu menu;
         menu.addItem(1, "Add Marker");
         menu.showMenuAsync(
@@ -389,7 +394,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     bool inTimeSelectionZone = event.y >= rulerMidpoint && event.y <= timeRulerEnd;
 
     // Check for loop marker dragging — only within the loop strip
-    int rulerBottom = arrangementBottom + timeRulerHeight;
+    int rulerBottom = getBarsRulerBottom();
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
     int loopStripTop = tickAreaTop - LayoutConfig::loopStripHeight;
     if (event.y >= loopStripTop && event.y < tickAreaTop) {
@@ -452,7 +457,7 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
     int arrangementHeight = layout.arrangementBarHeight;
     int arrangementBottom = chordHeight + arrangementHeight;
 
-    int rulerBottom = chordHeight + arrangementHeight + layout.timeRulerHeight;
+    int rulerBottom = getBarsRulerBottom();
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
     int loopStripTop = tickAreaTop - LayoutConfig::loopStripHeight;
 
@@ -813,18 +818,26 @@ int TimelineComponent::secondsDurationToPixels(double durationSeconds) const {
     return static_cast<int>(std::round(beats * pixelsPerBeat));
 }
 
+int TimelineComponent::getBarsRulerBottom() const {
+    auto& layout = LayoutConfig::getInstance();
+    const int top = layout.chordRowHeight + layout.arrangementBarHeight;
+    const int full = top + layout.timeRulerHeight;
+    if (secondsRulerVisible_ && displayMode == TimeDisplayMode::BarsBeats)
+        return top + juce::roundToInt(layout.timeRulerHeight * layout.barsRulerHeightRatio);
+    return full;
+}
+
 void TimelineComponent::drawMarkerGuides(juce::Graphics& g) {
     if (markers_.empty() || !markerLaneVisible_)
         return;
 
     auto& layout = LayoutConfig::getInstance();
     const int rulerTop = layout.chordRowHeight + layout.arrangementBarHeight;
-    const int rulerBottom = rulerTop + layout.timeRulerHeight;
+    const int rulerBottom = getBarsRulerBottom();
 
     auto visibleX = getVisibleXRange(g, getWidth());
-    // Start at the top of the time-ruler label row so the guide spans the
-    // labels and ticks but never bleeds up into the arrangement/section bar
-    // above it.
+    // Span the bars/beats portion of the ruler only; never bleed above the
+    // labels or into the seconds row below.
     const float top = static_cast<float>(rulerTop);
     const float bottom = static_cast<float>(rulerBottom);
     const int selectedMarkerId =
@@ -836,10 +849,51 @@ void TimelineComponent::drawMarkerGuides(juce::Graphics& g) {
             continue;
 
         const bool selected = marker.id == selectedMarkerId;
-        g.setColour(marker.colour.withAlpha(selected ? 0.34f : 0.20f));
-        g.drawLine(static_cast<float>(x), top, static_cast<float>(x), bottom,
-                   selected ? 1.4f : 1.0f);
+        g.setColour(marker.colour.withAlpha(selected ? 0.55f : 0.4f));
+
+        // Dashed so it reads as a guide instead of slashing a solid line
+        // through the bar-number labels it passes behind.
+        const float thickness = selected ? 1.4f : 1.0f;
+        constexpr float dash = 2.0f;
+        constexpr float gap = 3.0f;
+        for (float y = top; y < bottom; y += dash + gap) {
+            g.drawLine(static_cast<float>(x), y, static_cast<float>(x),
+                       juce::jmin(bottom, y + dash), thickness);
+        }
     }
+}
+
+void TimelineComponent::drawBarNumberLabel(juce::Graphics& g, const juce::String& text, int x,
+                                           int labelY, int labelHeight) {
+    auto font = FontManager::getInstance().getUIFont(12.0f).boldened();
+    g.setFont(font);
+
+    // If a marker guide passes near this number, lay an opaque background chip
+    // (a bit wider than the text) behind it so the dashed line breaks cleanly
+    // around the digits instead of slashing through them.
+    if (markerLaneVisible_) {
+        juce::GlyphArrangement ga;
+        ga.addLineOfText(font, text, 0.0f, 0.0f);
+        constexpr float hPad = 11.0f;  // padding each side of the digits
+        constexpr float vPad = 5.0f;
+        const float boxW = ga.getBoundingBox(0, -1, true).getWidth() + hPad * 2.0f;
+        const float boxH = font.getHeight() + vPad * 2.0f;
+        for (const auto& marker : markers_) {
+            const int mx = beatsToPixel(marker.positionBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+            if (std::abs(mx - x) <= boxW / 2.0f + 1.0f) {
+                // Match the zoom-time background brighten so the chip stays
+                // invisible against whatever the ruler is currently filled with.
+                auto bg = DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND);
+                g.setColour(isZooming ? bg.brighter(0.1f) : bg);
+                g.fillRoundedRectangle(static_cast<float>(x) - boxW / 2.0f,
+                                       static_cast<float>(labelY) - vPad, boxW, boxH, 3.0f);
+                break;
+            }
+        }
+    }
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.drawText(text, x - 35, labelY, 70, labelHeight, juce::Justification::centredTop);
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
@@ -853,13 +907,19 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     int rulerTop = chordHeight + arrangementHeight;
     int rulerBottom = rulerTop + timeRulerHeight;
 
+    // When the seconds ruler is shown, the bars/beats row is compressed into the
+    // top band and the seconds row fills the remainder.
+    const bool showSecondsRow = secondsRulerVisible_ && displayMode == TimeDisplayMode::BarsBeats;
+    const int barsBandBottom = getBarsRulerBottom();
+    const int barsBandHeight = barsBandBottom - rulerTop;
+
     // Tick and label sizing from config
     int majorTickHeight = layout.rulerMajorTickHeight;
     int minorTickHeight = layout.rulerMinorTickHeight;
     int labelFontSize = layout.rulerLabelFontSize;
     int labelY = rulerTop + layout.rulerLabelTopMargin;
-    int labelHeight = timeRulerHeight - majorTickHeight - layout.rulerLabelTopMargin - 2;
-    int tickBottom = rulerBottom;
+    int labelHeight = barsBandHeight - majorTickHeight - layout.rulerLabelTopMargin - 2;
+    int tickBottom = barsBandBottom;
 
     // Cache loop region pixel bounds for tick coloring
     double loopStartBeats = loopInteraction_.getStartPosition();
@@ -1081,10 +1141,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 bool isOn16th = std::abs(pos16th - sixteenth) < eps && sixteenth > 0;
 
                 if (isBarStart && (bar - 1) % barLabelInterval == 0) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-                    g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
-                    g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
-                               juce::Justification::centredTop);
+                    drawBarNumberLabel(g, juce::String(bar), x, labelY, labelHeight);
                 } else if (isBeatStart && !isBarStart && beatPixelSpacing >= 50) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -1146,10 +1203,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 // Labels
                 if (isBarStart) {
                     if ((bar - 1) % barLabelInterval == 0) {
-                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-                        g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
-                        g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
-                                   juce::Justification::centredTop);
+                        drawBarNumberLabel(g, juce::String(bar), x, labelY, labelHeight);
                     }
                 } else {
                     if (pixelsPerBeat >= 50) {
@@ -1161,6 +1215,70 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 }
             }
         }
+    }
+
+    if (showSecondsRow)
+        drawSecondsRuler(g, barsBandBottom, rulerBottom);
+}
+
+void TimelineComponent::drawSecondsRuler(juce::Graphics& g, int bandTop, int bandBottom) {
+    auto& layout = LayoutConfig::getInstance();
+    const int minPixelSpacing = layout.minGridPixelSpacing;
+    const int bandHeight = bandBottom - bandTop;
+
+    // A faint divider between the bars/beats row and the seconds row.
+    auto visibleX = getVisibleXRange(g, getWidth());
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.drawLine(static_cast<float>(visibleX.getStart()), static_cast<float>(bandTop),
+               static_cast<float>(visibleX.getEnd()), static_cast<float>(bandTop), 1.0f);
+
+    // Pick a seconds interval that keeps labels ~minPixelSpacing apart.
+    const double intervals[] = {0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0};
+    double interval = intervals[0];
+    for (double candidate : intervals) {
+        interval = candidate;
+        if (secondsDurationToPixels(candidate) >= minPixelSpacing)
+            break;
+    }
+
+    auto clipBounds = g.getClipBounds();
+    const double pxPerSec = tempoBPM / 60.0 * pixelsPerBeat;
+    if (pxPerSec <= 0.0)
+        return;
+    double visStart =
+        juce::jmax(0.0, (clipBounds.getX() - LayoutConfig::TIMELINE_LEFT_PADDING) / pxPerSec);
+    double visEnd = juce::jmin(
+        timelineLength, (clipBounds.getRight() - LayoutConfig::TIMELINE_LEFT_PADDING) / pxPerSec);
+    double startTime = std::floor(visStart / interval) * interval;
+    double endTime = juce::jmin(timelineLength, visEnd + interval);
+
+    const int tickH = juce::jmin(layout.rulerMinorTickHeight, bandHeight / 3);
+    const int labelTop = bandTop + tickH + 1;
+    const int labelH = juce::jmax(8, bandBottom - labelTop);
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+
+    for (double t = startTime; t <= endTime + 1e-9; t += interval) {
+        const int x = beatsToPixel(secondsToBeats(t)) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        if (x < 0 || x >= getWidth())
+            continue;
+
+        // Ticks grow downward from the divider.
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.drawLine(static_cast<float>(x), static_cast<float>(bandTop), static_cast<float>(x),
+                   static_cast<float>(bandTop + tickH), 1.0f);
+
+        juce::String label;
+        if (t >= 60.0) {
+            const int mins = static_cast<int>(t) / 60;
+            const int secs = static_cast<int>(t) % 60;
+            label = juce::String::formatted("%d:%02d", mins, secs);
+        } else if (interval < 1.0) {
+            label = juce::String(t, 1) + "s";
+        } else {
+            label = juce::String(static_cast<int>(t)) + "s";
+        }
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.drawText(label, x - 35, labelTop, 70, labelH, juce::Justification::centredTop);
     }
 }
 
@@ -1338,7 +1456,7 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
 
     // Get layout configuration - loop strip sits above the tick area
     auto& layout = LayoutConfig::getInstance();
-    int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
+    int rulerBottom = getBarsRulerBottom();
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
     int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
@@ -1385,7 +1503,7 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
 
     // Get layout configuration — strip sits above the tick area
     auto& layout = LayoutConfig::getInstance();
-    int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
+    int rulerBottom = getBarsRulerBottom();
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
     int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
@@ -1480,7 +1598,7 @@ void TimelineComponent::initLoopInteraction() {
     };
     host.onRepaint = [this]() { repaint(); };
     host.maxPosition = getTimelineLengthBeats();
-    int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
+    int rulerBottom = getBarsRulerBottom();
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
     host.topBorderY = tickAreaTop - LayoutConfig::loopStripHeight;
     host.topBorderThreshold = LayoutConfig::loopStripHeight;

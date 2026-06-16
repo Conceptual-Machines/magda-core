@@ -45,6 +45,18 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
         }
     }
 
+    // Optional seconds ruler: splits the time ruler into bars/beats (top) and
+    // seconds (bottom) rows inside its existing height. Display only.
+    void setSecondsRulerVisible(bool visible) {
+        if (secondsRulerVisible_ != visible) {
+            secondsRulerVisible_ = visible;
+            repaint();
+        }
+    }
+    bool isSecondsRulerVisible() const {
+        return secondsRulerVisible_;
+    }
+
     // Timeline controls
     void setTimelineLength(double lengthInSeconds);
     void setPlayheadPosition(double position);
@@ -185,7 +197,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     bool isDraggingTimeSelection = false;
     double timeSelectionDragStartBeats = -1.0;  // Initial drag position for time selection
 
-    bool markerLaneVisible_ = true;  // Gates marker guide-line drawing
+    bool markerLaneVisible_ = true;     // Gates marker guide-line drawing
+    bool secondsRulerVisible_ = false;  // Splits the ruler into bars + seconds rows
 
     // Mouse interaction state
     bool isZooming = false;
@@ -214,6 +227,16 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void drawLoopMarkerFlags(juce::Graphics& g);  // Draws triangular flags (foreground)
     void drawTimeSelection(juce::Graphics& g);
     void drawMarkerGuides(juce::Graphics& g);
+    // Draws a bar-number label, masking the dashed marker guide behind it with
+    // a small padded background box so the line never slashes through the digits.
+    void drawBarNumberLabel(juce::Graphics& g, const juce::String& text, int x, int labelY,
+                            int labelHeight);
+    // Compact seconds row drawn in the lower band [bandTop, bandBottom] when the
+    // seconds ruler is enabled. Display only; positions derived from beats.
+    void drawSecondsRuler(juce::Graphics& g, int bandTop, int bandBottom);
+    // Bottom y of the bars/beats portion of the ruler. Equals the full ruler
+    // bottom normally; the split point when the seconds row is shown.
+    int getBarsRulerBottom() const;
 
     // Arrangement interaction helpers
     int findSectionAtPosition(int x, int y) const;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../../../core/Config.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -14,23 +15,7 @@ namespace {
 constexpr int kMarkerHitRadius = 8;
 constexpr int kFlagWidth = 12;
 constexpr int kLaneTopInset = 5;
-
-juce::Colour markerColourForMenuId(int menuId) {
-    switch (menuId) {
-        case 101:
-            return juce::Colour(0xFFFFC857);
-        case 102:
-            return juce::Colour(0xFF55C1FF);
-        case 103:
-            return juce::Colour(0xFFFF6B8A);
-        case 104:
-            return juce::Colour(0xFF6DDB8F);
-        case 105:
-            return juce::Colour(0xFFC792EA);
-        default:
-            return juce::Colour(0xFFFFC857);
-    }
-}
+constexpr int kColourMenuBase = 200;  // First menu id for palette colour entries
 
 }  // namespace
 
@@ -218,12 +203,37 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     menu.addItem(3, "Rename...");
     menu.addItem(4, "Edit Position...");
     menu.addSeparator();
+
+    // Colour submenu built from the shared track/clip palette (default +
+    // user-defined custom colours) rather than a hardcoded marker-only set.
+    auto makeChip = [](juce::Colour colour) {
+        juce::Image chip(juce::Image::ARGB, 14, 14, true);
+        juce::Graphics cg(chip);
+        cg.setColour(colour);
+        cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
+        auto drawable = std::make_unique<juce::DrawableImage>();
+        drawable->setImage(chip);
+        return drawable;
+    };
+
     juce::PopupMenu colourMenu;
-    colourMenu.addItem(101, "Gold");
-    colourMenu.addItem(102, "Blue");
-    colourMenu.addItem(103, "Red");
-    colourMenu.addItem(104, "Green");
-    colourMenu.addItem(105, "Purple");
+    for (size_t i = 0; i < Config::defaultColourPalette.size(); ++i) {
+        auto colour = juce::Colour(Config::defaultColourPalette[i].colour);
+        colourMenu.addItem(kColourMenuBase + static_cast<int>(i),
+                           Config::defaultColourPalette[i].name, true, false, makeChip(colour));
+    }
+
+    const auto customPalette = Config::getInstance().getTrackColourPalette();
+    const int customColourBase =
+        kColourMenuBase + static_cast<int>(Config::defaultColourPalette.size());
+    if (!customPalette.empty()) {
+        colourMenu.addSeparator();
+        for (size_t i = 0; i < customPalette.size(); ++i) {
+            auto colour = juce::Colour(customPalette[i].colour);
+            colourMenu.addItem(customColourBase + static_cast<int>(i),
+                               juce::String(customPalette[i].name), true, false, makeChip(colour));
+        }
+    }
     menu.addSubMenu("Colour", colourMenu);
     menu.addSeparator();
     menu.addItem(2, "Delete Marker");
@@ -231,8 +241,8 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     const auto snapshot = *marker;
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea({screenPosition.x, screenPosition.y, 1, 1}),
-        [safeThis = juce::Component::SafePointer<MarkerLaneComponent>(this), markerId,
-         snapshot](int result) {
+        [safeThis = juce::Component::SafePointer<MarkerLaneComponent>(this), markerId, snapshot,
+         customPalette](int result) {
             if (safeThis == nullptr || result == 0)
                 return;
             auto* tc = safeThis->timelineListener_.get();
@@ -245,9 +255,20 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
                 safeThis->showRenameMarkerDialog(markerId, snapshot);
             } else if (result == 4) {
                 safeThis->showEditPositionDialog(markerId, snapshot);
-            } else if (result >= 101 && result <= 105) {
-                tc->dispatch(UpdateMarkerEvent{markerId, snapshot.positionBeats, snapshot.name,
-                                               markerColourForMenuId(result)});
+            } else if (result >= kColourMenuBase) {
+                const int defaultCount = static_cast<int>(Config::defaultColourPalette.size());
+                const int idx = result - kColourMenuBase;
+                juce::Colour colour;
+                if (idx < defaultCount) {
+                    colour = juce::Colour(Config::getDefaultColour(idx));
+                } else {
+                    const size_t customIdx = static_cast<size_t>(idx - defaultCount);
+                    if (customIdx >= customPalette.size())
+                        return;
+                    colour = juce::Colour(customPalette[customIdx].colour);
+                }
+                tc->dispatch(
+                    UpdateMarkerEvent{markerId, snapshot.positionBeats, snapshot.name, colour});
             }
         });
 }
@@ -255,6 +276,18 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
 void MarkerLaneComponent::showLaneMenu(juce::Point<int> screenPosition) {
     auto* controller = timelineListener_.get();
     if (!controller)
+        return;
+
+    // The lane "Add Marker" adds at the playhead. Hide it when a marker already
+    // sits there, since the add would be a no-op (positions must be unique).
+    const auto& state = controller->getState();
+    const double playheadBeats = state.playhead.getCurrentPositionBeats();
+    constexpr double kSamePositionEpsilon = 1e-6;
+    const bool markerAtPlayhead =
+        std::any_of(state.markers.begin(), state.markers.end(), [&](const TimelineMarker& m) {
+            return std::abs(m.positionBeats - playheadBeats) <= kSamePositionEpsilon;
+        });
+    if (markerAtPlayhead)
         return;
 
     juce::PopupMenu menu;

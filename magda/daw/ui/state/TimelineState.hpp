@@ -451,7 +451,7 @@ struct TimelineMarker {
     juce::Colour colour;
 
     TimelineMarker(int markerId = 0, double beats = 0.0, const juce::String& markerName = "Marker",
-                   juce::Colour markerColour = juce::Colour(0xFFFFC857))
+                   juce::Colour markerColour = juce::Colour(0xFF9E9E9E))
         : id(markerId), positionBeats(beats), name(markerName), colour(markerColour) {
         positionTime = beats * 60.0 / DEFAULT_BPM;
     }

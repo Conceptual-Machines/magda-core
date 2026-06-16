@@ -199,6 +199,7 @@ class MainView : public juce::Component,
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
     bool markerLaneVisible_ = true;
+    bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
 
     struct ArrangementLayout {
@@ -335,6 +336,7 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> trackMediumButton;
     std::unique_ptr<SvgButton> trackLargeButton;
     std::unique_ptr<SvgButton> zoomLoopButton;
+    std::unique_ptr<SvgButton> secondsRulerToggleButton;
     std::unique_ptr<SvgButton> ioToggleButton;
     std::unique_ptr<SvgButton> hAxisIcon;
     std::unique_ptr<SvgButton> vAxisIcon;
