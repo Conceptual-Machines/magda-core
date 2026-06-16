@@ -1536,6 +1536,28 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     return needsGraphReallocation;
 }
 
+void ClipSynchronizer::applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip,
+                                               const ClipInfo& clip) {
+    if (!clip.isAudio())
+        return;
+
+    const auto& takes = clip.audio().takes;
+    if (takes.empty())
+        return;
+
+    // Already populated (e.g. a plain property re-sync on an existing clip).
+    // Re-adding would duplicate the take list.
+    if (teClip.hasAnyTakes())
+        return;
+
+    // The clip source was created pointing at the active take, so getCurrentTake
+    // resolves it by matching source references — no setCurrentTake needed (and
+    // setCurrentTake assumes project-item takes, which these direct file
+    // references are not).
+    for (const auto& take : takes)
+        teClip.addTake(juce::File(take.filePath));
+}
+
 bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     namespace te = tracktion;
 
@@ -1660,6 +1682,11 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         DBG("ClipSynchronizer: Created WaveAudioClip (engine ID: " << engineClipId << ")");
     }
+
+    // Re-attach loop-record takes (no-op for ordinary clips). Runs for both the
+    // create path (record / project load) and the update path that follows a
+    // create on a fresh recording.
+    applyModelTakesToTeClip(*audioClipPtr, *clip);
 
     // 3b. REVERSE — must be handled before position/loop/offset sync.
     // setIsReversed triggers updateReversedState() which:

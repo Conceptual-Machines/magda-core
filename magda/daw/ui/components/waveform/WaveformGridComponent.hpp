@@ -202,6 +202,9 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     std::function<void(int deltaX, int deltaY, int anchorX, const juce::ModifierKeys& mods)>
         onZoomDrag;
 
+    // Fired when the user clicks a take lane (multi-take clip) to make it active.
+    std::function<void(int takeIndex)> onTakeSelected;
+
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 
@@ -296,6 +299,11 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
                                  const WaveformLayout& layout);
     void paintWaveformThumbnail(juce::Graphics& g, const magda::ClipInfo& clip,
                                 const WaveformLayout& layout);
+    // Loop-record takes: stacked equal-height waveform lanes (active highlighted).
+    void paintTakeLanes(juce::Graphics& g, const magda::ClipInfo& clip,
+                        const WaveformLayout& layout);
+    // Returns the take lane index under y (multi-take clip), or -1.
+    int takeLaneAtY(int y, const WaveformLayout& layout, int takeCount) const;
     void paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
                                const WaveformLayout& layout);
     void paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip);

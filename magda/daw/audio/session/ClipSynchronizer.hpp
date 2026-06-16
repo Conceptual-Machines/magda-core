@@ -315,6 +315,18 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     bool syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
 
     /**
+     * @brief Re-attach loop-record takes onto a freshly built TE clip.
+     *
+     * The model owns the take list (one audio file per loop pass); the TE clip
+     * is rebuilt from scratch on record and on project load, so the takes must
+     * be re-added each time. Idempotent: a no-op if the model has no takes or
+     * the TE clip already carries them. The active take plays back because the
+     * clip's source already points at takes[currentTakeIndex]; the others are
+     * preserved as alternates.
+     */
+    void applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
+
+    /**
      * @brief Configure autoTempo on a session audio clip in TE
      * @param audioClip The TE WaveAudioClip to configure
      * @param clip The ClipInfo model data

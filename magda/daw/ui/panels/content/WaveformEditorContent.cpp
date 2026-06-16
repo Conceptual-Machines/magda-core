@@ -568,6 +568,20 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onSliceWarpMarkersToDrumGrid = [this]() { sliceWarpMarkersToDrumGrid(); };
     gridComponent_->onSliceAtGridToDrumGrid = [this]() { sliceAtGridToDrumGrid(); };
 
+    // Loop-record takes: a lane click fronts that take as the clip's source and
+    // re-syncs (ClipSynchronizer rebuilds the TE clip + re-attaches the takes).
+    gridComponent_->onTakeSelected = [this](int takeIndex) {
+        auto& cm = magda::ClipManager::getInstance();
+        auto* clip = cm.getClip(editingClipId_);
+        if (!clip || !clip->isAudio())
+            return;
+        if (takeIndex < 0 || takeIndex >= static_cast<int>(clip->audio().takes.size()))
+            return;
+        clip->audio().currentTakeIndex = takeIndex;
+        clip->audio().source.filePath = clip->audio().takes[takeIndex].filePath;
+        cm.forceNotifyClipPropertyChanged(editingClipId_);
+    };
+
     // Zoom drag on waveform body, resolved through GestureRouter.
     gridComponent_->onZoomDrag = [this](int deltaX, int deltaY, int anchorX,
                                         const juce::ModifierKeys& mods) {
