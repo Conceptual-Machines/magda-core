@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "../../project/ProjectInfo.hpp"
 #include "TimelineEvents.hpp"
 #include "TimelineState.hpp"
 #include "TransportStateListener.hpp"
@@ -26,6 +27,7 @@ enum class ChangeFlags : uint32_t {
     Sections = 1 << 7,
     Timeline = 1 << 8,
     Punch = 1 << 9,
+    Markers = 1 << 10,
     All = 0xFFFFFFFF
 };
 
@@ -143,7 +145,8 @@ class TimelineController {
      * and UI are always synced, even if values haven't changed in TC state.
      */
     void restoreProjectState(double tempo, int timeSigNum, int timeSigDen, bool loopEnabled,
-                             double loopStartBeats, double loopEndBeats);
+                             double loopStartBeats, double loopEndBeats,
+                             const std::vector<ProjectTimelineMarker>& markers = {});
 
     // Backward-compatible alias for ChangeFlags (now at namespace scope)
     using ChangeFlags = magda::ChangeFlags;
@@ -222,6 +225,15 @@ class TimelineController {
     ChangeFlags handleEvent(const ResizeSectionBeatsEvent& e);
     ChangeFlags handleEvent(const ResizeSectionEvent& e);
     ChangeFlags handleEvent(const SelectSectionEvent& e);
+
+    ChangeFlags handleEvent(const AddMarkerBeatsEvent& e);
+    ChangeFlags handleEvent(const AddMarkerEvent& e);
+    ChangeFlags handleEvent(const UpdateMarkerEvent& e);
+    ChangeFlags handleEvent(const RemoveMarkerEvent& e);
+    ChangeFlags handleEvent(const SelectMarkerEvent& e);
+    ChangeFlags handleEvent(const GoToMarkerEvent& e);
+    ChangeFlags handleEvent(const GoToNextMarkerEvent& e);
+    ChangeFlags handleEvent(const GoToPreviousMarkerEvent& e);
 
     ChangeFlags handleEvent(const ViewportResizedEvent& e);
     ChangeFlags handleEvent(const SetTimelineLengthBeatsEvent& e);

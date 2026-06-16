@@ -271,6 +271,7 @@ class TrackContentPanel : public juce::Component,
     double tempoBPM = DEFAULT_BPM;
     int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
     int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
+    std::vector<TimelineMarker> markers_;
 
     // Repaint only the visible viewport area (avoids invalidating 65000+ px at high zoom)
     void repaintVisible();
@@ -280,6 +281,7 @@ class TrackContentPanel : public juce::Component,
     void paintTrackLane(juce::Graphics& g, const TrackLane& lane, juce::Rectangle<int> area,
                         bool isSelected, int trackIndex);
     void paintEditCursor(juce::Graphics& g);
+    void paintMarkerGuides(juce::Graphics& g);
     void paintRecordingPreviews(juce::Graphics& g);
     juce::Rectangle<int> getTrackLaneArea(int trackIndex) const;
 

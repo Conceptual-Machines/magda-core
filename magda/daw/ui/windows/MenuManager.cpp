@@ -207,6 +207,12 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addSeparator();
             menu.addItem(GoToStart, tr("menu.transport.go_to_start"), true, false);
             menu.addItem(GoToEnd, tr("menu.transport.go_to_end"), true, false);
+            menu.addSeparator();
+            menu.addItem(AddMarker, "Add Marker" + keyHint(CommandIDs::addMarker), true, false);
+            menu.addItem(GoToPreviousMarker,
+                         "Previous Marker" + keyHint(CommandIDs::goToPreviousMarker), true, false);
+            menu.addItem(GoToNextMarker, "Next Marker" + keyHint(CommandIDs::goToNextMarker), true,
+                         false);
             break;
         }
 
@@ -469,6 +475,18 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case GoToEnd:
             if (callbacks_.onGoToEnd)
                 callbacks_.onGoToEnd();
+            break;
+        case AddMarker:
+            if (callbacks_.onAddMarker)
+                callbacks_.onAddMarker();
+            break;
+        case GoToPreviousMarker:
+            if (callbacks_.onGoToPreviousMarker)
+                callbacks_.onGoToPreviousMarker();
+            break;
+        case GoToNextMarker:
+            if (callbacks_.onGoToNextMarker)
+                callbacks_.onGoToNextMarker();
             break;
 
         // Track menu

@@ -156,6 +156,30 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         if (projectObj->hasProperty("keyQuality"))
             outData.info.keyQuality = projectObj->getProperty("keyQuality");
 
+        // Named timeline markers
+        outData.info.markers.clear();
+        auto markersVar = projectObj->getProperty("markers");
+        if (markersVar.isArray()) {
+            auto* markersArray = markersVar.getArray();
+            for (const auto& markerVar : *markersArray) {
+                if (!markerVar.isObject())
+                    continue;
+
+                auto* markerObj = markerVar.getDynamicObject();
+                ProjectTimelineMarker marker;
+                marker.id = static_cast<int>(markerObj->getProperty("id"));
+                marker.positionBeats = static_cast<double>(markerObj->getProperty("positionBeats"));
+                marker.name = markerObj->getProperty("name").toString();
+
+                auto colourString = markerObj->getProperty("colour").toString();
+                if (colourString.isNotEmpty())
+                    marker.colourArgb = stringToColour(colourString).getARGB();
+
+                if (marker.id > 0)
+                    outData.info.markers.push_back(marker);
+            }
+        }
+
         // Loop settings
         auto loopVar = projectObj->getProperty("loop");
         if (loopVar.isObject()) {
@@ -285,6 +309,20 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("keyRoot", info.keyRoot);
     projectObj->setProperty("keyQuality", info.keyQuality);
 
+    // Named timeline markers
+    if (!info.markers.empty()) {
+        juce::Array<juce::var> markersArray;
+        for (const auto& marker : info.markers) {
+            auto* markerObj = new juce::DynamicObject();
+            markerObj->setProperty("id", marker.id);
+            markerObj->setProperty("positionBeats", marker.positionBeats);
+            markerObj->setProperty("name", marker.name);
+            markerObj->setProperty("colour", colourToString(juce::Colour(marker.colourArgb)));
+            markersArray.add(juce::var(markerObj));
+        }
+        projectObj->setProperty("markers", juce::var(markersArray));
+    }
+
     // Loop settings
     auto* loopObj = new juce::DynamicObject();
     loopObj->setProperty("enabled", info.loopEnabled);
@@ -392,6 +430,30 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.keyRoot = projectObj->getProperty("keyRoot");
     if (projectObj->hasProperty("keyQuality"))
         outInfo.keyQuality = projectObj->getProperty("keyQuality");
+
+    // Named timeline markers
+    outInfo.markers.clear();
+    auto markersVar = projectObj->getProperty("markers");
+    if (markersVar.isArray()) {
+        auto* markersArray = markersVar.getArray();
+        for (const auto& markerVar : *markersArray) {
+            if (!markerVar.isObject())
+                continue;
+
+            auto* markerObj = markerVar.getDynamicObject();
+            ProjectTimelineMarker marker;
+            marker.id = static_cast<int>(markerObj->getProperty("id"));
+            marker.positionBeats = static_cast<double>(markerObj->getProperty("positionBeats"));
+            marker.name = markerObj->getProperty("name").toString();
+
+            auto colourString = markerObj->getProperty("colour").toString();
+            if (colourString.isNotEmpty())
+                marker.colourArgb = stringToColour(colourString).getARGB();
+
+            if (marker.id > 0)
+                outInfo.markers.push_back(marker);
+        }
+    }
 
     // Loop settings
     auto loopVar = projectObj->getProperty("loop");

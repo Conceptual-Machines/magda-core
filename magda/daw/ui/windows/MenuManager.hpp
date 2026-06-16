@@ -66,6 +66,9 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onToggleLoop;
         std::function<void()> onGoToStart;
         std::function<void()> onGoToEnd;
+        std::function<void()> onAddMarker;
+        std::function<void()> onGoToPreviousMarker;
+        std::function<void()> onGoToNextMarker;
 
         // Track menu
         std::function<void()> onAddTrack;
@@ -198,6 +201,9 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         ToggleLoop = 410,
         GoToStart = 420,
         GoToEnd,
+        AddMarker,
+        GoToPreviousMarker,
+        GoToNextMarker,
 
         // Track menu (500-599)
         AddTrack = 500,

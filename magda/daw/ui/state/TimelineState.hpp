@@ -441,6 +441,33 @@ struct ArrangementSection {
 };
 
 /**
+ * @brief Named timeline marker
+ */
+struct TimelineMarker {
+    int id = 0;
+    double positionTime = 0.0;   // seconds cache derived from beats
+    double positionBeats = 0.0;  // authoritative beat position
+    juce::String name;
+    juce::Colour colour;
+
+    TimelineMarker(int markerId = 0, double beats = 0.0, const juce::String& markerName = "Marker",
+                   juce::Colour markerColour = juce::Colour(0xFFFFC857))
+        : id(markerId), positionBeats(beats), name(markerName), colour(markerColour) {
+        positionTime = beats * 60.0 / DEFAULT_BPM;
+    }
+
+    void setFromBeats(double beats, double bpm) {
+        positionBeats = juce::jmax(0.0, beats);
+        positionTime = positionBeats * 60.0 / clampBpm(bpm);
+    }
+
+    void setFromSeconds(double seconds, double bpm) {
+        const double validBpm = clampBpm(bpm);
+        setFromBeats(seconds * validBpm / 60.0, validBpm);
+    }
+};
+
+/**
  * @brief Complete timeline data snapshot - the single source of truth
  *
  * This struct holds ALL timeline-related state. Components read this snapshot
@@ -472,6 +499,11 @@ struct TimelineState {
     // Arrangement sections
     std::vector<ArrangementSection> sections;
     int selectedSectionIndex = -1;
+
+    // Named timeline markers
+    std::vector<TimelineMarker> markers;
+    int selectedMarkerId = 0;
+    int nextMarkerId = 1;
 
     // Layout constant — use LayoutConfig::TIMELINE_LEFT_PADDING directly
 
