@@ -261,6 +261,8 @@ target_sources(magda_daw PRIVATE
     AudioBridge.cpp
     AudioBridgeMixer.cpp
     AudioBridgeMixer.hpp
+    CompService.cpp
+    CompService.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp

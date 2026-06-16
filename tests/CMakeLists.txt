@@ -215,6 +215,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSelection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorState.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipFadesSection.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/sections/ClipTakesSection.cpp
     ../magda/daw/ui/components/common/BarsBeatsTicksLabel.cpp
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp

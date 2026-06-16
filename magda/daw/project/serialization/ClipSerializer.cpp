@@ -183,6 +183,20 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             audioObj->setProperty("currentTakeIndex", clip.audio().currentTakeIndex);
         }
 
+        // Comp sections (the render itself is regenerated, not persisted).
+        if (!clip.audio().comp.empty()) {
+            juce::Array<juce::var> compArray;
+            for (const auto& sec : clip.audio().comp) {
+                auto* secObj = new juce::DynamicObject();
+                secObj->setProperty("startSeconds", sec.startSeconds);
+                secObj->setProperty("endSeconds", sec.endSeconds);
+                secObj->setProperty("takeIndex", sec.takeIndex);
+                compArray.add(juce::var(secObj));
+            }
+            audioObj->setProperty("comp", compArray);
+            audioObj->setProperty("compActive", clip.audio().compActive);
+        }
+
         obj->setProperty("audio", juce::var(audioObj));
     }
 
@@ -442,6 +456,22 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                 outClip.audio().currentTakeIndex =
                     juce::jlimit(0, static_cast<int>(outClip.audio().takes.size()) - 1,
                                  static_cast<int>(audioObj->getProperty("currentTakeIndex")));
+        }
+
+        // Comp sections
+        auto compVar = audioObj->getProperty("comp");
+        if (compVar.isArray()) {
+            for (const auto& secVar : *compVar.getArray()) {
+                if (auto* secObj = secVar.getDynamicObject()) {
+                    CompSection sec;
+                    sec.startSeconds = secObj->getProperty("startSeconds");
+                    sec.endSeconds = secObj->getProperty("endSeconds");
+                    sec.takeIndex = static_cast<int>(secObj->getProperty("takeIndex"));
+                    outClip.audio().comp.push_back(sec);
+                }
+            }
+            outClip.audio().compActive = !outClip.audio().comp.empty() &&
+                                         static_cast<bool>(audioObj->getProperty("compActive"));
         }
     } else if (outClip.isAudio() && legacyAudioSourceObj != nullptr) {
         outClip.audio().source.filePath = legacyAudioSourceObj->getProperty("filePath").toString();
