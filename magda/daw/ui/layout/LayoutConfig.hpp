@@ -21,12 +21,7 @@ struct LayoutConfig {
     int rulerMajorTickHeight = 14;              // Shortened to avoid overlap with loop markers
     int rulerMinorTickHeight = 6;               // Shortened to avoid overlap with loop markers
     static constexpr int loopStripHeight = 12;  // Loop region strip above tick area
-
-    // When the optional seconds ruler is shown, the time ruler is split in two
-    // stacked rows inside its existing height: bars/beats on top, seconds below.
-    // This is the fraction kept by the bars/beats row (seconds gets the rest):
-    // 0.7 = a 7/3 split, 0.6 = 6/4. Tweak freely.
-    float barsRulerHeightRatio = 0.7f;
+    int secondsRowHeight = 18;                  // Extra ruler height for the optional seconds row
     int rulerLabelFontSize = 11;
     int rulerLabelTopMargin = 10;  // Space between separator line and time labels
 

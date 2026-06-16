@@ -194,8 +194,15 @@ class MainView : public juce::Component,
     int getMarkerLaneHeight() const {
         return markerLaneVisible_ ? LayoutConfig::getInstance().markerLaneHeight : 0;
     }
+    int getSecondsRowHeight() const {
+        return secondsRulerVisible_ ? LayoutConfig::getInstance().secondsRowHeight : 0;
+    }
+    // Height of the ruler component itself (bars body + optional seconds row).
+    int getRulerHeight() const {
+        return LayoutConfig::getInstance().getTimelineBodyHeight() + getSecondsRowHeight();
+    }
     int getTimelineHeight() const {
-        return getMarkerLaneHeight() + LayoutConfig::getInstance().getTimelineBodyHeight();
+        return getMarkerLaneHeight() + getRulerHeight();
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
     bool markerLaneVisible_ = true;

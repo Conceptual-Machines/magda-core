@@ -231,12 +231,12 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // a small padded background box so the line never slashes through the digits.
     void drawBarNumberLabel(juce::Graphics& g, const juce::String& text, int x, int labelY,
                             int labelHeight);
-    // Compact seconds row drawn in the lower band [bandTop, bandBottom] when the
-    // seconds ruler is enabled. Display only; positions derived from beats.
-    void drawSecondsRuler(juce::Graphics& g, int bandTop, int bandBottom);
-    // Bottom y of the bars/beats portion of the ruler. Equals the full ruler
-    // bottom normally; the split point when the seconds row is shown.
-    int getBarsRulerBottom() const;
+    // Draws a bar's time (bars translated to seconds) in the dedicated seconds
+    // row above the bars ruler, at the same x as the bar number.
+    void drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text);
+    // Height of the seconds band above the bars ruler (0 when hidden). The bars
+    // ruler is shifted down by this amount.
+    int secondsRowOffset() const;
 
     // Arrangement interaction helpers
     int findSectionAtPosition(int x, int y) const;
