@@ -2642,8 +2642,10 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     } else {
         // Find which track was clicked
+        bool hitTrack = false;
         for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
             if (getTrackHeaderArea(i).contains(pos)) {
+                hitTrack = true;
                 TrackId trackId = trackHeaders[i]->trackId;
 
                 // Clicks bubbled up from child components (mute / solo /
@@ -2719,6 +2721,12 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                 break;
             }
         }
+
+        // Right-click on the empty area below the tracks: offer Add Track so a
+        // new track can be created without the gutter button (also the only
+        // path when the project has no tracks yet).
+        if (!hitTrack && event.mods.isPopupMenu())
+            showAddTrackContextMenu(pos);
     }
 }
 
@@ -2930,6 +2938,9 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         PreferDrumGrid = 9,
         GroupSelectedTracks = 10,
         UngroupTracks = 11,
+        AddAudioTrack = 12,
+        AddGroupTrack = 13,
+        AddAuxTrack = 14,
 
         MoveToGroupBase = 100,
         AddSendBase = 500,
@@ -2941,6 +2952,16 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Track type info
     menu.addSectionHeader(track->name);
     menu.addSeparator();
+
+    // Add Track (mirrors the Track menu / "New Track" command)
+    {
+        juce::PopupMenu addTrackMenu;
+        addTrackMenu.addItem(AddAudioTrack, "Audio Track");
+        addTrackMenu.addItem(AddGroupTrack, "Group Track");
+        addTrackMenu.addItem(AddAuxTrack, "Aux Track");
+        menu.addSubMenu("Add Track", addTrackMenu);
+        menu.addSeparator();
+    }
 
     // Group operations
     if (track->isGroup()) {
@@ -3121,6 +3142,15 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             } else if (result == DeleteTrack) {
                 auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == AddAudioTrack) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<CreateTrackCommand>(TrackType::Audio));
+            } else if (result == AddGroupTrack) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<CreateTrackCommand>(TrackType::Group));
+            } else if (result == AddAuxTrack) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<CreateTrackCommand>(TrackType::Aux));
             } else if (result == DuplicateWithContent) {
                 auto cmd = std::make_unique<DuplicateTrackCommand>(
                     trackId, /*duplicateContent=*/true, /*duplicateDevices=*/true);
@@ -3167,6 +3197,30 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                     std::make_unique<AddTrackToGroupCommand>(trackId, groupId));
             }
         });
+}
+
+void TrackHeadersPanel::showAddTrackContextMenu(juce::Point<int> position) {
+    enum AddId : int { AddAudio = 1, AddGroup = 2, AddAux = 3 };
+
+    juce::PopupMenu menu;
+    menu.addItem(AddAudio, "Add Audio Track");
+    menu.addItem(AddGroup, "Add Group Track");
+    menu.addItem(AddAux, "Add Aux Track");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                           localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
+                       [](int result) {
+                           juce::PopupMenu::dismissAllActiveMenus();
+                           TrackType type = TrackType::Audio;
+                           if (result == AddGroup)
+                               type = TrackType::Group;
+                           else if (result == AddAux)
+                               type = TrackType::Aux;
+                           else if (result != AddAudio)
+                               return;
+                           UndoManager::getInstance().executeCommand(
+                               std::make_unique<CreateTrackCommand>(type));
+                       });
 }
 
 void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {

@@ -370,8 +370,8 @@ void MainView::setupComponents() {
     zoomSelButton->onClick = [this]() { zoomToSelection(); };
     zoomSelButton->setTooltip("Zoom to selection");
 
-    setupCornerButton(markerLaneToggleButton, "MarkerLaneToggle", BinaryData::hide_svg,
-                      BinaryData::hide_svgSize);
+    setupCornerButton(markerLaneToggleButton, "MarkerLaneToggle", BinaryData::location_svg,
+                      BinaryData::location_svgSize);
     markerLaneToggleButton->setClickingTogglesState(true);
     markerLaneToggleButton->setToggleState(markerLaneVisible_, juce::dontSendNotification);
     markerLaneToggleButton->onClick = [this]() {
@@ -379,6 +379,7 @@ void MainView::setupComponents() {
         markerLaneToggleButton->setTooltip(markerLaneVisible_ ? "Hide marker lane"
                                                               : "Show marker lane");
         markerLaneViewport->setVisible(markerLaneVisible_);
+        timeline->setMarkerLaneVisible(markerLaneVisible_);
         resized();
     };
     markerLaneToggleButton->setTooltip("Hide marker lane");
@@ -392,13 +393,6 @@ void MainView::setupComponents() {
         }
     };
     zoomLoopButton->setTooltip("Zoom to loop region");
-
-    setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
-    addTrackButton->onClick = []() {
-        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
-        UndoManager::getInstance().executeCommand(std::move(cmd));
-    };
-    addTrackButton->setTooltip("Add track");
 
     // S = density_small.svg (4 rows = compact), M = density_medium.svg (3 rows), L =
     // density_large.svg (2 rows = spacious)
@@ -989,6 +983,11 @@ void MainView::resized() {
         const auto markerCornerArea = cornerArea.withHeight(markerLaneHeight);
         const auto timelineCornerArea = cornerArea.withTrimmedTop(markerLaneHeight);
         auto grid = timelineCornerArea.withTrimmedLeft(margin).withTrimmedRight(margin);
+        // Centre the two button rows vertically so the icons get even top/bottom
+        // padding inside the gutter rather than sitting flush against the marker
+        // lane separator above.
+        const int rowsBlockHeight = btnSize * 2 + rowGap;
+        grid.removeFromTop(juce::jmax(0, (grid.getHeight() - rowsBlockHeight) / 2));
         auto topRow = grid.removeFromTop(btnSize);
         grid.removeFromTop(rowGap);
         auto botRow = grid.removeFromTop(btnSize);
@@ -1018,15 +1017,15 @@ void MainView::resized() {
         btnSide.removeSpacing(topRow, gap);
         zoomSelButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
-        markerLaneToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
-        btnSide.removeSpacing(topRow, gap);
         zoomLoopButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
-        addTrackButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        markerLaneToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         axisSide.removeSpacing(topRow, gap);
         hAxisIcon->setBounds(axisSide.removeFrom(topRow, btnSize));
 
-        // Bottom row: action buttons on inner side, axis label on outer side
+        // Bottom row: action buttons on inner side, axis label on outer side.
+        // The two show/hide toggles (markers above, I/O below) sit at the end of
+        // each row, vertically aligned.
         trackSmallButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
         trackMediumButton->setBounds(btnSide.removeFrom(botRow, btnSize));

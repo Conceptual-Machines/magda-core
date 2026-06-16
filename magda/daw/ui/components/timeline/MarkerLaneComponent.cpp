@@ -96,6 +96,41 @@ void MarkerLaneComponent::paint(juce::Graphics& g) {
                              juce::Justification::centredLeft, 1);
         }
     }
+
+    // When the active section's marker has scrolled off the left edge, watermark
+    // its name pinned at the left so the current section stays identifiable.
+    int visibleLeft = 0;
+    int visibleRight = getWidth();
+    if (auto* vp = findParentComponentOfClass<juce::Viewport>()) {
+        visibleLeft = vp->getViewPositionX();
+        visibleRight = visibleLeft + vp->getViewWidth();
+    }
+
+    const TimelineMarker* active = nullptr;
+    for (const auto& marker : markers_) {
+        if (markerToX(marker) <= visibleLeft &&
+            (active == nullptr || marker.positionBeats > active->positionBeats)) {
+            active = &marker;
+        }
+    }
+
+    if (active != nullptr && markerToX(*active) < visibleLeft) {
+        // Stop the watermark short of the next marker's flag if one is near.
+        int rightLimit = visibleRight;
+        for (const auto& marker : markers_) {
+            const int mx = markerToX(marker);
+            if (mx > visibleLeft && mx < rightLimit)
+                rightLimit = mx;
+        }
+        const int labelX = visibleLeft + 8;
+        const int labelW = juce::jmin(180, rightLimit - labelX - 6);
+        if (labelW > 24) {
+            g.setFont(FontManager::getInstance().getUIFont(11.0f).italicised());
+            g.setColour(active->colour.withAlpha(0.5f));
+            g.drawFittedText(active->name, labelX, kLaneTopInset + 1, labelW, 16,
+                             juce::Justification::centredLeft, 1);
+        }
+    }
 }
 
 void MarkerLaneComponent::mouseUp(const juce::MouseEvent& event) {
@@ -180,8 +215,8 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
         return;
 
     juce::PopupMenu menu;
-    menu.addItem(1, "Jump to Marker");
     menu.addItem(3, "Rename...");
+    menu.addItem(4, "Edit Position...");
     menu.addSeparator();
     juce::PopupMenu colourMenu;
     colourMenu.addItem(101, "Gold");
@@ -204,12 +239,12 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
             if (!tc)
                 return;
 
-            if (result == 1) {
-                tc->dispatch(GoToMarkerEvent{markerId});
-            } else if (result == 2) {
+            if (result == 2) {
                 tc->dispatch(RemoveMarkerEvent{markerId});
             } else if (result == 3) {
                 safeThis->showRenameMarkerDialog(markerId, snapshot);
+            } else if (result == 4) {
+                safeThis->showEditPositionDialog(markerId, snapshot);
             } else if (result >= 101 && result <= 105) {
                 tc->dispatch(UpdateMarkerEvent{markerId, snapshot.positionBeats, snapshot.name,
                                                markerColourForMenuId(result)});
@@ -260,6 +295,51 @@ void MarkerLaneComponent::showRenameMarkerDialog(int markerId, const TimelineMar
             if (auto* tc = safeThis->timelineListener_.get()) {
                 tc->dispatch(
                     UpdateMarkerEvent{markerId, marker.positionBeats, name, marker.colour});
+            }
+        }));
+}
+
+void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMarker& marker) {
+    auto* controller = timelineListener_.get();
+    if (!controller)
+        return;
+
+    const int beatsPerBar = juce::jmax(1, controller->getState().tempo.timeSignatureNumerator);
+
+    // Present the position as 1-indexed bar.beat (beat 1.0 == the downbeat) to
+    // match the ruler and transport. positionBeats is 0-indexed absolute beats.
+    const int bar = static_cast<int>(marker.positionBeats / beatsPerBar) + 1;
+    const double beatInBar =
+        marker.positionBeats - static_cast<double>(bar - 1) * beatsPerBar + 1.0;
+
+    auto* alert =
+        new juce::AlertWindow("Edit Marker Position", "", juce::MessageBoxIconType::NoIcon);
+    alert->addTextEditor("bar", juce::String(bar), "Bar:");
+    alert->addTextEditor("beat", juce::String(beatInBar, 3), "Beat:");
+    alert->addButton("Set", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<MarkerLaneComponent> safeThis(this);
+    alert->enterModalState(
+        true, juce::ModalCallbackFunction::create([alert, safeThis, markerId, marker,
+                                                   beatsPerBar](int result) {
+            if (result != 1) {
+                delete alert;
+                return;
+            }
+
+            const int bar = juce::jmax(1, alert->getTextEditorContents("bar").getIntValue());
+            const double beat =
+                juce::jmax(1.0, alert->getTextEditorContents("beat").getDoubleValue());
+            delete alert;
+            if (safeThis == nullptr)
+                return;
+
+            const double positionBeats =
+                juce::jmax(0.0, static_cast<double>(bar - 1) * beatsPerBar + (beat - 1.0));
+            if (auto* tc = safeThis->timelineListener_.get()) {
+                tc->dispatch(
+                    UpdateMarkerEvent{markerId, positionBeats, marker.name, marker.colour});
             }
         }));
 }

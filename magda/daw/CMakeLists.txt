@@ -173,6 +173,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/horizontal.svg
     ../../assets/icons/toolbar/vertical.svg
     ../../assets/icons/toolbar/io_routing.svg
+    ../../assets/icons/toolbar/location.svg
     # Footer view mode icons
     ../../assets/icons/footer/icon-session-boldm.svg
     ../../assets/icons/footer/icon-arrangement-boldm.svg

@@ -340,6 +340,7 @@ class TrackHeadersPanel : public juce::Component,
 
     // Context menu
     void showContextMenu(int trackIndex, juce::Point<int> position);
+    void showAddTrackContextMenu(juce::Point<int> position);
     void showAutomationMenu(TrackId trackId, juce::Component* relativeTo);
     void handleCollapseToggle(TrackId trackId);
     void toggleRouting(int trackIndex, RoutingType type);

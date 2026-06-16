@@ -36,6 +36,15 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
         return timelineListener_.get();
     }
 
+    // Marker lane visibility — marker guide lines are only drawn when the
+    // marker lane is shown.
+    void setMarkerLaneVisible(bool visible) {
+        if (markerLaneVisible_ != visible) {
+            markerLaneVisible_ = visible;
+            repaint();
+        }
+    }
+
     // Timeline controls
     void setTimelineLength(double lengthInSeconds);
     void setPlayheadPosition(double position);
@@ -175,6 +184,8 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     double timeSelectionEndBeats = -1.0;
     bool isDraggingTimeSelection = false;
     double timeSelectionDragStartBeats = -1.0;  // Initial drag position for time selection
+
+    bool markerLaneVisible_ = true;  // Gates marker guide-line drawing
 
     // Mouse interaction state
     bool isZooming = false;

@@ -344,6 +344,26 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
         parent = parent->getParentComponent();
     }
 
+    // Right-click anywhere on the ruler: add a marker at the clicked position.
+    if (event.mods.isPopupMenu()) {
+        double beats = juce::jlimit(0.0, getTimelineLengthBeats(), pixelToBeats(event.x));
+        if (snapEnabled)
+            beats = snapBeatsToGrid(beats);
+
+        juce::PopupMenu menu;
+        menu.addItem(1, "Add Marker");
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetScreenArea(
+                {event.getScreenX(), event.getScreenY(), 1, 1}),
+            [safeThis = juce::Component::SafePointer<TimelineComponent>(this), beats](int result) {
+                if (safeThis == nullptr || result != 1)
+                    return;
+                if (auto* tc = safeThis->getController())
+                    tc->dispatch(AddMarkerBeatsEvent{beats});
+            });
+        return;
+    }
+
     // Store initial mouse position for drag detection
     mouseDownX = event.x;
     mouseDownY = event.y;
@@ -794,12 +814,19 @@ int TimelineComponent::secondsDurationToPixels(double durationSeconds) const {
 }
 
 void TimelineComponent::drawMarkerGuides(juce::Graphics& g) {
-    if (markers_.empty())
+    if (markers_.empty() || !markerLaneVisible_)
         return;
 
+    auto& layout = LayoutConfig::getInstance();
+    const int rulerTop = layout.chordRowHeight + layout.arrangementBarHeight;
+    const int rulerBottom = rulerTop + layout.timeRulerHeight;
+
     auto visibleX = getVisibleXRange(g, getWidth());
-    const float top = 0.0f;
-    const float bottom = static_cast<float>(getHeight());
+    // Start at the top of the time-ruler label row so the guide spans the
+    // labels and ticks but never bleeds up into the arrangement/section bar
+    // above it.
+    const float top = static_cast<float>(rulerTop);
+    const float bottom = static_cast<float>(rulerBottom);
     const int selectedMarkerId =
         timelineListener_.get() ? timelineListener_.get()->getState().selectedMarkerId : 0;
 
