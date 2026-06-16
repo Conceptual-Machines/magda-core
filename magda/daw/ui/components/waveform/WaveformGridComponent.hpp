@@ -202,6 +202,16 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     std::function<void(int deltaX, int deltaY, int anchorX, const juce::ModifierKeys& mods)>
         onZoomDrag;
 
+    // Fired when the user clicks a take lane (multi-take clip) to make it active.
+    std::function<void(int takeIndex)> onTakeSelected;
+
+    // Fired when the user swipes across a take lane to assign that range of the
+    // comp to that take (comping). Times are source-domain seconds from clip start.
+    std::function<void(double startSeconds, double endSeconds, int takeIndex)> onCompSectionSet;
+
+    // Fired from the context menu to drop the comp and revert to a single take.
+    std::function<void()> onCompClear;
+
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 
@@ -267,6 +277,13 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     double dragStartWarpTime_ = 0.0;
     double dragStartSourceTime_ = 0.0;
 
+    // Take-lane swipe (comping). A click selects the active take; a drag assigns
+    // that range of the comp to the swiped take.
+    int takeSwipeLane_ = -1;
+    int takeSwipeStartX_ = 0;
+    int takeSwipeCurrentX_ = 0;
+    bool takeSwiping_ = false;
+
     // Interaction tracking — when true, paint uses fast thumbnail path
     bool interactionActive_ = false;
     juce::int64 lastInteractionTime_ = 0;
@@ -296,6 +313,11 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
                                  const WaveformLayout& layout);
     void paintWaveformThumbnail(juce::Graphics& g, const magda::ClipInfo& clip,
                                 const WaveformLayout& layout);
+    // Loop-record takes: stacked equal-height waveform lanes (active highlighted).
+    void paintTakeLanes(juce::Graphics& g, const magda::ClipInfo& clip,
+                        const WaveformLayout& layout);
+    // Returns the take lane index under y (multi-take clip), or -1.
+    int takeLaneAtY(int y, const WaveformLayout& layout, int takeCount) const;
     void paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
                                const WaveformLayout& layout);
     void paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip);

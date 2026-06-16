@@ -2,6 +2,7 @@
 
 #include "../../../../../audio/AudioThumbnailManager.hpp"
 #include "../../../../components/common/ColourSwatch.hpp"
+#include "../../../../components/common/SvgButton.hpp"
 #include "../../../../state/TimelineController.hpp"
 #include "../../../../themes/DarkTheme.hpp"
 #include "../../../../themes/FontManager.hpp"
@@ -11,6 +12,7 @@
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
 #include "audio/AudioBridge.hpp"
+#include "audio/CompService.hpp"
 #include "core/ClipBatchEdit.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
@@ -1816,6 +1818,9 @@ void ClipInspector::initPlaybackSection() {
 void ClipInspector::initFadesSection() {
     fadesSection_ = std::make_unique<ClipFadesSection>();
     clipPropsContainer_.addChildComponent(*fadesSection_);
+
+    takesSection_ = std::make_unique<ClipTakesSection>();
+    clipPropsContainer_.addChildComponent(*takesSection_);
 }
 
 // ========================================================================

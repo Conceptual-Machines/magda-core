@@ -75,7 +75,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
-        play, stop, record, goToStart, goToEnd,
+        play, stop, record, goToStart, goToEnd, addMarker, goToPreviousMarker, goToNextMarker,
         // Track
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
@@ -223,6 +223,23 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             break;
         case goToEnd:
             result.setInfo("Go to End", "Move playhead to end", "Transport", 0);
+            break;
+        case addMarker:
+            result.setInfo("Add Marker", "Add a marker at the current playhead position",
+                           "Transport", 0);
+            result.addDefaultKeypress('m', juce::ModifierKeys::commandModifier);
+            break;
+        case goToPreviousMarker:
+            result.setInfo("Previous Marker", "Jump to the previous timeline marker", "Transport",
+                           0);
+            result.addDefaultKeypress(juce::KeyPress::leftKey, juce::ModifierKeys::commandModifier |
+                                                                   juce::ModifierKeys::altModifier);
+            break;
+        case goToNextMarker:
+            result.setInfo("Next Marker", "Jump to the next timeline marker", "Transport", 0);
+            result.addDefaultKeypress(juce::KeyPress::rightKey,
+                                      juce::ModifierKeys::commandModifier |
+                                          juce::ModifierKeys::altModifier);
             break;
 
         // Track
@@ -1161,6 +1178,25 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 timelineController.dispatch(
                     SetEditPositionBeatsEvent{timelineController.getState().timelineLengthBeats});
             }
+            return true;
+
+        case addMarker:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& state = timelineController.getState();
+                timelineController.dispatch(
+                    AddMarkerBeatsEvent{state.playhead.getCurrentPositionBeats()});
+            }
+            return true;
+
+        case goToPreviousMarker:
+            if (mainView)
+                mainView->getTimelineController().dispatch(GoToPreviousMarkerEvent{});
+            return true;
+
+        case goToNextMarker:
+            if (mainView)
+                mainView->getTimelineController().dispatch(GoToNextMarkerEvent{});
             return true;
 
         case escapeAction: {

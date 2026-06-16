@@ -152,6 +152,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     double tempoBPM = DEFAULT_BPM;
     int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
     int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
+    std::vector<TimelineMarker> markers_;
 
     // Arrangement sections
     std::vector<std::unique_ptr<ArrangementSection>> sections;
@@ -201,6 +202,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void drawLoopMarkers(juce::Graphics& g);      // Draws shaded region (background)
     void drawLoopMarkerFlags(juce::Graphics& g);  // Draws triangular flags (foreground)
     void drawTimeSelection(juce::Graphics& g);
+    void drawMarkerGuides(juce::Graphics& g);
 
     // Arrangement interaction helpers
     int findSectionAtPosition(int x, int y) const;

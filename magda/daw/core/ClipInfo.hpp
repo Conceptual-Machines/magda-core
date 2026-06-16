@@ -131,9 +131,46 @@ struct AudioSourceInterpretation {
     std::string keyScale;
 };
 
+/**
+ * @brief One loop-record take: a single recorded pass over the loop range.
+ *
+ * Loop recording captures each pass as its own audio file (Tracktion splits the
+ * continuous recording at the loop boundaries). filePath is the on-disk source
+ * for that pass; durationSeconds is its audio length.
+ */
+struct AudioTake {
+    juce::String filePath;
+    double durationSeconds = 0.0;
+};
+
+/**
+ * @brief One comp section: the take that plays over [startSeconds, endSeconds).
+ *
+ * Comp sections tile the comp timeline (source-domain seconds, take 0 at t=0).
+ * They are kept sorted and contiguous; a comp is the ordered list of sections.
+ * takeIndex points into AudioClipModel::takes.
+ */
+struct CompSection {
+    double startSeconds = 0.0;
+    double endSeconds = 0.0;
+    int takeIndex = 0;
+};
+
 struct AudioClipModel {
     AudioSourceFacts source;
     AudioSourceInterpretation interpretation;
+
+    // Loop-record takes, one per pass. Empty for ordinary single-source clips.
+    // When non-empty, source.filePath mirrors takes[currentTakeIndex].filePath
+    // (the active take that plays back).
+    std::vector<AudioTake> takes;
+    int currentTakeIndex = 0;
+
+    // Comping. When compActive is true the clip plays a rendered composite
+    // (source.filePath points at the comp render) assembled from `comp`, which
+    // assigns a take to each region of the comp timeline. Empty comp = no comp.
+    std::vector<CompSection> comp;
+    bool compActive = false;
 };
 
 struct MidiClipModel {
@@ -191,6 +228,11 @@ struct ClipInfo {
     void setMidiContent() {
         content = MidiClipModel{};
     }
+
+    // Transient UI: whether the loop-record take lanes are expanded in the
+    // waveform editor (collapsed = the normal single active-take waveform).
+    // Not serialized.
+    bool takesExpanded = true;
 
     // Derived timeline seconds cache. Kept only for bridge/UI call sites that
     // have not moved to beats yet; do not treat these as model authority.

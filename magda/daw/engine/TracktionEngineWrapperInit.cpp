@@ -370,12 +370,24 @@ void TracktionEngineWrapper::createEditAndBridges() {
 
         // Capture zoom/scroll state
         if (auto* tc = TimelineController::getCurrent()) {
-            auto& zoom = tc->getState().zoom;
+            const auto& timelineState = tc->getState();
+            auto& zoom = timelineState.zoom;
             auto& proj = ProjectManager::getInstance().getMutableProjectInfo();
             proj.horizontalZoom = zoom.horizontalZoom;
             proj.verticalZoom = zoom.verticalZoom;
             proj.scrollX = zoom.scrollX;
             proj.scrollY = zoom.scrollY;
+
+            proj.markers.clear();
+            proj.markers.reserve(timelineState.markers.size());
+            for (const auto& marker : timelineState.markers) {
+                ProjectTimelineMarker projectMarker;
+                projectMarker.id = marker.id;
+                projectMarker.positionBeats = marker.positionBeats;
+                projectMarker.name = marker.name;
+                projectMarker.colourArgb = marker.colour.getARGB();
+                proj.markers.push_back(projectMarker);
+            }
         }
 
         // Capture active view mode

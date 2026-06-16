@@ -262,6 +262,7 @@ void TrackContentPanel::setController(TimelineController* controller) {
         tempoBPM = state.tempo.bpm;
         timeSignatureNumerator = state.tempo.timeSignatureNumerator;
         timeSignatureDenominator = state.tempo.timeSignatureDenominator;
+        markers_ = state.markers;
 
         repaintVisible();
     }
@@ -285,6 +286,10 @@ void TrackContentPanel::timelineStateChanged(const TimelineState& state, ChangeF
     }
     if (displayMode != state.display.timeDisplayMode) {
         displayMode = state.display.timeDisplayMode;
+        needsRepaint = true;
+    }
+    if (hasFlag(changes, ChangeFlags::Markers)) {
+        markers_ = state.markers;
         needsRepaint = true;
     }
 
@@ -405,6 +410,9 @@ void TrackContentPanel::paint(juce::Graphics& g) {
 }
 
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
+    // Draw marker guide lines above clips so cue points remain visible in the arrangement.
+    paintMarkerGuides(g);
+
     // Draw recording previews on top of any existing clip components
     paintRecordingPreviews(g);
 
@@ -926,6 +934,35 @@ void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
     // Draw main white cursor line
     g.setColour(juce::Colours::white);
     g.drawLine(x, top, x, bottom, 2.0f);
+}
+
+void TrackContentPanel::paintMarkerGuides(juce::Graphics& g) {
+    if (markers_.empty())
+        return;
+
+    const auto clip = g.getClipBounds();
+    const int top = clip.getY();
+    const int bottom = clip.getBottom();
+    if (bottom <= top)
+        return;
+
+    const int selectedMarkerId =
+        timelineController ? timelineController->getState().selectedMarkerId : 0;
+
+    for (const auto& marker : markers_) {
+        const int x = beatsToPixel(marker.positionBeats);
+        if (x < clip.getX() - 2 || x > clip.getRight() + 2)
+            continue;
+
+        const bool selected = marker.id == selectedMarkerId;
+        g.setColour(juce::Colours::black.withAlpha(selected ? 0.35f : 0.22f));
+        g.drawLine(static_cast<float>(x + 1), static_cast<float>(top), static_cast<float>(x + 1),
+                   static_cast<float>(bottom), 1.0f);
+
+        g.setColour(marker.colour.withAlpha(selected ? 0.58f : 0.34f));
+        g.drawLine(static_cast<float>(x), static_cast<float>(top), static_cast<float>(x),
+                   static_cast<float>(bottom), selected ? 1.6f : 1.0f);
+    }
 }
 
 juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {

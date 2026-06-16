@@ -93,6 +93,11 @@ class WaveformEditorContent : public PanelContent,
     }
     void setSnapEnabledFromUI(bool enabled);
 
+    // Loop-record take lanes (header TAKES toggle).
+    bool editingClipHasMultipleTakes() const;
+    bool areTakesExpanded() const;
+    void setTakesExpanded(bool expanded);
+
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
 

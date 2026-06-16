@@ -198,6 +198,14 @@ void MainView::syncStateFromController() {
 }
 
 void MainView::setupComponents() {
+    // Create marker lane viewport
+    markerLaneViewport = std::make_unique<juce::Viewport>();
+    markerLane = std::make_unique<MarkerLaneComponent>();
+    markerLane->setController(timelineController.get());
+    markerLaneViewport->setViewedComponent(markerLane.get(), false);
+    markerLaneViewport->setScrollBarsShown(false, false);
+    addAndMakeVisible(*markerLaneViewport);
+
     // Create timeline viewport
     timelineViewport = std::make_unique<juce::Viewport>();
     timeline = std::make_unique<TimelineComponent>();
@@ -361,6 +369,19 @@ void MainView::setupComponents() {
                       BinaryData::fit_width_svgSize);
     zoomSelButton->onClick = [this]() { zoomToSelection(); };
     zoomSelButton->setTooltip("Zoom to selection");
+
+    setupCornerButton(markerLaneToggleButton, "MarkerLaneToggle", BinaryData::hide_svg,
+                      BinaryData::hide_svgSize);
+    markerLaneToggleButton->setClickingTogglesState(true);
+    markerLaneToggleButton->setToggleState(markerLaneVisible_, juce::dontSendNotification);
+    markerLaneToggleButton->onClick = [this]() {
+        markerLaneVisible_ = markerLaneToggleButton->getToggleState();
+        markerLaneToggleButton->setTooltip(markerLaneVisible_ ? "Hide marker lane"
+                                                              : "Show marker lane");
+        markerLaneViewport->setVisible(markerLaneVisible_);
+        resized();
+    };
+    markerLaneToggleButton->setTooltip("Hide marker lane");
 
     setupCornerButton(zoomLoopButton, "ZoomLoop", BinaryData::fit_loop_svg,
                       BinaryData::fit_loop_svgSize);
@@ -608,9 +629,12 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         horizontalZoom = state.zoom.horizontalZoom;
 
         timeline->setZoom(horizontalZoom);
+        if (markerLane)
+            markerLane->repaint();
         trackContentPanel->setZoom(horizontalZoom);
         trackContentPanel->setVerticalZoom(verticalZoom);
 
+        markerLaneViewport->setViewPosition(state.zoom.scrollX, 0);
         timelineViewport->setViewPosition(state.zoom.scrollX, 0);
         // Preserve current vertical scroll — state.zoom.scrollY may be stale
         // since vertical scrolling doesn't always dispatch to the controller
@@ -789,7 +813,11 @@ void MainView::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getBorderColour());
     g.fillRect(0, 0, getWidth(), 1);
 
-    // Draw corner toolbar separator line between zoom and density rows
+    // Draw corner toolbar separator lines
+    if (!markerLaneSeparatorLine.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(markerLaneSeparatorLine);
+    }
     if (!cornerSeparatorLine.isEmpty()) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(cornerSeparatorLine);
@@ -901,10 +929,12 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     if (result.verticalScrollBarArea.getWidth() > 2)
         result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
 
-    result.timelineArea = bounds.removeFromTop(getTimelineHeight());
-    result.cornerArea = headerColumn.removeFrom(result.timelineArea, trackHeaderWidth);
+    auto timelineStripArea = bounds.removeFromTop(getTimelineHeight());
+    result.cornerArea = headerColumn.removeFrom(timelineStripArea, trackHeaderWidth);
 
-    headerColumn.removeSpacing(result.timelineArea, layout.componentSpacing);
+    headerColumn.removeSpacing(timelineStripArea, layout.componentSpacing);
+    result.markerLaneArea = timelineStripArea.removeFromTop(getMarkerLaneHeight());
+    result.timelineArea = timelineStripArea;
     result.trackHeadersArea = headerColumn.removeFrom(bounds, trackHeaderWidth);
     headerColumn.removeSpacing(bounds, layout.componentSpacing);
 
@@ -950,31 +980,35 @@ void MainView::resized() {
     }
 
     {
-        auto cornerArea = arrangementLayout.cornerArea;
-        int btnSize = 24;
-        int gap = 6;
-        int sepGap = 8;
-        int margin = 8;
-        int gridH = btnSize * 2 + sepGap;
-        auto grid =
-            cornerArea.withTrimmedLeft(margin).withTrimmedRight(margin).withSizeKeepingCentre(
-                cornerArea.getWidth() - margin * 2, gridH);
-
+        const auto cornerArea = arrangementLayout.cornerArea;
+        const int btnSize = 24;
+        const int gap = 6;
+        const int rowGap = 8;
+        const int margin = 8;
+        const int markerLaneHeight = getMarkerLaneHeight();
+        const auto markerCornerArea = cornerArea.withHeight(markerLaneHeight);
+        const auto timelineCornerArea = cornerArea.withTrimmedTop(markerLaneHeight);
+        auto grid = timelineCornerArea.withTrimmedLeft(margin).withTrimmedRight(margin);
         auto topRow = grid.removeFromTop(btnSize);
-        grid.removeFromTop(sepGap);
+        grid.removeFromTop(rowGap);
         auto botRow = grid.removeFromTop(btnSize);
 
         // Invalidate old separator line position before updating
+        if (!markerLaneSeparatorLine.isEmpty())
+            repaint(markerLaneSeparatorLine.expanded(1));
         if (!cornerSeparatorLine.isEmpty())
             repaint(cornerSeparatorLine.expanded(1));
 
         // Store separator line position (drawn in paint())
         // Span the full header column width (corner area + componentSpacing gap)
-        int sepY = topRow.getBottom() + sepGap / 2;
         int lineX = arrangementLayout.swapped ? cornerArea.getX() - layout.componentSpacing
                                               : cornerArea.getX();
         int lineW = cornerArea.getWidth() + layout.componentSpacing;
-        cornerSeparatorLine = juce::Rectangle<int>(lineX, sepY, lineW, 1);
+        markerLaneSeparatorLine =
+            markerLaneVisible_ ? juce::Rectangle<int>(lineX, markerCornerArea.getBottom(), lineW, 1)
+                               : juce::Rectangle<int>();
+        cornerSeparatorLine =
+            juce::Rectangle<int>(lineX, topRow.getBottom() + rowGap / 2, lineW, 1);
 
         // Top row: action buttons on inner side, axis label on outer side
         SideColumn btnSide(!arrangementLayout.swapped);
@@ -983,6 +1017,8 @@ void MainView::resized() {
         zoomFitButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
         zoomSelButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        btnSide.removeSpacing(topRow, gap);
+        markerLaneToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
         zoomLoopButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
@@ -1002,6 +1038,8 @@ void MainView::resized() {
         vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
     }
 
+    markerLaneViewport->setVisible(markerLaneVisible_);
+    markerLaneViewport->setBounds(arrangementLayout.markerLaneArea);
     timelineViewport->setBounds(arrangementLayout.timelineArea);
     trackHeadersViewport->setBounds(arrangementLayout.trackHeadersArea);
     trackHeadersPanel->refreshHeaderSideLayout();
@@ -1071,6 +1109,7 @@ void MainView::setVerticalZoom(double zoomFactor) {
 void MainView::scrollToPosition(double timePosition) {
     const auto& state = timelineController->getState();
     auto pixelPosition = state.timeDurationToPixels(timePosition);
+    markerLaneViewport->setViewPosition(pixelPosition, 0);
     timelineViewport->setViewPosition(pixelPosition, 0);
     trackContentViewport->setViewPosition(pixelPosition, trackContentViewport->getViewPositionY());
 }
@@ -1248,7 +1287,8 @@ void MainView::updateContentSizes() {
     trackContentPanel->setMinHeight(viewportFloor);
 
     // Update timeline size with enhanced content width
-    timeline->setSize(contentWidth, getTimelineHeight());
+    markerLane->setSize(contentWidth, getMarkerLaneHeight());
+    timeline->setSize(contentWidth, LayoutConfig::getInstance().getTimelineBodyHeight());
 
     // Update track content and headers with same height
     trackContentPanel->setSize(contentWidth, contentHeight);
@@ -1272,6 +1312,7 @@ void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double new
         timelineController->dispatch(SetScrollPositionEvent{scrollX, scrollY});
 
         // Sync timeline viewport
+        markerLaneViewport->setViewPosition(scrollX, 0);
         timelineViewport->setViewPosition(scrollX, 0);
 
         // Update zoom scroll bar

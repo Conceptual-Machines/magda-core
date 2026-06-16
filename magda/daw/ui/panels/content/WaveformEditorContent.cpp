@@ -10,6 +10,7 @@
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/CompService.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipPropertyCommands.hpp"
@@ -567,6 +568,31 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onSliceAtGrid = [this]() { sliceAtGrid(); };
     gridComponent_->onSliceWarpMarkersToDrumGrid = [this]() { sliceWarpMarkersToDrumGrid(); };
     gridComponent_->onSliceAtGridToDrumGrid = [this]() { sliceAtGridToDrumGrid(); };
+
+    // Loop-record takes: a lane click fronts that take as the clip's source and
+    // re-syncs (ClipSynchronizer rebuilds the TE clip + re-attaches the takes).
+    gridComponent_->onTakeSelected = [this](int takeIndex) {
+        auto& cm = magda::ClipManager::getInstance();
+        auto* clip = cm.getClip(editingClipId_);
+        if (!clip || !clip->isAudio())
+            return;
+        if (takeIndex < 0 || takeIndex >= static_cast<int>(clip->audio().takes.size()))
+            return;
+        clip->audio().currentTakeIndex = takeIndex;
+        clip->audio().source.filePath = clip->audio().takes[takeIndex].filePath;
+        cm.forceNotifyClipPropertyChanged(editingClipId_);
+    };
+
+    // Comping: a swipe across a take lane assigns that range of the comp to the
+    // swiped take. CompService edits the comp section list and re-renders.
+    gridComponent_->onCompSectionSet = [this](double startSeconds, double endSeconds,
+                                              int takeIndex) {
+        magda::CompService::getInstance().setSection(editingClipId_, startSeconds, endSeconds,
+                                                     takeIndex);
+    };
+    gridComponent_->onCompClear = [this]() {
+        magda::CompService::getInstance().clearComp(editingClipId_);
+    };
 
     // Zoom drag on waveform body, resolved through GestureRouter.
     gridComponent_->onZoomDrag = [this](int deltaX, int deltaY, int anchorX,
@@ -1152,6 +1178,25 @@ void WaveformEditorContent::setSnapEnabledFromUI(bool enabled) {
         gridComponent_->setSnapEnabled(enabled);
     if (timeRuler_)
         timeRuler_->setSnapEnabled(enabled);
+}
+
+bool WaveformEditorContent::editingClipHasMultipleTakes() const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    return clip && clip->isAudio() && clip->audio().takes.size() > 1;
+}
+
+bool WaveformEditorContent::areTakesExpanded() const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    return clip && clip->isAudio() && clip->takesExpanded;
+}
+
+void WaveformEditorContent::setTakesExpanded(bool expanded) {
+    auto& cm = magda::ClipManager::getInstance();
+    auto* clip = cm.getClip(editingClipId_);
+    if (!clip || !clip->isAudio())
+        return;
+    clip->takesExpanded = expanded;
+    cm.forceNotifyClipPropertyChanged(editingClipId_);
 }
 
 // ============================================================================

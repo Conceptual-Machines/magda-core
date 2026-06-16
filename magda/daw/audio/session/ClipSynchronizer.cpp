@@ -1536,6 +1536,40 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     return needsGraphReallocation;
 }
 
+void ClipSynchronizer::applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip,
+                                               const ClipInfo& clip) {
+    if (!clip.isAudio())
+        return;
+
+    const auto& takes = clip.audio().takes;
+    if (takes.empty())
+        return;
+
+    // Already populated (e.g. a plain property re-sync on an existing clip).
+    // Re-adding would duplicate the take list.
+    if (teClip.hasAnyTakes())
+        return;
+
+    // Build the takes tree with absolute direct file references. We deliberately
+    // do NOT use WaveAudioClip::addTake(File): that writes a relative path
+    // (SourceFileReference::setToDirectFileReference(f, /*useRelativePath*/ true)),
+    // which asserts in findPathFromFile when the edit has no on-disk edit file -
+    // MAGDA never saves a .tracktionedit. Absolute references avoid the assert and
+    // resolve reliably. The clip source already points at the active take, so
+    // getCurrentTake resolves by matching source references (no setCurrentTake,
+    // which assumes project-item takes these direct file references are not).
+    namespace te = tracktion;
+    auto takesTree = teClip.state.getOrCreateChildWithName(te::IDs::TAKES, nullptr);
+    for (const auto& take : takes) {
+        juce::ValueTree takeTree(te::IDs::TAKE);
+        {
+            te::SourceFileReference sfr(teClip.edit, takeTree, te::IDs::source);
+            sfr.setToDirectFileReference(juce::File(take.filePath), /*useRelativePath*/ false);
+        }
+        takesTree.addChild(takeTree, -1, nullptr);
+    }
+}
+
 bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     namespace te = tracktion;
 
@@ -1660,6 +1694,11 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         DBG("ClipSynchronizer: Created WaveAudioClip (engine ID: " << engineClipId << ")");
     }
+
+    // Re-attach loop-record takes (no-op for ordinary clips). Runs for both the
+    // create path (record / project load) and the update path that follows a
+    // create on a fresh recording.
+    applyModelTakesToTeClip(*audioClipPtr, *clip);
 
     // 3b. REVERSE — must be handled before position/loop/offset sync.
     // setIsReversed triggers updateReversedState() which:

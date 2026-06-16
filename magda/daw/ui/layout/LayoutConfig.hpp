@@ -12,9 +12,10 @@ namespace magda {
  */
 struct LayoutConfig {
     // Timeline area heights
-    int chordRowHeight = 0;         // Chord row disabled (now in piano roll only)
-    int arrangementBarHeight = 18;  // Reduced to give more space for time labels
-    int timeRulerHeight = 52;       // Increased to accommodate labels
+    int chordRowHeight = 0;        // Chord row disabled (now in piano roll only)
+    int markerLaneHeight = 24;     // Named timeline markers above the existing ruler
+    int arrangementBarHeight = 0;  // Arrangement sections disabled in the compact ruler
+    int timeRulerHeight = 60;      // Full compact ruler height
 
     // Time ruler details
     int rulerMajorTickHeight = 14;              // Shortened to avoid overlap with loop markers
@@ -40,6 +41,10 @@ struct LayoutConfig {
 
     // Computed total timeline height
     int getTimelineHeight() const {
+        return markerLaneHeight + getTimelineBodyHeight();
+    }
+
+    int getTimelineBodyHeight() const {
         return chordRowHeight + arrangementBarHeight + timeRulerHeight;
     }
 
@@ -98,6 +103,7 @@ struct LayoutConfig {
         juce::String info;
         info << "=== LayoutConfig ===\n";
         info << "Timeline Total: " << getTimelineHeight() << "px\n";
+        info << "  markerLaneHeight: " << markerLaneHeight << "\n";
         info << "  chordRowHeight: " << chordRowHeight << "\n";
         info << "  arrangementBarHeight: " << arrangementBarHeight << "\n";
         info << "  timeRulerHeight: " << timeRulerHeight << "\n";

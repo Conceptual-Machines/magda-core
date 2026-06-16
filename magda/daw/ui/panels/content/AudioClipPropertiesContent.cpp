@@ -479,6 +479,10 @@ void AudioClipPropertiesContent::createControls() {
         magda::ClipManager::getInstance().setAnalogPitch(clipId_, !clip->analogPitch);
     };
 
+    // ===================== TAKES SECTION =====================
+    takesSection_ = std::make_unique<ClipTakesSection>();
+    addAndMakeVisible(*takesSection_);
+
     // ===================== FADES SECTION =====================
     fadesSection_ = std::make_unique<ClipFadesSection>();
     addAndMakeVisible(*fadesSection_);
@@ -606,6 +610,7 @@ void AudioClipPropertiesContent::updateFromClip() {
     }
 
     fadesSection_->setClip(clipId_);
+    takesSection_->setClip(clipId_);
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && clip->autoTempo;
@@ -702,6 +707,15 @@ void AudioClipPropertiesContent::resized() {
         autoTempoToggle_->setBounds(row.removeFromLeft(toggleW));
         row.removeFromLeft(gap);
         reverseToggle_->setBounds(row.removeFromLeft(toggleW));
+    }
+
+    // Takes section (shared component; only renders for multi-take audio clips).
+    if (takesSection_) {
+        int ph = takesSection_->getPreferredHeight();
+        if (ph > 0) {
+            addSeparator(leftCol);
+            takesSection_->setBounds(addRow(leftCol, ph));
+        }
     }
 
     addSeparator(leftCol);

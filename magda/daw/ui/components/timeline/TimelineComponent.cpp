@@ -72,6 +72,7 @@ void TimelineComponent::setController(TimelineController* controller) {
         snapEnabled = state.display.snapEnabled;
         arrangementLocked = state.display.arrangementLocked;
         gridQuantize = state.display.gridQuantize;
+        markers_ = state.markers;
 
         // Sync loop region
         if (state.loop.isValid()) {
@@ -146,6 +147,10 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
         arrangementLocked = state.display.arrangementLocked;
         needsRepaint = true;
     }
+    if (hasFlag(changes, ChangeFlags::Markers)) {
+        markers_ = state.markers;
+        needsRepaint = true;
+    }
     if (gridQuantize.autoGrid != state.display.gridQuantize.autoGrid ||
         gridQuantize.numerator != state.display.gridQuantize.numerator ||
         gridQuantize.denominator != state.display.gridQuantize.denominator) {
@@ -205,6 +210,8 @@ void TimelineComponent::paint(juce::Graphics& g) {
     // Draw time selection (background layer)
     drawTimeSelection(g);
 
+    drawMarkerGuides(g);
+
     // Draw loop markers (background - shaded region behind time labels)
     drawLoopMarkers(g);
 
@@ -214,10 +221,13 @@ void TimelineComponent::paint(juce::Graphics& g) {
     // Draw time markers (in time ruler section) - ON TOP of loop region
     drawTimeMarkers(g);
 
-    // Draw separator line between arrangement and time ruler
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
-    g.drawLine(visibleLeft, static_cast<float>(arrangementTop + arrangementHeight), visibleRight,
-               static_cast<float>(arrangementTop + arrangementHeight), 1.0f);
+    // Draw separator line between arrangement and time ruler only when the
+    // optional arrangement strip has visible height.
+    if (arrangementHeight > 0) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+        g.drawLine(visibleLeft, static_cast<float>(arrangementTop + arrangementHeight),
+                   visibleRight, static_cast<float>(arrangementTop + arrangementHeight), 1.0f);
+    }
 
     // Draw separator line above ticks
     int tickAreaTop =
@@ -781,6 +791,28 @@ double TimelineComponent::snapBeatsToGrid(double beats) const {
 int TimelineComponent::secondsDurationToPixels(double durationSeconds) const {
     double beats = secondsToBeats(durationSeconds);
     return static_cast<int>(std::round(beats * pixelsPerBeat));
+}
+
+void TimelineComponent::drawMarkerGuides(juce::Graphics& g) {
+    if (markers_.empty())
+        return;
+
+    auto visibleX = getVisibleXRange(g, getWidth());
+    const float top = 0.0f;
+    const float bottom = static_cast<float>(getHeight());
+    const int selectedMarkerId =
+        timelineListener_.get() ? timelineListener_.get()->getState().selectedMarkerId : 0;
+
+    for (const auto& marker : markers_) {
+        const int x = beatsToPixel(marker.positionBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        if (x < visibleX.getStart() - 2 || x > visibleX.getEnd() + 2)
+            continue;
+
+        const bool selected = marker.id == selectedMarkerId;
+        g.setColour(marker.colour.withAlpha(selected ? 0.34f : 0.20f));
+        g.drawLine(static_cast<float>(x), top, static_cast<float>(x), bottom,
+                   selected ? 1.4f : 1.0f);
+    }
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {

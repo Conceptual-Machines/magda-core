@@ -212,11 +212,21 @@ void ClipInspector::updateFromSelectedClip() {
             swatch->setColour(clip->colour);
 
         // File path label: show source filename for library-backed audio/MIDI clips.
+        // For loop-record takes/comps the raw render filename is meaningless, so
+        // show a take/comp label instead.
         if (!isMulti && clip->view != magda::ClipView::Session && clip->isAudio() &&
             clip->audio().source.filePath.isNotEmpty()) {
-            juce::File sourceFile(clip->audio().source.filePath);
-            clipFilePathLabel_.setText(sourceFile.getFileName(), juce::dontSendNotification);
-            clipFilePathLabel_.setTooltip(clip->audio().source.filePath);
+            const auto& audio = clip->audio();
+            juce::String label;
+            if (audio.compActive)
+                label = "Comp";
+            else if (audio.takes.size() > 1)
+                label = "Take " + juce::String(audio.currentTakeIndex + 1) + " / " +
+                        juce::String(static_cast<int>(audio.takes.size()));
+            else
+                label = juce::File(audio.source.filePath).getFileName();
+            clipFilePathLabel_.setText(label, juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip(audio.source.filePath);
         } else if (!isMulti && clip->view != magda::ClipView::Session && clip->isMidi() &&
                    clip->midi().sourceFilePath.isNotEmpty()) {
             juce::File sourceFile(clip->midi().sourceFilePath);
@@ -232,6 +242,18 @@ void ClipInspector::updateFromSelectedClip() {
         bool showAudioProps = isAudioClip && !audioPropsCollapsed_;
         audioPropsCollapseToggle_.setVisible(isAudioClip);
         audioPropsLabel_.setVisible(isAudioClip);
+
+        // The audio source name now lives inside the Audio Properties section, so
+        // hide it when that section is collapsed (MIDI keeps it above).
+        if (isAudioClip)
+            clipFilePathLabel_.setVisible(showAudioProps);
+
+        // Loop-record takes section (shared component; visible inside the
+        // expanded Audio Properties section).
+        if (takesSection_) {
+            takesSection_->setSelectedClips(selectedClipIds_);
+            takesSection_->setVisible(showAudioProps);
+        }
 
         if (isAudioClip) {
             clipTypeIcon_->updateSvgData(BinaryData::iconaudioboldm_svg,
@@ -665,6 +687,8 @@ void ClipInspector::showClipControls(bool show) {
         followActionLoopCountSlider_.setVisible(false);
         if (fadesSection_)
             fadesSection_->setVisible(false);
+        if (takesSection_)
+            takesSection_->setVisible(false);
 
         // New sections
         pitchSectionLabel_.setVisible(false);

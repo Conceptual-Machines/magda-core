@@ -8,6 +8,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
 #include "inspector/clip/sections/ClipFadesSection.hpp"
+#include "inspector/clip/sections/ClipTakesSection.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
@@ -87,6 +88,7 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
 
     // Fades section
     std::unique_ptr<ClipFadesSection> fadesSection_;
+    std::unique_ptr<ClipTakesSection> takesSection_;
 
     // Transient Detection section
     std::unique_ptr<juce::Label> transientSectionLabel_;

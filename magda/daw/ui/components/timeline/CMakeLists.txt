@@ -5,8 +5,10 @@
 
 target_sources(magda_daw PRIVATE
     LoopMarkerInteraction.cpp
+    MarkerLaneComponent.cpp
     TimelineComponent.cpp
     LoopMarkerInteraction.hpp
+    MarkerLaneComponent.hpp
     TimelineComponent.hpp
     TimelineFiller.hpp
     TimeRuler.hpp
@@ -15,6 +17,7 @@ target_sources(magda_daw PRIVATE
 
 target_sources(magda_daw_app PRIVATE
     LoopMarkerInteraction.cpp
+    MarkerLaneComponent.cpp
     TimelineComponent.cpp
     TimelineFiller.cpp
     TimeRuler.cpp

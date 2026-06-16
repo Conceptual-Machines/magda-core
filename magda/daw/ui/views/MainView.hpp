@@ -7,6 +7,7 @@
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridOverlayComponent.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "../components/timeline/MarkerLaneComponent.hpp"
 #include "../components/timeline/TimelineComponent.hpp"
 #include "../components/timeline/ZoomScrollBar.hpp"
 #include "../components/tracks/TrackContentPanel.hpp"
@@ -122,6 +123,8 @@ class MainView : public juce::Component,
     std::unique_ptr<TimelineController> timelineController;
 
     // Timeline viewport (horizontal scroll only)
+    std::unique_ptr<juce::Viewport> markerLaneViewport;
+    std::unique_ptr<MarkerLaneComponent> markerLane;
     std::unique_ptr<juce::Viewport> timelineViewport;
     std::unique_ptr<TimelineComponent> timeline;
 
@@ -188,15 +191,20 @@ class MainView : public juce::Component,
     int zoomAnchorViewportX = 0;  // Viewport-relative position to keep stable
 
     // Layout - uses LayoutConfig for centralized configuration
+    int getMarkerLaneHeight() const {
+        return markerLaneVisible_ ? LayoutConfig::getInstance().markerLaneHeight : 0;
+    }
     int getTimelineHeight() const {
-        return LayoutConfig::getInstance().getTimelineHeight();
+        return getMarkerLaneHeight() + LayoutConfig::getInstance().getTimelineBodyHeight();
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
+    bool markerLaneVisible_ = true;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
 
     struct ArrangementLayout {
         bool swapped = false;
         juce::Rectangle<int> cornerArea;
+        juce::Rectangle<int> markerLaneArea;
         juce::Rectangle<int> timelineArea;
         juce::Rectangle<int> trackHeadersArea;
         juce::Rectangle<int> trackContentArea;
@@ -322,6 +330,7 @@ class MainView : public juce::Component,
     // Corner toolbar buttons (above track headers)
     std::unique_ptr<SvgButton> zoomFitButton;
     std::unique_ptr<SvgButton> zoomSelButton;
+    std::unique_ptr<SvgButton> markerLaneToggleButton;
     std::unique_ptr<SvgButton> trackSmallButton;
     std::unique_ptr<SvgButton> trackMediumButton;
     std::unique_ptr<SvgButton> trackLargeButton;
@@ -331,7 +340,8 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> hAxisIcon;
     std::unique_ptr<SvgButton> vAxisIcon;
 
-    // Separator line position between corner toolbar rows (set during resized())
+    // Separator line positions in the corner toolbar (set during resized())
+    juce::Rectangle<int> markerLaneSeparatorLine;
     juce::Rectangle<int> cornerSeparatorLine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
