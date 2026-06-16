@@ -1363,6 +1363,18 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
         g.fillRect(endX - 1, stripTop, 2, LOOP_STRIP_HEIGHT);
     }
 
+    // Extend the marker lines down through the tick area so they meet the
+    // full-height loop lines drawn over the tracks below. Without this the
+    // boundary line vanishes across the number-tick band whenever a loop edge
+    // does not coincide with a bar tick (visible once zoomed in).
+    int tickHeight = layout.rulerMajorTickHeight;
+    if (isXVisible(g, getWidth(), startX)) {
+        g.fillRect(startX - 1, tickAreaTop, 2, tickHeight);
+    }
+    if (isXVisible(g, getWidth(), endX)) {
+        g.fillRect(endX - 1, tickAreaTop, 2, tickHeight);
+    }
+
     // Triangular flags
     int flagTop = stripTop + 1;
     int loopPixelWidth = endX - startX;
