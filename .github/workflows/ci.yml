@@ -6,7 +6,10 @@ on:
     # that branch on top of the latest HEAD and force-pushes, so once the base
     # branch has advanced, the push diff carries real code and paths-ignore no
     # longer skips it. Excluding by branch name is the only reliable guard.
-    branches-ignore: [ 'l10n_crowdin_**' ]
+    # 'dependabot/**' so Dependabot bumps never auto-start CI (especially the
+    # self-hosted macOS/Windows build jobs). Validate a bump on demand via the
+    # workflow_dispatch button instead.
+    branches-ignore: [ 'l10n_crowdin_**', 'dependabot/**' ]
     tags-ignore: [ '**' ]
     # Belt-and-suspenders: also skip when a push only touches translation files.
     paths-ignore:
