@@ -18,6 +18,8 @@
 
 namespace magda {
 
+class PitchFoldMap;
+
 /**
  * @brief Scrollable grid component containing MIDI notes
  *
@@ -102,6 +104,11 @@ class PianoRollGridComponent : public juce::Component,
         return noteHeight_;
     }
 
+    // Shared folded-axis map (owned by PianoRollContent, must outlive this).
+    // When folded, the grid collapses to one row per used pitch; noteNumberToY /
+    // yToNoteNumber and the row backgrounds all route through it.
+    void setFoldMap(const PitchFoldMap* map);
+
     // Left padding (for alignment with ruler if needed)
     void setLeftPadding(int padding);
     int getLeftPadding() const {
@@ -184,6 +191,7 @@ class PianoRollGridComponent : public juce::Component,
     juce::Point<int> getGridScreenPosition() const override {
         return localPointToGlobal(juce::Point<int>());
     }
+    int noteNumberByRowDelta(int startNote, int rowsUp) const override;
     void updateNotePosition(NoteComponent* note, double beat, int noteNumber,
                             double length) override;
     void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
@@ -283,6 +291,11 @@ class PianoRollGridComponent : public juce::Component,
     static constexpr int MIN_NOTE = 0;    // C-2
     static constexpr int MAX_NOTE = 127;  // G9
     static constexpr int NOTE_COUNT = MAX_NOTE - MIN_NOTE + 1;
+
+    // Shared folded axis (not owned). Null = linear 0..127 axis.
+    const PitchFoldMap* foldMap_ = nullptr;
+    int foldRowCount() const;
+    int noteForRow(int row) const;
 
     // Left padding (0 by default for piano roll since keyboard provides context)
     int leftPadding_ = 0;

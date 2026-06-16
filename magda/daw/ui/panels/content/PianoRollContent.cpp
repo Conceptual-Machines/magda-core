@@ -32,10 +32,26 @@
 
 namespace magda::daw::ui {
 
+// Transient session state: fold persists across clip switches within a run.
+bool PianoRollContent::foldEnabled_ = false;
+
 PianoRollContent::PianoRollContent() {
     setName("PianoRoll");
     if (timeRuler_)
         timeRuler_->setGestureContext(magda::GestureContext::PianoRoll);
+
+    // Create fold toggle button (collapse the vertical axis to used pitches)
+    foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::iconfoldboldm_svg,
+                                                     BinaryData::iconfoldboldm_svgSize);
+    foldToggle_->setTooltip("Fold to used pitches");
+    foldToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    foldToggle_->setActive(foldEnabled_);
+    foldToggle_->onClick = [this]() {
+        foldEnabled_ = !foldEnabled_;
+        foldToggle_->setActive(foldEnabled_);
+        applyFold();
+    };
+    addAndMakeVisible(foldToggle_.get());
 
     // Create chord toggle button
     chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordboldm_svg,
@@ -107,7 +123,9 @@ PianoRollContent::PianoRollContent() {
     verticalZoomStrip_->onZoomChanged = [this](int newHeight, int anchorScreenY) {
         const int anchorContentY = anchorScreenY + viewport_->getViewPositionY();
         const int anchorNote =
-            juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (anchorContentY / noteHeight_));
+            gridComponent_
+                ? gridComponent_->yToNoteNumber(anchorContentY)
+                : juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (anchorContentY / noteHeight_));
         setNoteHeightAnchored(newHeight, anchorNote, anchorScreenY, true);
     };
     addAndMakeVisible(verticalZoomStrip_.get());
@@ -179,7 +197,9 @@ PianoRollContent::PianoRollContent() {
                                                      const juce::MouseWheelDetails& wheel) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();
         const int anchorNote =
-            juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (gridY / juce::jmax(1, noteHeight_)));
+            gridComponent_
+                ? gridComponent_->yToNoteNumber(gridY)
+                : juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (gridY / juce::jmax(1, noteHeight_)));
         const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
         setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, anchorScreenY, true);
     };
@@ -188,6 +208,13 @@ PianoRollContent::PianoRollContent() {
             controller->getState().tempo.timeSignatureNumerator);
     }
     viewport_->setViewedComponent(gridComponent_.get(), false);
+
+    // Share one folded-axis map across grid, keyboard, and octave strip so their
+    // vertical axes stay aligned. foldMap_ outlives all three (we own them).
+    foldMap_.setEnabled(foldEnabled_);
+    gridComponent_->setFoldMap(&foldMap_);
+    keyboard_->setFoldMap(&foldMap_);
+    octaveLabelStrip_->setFoldMap(&foldMap_);
 
     setupGridCallbacks();
 
@@ -215,6 +242,56 @@ PianoRollContent::PianoRollContent() {
 void PianoRollContent::applyOverlayTracks() {
     if (gridComponent_)
         gridComponent_->setOverlayTracks(overlayTrackIds_);
+}
+
+void PianoRollContent::rebuildFoldMap() {
+    // Collect the used pitches from the editing clip, or the union across all
+    // selected clips in multi-clip mode. Folding only reflects the editable
+    // clip(s)' own notes (not ghost-overlay tracks).
+    std::set<int> usedPitches;
+    auto& clipManager = magda::ClipManager::getInstance();
+
+    const auto& selectedClipIds =
+        gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
+    auto collect = [&](magda::ClipId id) {
+        if (const auto* clip = clipManager.getClip(id)) {
+            for (const auto& note : clip->midiNotes)
+                usedPitches.insert(note.noteNumber);
+        }
+    };
+    if (selectedClipIds.size() > 1) {
+        for (magda::ClipId id : selectedClipIds)
+            collect(id);
+    } else if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        collect(editingClipId_);
+    }
+
+    foldMap_.rebuild(std::vector<int>(usedPitches.begin(), usedPitches.end()));
+
+    // When folded, the keyboard and octave strip must redraw to follow the new
+    // row set (the grid repaints via its own setSize). Skip when unfolded — the
+    // 0..127 axis never changes, so there's nothing to refresh.
+    if (foldMap_.isEnabled()) {
+        if (keyboard_)
+            keyboard_->repaint();
+        if (octaveLabelStrip_)
+            octaveLabelStrip_->repaint();
+    }
+}
+
+void PianoRollContent::applyFold() {
+    foldMap_.setEnabled(foldEnabled_);
+    rebuildFoldMap();
+    updateGridSize();
+    if (gridComponent_)
+        gridComponent_->repaint();
+    if (keyboard_)
+        keyboard_->repaint();
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->repaint();
+    // After a fold change the content height jumps; bring used rows into view.
+    if (needsInitialCentering_ || foldMap_.isActive())
+        centerOnNotes();
 }
 
 void PianoRollContent::updateCcLanesButtonState() {
@@ -261,7 +338,8 @@ void PianoRollContent::setNoteHeightAnchored(int height, int anchorNote, int anc
     if (noteHeight_ == previousHeight || !viewport_)
         return;
 
-    const int newAnchorY = (MAX_NOTE - anchorNote) * noteHeight_;
+    const int newAnchorY = gridComponent_ ? gridComponent_->noteNumberToY(anchorNote)
+                                          : (MAX_NOTE - anchorNote) * noteHeight_;
     const int newScrollY = juce::jmax(0, newAnchorY - anchorScreenY);
     viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
 }
@@ -721,6 +799,9 @@ void PianoRollContent::resized() {
     // Chord toggle at top of sidebar — vertically centered in chord row height
     int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
+    // Fold toggle directly below the chord toggle
+    if (foldToggle_)
+        foldToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
     // Lane buttons stacked at the bottom, top to bottom: MPE, CC, velocity
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
     ccLanesBtn_->setBounds(padding, getHeight() - 2 * (iconSize + padding), iconSize, iconSize);
@@ -925,9 +1006,12 @@ void PianoRollContent::updateGridSize() {
         }
     }
 
+    // Refresh the folded-pitch axis before sizing — the row count drives height.
+    rebuildFoldMap();
+
     int gridWidth = juce::jmax(viewport_->getWidth(),
                                static_cast<int>(displayLengthBeats * horizontalZoom_) + 100);
-    int gridHeight = (MAX_NOTE - MIN_NOTE + 1) * noteHeight_;
+    int gridHeight = foldMap_.rowCount() * noteHeight_;
 
     gridComponent_->setSize(gridWidth, gridHeight);
 
@@ -1715,7 +1799,8 @@ void PianoRollContent::centerOnNote(int noteNumber) {
     if (!viewport_)
         return;
 
-    int noteY = (MAX_NOTE - noteNumber) * noteHeight_;
+    int noteY = gridComponent_ ? gridComponent_->noteNumberToY(noteNumber)
+                               : (MAX_NOTE - noteNumber) * noteHeight_;
     int viewportHeight = viewport_->getHeight();
     int scrollY = juce::jmax(0, noteY - (viewportHeight / 2) + (noteHeight_ / 2));
 
@@ -1729,7 +1814,8 @@ void PianoRollContent::ensureNoteVisible(int noteNumber) {
     if (!viewport_ || noteHeight_ <= 0)
         return;
 
-    const int noteTop = (MAX_NOTE - noteNumber) * noteHeight_;
+    const int noteTop = gridComponent_ ? gridComponent_->noteNumberToY(noteNumber)
+                                       : (MAX_NOTE - noteNumber) * noteHeight_;
     const int noteBottom = noteTop + noteHeight_;
     const int viewTop = viewport_->getViewPositionY();
     const int viewHeight = viewport_->getHeight();

@@ -210,7 +210,9 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& /*e*/) {
     switch (dragMode_) {
         case DragMode::Move: {
             double rawStartBeat = dragStartBeat_ + deltaBeat;
-            int rawNoteNumber = juce::jlimit(0, 127, dragStartNoteNumber_ + deltaNote);
+            // Fold-aware: deltaNote is a row delta. On the linear axis this is a
+            // semitone delta; on the folded axis it walks visible rows.
+            int rawNoteNumber = parentGrid_->noteNumberByRowDelta(dragStartNoteNumber_, deltaNote);
 
             // Apply grid snap if available
             if (snapBeatToGrid) {

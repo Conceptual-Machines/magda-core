@@ -12,6 +12,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../windows/CommandIDs.hpp"
 #include "PhaseMarker.hpp"
+#include "PitchFoldMap.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/GestureRouter.hpp"
@@ -391,6 +392,13 @@ void PianoRollGridComponent::paintOverlayNotes(juce::Graphics& g) {
                 if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, note))
                     continue;
 
+                // When folded the axis only has rows for the edited clip's own
+                // pitches; ghost notes on other pitches have no row, so hide
+                // them rather than snapping them onto an unrelated row.
+                if (foldMap_ && foldMap_->isActive() &&
+                    foldMap_->noteForRow(foldMap_->rowForNote(note.noteNumber)) != note.noteNumber)
+                    continue;
+
                 const double displayBeat = clipOffsetBeats + note.startBeat - visibleStart;
                 const int x = beatToPixel(displayBeat);
                 const int w = juce::jmax(4, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
@@ -424,16 +432,18 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
     // The grid area starts after left padding
     auto gridArea = area.withTrimmedLeft(leftPadding_);
 
-    // Draw row backgrounds - alternate for black/white keys (only in grid area)
-    for (int note = MIN_NOTE; note <= MAX_NOTE; note++) {
-        int y = noteNumberToY(note);
+    // Draw row backgrounds - alternate for black/white keys (only in grid area).
+    // Iterate rows (not pitches) so folded mode draws exactly the visible rows.
+    const int rows = foldRowCount();
+    for (int row = 0; row < rows; row++) {
+        int y = row * noteHeight_;
 
         if (y + noteHeight_ < area.getY() || y > area.getBottom()) {
             continue;
         }
 
         // Black key rows are darker
-        if (isBlackKey(note)) {
+        if (isBlackKey(noteForRow(row))) {
             g.setColour(juce::Colour(0xFF2a2a2a));
             g.fillRect(gridArea.getX(), y, gridArea.getWidth(), noteHeight_);
         }
@@ -455,11 +465,11 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
         g.fillRect(area.getX(), area.getY(), leftPadding_, area.getHeight());
     }
 
-    // Draw horizontal grid lines at each note boundary (at bottom of each row, -1 to match
+    // Draw horizontal grid lines at each row boundary (at bottom of each row, -1 to match
     // keyboard)
     g.setColour(juce::Colour(0xFF505050));
-    for (int note = MIN_NOTE; note <= MAX_NOTE; note++) {
-        int y = noteNumberToY(note) + noteHeight_ - 1;
+    for (int row = 0; row < rows; row++) {
+        int y = row * noteHeight_ + noteHeight_ - 1;
         if (y >= area.getY() && y <= area.getBottom()) {
             g.drawHorizontalLine(y, static_cast<float>(gridArea.getX()),
                                  static_cast<float>(area.getRight()));
@@ -1283,13 +1293,39 @@ void PianoRollGridComponent::setTimelineLengthBeats(double lengthBeats) {
     }
 }
 
+void PianoRollGridComponent::setFoldMap(const PitchFoldMap* map) {
+    if (foldMap_ == map)
+        return;
+    foldMap_ = map;
+    updateNoteComponentBounds();
+    repaint();
+}
+
+int PianoRollGridComponent::foldRowCount() const {
+    return foldMap_ ? foldMap_->rowCount() : NOTE_COUNT;
+}
+
+int PianoRollGridComponent::noteForRow(int row) const {
+    return foldMap_ ? foldMap_->noteForRow(row) : (MAX_NOTE - row);
+}
+
 int PianoRollGridComponent::noteNumberToY(int noteNumber) const {
-    return (MAX_NOTE - noteNumber) * noteHeight_;
+    const int row = foldMap_ ? foldMap_->rowForNote(noteNumber) : (MAX_NOTE - noteNumber);
+    return row * noteHeight_;
 }
 
 int PianoRollGridComponent::yToNoteNumber(int y) const {
-    int note = MAX_NOTE - (y / noteHeight_);
-    return juce::jlimit(MIN_NOTE, MAX_NOTE, note);
+    int row = juce::jlimit(0, foldRowCount() - 1, y / noteHeight_);
+    return juce::jlimit(MIN_NOTE, MAX_NOTE, noteForRow(row));
+}
+
+int PianoRollGridComponent::noteNumberByRowDelta(int startNote, int rowsUp) const {
+    // Rows increase downward, pitch increases upward — moving `rowsUp` rows up
+    // means decreasing the row index by that many.
+    if (!foldMap_)
+        return juce::jlimit(MIN_NOTE, MAX_NOTE, startNote + rowsUp);
+    const int targetRow = foldMap_->rowForNote(startNote) - rowsUp;
+    return juce::jlimit(MIN_NOTE, MAX_NOTE, noteForRow(targetRow));
 }
 
 void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat, int noteNumber,

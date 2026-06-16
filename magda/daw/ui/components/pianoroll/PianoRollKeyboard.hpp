@@ -10,6 +10,8 @@
 
 namespace magda {
 
+class PitchFoldMap;
+
 /**
  * Piano keyboard component for the piano roll.
  * Displays note names and responds to vertical scroll offset.
@@ -33,6 +35,14 @@ class PianoRollKeyboard : public juce::Component {
     void setNoteHeight(int height);
     void setNoteRange(int minNote, int maxNote);
     void setScrollOffset(int offsetY);
+
+    // Shared folded-axis map (owned by PianoRollContent). When folded, the
+    // keyboard draws one key per used pitch instead of the linear 0..127 axis.
+    // Pointer must outlive this component.
+    void setFoldMap(const PitchFoldMap* map) {
+        foldMap_ = map;
+        repaint();
+    }
     void setNotePressed(int noteNumber, bool pressed);
     void setHighlightedNotes(const std::set<int>& notes);
     void clearPressedNotes();
@@ -51,6 +61,11 @@ class PianoRollKeyboard : public juce::Component {
     int minNote_ = 21;   // A0
     int maxNote_ = 108;  // C8
     int scrollOffsetY_ = 0;
+
+    // Shared folded axis (not owned). Null = linear axis.
+    const PitchFoldMap* foldMap_ = nullptr;
+    int rowCount() const;
+    int noteForRow(int row) const;
 
     // Drag state (zoom or scroll)
     enum class DragMode { None, Zooming, Scrolling };
