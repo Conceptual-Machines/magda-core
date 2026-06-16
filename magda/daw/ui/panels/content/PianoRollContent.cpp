@@ -24,6 +24,7 @@
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
+#include "ui/components/pianoroll/MidiTakeLanesComponent.hpp"
 #include "ui/components/pianoroll/OctaveLabelStrip.hpp"
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
 #include "ui/components/pianoroll/PianoRollKeyboard.hpp"
@@ -32,10 +33,41 @@
 
 namespace magda::daw::ui {
 
+// Transient session state: fold persists across clip switches within a run.
+bool PianoRollContent::foldEnabled_ = false;
+
 PianoRollContent::PianoRollContent() {
     setName("PianoRoll");
     if (timeRuler_)
         timeRuler_->setGestureContext(magda::GestureContext::PianoRoll);
+
+    // Create fold toggle button (collapse the vertical axis to used pitches)
+    foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::iconfoldboldm_svg,
+                                                     BinaryData::iconfoldboldm_svgSize);
+    foldToggle_->setTooltip("Fold to used pitches");
+    foldToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    foldToggle_->setActive(foldEnabled_);
+    foldToggle_->onClick = [this]() {
+        foldEnabled_ = !foldEnabled_;
+        foldToggle_->setActive(foldEnabled_);
+        applyFold();
+    };
+    addAndMakeVisible(foldToggle_.get());
+
+    // Create take-lanes toggle button (show/hide the comp take-lanes strip).
+    // Only relevant for a MIDI clip with takes; shown contextually.
+    takeLanesToggle_ = std::make_unique<magda::SvgButton>("TakeLanesToggle", BinaryData::lanes_svg,
+                                                          BinaryData::lanes_svgSize);
+    takeLanesToggle_->setTooltip("Show take lanes");
+    takeLanesToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    takeLanesToggle_->onClick = [this]() {
+        auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip == nullptr)
+            return;
+        clip->takesExpanded = !clip->takesExpanded;
+        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
+    };
+    addChildComponent(takeLanesToggle_.get());
 
     // Create chord toggle button
     chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordboldm_svg,
@@ -107,7 +139,9 @@ PianoRollContent::PianoRollContent() {
     verticalZoomStrip_->onZoomChanged = [this](int newHeight, int anchorScreenY) {
         const int anchorContentY = anchorScreenY + viewport_->getViewPositionY();
         const int anchorNote =
-            juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (anchorContentY / noteHeight_));
+            gridComponent_
+                ? gridComponent_->yToNoteNumber(anchorContentY)
+                : juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (anchorContentY / noteHeight_));
         setNoteHeightAnchored(newHeight, anchorNote, anchorScreenY, true);
     };
     addAndMakeVisible(verticalZoomStrip_.get());
@@ -179,7 +213,9 @@ PianoRollContent::PianoRollContent() {
                                                      const juce::MouseWheelDetails& wheel) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();
         const int anchorNote =
-            juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (gridY / juce::jmax(1, noteHeight_)));
+            gridComponent_
+                ? gridComponent_->yToNoteNumber(gridY)
+                : juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (gridY / juce::jmax(1, noteHeight_)));
         const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
         setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, anchorScreenY, true);
     };
@@ -189,7 +225,47 @@ PianoRollContent::PianoRollContent() {
     }
     viewport_->setViewedComponent(gridComponent_.get(), false);
 
+    // Share one folded-axis map across grid, keyboard, and octave strip so their
+    // vertical axes stay aligned. foldMap_ outlives all three (we own them).
+    foldMap_.setEnabled(foldEnabled_);
+    gridComponent_->setFoldMap(&foldMap_);
+    keyboard_->setFoldMap(&foldMap_);
+    octaveLabelStrip_->setFoldMap(&foldMap_);
+
     setupGridCallbacks();
+
+    // Folded take-lanes strip below the grid (MIDI comping, #1466).
+    takeLanes_ = std::make_unique<MidiTakeLanesComponent>();
+    takeLanes_->setLeftPadding(GRID_LEFT_PADDING);
+    takeLanes_->onTakeSelected = [this](int takeIndex) {
+        magda::ClipManager::getInstance().setMidiClipCurrentTake(editingClipId_, takeIndex);
+    };
+    takeLanes_->onCompSectionSet = [this](double startBeat, double endBeat, int takeIndex) {
+        magda::ClipManager::getInstance().setMidiCompSection(editingClipId_, startBeat, endBeat,
+                                                             takeIndex);
+    };
+    takeLanes_->onCompClear = [this]() {
+        magda::ClipManager::getInstance().clearMidiComp(editingClipId_);
+    };
+    takeLanes_->onDeleteTake = [this](int takeIndex) {
+        magda::ClipManager::getInstance().deleteClipTake(editingClipId_, takeIndex);
+    };
+    takeLanes_->onTakeHovered = [this](int takeIndex) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!gridComponent_ || clip == nullptr || !clip->isMidi()) {
+            if (gridComponent_)
+                gridComponent_->clearOverlayNotes();
+            return;
+        }
+        const auto& takes = clip->midi().takes;
+        if (takeIndex >= 0 && takeIndex < static_cast<int>(takes.size()))
+            gridComponent_->setOverlayNotes(takes[static_cast<size_t>(takeIndex)].notes,
+                                            clip->colour);
+        else
+            gridComponent_->clearOverlayNotes();
+    };
+    addChildComponent(takeLanes_.get());
+    viewport_->componentsToRepaint.push_back(takeLanes_.get());
 
     // Apply any overlay tracks chosen in another editor session
     applyOverlayTracks();
@@ -215,6 +291,73 @@ PianoRollContent::PianoRollContent() {
 void PianoRollContent::applyOverlayTracks() {
     if (gridComponent_)
         gridComponent_->setOverlayTracks(overlayTrackIds_);
+}
+
+bool PianoRollContent::takeLanesVisible() const {
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    return clip != nullptr && clip->isMidi() && clip->midi().takes.size() >= 2 &&
+           clip->takesExpanded;
+}
+
+void PianoRollContent::refreshTakeLanes() {
+    if (!takeLanes_)
+        return;
+    takeLanes_->setClip(editingClipId_);
+    takeLanes_->setPixelsPerBeat(horizontalZoom_);
+    takeLanes_->setRelativeMode(relativeTimeMode_);
+    takeLanes_->setGridResolutionBeats(gridResolutionBeats_);
+    takeLanes_->setSnapEnabled(snapEnabled_);
+    takeLanes_->setScrollOffset(viewport_ ? viewport_->getViewPositionX() : 0);
+}
+
+void PianoRollContent::rebuildFoldMap() {
+    // Collect the used pitches from the editing clip, or the union across all
+    // selected clips in multi-clip mode. Folding only reflects the editable
+    // clip(s)' own notes (not ghost-overlay tracks).
+    std::set<int> usedPitches;
+    auto& clipManager = magda::ClipManager::getInstance();
+
+    const auto& selectedClipIds =
+        gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
+    auto collect = [&](magda::ClipId id) {
+        if (const auto* clip = clipManager.getClip(id)) {
+            for (const auto& note : clip->midiNotes)
+                usedPitches.insert(note.noteNumber);
+        }
+    };
+    if (selectedClipIds.size() > 1) {
+        for (magda::ClipId id : selectedClipIds)
+            collect(id);
+    } else if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        collect(editingClipId_);
+    }
+
+    foldMap_.rebuild(std::vector<int>(usedPitches.begin(), usedPitches.end()));
+
+    // When folded, the keyboard and octave strip must redraw to follow the new
+    // row set (the grid repaints via its own setSize). Skip when unfolded — the
+    // 0..127 axis never changes, so there's nothing to refresh.
+    if (foldMap_.isEnabled()) {
+        if (keyboard_)
+            keyboard_->repaint();
+        if (octaveLabelStrip_)
+            octaveLabelStrip_->repaint();
+    }
+}
+
+void PianoRollContent::applyFold() {
+    foldMap_.setEnabled(foldEnabled_);
+    rebuildFoldMap();
+    updateGridSize();
+    if (gridComponent_)
+        gridComponent_->repaint();
+    if (keyboard_)
+        keyboard_->repaint();
+    if (octaveLabelStrip_)
+        octaveLabelStrip_->repaint();
+    // After a fold change the content height jumps; bring used rows into view.
+    if (needsInitialCentering_ || foldMap_.isActive())
+        centerOnNotes();
 }
 
 void PianoRollContent::updateCcLanesButtonState() {
@@ -261,7 +404,8 @@ void PianoRollContent::setNoteHeightAnchored(int height, int anchorNote, int anc
     if (noteHeight_ == previousHeight || !viewport_)
         return;
 
-    const int newAnchorY = (MAX_NOTE - anchorNote) * noteHeight_;
+    const int newAnchorY = gridComponent_ ? gridComponent_->noteNumberToY(anchorNote)
+                                          : (MAX_NOTE - anchorNote) * noteHeight_;
     const int newScrollY = juce::jmax(0, newAnchorY - anchorScreenY);
     viewport_->setViewPosition(viewport_->getViewPositionX(), newScrollY);
 }
@@ -623,6 +767,8 @@ void PianoRollContent::setupGridCallbacks() {
 void PianoRollContent::setGridPixelsPerBeat(double ppb) {
     if (gridComponent_)
         gridComponent_->setPixelsPerBeat(ppb);
+    if (takeLanes_)
+        takeLanes_->setPixelsPerBeat(ppb);
     if (showChordRow_)
         repaint();
 }
@@ -646,6 +792,8 @@ void PianoRollContent::onScrollPositionChanged(int scrollX, int scrollY) {
     } else if (velocityLane_) {
         velocityLane_->setScrollOffset(scrollX);
     }
+    if (takeLanes_)
+        takeLanes_->setScrollOffset(scrollX);
 }
 
 void PianoRollContent::onGridResolutionChanged() {
@@ -721,6 +869,20 @@ void PianoRollContent::resized() {
     // Chord toggle at top of sidebar — vertically centered in chord row height
     int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
+    // Fold toggle directly below the chord toggle
+    if (foldToggle_)
+        foldToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
+    // Take-lanes toggle below the fold toggle (only when the clip has takes)
+    if (takeLanesToggle_) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        const bool hasTakes = clip != nullptr && clip->isMidi() && clip->midi().takes.size() >= 2;
+        takeLanesToggle_->setVisible(hasTakes);
+        if (hasTakes) {
+            takeLanesToggle_->setActive(clip->takesExpanded);
+            takeLanesToggle_->setBounds(padding, chordToggleY + 2 * (iconSize + padding), iconSize,
+                                        iconSize);
+        }
+    }
     // Lane buttons stacked at the bottom, top to bottom: MPE, CC, velocity
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
     ccLanesBtn_->setBounds(padding, getHeight() - 2 * (iconSize + padding), iconSize, iconSize);
@@ -761,6 +923,23 @@ void PianoRollContent::resized() {
             midiDrawer_->setVisible(false);
         if (velocityLane_)
             velocityLane_->setVisible(false);
+    }
+
+    // Folded take-lanes strip (MIDI comping) — directly above the drawer, below
+    // the grid, aligned to the grid's time axis.
+    if (takeLanesVisible() && takeLanes_) {
+        int stripH =
+            juce::jmin(takeLanes_->preferredHeight(), juce::jmax(0, bounds.getHeight() / 2));
+        auto stripArea = bounds.removeFromBottom(stripH);
+        // Span the octave-label + keyboard columns too, used as a fixed left
+        // gutter for the take name (aligned with the keyboard).
+        stripArea.removeFromLeft(ZOOM_STRIP_WIDTH);
+        takeLanes_->setLabelGutter(OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
+        takeLanes_->setBounds(stripArea);
+        takeLanes_->setVisible(true);
+        refreshTakeLanes();
+    } else if (takeLanes_) {
+        takeLanes_->setVisible(false);
     }
 
     // Ruler row
@@ -925,9 +1104,12 @@ void PianoRollContent::updateGridSize() {
         }
     }
 
+    // Refresh the folded-pitch axis before sizing — the row count drives height.
+    rebuildFoldMap();
+
     int gridWidth = juce::jmax(viewport_->getWidth(),
                                static_cast<int>(displayLengthBeats * horizontalZoom_) + 100);
-    int gridHeight = (MAX_NOTE - MIN_NOTE + 1) * noteHeight_;
+    int gridHeight = foldMap_.rowCount() * noteHeight_;
 
     gridComponent_->setSize(gridWidth, gridHeight);
 
@@ -951,6 +1133,9 @@ void PianoRollContent::updateGridSize() {
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
     }
+
+    if (takeLanes_)
+        refreshTakeLanes();
 }
 
 // Loop region is now handled by MidiEditorContent::updateTimeRuler()
@@ -1183,6 +1368,9 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                 self->applyClipGridSettings();
                 self->loadNoteHeightFromClip(self->editingClipId_);
                 self->updateGridSize();
+                // Relayout so the take-lanes strip appears/resizes when takes or
+                // the takesExpanded toggle change.
+                self->resized();
                 self->updateTimeRuler();
                 self->updateVelocityLane();
                 if (placementMoved)
@@ -1715,7 +1903,8 @@ void PianoRollContent::centerOnNote(int noteNumber) {
     if (!viewport_)
         return;
 
-    int noteY = (MAX_NOTE - noteNumber) * noteHeight_;
+    int noteY = gridComponent_ ? gridComponent_->noteNumberToY(noteNumber)
+                               : (MAX_NOTE - noteNumber) * noteHeight_;
     int viewportHeight = viewport_->getHeight();
     int scrollY = juce::jmax(0, noteY - (viewportHeight / 2) + (noteHeight_ / 2));
 
@@ -1729,7 +1918,8 @@ void PianoRollContent::ensureNoteVisible(int noteNumber) {
     if (!viewport_ || noteHeight_ <= 0)
         return;
 
-    const int noteTop = (MAX_NOTE - noteNumber) * noteHeight_;
+    const int noteTop = gridComponent_ ? gridComponent_->noteNumberToY(noteNumber)
+                                       : (MAX_NOTE - noteNumber) * noteHeight_;
     const int noteBottom = noteTop + noteHeight_;
     const int viewTop = viewport_->getViewPositionY();
     const int viewHeight = viewport_->getHeight();

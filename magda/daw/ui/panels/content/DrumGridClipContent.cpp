@@ -305,6 +305,12 @@ class DrumGridClipGrid : public juce::Component,
         return localPointToGlobal(juce::Point<int>());
     }
 
+    // The drum grid has no folded pitch axis; a row delta is a plain semitone
+    // delta (preserves the pre-fold behaviour).
+    int noteNumberByRowDelta(int startNote, int rowsUp) const override {
+        return juce::jlimit(0, 127, startNote + rowsUp);
+    }
+
     void updateNotePosition(magda::NoteComponent* note, double beat, int noteNumber,
                             double length) override {
         if (!note || !padRows_)

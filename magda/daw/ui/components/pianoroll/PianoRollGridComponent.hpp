@@ -18,6 +18,8 @@
 
 namespace magda {
 
+class PitchFoldMap;
+
 /**
  * @brief Scrollable grid component containing MIDI notes
  *
@@ -91,6 +93,12 @@ class PianoRollGridComponent : public juce::Component,
         return overlayTrackIds_;
     }
 
+    // Ghost an arbitrary note set into the roll (e.g. a comp take on hover,
+    // #1466). Painted dimmed in `colour`, non-interactive, fold-aware. Cleared
+    // by clearOverlayNotes().
+    void setOverlayNotes(std::vector<MidiNote> notes, juce::Colour colour);
+    void clearOverlayNotes();
+
     // Zoom settings
     void setPixelsPerBeat(double ppb);
     double getPixelsPerBeat() const override {
@@ -101,6 +109,11 @@ class PianoRollGridComponent : public juce::Component,
     int getNoteHeight() const override {
         return noteHeight_;
     }
+
+    // Shared folded-axis map (owned by PianoRollContent, must outlive this).
+    // When folded, the grid collapses to one row per used pitch; noteNumberToY /
+    // yToNoteNumber and the row backgrounds all route through it.
+    void setFoldMap(const PitchFoldMap* map);
 
     // Left padding (for alignment with ruler if needed)
     void setLeftPadding(int padding);
@@ -184,6 +197,7 @@ class PianoRollGridComponent : public juce::Component,
     juce::Point<int> getGridScreenPosition() const override {
         return localPointToGlobal(juce::Point<int>());
     }
+    int noteNumberByRowDelta(int startNote, int rowsUp) const override;
     void updateNotePosition(NoteComponent* note, double beat, int noteNumber,
                             double length) override;
     void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,
@@ -278,11 +292,22 @@ class PianoRollGridComponent : public juce::Component,
     // Tracks whose MIDI renders as a ghost overlay (paint-only, never interactive)
     std::vector<TrackId> overlayTrackIds_;
     void paintOverlayNotes(juce::Graphics& g);
+    void paintOverlayNoteSet(juce::Graphics& g);
+
+    // Ad-hoc ghost note set (comp take on hover, #1466). Painted with the rest
+    // of the overlay, dimmed in overlayNotesColour_.
+    std::vector<MidiNote> overlayNotes_;
+    juce::Colour overlayNotesColour_;
 
     // Note range
     static constexpr int MIN_NOTE = 0;    // C-2
     static constexpr int MAX_NOTE = 127;  // G9
     static constexpr int NOTE_COUNT = MAX_NOTE - MIN_NOTE + 1;
+
+    // Shared folded axis (not owned). Null = linear 0..127 axis.
+    const PitchFoldMap* foldMap_ = nullptr;
+    int foldRowCount() const;
+    int noteForRow(int row) const;
 
     // Left padding (0 by default for piano roll since keyboard provides context)
     int leftPadding_ = 0;

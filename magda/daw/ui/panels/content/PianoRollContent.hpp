@@ -5,6 +5,7 @@
 
 #include "MidiEditorContent.hpp"
 #include "core/SelectionManager.hpp"
+#include "ui/components/pianoroll/PitchFoldMap.hpp"
 
 namespace magda {
 class PianoRollGridComponent;
@@ -16,6 +17,8 @@ struct MidiNoteEvent;
 }  // namespace magda
 
 namespace magda::daw::ui {
+
+class MidiTakeLanesComponent;
 
 /**
  * @brief Piano roll editor for MIDI clips
@@ -118,6 +121,17 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Zoom state (vertical — horizontal is in base)
     int noteHeight_ = DEFAULT_NOTE_HEIGHT;
 
+    // Pitch fold (#1464): collapse the vertical axis to used pitches. Shared
+    // map drives grid/keyboard/octave-strip. foldEnabled_ is static so the
+    // toggle persists across clip switches within a session (transient, not
+    // serialized — mirrors velocityDrawerOpen_/overlayTrackIds_).
+    static bool foldEnabled_;
+    magda::PitchFoldMap foldMap_;
+    // Recompute the used-pitch set from the editing clip(s) and refresh.
+    void rebuildFoldMap();
+    // Apply the current fold-enabled flag, rebuild the map, and relayout.
+    void applyFold();
+
     // Chord row visibility
     bool showChordRow_ = false;
     bool isSyncingChords_ = false;  // Re-entry guard for syncChordAnnotations
@@ -129,6 +143,8 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::PianoRollGridComponent> gridComponent_;
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
+    std::unique_ptr<magda::SvgButton> foldToggle_;
+    std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
@@ -162,6 +178,12 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     }
 
     std::unique_ptr<magda::OctaveLabelStrip> octaveLabelStrip_;
+
+    // Folded take-lanes strip below the grid (MIDI comping, #1466). Visible when
+    // the clip has >=2 takes and clip->takesExpanded.
+    std::unique_ptr<MidiTakeLanesComponent> takeLanes_;
+    bool takeLanesVisible() const;
+    void refreshTakeLanes();
 
     // Center the view on middle C (C4)
     void centerOnNote(int noteNumber);

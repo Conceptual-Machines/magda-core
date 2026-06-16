@@ -134,6 +134,40 @@ class ClipManager {
                           ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     /**
+     * @brief Switch the active MIDI loop-record take (#1465).
+     *
+     * Fronts take `takeIndex` — copies its notes/CC/pitchbend into the clip's
+     * authoritative event vectors and re-syncs to the engine. No-op unless the
+     * clip is MIDI with that take.
+     */
+    void setMidiClipCurrentTake(ClipId clipId, int takeIndex);
+
+    /** Switch the active AUDIO take (undoable; exits any comp). */
+    void setAudioClipCurrentTake(ClipId clipId, int takeIndex);
+
+    /**
+     * @brief Assign MIDI comp section [startBeat, endBeat) to a take (#1466).
+     *
+     * Seeds a full-length base section from the current take on first use, then
+     * splits/merges so the range plays `takeIndex`, reassembles the active note
+     * list, and re-syncs. No render (unlike audio). No-op for non-MIDI clips or
+     * clips with fewer than two takes.
+     */
+    void setMidiCompSection(ClipId clipId, double startBeat, double endBeat, int takeIndex);
+
+    /** Drop the MIDI comp and revert to the current take. */
+    void clearMidiComp(ClipId clipId);
+
+    /**
+     * @brief Delete loop-record take `takeIndex` (audio or MIDI).
+     *
+     * Drops the take, remaps comp sections (sections on the deleted take are
+     * removed, higher indices shift down), clamps the active take, re-fronts the
+     * active content, and re-syncs. No-op for the last remaining take.
+     */
+    void deleteClipTake(ClipId clipId, int takeIndex);
+
+    /**
      * @brief Delete a clip
      */
     void deleteClip(ClipId clipId);
@@ -142,6 +176,21 @@ class ClipManager {
      * @brief Restore a clip from full ClipInfo (used by undo system)
      */
     void restoreClip(const ClipInfo& clipInfo);
+
+    /**
+     * @brief Overwrite an existing clip's full state in place and re-sync.
+     *
+     * Used by the take/comp undo commands to restore a snapshot. Unlike
+     * restoreClip (which re-adds a deleted clip), this replaces a live clip.
+     */
+    void replaceClipState(const ClipInfo& clipInfo);
+
+    /**
+     * @brief Push an undoable take/comp snapshot. `before` is the clip state
+     * captured before the edit; the current (post-edit) state is the redo state.
+     * Used by audio comp edits in CompService.
+     */
+    void pushClipTakeUndo(const juce::String& desc, const ClipInfo& before);
 
     /**
      * @brief Force a clips changed notification (used by undo system)

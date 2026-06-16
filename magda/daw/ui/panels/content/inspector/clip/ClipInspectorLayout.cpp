@@ -157,6 +157,16 @@ void ClipInspector::resized() {
         }
     }
 
+    // MIDI clips have no Audio Properties section, so their takes section is
+    // laid out here at top level (visibility is set in ClipInspectorState).
+    if (!audioPropsCollapseToggle_.isVisible() && takesSection_) {
+        int ph = takesSection_->getPreferredHeight();
+        if (ph > 0) {
+            takesSection_->setBounds(addRow(ph));
+            addSpace(4);
+        }
+    }
+
     // 2-column grid: warp toggles | combo  /  BPM | speed/beats
     {
         const int colGap = 8;

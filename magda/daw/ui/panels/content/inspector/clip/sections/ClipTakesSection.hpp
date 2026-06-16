@@ -34,6 +34,11 @@ class ClipTakesSection : public juce::Component {
     /** Height in pixels needed for the current clip. Returns 0 if there's nothing to show. */
     int getPreferredHeight() const;
 
+    /** True when the current clip has takes worth showing (audio or MIDI). */
+    bool hasContent() const {
+        return hasTakes();
+    }
+
     void resized() override;
 
   private:

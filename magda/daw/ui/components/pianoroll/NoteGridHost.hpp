@@ -12,6 +12,13 @@ class NoteGridHost {
     virtual double getPixelsPerBeat() const = 0;
     virtual int getNoteHeight() const = 0;
     virtual juce::Point<int> getGridScreenPosition() const = 0;
+
+    // Resolve a vertical drag expressed in rows: the note `rowsUp` rows above
+    // `startNote` on the current axis. Identity (startNote + rowsUp) on the
+    // linear axis; on the folded axis it walks the visible used-pitch rows, so
+    // one row of drag = one visible row regardless of the semitone gap.
+    virtual int noteNumberByRowDelta(int startNote, int rowsUp) const = 0;
+
     virtual void updateNotePosition(NoteComponent* note, double beat, int noteNumber,
                                     double length) = 0;
     virtual void setCopyDragPreview(double beat, int noteNumber, double length, juce::Colour colour,

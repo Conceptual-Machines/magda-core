@@ -572,15 +572,7 @@ WaveformEditorContent::WaveformEditorContent() {
     // Loop-record takes: a lane click fronts that take as the clip's source and
     // re-syncs (ClipSynchronizer rebuilds the TE clip + re-attaches the takes).
     gridComponent_->onTakeSelected = [this](int takeIndex) {
-        auto& cm = magda::ClipManager::getInstance();
-        auto* clip = cm.getClip(editingClipId_);
-        if (!clip || !clip->isAudio())
-            return;
-        if (takeIndex < 0 || takeIndex >= static_cast<int>(clip->audio().takes.size()))
-            return;
-        clip->audio().currentTakeIndex = takeIndex;
-        clip->audio().source.filePath = clip->audio().takes[takeIndex].filePath;
-        cm.forceNotifyClipPropertyChanged(editingClipId_);
+        magda::ClipManager::getInstance().setAudioClipCurrentTake(editingClipId_, takeIndex);
     };
 
     // Comping: a swipe across a take lane assigns that range of the comp to the
@@ -592,6 +584,9 @@ WaveformEditorContent::WaveformEditorContent() {
     };
     gridComponent_->onCompClear = [this]() {
         magda::CompService::getInstance().clearComp(editingClipId_);
+    };
+    gridComponent_->onTakeDelete = [this](int takeIndex) {
+        magda::ClipManager::getInstance().deleteClipTake(editingClipId_, takeIndex);
     };
 
     // Zoom drag on waveform body, resolved through GestureRouter.

@@ -173,8 +173,49 @@ struct AudioClipModel {
     bool compActive = false;
 };
 
+/**
+ * @brief One MIDI loop-record take: a single recorded pass over the loop range.
+ *
+ * The MIDI counterpart of AudioTake. Where audio takes are file references,
+ * MIDI takes are full note/controller snapshots — assembling a comp needs no
+ * render, just picking which take's events play. Immutable once recorded.
+ */
+struct MidiTake {
+    std::vector<MidiNote> notes;
+    std::vector<MidiCCData> cc;
+    std::vector<MidiPitchBendData> pitchBend;
+};
+
+/**
+ * @brief One MIDI comp section: the take that plays over [startBeat, endBeat).
+ *
+ * The beats-domain counterpart of CompSection. Sections tile the comp timeline
+ * (take 0 at beat 0), kept sorted and contiguous; a comp is the ordered list.
+ * takeIndex points into MidiClipModel::takes. Unlike audio there is no render —
+ * the active note list is assembled directly from the sections + take note sets.
+ */
+struct MidiCompSection {
+    double startBeat = 0.0;
+    double endBeat = 0.0;
+    int takeIndex = 0;
+};
+
 struct MidiClipModel {
     juce::String sourceFilePath;
+
+    // Loop-record takes, one per pass. Empty for ordinary single-pass clips.
+    // When non-empty, the active take's events are mirrored into the clip's
+    // authoritative ClipInfo::midiNotes / midiCCData / midiPitchBendData (the
+    // rendered, engine-synced content) — mirroring how AudioClipModel fronts
+    // takes[currentTakeIndex] into source.filePath.
+    std::vector<MidiTake> takes;
+    int currentTakeIndex = 0;
+
+    // Comping. When compActive, the authoritative event vectors are assembled
+    // from `comp` (each section assigns a take to a beat range) instead of a
+    // single take. Empty comp = no comp.
+    std::vector<MidiCompSection> comp;
+    bool compActive = false;
 };
 
 using ClipContent = std::variant<MidiClipModel, AudioClipModel>;
@@ -227,6 +268,22 @@ struct ClipInfo {
 
     void setMidiContent() {
         content = MidiClipModel{};
+    }
+
+    /// Front MIDI take `idx`: copy its events into the authoritative active
+    /// note/CC/pitchbend vectors and mark it current. No-op unless this is a
+    /// MIDI clip with that take. Mirrors how audio fronts takes[idx] into the
+    /// clip source.
+    void frontMidiTake(int idx) {
+        if (!isMidi())
+            return;
+        auto& m = midi();
+        if (idx < 0 || idx >= static_cast<int>(m.takes.size()))
+            return;
+        m.currentTakeIndex = idx;
+        midiNotes = m.takes[static_cast<size_t>(idx)].notes;
+        midiCCData = m.takes[static_cast<size_t>(idx)].cc;
+        midiPitchBendData = m.takes[static_cast<size_t>(idx)].pitchBend;
     }
 
     // Transient UI: whether the loop-record take lanes are expanded in the

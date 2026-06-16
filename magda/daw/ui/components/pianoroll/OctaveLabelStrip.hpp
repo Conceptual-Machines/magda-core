@@ -4,6 +4,8 @@
 
 namespace magda {
 
+class PitchFoldMap;
+
 /**
  * Narrow vertical strip that draws octave labels (C-2 .. C8) next to the
  * piano roll keyboard. Independent of zoom so labels remain visible at
@@ -24,11 +26,19 @@ class OctaveLabelStrip : public juce::Component {
     void setNoteRange(int minNote, int maxNote);
     void setScrollOffset(int offsetY);
 
+    // Shared folded-axis map (owned by PianoRollContent, must outlive this).
+    // When folded, labels follow the folded rows instead of the linear axis.
+    void setFoldMap(const PitchFoldMap* map) {
+        foldMap_ = map;
+        repaint();
+    }
+
   private:
     int noteHeight_ = 12;
     int minNote_ = 0;
     int maxNote_ = 127;
     int scrollOffsetY_ = 0;
+    const PitchFoldMap* foldMap_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OctaveLabelStrip)
 };

@@ -4,6 +4,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "PitchFoldMap.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/GestureRouter.hpp"
 
@@ -13,6 +14,14 @@ PianoRollKeyboard::PianoRollKeyboard() {
     setOpaque(true);
 }
 
+int PianoRollKeyboard::rowCount() const {
+    return foldMap_ ? foldMap_->rowCount() : (maxNote_ - minNote_ + 1);
+}
+
+int PianoRollKeyboard::noteForRow(int row) const {
+    return foldMap_ ? foldMap_->noteForRow(row) : (maxNote_ - row);
+}
+
 void PianoRollKeyboard::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
@@ -20,8 +29,10 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(0xFF1a1a1a));
     g.fillRect(bounds);
 
-    for (int note = minNote_; note <= maxNote_; note++) {
-        int y = bounds.getY() + (maxNote_ - note) * noteHeight_ - scrollOffsetY_;
+    const int rows = rowCount();
+    for (int row = 0; row < rows; row++) {
+        const int note = noteForRow(row);
+        int y = bounds.getY() + row * noteHeight_ - scrollOffsetY_;
 
         if (y + noteHeight_ < bounds.getY() || y > bounds.getBottom()) {
             continue;
@@ -129,8 +140,8 @@ juce::String PianoRollKeyboard::getNoteName(int noteNumber) const {
 
 int PianoRollKeyboard::yToNoteNumber(int y) const {
     int adjustedY = y + scrollOffsetY_;
-    int note = maxNote_ - (adjustedY / noteHeight_);
-    return juce::jlimit(minNote_, maxNote_, note);
+    int row = juce::jlimit(0, rowCount() - 1, adjustedY / noteHeight_);
+    return juce::jlimit(minNote_, maxNote_, noteForRow(row));
 }
 
 void PianoRollKeyboard::mouseDown(const juce::MouseEvent& event) {
