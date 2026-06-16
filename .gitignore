@@ -137,3 +137,7 @@ mix-analysis-*.txt
 
 # Local fine-tuned model weights (multi-GB, never commit)
 *.gguf
+
+# Local exploratory scratch dirs (not tracked)
+eval/
+tools/
