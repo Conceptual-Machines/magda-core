@@ -243,6 +243,18 @@ void ClipInspector::updateFromSelectedClip() {
         audioPropsCollapseToggle_.setVisible(isAudioClip);
         audioPropsLabel_.setVisible(isAudioClip);
 
+        // The audio source name now lives inside the Audio Properties section, so
+        // hide it when that section is collapsed (MIDI keeps it above).
+        if (isAudioClip)
+            clipFilePathLabel_.setVisible(showAudioProps);
+
+        // Loop-record takes section (shared component; visible inside the
+        // expanded Audio Properties section).
+        if (takesSection_) {
+            takesSection_->setSelectedClips(selectedClipIds_);
+            takesSection_->setVisible(showAudioProps);
+        }
+
         if (isAudioClip) {
             clipTypeIcon_->updateSvgData(BinaryData::iconaudioboldm_svg,
                                          BinaryData::iconaudioboldm_svgSize);
@@ -675,6 +687,8 @@ void ClipInspector::showClipControls(bool show) {
         followActionLoopCountSlider_.setVisible(false);
         if (fadesSection_)
             fadesSection_->setVisible(false);
+        if (takesSection_)
+            takesSection_->setVisible(false);
 
         // New sections
         pitchSectionLabel_.setVisible(false);

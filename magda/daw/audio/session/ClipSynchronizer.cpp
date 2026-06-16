@@ -1550,12 +1550,24 @@ void ClipSynchronizer::applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip,
     if (teClip.hasAnyTakes())
         return;
 
-    // The clip source was created pointing at the active take, so getCurrentTake
-    // resolves it by matching source references — no setCurrentTake needed (and
-    // setCurrentTake assumes project-item takes, which these direct file
-    // references are not).
-    for (const auto& take : takes)
-        teClip.addTake(juce::File(take.filePath));
+    // Build the takes tree with absolute direct file references. We deliberately
+    // do NOT use WaveAudioClip::addTake(File): that writes a relative path
+    // (SourceFileReference::setToDirectFileReference(f, /*useRelativePath*/ true)),
+    // which asserts in findPathFromFile when the edit has no on-disk edit file -
+    // MAGDA never saves a .tracktionedit. Absolute references avoid the assert and
+    // resolve reliably. The clip source already points at the active take, so
+    // getCurrentTake resolves by matching source references (no setCurrentTake,
+    // which assumes project-item takes these direct file references are not).
+    namespace te = tracktion;
+    auto takesTree = teClip.state.getOrCreateChildWithName(te::IDs::TAKES, nullptr);
+    for (const auto& take : takes) {
+        juce::ValueTree takeTree(te::IDs::TAKE);
+        {
+            te::SourceFileReference sfr(teClip.edit, takeTree, te::IDs::source);
+            sfr.setToDirectFileReference(juce::File(take.filePath), /*useRelativePath*/ false);
+        }
+        takesTree.addChild(takeTree, -1, nullptr);
+    }
 }
 
 bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {

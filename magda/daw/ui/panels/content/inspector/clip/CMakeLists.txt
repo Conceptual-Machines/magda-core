@@ -6,4 +6,5 @@ target_sources(magda_daw_app PRIVATE
     ClipInspectorSelection.cpp
     ClipInspectorState.cpp
     sections/ClipFadesSection.cpp
+    sections/ClipTakesSection.cpp
 )

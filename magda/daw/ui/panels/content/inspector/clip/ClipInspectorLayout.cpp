@@ -96,8 +96,10 @@ void ClipInspector::resized() {
         addSeparator();
     }
 
-    // File path label (full width) — hidden when empty (e.g. session MIDI clips)
-    if (clipFilePathLabel_.getText().isNotEmpty()) {
+    // Source name label. For audio clips it lives inside the Audio Properties
+    // section (below); here it only covers non-audio (MIDI) clips, which have no
+    // Audio Properties header.
+    if (!audioPropsCollapseToggle_.isVisible() && clipFilePathLabel_.getText().isNotEmpty()) {
         clipFilePathLabel_.setBounds(addRow(16));
         addSeparator();
     }
@@ -137,6 +139,22 @@ void ClipInspector::resized() {
         audioPropsCollapseToggle_.setBounds(headerRow.removeFromLeft(16));
         audioPropsLabel_.setBounds(headerRow);
         addSpace(4);
+
+        // Audio source name (e.g. "Comp", "Take 3 / 6", or the filename), shown
+        // inside the Audio Properties section when expanded.
+        if (!audioPropsCollapsed_ && clipFilePathLabel_.getText().isNotEmpty()) {
+            clipFilePathLabel_.setBounds(addRow(16));
+            addSpace(4);
+        }
+
+        // Takes section (shared component; multi-take audio clips only).
+        if (takesSection_) {
+            int ph = takesSection_->getPreferredHeight();
+            if (ph > 0) {
+                takesSection_->setBounds(addRow(ph));
+                addSpace(4);
+            }
+        }
     }
 
     // 2-column grid: warp toggles | combo  /  BPM | speed/beats
