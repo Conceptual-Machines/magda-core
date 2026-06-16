@@ -112,7 +112,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<HeaderBar> headerBar_;
 
     void addMidiControlsToHeader();
-    void updateTakesButtonState();
     void removeMidiControlsFromHeader();
     void hideMidiHeaderControls();
     void layoutMidiHeaderControls(juce::Rectangle<int> headerBounds);
@@ -140,7 +139,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
     std::unique_ptr<juce::TextButton> autoGridButton_;
     std::unique_ptr<juce::TextButton> snapButton_;
-    std::unique_ptr<juce::TextButton> takesButton_;  // waveform editor: expand/collapse take lanes
     std::unique_ptr<SvgButton> sliceButton_;
     std::unique_ptr<SvgButton> bendButton_;
 

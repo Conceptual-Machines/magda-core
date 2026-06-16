@@ -289,8 +289,6 @@ BottomPanel::~BottomPanel() {
         autoGridButton_->setLookAndFeel(nullptr);
     if (snapButton_)
         snapButton_->setLookAndFeel(nullptr);
-    if (takesButton_)
-        takesButton_->setLookAndFeel(nullptr);
 
     ClipManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
@@ -484,27 +482,6 @@ void BottomPanel::setupHeaderControls() {
         }
     };
     headerBar_->addChildComponent(snapButton_.get());
-
-    // TAKES toggle (waveform editor only: expand/collapse loop-record take lanes)
-    takesButton_ = std::make_unique<juce::TextButton>("TAKES");
-    takesButton_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
-    takesButton_->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
-    takesButton_->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    takesButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-    takesButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    takesButton_->setWantsKeyboardFocus(false);
-    takesButton_->setClickingTogglesState(true);
-    takesButton_->setTooltip("Expand or collapse the loop-record take lanes");
-    takesButton_->setLookAndFeel(&smallLF);
-    takesButton_->onClick = [this]() {
-        if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(getActiveContent()))
-            waveEditor->setTakesExpanded(takesButton_->getToggleState());
-    };
-    headerBar_->addChildComponent(takesButton_.get());
 
     // Note slice button (dual icon: off=grey, on=blue when notes selected)
     sliceButton_ = std::make_unique<SvgButton>(
@@ -781,10 +758,8 @@ void BottomPanel::clipPropertyChanged(ClipId clipId) {
     else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
         activeClipId = waveEditor->getEditingClipId();
 
-    if (activeClipId == clipId) {
+    if (activeClipId == clipId)
         applyTimeModeToContent();
-        updateTakesButtonState();
-    }
 }
 
 void BottomPanel::tracksChanged() {
@@ -1167,8 +1142,6 @@ void BottomPanel::hideMidiHeaderControls() {
     gridDenominatorLabel_->setVisible(false);
     autoGridButton_->setVisible(false);
     snapButton_->setVisible(false);
-    if (takesButton_)
-        takesButton_->setVisible(false);
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
     sliceButton_->setVisible(false);
@@ -1177,18 +1150,6 @@ void BottomPanel::hideMidiHeaderControls() {
         overlayTracksButton_->setVisible(false);
     if (fullscreenToggle_)
         fullscreenToggle_->setVisible(false);
-}
-
-void BottomPanel::updateTakesButtonState() {
-    if (!takesButton_)
-        return;
-    auto* wave = dynamic_cast<daw::ui::WaveformEditorContent*>(getActiveContent());
-    const bool show = wave != nullptr && wave->editingClipHasMultipleTakes();
-    takesButton_->setVisible(show);
-    if (show)
-        takesButton_->setToggleState(wave->areTakesExpanded(), juce::dontSendNotification);
-    if (headerBar_->isVisible())
-        layoutMidiHeaderControls(headerBar_->getLocalBounds());
 }
 
 void BottomPanel::updateOverlayTracksButtonState() {
@@ -1221,11 +1182,6 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
 
     x -= 36;
     snapButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
-    if (takesButton_ && takesButton_->isVisible()) {
-        x -= 4;
-        x -= 48;
-        takesButton_->setBounds(x, y + vPad, 48, h - vPad * 2);
-    }
     x -= 4;
     x -= 36;
     autoGridButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
@@ -1436,8 +1392,6 @@ void BottomPanel::syncGridControlsFromContent() {
     gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
-
-    updateTakesButtonState();
 }
 
 void BottomPanel::syncGridStateFromTimeline() {

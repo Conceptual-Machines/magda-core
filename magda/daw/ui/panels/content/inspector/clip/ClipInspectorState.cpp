@@ -212,11 +212,21 @@ void ClipInspector::updateFromSelectedClip() {
             swatch->setColour(clip->colour);
 
         // File path label: show source filename for library-backed audio/MIDI clips.
+        // For loop-record takes/comps the raw render filename is meaningless, so
+        // show a take/comp label instead.
         if (!isMulti && clip->view != magda::ClipView::Session && clip->isAudio() &&
             clip->audio().source.filePath.isNotEmpty()) {
-            juce::File sourceFile(clip->audio().source.filePath);
-            clipFilePathLabel_.setText(sourceFile.getFileName(), juce::dontSendNotification);
-            clipFilePathLabel_.setTooltip(clip->audio().source.filePath);
+            const auto& audio = clip->audio();
+            juce::String label;
+            if (audio.compActive)
+                label = "Comp";
+            else if (audio.takes.size() > 1)
+                label = "Take " + juce::String(audio.currentTakeIndex + 1) + " / " +
+                        juce::String(static_cast<int>(audio.takes.size()));
+            else
+                label = juce::File(audio.source.filePath).getFileName();
+            clipFilePathLabel_.setText(label, juce::dontSendNotification);
+            clipFilePathLabel_.setTooltip(audio.source.filePath);
         } else if (!isMulti && clip->view != magda::ClipView::Session && clip->isMidi() &&
                    clip->midi().sourceFilePath.isNotEmpty()) {
             juce::File sourceFile(clip->midi().sourceFilePath);
