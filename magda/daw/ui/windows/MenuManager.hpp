@@ -18,6 +18,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onCloseProject;
         std::function<void()> onSaveProject;
         std::function<void()> onSaveProjectAs;
+        std::function<void()> onProjectSettings;
         std::function<void()> onCollectFiles;
         std::function<void()> onExportAudio;
         std::function<void()> onExportMidi;
@@ -155,6 +156,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         ExportAudio = 111,
         ExportMidi,
         CollectFiles = 115,
+        ProjectSettings = 116,
         RecentProjectBase = 150,  // 150-159 reserved for recent projects
         Quit = 199,
 

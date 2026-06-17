@@ -151,6 +151,12 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
         if (projectObj->hasProperty("sampleRate"))
             outData.info.sampleRate = projectObj->getProperty("sampleRate");
+        if (projectObj->hasProperty("timelineLengthBars"))
+            outData.info.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+        if (projectObj->hasProperty("renderBitDepth"))
+            outData.info.renderBitDepth = projectObj->getProperty("renderBitDepth");
+        if (projectObj->hasProperty("bounceBitDepth"))
+            outData.info.bounceBitDepth = projectObj->getProperty("bounceBitDepth");
         if (projectObj->hasProperty("keyRoot"))
             outData.info.keyRoot = projectObj->getProperty("keyRoot");
         if (projectObj->hasProperty("keyQuality"))
@@ -306,6 +312,9 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
 
     projectObj->setProperty("projectLength", info.projectLength);
     projectObj->setProperty("sampleRate", info.sampleRate);
+    projectObj->setProperty("timelineLengthBars", info.timelineLengthBars);
+    projectObj->setProperty("renderBitDepth", info.renderBitDepth);
+    projectObj->setProperty("bounceBitDepth", info.bounceBitDepth);
     projectObj->setProperty("keyRoot", info.keyRoot);
     projectObj->setProperty("keyQuality", info.keyQuality);
 
@@ -426,6 +435,12 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
     if (projectObj->hasProperty("sampleRate"))
         outInfo.sampleRate = projectObj->getProperty("sampleRate");
+    if (projectObj->hasProperty("timelineLengthBars"))
+        outInfo.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+    if (projectObj->hasProperty("renderBitDepth"))
+        outInfo.renderBitDepth = projectObj->getProperty("renderBitDepth");
+    if (projectObj->hasProperty("bounceBitDepth"))
+        outInfo.bounceBitDepth = projectObj->getProperty("bounceBitDepth");
     if (projectObj->hasProperty("keyRoot"))
         outInfo.keyRoot = projectObj->getProperty("keyRoot");
     if (projectObj->hasProperty("keyQuality"))

@@ -134,9 +134,7 @@ class GeneralPage : public juce::Component {
                         tr("preferences.slider.zoom_shift_sensitivity"), 1.0, 50.0, 0.5, 1);
 
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
-        setupTextSlider(*this, timelineLengthSlider, timelineLengthLabel,
-                        tr("preferences.slider.default_length"), 16.0, 4096.0, 1.0, 0, " bars");
-        timelineLengthSlider.setSkewForCentre(256.0);
+        // Total timeline length is per-project (File > Project Settings).
         setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
                         tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, 0, " bars");
 
@@ -227,8 +225,6 @@ class GeneralPage : public juce::Component {
                                           juce::dontSendNotification);
         zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
                                             juce::dontSendNotification);
-        timelineLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
-                                      juce::dontSendNotification);
         viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
         stopUpdatesPlayheadToggle.setToggleState(config.getStopUpdatesPlayhead(),
                                                  juce::dontSendNotification);
@@ -281,7 +277,6 @@ class GeneralPage : public juce::Component {
         config.setZoomOutSensitivity(zoomOutSensitivitySlider.getValue());
         config.setZoomInSensitivityShift(zoomShiftSensitivitySlider.getValue());
         config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
-        config.setDefaultTimelineLengthBars(static_cast<int>(timelineLengthSlider.getValue()));
         config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
         config.setStopUpdatesPlayhead(stopUpdatesPlayheadToggle.getToggleState());
         config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
@@ -369,8 +364,6 @@ class GeneralPage : public juce::Component {
         // Timeline
         timelineHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
-        bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, sliderH);
         bounds.removeFromTop(secGap);
 
@@ -446,8 +439,6 @@ class GeneralPage : public juce::Component {
 
         // Timeline
         timelineHeader.setBounds(left.removeFromTop(headerH));
-        left.removeFromTop(4);
-        layoutTextSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, sliderH);
         left.removeFromTop(4);
         layoutTextSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, sliderH);
         left.removeFromTop(secGap);
@@ -577,8 +568,8 @@ class GeneralPage : public juce::Component {
     magda::daw::ui::TextSlider zoomInSensitivitySlider, zoomOutSensitivitySlider,
         zoomShiftSensitivitySlider;
     juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
-    magda::daw::ui::TextSlider timelineLengthSlider, viewDurationSlider;
-    juce::Label timelineLengthLabel, viewDurationLabel;
+    magda::daw::ui::TextSlider viewDurationSlider;
+    juce::Label viewDurationLabel;
     juce::ToggleButton stopUpdatesPlayheadToggle;
     juce::ToggleButton autoSaveToggle;
     magda::daw::ui::TextSlider autoSaveIntervalSlider;
@@ -919,30 +910,8 @@ class RenderingPage : public juce::Component {
         };
         addAndMakeVisible(renderFolderClearButton);
 
-        // --- Format ---
-        setupSectionHeader(*this, formatHeader, tr("preferences.section.format"));
-
-        setupComboLabel(sampleRateLabel, tr("preferences.label.sample_rate"));
-        sampleRateCombo.addItem("44100 Hz", 1);
-        sampleRateCombo.addItem("48000 Hz", 2);
-        sampleRateCombo.addItem("96000 Hz", 3);
-        sampleRateCombo.addItem("192000 Hz", 4);
-        styleCombo(sampleRateCombo);
-        addAndMakeVisible(sampleRateCombo);
-
-        setupComboLabel(bitDepthLabel, tr("preferences.label.export_bit_depth"));
-        bitDepthCombo.addItem(tr("preferences.option.bit_depth_16"), 1);
-        bitDepthCombo.addItem(tr("preferences.option.bit_depth_24"), 2);
-        bitDepthCombo.addItem(tr("preferences.option.bit_depth_32_float"), 3);
-        styleCombo(bitDepthCombo);
-        addAndMakeVisible(bitDepthCombo);
-
-        setupComboLabel(bounceBitDepthLabel, tr("preferences.label.bounce_bit_depth"));
-        bounceBitDepthCombo.addItem(tr("preferences.option.bit_depth_16"), 1);
-        bounceBitDepthCombo.addItem(tr("preferences.option.bit_depth_24"), 2);
-        bounceBitDepthCombo.addItem(tr("preferences.option.bit_depth_32_float"), 3);
-        styleCombo(bounceBitDepthCombo);
-        addAndMakeVisible(bounceBitDepthCombo);
+        // Sample rate and render/bounce bit depth are per-project (File >
+        // Project Settings), not global preferences.
 
         // --- File Naming ---
         setupSectionHeader(*this, namingHeader, tr("preferences.section.file_naming"));
@@ -981,8 +950,8 @@ class RenderingPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + (rowH * 3) + 8 +
-               secGap + headerH + 4 + rowH + 4 + rowH + 2 + 18 + padding;
+        return padding + headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH +
+               2 + 18 + padding;
     }
 
     void resized() override {
@@ -1005,16 +974,6 @@ class RenderingPage : public juce::Component {
             buttonsArea.removeFromRight(4);
             renderFolderBrowseButton.setBounds(buttonsArea.reduced(0, 2));
         }
-        bounds.removeFromTop(secGap);
-
-        // Format
-        formatHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, sampleRateLabel, sampleRateCombo, rowH, labelW);
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, bitDepthLabel, bitDepthCombo, rowH, labelW);
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, bounceBitDepthLabel, bounceBitDepthCombo, rowH, labelW);
         bounds.removeFromTop(secGap);
 
         // File naming
@@ -1045,35 +1004,6 @@ class RenderingPage : public juce::Component {
             renderFolderValue.setText(juce::String(renderFolderPath_), juce::dontSendNotification);
         }
 
-        // Sample rate
-        double sr = config.getRenderSampleRate();
-        if (sr >= 192000.0)
-            sampleRateCombo.setSelectedId(4, juce::dontSendNotification);
-        else if (sr >= 96000.0)
-            sampleRateCombo.setSelectedId(3, juce::dontSendNotification);
-        else if (sr >= 48000.0)
-            sampleRateCombo.setSelectedId(2, juce::dontSendNotification);
-        else
-            sampleRateCombo.setSelectedId(1, juce::dontSendNotification);
-
-        // Bit depth
-        int bd = config.getRenderBitDepth();
-        if (bd >= 32)
-            bitDepthCombo.setSelectedId(3, juce::dontSendNotification);
-        else if (bd >= 24)
-            bitDepthCombo.setSelectedId(2, juce::dontSendNotification);
-        else
-            bitDepthCombo.setSelectedId(1, juce::dontSendNotification);
-
-        // Bounce bit depth
-        int bbd = config.getBounceBitDepth();
-        if (bbd >= 32)
-            bounceBitDepthCombo.setSelectedId(3, juce::dontSendNotification);
-        else if (bbd >= 24)
-            bounceBitDepthCombo.setSelectedId(2, juce::dontSendNotification);
-        else
-            bounceBitDepthCombo.setSelectedId(1, juce::dontSendNotification);
-
         // File patterns
         patternEditor.setText(juce::String(config.getRenderFilePattern()),
                               juce::dontSendNotification);
@@ -1084,16 +1014,6 @@ class RenderingPage : public juce::Component {
     void applySettings(Config& config) {
         config.setRenderFolder(renderFolderPath_);
 
-        static constexpr double sampleRates[] = {44100.0, 48000.0, 96000.0, 192000.0};
-        int srIdx = sampleRateCombo.getSelectedId() - 1;
-        if (srIdx >= 0 && srIdx < 4)
-            config.setRenderSampleRate(sampleRates[srIdx]);
-
-        static constexpr int bitDepths[] = {16, 24, 32};
-        int bdIdx = bitDepthCombo.getSelectedId() - 1;
-        if (bdIdx >= 0 && bdIdx < 3)
-            config.setRenderBitDepth(bitDepths[bdIdx]);
-
         auto pattern = patternEditor.getText().toStdString();
         if (pattern.empty())
             pattern = "<project-name>_<date-time>";
@@ -1103,10 +1023,6 @@ class RenderingPage : public juce::Component {
         if (bouncePattern.empty())
             bouncePattern = "<clip-name>_<date-time>";
         config.setBounceFilePattern(bouncePattern);
-
-        int bbdIdx = bounceBitDepthCombo.getSelectedId() - 1;
-        if (bbdIdx >= 0 && bbdIdx < 3)
-            config.setBounceBitDepth(bitDepths[bbdIdx]);
     }
 
   private:
@@ -1118,30 +1034,12 @@ class RenderingPage : public juce::Component {
         addAndMakeVisible(label);
     }
 
-    void styleCombo(juce::ComboBox& combo) {
-        combo.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
-        combo.setColour(juce::ComboBox::textColourId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-    }
-
-    static void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                               juce::ComboBox& combo, int rowH, int labelW) {
-        auto row = bounds.removeFromTop(rowH);
-        label.setBounds(row.removeFromLeft(labelW));
-        combo.setBounds(row.reduced(0, 4));
-    }
-
-    juce::Label renderHeader, formatHeader, namingHeader;
+    juce::Label renderHeader, namingHeader;
     juce::Label renderFolderLabel;
     juce::Label renderFolderValue;
     juce::TextButton renderFolderBrowseButton;
     juce::TextButton renderFolderClearButton;
     std::string renderFolderPath_;
-
-    juce::Label sampleRateLabel, bitDepthLabel, bounceBitDepthLabel;
-    juce::ComboBox sampleRateCombo, bitDepthCombo, bounceBitDepthCombo;
 
     juce::Label patternLabel, bouncePatternLabel, patternHint;
     juce::TextEditor patternEditor, bouncePatternEditor;

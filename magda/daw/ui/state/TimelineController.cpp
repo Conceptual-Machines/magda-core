@@ -1323,17 +1323,20 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
 void TimelineController::restoreProjectState(double tempo, int timeSigNum, int timeSigDen,
                                              bool loopEnabled, double loopStartBeats,
                                              double loopEndBeats,
-                                             const std::vector<ProjectTimelineMarker>& markers) {
+                                             const std::vector<ProjectTimelineMarker>& markers,
+                                             int timelineLengthBars) {
     // Unconditionally set state — no early returns
     state.tempo.bpm = clampBpm(tempo);
     state.tempo.timeSignatureNumerator = clampTimeSignatureValue(timeSigNum);
     state.tempo.timeSignatureDenominator = clampTimeSignatureValue(timeSigDen);
 
-    // Recalculate timeline length from configured bars using actual project tempo
-    auto& config = magda::Config::getInstance();
-    state.timelineLengthBeats =
-        config.getDefaultTimelineLengthBars() * state.tempo.timeSignatureNumerator;
-    state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
+    // Timeline length is a per-project property; fall back to the global default
+    // (e.g. older projects without the field) when not supplied.
+    const int lengthBars = (timelineLengthBars > 0)
+                               ? timelineLengthBars
+                               : magda::Config::getInstance().getDefaultTimelineLengthBars();
+    state.timelineLengthBeats = lengthBars * state.tempo.timeSignatureNumerator;
+    state.timelineLength = state.tempo.barsToTime(lengthBars);
 
     // Loop: beats are authoritative, derive seconds from BPM
     state.loop.enabled = loopEnabled;
