@@ -423,8 +423,8 @@ void MainView::setupComponents() {
     trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
     trackLargeButton->setTooltip("Large track height");
 
-    setupCornerButton(ioToggleButton, "IOToggle", BinaryData::io_routing_svg,
-                      BinaryData::io_routing_svgSize);
+    setupCornerButton(ioToggleButton, "IOToggle", BinaryData::inputoutput_svg,
+                      BinaryData::inputoutput_svgSize);
     ioToggleButton->onClick = [this]() {
         trackHeadersPanel->toggleIORouting();
         // Update button appearance to reflect state
@@ -442,18 +442,26 @@ void MainView::setupComponents() {
             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
     }
 
+    setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
+    addTrackButton->onClick = []() {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<CreateTrackCommand>(TrackType::Audio));
+    };
+    addTrackButton->setTooltip("Add track");
+
     // Axis label icons (non-interactive)
     setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
                       BinaryData::horizontal_svgSize);
     hAxisIcon->setInterceptsMouseClicks(false, false);
-    hAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
-    hAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    // Faint watermark rather than a solid grey glyph.
+    hAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    hAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
     hAxisIcon->setBorderThickness(0.0f);
 
     setupCornerButton(vAxisIcon, "VAxis", BinaryData::vertical_svg, BinaryData::vertical_svgSize);
     vAxisIcon->setInterceptsMouseClicks(false, false);
-    vAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
-    vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    vAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
     vAxisIcon->setBorderThickness(0.0f);
 
     // Set up scroll synchronization
@@ -828,6 +836,10 @@ void MainView::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(cornerSeparatorLine);
     }
+    if (!cornerBottomBorderLine.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(cornerBottomBorderLine);
+    }
 
     auto arrangementLayout = computeArrangementLayout();
     SideColumn headerColumn(!arrangementLayout.swapped);
@@ -988,7 +1000,7 @@ void MainView::resized() {
 
     {
         const auto cornerArea = arrangementLayout.cornerArea;
-        const int btnSize = 24;
+        const int btnSize = 23;
         const int gap = 6;
         const int rowGap = 8;
         const int margin = 8;
@@ -1021,6 +1033,11 @@ void MainView::resized() {
                                : juce::Rectangle<int>();
         cornerSeparatorLine =
             juce::Rectangle<int>(lineX, topRow.getBottom() + rowGap / 2, lineW, 1);
+        // Bottom border closing off the gutter at the ruler/track boundary, so
+        // it lines up with the ruler bottom and reads as separate from tracks.
+        if (!cornerBottomBorderLine.isEmpty())
+            repaint(cornerBottomBorderLine.expanded(1));
+        cornerBottomBorderLine = juce::Rectangle<int>(lineX, cornerArea.getBottom() - 1, lineW, 1);
 
         // Top row: action buttons on inner side, axis label on outer side
         SideColumn btnSide(!arrangementLayout.swapped);
@@ -1048,6 +1065,8 @@ void MainView::resized() {
         trackLargeButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
         ioToggleButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        btnSide.removeSpacing(botRow, gap);
+        addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         axisSide.removeSpacing(botRow, gap);
         vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
     }

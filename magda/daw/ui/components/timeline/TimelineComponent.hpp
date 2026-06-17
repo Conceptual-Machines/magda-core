@@ -233,7 +233,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
                             int labelHeight);
     // Draws a bar's time (bars translated to seconds) in the seconds row, at the
     // same x as the bar number.
-    void drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text);
+    void drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text, bool isFirstBar);
     bool secondsRowShown() const;
     // Bar numbers grow when the seconds row is hidden (the bars row is taller).
     float barLabelFontSize() const;

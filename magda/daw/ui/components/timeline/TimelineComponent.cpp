@@ -907,13 +907,22 @@ TimelineComponent::RulerRows TimelineComponent::rulerRows() const {
     return r;
 }
 
-void TimelineComponent::drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text) {
+void TimelineComponent::drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text,
+                                             bool isFirstBar) {
     const auto rows = rulerRows();
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText(text, x - 35, rows.secondsTop, 70, rows.secondsBottom - rows.secondsTop,
-               juce::Justification::centred);
+
+    // Bar 1 is pinned at the left padding (you can't scroll past it), so its
+    // wide "0:00" would clip when centred; left-align it nudged to the edge.
+    // Every other bar can be scrolled into view, so it stays centred.
+    const int h = rows.secondsBottom - rows.secondsTop;
+    if (isFirstBar) {
+        g.drawText(text, 2, rows.secondsTop, 70, h, juce::Justification::centredLeft);
+    } else {
+        g.drawText(text, x - 35, rows.secondsTop, 70, h, juce::Justification::centred);
+    }
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
@@ -1199,7 +1208,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 if (isBarStart && (bar - 1) % barLabelInterval == 0) {
                     drawBarNumberLabel(g, juce::String(bar), x, labelY, labelHeight);
                     if (showSecondsRow)
-                        drawSecondsBandLabel(g, x, secondsLabelFor(beat));
+                        drawSecondsBandLabel(g, x, secondsLabelFor(beat), bar == 1);
                 } else if (isBeatStart && !isBarStart && beatPixelSpacing >= 50) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -1263,7 +1272,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                     if ((bar - 1) % barLabelInterval == 0) {
                         drawBarNumberLabel(g, juce::String(bar), x, labelY, labelHeight);
                         if (showSecondsRow)
-                            drawSecondsBandLabel(g, x, secondsLabelFor(beat));
+                            drawSecondsBandLabel(g, x, secondsLabelFor(beat), bar == 1);
                     }
                 } else {
                     if (pixelsPerBeat >= 50) {

@@ -66,7 +66,7 @@ struct LayoutConfig {
     int panelPadding = 8;
 
     // Timeline content left padding - shared across timeline, track content, automation lanes
-    static constexpr int TIMELINE_LEFT_PADDING = 7;
+    static constexpr int TIMELINE_LEFT_PADDING = 8;
 
     // Zoom controls
     int zoomButtonSize = 24;
