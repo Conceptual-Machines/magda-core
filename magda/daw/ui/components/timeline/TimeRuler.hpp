@@ -98,6 +98,9 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return playheadPosition;
     }
 
+    // Edit/playhead handle position, in this ruler's display-time domain.
+    void setPlayheadHandlePosition(double positionSeconds);
+
     // Edit cursor position (for drawing blinking edit cursor line)
     void setEditCursorPosition(double positionSeconds, bool blinkVisible);
 
@@ -127,7 +130,8 @@ class TimeRuler : public juce::Component, private juce::Timer {
                         const juce::MouseWheelDetails& wheel) override;
 
     // Callbacks
-    std::function<void(double)> onPositionClicked;            // Time position clicked
+    std::function<void(double)> onPositionClicked;            // Upper ruler position clicked
+    std::function<void(double)> onPlayheadPositionClicked;    // Lower tick/playhead strip clicked
     std::function<void(double, double, int)> onZoomChanged;   // newZoom, anchorTime, anchorScreenX
     std::function<void(int)> onScrollRequested;               // deltaX scroll amount
     std::function<void(double, double)> onLoopRegionChanged;  // Loop start/end preview during drag
@@ -159,6 +163,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double clipContentOffset =
         0.0;  // seconds - source offset in timeline seconds (shifts boundaries)
     double playheadPosition = -1.0;  // seconds - current playback position (-1 = not playing)
+    double playheadHandlePosition_ = -1.0;  // seconds in display domain (-1 = hidden)
 
     // Edit cursor
     double editCursorPosition_ = -1.0;  // seconds - edit cursor position (-1 = hidden)

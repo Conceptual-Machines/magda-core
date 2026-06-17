@@ -121,6 +121,13 @@ void TimeRuler::setPlayheadPosition(double positionSeconds) {
     }
 }
 
+void TimeRuler::setPlayheadHandlePosition(double positionSeconds) {
+    if (playheadHandlePosition_ != positionSeconds) {
+        playheadHandlePosition_ = positionSeconds;
+        repaint();
+    }
+}
+
 void TimeRuler::setEditCursorPosition(double positionSeconds, bool blinkVisible) {
     editCursorPosition_ = positionSeconds;
     editCursorVisible_ = blinkVisible;
@@ -305,7 +312,9 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
             onPhaseDragEnded(finalPhaseTime);
         }
         dragMode = DragMode::None;
-        setMouseCursor(CursorManager::getInstance().getZoomCursor());
+        setMouseCursor(event.y >= getHeight() - tickHeightMajor()
+                           ? juce::MouseCursor::IBeamCursor
+                           : CursorManager::getInstance().getZoomCursor());
         return;
     }
 
@@ -322,9 +331,12 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
         int deltaY = std::abs(event.y - mouseDownY);
 
         if (deltaX <= DRAG_THRESHOLD && deltaY <= DRAG_THRESHOLD) {
-            if (onPositionClicked) {
-                double time = pixelToTime(event.x);
-                if (time >= 0.0 && time <= timelineLength) {
+            double time = pixelToTime(event.x);
+            if (time >= 0.0 && time <= timelineLength) {
+                if (event.y >= getHeight() - tickHeightMajor()) {
+                    if (onPlayheadPositionClicked)
+                        onPlayheadPositionClicked(time);
+                } else if (onPositionClicked) {
                     onPositionClicked(time);
                 }
             }
@@ -332,7 +344,9 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     }
 
     dragMode = DragMode::None;
-    setMouseCursor(CursorManager::getInstance().getZoomCursor());
+    setMouseCursor(event.y >= getHeight() - tickHeightMajor()
+                       ? juce::MouseCursor::IBeamCursor
+                       : CursorManager::getInstance().getZoomCursor());
 }
 
 void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
@@ -356,17 +370,23 @@ void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
         }
     }
 
-    // Fall through: treat as click for playhead positioning
-    if (onPositionClicked) {
-        double time = pixelToTime(event.x);
-        if (time >= 0.0 && time <= timelineLength) {
+    // Fall through: treat as a position click using the same ruler zones as mouseUp.
+    double time = pixelToTime(event.x);
+    if (time >= 0.0 && time <= timelineLength) {
+        if (event.y >= getHeight() - tickHeightMajor()) {
+            if (onPlayheadPositionClicked)
+                onPlayheadPositionClicked(time);
+        } else if (onPositionClicked) {
             onPositionClicked(time);
         }
     }
 }
 
 void TimeRuler::mouseMove(const juce::MouseEvent& event) {
-    juce::MouseCursor desiredCursor = CursorManager::getInstance().getZoomCursor();
+    const int tickAreaTop = getHeight() - tickHeightMajor();
+    juce::MouseCursor desiredCursor = event.y >= tickAreaTop
+                                          ? juce::MouseCursor::IBeamCursor
+                                          : CursorManager::getInstance().getZoomCursor();
 
     // Alt+hover near phase marker shows resize cursor
     if (event.mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {
@@ -381,7 +401,8 @@ void TimeRuler::mouseMove(const juce::MouseEvent& event) {
     // a few pixels above the visible strip, and previously gating on a strict
     // inLoopStrip check left the zoom cursor showing in that band even though
     // a click there got captured as a loop-region drag.
-    if (desiredCursor == CursorManager::getInstance().getZoomCursor()) {
+    if (desiredCursor == CursorManager::getInstance().getZoomCursor() ||
+        desiredCursor == juce::MouseCursor::IBeamCursor) {
         auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
         if (loopCursor != juce::MouseCursor::NormalCursor)
             desiredCursor = loopCursor;
@@ -860,6 +881,21 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(height), 1.f);
             g.setColour(juce::Colours::white);
             g.drawLine(float(cursorX), 0.f, float(cursorX), float(height), 2.f);
+        }
+    }
+
+    // Draw global playhead/edit handle in the lower strip.
+    if (playheadHandlePosition_ >= 0.0) {
+        int handleX = timeToPixel(playheadHandlePosition_);
+        if (handleX >= 0 && handleX <= width) {
+            int tickAreaTop = height - tickHeightMajor();
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+
+            juce::Path triangle;
+            const float x = static_cast<float>(handleX);
+            const float y = static_cast<float>(tickAreaTop + 2);
+            triangle.addTriangle(x - 6.0f, y, x + 6.0f, y, x, y + 13.0f);
+            g.fillPath(triangle);
         }
     }
 

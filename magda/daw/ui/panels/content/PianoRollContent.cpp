@@ -6,6 +6,7 @@
 
 #include "../../core/SelectionManager.hpp"
 #include "../../state/TimelineController.hpp"
+#include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
@@ -716,6 +717,12 @@ void PianoRollContent::setupGridCallbacks() {
     // Edit cursor set from grid (Alt+click on grid line) — local to MIDI editor
     gridComponent_->onEditCursorSet = [this](double positionSeconds) {
         setLocalEditCursor(positionSeconds);
+    };
+
+    // Playhead set from grid — global arrangement transport, matching the timeline ruler.
+    gridComponent_->onPlayheadPositionBeatsChanged = [](double positionBeats) {
+        if (auto* controller = magda::TimelineController::getCurrent())
+            controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
     };
 
     // Handle chord block drops from the chord panel
