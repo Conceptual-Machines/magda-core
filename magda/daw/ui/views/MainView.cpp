@@ -2768,27 +2768,51 @@ void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& event) {
 }
 
 void MainView::MasterHeaderPanel::showMasterAutomationMenu(juce::Component* anchor) {
-    // Master has only a volume fader, so Volume is the single offered target.
+    // Mirror the per-track automation menu structure (section header, existing
+    // lanes as visibility toggles, an "Add New Lane..." submenu). Master has
+    // only a volume fader, so Volume is the single target offered.
     auto& manager = AutomationManager::getInstance();
     const auto target = ControlTarget::trackVolume(MASTER_TRACK_ID);
-    auto existing = manager.getLaneForTarget(target);
-    const bool shown = existing != INVALID_AUTOMATION_LANE_ID && manager.getLane(existing) &&
-                       manager.getLane(existing)->visible;
 
     juce::PopupMenu menu;
-    menu.addItem(1, "Master Volume", true, shown);
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(anchor), [target](int result) {
-            if (result != 1)
-                return;
-            auto& mgr = AutomationManager::getInstance();
+    menu.addSectionHeader("Show Automation Lane");
+    menu.addSeparator();
+
+    auto existingLanes = manager.getLanesForTrack(MASTER_TRACK_ID);
+    if (!existingLanes.empty()) {
+        for (auto laneId : existingLanes) {
+            if (const auto* lane = manager.getLane(laneId))
+                menu.addItem(1000 + laneId, lane->getDisplayName(), true, lane->visible);
+        }
+        menu.addSeparator();
+    }
+
+    juce::PopupMenu addNewMenu;
+    auto volLane = manager.getLaneForTarget(target);
+    const bool volShown = volLane != INVALID_AUTOMATION_LANE_ID && manager.getLane(volLane) &&
+                          manager.getLane(volLane)->visible;
+    addNewMenu.addItem(1, "Master Volume", true, volShown);
+    menu.addSubMenu("Add New Lane...", addNewMenu);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(anchor), [target](
+                                                                                   int result) {
+        if (result == 0)
+            return;
+        auto& mgr = AutomationManager::getInstance();
+        if (result >= 1000) {
+            AutomationLaneId laneId = result - 1000;
+            if (const auto* lane = mgr.getLane(laneId))
+                mgr.setLaneVisible(laneId, !lane->visible);
+            return;
+        }
+        if (result == 1) {
             auto id = mgr.getLaneForTarget(target);
-            if (id != INVALID_AUTOMATION_LANE_ID && mgr.getLane(id) && mgr.getLane(id)->visible) {
+            if (id != INVALID_AUTOMATION_LANE_ID && mgr.getLane(id) && mgr.getLane(id)->visible)
                 mgr.setLaneVisible(id, false);
-            } else {
+            else
                 mgr.setLaneVisible(mgr.getOrCreateLane(target, AutomationLaneType::Absolute), true);
-            }
-        });
+        }
+    });
 }
 
 void MainView::MasterHeaderPanel::resized() {
