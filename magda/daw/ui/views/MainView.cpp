@@ -2706,6 +2706,20 @@ void MainView::MasterHeaderPanel::setupControls() {
     };
     addAndMakeVisible(*speakerButton);
 
+    // Automation button: same icon as the per-track headers, opens the master
+    // automation menu.
+    automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
+                                                   BinaryData::automation_svgSize);
+    automationButton->setTooltip(tr("tracks.automation"));
+    automationButton->setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    automationButton->setColour(juce::TextButton::buttonOnColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationButton->onClick = [this]() { showMasterAutomationMenu(automationButton.get()); };
+    addAndMakeVisible(*automationButton);
+
     // Volume as draggable dB label
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(-60.0, 6.0, 0.0);  // -60 dB to +6 dB, default 0 dB
@@ -2749,11 +2763,12 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
 void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& event) {
     SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
 
-    if (!event.mods.isPopupMenu())
-        return;
+    if (event.mods.isPopupMenu())
+        showMasterAutomationMenu(this);
+}
 
-    // Right-click: toggle the master channel's automation lane(s). Master has
-    // only a volume fader, so Volume is the single offered target.
+void MainView::MasterHeaderPanel::showMasterAutomationMenu(juce::Component* anchor) {
+    // Master has only a volume fader, so Volume is the single offered target.
     auto& manager = AutomationManager::getInstance();
     const auto target = ControlTarget::trackVolume(MASTER_TRACK_ID);
     auto existing = manager.getLaneForTarget(target);
@@ -2762,17 +2777,18 @@ void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& event) {
 
     juce::PopupMenu menu;
     menu.addItem(1, "Master Volume", true, shown);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [target](int result) {
-        if (result != 1)
-            return;
-        auto& mgr = AutomationManager::getInstance();
-        auto id = mgr.getLaneForTarget(target);
-        if (id != INVALID_AUTOMATION_LANE_ID && mgr.getLane(id) && mgr.getLane(id)->visible) {
-            mgr.setLaneVisible(id, false);
-        } else {
-            mgr.setLaneVisible(mgr.getOrCreateLane(target, AutomationLaneType::Absolute), true);
-        }
-    });
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(anchor), [target](int result) {
+            if (result != 1)
+                return;
+            auto& mgr = AutomationManager::getInstance();
+            auto id = mgr.getLaneForTarget(target);
+            if (id != INVALID_AUTOMATION_LANE_ID && mgr.getLane(id) && mgr.getLane(id)->visible) {
+                mgr.setLaneVisible(id, false);
+            } else {
+                mgr.setLaneVisible(mgr.getOrCreateLane(target, AutomationLaneType::Absolute), true);
+            }
+        });
 }
 
 void MainView::MasterHeaderPanel::resized() {
@@ -2788,6 +2804,9 @@ void MainView::MasterHeaderPanel::resized() {
     auto topRow = contentArea.removeFromTop(18);
     // Square to the row height; the icon carries its own border, so don't shrink it.
     speakerButton->setBounds(
+        topRow.removeFromRight(topRow.getHeight()).withSizeKeepingCentre(16, 16));
+    topRow.removeFromRight(4);
+    automationButton->setBounds(
         topRow.removeFromRight(topRow.getHeight()).withSizeKeepingCentre(16, 16));
     topRow.removeFromRight(4);
     volumeLabel->setBounds(topRow);

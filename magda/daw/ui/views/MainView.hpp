@@ -442,7 +442,12 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     void setPeakLevels(float leftPeak, float rightPeak);
 
   private:
+    // Opens the master automation menu (mirrors the per-track automation
+    // button). Shared by the icon button and the header right-click.
+    void showMasterAutomationMenu(juce::Component* anchor);
+
     std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
+    std::unique_ptr<SvgButton> automationButton;          // Show master automation lane
     std::unique_ptr<DraggableValueLabel> volumeLabel;     // Volume as draggable dB label
 
     // Horizontal stereo meter component
