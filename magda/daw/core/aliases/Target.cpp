@@ -18,6 +18,8 @@ juce::String kindToJsonString(ControlTarget::Kind k) {
             return "track_pan";
         case ControlTarget::Kind::SendLevel:
             return "send_level";
+        case ControlTarget::Kind::Tempo:
+            return "tempo";
     }
     return "plugin_param";
 }
@@ -35,6 +37,8 @@ std::optional<ControlTarget::Kind> kindFromJsonString(const juce::String& s) {
         return ControlTarget::Kind::TrackPan;
     if (s == "send_level")
         return ControlTarget::Kind::SendLevel;
+    if (s == "tempo")
+        return ControlTarget::Kind::Tempo;
     return std::nullopt;
 }
 
@@ -109,6 +113,8 @@ juce::String toDebugString(const Target& target) {
                     case ControlTarget::Kind::SendLevel:
                         s += ", sendBusIndex=" + juce::String(t.sendBusIndex);
                         break;
+                    case ControlTarget::Kind::Tempo:
+                        break;
                 }
                 s += "}";
                 return s;
@@ -159,6 +165,8 @@ juce::String encodeTarget(const Target& target) {
                         break;
                     case ControlTarget::Kind::SendLevel:
                         obj->setProperty("sendBusIndex", t.sendBusIndex);
+                        break;
+                    case ControlTarget::Kind::Tempo:
                         break;
                 }
 
@@ -228,6 +236,8 @@ std::optional<Target> decodeTarget(const juce::String& json) {
                 break;
             case ControlTarget::Kind::SendLevel:
                 t.sendBusIndex = static_cast<int>(obj->getProperty("sendBusIndex"));
+                break;
+            case ControlTarget::Kind::Tempo:
                 break;
         }
 

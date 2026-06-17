@@ -38,6 +38,7 @@ void DefaultControllerParamWriter::write(const ResolveResult& resolved, float va
         case ControlTarget::Kind::TrackVolume:
         case ControlTarget::Kind::TrackPan:
         case ControlTarget::Kind::SendLevel:
+        case ControlTarget::Kind::Tempo:
             break;
     }
 }

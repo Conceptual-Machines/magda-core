@@ -70,6 +70,29 @@ TEST_CASE("ControlTarget - SendLevel validity", "[control_target]") {
     REQUIRE_FALSE(t2.isValid());
 }
 
+TEST_CASE("ControlTarget - Tempo is edit-scoped and needs no devicePath", "[control_target]") {
+    auto t = ControlTarget::tempo();
+
+    REQUIRE(t.kind == ControlTarget::Kind::Tempo);
+    REQUIRE(t.isEditScoped());
+    REQUIRE_FALSE(t.devicePath.isValid());  // no owning track/device
+    REQUIRE(t.isValid());                   // still valid despite empty path
+    REQUIRE(t.deviceId() == INVALID_DEVICE_ID);
+
+    // Device-bound kinds are not edit-scoped.
+    REQUIRE_FALSE(ControlTarget::trackVolume(1).isEditScoped());
+    REQUIRE_FALSE(
+        ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 5), 0).isEditScoped());
+}
+
+TEST_CASE("ControlTarget - all Tempo targets are equal", "[control_target]") {
+    auto a = ControlTarget::tempo();
+    auto b = ControlTarget::tempo();
+    REQUIRE(a == b);  // edit-scoped singleton: no secondary fields to differ on
+
+    REQUIRE(a != ControlTarget::trackVolume(1));  // different kind
+}
+
 TEST_CASE("ControlTarget - operator== distinguishes by kind", "[control_target]") {
     auto path = ChainNodePath::topLevelDevice(1, 5);
     auto plug = ControlTarget::pluginParam(path, 0);

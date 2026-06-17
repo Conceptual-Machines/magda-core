@@ -22,6 +22,7 @@ bool isPostFxAutomationTarget(const AutomationTarget& target) {
         case ControlTarget::Kind::TrackVolume:
         case ControlTarget::Kind::TrackPan:
         case ControlTarget::Kind::SendLevel:
+        case ControlTarget::Kind::Tempo:
             return false;
     }
     return false;
@@ -175,6 +176,12 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             }
             return std::nullopt;
         }
+        case ControlTarget::Kind::Tempo:
+            // Edit-scoped: no live engine read here (that is the BPM bridge's
+            // job). Seed the lane at the default tempo so the first point lands
+            // on a sensible musical value instead of the range midpoint.
+            return static_cast<double>(
+                ParameterUtils::realToNormalized(paramInfo.defaultValue, paramInfo));
         default:
             return std::nullopt;
     }
@@ -327,6 +334,16 @@ std::vector<AutomationLaneId> AutomationManager::getLanesForTrack(TrackId trackI
     std::vector<AutomationLaneId> result;
     for (const auto& lane : lanes_) {
         if (lane.target.devicePath.trackId == trackId) {
+            result.push_back(lane.id);
+        }
+    }
+    return result;
+}
+
+std::vector<AutomationLaneId> AutomationManager::getEditScopedLanes() const {
+    std::vector<AutomationLaneId> result;
+    for (const auto& lane : lanes_) {
+        if (lane.target.isEditScoped()) {
             result.push_back(lane.id);
         }
     }

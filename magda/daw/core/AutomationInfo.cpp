@@ -102,6 +102,20 @@ ParameterInfo makeSyncDivisionInfo(const juce::String& name) {
     return info;
 }
 
+ParameterInfo makeTempoInfo(const juce::String& name) {
+    // Global tempo lane. Linear BPM scale covering the usual musical range;
+    // the actual write into te::TempoSequence happens in the BPM bridge epic.
+    ParameterInfo info;
+    info.paramIndex = -1;
+    info.name = name;
+    info.unit = "BPM";
+    info.minValue = 20.0f;
+    info.maxValue = 300.0f;
+    info.defaultValue = 120.0f;
+    info.scale = ParameterScale::Linear;
+    return info;
+}
+
 }  // namespace
 
 juce::String formatCustomNameWithDefault(const juce::String& name,
@@ -179,6 +193,9 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
             break;
         }
 
+        case ControlTarget::Kind::Tempo:
+            return makeTempoInfo("Tempo");
+
         case ControlTarget::Kind::DeviceMacro:
             break;
     }
@@ -209,6 +226,8 @@ juce::String getDisplayNameForTarget(const AutomationTarget& target) {
             return "Mod " + juce::String(target.modId) + " Param " +
                    juce::String(target.modParamIndex);
         }
+        case ControlTarget::Kind::Tempo:
+            return "Tempo";
     }
     return "Unknown";
 }
