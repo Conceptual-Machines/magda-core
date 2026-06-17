@@ -293,6 +293,14 @@ class Config {
         stopUpdatesPlayhead = enabled;
     }
 
+    // Auto-scroll the arrangement to follow the playhead during playback.
+    bool getFollowPlayhead() const {
+        return followPlayhead;
+    }
+    void setFollowPlayhead(bool enabled) {
+        followPlayhead = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -1036,6 +1044,9 @@ class Config {
     // See getStopUpdatesPlayhead — default keeps the playhead in place
     // across Stop/Play cycles (Bitwig-style "play from playhead").
     bool stopUpdatesPlayhead = false;
+
+    // Auto-scroll the arrangement to follow the playhead during playback.
+    bool followPlayhead = true;
 
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;    // Show audio files by default

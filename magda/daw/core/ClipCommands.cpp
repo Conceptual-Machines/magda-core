@@ -993,8 +993,8 @@ void RenderClipCommand::execute() {
 
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = Config::getInstance().getRenderBitDepth();
-    params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
+    params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().renderBitDepth;
+    params.sampleRateForAudio = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
     params.blockSizeForAudio = 512;
     params.usePlugins = false;
     params.useMasterPlugins = false;
@@ -1183,8 +1183,9 @@ void RenderTimeSelectionCommand::execute() {
 
         auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
         params.audioFormat = formatManager.getWavFormat();
-        params.bitDepth = Config::getInstance().getRenderBitDepth();
-        params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
+        params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().renderBitDepth;
+        params.sampleRateForAudio =
+            ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
         params.blockSizeForAudio = 512;
         params.usePlugins = false;
         params.useMasterPlugins = false;
@@ -1735,8 +1736,8 @@ void BounceInPlaceCommand::execute() {
     params.destFile = renderedFile_;
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = Config::getInstance().getBounceBitDepth();
-    params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
+    params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().bounceBitDepth;
+    params.sampleRateForAudio = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
     params.blockSizeForAudio = 512;
     params.usePlugins = true;  // Synth is active, FX are bypassed
     params.useMasterPlugins = false;
@@ -1910,8 +1911,8 @@ void BounceToNewTrackCommand::execute() {
     params.destFile = renderedFile_;
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = Config::getInstance().getBounceBitDepth();
-    params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
+    params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().bounceBitDepth;
+    params.sampleRateForAudio = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
     params.blockSizeForAudio = 512;
     params.usePlugins = true;  // Full signal chain
     params.useMasterPlugins = false;

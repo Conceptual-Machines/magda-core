@@ -16,6 +16,7 @@ class MarkerLaneComponent : public juce::Component, public TimelineStateListener
 
     void paint(juce::Graphics& g) override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
 

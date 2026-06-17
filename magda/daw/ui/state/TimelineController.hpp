@@ -146,7 +146,8 @@ class TimelineController {
      */
     void restoreProjectState(double tempo, int timeSigNum, int timeSigDen, bool loopEnabled,
                              double loopStartBeats, double loopEndBeats,
-                             const std::vector<ProjectTimelineMarker>& markers = {});
+                             const std::vector<ProjectTimelineMarker>& markers = {},
+                             int timelineLengthBars = -1);
 
     // Backward-compatible alias for ChangeFlags (now at namespace scope)
     using ChangeFlags = magda::ChangeFlags;

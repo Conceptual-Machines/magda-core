@@ -102,6 +102,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(SaveProject, tr("menu.file.save_project"), true, false);
             menu.addItem(SaveProjectAs, tr("menu.file.save_project_as"), true, false);
             menu.addSeparator();
+            menu.addItem(ProjectSettings, tr("menu.file.project_settings"), true, false);
             menu.addItem(CollectFiles, tr("menu.file.collect_files"), true, false);
             menu.addSeparator();
             menu.addItem(ExportAudio, tr("menu.file.export_audio"), true, false);
@@ -308,6 +309,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case SaveProjectAs:
             if (callbacks_.onSaveProjectAs)
                 callbacks_.onSaveProjectAs();
+            break;
+        case ProjectSettings:
+            if (callbacks_.onProjectSettings)
+                callbacks_.onProjectSettings();
             break;
         case CollectFiles:
             if (callbacks_.onCollectFiles)

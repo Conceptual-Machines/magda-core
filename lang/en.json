@@ -16,6 +16,7 @@
     "file.close_project": "Close Project",
     "file.save_project": "Save Project",
     "file.save_project_as": "Save Project As...",
+    "file.project_settings": "Project Settings...",
     "file.collect_files": "Collect Files...",
     "file.export_audio": "Export Audio...",
     "file.export_midi": "Export MIDI...",
@@ -166,6 +167,14 @@
   },
   "chain_tree": {
     "label.click_hint": "Click an item to select it in the chain view"
+  },
+  "project_settings": {
+    "total_length": "Total length",
+    "bars": "bars",
+    "sample_rate": "Sample rate",
+    "render_bit_depth": "Render bit depth",
+    "bounce_bit_depth": "Bounce bit depth",
+    "save_as_default": "Save as default for new projects"
   },
   "track_manager": {
     "column.track": "Track",
@@ -320,6 +329,7 @@
     "slider.interval": "Interval",
     "toggle.enable_autosave": "Enable auto-save",
     "toggle.stop_updates_playhead": "Stop updates playhead",
+    "toggle.follow_playhead": "Follow playhead during playback",
     "toggle.headers_on_right": "Headers on the Right",
     "toggle.autohide_arrangement_scrollbars": "Auto-Hide Arrangement Scrollbars",
     "toggle.confirm_track_delete": "Confirm before deleting tracks",

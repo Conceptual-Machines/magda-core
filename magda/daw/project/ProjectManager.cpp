@@ -7,6 +7,7 @@
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
+#include "../core/Config.hpp"
 #include "../core/TempoUtils.hpp"
 #include "../core/TrackManager.hpp"
 #include "../engine/AudioEngine.hpp"
@@ -111,6 +112,14 @@ bool ProjectManager::newProject() {
     currentProject_ = ProjectInfo();
     currentProject_.name = "Untitled";
     currentProject_.version = MAGDA_VERSION;
+    // Seed per-project settings from the global new-project defaults.
+    {
+        auto& config = Config::getInstance();
+        currentProject_.timelineLengthBars = config.getDefaultTimelineLengthBars();
+        currentProject_.sampleRate = config.getRenderSampleRate();
+        currentProject_.renderBitDepth = config.getRenderBitDepth();
+        currentProject_.bounceBitDepth = config.getBounceBitDepth();
+    }
     currentFile_ = juce::File();
     isProjectOpen_ = true;
 

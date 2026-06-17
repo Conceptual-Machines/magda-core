@@ -45,8 +45,8 @@ double SongNavigatorPanel::totalBeats() const {
 
 int SongNavigatorPanel::beatToX(double beat) const {
     // Left padding matches the main track content; the right gutter matches the
-    // arrangement's min-zoom label gutter so that, fully zoomed out, the end of
-    // the strip lines up with the end of the arrangement's bars.
+    // arrangement's min-zoom label gutter so the strip's end lines up with the
+    // end of the arrangement's bars.
     const int usableWidth =
         juce::jmax(1, getWidth() - LayoutConfig::TIMELINE_LEFT_PADDING -
                           static_cast<int>(TimelineState::MIN_ZOOM_RIGHT_LABEL_GUTTER));
@@ -91,9 +91,10 @@ juce::Rectangle<float> SongNavigatorPanel::getViewportBox() const {
     const double endBeats = juce::jmin(totalBeats(), startBeats + visibleLengthBeats());
     const int left = beatToX(startBeats);
     const int right = beatToX(endBeats);
-    return juce::Rectangle<float>(static_cast<float>(left), 0.0f,
+    // Span the lanes area only - start below the ruler band, like the playhead.
+    return juce::Rectangle<float>(static_cast<float>(left), static_cast<float>(kRulerHeight),
                                   static_cast<float>(juce::jmax(2, right - left)),
-                                  static_cast<float>(getHeight()));
+                                  static_cast<float>(getHeight() - kRulerHeight));
 }
 
 // ===== Painting =====
@@ -130,20 +131,31 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
         g.fillRect(0, 0, getWidth(), kRulerHeight);
         g.setFont(8.0f);
-        for (int bar = 1; bar <= static_cast<int>(totalBars); bar += barStep) {
-            const int x = beatToX((bar - 1) * static_cast<double>(beatsPerBar));
-            // Skip ticks/labels that land on (or past) the right edge - they
-            // collide with the border / viewport box and the label gets clipped.
+
+        auto drawTick = [&](int barNumber, double beatPos) {
+            const int x = beatToX(beatPos);
             if (x >= getWidth() - 2) {
-                continue;
+                return;
             }
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.6f));
             g.drawVerticalLine(x, static_cast<float>(kRulerHeight),
                                static_cast<float>(getHeight()));
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
-            g.drawText(juce::String(bar), x + 2, 0, 40, kRulerHeight,
+            g.drawText(juce::String(barNumber), x + 2, 0, 40, kRulerHeight,
                        juce::Justification::centredLeft);
+        };
+
+        // The end of the project is bar (totalBars + 1) at the content's right
+        // edge (just before the gutter).
+        const int endBar = static_cast<int>(totalBars) + 1;
+        for (int bar = 1; bar < endBar; bar += barStep) {
+            // Don't crowd the final boundary label drawn below.
+            if (endBar - bar < barStep) {
+                continue;
+            }
+            drawTick(bar, (bar - 1) * static_cast<double>(beatsPerBar));
         }
+        drawTick(endBar, totalBars * static_cast<double>(beatsPerBar));
     }
 
     // Height is limited, so merge tracks onto a few lanes rather than one thin
@@ -190,12 +202,28 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
         }
     }
 
-    // Playhead marker.
+    // Timeline markers - a coloured line down the strip with a small flag tick
+    // in the ruler band, mirroring the arrangement's markers.
+    if (controller_) {
+        for (const auto& marker : controller_->getState().markers) {
+            const int mx = beatToX(marker.positionBeats);
+            if (mx >= getWidth() - 1) {
+                continue;
+            }
+            g.setColour(marker.colour.withAlpha(0.85f));
+            g.drawVerticalLine(mx, static_cast<float>(kRulerHeight),
+                               static_cast<float>(getHeight()));
+            // Flag tick at the top of the content area (not in the ruler header).
+            g.fillRect(mx, kRulerHeight, 4, 4);
+        }
+    }
+
+    // Playhead marker - starts below the ruler band, like the gridlines.
     if (controller_) {
         const double playBeats = controller_->getState().playhead.playbackPositionBeats;
         const int px = beatToX(playBeats);
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.9f));
-        g.drawVerticalLine(px, 0.0f, static_cast<float>(getHeight()));
+        g.drawVerticalLine(px, static_cast<float>(kRulerHeight), static_cast<float>(getHeight()));
     }
 
     // Viewport rectangle marking the currently-visible window. Hidden when the
@@ -326,12 +354,12 @@ void SongNavigatorPanel::zoomToVisibleRange(double startBeats, double lengthBeat
 
 // ===== Listeners =====
 
-void SongNavigatorPanel::timelineStateChanged(const TimelineState& /*state*/, ChangeFlags changes) {
-    if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll) ||
-        hasFlag(changes, ChangeFlags::Playhead) || hasFlag(changes, ChangeFlags::Timeline) ||
-        hasFlag(changes, ChangeFlags::Tempo)) {
-        repaint();
-    }
+void SongNavigatorPanel::timelineStateChanged(const TimelineState& /*state*/,
+                                              ChangeFlags /*changes*/) {
+    // The whole strip is derived from timeline state (zoom, scroll, playhead,
+    // length, tempo, markers), so just repaint when the state changes rather
+    // than filtering on individual flags.
+    repaint();
 }
 
 void SongNavigatorPanel::tracksChanged() {

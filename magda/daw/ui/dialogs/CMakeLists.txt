@@ -9,6 +9,7 @@ target_sources(magda_daw_app PRIVATE
     ParameterConfigDialog.cpp
     PluginSettingsDialog.cpp
     PreferencesDialog.cpp
+    ProjectSettingsDialog.cpp
     TrackManagerDialog.cpp
     AboutDialog.cpp
     SplashScreen.cpp
@@ -21,6 +22,7 @@ target_sources(magda_daw_app PRIVATE
     ParameterConfigDialog.hpp
     PluginSettingsDialog.hpp
     PreferencesDialog.hpp
+    ProjectSettingsDialog.hpp
     TrackManagerDialog.hpp
     AboutDialog.hpp
     SplashScreen.hpp

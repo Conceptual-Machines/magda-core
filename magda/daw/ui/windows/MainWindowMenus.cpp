@@ -9,6 +9,7 @@
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "../dialogs/PluginSettingsDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
+#include "../dialogs/ProjectSettingsDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
@@ -110,7 +111,8 @@ void MainWindow::openProjectFile(const juce::File& file) {
             auto& tc = safeThis->mainComponent->mainView->getTimelineController();
             tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
                                    info.timeSignatureDenominator, info.loopEnabled,
-                                   info.loopStartBeats, info.loopEndBeats, info.markers);
+                                   info.loopStartBeats, info.loopEndBeats, info.markers,
+                                   info.timelineLengthBars);
         },
         [safeThis, file](bool success, const juce::String& error) {
             if (!safeThis)
@@ -155,11 +157,12 @@ void MainWindow::setupMenuCallbacks() {
         } else {
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
-                ProjectInfo defaults;
+                const auto& info = ProjectManager::getInstance().getCurrentProjectInfo();
                 auto& tc = mainComponent->mainView->getTimelineController();
-                tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
-                                       defaults.timeSignatureDenominator, defaults.loopEnabled,
-                                       defaults.loopStartBeats, defaults.loopEndBeats);
+                tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                       info.timeSignatureDenominator, info.loopEnabled,
+                                       info.loopStartBeats, info.loopEndBeats, info.markers,
+                                       info.timelineLengthBars);
             }
             // Select master channel by default
             SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
@@ -464,6 +467,8 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onPreferences = [this]() { PreferencesDialog::showDialog(this); };
+
+    callbacks.onProjectSettings = [this]() { ProjectSettingsDialog::showDialog(this); };
 
     callbacks.onAISettings = [this]() { AISettingsDialog::showDialog(this); };
 
