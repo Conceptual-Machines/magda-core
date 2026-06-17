@@ -1,4 +1,5 @@
 add_subdirectory(common)
+add_subdirectory(navigation)
 add_subdirectory(timeline)
 add_subdirectory(tracks)
 add_subdirectory(clips)

@@ -7,6 +7,7 @@
 
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/LevelMeterBallistics.hpp"
+#include "../components/navigation/SongNavigatorPanel.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
@@ -268,7 +269,8 @@ void MainView::setupComponents() {
     // Create fixed master track row at bottom (matching track panel style)
     masterHeaderPanel = std::make_unique<MasterHeaderPanel>();
     addAndMakeVisible(*masterHeaderPanel);
-    masterContentPanel = std::make_unique<MasterContentPanel>();
+    masterContentPanel = std::make_unique<SongNavigatorPanel>();
+    masterContentPanel->setController(timelineController.get());
     addAndMakeVisible(*masterContentPanel);
 
     // Create horizontal zoom scroll bar (at bottom)
