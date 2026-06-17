@@ -61,6 +61,11 @@ te::AutomatableParameter* ControlTargetResolver::resolve(const ControlTarget& ta
         case ControlTarget::Kind::ModParam:
             return pluginManager_.findModifierParameterForAutomation(
                 target.devicePath.trackId, target.devicePath, target.modId, target.modParamIndex);
+
+        case ControlTarget::Kind::Tempo:
+            // Edit-scoped: tempo has no te::AutomatableParameter. The BPM bridge
+            // drives te::TempoSequence directly rather than through a parameter.
+            return nullptr;
     }
     return nullptr;
 }

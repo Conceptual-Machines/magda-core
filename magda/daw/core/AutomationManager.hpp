@@ -132,6 +132,12 @@ class AutomationManager : public TrackManagerListener {
     std::vector<AutomationLaneId> getLanesForTrack(TrackId trackId) const;
 
     /**
+     * @brief Get edit-scoped lanes (global targets with no owning track/device,
+     *        e.g. Tempo). These render in a pinned host rather than under a track.
+     */
+    std::vector<AutomationLaneId> getEditScopedLanes() const;
+
+    /**
      * @brief Get lane for a specific target
      * @return INVALID_AUTOMATION_LANE_ID if not found
      */

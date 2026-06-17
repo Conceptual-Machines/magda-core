@@ -149,6 +149,47 @@ TEST_CASE("AutomationManager::restoreLane skips duplicate targets", "[automation
     REQUIRE(mgr.getLane(first + 1000) == nullptr);
 }
 
+TEST_CASE("AutomationManager owns an untethered edit-scoped Tempo lane",
+          "[automation][editscoped]") {
+    resetState();
+    auto trackId = makeTrack("T");
+    auto& mgr = AutomationManager::getInstance();
+
+    auto trackLane = mgr.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
+    auto tempoLane = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+
+    REQUIRE(tempoLane != INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(tempoLane != trackLane);
+
+    // The tempo lane is global: it does not appear under the real track...
+    REQUIRE(mgr.getLanesForTrack(trackId).size() == 1);
+    REQUIRE(mgr.getLanesForTrack(trackId).front() == trackLane);
+
+    // ...and is surfaced through the edit-scoped accessor instead.
+    auto editScoped = mgr.getEditScopedLanes();
+    REQUIRE(editScoped.size() == 1);
+    REQUIRE(editScoped.front() == tempoLane);
+}
+
+TEST_CASE("AutomationManager: Tempo lane is a singleton and survives post-fx guard",
+          "[automation][editscoped]") {
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+
+    auto first = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+    auto second = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+
+    REQUIRE(first != INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(first == second);  // at most one lane per edit-scoped target
+    REQUIRE(mgr.getEditScopedLanes().size() == 1);
+
+    // Edit-scoped targets seed an initial point at the default tempo, not the
+    // 0.5 range-midpoint fallback used for unresolved targets.
+    const auto* lane = mgr.getLane(first);
+    REQUIRE(lane != nullptr);
+    REQUIRE(lane->absolutePoints.size() == 1);
+}
+
 TEST_CASE("DuplicateAutomationTimeSelectionCommand duplicates visible absolute lane points",
           "[automation][commands][duplicate]") {
     resetState();

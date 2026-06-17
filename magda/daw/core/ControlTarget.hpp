@@ -29,6 +29,8 @@ namespace magda {
  *  - `TrackVolume` — `devicePath` (track-level path).
  *  - `TrackPan`    — `devicePath` (track-level path).
  *  - `SendLevel`   — `devicePath` (track-level path) + `sendBusIndex`.
+ *  - `Tempo`       — edit-scoped; no `devicePath`, no secondary fields. A
+ *    global timeline value not bound to any track or device.
  */
 struct ControlTarget {
     enum class Kind {
@@ -38,6 +40,9 @@ struct ControlTarget {
         TrackVolume,
         TrackPan,
         SendLevel,
+        // Edit-scoped (no devicePath). Keep new edit-scoped kinds appended so
+        // the serialized integer values of the device-bound kinds stay stable.
+        Tempo,
     };
 
     Kind kind = Kind::PluginParam;
@@ -48,8 +53,14 @@ struct ControlTarget {
     int modParamIndex = -1;        // ModParam (0 = Rate)
     int sendBusIndex = -1;         // SendLevel
 
+    // Edit-scoped targets address a global/timeline value with no owning track
+    // or device, so they carry no `devicePath`.
+    bool isEditScoped() const {
+        return kind == Kind::Tempo;
+    }
+
     bool isValid() const {
-        if (!devicePath.isValid())
+        if (!isEditScoped() && !devicePath.isValid())
             return false;
         switch (kind) {
             case Kind::PluginParam:
@@ -62,6 +73,8 @@ struct ControlTarget {
                 return true;
             case Kind::SendLevel:
                 return sendBusIndex >= 0;
+            case Kind::Tempo:
+                return true;
         }
         return false;
     }
@@ -80,6 +93,8 @@ struct ControlTarget {
                 return true;
             case Kind::SendLevel:
                 return sendBusIndex == other.sendBusIndex;
+            case Kind::Tempo:
+                return true;
         }
         return false;
     }
@@ -137,6 +152,13 @@ struct ControlTarget {
         return t;
     }
 
+    // Edit-scoped global tempo. No devicePath.
+    static ControlTarget tempo() {
+        ControlTarget t;
+        t.kind = Kind::Tempo;
+        return t;
+    }
+
     // Legacy convenience — extract the leaf device id from devicePath.
     DeviceId deviceId() const {
         return devicePath.getDeviceId();
@@ -157,6 +179,8 @@ inline const char* toString(ControlTarget::Kind kind) {
             return "track_pan";
         case ControlTarget::Kind::SendLevel:
             return "send_level";
+        case ControlTarget::Kind::Tempo:
+            return "tempo";
     }
     return "unknown";
 }
