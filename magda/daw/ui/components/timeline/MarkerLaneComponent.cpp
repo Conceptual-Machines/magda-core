@@ -138,6 +138,14 @@ void MarkerLaneComponent::mouseUp(const juce::MouseEvent& event) {
         controller->dispatch(GoToMarkerEvent{markerId});
 }
 
+void MarkerLaneComponent::mouseDoubleClick(const juce::MouseEvent& event) {
+    const int markerId = markerAt(event.getPosition());
+    if (markerId == 0)
+        return;
+    if (const auto* marker = findMarker(markerId))
+        showRenameMarkerDialog(markerId, *marker);
+}
+
 void MarkerLaneComponent::mouseMove(const juce::MouseEvent& event) {
     const int markerId = markerAt(event.getPosition());
     if (markerId != hoveredMarkerId_) {
