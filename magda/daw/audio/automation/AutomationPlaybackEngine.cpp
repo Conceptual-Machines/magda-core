@@ -440,7 +440,8 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
                 const bool hasShaper = !prev.outHandle.isZero() || !point.inHandle.isZero();
                 const bool isCurvedLinear = prev.curveType == AutomationCurveType::Linear &&
                                             (std::abs(prev.tension) >= 0.001 || hasShaper);
-                if (isBezier || isCurvedLinear) {
+                const bool isHardCorner = prev.curveType == AutomationCurveType::HardCorner;
+                if (isBezier || isCurvedLinear || isHardCorner) {
                     const double span = point.beatPosition - prev.beatPosition;
                     if (span > 0.0) {
                         for (int s = 1; s < kBezierSegments; ++s) {

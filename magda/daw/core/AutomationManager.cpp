@@ -1002,6 +1002,21 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
 
                 case AutomationCurveType::Step:
                     return p1.value;  // Hold until next point
+
+                case AutomationCurveType::HardCorner: {
+                    // Two straight segments meeting at the apex (from the
+                    // shaper handle), or the midpoint when no apex was dragged.
+                    double apexT = 0.5;
+                    double apexValue = (p1.value + p2.value) * 0.5;
+                    if (!p1.outHandle.isZero()) {
+                        apexT =
+                            juce::jlimit(1.0e-4, 1.0 - 1.0e-4, p1.outHandle.beatOffset / duration);
+                        apexValue = p1.value + p1.outHandle.value;
+                    }
+                    if (t < apexT)
+                        return p1.value + (t / apexT) * (apexValue - p1.value);
+                    return apexValue + ((t - apexT) / (1.0 - apexT)) * (p2.value - apexValue);
+                }
             }
         }
     }

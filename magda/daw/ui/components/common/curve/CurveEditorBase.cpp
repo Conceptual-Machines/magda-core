@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 
+#include "core/UndoManager.hpp"
 #include "magda/daw/ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -681,6 +682,9 @@ void CurveEditorBase::toggleSegmentHardCorner(uint32_t pointId) {
     if (pointId == INVALID_CURVE_POINT_ID)
         return;
 
+    // Hard corner is a per-segment property stored on the left point: toggle the
+    // segment between a smooth/linear curve and a sharp kink (two straight
+    // segments meeting at the draggable apex).
     CurveType currentType = CurveType::Linear;
     for (const auto& point : getPoints()) {
         if (point.id == pointId) {
@@ -688,12 +692,8 @@ void CurveEditorBase::toggleSegmentHardCorner(uint32_t pointId) {
             break;
         }
     }
-
-    CurveType newType =
+    const CurveType newType =
         currentType == CurveType::HardCorner ? CurveType::Linear : CurveType::HardCorner;
-    DBG("[HardCorner] right-click segment pointId=" << static_cast<int>(pointId)
-                                                    << " oldType=" << getCurveTypeName(currentType)
-                                                    << " newType=" << getCurveTypeName(newType));
 
     previewPointId_ = INVALID_CURVE_POINT_ID;
     tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;

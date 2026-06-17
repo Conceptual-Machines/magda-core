@@ -261,11 +261,107 @@ juce::String AutomationCurveEditor::formatValueLabel(double y) const {
 void AutomationCurveEditor::mouseDown(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) {
         isRightClickPending_ = true;
-        showContextMenu();
+        rightClickX_ = e.x;
+        // Right-click ON a point edits its value; right-click on a segment /
+        // empty area opens the segment menu.
+        const uint32_t pid = pointIdAt(e.x, e.y);
+        if (pid != INVALID_CURVE_POINT_ID)
+            showPointValueEditor(pid);
+        else
+            showContextMenu();
         return;
     }
     isRightClickPending_ = false;
     CurveEditorBase::mouseDown(e);
+}
+
+uint32_t AutomationCurveEditor::pointIdAt(int x, int y) const {
+    for (const auto& pc : pointComponents_)
+        if (pc && pc->getBounds().contains(x, y))
+            return pc->getPointId();
+    return INVALID_CURVE_POINT_ID;
+}
+
+void AutomationCurveEditor::showPointValueEditor(uint32_t pointId) {
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    if (!lane)
+        return;
+
+    const CurvePoint* found = nullptr;
+    for (const auto& p : getPoints())
+        if (p.id == pointId) {
+            found = &p;
+            break;
+        }
+    if (!found)
+        return;
+
+    const ParameterInfo info = getParameterInfoForTarget(lane->target);
+    const double real = ParameterUtils::normalizedToReal(static_cast<float>(found->y), info);
+
+    if (!valueEditor_) {
+        valueEditor_ = std::make_unique<juce::TextEditor>();
+        valueEditor_->setJustification(juce::Justification::centred);
+        valueEditor_->setSelectAllWhenFocused(true);
+        valueEditor_->setFont(FontManager::getInstance().getUIFont(11.0f));
+        valueEditor_->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xFF111111));
+        valueEditor_->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+        valueEditor_->setColour(juce::TextEditor::outlineColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        valueEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        valueEditor_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+        valueEditor_->setColour(juce::TextEditor::highlightColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.4f));
+        valueEditor_->onReturnKey = [this]() { commitPointValueEdit(); };
+        valueEditor_->onEscapeKey = [this]() { hidePointValueEditor(); };
+        valueEditor_->onFocusLost = [this]() { commitPointValueEdit(); };
+        addAndMakeVisible(*valueEditor_);
+    }
+
+    valueEditPointId_ = pointId;
+    valueEditor_->setText(juce::String(real, 2), juce::dontSendNotification);
+
+    constexpr int kW = 56, kH = 18;
+    int cx = xToPixel(found->x);
+    int cy = yToPixel(found->y);
+    valueEditor_->setBounds(juce::jlimit(0, juce::jmax(0, getWidth() - kW), cx - kW / 2),
+                            juce::jlimit(0, juce::jmax(0, getHeight() - kH), cy - kH - 6), kW, kH);
+    valueEditor_->setVisible(true);
+    valueEditor_->grabKeyboardFocus();
+    valueEditor_->selectAll();
+}
+
+void AutomationCurveEditor::commitPointValueEdit() {
+    if (!valueEditor_ || valueEditPointId_ == INVALID_CURVE_POINT_ID)
+        return;
+    // Capture + clear state first: onPointMoved rebuilds point components and
+    // can re-fire onFocusLost, which would otherwise re-enter and re-apply.
+    const uint32_t pid = valueEditPointId_;
+    const juce::String text = valueEditor_->getText();
+    valueEditPointId_ = INVALID_CURVE_POINT_ID;
+    valueEditor_->setVisible(false);
+
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    const CurvePoint* found = nullptr;
+    for (const auto& p : getPoints())
+        if (p.id == pid) {
+            found = &p;
+            break;
+        }
+    if (!lane || !found)
+        return;
+    const ParameterInfo info = getParameterInfoForTarget(lane->target);
+    const double norm = juce::jlimit(0.0, 1.0,
+                                     static_cast<double>(ParameterUtils::realToNormalized(
+                                         static_cast<float>(text.getDoubleValue()), info)));
+    onPointMoved(pid, found->x, norm);  // keep the beat, set the value
+}
+
+void AutomationCurveEditor::hidePointValueEditor() {
+    valueEditPointId_ = INVALID_CURVE_POINT_ID;
+    if (valueEditor_)
+        valueEditor_->setVisible(false);
 }
 
 void AutomationCurveEditor::mouseUp(const juce::MouseEvent& e) {
@@ -328,32 +424,53 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
 
 void AutomationCurveEditor::showContextMenu() {
     juce::PopupMenu menu;
-    enum { SimplifyItem = 1 };
+    enum { HardCornerItem = 1, SimplifyItem = 2 };
 
     const auto& selectedIds = getSelectedPointIds();
-    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     const bool hasSelection = !selectedIds.empty();
-    const size_t pointCount = (lane && lane->isAbsolute()) ? lane->absolutePoints.size() : 0;
-    // RDP degenerates below 3 points in the scope we're operating on.
-    const bool canSimplify =
-        lane && lane->isAbsolute() && (hasSelection ? selectedIds.size() > 2 : pointCount > 2);
 
-    juce::String label = hasSelection ? "Simplify Selected Points" : "Simplify Curve";
-    menu.addItem(SimplifyItem, label, canSimplify);
+    // Hard corner toggles the segment under the cursor between a smooth/linear
+    // curve and a sharp kink. A segment is owned by its left point.
+    const uint32_t segId = findSegmentOwnerAt(pixelToX(rightClickX_));
+    bool isHardCorner = false;
+    if (segId != INVALID_CURVE_POINT_ID)
+        for (const auto& p : getPoints())
+            if (p.id == segId) {
+                isHardCorner = p.curveType == CurveType::HardCorner;
+                break;
+            }
+    if (segId != INVALID_CURVE_POINT_ID)
+        menu.addItem(HardCornerItem, "Hard Corner", true, isHardCorner);
+
+    // Simplify only applies to a selection of points (3+ for RDP to do anything).
+    if (hasSelection && selectedIds.size() > 2)
+        menu.addItem(SimplifyItem, "Simplify Selected Points");
+
+    if (menu.getNumItems() == 0)
+        return;
 
     auto laneId = laneId_;
     std::set<uint32_t> selectionCopy(selectedIds.begin(), selectedIds.end());
+    juce::Component::SafePointer<AutomationCurveEditor> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
-                       [laneId, selectionCopy](int result) {
-                           if (result != SimplifyItem)
-                               return;
-                           juce::MessageManager::callAsync([laneId, selectionCopy]() {
-                               std::vector<AutomationPointId> ids;
-                               ids.reserve(selectionCopy.size());
-                               for (auto id : selectionCopy)
-                                   ids.push_back(static_cast<AutomationPointId>(id));
-                               AutomationLaneComponent::simplifyLane(laneId, 0.01, ids);
-                           });
+                       [safe, laneId, selectionCopy, segId, isHardCorner](int result) {
+                           if (result == HardCornerItem) {
+                               if (safe && segId != INVALID_CURVE_POINT_ID) {
+                                   safe->onPointCurveTypeChanged(
+                                       segId,
+                                       isHardCorner ? CurveType::Linear : CurveType::HardCorner);
+                                   safe->updatePointPositions();
+                                   safe->repaint();
+                               }
+                           } else if (result == SimplifyItem) {
+                               juce::MessageManager::callAsync([laneId, selectionCopy]() {
+                                   std::vector<AutomationPointId> ids;
+                                   ids.reserve(selectionCopy.size());
+                                   for (auto id : selectionCopy)
+                                       ids.push_back(static_cast<AutomationPointId>(id));
+                                   AutomationLaneComponent::simplifyLane(laneId, 0.01, ids);
+                               });
+                           }
                        });
 }
 
@@ -683,6 +800,8 @@ CurveType AutomationCurveEditor::toCurveType(AutomationCurveType type) {
             return CurveType::Bezier;
         case AutomationCurveType::Step:
             return CurveType::Step;
+        case AutomationCurveType::HardCorner:
+            return CurveType::HardCorner;
     }
     return CurveType::Linear;
 }
@@ -696,7 +815,7 @@ AutomationCurveType AutomationCurveEditor::toAutomationCurveType(CurveType type)
         case CurveType::Step:
             return AutomationCurveType::Step;
         case CurveType::HardCorner:
-            return AutomationCurveType::Linear;
+            return AutomationCurveType::HardCorner;
     }
     return AutomationCurveType::Linear;
 }

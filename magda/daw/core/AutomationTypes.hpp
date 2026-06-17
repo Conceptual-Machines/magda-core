@@ -17,9 +17,11 @@ enum class AutomationLaneType {
  * @brief Curve interpolation type between automation points
  */
 enum class AutomationCurveType {
-    Linear,  // Straight line between points
-    Bezier,  // Smooth bezier curve with control handles
-    Step     // Instant jump to next value (no interpolation)
+    Linear,     // Straight line between points
+    Bezier,     // Smooth bezier curve with control handles
+    Step,       // Instant jump to next value (no interpolation)
+    HardCorner  // Two straight segments meeting at a sharp, draggable apex.
+                // Keep LAST: persisted as its integer value.
 };
 
 /**
@@ -56,6 +58,8 @@ inline const char* getCurveTypeName(AutomationCurveType type) {
             return "Bezier";
         case AutomationCurveType::Step:
             return "Step";
+        case AutomationCurveType::HardCorner:
+            return "Hard Corner";
     }
     return "Unknown";
 }

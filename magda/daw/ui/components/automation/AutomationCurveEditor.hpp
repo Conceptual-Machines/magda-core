@@ -139,6 +139,15 @@ class AutomationCurveEditor : public CurveEditorBase,
     void showContextMenu();
     void paintOverrideOverlay(juce::Graphics& g);
 
+    // Right-click a point to type its value inline (real units).
+    uint32_t pointIdAt(int x, int y) const;
+    void showPointValueEditor(uint32_t pointId);
+    void commitPointValueEdit();
+    void hidePointValueEditor();
+    std::unique_ptr<juce::TextEditor> valueEditor_;
+    uint32_t valueEditPointId_ = INVALID_CURVE_POINT_ID;
+    int rightClickX_ = 0;  // remembered for resolving the segment under a menu
+
     // Quantize a normalized value to the parameter's natural grid when
     // the lane's snapValue flag is enabled.
     double applyValueSnap(double normalized) const;
