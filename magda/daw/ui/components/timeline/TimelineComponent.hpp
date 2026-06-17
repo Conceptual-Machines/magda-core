@@ -231,12 +231,23 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // a small padded background box so the line never slashes through the digits.
     void drawBarNumberLabel(juce::Graphics& g, const juce::String& text, int x, int labelY,
                             int labelHeight);
-    // Draws a bar's time (bars translated to seconds) in the dedicated seconds
-    // row above the bars ruler, at the same x as the bar number.
+    // Draws a bar's time (bars translated to seconds) in the seconds row, at the
+    // same x as the bar number.
     void drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text);
-    // Height of the seconds band above the bars ruler (0 when hidden). The bars
-    // ruler is shifted down by this amount.
-    int secondsRowOffset() const;
+    bool secondsRowShown() const;
+    // Bar numbers grow when the seconds row is hidden (the bars row is taller).
+    float barLabelFontSize() const;
+
+    // The ruler is a fixed-height stack of four rows. When the seconds row is
+    // hidden its height folds into the bars row, so the total never changes.
+    struct RulerRows {
+        int barsTop, barsBottom;
+        int secondsTop, secondsBottom;  // equal (zero height) when hidden
+        int loopTop, loopBottom;
+        int playheadTop, playheadBottom;
+        bool hasSeconds;
+    };
+    RulerRows rulerRows() const;
 
     // Arrangement interaction helpers
     int findSectionAtPosition(int x, int y) const;

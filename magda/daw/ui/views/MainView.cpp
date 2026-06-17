@@ -393,9 +393,6 @@ void MainView::setupComponents() {
         secondsRulerToggleButton->setTooltip(secondsRulerVisible_ ? "Hide seconds ruler"
                                                                   : "Show seconds ruler");
         timeline->setSecondsRulerVisible(secondsRulerVisible_);
-        // The seconds row changes the ruler/timeline height, so relayout.
-        updateContentSizes();
-        resized();
     };
     secondsRulerToggleButton->setTooltip("Show seconds ruler");
 
@@ -949,7 +946,8 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 
     result.trackContentArea = bounds;
     result.overlayArea = bounds;
-    result.playheadArea = bounds.withTop(getTimelineHeight() - 20);
+    result.playheadArea =
+        bounds.withTop(getTimelineHeight() - LayoutConfig::getInstance().playheadRowHeight);
 
     return result;
 }
@@ -1304,7 +1302,7 @@ void MainView::updateContentSizes() {
 
     // Update timeline size with enhanced content width
     markerLane->setSize(contentWidth, getMarkerLaneHeight());
-    timeline->setSize(contentWidth, getRulerHeight());
+    timeline->setSize(contentWidth, LayoutConfig::getInstance().getTimelineBodyHeight());
 
     // Update track content and headers with same height
     trackContentPanel->setSize(contentWidth, contentHeight);
@@ -1692,8 +1690,10 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     // Draw edit cursor (triangle) - always visible
     if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        // Fill the playhead row: top edge at y0, tip at the row bottom.
+        const float ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
-        triangle.addTriangle(editX - 6, 6, editX + 6, 6, editX, 20);
+        triangle.addTriangle(editX - 6, 0.0f, editX + 6, 0.0f, editX, ph);
         g.fillPath(triangle);
     }
 
