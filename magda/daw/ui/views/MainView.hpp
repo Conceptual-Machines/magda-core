@@ -22,6 +22,7 @@ namespace magda {
 
 // Forward declaration
 class AudioEngine;
+class SongNavigatorPanel;
 
 class MainView : public juce::Component,
                  public juce::ScrollBar::Listener,
@@ -153,9 +154,10 @@ class MainView : public juce::Component,
 
     // Fixed master track row at bottom (matching track panel style)
     class MasterHeaderPanel;
-    class MasterContentPanel;
+    class MasterContentPanel;  // legacy "Master Output" placeholder (kept for easy revert)
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
-    std::unique_ptr<MasterContentPanel> masterContentPanel;
+    // Song navigator / minimap occupying the master content strip (issue #1474).
+    std::unique_ptr<SongNavigatorPanel> masterContentPanel;
     int masterStripHeight = 60;
     ViewMode currentViewMode_ = ViewMode::Arrange;
     bool masterVisible_ = true;
