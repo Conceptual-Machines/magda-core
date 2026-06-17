@@ -263,6 +263,9 @@ class PianoRollGridComponent : public juce::Component,
     // Edit cursor click on grid (Alt+click) — position in seconds
     std::function<void(double)> onEditCursorSet;
 
+    // Playhead click on grid — absolute timeline position in beats
+    std::function<void(double)> onPlayheadPositionBeatsChanged;
+
     // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs), chord name,
     // length
     std::function<void(ClipId, double, double, std::vector<std::pair<int, int>>, juce::String)>
@@ -361,6 +364,11 @@ class PianoRollGridComponent : public juce::Component,
     bool isDragSelecting_ = false;
     juce::Point<int> dragSelectStart_;
     juce::Point<int> dragSelectEnd_;
+
+    // Plain empty-grid click mirrors the timeline playhead lane.
+    bool isPendingPlayheadClick_ = false;
+    juce::Point<int> playheadClickStart_;
+    static constexpr int PLAYHEAD_CLICK_DRAG_THRESHOLD = 5;
 
     // Shift-drag note creation state
     bool isDrawingNote_ = false;
@@ -486,6 +494,7 @@ class PianoRollGridComponent : public juce::Component,
     std::optional<NoteInsertPosition> getNoteInsertPosition(juce::Point<int> localPos) const;
     double displayBeatForClipBeat(ClipId clipId, double clipBeat) const;
     double clipBeatForDisplayX(ClipId clipId, int mouseX) const;
+    double absolutePlayheadBeatForDisplayX(int mouseX) const;
     void updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX);
     bool isBlackKey(int noteNumber) const;
     juce::Colour getClipColour() const;

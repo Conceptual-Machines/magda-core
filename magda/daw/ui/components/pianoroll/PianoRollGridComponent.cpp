@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 #include "../../state/TimelineController.hpp"
@@ -34,6 +35,49 @@ double timelineLengthBeats(const ClipInfo& clip, double bpm) {
 
 double timelineEndBeats(const ClipInfo& clip, double bpm) {
     return clip.getEndBeats(bpm);
+}
+
+double effectiveLoopStartBeats(const ClipInfo& clip, double bpm) {
+    if (clip.loopStartBeats > 0.0)
+        return clip.loopStartBeats;
+
+    if (clip.loopStart > 0.0 && bpm > 0.0)
+        return clip.loopStart * bpm / 60.0;
+
+    return 0.0;
+}
+
+double effectiveLoopLengthBeats(const ClipInfo& clip, double bpm) {
+    if (clip.loopLengthBeats > 0.0)
+        return clip.loopLengthBeats;
+
+    if (clip.loopLength > 0.0 && bpm > 0.0)
+        return clip.loopLength * bpm / 60.0;
+
+    return timelineLengthBeats(clip, bpm);
+}
+
+// Grid clicks use the same relative-loop contract as the ruler: display beat is
+// loop phase, and the global target stays in the current playhead cycle.
+double globalBeatForRelativeLoopClick(double displayBeat, double currentGlobalBeat,
+                                      const ClipInfo& clip, double bpm) {
+    const double clipStart = timelineStartBeats(clip, bpm);
+    const double loopStart = effectiveLoopStartBeats(clip, bpm);
+    const double loopLength = effectiveLoopLengthBeats(clip, bpm);
+    const double phase = wrapPhase(displayBeat - loopStart, loopLength);
+    const double currentElapsed = currentGlobalBeat - clipStart;
+    const double cycle =
+        currentElapsed >= loopStart ? std::floor((currentElapsed - loopStart) / loopLength) : 0.0;
+
+    double target = clipStart + loopStart + cycle * loopLength + phase;
+
+    const double clipEnd = timelineEndBeats(clip, bpm);
+    while (target < clipStart)
+        target += loopLength;
+    while (target > clipEnd)
+        target -= loopLength;
+
+    return juce::jlimit(clipStart, clipEnd, target);
 }
 }  // namespace
 
@@ -607,6 +651,7 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
     }
 
     isEditCursorClick_ = false;
+    isPendingPlayheadClick_ = false;
 
     // Right-click context menu
     if (e.mods.isPopupMenu()) {
@@ -743,6 +788,9 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
     dragSelectStart_ = e.getPosition();
     dragSelectEnd_ = e.getPosition();
     isDragSelecting_ = false;
+    isPendingPlayheadClick_ =
+        !e.mods.isShiftDown() && !e.mods.isCommandDown() && !e.mods.isAltDown();
+    playheadClickStart_ = e.getPosition();
 }
 
 void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
@@ -760,6 +808,12 @@ void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
 
+    const int deltaX = std::abs(e.x - playheadClickStart_.x);
+    const int deltaY = std::abs(e.y - playheadClickStart_.y);
+    if (juce::jmax(deltaX, deltaY) <= PLAYHEAD_CLICK_DRAG_THRESHOLD)
+        return;
+
+    isPendingPlayheadClick_ = false;
     isDragSelecting_ = true;
     dragSelectEnd_ = e.getPosition();
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
@@ -821,6 +875,17 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         }
         return;
     }
+
+    if (isPendingPlayheadClick_ && e.getNumberOfClicks() == 1) {
+        const int deltaX = std::abs(e.x - playheadClickStart_.x);
+        const int deltaY = std::abs(e.y - playheadClickStart_.y);
+        if (juce::jmax(deltaX, deltaY) <= PLAYHEAD_CLICK_DRAG_THRESHOLD) {
+            if (onPlayheadPositionBeatsChanged)
+                onPlayheadPositionBeatsChanged(
+                    absolutePlayheadBeatForDisplayX(playheadClickStart_.x));
+        }
+    }
+    isPendingPlayheadClick_ = false;
 
     if (isDragSelecting_) {
         // Build normalized selection rectangle
@@ -925,6 +990,7 @@ void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
 
 void PianoRollGridComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
+    isPendingPlayheadClick_ = false;
     if (nearPhaseMarker_) {
         nearPhaseMarker_ = false;
         repaint();
@@ -1908,13 +1974,42 @@ double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) co
     return clipBeat;
 }
 
+double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const {
+    double beat = pixelToBeat(mouseX);
+    if (snapEnabled_)
+        beat = snapBeatToGrid(beat);
+
+    if (relativeMode_) {
+        const auto* clip =
+            clipId_ != INVALID_CLIP_ID ? ClipManager::getInstance().getClip(clipId_) : nullptr;
+
+        if (clip && clip->loopEnabled) {
+            double bpm = 120.0;
+            double currentGlobalBeat = 0.0;
+            if (auto* controller = TimelineController::getCurrent()) {
+                const auto& state = controller->getState();
+                bpm = state.tempo.bpm > 0.0 ? state.tempo.bpm : bpm;
+                currentGlobalBeat = state.playhead.getCurrentPositionBeats();
+            }
+
+            const double loopLength = effectiveLoopLengthBeats(*clip, bpm);
+            if (loopLength > 0.0)
+                return globalBeatForRelativeLoopClick(beat, currentGlobalBeat, *clip, bpm);
+        }
+
+        return juce::jmax(0.0, beat + clipStartBeats_);
+    }
+
+    return juce::jlimit(0.0, timelineLengthBeats_, beat);
+}
+
 void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX) {
     if (mods.isAltDown() && isNearGridLine(mouseX)) {
         setMouseCursor(juce::MouseCursor::IBeamCursor);
     } else if (mods.isShiftDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
-        setMouseCursor(juce::MouseCursor::NormalCursor);
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
     }
 }
 
