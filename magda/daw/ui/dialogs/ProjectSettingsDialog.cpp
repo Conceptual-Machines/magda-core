@@ -74,6 +74,7 @@ ProjectSettingsDialog::ProjectSettingsDialog() {
     addAndMakeVisible(bounceBitCombo_);
 
     saveAsDefaultBtn_.setButtonText(tr("project_settings.save_as_default"));
+    saveAsDefaultBtn_.setClickingTogglesState(true);
     addAndMakeVisible(saveAsDefaultBtn_);
 
     okBtn_.onClick = [this]() {

@@ -637,6 +637,14 @@ void MainView::timerCallback() {
 // ===== TimelineStateListener Implementation =====
 
 void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    // Timeline length changes: the ruler and track content cache their own
+    // length, so push the new value to them (e.g. from Project Settings). The
+    // Zoom flag that accompanies a length change handles the resize/scrollbars.
+    if (hasFlag(changes, ChangeFlags::Timeline)) {
+        timeline->setTimelineLength(state.timelineLength);
+        trackContentPanel->setTimelineLength(state.timelineLength);
+    }
+
     // Zoom/scroll changes
     if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll)) {
         if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll))

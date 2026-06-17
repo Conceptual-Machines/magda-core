@@ -45,8 +45,8 @@ double SongNavigatorPanel::totalBeats() const {
 
 int SongNavigatorPanel::beatToX(double beat) const {
     // Left padding matches the main track content; the right gutter matches the
-    // arrangement's min-zoom label gutter so that, fully zoomed out, the end of
-    // the strip lines up with the end of the arrangement's bars.
+    // arrangement's min-zoom label gutter so the strip's end lines up with the
+    // end of the arrangement's bars.
     const int usableWidth =
         juce::jmax(1, getWidth() - LayoutConfig::TIMELINE_LEFT_PADDING -
                           static_cast<int>(TimelineState::MIN_ZOOM_RIGHT_LABEL_GUTTER));
@@ -130,20 +130,31 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
         g.fillRect(0, 0, getWidth(), kRulerHeight);
         g.setFont(8.0f);
-        for (int bar = 1; bar <= static_cast<int>(totalBars); bar += barStep) {
-            const int x = beatToX((bar - 1) * static_cast<double>(beatsPerBar));
-            // Skip ticks/labels that land on (or past) the right edge - they
-            // collide with the border / viewport box and the label gets clipped.
+
+        auto drawTick = [&](int barNumber, double beatPos) {
+            const int x = beatToX(beatPos);
             if (x >= getWidth() - 2) {
-                continue;
+                return;
             }
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.6f));
             g.drawVerticalLine(x, static_cast<float>(kRulerHeight),
                                static_cast<float>(getHeight()));
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
-            g.drawText(juce::String(bar), x + 2, 0, 40, kRulerHeight,
+            g.drawText(juce::String(barNumber), x + 2, 0, 40, kRulerHeight,
                        juce::Justification::centredLeft);
+        };
+
+        // The end of the project is bar (totalBars + 1) at the content's right
+        // edge (just before the gutter).
+        const int endBar = static_cast<int>(totalBars) + 1;
+        for (int bar = 1; bar < endBar; bar += barStep) {
+            // Don't crowd the final boundary label drawn below.
+            if (endBar - bar < barStep) {
+                continue;
+            }
+            drawTick(bar, (bar - 1) * static_cast<double>(beatsPerBar));
         }
+        drawTick(endBar, totalBars * static_cast<double>(beatsPerBar));
     }
 
     // Height is limited, so merge tracks onto a few lanes rather than one thin
