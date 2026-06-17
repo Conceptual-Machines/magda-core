@@ -5,6 +5,7 @@
 #include <cmath>
 #include <set>
 
+#include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/LevelMeterBallistics.hpp"
@@ -2768,51 +2769,10 @@ void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& event) {
 }
 
 void MainView::MasterHeaderPanel::showMasterAutomationMenu(juce::Component* anchor) {
-    // Mirror the per-track automation menu structure (section header, existing
-    // lanes as visibility toggles, an "Add New Lane..." submenu). Master has
-    // only a volume fader, so Volume is the single target offered.
-    auto& manager = AutomationManager::getInstance();
-    const auto target = ControlTarget::trackVolume(MASTER_TRACK_ID);
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader("Show Automation Lane");
-    menu.addSeparator();
-
-    auto existingLanes = manager.getLanesForTrack(MASTER_TRACK_ID);
-    if (!existingLanes.empty()) {
-        for (auto laneId : existingLanes) {
-            if (const auto* lane = manager.getLane(laneId))
-                menu.addItem(1000 + laneId, lane->getDisplayName(), true, lane->visible);
-        }
-        menu.addSeparator();
-    }
-
-    juce::PopupMenu addNewMenu;
-    auto volLane = manager.getLaneForTarget(target);
-    const bool volShown = volLane != INVALID_AUTOMATION_LANE_ID && manager.getLane(volLane) &&
-                          manager.getLane(volLane)->visible;
-    addNewMenu.addItem(1, "Master Volume", true, volShown);
-    menu.addSubMenu("Add New Lane...", addNewMenu);
-
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(anchor), [target](
-                                                                                   int result) {
-        if (result == 0)
-            return;
-        auto& mgr = AutomationManager::getInstance();
-        if (result >= 1000) {
-            AutomationLaneId laneId = result - 1000;
-            if (const auto* lane = mgr.getLane(laneId))
-                mgr.setLaneVisible(laneId, !lane->visible);
-            return;
-        }
-        if (result == 1) {
-            auto id = mgr.getLaneForTarget(target);
-            if (id != INVALID_AUTOMATION_LANE_ID && mgr.getLane(id) && mgr.getLane(id)->visible)
-                mgr.setLaneVisible(id, false);
-            else
-                mgr.setLaneVisible(mgr.getOrCreateLane(target, AutomationLaneType::Absolute), true);
-        }
-    });
+    // Same menu builder as the per-track headers — it walks the master channel's
+    // volume, macros, modulators, and device chain (pan/sends are skipped for
+    // the master). The band updates via its own listener, so no callback.
+    showAutomationMenu(MASTER_TRACK_ID, anchor);
 }
 
 void MainView::MasterHeaderPanel::resized() {
