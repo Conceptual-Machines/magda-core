@@ -36,6 +36,7 @@ class MarkerLaneComponent : public juce::Component, public TimelineStateListener
     void showMarkerMenu(int markerId, juce::Point<int> screenPosition);
     void showLaneMenu(juce::Point<int> screenPosition);
     void showRenameMarkerDialog(int markerId, const TimelineMarker& marker);
+    void showEditPositionDialog(int markerId, const TimelineMarker& marker);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MarkerLaneComponent)
 };

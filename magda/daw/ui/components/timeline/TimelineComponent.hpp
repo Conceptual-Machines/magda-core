@@ -36,6 +36,27 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
         return timelineListener_.get();
     }
 
+    // Marker lane visibility — marker guide lines are only drawn when the
+    // marker lane is shown.
+    void setMarkerLaneVisible(bool visible) {
+        if (markerLaneVisible_ != visible) {
+            markerLaneVisible_ = visible;
+            repaint();
+        }
+    }
+
+    // Optional seconds ruler: splits the time ruler into bars/beats (top) and
+    // seconds (bottom) rows inside its existing height. Display only.
+    void setSecondsRulerVisible(bool visible) {
+        if (secondsRulerVisible_ != visible) {
+            secondsRulerVisible_ = visible;
+            repaint();
+        }
+    }
+    bool isSecondsRulerVisible() const {
+        return secondsRulerVisible_;
+    }
+
     // Timeline controls
     void setTimelineLength(double lengthInSeconds);
     void setPlayheadPosition(double position);
@@ -176,6 +197,9 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     bool isDraggingTimeSelection = false;
     double timeSelectionDragStartBeats = -1.0;  // Initial drag position for time selection
 
+    bool markerLaneVisible_ = true;     // Gates marker guide-line drawing
+    bool secondsRulerVisible_ = false;  // Splits the ruler into bars + seconds rows
+
     // Mouse interaction state
     bool isZooming = false;
     bool isPendingPlayheadClick = false;  // True if we might set playhead on mouseUp
@@ -203,6 +227,27 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void drawLoopMarkerFlags(juce::Graphics& g);  // Draws triangular flags (foreground)
     void drawTimeSelection(juce::Graphics& g);
     void drawMarkerGuides(juce::Graphics& g);
+    // Draws a bar-number label, masking the dashed marker guide behind it with
+    // a small padded background box so the line never slashes through the digits.
+    void drawBarNumberLabel(juce::Graphics& g, const juce::String& text, int x, int labelY,
+                            int labelHeight);
+    // Draws a bar's time (bars translated to seconds) in the seconds row, at the
+    // same x as the bar number.
+    void drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text, bool isFirstBar);
+    bool secondsRowShown() const;
+    // Bar numbers grow when the seconds row is hidden (the bars row is taller).
+    float barLabelFontSize() const;
+
+    // The ruler is a fixed-height stack of four rows. When the seconds row is
+    // hidden its height folds into the bars row, so the total never changes.
+    struct RulerRows {
+        int barsTop, barsBottom;
+        int secondsTop, secondsBottom;  // equal (zero height) when hidden
+        int loopTop, loopBottom;
+        int playheadTop, playheadBottom;
+        bool hasSeconds;
+    };
+    RulerRows rulerRows() const;
 
     // Arrangement interaction helpers
     int findSectionAtPosition(int x, int y) const;

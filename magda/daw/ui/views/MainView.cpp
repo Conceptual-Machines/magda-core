@@ -370,8 +370,8 @@ void MainView::setupComponents() {
     zoomSelButton->onClick = [this]() { zoomToSelection(); };
     zoomSelButton->setTooltip("Zoom to selection");
 
-    setupCornerButton(markerLaneToggleButton, "MarkerLaneToggle", BinaryData::hide_svg,
-                      BinaryData::hide_svgSize);
+    setupCornerButton(markerLaneToggleButton, "MarkerLaneToggle", BinaryData::location_svg,
+                      BinaryData::location_svgSize);
     markerLaneToggleButton->setClickingTogglesState(true);
     markerLaneToggleButton->setToggleState(markerLaneVisible_, juce::dontSendNotification);
     markerLaneToggleButton->onClick = [this]() {
@@ -379,9 +379,22 @@ void MainView::setupComponents() {
         markerLaneToggleButton->setTooltip(markerLaneVisible_ ? "Hide marker lane"
                                                               : "Show marker lane");
         markerLaneViewport->setVisible(markerLaneVisible_);
+        timeline->setMarkerLaneVisible(markerLaneVisible_);
         resized();
     };
     markerLaneToggleButton->setTooltip("Hide marker lane");
+
+    setupCornerButton(secondsRulerToggleButton, "SecondsRulerToggle", BinaryData::clock_svg,
+                      BinaryData::clock_svgSize);
+    secondsRulerToggleButton->setClickingTogglesState(true);
+    secondsRulerToggleButton->setToggleState(secondsRulerVisible_, juce::dontSendNotification);
+    secondsRulerToggleButton->onClick = [this]() {
+        secondsRulerVisible_ = secondsRulerToggleButton->getToggleState();
+        secondsRulerToggleButton->setTooltip(secondsRulerVisible_ ? "Hide seconds ruler"
+                                                                  : "Show seconds ruler");
+        timeline->setSecondsRulerVisible(secondsRulerVisible_);
+    };
+    secondsRulerToggleButton->setTooltip("Show seconds ruler");
 
     setupCornerButton(zoomLoopButton, "ZoomLoop", BinaryData::fit_loop_svg,
                       BinaryData::fit_loop_svgSize);
@@ -392,13 +405,6 @@ void MainView::setupComponents() {
         }
     };
     zoomLoopButton->setTooltip("Zoom to loop region");
-
-    setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
-    addTrackButton->onClick = []() {
-        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
-        UndoManager::getInstance().executeCommand(std::move(cmd));
-    };
-    addTrackButton->setTooltip("Add track");
 
     // S = density_small.svg (4 rows = compact), M = density_medium.svg (3 rows), L =
     // density_large.svg (2 rows = spacious)
@@ -417,8 +423,8 @@ void MainView::setupComponents() {
     trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
     trackLargeButton->setTooltip("Large track height");
 
-    setupCornerButton(ioToggleButton, "IOToggle", BinaryData::io_routing_svg,
-                      BinaryData::io_routing_svgSize);
+    setupCornerButton(ioToggleButton, "IOToggle", BinaryData::inputoutput_svg,
+                      BinaryData::inputoutput_svgSize);
     ioToggleButton->onClick = [this]() {
         trackHeadersPanel->toggleIORouting();
         // Update button appearance to reflect state
@@ -436,18 +442,26 @@ void MainView::setupComponents() {
             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
     }
 
+    setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
+    addTrackButton->onClick = []() {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<CreateTrackCommand>(TrackType::Audio));
+    };
+    addTrackButton->setTooltip("Add track");
+
     // Axis label icons (non-interactive)
     setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
                       BinaryData::horizontal_svgSize);
     hAxisIcon->setInterceptsMouseClicks(false, false);
-    hAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
-    hAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    // Faint watermark rather than a solid grey glyph.
+    hAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    hAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
     hAxisIcon->setBorderThickness(0.0f);
 
     setupCornerButton(vAxisIcon, "VAxis", BinaryData::vertical_svg, BinaryData::vertical_svgSize);
     vAxisIcon->setInterceptsMouseClicks(false, false);
-    vAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
-    vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    vAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
     vAxisIcon->setBorderThickness(0.0f);
 
     // Set up scroll synchronization
@@ -822,6 +836,10 @@ void MainView::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(cornerSeparatorLine);
     }
+    if (!cornerBottomBorderLine.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(cornerBottomBorderLine);
+    }
 
     auto arrangementLayout = computeArrangementLayout();
     SideColumn headerColumn(!arrangementLayout.swapped);
@@ -940,7 +958,8 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 
     result.trackContentArea = bounds;
     result.overlayArea = bounds;
-    result.playheadArea = bounds.withTop(getTimelineHeight() - 20);
+    result.playheadArea =
+        bounds.withTop(getTimelineHeight() - LayoutConfig::getInstance().playheadRowHeight);
 
     return result;
 }
@@ -981,7 +1000,7 @@ void MainView::resized() {
 
     {
         const auto cornerArea = arrangementLayout.cornerArea;
-        const int btnSize = 24;
+        const int btnSize = 23;
         const int gap = 6;
         const int rowGap = 8;
         const int margin = 8;
@@ -989,6 +1008,11 @@ void MainView::resized() {
         const auto markerCornerArea = cornerArea.withHeight(markerLaneHeight);
         const auto timelineCornerArea = cornerArea.withTrimmedTop(markerLaneHeight);
         auto grid = timelineCornerArea.withTrimmedLeft(margin).withTrimmedRight(margin);
+        // Centre the two button rows vertically so the icons get even top/bottom
+        // padding inside the gutter rather than sitting flush against the marker
+        // lane separator above.
+        const int rowsBlockHeight = btnSize * 2 + rowGap;
+        grid.removeFromTop(juce::jmax(0, (grid.getHeight() - rowsBlockHeight) / 2));
         auto topRow = grid.removeFromTop(btnSize);
         grid.removeFromTop(rowGap);
         auto botRow = grid.removeFromTop(btnSize);
@@ -1009,6 +1033,11 @@ void MainView::resized() {
                                : juce::Rectangle<int>();
         cornerSeparatorLine =
             juce::Rectangle<int>(lineX, topRow.getBottom() + rowGap / 2, lineW, 1);
+        // Bottom border closing off the gutter at the ruler/track boundary, so
+        // it lines up with the ruler bottom and reads as separate from tracks.
+        if (!cornerBottomBorderLine.isEmpty())
+            repaint(cornerBottomBorderLine.expanded(1));
+        cornerBottomBorderLine = juce::Rectangle<int>(lineX, cornerArea.getBottom() - 1, lineW, 1);
 
         // Top row: action buttons on inner side, axis label on outer side
         SideColumn btnSide(!arrangementLayout.swapped);
@@ -1018,15 +1047,17 @@ void MainView::resized() {
         btnSide.removeSpacing(topRow, gap);
         zoomSelButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
-        markerLaneToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
-        btnSide.removeSpacing(topRow, gap);
         zoomLoopButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         btnSide.removeSpacing(topRow, gap);
-        addTrackButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        markerLaneToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        btnSide.removeSpacing(topRow, gap);
+        secondsRulerToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
         axisSide.removeSpacing(topRow, gap);
         hAxisIcon->setBounds(axisSide.removeFrom(topRow, btnSize));
 
-        // Bottom row: action buttons on inner side, axis label on outer side
+        // Bottom row: action buttons on inner side, axis label on outer side.
+        // The two show/hide toggles (markers above, I/O below) sit at the end of
+        // each row, vertically aligned.
         trackSmallButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
         trackMediumButton->setBounds(btnSide.removeFrom(botRow, btnSize));
@@ -1034,6 +1065,8 @@ void MainView::resized() {
         trackLargeButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
         ioToggleButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        btnSide.removeSpacing(botRow, gap);
+        addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         axisSide.removeSpacing(botRow, gap);
         vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
     }
@@ -1676,8 +1709,10 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     // Draw edit cursor (triangle) - always visible
     if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        // Fill the playhead row: top edge at y0, tip at the row bottom.
+        const float ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
-        triangle.addTriangle(editX - 6, 6, editX + 6, 6, editX, 20);
+        triangle.addTriangle(editX - 6, 0.0f, editX + 6, 0.0f, editX, ph);
         g.fillPath(triangle);
     }
 

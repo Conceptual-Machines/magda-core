@@ -397,12 +397,24 @@ jobs:
           status=$(printf '%s' "$runner" | cut -f1)
           busy=$(printf '%s' "$runner" | cut -f2)
 
-          if [ "$status" = "online" ] && [ "$busy" != "true" ]; then
+          # The runner only reports busy=true once a job has actually landed on
+          # it. This pick job runs at the very start of the workflow, long before
+          # the Windows build job dispatches, so two CI runs starting close
+          # together both see busy=false and both target magda-luca - the second
+          # then queues behind the first instead of falling back. Guard against
+          # that by also falling back when any other CI run is already in flight.
+          # Count every run that is not yet completed (queued/in_progress/
+          # waiting/...): a competing run can still be queued, not in_progress,
+          # at the moment this step executes, and it has already picked a runner.
+          inflight=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?per_page=100" \
+            --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.status != \"completed\")] | length" 2>/dev/null || echo "unknown")
+
+          if [ "$status" = "online" ] && [ "$busy" != "true" ] && [ "$inflight" = "0" ]; then
             echo 'labels=["self-hosted","Windows","magda-luca"]' >> "$GITHUB_OUTPUT"
             echo "Using idle self-hosted runner: magda-luca"
           else
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
-            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}', busy: '${busy:-unknown}')"
+            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}', busy: '${busy:-unknown}', inflight runs: '${inflight}')"
           fi
 
   build-and-test-windows:

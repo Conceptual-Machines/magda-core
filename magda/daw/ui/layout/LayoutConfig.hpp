@@ -20,7 +20,9 @@ struct LayoutConfig {
     // Time ruler details
     int rulerMajorTickHeight = 14;              // Shortened to avoid overlap with loop markers
     int rulerMinorTickHeight = 6;               // Shortened to avoid overlap with loop markers
-    static constexpr int loopStripHeight = 12;  // Loop region strip above tick area
+    static constexpr int loopStripHeight = 12;  // Loop row (loop region strip)
+    int secondsRowHeight = 11;                  // Seconds row (when shown)
+    int playheadRowHeight = 12;                 // Bottom row: just tall enough for the triangle
     int rulerLabelFontSize = 11;
     int rulerLabelTopMargin = 10;  // Space between separator line and time labels
 
@@ -64,7 +66,7 @@ struct LayoutConfig {
     int panelPadding = 8;
 
     // Timeline content left padding - shared across timeline, track content, automation lanes
-    static constexpr int TIMELINE_LEFT_PADDING = 7;
+    static constexpr int TIMELINE_LEFT_PADDING = 8;
 
     // Zoom controls
     int zoomButtonSize = 24;

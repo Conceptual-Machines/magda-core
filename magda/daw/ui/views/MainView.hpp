@@ -194,11 +194,14 @@ class MainView : public juce::Component,
     int getMarkerLaneHeight() const {
         return markerLaneVisible_ ? LayoutConfig::getInstance().markerLaneHeight : 0;
     }
+    // The ruler height is fixed; the seconds row is one of its internal rows, so
+    // toggling it never changes the total height.
     int getTimelineHeight() const {
         return getMarkerLaneHeight() + LayoutConfig::getInstance().getTimelineBodyHeight();
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
     bool markerLaneVisible_ = true;
+    bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
 
     struct ArrangementLayout {
@@ -335,14 +338,16 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> trackMediumButton;
     std::unique_ptr<SvgButton> trackLargeButton;
     std::unique_ptr<SvgButton> zoomLoopButton;
-    std::unique_ptr<SvgButton> addTrackButton;
+    std::unique_ptr<SvgButton> secondsRulerToggleButton;
     std::unique_ptr<SvgButton> ioToggleButton;
+    std::unique_ptr<SvgButton> addTrackButton;
     std::unique_ptr<SvgButton> hAxisIcon;
     std::unique_ptr<SvgButton> vAxisIcon;
 
     // Separator line positions in the corner toolbar (set during resized())
     juce::Rectangle<int> markerLaneSeparatorLine;
     juce::Rectangle<int> cornerSeparatorLine;
+    juce::Rectangle<int> cornerBottomBorderLine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };

@@ -1102,12 +1102,25 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SelectSect
 // ===== Marker Event Handlers =====
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const AddMarkerBeatsEvent& e) {
+    const double positionBeats = juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats);
+
+    // Never stack two markers at the same position; if one is already there,
+    // just select it instead of adding a duplicate.
+    constexpr double kSamePositionEpsilon = 1e-6;
+    for (const auto& existing : state.markers) {
+        if (std::abs(existing.positionBeats - positionBeats) <= kSamePositionEpsilon) {
+            if (state.selectedMarkerId == existing.id)
+                return ChangeFlags::None;
+            state.selectedMarkerId = existing.id;
+            return ChangeFlags::Markers;
+        }
+    }
+
     TimelineMarker marker;
     marker.id = state.nextMarkerId++;
     marker.name = e.name.isNotEmpty() ? e.name : "Marker " + juce::String(marker.id);
     marker.colour = e.colour;
-    marker.setFromBeats(juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats),
-                        state.tempo.bpm);
+    marker.setFromBeats(positionBeats, state.tempo.bpm);
 
     auto insertPos =
         std::lower_bound(state.markers.begin(), state.markers.end(), marker.positionBeats,
