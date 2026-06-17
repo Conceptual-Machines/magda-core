@@ -91,9 +91,10 @@ juce::Rectangle<float> SongNavigatorPanel::getViewportBox() const {
     const double endBeats = juce::jmin(totalBeats(), startBeats + visibleLengthBeats());
     const int left = beatToX(startBeats);
     const int right = beatToX(endBeats);
-    return juce::Rectangle<float>(static_cast<float>(left), 0.0f,
+    // Span the lanes area only - start below the ruler band, like the playhead.
+    return juce::Rectangle<float>(static_cast<float>(left), static_cast<float>(kRulerHeight),
                                   static_cast<float>(juce::jmax(2, right - left)),
-                                  static_cast<float>(getHeight()));
+                                  static_cast<float>(getHeight() - kRulerHeight));
 }
 
 // ===== Painting =====
@@ -201,12 +202,28 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
         }
     }
 
-    // Playhead marker.
+    // Timeline markers - a coloured line down the strip with a small flag tick
+    // in the ruler band, mirroring the arrangement's markers.
+    if (controller_) {
+        for (const auto& marker : controller_->getState().markers) {
+            const int mx = beatToX(marker.positionBeats);
+            if (mx >= getWidth() - 1) {
+                continue;
+            }
+            g.setColour(marker.colour.withAlpha(0.85f));
+            g.drawVerticalLine(mx, static_cast<float>(kRulerHeight),
+                               static_cast<float>(getHeight()));
+            // Flag tick at the top of the content area (not in the ruler header).
+            g.fillRect(mx, kRulerHeight, 4, 4);
+        }
+    }
+
+    // Playhead marker - starts below the ruler band, like the gridlines.
     if (controller_) {
         const double playBeats = controller_->getState().playhead.playbackPositionBeats;
         const int px = beatToX(playBeats);
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.9f));
-        g.drawVerticalLine(px, 0.0f, static_cast<float>(getHeight()));
+        g.drawVerticalLine(px, static_cast<float>(kRulerHeight), static_cast<float>(getHeight()));
     }
 
     // Viewport rectangle marking the currently-visible window. Hidden when the
@@ -337,12 +354,12 @@ void SongNavigatorPanel::zoomToVisibleRange(double startBeats, double lengthBeat
 
 // ===== Listeners =====
 
-void SongNavigatorPanel::timelineStateChanged(const TimelineState& /*state*/, ChangeFlags changes) {
-    if (hasFlag(changes, ChangeFlags::Zoom) || hasFlag(changes, ChangeFlags::Scroll) ||
-        hasFlag(changes, ChangeFlags::Playhead) || hasFlag(changes, ChangeFlags::Timeline) ||
-        hasFlag(changes, ChangeFlags::Tempo)) {
-        repaint();
-    }
+void SongNavigatorPanel::timelineStateChanged(const TimelineState& /*state*/,
+                                              ChangeFlags /*changes*/) {
+    // The whole strip is derived from timeline state (zoom, scroll, playhead,
+    // length, tempo, markers), so just repaint when the state changes rather
+    // than filtering on individual flags.
+    repaint();
 }
 
 void SongNavigatorPanel::tracksChanged() {

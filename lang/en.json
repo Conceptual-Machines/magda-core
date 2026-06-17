@@ -329,6 +329,7 @@
     "slider.interval": "Interval",
     "toggle.enable_autosave": "Enable auto-save",
     "toggle.stop_updates_playhead": "Stop updates playhead",
+    "toggle.follow_playhead": "Follow playhead during playback",
     "toggle.headers_on_right": "Headers on the Right",
     "toggle.autohide_arrangement_scrollbars": "Auto-Hide Arrangement Scrollbars",
     "toggle.confirm_track_delete": "Confirm before deleting tracks",

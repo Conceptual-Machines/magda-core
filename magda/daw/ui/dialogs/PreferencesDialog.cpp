@@ -141,6 +141,7 @@ class GeneralPage : public juce::Component {
         setupSectionHeader(*this, transportHeader, tr("preferences.section.transport"));
         setupToggle(*this, stopUpdatesPlayheadToggle,
                     tr("preferences.toggle.stop_updates_playhead"));
+        setupToggle(*this, followPlayheadToggle, tr("preferences.toggle.follow_playhead"));
 
         setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
         setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
@@ -226,6 +227,7 @@ class GeneralPage : public juce::Component {
         zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
                                             juce::dontSendNotification);
         viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
+        followPlayheadToggle.setToggleState(config.getFollowPlayhead(), juce::dontSendNotification);
         stopUpdatesPlayheadToggle.setToggleState(config.getStopUpdatesPlayhead(),
                                                  juce::dontSendNotification);
         autoSaveToggle.setToggleState(config.getAutoSaveEnabled(), juce::dontSendNotification);
@@ -279,6 +281,7 @@ class GeneralPage : public juce::Component {
         config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
         config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
         config.setStopUpdatesPlayhead(stopUpdatesPlayheadToggle.getToggleState());
+        config.setFollowPlayhead(followPlayheadToggle.getToggleState());
         config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
@@ -335,8 +338,11 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
-               secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + padding;
+        return padding + headerH + 4 + (rowH * 3) + 8    // Zoom
+               + secGap + headerH + 4 + rowH             // Timeline
+               + secGap + headerH + 4 + rowH + 4 + rowH  // Transport
+               + secGap + headerH + 4 + rowH + 4 + rowH  // Auto-Save
+               + padding;
     }
 
     static int getRightColumnPreferredHeight() {
@@ -345,8 +351,11 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 5) + 12 + secGap +
-               headerH + 4 + rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
+        return padding + headerH + 4 + rowH + 4 + rowH   // Layout
+               + secGap + headerH + 4 + (rowH * 5) + 16  // Behaviour
+               + secGap + headerH + 4 + rowH + 18        // Language
+               + secGap + headerH + 4 + rowH + 4 + rowH  // Display Scale
+               + padding;
     }
 
     void layoutSingleColumn(juce::Rectangle<int> bounds, int rowH, int sliderH, int headerH,
@@ -371,6 +380,8 @@ class GeneralPage : public juce::Component {
         transportHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
         stopUpdatesPlayheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        followPlayheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Auto-Save
@@ -447,6 +458,8 @@ class GeneralPage : public juce::Component {
         transportHeader.setBounds(left.removeFromTop(headerH));
         left.removeFromTop(4);
         stopUpdatesPlayheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(4);
+        followPlayheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
         left.removeFromTop(secGap);
 
         // Auto-Save
@@ -485,7 +498,7 @@ class GeneralPage : public juce::Component {
         restartHint.setBounds(right.removeFromTop(18));
         right.removeFromTop(secGap);
 
-        // UI scale
+        // Display Scale
         scaleHeader.setBounds(right.removeFromTop(headerH));
         right.removeFromTop(4);
         layoutComboRow(right, scaleLabel, scaleCombo, rowH);
@@ -571,6 +584,7 @@ class GeneralPage : public juce::Component {
     magda::daw::ui::TextSlider viewDurationSlider;
     juce::Label viewDurationLabel;
     juce::ToggleButton stopUpdatesPlayheadToggle;
+    juce::ToggleButton followPlayheadToggle;
     juce::ToggleButton autoSaveToggle;
     magda::daw::ui::TextSlider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;

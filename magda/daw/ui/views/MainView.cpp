@@ -693,6 +693,23 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
             selectionOverlay->repaint();
         }
 
+        // Auto-scroll: keep the playhead in view while playing. When it runs off
+        // the right edge (or jumps back, e.g. on loop), page the arrangement so
+        // it sits near the left. Dispatching re-enters with a Scroll flag, which
+        // syncs every horizontal surface (handled above).
+        if (state.playhead.isPlaying && Config::getInstance().getFollowPlayhead()) {
+            const int viewW = state.zoom.viewportWidth;
+            if (viewW > 0) {
+                const int playX = state.timeToPixelLocal(playheadPosition);
+                const int scrollX = state.zoom.scrollX;
+                const int margin = 48;
+                if (playX > scrollX + viewW - margin || playX < scrollX) {
+                    timelineController->dispatch(
+                        SetScrollPositionEvent{juce::jmax(0, playX - margin), -1});
+                }
+            }
+        }
+
         if (onPlayheadPositionChanged) {
             onPlayheadPositionChanged(playheadPosition);
         }
@@ -1729,9 +1746,11 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     // Draw play cursor (vertical line) - only during playback when position differs from edit
     if (isPlaying && playbackPos >= 0 && playbackPos <= owner.timelineLength && playX >= 0 &&
         playX < getWidth()) {
-        // Draw thin vertical line extending full height of track area
+        // Draw thin vertical line extending the full track area, starting at the
+        // top of the track content (just below the playhead/triangle row).
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.drawLine(static_cast<float>(playX), 20.0f, static_cast<float>(playX),
+        const float lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
+        g.drawLine(static_cast<float>(playX), lineTop, static_cast<float>(playX),
                    static_cast<float>(getHeight()), 1.5f);
     }
 }
