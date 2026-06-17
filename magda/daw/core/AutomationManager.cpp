@@ -954,6 +954,15 @@ static double interpolateWithTension(double t, double v1, double v2, double tens
     return v1 + curvedT * (v2 - v1);
 }
 
+// Quadratic bezier through the segment shaper's apex (both handles point to it),
+// matching AutomationCurveEditor's quadraticTo rendering so what you see and
+// what plays back agree. t is the x-fraction along the segment.
+static double interpolateShaper(double t, const AutomationPoint& p1, const AutomationPoint& p2) {
+    const double apex = p1.value + p1.outHandle.value;
+    const double mt = 1.0 - t;
+    return mt * mt * p1.value + 2.0 * mt * t * apex + t * t * p2.value;
+}
+
 double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& points,
                                             double beatPosition) const {
     if (points.empty())
@@ -982,7 +991,10 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
 
             switch (p1.curveType) {
                 case AutomationCurveType::Linear:
-                    // Use tension-based interpolation
+                    // The shaper bends a Linear segment via bezier handles; fall
+                    // back to the tension scalar only when no handle is stored.
+                    if (!p1.outHandle.isZero() || !p2.inHandle.isZero())
+                        return interpolateShaper(t, p1, p2);
                     return interpolateWithTension(t, p1.value, p2.value, p1.tension);
 
                 case AutomationCurveType::Bezier:

@@ -1901,8 +1901,15 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                 std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
     };
 
-    // Automation button - show automation lane menu
+    // Automation button - show automation lane menu. Alt/Option-click is a
+    // shortcut to toggle global show/hide of ALL automation lanes (the menu's
+    // own items stay per-track).
     header.automationButton->onClick = [this, trackId, &header]() {
+        if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
+            auto& am = AutomationManager::getInstance();
+            am.setGlobalLaneVisibility(!am.isGlobalLaneVisibilityEnabled());
+            return;
+        }
         showAutomationMenu(trackId, header.automationButton.get());
     };
 

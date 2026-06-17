@@ -1025,6 +1025,12 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     result.playheadArea =
         bounds.withTop(getTimelineHeight() - LayoutConfig::getInstance().playheadRowHeight);
 
+    // Extend the playhead line down through the master automation band so it
+    // tracks the tempo / master lanes too (the band was carved off the bottom
+    // before this, so the playhead would otherwise stop above it).
+    if (!result.masterAutomationContentArea.isEmpty())
+        result.playheadArea.setBottom(result.masterAutomationContentArea.getBottom());
+
     return result;
 }
 
@@ -1412,6 +1418,14 @@ void MainView::updateContentSizes() {
     trackContentPanel->setVerticalZoom(verticalZoom);
     trackHeadersPanel->setSize(trackHeaderWidth, contentHeight);
     trackHeadersPanel->setVerticalZoom(verticalZoom);
+
+    // Keep the master automation band in step with the arrangement's horizontal
+    // zoom/width so its curves rescale and scroll with the timeline (resized()
+    // only runs on a relayout, not on every zoom/scroll change).
+    if (masterAutomationContentPanel) {
+        masterAutomationContentPanel->setPixelsPerBeat(horizontalZoom);
+        masterAutomationContentPanel->setTimelineWidth(contentWidth);
+    }
 
     // Update both zoom scroll bars
     updateVerticalZoomScrollBar();
@@ -2724,7 +2738,15 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->onClick = [this]() { showMasterAutomationMenu(automationButton.get()); };
+    automationButton->onClick = [this]() {
+        // Alt/Option-click toggles global show/hide of all automation lanes.
+        if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
+            auto& am = AutomationManager::getInstance();
+            am.setGlobalLaneVisibility(!am.isGlobalLaneVisibilityEnabled());
+            return;
+        }
+        showMasterAutomationMenu(automationButton.get());
+    };
     addAndMakeVisible(*automationButton);
 
     // Volume as draggable dB label

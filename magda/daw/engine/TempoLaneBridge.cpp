@@ -1,6 +1,7 @@
 #include "TempoLaneBridge.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "../core/ControlTarget.hpp"
 #include "../core/ParameterUtils.hpp"
@@ -10,13 +11,45 @@ namespace magda {
 namespace te = tracktion;
 
 namespace {
-// TempoSetting and AutomationPoint share the [-1, +1] curve/tension convention,
-// so the mapping is the identity (clamped for safety).
-float tensionToCurve(double tension) {
-    return juce::jlimit(-1.0f, 1.0f, static_cast<float>(tension));
+// TempoSetting stores ONE curve factor per segment; the lane's shaper uses
+// bezier handles (free apex). We project the apex's vertical bend onto the
+// [-1,+1] curve factor (the curve/tension convention is shared), and on read
+// reconstruct a symmetric apex so the lane renders the same bend. The apex's
+// horizontal offset and any asymmetry are not representable and are dropped.
+constexpr double kEps = 1.0e-6;
+
+// Curve factor of a t=0.5 shaper -> normalized apex fraction along the segment.
+double curvedTFromTension(double tension) {
+    constexpr double t = 0.5;
+    if (tension > 0.0)
+        return std::pow(t, 1.0 + tension * 2.0);
+    return 1.0 - std::pow(1.0 - t, 1.0 - tension * 2.0);
 }
-double curveToTension(float curve) {
-    return juce::jlimit(-1.0f, 1.0f, curve);
+
+// Inverse of curvedTFromTension.
+double tensionFromCurvedT(double curvedT) {
+    curvedT = juce::jlimit(1.0e-4, 1.0 - 1.0e-4, curvedT);
+    const double invLog2 = 1.0 / std::log(0.5);
+    if (curvedT <= 0.5)
+        return juce::jlimit(-1.0, 1.0, ((std::log(curvedT) * invLog2) - 1.0) * 0.5);
+    return juce::jlimit(-1.0, 1.0, (1.0 - std::log(1.0 - curvedT) * invLog2) * 0.5);
+}
+
+// Curve factor for the segment that starts at points[i] (its outHandle bend).
+float curveForSegment(const std::vector<AutomationPoint>& points, size_t i) {
+    if (i + 1 >= points.size())
+        return 0.0f;
+    const auto& p1 = points[i];
+    const auto& p2 = points[i + 1];
+    const double dy = p2.value - p1.value;
+    if (std::abs(dy) <= kEps)
+        return juce::jlimit(-1.0f, 1.0f, static_cast<float>(p1.tension));  // flat: no bend
+    const bool hasHandle =
+        std::abs(p1.outHandle.value) > kEps || std::abs(p1.outHandle.beatOffset) > kEps;
+    if (!hasHandle)
+        return juce::jlimit(-1.0f, 1.0f, static_cast<float>(p1.tension));  // legacy tension
+    const double curvedT = juce::jlimit(kEps, 1.0 - kEps, p1.outHandle.value / dy);
+    return juce::jlimit(-1.0f, 1.0f, static_cast<float>(tensionFromCurvedT(curvedT)));
 }
 }  // namespace
 
@@ -51,7 +84,7 @@ void TempoLaneBridge::writePointsToSequence(const std::vector<AutomationPoint>& 
     const auto& first = points.front();
     if (auto* t0 = ts.getTempo(0))
         t0->set(te::BeatPosition::fromBeats(0.0), normalizedToBpm(first.value),
-                tensionToCurve(first.tension), false);
+                curveForSegment(points, 0), false);
 
     // Insert the remaining points at their beats (skip any extra at/below 0,
     // already represented by tempo[0]).
@@ -60,12 +93,13 @@ void TempoLaneBridge::writePointsToSequence(const std::vector<AutomationPoint>& 
         if (p.beatPosition <= 0.0)
             continue;
         ts.insertTempo(te::BeatPosition::fromBeats(p.beatPosition), normalizedToBpm(p.value),
-                       tensionToCurve(p.tension));
+                       curveForSegment(points, i));
     }
 }
 
 std::vector<AutomationPoint> TempoLaneBridge::readPointsFromSequence(te::Edit& edit) {
     std::vector<AutomationPoint> points;
+    std::vector<float> curves;
     auto& ts = edit.tempoSequence;
     for (int i = 0; i < ts.getNumTempos(); ++i) {
         if (auto* t = ts.getTempo(i)) {
@@ -73,9 +107,25 @@ std::vector<AutomationPoint> TempoLaneBridge::readPointsFromSequence(te::Edit& e
             p.beatPosition = t->getStartBeat().inBeats();
             p.value = bpmToNormalized(t->getBpm());
             p.curveType = AutomationCurveType::Linear;
-            p.tension = curveToTension(t->getCurve());
             points.push_back(p);
+            curves.push_back(t->getCurve());
         }
+    }
+
+    // Reconstruct a symmetric (midpoint) bezier apex per segment from its curve
+    // factor, so the lane's shaper renders the same bend the engine plays.
+    for (size_t i = 0; i + 1 < points.size(); ++i) {
+        const double tension = juce::jlimit(-1.0f, 1.0f, curves[i]);
+        const double dy = points[i + 1].value - points[i].value;
+        if (std::abs(tension) <= kEps || std::abs(dy) <= kEps)
+            continue;
+        const double curvedT = curvedTFromTension(tension);
+        const double apexValue = points[i].value + curvedT * dy;
+        const double apexBeat = (points[i].beatPosition + points[i + 1].beatPosition) * 0.5;
+        points[i].outHandle = {apexBeat - points[i].beatPosition, apexValue - points[i].value,
+                               true};
+        points[i + 1].inHandle = {apexBeat - points[i + 1].beatPosition,
+                                  apexValue - points[i + 1].value, true};
     }
     return points;
 }

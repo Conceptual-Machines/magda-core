@@ -260,3 +260,28 @@ TEST_CASE("DuplicateAutomationTimeSelectionCommand duplicates visible absolute l
     REQUIRE(findPointAt(mgr.getLane(volumeLaneId), 5.0) == nullptr);
     REQUIRE(findPointAt(mgr.getLane(volumeLaneId), 7.0) == nullptr);
 }
+
+TEST_CASE("A Linear segment's shaper handle bends the evaluated value", "[automation][singleton]") {
+    // Regression: the shaper bends a Linear segment via bezier handles, but
+    // value evaluation used to read only the tension scalar -> the curve was
+    // visible but played back straight (inaudible).
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+    auto trackId = makeTrack("Vol");
+    auto laneId = mgr.getOrCreateLane(volumeTarget(trackId), AutomationLaneType::Absolute);
+    auto p0 = mgr.addPoint(laneId, 0.0, 0.0, AutomationCurveType::Linear);
+    mgr.addPoint(laneId, 4.0, 1.0, AutomationCurveType::Linear);
+
+    // Straight segment: the midpoint is the linear average.
+    REQUIRE(mgr.getValueAtBeat(laneId, 2.0) == Catch::Approx(0.5).margin(0.01));
+
+    // Bend it: a shaper apex below the line (outHandle on the left point).
+    BezierHandle in;
+    BezierHandle out;
+    out.beatOffset = 2.0;  // apex at the segment midpoint
+    out.value = 0.1;       // apex value 0.1 -> well below the 0.5 straight line
+    mgr.setPointHandles(laneId, p0, in, out);
+
+    // The midpoint must now follow the bend, not the straight line.
+    REQUIRE(mgr.getValueAtBeat(laneId, 2.0) < 0.45);
+}

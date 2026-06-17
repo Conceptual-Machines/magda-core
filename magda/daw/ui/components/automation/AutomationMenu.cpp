@@ -19,27 +19,32 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
 
     juce::PopupMenu menu;
 
-    // Global show/hide toggle (id 9999) — applies to every track
-    bool globalOn = automationManager.isGlobalLaneVisibilityEnabled();
-    menu.addItem(9999, globalOn ? "Hide All Automation Lanes" : "Show All Automation Lanes");
-    menu.addSeparator();
-
     menu.addSectionHeader("Show Automation Lane");
     menu.addSeparator();
 
-    // Get existing lanes for this track
+    // Get existing lanes for this track. The master also owns the edit-scoped
+    // lanes (Tempo), which render in its band — list them so they can be toggled.
     auto existingLanes = automationManager.getLanesForTrack(trackId);
+    if (trackId == MASTER_TRACK_ID) {
+        for (auto laneId : automationManager.getEditScopedLanes())
+            existingLanes.push_back(laneId);
+    }
 
     // Add existing lanes first (with toggle indicator)
+    bool anyVisibleOnTrack = false;
     if (!existingLanes.empty()) {
         for (auto laneId : existingLanes) {
             const auto* lane = automationManager.getLane(laneId);
             if (lane) {
                 juce::String name = lane->getDisplayName();
                 bool isVisible = lane->visible;
+                anyVisibleOnTrack = anyVisibleOnTrack || isVisible;
                 menu.addItem(1000 + laneId, name, true, isVisible);
             }
         }
+        // Per-track convenience: hide every lane on THIS track at once. The
+        // global show/hide toggle lives on the arrangement toolbar instead.
+        menu.addItem(9998, "Hide All Lanes on This Track", anyVisibleOnTrack, false);
         menu.addSeparator();
     }
 
@@ -71,6 +76,13 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
         tpTarget.kind = ControlTarget::Kind::TrackPan;
         tpTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
         addNewMenu.addItem(2, "Track Pan", true, isTargetShown(tpTarget));
+    }
+
+    // Tempo — edit-scoped/global, so it is offered only on the master channel.
+    // The lane edits te::Edit::tempoSequence and renders in the master
+    // automation band alongside master volume.
+    if (trackId == MASTER_TRACK_ID) {
+        addNewMenu.addItem(3, "Tempo", true, isTargetShown(ControlTarget::tempo()));
     }
 
     // Build device parameter targets from chain elements
@@ -354,10 +366,15 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
 
         auto& automationManager = AutomationManager::getInstance();
 
-        if (result == 9999) {
-            // Global show/hide toggle
-            automationManager.setGlobalLaneVisibility(
-                !automationManager.isGlobalLaneVisibilityEnabled());
+        if (result == 9998) {
+            // Hide every lane on THIS track (and the master's edit-scoped lanes).
+            auto laneIds = automationManager.getLanesForTrack(trackId);
+            if (trackId == MASTER_TRACK_ID) {
+                for (auto laneId : automationManager.getEditScopedLanes())
+                    laneIds.push_back(laneId);
+            }
+            for (auto laneId : laneIds)
+                automationManager.setLaneVisible(laneId, false);
             return;
         }
 
@@ -387,6 +404,15 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
             target.kind = ControlTarget::Kind::TrackPan;
             target.devicePath.trackId = trackId;
             auto laneId = automationManager.getOrCreateLane(target, AutomationLaneType::Absolute);
+            automationManager.setLaneVisible(laneId, true);
+            if (onShowAutomationLane) {
+                onShowAutomationLane(trackId, laneId);
+            }
+        } else if (result == 3) {
+            // Create the edit-scoped Tempo lane (master automation band).
+            // TempoLaneSync binds it to te::Edit::tempoSequence.
+            auto laneId = automationManager.getOrCreateLane(ControlTarget::tempo(),
+                                                            AutomationLaneType::Absolute);
             automationManager.setLaneVisible(laneId, true);
             if (onShowAutomationLane) {
                 onShowAutomationLane(trackId, laneId);

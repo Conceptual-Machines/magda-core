@@ -229,7 +229,7 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons,
 }
 
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
-                                 int laneTopY) {
+                                 int laneTopY, int topInset) {
     constexpr int kBtnSize = 20;
     constexpr int kBtnGap = 3;
     constexpr int kLeftMargin = 6;
@@ -244,7 +244,7 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
     if (!inView)
         return;
 
-    int btnY = laneTopY + AutomationLaneComponent::HEADER_HEIGHT + kTopMargin;
+    int btnY = laneTopY + topInset + AutomationLaneComponent::HEADER_HEIGHT + kTopMargin;
     int x = kLeftMargin;
     auto place = [&](juce::Button& b) {
         b.setBounds(x, btnY, kBtnSize, kBtnSize);
@@ -257,8 +257,8 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
 }
 
 void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane, int laneTopY,
-                               int width, int laneHeight) {
-    const int y = laneTopY;
+                               int width, int laneHeight, int topInset) {
+    const int y = laneTopY + topInset;
 
     // Header area for this automation lane
     auto headerArea = juce::Rectangle<int>(0, y, width, AutomationLaneComponent::HEADER_HEIGHT);

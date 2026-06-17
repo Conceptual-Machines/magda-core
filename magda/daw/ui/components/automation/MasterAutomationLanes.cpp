@@ -22,6 +22,17 @@ int laneHeightPx(const AutomationLaneInfo& lane, double verticalZoom) {
 std::vector<AutomationLaneId> visibleMasterAutomationLanes() {
     auto& manager = AutomationManager::getInstance();
     std::vector<AutomationLaneId> result;
+    // Honour the global "Hide All Automation Lanes" override, same as the
+    // per-track lanes, so the toggle affects the master band too.
+    if (!manager.isGlobalLaneVisibilityEnabled())
+        return result;
+    // Edit-scoped lanes (Tempo) are project-global concerns and live at the top
+    // of the master band rather than in a separate pinned block.
+    for (auto laneId : manager.getEditScopedLanes()) {
+        const auto* lane = manager.getLane(laneId);
+        if (lane && lane->visible)
+            result.push_back(laneId);
+    }
     for (auto laneId : manager.getLanesForTrack(MASTER_TRACK_ID)) {
         const auto* lane = manager.getLane(laneId);
         if (lane && lane->visible)
@@ -69,7 +80,10 @@ void MasterAutomationHeaderPanel::paint(juce::Graphics& g) {
         if (!lane)
             continue;
         int h = laneHeightPx(*lane, verticalZoom_);
-        paintAutomationLaneHeader(g, *lane, y, getWidth(), h);
+        // Master-band lanes carry the resize handle on the top edge, so inset
+        // the header below it to line up with the lane content.
+        paintAutomationLaneHeader(g, *lane, y, getWidth(), h,
+                                  AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);
         y += h;
     }
 }
@@ -129,7 +143,8 @@ void MasterAutomationHeaderPanel::layoutButtons() {
             buttons_.begin(), buttons_.end(),
             [&](const std::unique_ptr<AutoLaneHeaderButtons>& e) { return e->laneId == laneId; });
         if (it != buttons_.end())
-            layoutAutoLaneHeaderButtons(**it, *lane, y);
+            layoutAutoLaneHeaderButtons(**it, *lane, y,
+                                        AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);
         y += laneHeightPx(*lane, verticalZoom_);
     }
 }
@@ -215,6 +230,9 @@ void MasterAutomationContentPanel::rebuildLanes() {
         entry.component = std::make_unique<AutomationLaneComponent>(laneId);
         entry.component->setPixelsPerBeat(pixelsPerBeat_);
         entry.component->setTempoBPM(tempoBPM_);
+        // The master band is pinned above the master strip and grows upward, so
+        // the resize grab edge sits on top of each lane.
+        entry.component->setResizeHandleAtTop(true);
         entry.component->onHeightChanged = [this](AutomationLaneId, int) {
             layoutLanes();
             if (onBandHeightChanged)

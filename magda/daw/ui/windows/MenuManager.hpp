@@ -195,7 +195,6 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         ZoomSelectionToFit,
         ToggleFullscreen = 320,
         ToggleScrollbarPosition = 325,
-        ShowTempoLane = 326,
 
         // Transport menu (400-499)
         Play = 400,

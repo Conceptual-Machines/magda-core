@@ -633,7 +633,7 @@ void TrackContentPanel::setTimeSignature(int numerator, int denominator) {
 }
 
 int TrackContentPanel::getTotalTracksHeight() const {
-    int totalHeight = getGlobalLanesHeight();
+    int totalHeight = 0;
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         totalHeight += getTrackTotalHeight(static_cast<int>(i));
     }
@@ -641,8 +641,7 @@ int TrackContentPanel::getTotalTracksHeight() const {
 }
 
 int TrackContentPanel::getTrackYPosition(int trackIndex) const {
-    // Tracks start below the pinned global-lane block at the top of the content.
-    int yPosition = getGlobalLanesHeight();
+    int yPosition = 0;
     for (int i = 0; i < trackIndex && i < static_cast<int>(trackLanes.size()); ++i) {
         yPosition += getTrackTotalHeight(i);
     }
@@ -1024,7 +1023,7 @@ int TrackContentPanel::timeToPixel(double time) const {
 }
 
 int TrackContentPanel::getTrackIndexAtY(int y) const {
-    int currentY = getGlobalLanesHeight();
+    int currentY = 0;
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         int trackHeight = static_cast<int>(trackLanes[i]->height * verticalZoom);
         // Only match within the track's own lane area, not automation lanes below it
@@ -3010,23 +3009,6 @@ int TrackContentPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
     return totalHeight;
 }
 
-int TrackContentPanel::getGlobalLanesHeight() const {
-    int totalHeight = 0;
-    auto& manager = AutomationManager::getInstance();
-    if (!manager.isGlobalLaneVisibilityEnabled())
-        return 0;
-    for (auto laneId : manager.getEditScopedLanes()) {
-        const auto* lane = manager.getLane(laneId);
-        if (lane && lane->visible) {
-            totalHeight += lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
-                                             static_cast<int>(lane->height * verticalZoom) +
-                                             AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
-                                          : AutomationLaneComponent::HEADER_HEIGHT;
-        }
-    }
-    return totalHeight;
-}
-
 void TrackContentPanel::rebuildAutomationLaneComponents() {
     // Remove old lane components
     for (auto& entry : automationLaneComponents_)
@@ -3034,39 +3016,10 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             removeChildComponent(entry.component.get());
     automationLaneComponents_.clear();
 
-    for (auto& entry : globalLaneComponents_)
-        if (entry.component)
-            removeChildComponent(entry.component.get());
-    globalLaneComponents_.clear();
-
     auto& manager = AutomationManager::getInstance();
 
-    // Edit-scoped (global) lanes: a pinned block at the top, no owning track.
-    if (manager.isGlobalLaneVisibilityEnabled()) {
-        for (auto laneId : manager.getEditScopedLanes()) {
-            const auto* lane = manager.getLane(laneId);
-            if (!lane || !lane->visible)
-                continue;
-
-            AutomationLaneEntry entry;
-            entry.trackId = INVALID_TRACK_ID;
-            entry.laneId = laneId;
-            entry.component = std::make_unique<AutomationLaneComponent>(laneId);
-            entry.component->setPixelsPerBeat(currentZoom);
-            entry.component->setTempoBPM(tempoBPM);
-            entry.component->snapBeatToGrid = snapBeatsToGrid;
-            entry.component->getGridSpacingBeats = getGridSpacingBeats;
-            entry.component->onHeightChanged = [this](AutomationLaneId, int) {
-                updateAutomationLanePositions();
-                updateClipComponentPositions();
-                resized();
-                repaintVisible();
-            };
-
-            addAndMakeVisible(*entry.component);
-            globalLaneComponents_.push_back(std::move(entry));
-        }
-    }
+    // Edit-scoped (global) lanes such as Tempo render in the master automation
+    // band, not here.
 
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         TrackId trackId = visibleTrackIds_[i];
@@ -3121,32 +3074,6 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
 
 void TrackContentPanel::updateAutomationLanePositions() {
     auto& manager = AutomationManager::getInstance();
-
-    // Pinned global-lane block at the very top of the content (y from 0).
-    {
-        int y = 0;
-        for (auto laneId : manager.getEditScopedLanes()) {
-            const auto* lane = manager.getLane(laneId);
-            if (!lane || !lane->visible)
-                continue;
-
-            int height = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
-                                           static_cast<int>(lane->height * verticalZoom) +
-                                           AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
-                                        : AutomationLaneComponent::HEADER_HEIGHT;
-
-            for (auto& entry : globalLaneComponents_) {
-                if (entry.laneId == laneId && entry.component) {
-                    entry.component->setBounds(0, y, getWidth(), height);
-                    entry.component->setPixelsPerBeat(currentZoom);
-                    entry.component->setTempoBPM(tempoBPM);
-                    break;
-                }
-            }
-
-            y += height;
-        }
-    }
 
     // Position each lane component directly under its track row.
     // Lanes stack inline; the outer content panel viewport handles scrolling.

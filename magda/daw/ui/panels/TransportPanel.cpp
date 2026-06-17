@@ -1306,6 +1306,13 @@ void TransportPanel::setAutomationWriteEnabled(bool enabled) {
     }
 }
 
+void TransportPanel::setLiveTempoDisplay(double bpm) {
+    const double clamped = clampBpm(bpm);
+    if (std::abs(tempoLabel->getValue() - clamped) < 0.01)
+        return;
+    tempoLabel->setValue(clamped, juce::dontSendNotification);
+}
+
 void TransportPanel::setQwertyKeyboardEnabled(bool enabled) {
     if (qwertyKeyboardButton)
         qwertyKeyboardButton->setActive(enabled);

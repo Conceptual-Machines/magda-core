@@ -510,6 +510,20 @@ void AutomationCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType 
     }
 }
 
+void AutomationCurveEditor::onSegmentShaperChanged(
+    uint32_t leftPointId, const CurveHandleData& leftInHandle, const CurveHandleData& leftOutHandle,
+    uint32_t rightPointId, const CurveHandleData& rightInHandle,
+    const CurveHandleData& rightOutHandle, bool isPreview) {
+    // The live bend is drawn from the shaper preview state while dragging.
+    // Committing every frame would run an undoable command and rebuild the
+    // point components, destroying the handle mid-drag (so the segment "can't
+    // be grabbed"). Persist only on release.
+    if (isPreview)
+        return;
+    onHandlesChanged(leftPointId, leftInHandle, leftOutHandle);
+    onHandlesChanged(rightPointId, rightInHandle, rightOutHandle);
+}
+
 void AutomationCurveEditor::onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                                              const CurveHandleData& outHandle) {
     // Convert CurveHandleData to BezierHandle

@@ -107,6 +107,10 @@ class AutomationCurveEditor : public CurveEditorBase,
     void onTensionChanged(uint32_t pointId, double tension) override;
     void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                           const CurveHandleData& outHandle) override;
+    void onSegmentShaperChanged(uint32_t leftPointId, const CurveHandleData& leftInHandle,
+                                const CurveHandleData& leftOutHandle, uint32_t rightPointId,
+                                const CurveHandleData& rightInHandle,
+                                const CurveHandleData& rightOutHandle, bool isPreview) override;
 
     void onPointCurveTypeChanged(uint32_t pointId, CurveType newType) override;
     void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) override;

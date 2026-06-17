@@ -434,8 +434,12 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             if (i > 0) {
                 const auto& prev = (*sourcePoints)[i - 1];
                 const bool isBezier = prev.curveType == AutomationCurveType::Bezier;
+                // The shaper bends a Linear segment via bezier handles (tension
+                // stays 0), so tessellate when either is set, else the bake
+                // writes a straight ramp regardless of the visible curve.
+                const bool hasShaper = !prev.outHandle.isZero() || !point.inHandle.isZero();
                 const bool isCurvedLinear = prev.curveType == AutomationCurveType::Linear &&
-                                            std::abs(prev.tension) >= 0.001;
+                                            (std::abs(prev.tension) >= 0.001 || hasShaper);
                 if (isBezier || isCurvedLinear) {
                     const double span = point.beatPosition - prev.beatPosition;
                     if (span > 0.0) {

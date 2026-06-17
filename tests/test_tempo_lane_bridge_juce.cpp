@@ -2,6 +2,8 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <cmath>
+
 #include "SharedTestEngine.hpp"
 #include "magda/daw/core/AutomationInfo.hpp"
 #include "magda/daw/engine/TempoLaneBridge.hpp"
@@ -39,17 +41,20 @@ class TempoLaneBridgeTest final : public juce::UnitTest {
             expectWithinAbsoluteError(rt, bpm, 1.0e-4);
         }
 
-        beginTest("writePointsToSequence reflects points in tempoSequence");
-        magda::TempoLaneBridge::writePointsToSequence({pt(0.0, 120.0, 0.0), pt(16.0, 60.0, 0.5)},
+        beginTest("writePointsToSequence projects a segment's bend onto its tempo curve");
+        // A segment's bend lives on its LEFT point. With no bezier handle the
+        // tension fallback maps straight to the tempo curve factor; the last
+        // point has no following segment, so its tempo curve is 0.
+        magda::TempoLaneBridge::writePointsToSequence({pt(0.0, 120.0, 0.5), pt(16.0, 60.0, 0.0)},
                                                       *edit);
         expectEquals(ts.getNumTempos(), 2);
         expectWithinAbsoluteError(ts.getTempo(0)->getBpm(), 120.0, 1.0e-3);
         expectWithinAbsoluteError(ts.getTempo(0)->getStartBeat().inBeats(), 0.0, 1.0e-9);
+        expectWithinAbsoluteError((double)ts.getTempo(0)->getCurve(), 0.5, 1.0e-4);
         expectWithinAbsoluteError(ts.getTempo(1)->getStartBeat().inBeats(), 16.0, 1.0e-9);
         expectWithinAbsoluteError(ts.getTempo(1)->getBpm(), 60.0, 1.0e-3);
-        expectWithinAbsoluteError((double)ts.getTempo(1)->getCurve(), 0.5, 1.0e-4);
 
-        beginTest("readPointsFromSequence round-trips the written points");
+        beginTest("readPointsFromSequence reconstructs the bend and the curve round-trips");
         {
             auto pts = magda::TempoLaneBridge::readPointsFromSequence(*edit);
             expectEquals((int)pts.size(), 2);
@@ -59,7 +64,24 @@ class TempoLaneBridgeTest final : public juce::UnitTest {
             expectWithinAbsoluteError(pts[1].beatPosition, 16.0, 1.0e-9);
             expectWithinAbsoluteError(magda::TempoLaneBridge::normalizedToBpm(pts[1].value), 60.0,
                                       1.0e-3);
-            expectWithinAbsoluteError(pts[1].tension, 0.5, 1.0e-4);
+            // The bend is reconstructed as a bezier apex on the segment's left point.
+            expect(std::abs(pts[0].outHandle.value) > 1.0e-4);
+            // Re-writing the reconstructed points preserves the curve factor.
+            magda::TempoLaneBridge::writePointsToSequence(pts, *edit);
+            expectWithinAbsoluteError((double)ts.getTempo(0)->getCurve(), 0.5, 1.0e-3);
+        }
+
+        beginTest("a straight ramp interpolates through the segment (not a step)");
+        {
+            // A plain segment writes curve 0 (linear ramp). TE treats curve
+            // +/-1 as a hold-then-jump, so guard that we never produce that for
+            // an unshaped ramp: the midpoint BPM must sit between the endpoints.
+            magda::TempoLaneBridge::writePointsToSequence(
+                {pt(0.0, 120.0, 0.0), pt(16.0, 20.0, 0.0)}, *edit);
+            const double midTime = ts.toTime(te::BeatPosition::fromBeats(8.0)).inSeconds();
+            const double midBpm = ts.getBpmAt(te::TimePosition::fromSeconds(midTime));
+            expect(midBpm > 25.0 && midBpm < 115.0,
+                   "midpoint BPM should be ramped, got " + juce::String(midBpm));
         }
 
         beginTest("reconcile shrinks the sequence when points are removed");

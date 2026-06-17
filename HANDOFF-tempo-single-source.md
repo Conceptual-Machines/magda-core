@@ -2,6 +2,66 @@
 
 Branch: `feat/tempo-single-source` (off `dev/0.12.0`).
 
+---
+
+## ⚑ START HERE (fresh-context handoff)
+
+**Git:** branch `feat/tempo-single-source`, REBASED onto `dev/0.12.0` @ `15cbeeda3`
+(which includes #1482 master-channel-automation). All WIP is in ONE commit on top
+(`c6e1607f6` "WIP: tempo single-source ..."). Tree is clean. App + Catch2 +
+JUCE test builds all compile green (verified post-rebase).
+
+**What is DONE and correct (keep it):**
+- Phase 0 — `magda::TempoMap` facade (`magda/daw/core/TempoMap.hpp`) +
+  `TracktionTempoMap` (engine) over `tempoSequence`. Injected into
+  `TimelineController` from `MainWindow`. Tested (`test_tempo_map_juce`).
+- Phase 1 core — `TimelineState` + `TrackContentPanel` + all UI clip-seconds
+  call sites (`ClipComponent`, `TrackContentPanelClipDrag`, `MainView`,
+  `MainWindowCommands`, the 3 editors) route beats<->seconds through the facade
+  with bpm fallback. `ClipInfo::getTimeline*(const TempoMap&)` overloads added.
+- Phase 4 engine sync — `TempoLaneBridge` (lane points <-> tempoSequence,
+  position-aware) + `TempoLaneSync` (live, both directions, echo-guarded, owned
+  by `TracktionEngineWrapper`, gated off in tests via
+  `MAGDA_NO_AUTO_TEMPO_LANE_SYNC`). Tested (`test_tempo_lane_bridge_juce`,
+  `test_tempo_lane_sync_juce`). THE SYNC LOGIC IS GOOD — do not rewrite it.
+
+**Creation + display UX — FIXED (was the wrong surfacing).** Tempo/bpm is a
+global/master concern; it now lives in the #1482 master automation band:
+  1. REMOVED the `View > Tempo Lane` item (`ShowTempoLane` enum + View `addItem`
+     + tempoLaneShown lookup + handler in MenuManager.{hpp,cpp}, the
+     AutomationManager/ControlTarget includes there, and `view.tempo_lane` in
+     en.json).
+  2. ADDED "Tempo" to `showAutomationMenu` (`AutomationMenu.cpp`, item id 3),
+     gated to `trackId == MASTER_TRACK_ID`. Selecting it calls
+     `getOrCreateLane(ControlTarget::tempo(), Absolute)` + `setLaneVisible`;
+     `TempoLaneSync` engages automatically.
+  3. `visibleMasterAutomationLanes()` (`MasterAutomationLanes.cpp`) now PREPENDS
+     `getEditScopedLanes()` before the master track lanes, so the Tempo lane
+     renders in the master band with a proper header (`paintAutomationLaneHeader`
+     -> `getDisplayName()` = "Tempo" + standard buttons) — header + content both
+     flow from that one helper.
+  4. REMOVED the old `TrackContentPanel` pinned global-lane block entirely
+     (`globalLaneComponents_`, `getGlobalLanesHeight()` + its 3 offset call sites
+     now 0, the rebuild + position blocks). Edit-scoped lanes no longer render
+     there.
+
+  HOW TO SEE IT: click the automation (curve) icon on the master header (or
+  right-click the master header) -> "Add New Lane..." -> "Tempo". A "Tempo" lane
+  appears in the master automation band at the bottom. Drag/add points = tempo
+  changes; moving the transport tempo updates the lane.
+
+  Verified: app build green; JUCE "Tempo Map/Lane Bridge/Lane Sync" + Automation
+  tests pass; Catch2 1258 (1252 pass, 6 skip, 0 fail).
+
+**Remaining follow-ups:**
+  - Constrained-editor cleanup (disable bezier/tension on the tempo lane; the
+    bridge only maps point tension -> TempoSetting.curve and rebuilds Linear, so
+    bezier edits snap back on the next sync — janky, not broken).
+  - Deferred session-sync routing (see Phase 4 notes).
+
+Everything below is the original plan + per-phase detail. The engine/bridge/sync
+and conversion routing are sound; only the creation/display surfacing is wrong.
+
 ## Goal
 
 `te::Edit::tempoSequence` becomes the **single source of truth** for tempo. No

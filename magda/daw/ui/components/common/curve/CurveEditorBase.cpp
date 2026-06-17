@@ -633,6 +633,9 @@ void CurveEditorBase::updateSegmentShaperFromPixel(uint32_t pointId, double pixe
         if (snapYToGrid)
             sy = juce::jlimit(0.0, 1.0, snapYToGrid(sy));
 
+        // Tension-only mode (e.g. the tempo lane): collapse the 2-D apex drag to
+        // a single per-segment tension scalar, which is all the backing store
+        // can hold. Derived by inverting getSegmentShaperPosition's t=0.5 curve.
         shaperPreviewPointId_ = isPreview ? pointId : INVALID_CURVE_POINT_ID;
         shaperPreviewX_ = sx;
         shaperPreviewY_ = sy;

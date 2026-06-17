@@ -570,6 +570,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     mainView->onPlayheadPositionChanged = [this](double position) {
         transportPanel->setPlayheadPosition(position);
+        // Follow the tempo curve: show the BPM at the playhead, not a static
+        // scalar. Walks the tempo map (constant tempo -> unchanged readout).
+        if (const auto* tm = mainView->getTimelineController().tempoMap())
+            transportPanel->setLiveTempoDisplay(tm->bpmAt(tm->timeToBeat(position)));
     };
     mainView->onTimeSelectionChanged = [this](double start, double end, bool hasTimeSelection) {
         transportPanel->setTimeSelection(start, end, hasTimeSelection);

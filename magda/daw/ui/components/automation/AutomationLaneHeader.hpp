@@ -47,9 +47,11 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons, const Automa
  * @brief Position the buttons within the lane's content area and sync their
  *        toggle state. Hidden when the lane is collapsed.
  * @param laneTopY Top of the lane (its header row) in the host's coordinates.
+ * @param topInset Pixels of grab strip above the header (the master band puts
+ *                 its resize handle on the top edge); 0 for bottom-handle hosts.
  */
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
-                                 int laneTopY);
+                                 int laneTopY, int topInset = 0);
 
 /**
  * @brief Paint a single automation lane header: background, parameter name, and
@@ -57,8 +59,10 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
  * @param laneTopY  Top of the lane in the host's coordinates.
  * @param width     Width of the header column (the labels flush to its right edge).
  * @param laneHeight Full lane height (header + curve + resize handle when expanded).
+ * @param topInset  Pixels of grab strip above the header (top-handle hosts); 0
+ *                  for bottom-handle hosts so per-track lanes are unchanged.
  */
 void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane, int laneTopY,
-                               int width, int laneHeight);
+                               int width, int laneHeight, int topInset = 0);
 
 }  // namespace magda
