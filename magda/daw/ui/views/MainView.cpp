@@ -5,6 +5,7 @@
 #include <cmath>
 #include <set>
 
+#include "../components/automation/MasterAutomationLanes.hpp"
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/LevelMeterBallistics.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
@@ -272,6 +273,22 @@ void MainView::setupComponents() {
     masterContentPanel = std::make_unique<SongNavigatorPanel>();
     masterContentPanel->setController(timelineController.get());
     addAndMakeVisible(*masterContentPanel);
+
+    // Master automation band (above the master strip): fixed header column +
+    // a content viewport scroll-synced to the arrangement.
+    masterAutomationHeaderPanel = std::make_unique<MasterAutomationHeaderPanel>();
+    addAndMakeVisible(*masterAutomationHeaderPanel);
+    masterAutomationViewport = std::make_unique<juce::Viewport>();
+    masterAutomationContentPanel = std::make_unique<MasterAutomationContentPanel>();
+    masterAutomationViewport->setViewedComponent(masterAutomationContentPanel.get(), false);
+    masterAutomationViewport->setScrollBarsShown(false, false);
+    addAndMakeVisible(*masterAutomationViewport);
+    // A lane added / removed / resized changes the band height: re-run the
+    // arrangement layout so the band and the tracks above it resize.
+    masterAutomationContentPanel->onBandHeightChanged = [this]() {
+        resized();
+        repaint();
+    };
 
     // Create horizontal zoom scroll bar (at bottom)
     horizontalZoomScrollBar =
@@ -660,6 +677,8 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
 
         markerLaneViewport->setViewPosition(state.zoom.scrollX, 0);
         timelineViewport->setViewPosition(state.zoom.scrollX, 0);
+        if (masterAutomationViewport)
+            masterAutomationViewport->setViewPosition(state.zoom.scrollX, 0);
         // Preserve current vertical scroll — state.zoom.scrollY may be stale
         // since vertical scrolling doesn't always dispatch to the controller
         int currentScrollY = trackContentViewport->getViewPositionY();
@@ -949,6 +968,17 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
         result.masterContentArea = masterRowArea;
     }
 
+    // Master automation band: pinned directly above the master strip. Carved
+    // after the master row (removeFromBottom) so it sits just above it.
+    const int effectiveMasterAutomationHeight =
+        masterVisible_ ? juce::jmax(0, masterAutomationHeight) : 0;
+    if (effectiveMasterAutomationHeight > 0) {
+        auto bandRow = bounds.removeFromBottom(effectiveMasterAutomationHeight);
+        result.masterAutomationHeaderArea = headerColumn.removeFrom(bandRow, trackHeaderWidth);
+        headerColumn.removeSpacing(bandRow, layout.componentSpacing);
+        result.masterAutomationContentArea = bandRow;
+    }
+
     if (auxVisible_) {
         auto auxRowArea = bounds.removeFromBottom(auxSectionHeight);
         result.auxHeadersArea = headerColumn.removeFrom(auxRowArea, trackHeaderWidth);
@@ -963,13 +993,13 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
     result.verticalScrollBarHitArea.removeFromBottom(
         ARRANGEMENT_SCROLLBAR_SIZE + effectiveMasterHeight + effectiveResizeHandleHeight +
-        effectiveAuxHeight);
+        effectiveAuxHeight + effectiveMasterAutomationHeight);
     result.verticalScrollBarHitArea.removeFromTop(getTimelineHeight());
     result.verticalScrollBarHitArea = result.verticalScrollBarHitArea.reduced(1, 0);
 
-    result.verticalScrollBarArea.removeFromBottom(horizontalScrollbarHeight +
-                                                  effectiveMasterHeight +
-                                                  effectiveResizeHandleHeight + effectiveAuxHeight);
+    result.verticalScrollBarArea.removeFromBottom(
+        horizontalScrollbarHeight + effectiveMasterHeight + effectiveResizeHandleHeight +
+        effectiveAuxHeight + effectiveMasterAutomationHeight);
     result.verticalScrollBarArea.removeFromTop(getTimelineHeight());
     if (result.verticalScrollBarArea.getWidth() > 2)
         result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
@@ -1002,6 +1032,10 @@ void MainView::resized() {
         previousArrangementHeight = getHeight();
     }
 
+    // Band height must be known before computeArrangementLayout carves the
+    // band area above the master strip.
+    masterAutomationHeight = masterVisible_ ? masterAutomationBandHeight(verticalZoom) : 0;
+
     auto arrangementLayout = computeArrangementLayout();
     auto& layout = LayoutConfig::getInstance();
 
@@ -1018,6 +1052,20 @@ void MainView::resized() {
     if (masterVisible_) {
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
+    }
+
+    const bool bandVisible = masterVisible_ && masterAutomationHeight > 0;
+    masterAutomationHeaderPanel->setVisible(bandVisible);
+    masterAutomationViewport->setVisible(bandVisible);
+    if (bandVisible) {
+        masterAutomationHeaderPanel->setBounds(arrangementLayout.masterAutomationHeaderArea);
+        masterAutomationViewport->setBounds(arrangementLayout.masterAutomationContentArea);
+        masterAutomationHeaderPanel->setVerticalZoom(verticalZoom);
+        masterAutomationContentPanel->setVerticalZoom(verticalZoom);
+        masterAutomationContentPanel->setPixelsPerBeat(horizontalZoom);
+        masterAutomationContentPanel->setTempoBPM(trackContentPanel->getTempo());
+        masterAutomationContentPanel->setTimelineWidth(trackContentPanel->getWidth());
+        masterAutomationViewport->setViewPosition(trackContentViewport->getViewPositionX(), 0);
     }
 
     if (auxVisible_) {
@@ -1171,6 +1219,8 @@ void MainView::scrollToPosition(double timePosition) {
     auto pixelPosition = state.timeDurationToPixels(timePosition);
     markerLaneViewport->setViewPosition(pixelPosition, 0);
     timelineViewport->setViewPosition(pixelPosition, 0);
+    if (masterAutomationViewport)
+        masterAutomationViewport->setViewPosition(pixelPosition, 0);
     trackContentViewport->setViewPosition(pixelPosition, trackContentViewport->getViewPositionY());
 }
 
@@ -1374,6 +1424,8 @@ void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double new
         // Sync timeline viewport
         markerLaneViewport->setViewPosition(scrollX, 0);
         timelineViewport->setViewPosition(scrollX, 0);
+        if (masterAutomationViewport)
+            masterAutomationViewport->setViewPosition(scrollX, 0);
 
         // Update zoom scroll bar
         updateHorizontalZoomScrollBar();
@@ -2694,8 +2746,33 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     g.drawText(tr("common.master"), labelArea, juce::Justification::centredLeft);
 }
 
-void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& /*event*/) {
+void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& event) {
     SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
+
+    if (!event.mods.isPopupMenu())
+        return;
+
+    // Right-click: toggle the master channel's automation lane(s). Master has
+    // only a volume fader, so Volume is the single offered target.
+    auto& manager = AutomationManager::getInstance();
+    const auto target = ControlTarget::trackVolume(MASTER_TRACK_ID);
+    auto existing = manager.getLaneForTarget(target);
+    const bool shown = existing != INVALID_AUTOMATION_LANE_ID && manager.getLane(existing) &&
+                       manager.getLane(existing)->visible;
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Master Volume", true, shown);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [target](int result) {
+        if (result != 1)
+            return;
+        auto& mgr = AutomationManager::getInstance();
+        auto id = mgr.getLaneForTarget(target);
+        if (id != INVALID_AUTOMATION_LANE_ID && mgr.getLane(id) && mgr.getLane(id)->visible) {
+            mgr.setLaneVisible(id, false);
+        } else {
+            mgr.setLaneVisible(mgr.getOrCreateLane(target, AutomationLaneType::Absolute), true);
+        }
+    });
 }
 
 void MainView::MasterHeaderPanel::resized() {

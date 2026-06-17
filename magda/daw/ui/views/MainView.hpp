@@ -23,6 +23,8 @@ namespace magda {
 // Forward declaration
 class AudioEngine;
 class SongNavigatorPanel;
+class MasterAutomationHeaderPanel;
+class MasterAutomationContentPanel;
 
 class MainView : public juce::Component,
                  public juce::ScrollBar::Listener,
@@ -159,6 +161,14 @@ class MainView : public juce::Component,
     // Song navigator / minimap occupying the master content strip (issue #1474).
     std::unique_ptr<SongNavigatorPanel> masterContentPanel;
     int masterStripHeight = 60;
+
+    // Master automation band: a pinned strip directly above the master strip
+    // hosting the master channel's automation lanes (issue #1482). Fixed-width
+    // header column + a horizontally scroll-synced content viewport.
+    std::unique_ptr<MasterAutomationHeaderPanel> masterAutomationHeaderPanel;
+    std::unique_ptr<juce::Viewport> masterAutomationViewport;
+    std::unique_ptr<MasterAutomationContentPanel> masterAutomationContentPanel;
+    int masterAutomationHeight = 0;  // computed band height; 0 collapses the band
     ViewMode currentViewMode_ = ViewMode::Arrange;
     bool masterVisible_ = true;
 
@@ -222,6 +232,8 @@ class MainView : public juce::Component,
         juce::Rectangle<int> verticalScrollBarHitArea;
         juce::Rectangle<int> masterHeaderArea;
         juce::Rectangle<int> masterContentArea;
+        juce::Rectangle<int> masterAutomationHeaderArea;
+        juce::Rectangle<int> masterAutomationContentArea;
         juce::Rectangle<int> auxHeadersArea;
         juce::Rectangle<int> auxContentArea;
     };
