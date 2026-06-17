@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ClipTypes.hpp"
+#include "TempoMap.hpp"
 #include "TempoUtils.hpp"
 #include "TrackTypes.hpp"
 #include "TypeIds.hpp"
@@ -695,6 +696,29 @@ struct ClipInfo {
     /// Timeline-domain end position (start + length).
     double getTimelineEnd(double projectBPM) const {
         return getTimelineStart(projectBPM) + getTimelineLength(projectBPM);
+    }
+
+    // ----- Position-aware overloads (tempo single-source-of-truth) -----
+    // These walk the tempo curve via the facade, so they stay correct under a
+    // varying tempo where `beats * 60 / bpm` would drift. Beats are
+    // authoritative; placement.startBeat / endBeat() drive the result.
+
+    /// Timeline-domain seconds for the clip's start position.
+    double getTimelineStart(const TempoMap& tempoMap) const {
+        return tempoMap.beatToTime(placement.startBeat);
+    }
+
+    /// Timeline-domain seconds for the clip's length. Position-aware: a beat
+    /// span occupies different wall-clock seconds depending on where it sits on
+    /// the tempo curve, so length = end-time minus start-time (not a direct
+    /// lengthBeats conversion).
+    double getTimelineLength(const TempoMap& tempoMap) const {
+        return tempoMap.beatToTime(placement.endBeat()) - tempoMap.beatToTime(placement.startBeat);
+    }
+
+    /// Timeline-domain end position.
+    double getTimelineEnd(const TempoMap& tempoMap) const {
+        return tempoMap.beatToTime(placement.endBeat());
     }
 
     /// Timeline-domain seconds for the looping playback span — the length the

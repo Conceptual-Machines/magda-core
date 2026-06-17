@@ -2,6 +2,8 @@
 
 #include "CommandIDs.hpp"
 #include "Config.hpp"
+#include "core/AutomationManager.hpp"
+#include "core/ControlTarget.hpp"
 #include "core/StringTable.hpp"
 #include "core/UndoManager.hpp"
 
@@ -186,6 +188,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             bool headersOnRight = Config::getInstance().getScrollbarOnLeft();
             menu.addItem(ToggleScrollbarPosition, tr("menu.view.headers_right"), true,
                          headersOnRight);
+            menu.addSeparator();
+            const bool tempoLaneShown = AutomationManager::getInstance().getLaneForTarget(
+                                            ControlTarget::tempo()) != INVALID_AUTOMATION_LANE_ID;
+            menu.addItem(ShowTempoLane, tr("menu.view.tempo_lane"), true, tempoLaneShown);
             menu.addSeparator();
             menu.addItem(ZoomIn, tr("menu.view.zoom_in"), true, false);
             menu.addItem(ZoomOut, tr("menu.view.zoom_out"), true, false);
@@ -455,6 +461,18 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             if (callbacks_.onToggleScrollbarPosition)
                 callbacks_.onToggleScrollbarPosition();
             break;
+        case ShowTempoLane: {
+            // Toggle the edit-scoped global Tempo lane. Creating it makes it
+            // appear in the pinned global-lane block; TempoLaneSync keeps it
+            // bound to tempoSequence.
+            auto& am = AutomationManager::getInstance();
+            const auto existing = am.getLaneForTarget(ControlTarget::tempo());
+            if (existing != INVALID_AUTOMATION_LANE_ID)
+                am.deleteLane(existing);
+            else
+                am.getOrCreateLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+            break;
+        }
 
         // Transport menu
         case Play:

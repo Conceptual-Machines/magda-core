@@ -734,6 +734,24 @@ void AutomationManager::clearLanePoints(AutomationLaneId laneId) {
     notifyPointsChanged(laneId);
 }
 
+void AutomationManager::replaceLanePoints(AutomationLaneId laneId,
+                                          const std::vector<AutomationPoint>& points) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isAbsolute())
+        return;
+
+    lane->absolutePoints.clear();
+    lane->absolutePoints.reserve(points.size());
+    for (auto p : points) {
+        p.id = nextPointId_++;
+        p.beatPosition = juce::jmax(0.0, p.beatPosition);
+        p.value = juce::jlimit(0.0, 1.0, p.value);
+        lane->absolutePoints.push_back(p);
+    }
+    sortPoints(lane->absolutePoints);
+    notifyPointsChanged(laneId);
+}
+
 void AutomationManager::deletePointFromClip(AutomationClipId clipId, AutomationPointId pointId) {
     auto* clip = getClip(clipId);
     if (!clip)

@@ -46,6 +46,7 @@
     "view.zoom_loop": "Zoom Loop to Fit",
     "view.zoom_selection": "Zoom Selection to Fit",
     "view.fullscreen": "Enter Full Screen",
+    "view.tempo_lane": "Tempo Lane",
     "transport.play": "Play",
     "transport.pause": "Pause",
     "transport.stop": "Stop",

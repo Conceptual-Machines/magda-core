@@ -990,8 +990,8 @@ bool TrackContentPanel::isInSelectableArea(int x, int y) const {
 }
 
 double TrackContentPanel::pixelToTime(int pixel) const {
-    if (currentZoom > 0 && tempoBPM > 0)
-        return pixelToBeats(pixel) * 60.0 / tempoBPM;
+    if (currentZoom > 0)
+        return beatsToSeconds(pixelToBeats(pixel));
     return 0.0;
 }
 
@@ -1006,10 +1006,14 @@ double TrackContentPanel::pixelToBeats(int pixel) const {
 }
 
 double TrackContentPanel::secondsToBeats(double timeInSeconds) const {
+    if (timelineController && timelineController->tempoMap())
+        return timelineController->tempoMap()->timeToBeat(timeInSeconds);
     return timeInSeconds * tempoBPM / 60.0;
 }
 
 double TrackContentPanel::beatsToSeconds(double beats) const {
+    if (timelineController && timelineController->tempoMap())
+        return timelineController->tempoMap()->beatToTime(beats);
     if (tempoBPM > 0)
         return beats * 60.0 / tempoBPM;
     return 0.0;

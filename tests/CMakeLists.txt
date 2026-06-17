@@ -170,6 +170,10 @@ target_compile_definitions(magda_tests
     PRIVATE
     MAGDA_REPO_ROOT="${CMAKE_SOURCE_DIR}"
     MAGDA_AUDIO_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/audio"
+    # The shared test engine must NOT auto-wire the live Tempo lane sync: it
+    # attaches to the AutomationManager singleton and would perturb other tests.
+    # TempoLaneSync is tested directly in test_tempo_lane_sync_juce.cpp instead.
+    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
 )
 
 # Add the test to CTest
@@ -206,6 +210,9 @@ target_sources(magda_juce_tests PRIVATE
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
     test_arrange_beat_native_juce.cpp
+    test_tempo_map_juce.cpp
+    test_tempo_lane_bridge_juce.cpp
+    test_tempo_lane_sync_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
@@ -244,7 +251,8 @@ target_link_libraries(magda_juce_tests
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
-target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1)
+target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
+    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1)
 
 # Include directories for JUCE tests
 target_include_directories(magda_juce_tests
@@ -274,6 +282,15 @@ add_test(NAME timeline_extreme_zoom_paint_juce
 
 add_test(NAME arrange_beat_native_juce
          COMMAND magda_juce_tests "Arrange Beat Native Tests")
+
+add_test(NAME tempo_map_juce
+         COMMAND magda_juce_tests "Tempo Map Tests")
+
+add_test(NAME tempo_lane_bridge_juce
+         COMMAND magda_juce_tests "Tempo Lane Bridge Tests")
+
+add_test(NAME tempo_lane_sync_juce
+         COMMAND magda_juce_tests "Tempo Lane Sync Tests")
 
 add_test(NAME midi_bridge_note_events_juce
          COMMAND magda_juce_tests "MidiBridge Note Events Tests")

@@ -9,6 +9,7 @@
 #include "TimelineEvents.hpp"
 #include "TimelineState.hpp"
 #include "TransportStateListener.hpp"
+#include "core/TempoMap.hpp"
 #include "utils/ScopedListener.hpp"
 
 namespace magda {
@@ -104,6 +105,28 @@ class TimelineController {
         return state;
     }
 
+    // ===== Tempo Map (beats<->seconds facade) =====
+
+    /**
+     * Inject the position-aware tempo facade (backed by the engine's tempo
+     * sequence). Wired once at startup from the audio engine. The controller
+     * does not own it; the engine keeps it alive.
+     */
+    void setTempoMap(const TempoMap* tempoMap) {
+        tempoMap_ = tempoMap;
+        // The state snapshot routes its beats<->seconds conversions through the
+        // same facade. `state` is never wholesale-reassigned, so this sticks.
+        state.tempoMap = tempoMap;
+    }
+
+    /**
+     * The tempo facade for beats<->seconds conversion, or nullptr if not yet
+     * injected (early startup / headless contexts). Callers must null-check.
+     */
+    const TempoMap* tempoMap() const {
+        return tempoMap_;
+    }
+
     // ===== Event Dispatching =====
 
     /**
@@ -155,6 +178,10 @@ class TimelineController {
   private:
     // The authoritative state snapshot. Mutate only through dispatched events.
     TimelineState state;
+
+    // Position-aware beats<->seconds facade. Injected by the audio engine; not
+    // owned here. May be null before injection.
+    const TempoMap* tempoMap_ = nullptr;
 
     // Listeners
     std::vector<TimelineStateListener*> listeners;

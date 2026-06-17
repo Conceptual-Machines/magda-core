@@ -828,6 +828,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // This enables the observer pattern: UI -> TimelineController -> AudioEngine
     mainView->getTimelineController().addAudioEngineListener(engine);
 
+    // Inject the position-aware tempo facade (engine -> UI). All beats<->seconds
+    // conversions go through this, backed by the engine's tempo sequence.
+    mainView->getTimelineController().setTempoMap(engine->tempoMap());
+
     // Create position timer for playhead updates (AudioEngine -> UI)
     // Timer runs continuously and detects play/stop state changes
     positionTimer_ =
