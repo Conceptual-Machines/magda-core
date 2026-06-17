@@ -41,6 +41,10 @@ te::AudioTrack* TrackController::getAudioTrack(TrackId trackId) const {
     return it != trackMapping_.end() ? it->second : nullptr;
 }
 
+te::VolumeAndPanPlugin* TrackController::getMasterVolumePlugin() const {
+    return edit_.getMasterVolumePlugin().get();
+}
+
 te::AudioTrack* TrackController::createAudioTrack(TrackId trackId, const juce::String& name) {
     juce::ScopedLock lock(trackLock_);
 
