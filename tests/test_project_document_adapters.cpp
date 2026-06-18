@@ -296,6 +296,76 @@ TEST_CASE("DawProjectXmlAdapter roundtrips group track hierarchy",
     REQUIRE(importedGroup->childIds[1] == importedSnare->id);
 }
 
+TEST_CASE("DawProjectXmlAdapter roundtrips session clip scenes",
+          "[project][serialization][dawproject][scenes]") {
+    ProjectDocument document;
+    document.info.name = "Session Test";
+    document.info.version = "0.session";
+    document.info.tempo = 120.0;
+
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Launcher";
+    document.tracks.push_back(track);
+
+    ClipInfo sessionClip;
+    sessionClip.id = 10;
+    sessionClip.trackId = track.id;
+    sessionClip.name = "Slot Pattern";
+    sessionClip.view = ClipView::Session;
+    sessionClip.sceneIndex = 2;
+    sessionClip.setMidiContent();
+    sessionClip.setPlacementBeats(12.0, 4.0);
+    sessionClip.loopEnabled = true;
+    sessionClip.loopStartBeats = 0.0;
+    sessionClip.loopLengthBeats = 4.0;
+    sessionClip.midiNotes.push_back(MidiNote{60, 100, 0.0, 1.0});
+    document.clips.push_back(sessionClip);
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("<Scenes>"));
+    REQUIRE(xml.contains("<Scene"));
+    REQUIRE(xml.contains("<ClipSlot"));
+    REQUIRE(xml.contains("track=\"track1\""));
+
+    auto root = juce::parseXML(xml);
+    REQUIRE(root != nullptr);
+    auto* scenes = root->getChildByName("Scenes");
+    REQUIRE(scenes != nullptr);
+    auto* scene = scenes->getChildByName("Scene");
+    REQUIRE(scene != nullptr);
+    REQUIRE(scene->getStringAttribute("id") == "scene2");
+    auto* sceneLanes = scene->getChildByName("Lanes");
+    REQUIRE(sceneLanes != nullptr);
+    auto* slot = sceneLanes->getChildByName("ClipSlot");
+    REQUIRE(slot != nullptr);
+    REQUIRE(slot->getStringAttribute("track") == "track1");
+    auto* clip = slot->getChildByName("Clip");
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->getStringAttribute("name") == "Slot Pattern");
+    REQUIRE(clip->getDoubleAttribute("time") == Catch::Approx(0.0));
+
+    juce::String validationError;
+    INFO(validationError);
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    REQUIRE(error.isEmpty());
+    REQUIRE(imported.clips.size() == 1);
+    REQUIRE(imported.clips[0].name == "Slot Pattern");
+    REQUIRE(imported.clips[0].view == ClipView::Session);
+    REQUIRE(imported.clips[0].sceneIndex == 2);
+    REQUIRE(imported.clips[0].trackId == imported.tracks[0].id);
+    REQUIRE(imported.clips[0].placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(imported.clips[0].placement.lengthBeats == Catch::Approx(4.0));
+    REQUIRE(imported.clips[0].loopEnabled);
+    REQUIRE(imported.clips[0].loopLengthBeats == Catch::Approx(4.0));
+    REQUIRE(imported.clips[0].midiNotes.size() == 1);
+    REQUIRE(imported.clips[0].midiNotes[0].noteNumber == 60);
+}
+
 TEST_CASE("DawProjectValidator validates vendored project and metadata schemas",
           "[project][serialization][dawproject][validation]") {
     juce::String error;
