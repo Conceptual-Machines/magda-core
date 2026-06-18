@@ -90,11 +90,12 @@ bool ProjectSerializer::exportToDawProject(const juce::File& file, const Project
     return true;
 }
 
-bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData) {
+bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                               const juce::File& audioExtractionDir) {
     ProjectDocument document;
     juce::String error;
 
-    if (!DawProjectArchive::readFromFile(file, document, error)) {
+    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir)) {
         lastError_ = error;
         return false;
     }

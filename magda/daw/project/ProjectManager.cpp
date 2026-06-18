@@ -309,8 +309,14 @@ bool ProjectManager::importDawProject(const juce::File& file,
         return false;
     }
 
+    // Set up the project media directory first so embedded audio extracts into
+    // it (the "imported" subdir) and persists with the project, rather than into
+    // a throwaway temp folder.
+    createTempMediaDirectory();
+    ensureMediaSubdirectories(mediaDirectory_);
+
     StagedProjectData staged;
-    if (!ProjectSerializer::loadDawProjectAndStage(file, staged)) {
+    if (!ProjectSerializer::loadDawProjectAndStage(file, staged, getImportedDirectory())) {
         DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
         lastError_ = ProjectSerializer::getLastError();
         return false;
@@ -327,9 +333,6 @@ bool ProjectManager::importDawProject(const juce::File& file,
     currentProject_.filePath = {};
     currentFile_ = juce::File();
     isProjectOpen_ = true;
-
-    createTempMediaDirectory();
-    ensureMediaSubdirectories(mediaDirectory_);
 
     isDirty_ = true;
     notifyProjectOpened();

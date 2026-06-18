@@ -1,3 +1,4 @@
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
@@ -96,7 +97,9 @@ TEST_CASE("DawProjectXmlAdapter roundtrips transport tracks and arrangement clip
     auto xml = DawProjectXmlAdapter::toProjectXml(document);
     REQUIRE(xml.contains("<Project"));
     REQUIRE(xml.contains("version=\"1.0\""));
-    REQUIRE(xml.contains("contentType=\"audio\""));
+    // A track carrying a MIDI clip is a "notes" track even with no instrument,
+    // so importing DAWs (Bitwig) don't mistake it for an audio track.
+    REQUIRE(xml.contains("contentType=\"notes\""));
     REQUIRE(xml.contains("<Notes"));
     REQUIRE(xml.contains("key=\"65\""));
 
@@ -216,4 +219,84 @@ TEST_CASE("ProjectSerializer exports and stages dawproject archives",
 
     file.deleteFile();
     clearProjectManagers();
+}
+
+TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
+          "[project][serialization][dawproject][archive][audio]") {
+    // A real on-disk WAV the audio clip points at, so the exporter reads genuine
+    // channel/sample-rate facts from the header.
+    constexpr int kSampleRate = 48000;
+    constexpr int kChannels = 1;
+    constexpr int kFrames = kSampleRate / 2;  // 0.5 s
+    auto source = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                      .getNonexistentChildFile("magda-dawproject-sample", ".wav");
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::FileOutputStream> out(source.createOutputStream());
+        REQUIRE(out != nullptr);
+        std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(
+            out.get(), kSampleRate, static_cast<unsigned int>(kChannels), 16, {}, 0));
+        REQUIRE(writer != nullptr);
+        out.release();  // writer owns the stream now
+        juce::AudioBuffer<float> buffer(kChannels, kFrames);
+        buffer.clear();
+        REQUIRE(writer->writeFromAudioSampleBuffer(buffer, 0, kFrames));
+    }
+
+    ProjectDocument document;
+    document.info.name = "Audio Embed";
+    document.info.version = "0.audio";
+    document.info.tempo = 120.0;
+
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Drums";
+    document.tracks.push_back(track);
+
+    ClipInfo clip;
+    clip.id = 1;
+    clip.trackId = track.id;
+    clip.name = "Loop";
+    clip.setAudioContent();
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.audio().source.filePath = source.getFullPathName();
+    document.clips.push_back(clip);
+
+    auto archive = createTempDawProjectFile();
+    juce::String error;
+    REQUIRE(DawProjectArchive::writeToFile(archive, document, error));
+    INFO(error);
+    REQUIRE(error.isEmpty());
+
+    // The XML references the embedded copy relatively, and the sample is stored
+    // inside the archive under that same path.
+    juce::ZipFile zip(archive);
+    auto projectXml = readZipTextEntry(zip, "project.xml");
+    REQUIRE(projectXml.contains("external=\"false\""));
+    REQUIRE(projectXml.contains("path=\"audio/" + source.getFileName() + "\""));
+    REQUIRE(zip.getIndexOfFileName("audio/" + source.getFileName(), false) >= 0);
+
+    // The <Audio> element carries the real header facts, not placeholders.
+    REQUIRE(projectXml.contains("sampleRate=\"48000\""));
+    REQUIRE(projectXml.contains("channels=\"1\""));
+
+    // Import re-points the clip at an extracted, byte-identical copy of the WAV.
+    ProjectDocument imported;
+    REQUIRE(DawProjectArchive::readFromFile(archive, imported, error));
+    REQUIRE(imported.clips.size() == 1);
+    REQUIRE(imported.clips[0].isAudio());
+    const juce::File extracted(imported.clips[0].audio().source.filePath);
+    REQUIRE(extracted.existsAsFile());
+    REQUIRE(extracted.getSize() == source.getSize());
+
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(extracted));
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->sampleRate == kSampleRate);
+    REQUIRE(static_cast<int>(reader->numChannels) == kChannels);
+
+    source.deleteFile();
+    archive.deleteFile();
+    extracted.getParentDirectory().getParentDirectory().deleteRecursively();
 }

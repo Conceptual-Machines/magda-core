@@ -79,6 +79,12 @@ bool DawProjectArchive::writeToFile(const juce::File& file, const ProjectDocumen
         builder.addEntry(streamForXml(metadataXml).release(), 9, "metadata.xml",
                          juce::Time::getCurrentTime());
 
+        // Embed referenced audio so the project is self-contained and portable.
+        // Stored (compression 0) since audio barely compresses and we want fast
+        // writes. The XML already references these by their archive-relative path.
+        for (const auto& audio : DawProjectXmlAdapter::collectEmbeddedAudio(document))
+            builder.addFile(juce::File(audio.sourcePath), 0, audio.archivePath);
+
         double progress = 0.0;
         if (!builder.writeToStream(output, &progress)) {
             error = "Failed to write DAWproject archive";
@@ -97,7 +103,7 @@ bool DawProjectArchive::writeToFile(const juce::File& file, const ProjectDocumen
 }
 
 bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& outDocument,
-                                     juce::String& error) {
+                                     juce::String& error, const juce::File& audioExtractionDir) {
     error.clear();
 
     if (!file.existsAsFile()) {
@@ -124,6 +130,29 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
 
     if (!DawProjectXmlAdapter::fromProjectXml(projectXml, outDocument, error))
         return false;
+
+    // Extract embedded audio to disk and repoint clips at the extracted files,
+    // so audio resolves after import. Files referenced by a relative archive path
+    // are embedded; absolute paths are external references and left untouched.
+    juce::File mediaDir = audioExtractionDir != juce::File()
+                              ? audioExtractionDir
+                              : juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                    .getChildFile("magda_dawproject_import")
+                                    .getChildFile(file.getFileNameWithoutExtension());
+    for (auto& clip : outDocument.clips) {
+        if (!clip.isAudio())
+            continue;
+        const auto entryName = clip.audio().source.filePath;
+        if (entryName.isEmpty())
+            continue;
+        const int entryIndex = zip.getIndexOfFileName(entryName, false);
+        if (entryIndex < 0)
+            continue;  // external/absolute reference, nothing to extract
+
+        mediaDir.createDirectory();
+        if (zip.uncompressEntry(entryIndex, mediaDir, true).wasOk())
+            clip.audio().source.filePath = mediaDir.getChildFile(entryName).getFullPathName();
+    }
 
     if (metadataXml.isNotEmpty()) {
         if (auto metadata = juce::parseXML(metadataXml)) {

@@ -74,7 +74,8 @@ class ProjectSerializer {
      * @param outData Output staged data ready for commitStaged()
      * @return true on success, false on error (check getLastError())
      */
-    static bool loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData);
+    static bool loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                       const juce::File& audioExtractionDir = {});
 
     /**
      * @brief Commit previously staged data to singleton managers (message thread only)

@@ -1,6 +1,10 @@
 #include "DawProjectXmlAdapter.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <map>
+#include <memory>
+#include <set>
 
 #include "../../core/TempoUtils.hpp"
 #include "version.hpp"
@@ -30,10 +34,29 @@ float dawProjectToLinearPan(double pan) {
     return static_cast<float>(juce::jlimit(-1.0, 1.0, (pan * 2.0) - 1.0));
 }
 
-const char* contentTypeForTrack(const TrackInfo& track) {
+juce::String contentTypeForTrack(const TrackInfo& track, const std::vector<ClipInfo>& clips) {
     if (track.type == TrackType::Group)
         return "tracks";
-    return track.hasInstrument() ? "notes" : "audio";
+
+    // MAGDA tracks are all hybrid (no distinct MIDI/instrument type), so decide
+    // the DAWproject contentType from what the track actually carries. A track
+    // holding MIDI clips is a "notes" track even with no instrument loaded;
+    // otherwise Bitwig (and others) import it as an audio track.
+    bool hasMidiClip = false;
+    bool hasAudioClip = false;
+    for (const auto& clip : clips) {
+        if (clip.trackId != track.id)
+            continue;
+        hasMidiClip = hasMidiClip || clip.isMidi();
+        hasAudioClip = hasAudioClip || clip.isAudio();
+    }
+
+    const bool notes = hasMidiClip || track.hasInstrument();
+    if (notes && hasAudioClip)
+        return "notes audio";
+    if (notes)
+        return "notes";
+    return "audio";
 }
 
 juce::XmlElement* addRealParameter(juce::XmlElement& parent, const juce::String& tag,
@@ -76,15 +99,63 @@ juce::XmlElement* addNotes(juce::XmlElement& clipElement, const ClipInfo& clip,
     return notesElement;
 }
 
-void addAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip, const juce::String& id) {
+// Real channel count / sample rate / duration read from the audio file header.
+// DAWproject requires channels and sampleRate on <Audio>; importers (Bitwig) use
+// them to interpret the file, so they must reflect the actual media, not guesses.
+struct AudioFileFacts {
+    int channels = 0;
+    int sampleRate = 0;
+    double durationSeconds = 0.0;
+};
+
+AudioFileFacts readAudioFileFacts(const juce::File& file) {
+    AudioFileFacts facts;
+    if (!file.existsAsFile())
+        return facts;
+
+    // A local format manager per read: sharing one isn't thread-safe and export
+    // touches only a handful of files, so this matches the codebase convention.
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    if (std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file)); reader) {
+        facts.channels = static_cast<int>(reader->numChannels);
+        facts.sampleRate = static_cast<int>(reader->sampleRate);
+        if (reader->sampleRate > 0.0)
+            facts.durationSeconds =
+                static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+    }
+    return facts;
+}
+
+void addAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip, const juce::String& id,
+                     const std::map<juce::String, juce::String>& embeddedBySource) {
+    const auto source = clip.audio().source.filePath;
+    const auto facts = readAudioFileFacts(juce::File(source));
+
     auto* audio = clipElement.createNewChildElement("Audio");
     audio->setAttribute("id", id);
-    audio->setAttribute("channels", 2);
-    audio->setAttribute("duration", clip.audio().source.durationSeconds);
-    audio->setAttribute("sampleRate", 0);
+    audio->setAttribute("channels", facts.channels > 0 ? facts.channels : 2);
+    audio->setAttribute("sampleRate", facts.sampleRate);
+    // Prefer the clip model's source duration; fall back to the file's length
+    // when the model hasn't recorded one.
+    audio->setAttribute("duration", clip.audio().source.durationSeconds > 0.0
+                                        ? clip.audio().source.durationSeconds
+                                        : facts.durationSeconds);
 
     auto* file = audio->createNewChildElement("File");
-    file->setAttribute("path", clip.audio().source.filePath);
+
+    // Prefer an embedded, archive-relative reference so the project is portable
+    // (other DAWs resolve it from inside the .dawproject). Fall back to an
+    // external absolute path only when the source file is missing and cannot be
+    // embedded.
+    const auto it = embeddedBySource.find(source);
+    if (it != embeddedBySource.end()) {
+        file->setAttribute("path", it->second);
+        file->setAttribute("external", "false");
+    } else {
+        file->setAttribute("path", source);
+        file->setAttribute("external", "true");
+    }
 }
 
 ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipId clipId) {
@@ -130,6 +201,12 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     juce::XmlElement project("Project");
     project.setAttribute("version", "1.0");
 
+    // Audio sources that will be embedded in the archive, keyed by on-disk path,
+    // so audio clips reference the archive-relative copy instead of a local path.
+    std::map<juce::String, juce::String> embeddedBySource;
+    for (const auto& embedded : collectEmbeddedAudio(document))
+        embeddedBySource[embedded.sourcePath] = embedded.archivePath;
+
     auto* application = project.createNewChildElement("Application");
     application->setAttribute("name", "MAGDA");
     application->setAttribute("version", document.info.version.isNotEmpty() ? document.info.version
@@ -148,7 +225,7 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
         auto* trackElement = structure->createNewChildElement("Track");
         trackElement->setAttribute("id", idFor("track", track.id));
         trackElement->setAttribute("name", track.name);
-        trackElement->setAttribute("contentType", contentTypeForTrack(track));
+        trackElement->setAttribute("contentType", contentTypeForTrack(track, document.clips));
         trackElement->setAttribute("loaded", "true");
         if (!track.colour.isTransparent())
             trackElement->setAttribute("color", colourToDawProject(track.colour));
@@ -187,6 +264,12 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
             clipElement->setAttribute("time", clip.placement.startBeat);
             clipElement->setAttribute("duration", clip.placement.lengthBeats);
             clipElement->setAttribute("playStart", 0.0);
+            // The arrangement Lanes are timeUnit="beats" (governs clip time/
+            // duration), but a clip's inner content (Note times, Audio duration)
+            // lives in its own content time. Declare it explicitly: MIDI note
+            // times are clip-relative beats, audio duration is in seconds.
+            // Omitting this lets the importing DAW guess, which misplaces notes.
+            clipElement->setAttribute("contentTimeUnit", clip.isAudio() ? "seconds" : "beats");
             if (clip.name.isNotEmpty())
                 clipElement->setAttribute("name", clip.name);
             if (!clip.colour.isTransparent())
@@ -195,7 +278,7 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
             if (clip.isMidi())
                 addNotes(*clipElement, clip, idFor("notes", clip.id));
             else if (clip.isAudio())
-                addAudioContent(*clipElement, clip, idFor("audio", clip.id));
+                addAudioContent(*clipElement, clip, idFor("audio", clip.id), embeddedBySource);
         }
     }
 
@@ -271,6 +354,37 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
 
     outDocument = std::move(document);
     return true;
+}
+
+std::vector<DawProjectXmlAdapter::EmbeddedAudioFile> DawProjectXmlAdapter::collectEmbeddedAudio(
+    const ProjectDocument& document) {
+    std::vector<EmbeddedAudioFile> files;
+    std::set<juce::String> seenSources;       // dedup the same sample used by many clips
+    std::set<juce::String> usedArchivePaths;  // disambiguate same-name distinct sources
+
+    for (const auto& clip : document.clips) {
+        if (!clip.isAudio())
+            continue;
+
+        const auto source = clip.audio().source.filePath;
+        if (source.isEmpty() || seenSources.count(source) > 0)
+            continue;
+        seenSources.insert(source);
+
+        const juce::File srcFile(source);
+        if (!srcFile.existsAsFile())
+            continue;  // can't embed a missing file; it stays an external reference
+
+        juce::String archivePath = "audio/" + srcFile.getFileName();
+        for (int n = 1; usedArchivePaths.count(archivePath) > 0; ++n)
+            archivePath = "audio/" + srcFile.getFileNameWithoutExtension() + "-" + juce::String(n) +
+                          srcFile.getFileExtension();
+        usedArchivePaths.insert(archivePath);
+
+        files.push_back({source, archivePath});
+    }
+
+    return files;
 }
 
 }  // namespace magda
