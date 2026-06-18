@@ -8,7 +8,6 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
-#include "audio/plugins/IFaustEditorModel.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
@@ -1052,9 +1051,8 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
             if (auto* bridge = audioEngine->getAudioBridge())
                 if (auto plugin = bridge->getPlugin(nodePath_))
-                    if (auto* faustModel =
-                            dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get()))
-                        faustUI_->setPlugin(faustModel);
+                    if (auto* faustPlugin = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get()))
+                        faustUI_->setPlugin(faustPlugin);
     }
 
     // Initial compute for the controller indicator dots — listeners only fire
