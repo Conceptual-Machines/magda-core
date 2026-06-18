@@ -648,6 +648,13 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
             track.type = TrackType::Audio;
 
             if (auto* channel = trackElement->getChildByName("Channel")) {
+                // The channel role drives the MAGDA track type. "master" routes
+                // into MAGDA's singleton master (see toStagedProjectData); other
+                // roles (regular/effect) currently load as plain audio tracks
+                // until send routing is wired.
+                if (channel->getStringAttribute("role") == "master")
+                    track.type = TrackType::Master;
+
                 if (auto* volume = channel->getChildByName("Volume"))
                     track.volume = static_cast<float>(volume->getDoubleAttribute("value", 1.0));
                 if (auto* pan = channel->getChildByName("Pan"))

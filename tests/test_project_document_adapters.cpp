@@ -537,3 +537,37 @@ TEST_CASE("DawProjectXmlAdapter maps the native compressor to a <Compressor> bui
     REQUIRE(value(8) == Catch::Approx(3.0f));    // Output (dB)
     REQUIRE(value(14) == Catch::Approx(1.0f));   // Autogain
 }
+
+TEST_CASE("DawProjectXmlAdapter routes a master-role channel to the master track",
+          "[project][serialization][dawproject][builtin]") {
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="audio" loaded="true" id="t1" name="Audio 1">
+      <Channel audioChannels="2" role="regular" id="c1"/>
+    </Track>
+    <Track contentType="audio notes" loaded="true" id="t2" name="Master">
+      <Channel audioChannels="2" role="master" id="c2"/>
+    </Track>
+  </Structure>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.tracks.size() == 2);
+
+    int masterCount = 0;
+    for (const auto& t : doc.tracks)
+        if (t.type == TrackType::Master)
+            ++masterCount;
+    REQUIRE(masterCount == 1);
+
+    // The master-role track is peeled into staged.masterTrack (merged onto
+    // MAGDA's singleton master) and excluded from the regular track list.
+    auto staged = NativeProjectDocumentAdapter::toStagedProjectData(doc);
+    REQUIRE(staged.masterTrack != nullptr);
+    REQUIRE(staged.masterTrack->name == "Master");
+    REQUIRE(staged.tracks.size() == 1);
+    REQUIRE(staged.tracks[0].name == "Audio 1");
+}
