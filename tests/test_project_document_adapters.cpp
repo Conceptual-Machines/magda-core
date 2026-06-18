@@ -211,6 +211,91 @@ TEST_CASE("DawProjectXmlAdapter roundtrips track volume and pan automation",
     REQUIRE(importedPan->absolutePoints[1].value == Catch::Approx(1.0));
 }
 
+TEST_CASE("DawProjectXmlAdapter roundtrips group track hierarchy",
+          "[project][serialization][dawproject][groups]") {
+    ProjectDocument document;
+    document.info.name = "Group Test";
+    document.info.version = "0.groups";
+    document.info.tempo = 120.0;
+
+    TrackInfo group;
+    group.id = 1;
+    group.name = "Drum Bus";
+    group.type = TrackType::Group;
+    group.childIds = {2, 3};
+
+    TrackInfo kick;
+    kick.id = 2;
+    kick.name = "Kick";
+    kick.parentId = group.id;
+
+    TrackInfo snare;
+    snare.id = 3;
+    snare.name = "Snare";
+    snare.parentId = group.id;
+
+    document.tracks.push_back(group);
+    document.tracks.push_back(kick);
+    document.tracks.push_back(snare);
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("contentType=\"tracks\""));
+
+    auto root = juce::parseXML(xml);
+    REQUIRE(root != nullptr);
+    auto* structure = root->getChildByName("Structure");
+    REQUIRE(structure != nullptr);
+
+    int rootTrackCount = 0;
+    const juce::XmlElement* groupElement = nullptr;
+    for (auto* trackElement : structure->getChildWithTagNameIterator("Track")) {
+        ++rootTrackCount;
+        if (trackElement->getStringAttribute("name") == "Drum Bus")
+            groupElement = trackElement;
+    }
+    REQUIRE(rootTrackCount == 1);
+    REQUIRE(groupElement != nullptr);
+
+    int childTrackCount = 0;
+    for (auto* childElement : groupElement->getChildWithTagNameIterator("Track")) {
+        ++childTrackCount;
+        REQUIRE(childElement->getStringAttribute("name").isNotEmpty());
+    }
+    REQUIRE(childTrackCount == 2);
+
+    juce::String validationError;
+    INFO(validationError);
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    REQUIRE(error.isEmpty());
+    REQUIRE(imported.tracks.size() == 3);
+
+    const TrackInfo* importedGroup = nullptr;
+    const TrackInfo* importedKick = nullptr;
+    const TrackInfo* importedSnare = nullptr;
+    for (const auto& track : imported.tracks) {
+        if (track.name == "Drum Bus")
+            importedGroup = &track;
+        else if (track.name == "Kick")
+            importedKick = &track;
+        else if (track.name == "Snare")
+            importedSnare = &track;
+    }
+
+    REQUIRE(importedGroup != nullptr);
+    REQUIRE(importedGroup->type == TrackType::Group);
+    REQUIRE(importedGroup->childIds.size() == 2);
+    REQUIRE(importedKick != nullptr);
+    REQUIRE(importedSnare != nullptr);
+    REQUIRE(importedKick->parentId == importedGroup->id);
+    REQUIRE(importedSnare->parentId == importedGroup->id);
+    REQUIRE(importedGroup->childIds[0] == importedKick->id);
+    REQUIRE(importedGroup->childIds[1] == importedSnare->id);
+}
+
 TEST_CASE("DawProjectValidator validates vendored project and metadata schemas",
           "[project][serialization][dawproject][validation]") {
     juce::String error;

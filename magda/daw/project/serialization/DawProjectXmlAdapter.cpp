@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -848,64 +849,94 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
                     [](const TrackInfo& t) { return t.type == TrackType::Master; });
 
     auto* structure = project.createNewChildElement("Structure");
-    for (const auto& track : document.tracks) {
-        auto* trackElement = structure->createNewChildElement("Track");
-        trackElement->setAttribute("id", idFor("track", track.id));
-        trackElement->setAttribute("name", track.name);
-        trackElement->setAttribute("contentType", contentTypeForTrack(track, document.clips));
-        trackElement->setAttribute("loaded", "true");
-        if (!track.colour.isTransparent())
-            trackElement->setAttribute("color", colourToDawProject(track.colour));
+    std::map<TrackId, const TrackInfo*> tracksById;
+    for (const auto& track : document.tracks)
+        tracksById[track.id] = &track;
 
-        auto* channel = trackElement->createNewChildElement("Channel");
-        channel->setAttribute("id", idFor("channel", track.id));
-        // Role mirrors MAGDA's track type: the master is "master", aux/return
-        // tracks are "effect", everything else "regular". Non-master channels
-        // output to the master channel via `destination`.
-        const char* role = track.type == TrackType::Master ? "master"
-                           : track.type == TrackType::Aux  ? "effect"
-                                                           : "regular";
-        channel->setAttribute("role", role);
-        channel->setAttribute("audioChannels", 2);
-        if (track.type != TrackType::Master && hasMaster)
-            channel->setAttribute("destination", idFor("channel", MASTER_TRACK_ID));
-        channel->setAttribute("solo", track.soloed ? "true" : "false");
-
-        // Channel child order is fixed by the schema: Devices, Mute, Pan,
-        // Sends, Volume.
-        std::vector<const DeviceInfo*> channelDevices;
-        collectExportableDevices(track, channelDevices);
-        if (!channelDevices.empty()) {
-            auto* devices = channel->createNewChildElement("Devices");
-            for (const auto* device : channelDevices)
-                addDevice(*devices, *device);
+    auto childTracksFor = [&](const TrackInfo& parent) {
+        std::vector<const TrackInfo*> children;
+        for (auto childId : parent.childIds) {
+            if (auto it = tracksById.find(childId); it != tracksById.end())
+                children.push_back(it->second);
         }
 
-        addBoolParameter(*channel, "Mute", idFor("mute", track.id), "Mute", track.muted);
-        addRealParameter(*channel, "Pan", idFor("pan", track.id), "Pan", "normalized",
-                         linearToDawProjectPan(track.pan), 0.0, 1.0);
+        if (children.empty()) {
+            for (const auto& candidate : document.tracks)
+                if (candidate.parentId == parent.id)
+                    children.push_back(&candidate);
+        }
 
-        // Sends to aux/return tracks. Each routes to the destination track's
-        // channel; level is linear, type carries pre/post-fader.
-        if (!track.sends.empty()) {
-            auto* sends = channel->createNewChildElement("Sends");
-            int sendCounter = 0;
-            for (const auto& send : track.sends) {
-                if (send.destTrackId == INVALID_TRACK_ID)
-                    continue;
-                auto* sendEl = sends->createNewChildElement("Send");
-                const auto sendId = idFor("send", track.id) + "_" + juce::String(sendCounter++);
-                sendEl->setAttribute("destination", idFor("channel", send.destTrackId));
-                sendEl->setAttribute("type", send.preFader ? "pre" : "post");
-                sendEl->setAttribute("id", sendId);
-                addBoolParameter(*sendEl, "Enable", sendId + "_en", "Enable", true);
-                addRealParameter(*sendEl, "Volume", sendId + "_vol", "Send", "linear", send.level,
-                                 0.0, 1.0);
+        return children;
+    };
+
+    std::function<void(juce::XmlElement&, const TrackInfo&)> addTrackElement =
+        [&](juce::XmlElement& parent, const TrackInfo& track) {
+            auto* trackElement = parent.createNewChildElement("Track");
+            trackElement->setAttribute("id", idFor("track", track.id));
+            trackElement->setAttribute("name", track.name);
+            trackElement->setAttribute("contentType", contentTypeForTrack(track, document.clips));
+            trackElement->setAttribute("loaded", "true");
+            if (!track.colour.isTransparent())
+                trackElement->setAttribute("color", colourToDawProject(track.colour));
+
+            auto* channel = trackElement->createNewChildElement("Channel");
+            channel->setAttribute("id", idFor("channel", track.id));
+            // Role mirrors MAGDA's track type: the master is "master", aux/return
+            // tracks are "effect", everything else "regular". Non-master channels
+            // output to the master channel via `destination`.
+            const char* role = track.type == TrackType::Master ? "master"
+                               : track.type == TrackType::Aux  ? "effect"
+                                                               : "regular";
+            channel->setAttribute("role", role);
+            channel->setAttribute("audioChannels", 2);
+            if (track.type != TrackType::Master && hasMaster)
+                channel->setAttribute("destination", idFor("channel", MASTER_TRACK_ID));
+            channel->setAttribute("solo", track.soloed ? "true" : "false");
+
+            // Channel child order is fixed by the schema: Devices, Mute, Pan,
+            // Sends, Volume.
+            std::vector<const DeviceInfo*> channelDevices;
+            collectExportableDevices(track, channelDevices);
+            if (!channelDevices.empty()) {
+                auto* devices = channel->createNewChildElement("Devices");
+                for (const auto* device : channelDevices)
+                    addDevice(*devices, *device);
             }
-        }
 
-        addRealParameter(*channel, "Volume", idFor("volume", track.id), "Volume", "linear",
-                         track.volume, 0.0, 2.0);
+            addBoolParameter(*channel, "Mute", idFor("mute", track.id), "Mute", track.muted);
+            addRealParameter(*channel, "Pan", idFor("pan", track.id), "Pan", "normalized",
+                             linearToDawProjectPan(track.pan), 0.0, 1.0);
+
+            // Sends to aux/return tracks. Each routes to the destination track's
+            // channel; level is linear, type carries pre/post-fader.
+            if (!track.sends.empty()) {
+                auto* sends = channel->createNewChildElement("Sends");
+                int sendCounter = 0;
+                for (const auto& send : track.sends) {
+                    if (send.destTrackId == INVALID_TRACK_ID)
+                        continue;
+                    auto* sendEl = sends->createNewChildElement("Send");
+                    const auto sendId = idFor("send", track.id) + "_" + juce::String(sendCounter++);
+                    sendEl->setAttribute("destination", idFor("channel", send.destTrackId));
+                    sendEl->setAttribute("type", send.preFader ? "pre" : "post");
+                    sendEl->setAttribute("id", sendId);
+                    addBoolParameter(*sendEl, "Enable", sendId + "_en", "Enable", true);
+                    addRealParameter(*sendEl, "Volume", sendId + "_vol", "Send", "linear",
+                                     send.level, 0.0, 1.0);
+                }
+            }
+
+            addRealParameter(*channel, "Volume", idFor("volume", track.id), "Volume", "linear",
+                             track.volume, 0.0, 2.0);
+
+            for (const auto* child : childTracksFor(track))
+                addTrackElement(*trackElement, *child);
+        };
+
+    for (const auto& track : document.tracks) {
+        if (track.parentId != INVALID_TRACK_ID && tracksById.count(track.parentId) > 0)
+            continue;
+        addTrackElement(*structure, track);
     }
 
     auto* arrangement = project.createNewChildElement("Arrangement");
@@ -1030,130 +1061,148 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     int nextAuxBus = 0;
 
     if (auto* structure = root->getChildByName("Structure")) {
-        for (auto* trackElement : structure->getChildWithTagNameIterator("Track")) {
-            TrackInfo track;
-            track.id = nextTrackId++;
-            track.name =
-                trackElement->getStringAttribute("name", "Track " + juce::String(track.id));
-            track.colour = colourFromDawProject(trackElement->getStringAttribute("color"));
-            const auto contentType = trackElement->getStringAttribute("contentType");
-            track.type = TrackType::Audio;
-            const size_t trackIndex = document.tracks.size();
+        std::function<void(juce::XmlElement*, TrackId)> parseTrackElement =
+            [&](juce::XmlElement* trackElement, TrackId parentId) {
+                TrackInfo track;
+                track.id = nextTrackId++;
+                track.name =
+                    trackElement->getStringAttribute("name", "Track " + juce::String(track.id));
+                track.colour = colourFromDawProject(trackElement->getStringAttribute("color"));
+                const auto contentType = trackElement->getStringAttribute("contentType");
+                track.type = contentType.contains("tracks") ? TrackType::Group : TrackType::Audio;
+                track.parentId = parentId;
+                const size_t trackIndex = document.tracks.size();
 
-            if (auto* channel = trackElement->getChildByName("Channel")) {
-                // The channel role drives the MAGDA track type. "master" routes
-                // into MAGDA's singleton master (see toStagedProjectData);
-                // "effect" is an aux/return track and gets a unique bus that its
-                // sources' sends reference.
-                const auto role = channel->getStringAttribute("role", "regular");
-                const auto channelId = channel->getStringAttribute("id");
-                if (role == "master") {
-                    track.type = TrackType::Master;
-                } else if (role == "effect") {
-                    track.type = TrackType::Aux;
-                    track.auxBusIndex = nextAuxBus++;
-                    channelToAuxBus[channelId] = track.auxBusIndex;
-                }
-                if (channelId.isNotEmpty())
-                    channelToTrackIndex[channelId] = trackIndex;
-
-                // Sends to aux/effect channels. Skip disabled sends (Bitwig
-                // writes a default disabled send from every track to every
-                // effect bus); resolve the destination bus in the second pass.
-                if (auto* sends = channel->getChildByName("Sends")) {
-                    for (auto* sendEl : sends->getChildWithTagNameIterator("Send")) {
-                        if (auto* en = sendEl->getChildByName("Enable");
-                            en != nullptr && !en->getBoolAttribute("value", true))
-                            continue;
-                        const auto dest = sendEl->getStringAttribute("destination");
-                        if (dest.isEmpty())
-                            continue;
-                        float level = 1.0f;
-                        if (auto* vol = sendEl->getChildByName("Volume"))
-                            level = static_cast<float>(vol->getDoubleAttribute("value", 1.0));
-                        pendingSends.push_back(
-                            {trackIndex, dest, level, sendEl->getStringAttribute("type") == "pre"});
+                if (auto* channel = trackElement->getChildByName("Channel")) {
+                    // The channel role drives the MAGDA track type. "master" routes
+                    // into MAGDA's singleton master (see toStagedProjectData);
+                    // "effect" is an aux/return track and gets a unique bus that its
+                    // sources' sends reference.
+                    const auto role = channel->getStringAttribute("role", "regular");
+                    const auto channelId = channel->getStringAttribute("id");
+                    if (role == "master") {
+                        track.type = TrackType::Master;
+                    } else if (role == "effect") {
+                        track.type = TrackType::Aux;
+                        track.auxBusIndex = nextAuxBus++;
+                        channelToAuxBus[channelId] = track.auxBusIndex;
                     }
-                }
+                    if (channelId.isNotEmpty())
+                        channelToTrackIndex[channelId] = trackIndex;
 
-                if (auto* volume = channel->getChildByName("Volume"))
-                    track.volume = static_cast<float>(volume->getDoubleAttribute("value", 1.0));
-                if (auto* volume = channel->getChildByName("Volume")) {
-                    const auto parameterId = volume->getStringAttribute("id");
-                    if (parameterId.isNotEmpty())
-                        parameterTargets[parameterId] = ControlTarget::trackVolume(track.id);
-                }
-                if (auto* pan = channel->getChildByName("Pan")) {
-                    track.pan = dawProjectToLinearPan(pan->getDoubleAttribute("value", 0.5));
-                    const auto parameterId = pan->getStringAttribute("id");
-                    if (parameterId.isNotEmpty())
-                        parameterTargets[parameterId] = ControlTarget::trackPan(track.id);
-                }
-                if (auto* mute = channel->getChildByName("Mute"))
-                    track.muted = mute->getBoolAttribute("value", false);
-                track.soloed = channel->getBoolAttribute("solo", false);
+                    // Sends to aux/effect channels. Skip disabled sends (Bitwig
+                    // writes a default disabled send from every track to every
+                    // effect bus); resolve the destination bus in the second pass.
+                    if (auto* sends = channel->getChildByName("Sends")) {
+                        for (auto* sendEl : sends->getChildWithTagNameIterator("Send")) {
+                            if (auto* en = sendEl->getChildByName("Enable");
+                                en != nullptr && !en->getBoolAttribute("value", true))
+                                continue;
+                            const auto dest = sendEl->getStringAttribute("destination");
+                            if (dest.isEmpty())
+                                continue;
+                            float level = 1.0f;
+                            if (auto* vol = sendEl->getChildByName("Volume"))
+                                level = static_cast<float>(vol->getDoubleAttribute("value", 1.0));
+                            pendingSends.push_back({trackIndex, dest, level,
+                                                    sendEl->getStringAttribute("type") == "pre"});
+                        }
+                    }
 
-                // VST3/AU devices. State holds the archive path here; readFromFile
-                // swaps it for the base64 chunk once the zip is available.
-                if (auto* devices = channel->getChildByName("Devices")) {
-                    for (auto* devEl : devices->getChildIterator()) {
-                        const auto tag = devEl->getTagName();
-                        DeviceInfo device;
-                        device.id = nextDeviceId++;
+                    if (auto* volume = channel->getChildByName("Volume"))
+                        track.volume = static_cast<float>(volume->getDoubleAttribute("value", 1.0));
+                    if (auto* volume = channel->getChildByName("Volume")) {
+                        const auto parameterId = volume->getStringAttribute("id");
+                        if (parameterId.isNotEmpty())
+                            parameterTargets[parameterId] = ControlTarget::trackVolume(track.id);
+                    }
+                    if (auto* pan = channel->getChildByName("Pan")) {
+                        track.pan = dawProjectToLinearPan(pan->getDoubleAttribute("value", 0.5));
+                        const auto parameterId = pan->getStringAttribute("id");
+                        if (parameterId.isNotEmpty())
+                            parameterTargets[parameterId] = ControlTarget::trackPan(track.id);
+                    }
+                    if (auto* mute = channel->getChildByName("Mute"))
+                        track.muted = mute->getBoolAttribute("value", false);
+                    track.soloed = channel->getBoolAttribute("solo", false);
 
-                        // Standardized builtins: reconstruct MAGDA's native
-                        // device instead of treating it as opaque.
-                        if (tag == "Compressor" || tag == "NoiseGate" || tag == "Limiter" ||
-                            tag == "Equalizer") {
-                            if (tag == "Compressor")
-                                parseCompressorDevice(*devEl, device);
-                            else if (tag == "NoiseGate")
-                                parseGateDevice(*devEl, device);
-                            else if (tag == "Limiter")
-                                parseLimiterDevice(*devEl, device);
+                    // VST3/AU devices. State holds the archive path here; readFromFile
+                    // swaps it for the base64 chunk once the zip is available.
+                    if (auto* devices = channel->getChildByName("Devices")) {
+                        for (auto* devEl : devices->getChildIterator()) {
+                            const auto tag = devEl->getTagName();
+                            DeviceInfo device;
+                            device.id = nextDeviceId++;
+
+                            // Standardized builtins: reconstruct MAGDA's native
+                            // device instead of treating it as opaque.
+                            if (tag == "Compressor" || tag == "NoiseGate" || tag == "Limiter" ||
+                                tag == "Equalizer") {
+                                if (tag == "Compressor")
+                                    parseCompressorDevice(*devEl, device);
+                                else if (tag == "NoiseGate")
+                                    parseGateDevice(*devEl, device);
+                                else if (tag == "Limiter")
+                                    parseLimiterDevice(*devEl, device);
+                                else
+                                    parseEqualizerDevice(*devEl, device);
+                                if (auto* enabled = devEl->getChildByName("Enabled"))
+                                    device.bypassed = !enabled->getBoolAttribute("value", true);
+                                track.chain.fxChainElements.push_back(std::move(device));
+                                continue;
+                            }
+
+                            if (tag == "Vst3Plugin")
+                                device.format = PluginFormat::VST3;
+                            else if (tag == "AuPlugin")
+                                device.format = PluginFormat::AU;
                             else
-                                parseEqualizerDevice(*devEl, device);
+                                continue;  // VST2/CLAP/other builtins not supported
+
+                            device.name = devEl->getStringAttribute("deviceName");
+                            const auto deviceId = devEl->getStringAttribute("deviceID");
+                            // deviceID is the VST3 class id (32-hex). Keep it as the
+                            // portable identity so a re-export preserves it. Matching
+                            // it back to an installed plugin for load is best-effort
+                            // (MAGDA matches by uniqueId/path, which DAWproject lacks).
+                            if (device.format == PluginFormat::VST3)
+                                device.vst3ClassId = deviceId;
+                            device.uniqueId = deviceId;
+                            device.fileOrIdentifier = deviceId;
+                            device.manufacturer = devEl->getStringAttribute("deviceVendor");
+                            device.isInstrument =
+                                devEl->getStringAttribute("deviceRole") == "instrument";
+                            device.deviceType =
+                                device.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
                             if (auto* enabled = devEl->getChildByName("Enabled"))
                                 device.bypassed = !enabled->getBoolAttribute("value", true);
+                            if (auto* state = devEl->getChildByName("State"))
+                                device.pluginState = state->getStringAttribute("path");
+
                             track.chain.fxChainElements.push_back(std::move(device));
-                            continue;
                         }
-
-                        if (tag == "Vst3Plugin")
-                            device.format = PluginFormat::VST3;
-                        else if (tag == "AuPlugin")
-                            device.format = PluginFormat::AU;
-                        else
-                            continue;  // VST2/CLAP/other builtins not supported
-
-                        device.name = devEl->getStringAttribute("deviceName");
-                        const auto deviceId = devEl->getStringAttribute("deviceID");
-                        // deviceID is the VST3 class id (32-hex). Keep it as the
-                        // portable identity so a re-export preserves it. Matching
-                        // it back to an installed plugin for load is best-effort
-                        // (MAGDA matches by uniqueId/path, which DAWproject lacks).
-                        if (device.format == PluginFormat::VST3)
-                            device.vst3ClassId = deviceId;
-                        device.uniqueId = deviceId;
-                        device.fileOrIdentifier = deviceId;
-                        device.manufacturer = devEl->getStringAttribute("deviceVendor");
-                        device.isInstrument =
-                            devEl->getStringAttribute("deviceRole") == "instrument";
-                        device.deviceType =
-                            device.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
-                        if (auto* enabled = devEl->getChildByName("Enabled"))
-                            device.bypassed = !enabled->getBoolAttribute("value", true);
-                        if (auto* state = devEl->getChildByName("State"))
-                            device.pluginState = state->getStringAttribute("path");
-
-                        track.chain.fxChainElements.push_back(std::move(device));
                     }
                 }
-            }
 
-            trackIds[trackElement->getStringAttribute("id")] = track.id;
-            document.tracks.push_back(std::move(track));
-        }
+                trackIds[trackElement->getStringAttribute("id")] = track.id;
+                const TrackId currentTrackId = track.id;
+                document.tracks.push_back(std::move(track));
+
+                if (parentId != INVALID_TRACK_ID) {
+                    for (auto& parentTrack : document.tracks) {
+                        if (parentTrack.id == parentId) {
+                            parentTrack.childIds.push_back(document.tracks.back().id);
+                            break;
+                        }
+                    }
+                }
+
+                for (auto* childElement : trackElement->getChildWithTagNameIterator("Track"))
+                    parseTrackElement(childElement, currentTrackId);
+            };
+
+        for (auto* trackElement : structure->getChildWithTagNameIterator("Track"))
+            parseTrackElement(trackElement, INVALID_TRACK_ID);
     }
 
     // Second pass: wire sends now that every aux bus is known. Drop sends whose
