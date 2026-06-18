@@ -60,10 +60,10 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         return DeviceSlotInlineUiKind::Compiled;
     }
 
-    // Both the Faust effect and the Faust instrument expose the editor model
-    // interface, so one path drives the rich Faust UI for either device.
-    if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName) ||
-        device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
+    // The Faust EFFECT uses the inline header + standard param grid here. The
+    // Faust INSTRUMENT instead gets its own wider tabbed UI via the
+    // DeviceCustomUIManager path below (DeviceSlotInlineUiKind::Custom).
+    if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();
 
         if (auto plugin = getLivePlugin(nodePath)) {

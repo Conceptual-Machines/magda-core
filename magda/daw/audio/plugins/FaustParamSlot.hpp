@@ -42,6 +42,10 @@ struct FaustParamSlot {
     bool active = false;  // false slots are reserved but unmapped
     juce::String label;   // cleaned label (no `[…]` annotations)
     juce::String unit;    // from `[unit:Hz]` / `[unit:dB]` / …
+    // Top-level Faust group label (vgroup/hgroup/tgroup) the control sits in.
+    // UI-only: the Faust instrument's tabbed UI uses it as the tab name. Empty
+    // = ungrouped (single "Params" tab). Unused by the Faust effect.
+    juce::String group;
     Kind kind = Kind::Continuous;
 
     // Real-units range. For Continuous: from the Faust slider min/max/step.

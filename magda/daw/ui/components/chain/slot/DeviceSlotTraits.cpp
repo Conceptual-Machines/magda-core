@@ -16,10 +16,11 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     traits.isArpeggiator = kind == magda::InternalDeviceKind::Arpeggiator;
     traits.isStepSequencer = kind == magda::InternalDeviceKind::StepSequencer;
     traits.isPolyStepSequencer = kind == magda::InternalDeviceKind::PolyStepSequencer;
-    // Both Faust devices (effect + instrument) share the Faust-family
-    // header/editor/layout chrome, gated by `isFaust`.
-    traits.isFaust = kind == magda::InternalDeviceKind::Faust ||
-                     kind == magda::InternalDeviceKind::FaustInstrument;
+    // The interpreter Faust EFFECT uses the header+grid body layout (isFaust).
+    // The Faust INSTRUMENT has its own tabbed custom UI (isFaustInstrument) but
+    // shares the Faust chrome-suppression (no standard content header / presets).
+    traits.isFaust = kind == magda::InternalDeviceKind::Faust;
+    traits.isFaustInstrument = kind == magda::InternalDeviceKind::FaustInstrument;
     traits.isAnalysis = magda::isAnalysisDevice(pluginId);
     traits.hasAnalyzerPopout = kind == magda::InternalDeviceKind::Oscilloscope ||
                                kind == magda::InternalDeviceKind::SpectrumAnalyzer;
