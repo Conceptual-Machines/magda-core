@@ -1539,8 +1539,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     auto* activeCustomUI = customUI_.getActiveUI();
     auto* compiledPanelComponent =
         compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
-    const bool pluginPresetsAvailable = !collapsed_ && !traits_.isFaust &&
-                                        !traits_.isFaustInstrument && hasPluginPresetsAvailable();
+    const bool pluginPresetsAvailable =
+        !collapsed_ && !traits_.isFaust && hasPluginPresetsAvailable();
     if (!prepareDeviceSlotContentFrame(
             contentArea, traits_, device_, collapsed_, isInternalDevice(), pluginPresetsAvailable,
             {.pluginPresetsButton = presetsButton_.get(),
