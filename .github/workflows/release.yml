@@ -546,8 +546,20 @@ jobs:
       with:
         arch: x64
 
+    - name: Cache vcpkg packages
+      uses: actions/cache@v5
+      with:
+        path: |
+          vcpkg_installed
+          .vcpkg-binary-cache
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
     - name: Install libxml2
       shell: powershell
+      env:
+        VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-binary-cache
       run: '& "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows'
 
     # Ninja is shipped with the Visual Studio install on windows-latest, so
