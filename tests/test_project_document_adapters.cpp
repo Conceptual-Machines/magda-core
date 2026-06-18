@@ -686,3 +686,168 @@ TEST_CASE("DawProjectXmlAdapter exports master role and send routing and roundtr
     REQUIRE(audioBack->sends[0].level == Catch::Approx(0.5f));
     REQUIRE(audioBack->sends[0].destTrackId == auxBack->id);
 }
+
+namespace {
+// Build a single-device ProjectDocument for a native builtin and return the XML.
+ProjectDocument makeBuiltinDoc(const juce::String& pluginId, const juce::String& name,
+                               const std::vector<ParameterInfo>& params) {
+    ProjectDocument document;
+    document.info.name = name + " Test";
+    document.info.tempo = 120.0;
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Bus";
+    DeviceInfo device;
+    device.id = 1;
+    device.name = name;
+    device.pluginId = pluginId;
+    device.deviceType = DeviceType::Effect;
+    device.parameters = params;
+    track.chain.fxChainElements.push_back(device);
+    document.tracks.push_back(track);
+    return document;
+}
+
+ParameterInfo namedParam(const char* name, int slot, float value, float lo, float hi,
+                         const char* unit) {
+    ParameterInfo p;
+    p.name = name;
+    p.paramIndex = slot;
+    p.currentValue = value;
+    p.minValue = lo;
+    p.maxValue = hi;
+    p.unit = unit;
+    return p;
+}
+
+float importedSlot(const DeviceInfo& d, int slot) {
+    for (const auto& p : d.parameters)
+        if (p.paramIndex == slot)
+            return p.currentValue;
+    FAIL("missing imported slot " << slot);
+    return 0.0f;
+}
+}  // namespace
+
+TEST_CASE("DawProjectXmlAdapter maps the native gate to a <NoiseGate> builtin",
+          "[project][serialization][dawproject][builtin]") {
+    // Slots: Attack=0, Release=1, Mix=2, Output=3, Threshold=4, Ratio=5, Range=6.
+    auto document = makeBuiltinDoc("magda_gate_expander", "Gate",
+                                   {namedParam("Attack", 0, 5.0f, 0.1f, 100.0f, "ms"),
+                                    namedParam("Release", 1, 120.0f, 5.0f, 1000.0f, "ms"),
+                                    namedParam("Mix", 2, 1.0f, 0.0f, 1.0f, ""),
+                                    namedParam("Output", 3, 0.0f, -24.0f, 24.0f, "dB"),
+                                    namedParam("Threshold", 4, -40.0f, -80.0f, 0.0f, "dB"),
+                                    namedParam("Ratio", 5, 4.0f, 1.0f, 50.0f, ""),
+                                    namedParam("Range", 6, 60.0f, 0.0f, 80.0f, "dB")});
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("<NoiseGate"));
+    REQUIRE(xml.contains("<Range"));
+    REQUIRE(xml.contains("<Ratio"));
+    REQUIRE(xml.contains("unit=\"seconds\""));   // attack/release
+    REQUIRE_FALSE(xml.contains("<OutputGain"));  // gate has no output field
+    REQUIRE_FALSE(xml.contains(".vstpreset"));
+
+    juce::String validationError;
+    INFO(validationError);
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    const auto& back = getDevice(imported.tracks[0].chain.fxChainElements[0]);
+    REQUIRE(back.pluginId == "magda_gate_expander");
+    REQUIRE(importedSlot(back, 0) == Catch::Approx(5.0f));    // Attack ms
+    REQUIRE(importedSlot(back, 1) == Catch::Approx(120.0f));  // Release ms
+    REQUIRE(importedSlot(back, 4) == Catch::Approx(-40.0f));  // Threshold dB
+    REQUIRE(importedSlot(back, 5) == Catch::Approx(4.0f));    // Ratio
+    REQUIRE(importedSlot(back, 6) == Catch::Approx(60.0f));   // Range dB
+}
+
+TEST_CASE("DawProjectXmlAdapter maps the native limiter to a <Limiter> builtin",
+          "[project][serialization][dawproject][builtin]") {
+    // Slots: Threshold=0, Attack=1, Hold=2, Release=3, Mix=4, Output=5, Autogain=6.
+    auto document = makeBuiltinDoc("magda_limiter", "Limiter",
+                                   {namedParam("Threshold", 0, -1.0f, -24.0f, 0.0f, "dB"),
+                                    namedParam("Attack", 1, 1.0f, 0.1f, 50.0f, "ms"),
+                                    namedParam("Hold", 2, 50.0f, 1.0f, 500.0f, "ms"),
+                                    namedParam("Release", 3, 200.0f, 10.0f, 2000.0f, "ms"),
+                                    namedParam("Mix", 4, 1.0f, 0.0f, 1.0f, ""),
+                                    namedParam("Output", 5, 0.0f, -24.0f, 12.0f, "dB"),
+                                    namedParam("Autogain", 6, 0.0f, 0.0f, 1.0f, "")});
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("<Limiter"));
+    REQUIRE(xml.contains("<OutputGain"));
+    REQUIRE_FALSE(xml.contains("<Ratio"));       // limiter has no ratio
+    REQUIRE_FALSE(xml.contains("<AutoMakeup"));  // nor automakeup
+
+    juce::String validationError;
+    INFO(validationError);
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    const auto& back = getDevice(imported.tracks[0].chain.fxChainElements[0]);
+    REQUIRE(back.pluginId == "magda_limiter");
+    REQUIRE(importedSlot(back, 0) == Catch::Approx(-1.0f));   // Threshold dB
+    REQUIRE(importedSlot(back, 1) == Catch::Approx(1.0f));    // Attack ms
+    REQUIRE(importedSlot(back, 3) == Catch::Approx(200.0f));  // Release ms
+    REQUIRE(importedSlot(back, 5) == Catch::Approx(0.0f));    // Output dB
+}
+
+TEST_CASE("DawProjectXmlAdapter maps the native EQ to an <Equalizer> builtin",
+          "[project][serialization][dawproject][builtin]") {
+    // magda_eq: 8 bands x 5 slots (Enabled,Type,Freq,Gain,Q); Output at slot 40.
+    auto band = [](int b, bool enabled, float type, float freq, float gain, float q) {
+        const int base = b * 5;
+        return std::vector<ParameterInfo>{
+            namedParam("Enabled", base + 0, enabled ? 1.0f : 0.0f, 0.0f, 1.0f, ""),
+            namedParam("Type", base + 1, type, 0.0f, 5.0f, ""),
+            namedParam("Freq", base + 2, freq, 20.0f, 20000.0f, "Hz"),
+            namedParam("Gain", base + 3, gain, -24.0f, 24.0f, "dB"),
+            namedParam("Q", base + 4, q, 0.1f, 10.0f, "")};
+    };
+    std::vector<ParameterInfo> params;
+    auto append = [&](const std::vector<ParameterInfo>& v) {
+        params.insert(params.end(), v.begin(), v.end());
+    };
+    append(band(0, true, 2.0f, 1000.0f, 3.0f, 0.7f));   // bell
+    append(band(1, true, 3.0f, 8000.0f, -2.0f, 0.7f));  // highShelf
+    append(band(2, false, 2.0f, 5000.0f, 0.0f, 1.0f));  // disabled -> not emitted
+    params.push_back(namedParam("Output", 40, -1.0f, -24.0f, 12.0f, "dB"));
+
+    auto document = makeBuiltinDoc("magda_eq", "EQ", params);
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("<Equalizer"));
+    REQUIRE(xml.contains("<Band"));
+    REQUIRE(xml.contains("type=\"bell\""));
+    REQUIRE(xml.contains("type=\"highShelf\""));
+    REQUIRE(xml.contains("unit=\"hertz\""));
+    REQUIRE(xml.contains("<OutputGain"));
+
+    juce::String validationError;
+    INFO(validationError);
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    const auto& back = getDevice(imported.tracks[0].chain.fxChainElements[0]);
+    REQUIRE(back.pluginId == "magda_eq");
+    // Only the two enabled bands survive, in order: band0 (bell) and band1 (highShelf).
+    REQUIRE(importedSlot(back, 1) == Catch::Approx(2.0f));     // band0 type = bell
+    REQUIRE(importedSlot(back, 2) == Catch::Approx(1000.0f));  // band0 freq
+    REQUIRE(importedSlot(back, 6) == Catch::Approx(3.0f));     // band1 type = highShelf
+    REQUIRE(importedSlot(back, 7) == Catch::Approx(8000.0f));  // band1 freq
+    REQUIRE(importedSlot(back, 40) == Catch::Approx(-1.0f));   // output dB
+    // The disabled third band was not emitted, so its type slot is absent.
+    bool hasBand2 = false;
+    for (const auto& p : back.parameters)
+        if (p.paramIndex == 11)
+            hasBand2 = true;
+    REQUIRE_FALSE(hasBand2);
+}

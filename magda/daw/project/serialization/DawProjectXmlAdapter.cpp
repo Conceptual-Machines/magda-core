@@ -219,14 +219,27 @@ PluginFormat resolveDeviceFormat(const DeviceInfo& device) {
     return device.format;
 }
 
-// MAGDA's native Compressor (Faust) maps to DAWproject's standardized <Compressor>
-// builtin - parameter-based, so it round-trips to other hosts' stock compressors.
+// MAGDA's native dynamics/EQ (compiled Faust) map to DAWproject's standardized
+// builtins - parameter-based, so they round-trip to other hosts' stock devices.
 bool isBuiltinCompressor(const DeviceInfo& device) {
     return device.pluginId == "magda_compressor";
 }
+bool isBuiltinGate(const DeviceInfo& device) {
+    return device.pluginId == "magda_gate_expander";
+}
+bool isBuiltinLimiter(const DeviceInfo& device) {
+    return device.pluginId == "magda_limiter";
+}
+bool isBuiltinEq(const DeviceInfo& device) {
+    return device.pluginId == "magda_eq";
+}
+bool isBuiltinDevice(const DeviceInfo& device) {
+    return isBuiltinCompressor(device) || isBuiltinGate(device) || isBuiltinLimiter(device) ||
+           isBuiltinEq(device);
+}
 
 bool isExportableDevice(const DeviceInfo& device) {
-    if (isBuiltinCompressor(device))
+    if (isBuiltinDevice(device))
         return true;
     const auto format = resolveDeviceFormat(device);
     return format == PluginFormat::VST3 || format == PluginFormat::AU;
@@ -245,7 +258,7 @@ struct DeviceStateFile {
 };
 
 std::optional<DeviceStateFile> deviceStateFile(const DeviceInfo& device) {
-    if (isBuiltinCompressor(device))
+    if (isBuiltinDevice(device))
         return std::nullopt;  // mapped as parameters, no opaque state file
     const auto base = "plugins/device-" + juce::String(static_cast<int>(device.id));
 
@@ -281,32 +294,136 @@ const ParameterInfo* findDeviceParam(const DeviceInfo& device, juce::StringRef n
     return nullptr;
 }
 
-// Emit MAGDA's Faust compressor as a DAWproject <Compressor> builtin. Param
-// children must follow the XSD order (Attack, AutoMakeup, InputGain, OutputGain,
-// Ratio, Release, Threshold); MAGDA's Knee/Mix/Detector/SC-HPF have no field and
-// are dropped. Attack/Release convert ms -> seconds.
-void addCompressorDevice(juce::XmlElement& devices, const DeviceInfo& device) {
-    auto* comp = devices.createNewChildElement("Compressor");
-    comp->setAttribute("id", idFor("device", device.id));
-    comp->setAttribute("name", device.name);
-    comp->setAttribute("loaded", "true");
-    comp->setAttribute("deviceRole", "audioFX");
-    comp->setAttribute("deviceName", device.name);
+const ParameterInfo* findDeviceParamByIndex(const DeviceInfo& device, int paramIndex) {
+    for (const auto& p : device.parameters)
+        if (p.paramIndex == paramIndex)
+            return &p;
+    return nullptr;
+}
 
-    auto real = [&](const char* tag, juce::StringRef paramName, const char* unit, double scale) {
-        if (const auto* p = findDeviceParam(device, paramName))
-            addRealParameter(*comp, tag, idFor(tag, device.id), tag, unit, p->currentValue * scale,
-                             p->minValue * scale, p->maxValue * scale);
+// Common opening element for a builtin device: the same attributes Bitwig writes,
+// so other hosts treat it as a loaded stock device of that type.
+juce::XmlElement& addBuiltinElement(juce::XmlElement& devices, const char* tag,
+                                    const DeviceInfo& device) {
+    auto* el = devices.createNewChildElement(tag);
+    el->setAttribute("id", idFor("device", device.id));
+    el->setAttribute("name", device.name);
+    el->setAttribute("loaded", "true");
+    el->setAttribute("deviceRole", "audioFX");
+    el->setAttribute("deviceName", device.name);
+    return *el;
+}
+
+// Emit one realParameter child for a builtin, scaling value/min/max (e.g. ms->s).
+// No-op when MAGDA doesn't expose the named param.
+void addMappedReal(juce::XmlElement& el, const DeviceInfo& device, const char* tag,
+                   juce::StringRef paramName, const char* unit, double scale) {
+    if (const auto* p = findDeviceParam(device, paramName))
+        addRealParameter(el, tag, idFor(tag, device.id), tag, unit, p->currentValue * scale,
+                         p->minValue * scale, p->maxValue * scale);
+}
+
+// MAGDA's native dynamics expose ms / dB / linear-ratio display values, the same
+// units DAWproject uses (aside from ms->seconds). Each builtin emits the subset
+// of params that has a field in its XSD type, in the XSD-mandated child order.
+
+// <Compressor>: Attack, AutoMakeup, InputGain, OutputGain, Ratio, Release,
+// Threshold. MAGDA's Knee/Mix/Detector/SC-HPF have no field and are dropped.
+void addCompressorDevice(juce::XmlElement& devices, const DeviceInfo& device) {
+    auto& comp = addBuiltinElement(devices, "Compressor", device);
+    addMappedReal(comp, device, "Attack", "Attack", "seconds", 0.001);  // MAGDA stores ms
+    if (const auto* autogain = findDeviceParam(device, "Autogain"))
+        addBoolParameter(comp, "AutoMakeup", idFor("automakeup", device.id), "AutoMakeup",
+                         autogain->currentValue >= 0.5f);
+    addMappedReal(comp, device, "OutputGain", "Output", "decibel", 1.0);
+    addMappedReal(comp, device, "Ratio", "Ratio", "linear", 1.0);
+    addMappedReal(comp, device, "Release", "Release", "seconds", 0.001);  // MAGDA stores ms
+    addMappedReal(comp, device, "Threshold", "Threshold", "decibel", 1.0);
+}
+
+// <NoiseGate>: Attack, Range, Ratio, Release, Threshold. MAGDA's Mix/Output have
+// no field and are dropped.
+void addGateDevice(juce::XmlElement& devices, const DeviceInfo& device) {
+    auto& gate = addBuiltinElement(devices, "NoiseGate", device);
+    addMappedReal(gate, device, "Attack", "Attack", "seconds", 0.001);
+    addMappedReal(gate, device, "Range", "Range", "decibel", 1.0);
+    addMappedReal(gate, device, "Ratio", "Ratio", "linear", 1.0);
+    addMappedReal(gate, device, "Release", "Release", "seconds", 0.001);
+    addMappedReal(gate, device, "Threshold", "Threshold", "decibel", 1.0);
+}
+
+// <Limiter>: Attack, InputGain, OutputGain, Release, Threshold. MAGDA's limiter
+// has no InputGain; its Hold/Mix/Autogain have no field and are dropped.
+void addLimiterDevice(juce::XmlElement& devices, const DeviceInfo& device) {
+    auto& lim = addBuiltinElement(devices, "Limiter", device);
+    addMappedReal(lim, device, "Attack", "Attack", "seconds", 0.001);
+    addMappedReal(lim, device, "OutputGain", "Output", "decibel", 1.0);
+    addMappedReal(lim, device, "Release", "Release", "seconds", 0.001);
+    addMappedReal(lim, device, "Threshold", "Threshold", "decibel", 1.0);
+}
+
+// MAGDA EQ band type (kBandTypeOffset slot value) -> DAWproject eqBandType. MAGDA
+// has no bandPass, so it's never emitted.
+const char* eqBandTypeString(float typeValue) {
+    switch (juce::roundToInt(typeValue)) {
+        case 0:
+            return "highPass";
+        case 1:
+            return "lowShelf";
+        case 3:
+            return "highShelf";
+        case 4:
+            return "lowPass";
+        case 5:
+            return "notch";
+        default:
+            return "bell";  // 2
+    }
+}
+
+// <Equalizer>: per-band <Band> (Freq/Gain/Q/Enabled + type attr) then OutputGain.
+// magda_eq is 8 bands of 5 slots (Enabled,Type,Freq,Gain,Q) + Output at slot 40;
+// slot index == ParameterInfo::paramIndex. Only enabled bands are emitted so the
+// imported curve matches; MAGDA has no InputGain so it's omitted.
+void addEqualizerDevice(juce::XmlElement& devices, const DeviceInfo& device) {
+    constexpr int kBands = 8;
+    constexpr int kSlotsPerBand = 5;
+    constexpr int kOutputSlot = 40;
+    auto bandParam = [&](int band, int offset) {
+        return findDeviceParamByIndex(device, band * kSlotsPerBand + offset);
     };
 
-    real("Attack", "Attack", "seconds", 0.001);  // MAGDA stores ms
-    if (const auto* autogain = findDeviceParam(device, "Autogain"))
-        addBoolParameter(*comp, "AutoMakeup", idFor("automakeup", device.id), "AutoMakeup",
-                         autogain->currentValue >= 0.5f);
-    real("OutputGain", "Output", "decibel", 1.0);
-    real("Ratio", "Ratio", "linear", 1.0);
-    real("Release", "Release", "seconds", 0.001);  // MAGDA stores ms
-    real("Threshold", "Threshold", "decibel", 1.0);
+    auto& eq = addBuiltinElement(devices, "Equalizer", device);
+    int order = 0;
+    for (int b = 0; b < kBands; ++b) {
+        const auto* enabled = bandParam(b, 0);
+        if (enabled == nullptr || enabled->currentValue < 0.5f)
+            continue;
+        const auto* type = bandParam(b, 1);
+        const auto* freq = bandParam(b, 2);
+        const auto* gain = bandParam(b, 3);
+        const auto* q = bandParam(b, 4);
+
+        auto* band = eq.createNewChildElement("Band");
+        band->setAttribute("type", type != nullptr ? eqBandTypeString(type->currentValue) : "bell");
+        band->setAttribute("order", order);
+        const auto suffix = "_b" + juce::String(b);
+        if (freq != nullptr)
+            addRealParameter(*band, "Freq", idFor("freq", device.id) + suffix, "Freq", "hertz",
+                             freq->currentValue, freq->minValue, freq->maxValue);
+        if (gain != nullptr)
+            addRealParameter(*band, "Gain", idFor("gain", device.id) + suffix, "Gain", "decibel",
+                             gain->currentValue, gain->minValue, gain->maxValue);
+        if (q != nullptr)
+            addRealParameter(*band, "Q", idFor("q", device.id) + suffix, "Q", "linear",
+                             q->currentValue, q->minValue, q->maxValue);
+        addBoolParameter(*band, "Enabled", idFor("banden", device.id) + suffix, "Enabled", true);
+        ++order;
+    }
+
+    if (const auto* out = findDeviceParamByIndex(device, kOutputSlot))
+        addRealParameter(eq, "OutputGain", idFor("OutputGain", device.id), "OutputGain", "decibel",
+                         out->currentValue, out->minValue, out->maxValue);
 }
 
 // Reconstruct MAGDA's native Faust compressor from a DAWproject <Compressor>
@@ -316,51 +433,156 @@ void addCompressorDevice(juce::XmlElement& devices, const DeviceInfo& device) {
 // (dB, ms, linear ratio), honouring each DAWproject param's `unit`. Foreign
 // params we can't invert cleanly (e.g. Bitwig writes Ratio as a percent scale)
 // are skipped, leaving the plugin default.
-void parseCompressorDevice(const juce::XmlElement& comp, DeviceInfo& device) {
+// Push one ParameterInfo at a builtin's host-slot index, in display units.
+// syncFromDeviceInfo applies it via setParameterByIndex; the name is cosmetic.
+void addBuiltinParam(DeviceInfo& device, int slot, juce::StringRef name, double value) {
+    ParameterInfo p;
+    p.paramIndex = slot;
+    p.name = name;
+    p.currentValue = static_cast<float>(value);
+    device.parameters.push_back(std::move(p));
+}
+
+// DAWproject's standard time unit is seconds; convert to MAGDA's ms. Honour an
+// explicit ms unit just in case a host writes one.
+double dawSecondsToMs(const juce::XmlElement& e) {
+    const double v = e.getDoubleAttribute("value");
+    const auto unit = e.getStringAttribute("unit");
+    return (unit == "milliseconds" || unit == "ms") ? v : v * 1000.0;
+}
+
+void initBuiltinDevice(DeviceInfo& device, const juce::XmlElement& el, const char* pluginId,
+                       const char* defaultName) {
     device.format = PluginFormat::Internal;
-    device.pluginId = "magda_compressor";
+    device.pluginId = pluginId;
     device.deviceType = DeviceType::Effect;
     device.isInstrument = false;
     if (device.name.isEmpty())
-        device.name = comp.getStringAttribute("name", "Compressor");
+        device.name = el.getStringAttribute("name", defaultName);
+}
 
-    auto addParam = [&](int slot, juce::StringRef name, double value) {
-        ParameterInfo p;
-        p.paramIndex = slot;
-        p.name = name;
-        p.currentValue = static_cast<float>(value);
-        device.parameters.push_back(std::move(p));
-    };
-
-    // DAWproject's standard time unit is seconds; convert to MAGDA's ms. Honour
-    // an explicit ms unit just in case a host writes one.
-    auto toMs = [](const juce::XmlElement& e) {
-        const double v = e.getDoubleAttribute("value");
-        const auto unit = e.getStringAttribute("unit");
-        return (unit == "milliseconds" || unit == "ms") ? v : v * 1000.0;
-    };
-
+// Slots from MagdaCompressorCompiledPlugin: Threshold=1, Ratio=2, Attack=3,
+// Release=4, Output=8, Autogain=14.
+void parseCompressorDevice(const juce::XmlElement& comp, DeviceInfo& device) {
+    initBuiltinDevice(device, comp, "magda_compressor", "Compressor");
     if (auto* t = comp.getChildByName("Threshold"))
-        addParam(1, "Threshold", t->getDoubleAttribute("value"));
+        addBuiltinParam(device, 1, "Threshold", t->getDoubleAttribute("value"));
     if (auto* r = comp.getChildByName("Ratio")) {
         // MAGDA's ratio is a linear factor; only adopt a value the source
         // tagged linear. Bitwig writes a percent scale we can't invert.
         if (r->getStringAttribute("unit") == "linear")
-            addParam(2, "Ratio", r->getDoubleAttribute("value"));
+            addBuiltinParam(device, 2, "Ratio", r->getDoubleAttribute("value"));
     }
     if (auto* a = comp.getChildByName("Attack"))
-        addParam(3, "Attack", toMs(*a));
+        addBuiltinParam(device, 3, "Attack", dawSecondsToMs(*a));
     if (auto* rel = comp.getChildByName("Release"))
-        addParam(4, "Release", toMs(*rel));
+        addBuiltinParam(device, 4, "Release", dawSecondsToMs(*rel));
     if (auto* o = comp.getChildByName("OutputGain"))
-        addParam(8, "Output", o->getDoubleAttribute("value"));
+        addBuiltinParam(device, 8, "Output", o->getDoubleAttribute("value"));
     if (auto* mk = comp.getChildByName("AutoMakeup"))
-        addParam(14, "Autogain", mk->getBoolAttribute("value") ? 1.0 : 0.0);
+        addBuiltinParam(device, 14, "Autogain", mk->getBoolAttribute("value") ? 1.0 : 0.0);
+}
+
+// Slots from MagdaGateExpanderCompiledPlugin: Attack=0, Release=1, Threshold=4,
+// Ratio=5, Range=6.
+void parseGateDevice(const juce::XmlElement& gate, DeviceInfo& device) {
+    initBuiltinDevice(device, gate, "magda_gate_expander", "Gate");
+    if (auto* a = gate.getChildByName("Attack"))
+        addBuiltinParam(device, 0, "Attack", dawSecondsToMs(*a));
+    if (auto* rel = gate.getChildByName("Release"))
+        addBuiltinParam(device, 1, "Release", dawSecondsToMs(*rel));
+    if (auto* t = gate.getChildByName("Threshold"))
+        addBuiltinParam(device, 4, "Threshold", t->getDoubleAttribute("value"));
+    if (auto* r = gate.getChildByName("Ratio")) {
+        if (r->getStringAttribute("unit") == "linear")
+            addBuiltinParam(device, 5, "Ratio", r->getDoubleAttribute("value"));
+    }
+    if (auto* rg = gate.getChildByName("Range"))
+        addBuiltinParam(device, 6, "Range", rg->getDoubleAttribute("value"));
+}
+
+// Slots from MagdaLimiterCompiledPlugin: Threshold=0, Attack=1, Release=3,
+// Output=5. DAWproject InputGain has no MAGDA counterpart (skipped).
+void parseLimiterDevice(const juce::XmlElement& lim, DeviceInfo& device) {
+    initBuiltinDevice(device, lim, "magda_limiter", "Limiter");
+    if (auto* t = lim.getChildByName("Threshold"))
+        addBuiltinParam(device, 0, "Threshold", t->getDoubleAttribute("value"));
+    if (auto* a = lim.getChildByName("Attack"))
+        addBuiltinParam(device, 1, "Attack", dawSecondsToMs(*a));
+    if (auto* rel = lim.getChildByName("Release"))
+        addBuiltinParam(device, 3, "Release", dawSecondsToMs(*rel));
+    if (auto* o = lim.getChildByName("OutputGain"))
+        addBuiltinParam(device, 5, "Output", o->getDoubleAttribute("value"));
+}
+
+// DAWproject eqBandType -> MAGDA EQ band type slot value. MAGDA has no bandPass;
+// fall back to Bell (the closest peaking-with-gain filter).
+int eqBandTypeValue(const juce::String& type) {
+    if (type == "highPass")
+        return 0;
+    if (type == "lowShelf")
+        return 1;
+    if (type == "highShelf")
+        return 3;
+    if (type == "lowPass")
+        return 4;
+    if (type == "notch")
+        return 5;
+    return 2;  // bell + bandPass fallback
+}
+
+// magda_eq: 8 bands of 5 slots (Enabled,Type,Freq,Gain,Q) + Output at slot 40.
+// Take the first 8 <Band>s in document order; extra bands are dropped, missing
+// MAGDA bands stay at their disabled defaults. DAWproject InputGain has no target.
+void parseEqualizerDevice(const juce::XmlElement& eq, DeviceInfo& device) {
+    initBuiltinDevice(device, eq, "magda_eq", "EQ");
+    constexpr int kBands = 8;
+    constexpr int kSlotsPerBand = 5;
+    constexpr int kOutputSlot = 40;
+
+    int b = 0;
+    for (auto* band : eq.getChildWithTagNameIterator("Band")) {
+        if (b >= kBands)
+            break;
+        const int base = b * kSlotsPerBand;
+        addBuiltinParam(device, base + 1, "Type",
+                        eqBandTypeValue(band->getStringAttribute("type", "bell")));
+        bool enabled = true;
+        if (auto* en = band->getChildByName("Enabled"))
+            enabled = en->getBoolAttribute("value", true);
+        addBuiltinParam(device, base + 0, "Enabled", enabled ? 1.0 : 0.0);
+        if (auto* f = band->getChildByName("Freq"))
+            addBuiltinParam(device, base + 2, "Freq",
+                            juce::jlimit(20.0, 20000.0, f->getDoubleAttribute("value")));
+        if (auto* g = band->getChildByName("Gain"))
+            addBuiltinParam(device, base + 3, "Gain",
+                            juce::jlimit(-24.0, 24.0, g->getDoubleAttribute("value")));
+        if (auto* q = band->getChildByName("Q"))
+            addBuiltinParam(device, base + 4, "Q",
+                            juce::jlimit(0.1, 10.0, q->getDoubleAttribute("value")));
+        ++b;
+    }
+
+    if (auto* out = eq.getChildByName("OutputGain"))
+        addBuiltinParam(device, kOutputSlot, "Output",
+                        juce::jlimit(-24.0, 12.0, out->getDoubleAttribute("value")));
 }
 
 void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     if (isBuiltinCompressor(device)) {
         addCompressorDevice(devices, device);
+        return;
+    }
+    if (isBuiltinGate(device)) {
+        addGateDevice(devices, device);
+        return;
+    }
+    if (isBuiltinLimiter(device)) {
+        addLimiterDevice(devices, device);
+        return;
+    }
+    if (isBuiltinEq(device)) {
+        addEqualizerDevice(devices, device);
         return;
     }
 
@@ -753,10 +975,18 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                         DeviceInfo device;
                         device.id = nextDeviceId++;
 
-                        // Standardized builtin: reconstruct MAGDA's native
-                        // compressor instead of treating it as opaque.
-                        if (tag == "Compressor") {
-                            parseCompressorDevice(*devEl, device);
+                        // Standardized builtins: reconstruct MAGDA's native
+                        // device instead of treating it as opaque.
+                        if (tag == "Compressor" || tag == "NoiseGate" || tag == "Limiter" ||
+                            tag == "Equalizer") {
+                            if (tag == "Compressor")
+                                parseCompressorDevice(*devEl, device);
+                            else if (tag == "NoiseGate")
+                                parseGateDevice(*devEl, device);
+                            else if (tag == "Limiter")
+                                parseLimiterDevice(*devEl, device);
+                            else
+                                parseEqualizerDevice(*devEl, device);
                             if (auto* enabled = devEl->getChildByName("Enabled"))
                                 device.bypassed = !enabled->getBoolAttribute("value", true);
                             track.chain.fxChainElements.push_back(std::move(device));
