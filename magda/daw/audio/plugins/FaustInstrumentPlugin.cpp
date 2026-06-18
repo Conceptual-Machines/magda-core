@@ -35,6 +35,9 @@ bool isReservedVoiceControl(const juce::String& cleanLabel) {
 // reserved per-voice MIDI controls; cutoff/resonance/attack/release are the
 // user-editable tone controls harvested into the pool. Mono voice fanned to
 // stereo with `<: _,_`.
+// The user controls are wrapped in vgroup() boxes (Osc / Filter / Env) so the
+// instrument's tabbed UI gets one tab per group. Each group's controls are
+// declared inside the box via `with{}` so Faust composes them under that group.
 constexpr const char* kDefaultDspSource = R"FAUST(
 import("stdfaust.lib");
 declare name "Faust Poly Synth";
@@ -43,13 +46,27 @@ freq = hslider("freq", 440, 20, 20000, 0.01);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
 gate = button("gate");
 
-cutoff = hslider("cutoff [unit:Hz] [scale:log]", 3000, 50, 18000, 1);
-res    = hslider("resonance", 0.3, 0, 0.95, 0.01);
-att    = hslider("attack [unit:s]", 0.005, 0.001, 2, 0.001);
-rel    = hslider("release [unit:s]", 0.4, 0.001, 4, 0.001);
+// Osc tab: detuned sub-saw mixed under the main saw.
+oscSection = vgroup("Osc", os.sawtooth(freq) + sub * os.sawtooth(freq * 0.5))
+with {
+    sub = hslider("sub [idx:4]", 0.0, 0.0, 1.0, 0.01);
+};
 
-env   = en.adsr(att, 0.2, 0.7, rel, gate);
-voice = os.sawtooth(freq) * env * gain : fi.resonlp(cutoff, res, 1);
+// Filter tab: resonant lowpass.
+filterSection(x) = vgroup("Filter", x : fi.resonlp(cutoff, res, 1))
+with {
+    cutoff = hslider("cutoff [unit:Hz] [scale:log] [idx:0]", 3000, 50, 18000, 1);
+    res    = hslider("resonance [idx:1]", 0.3, 0, 0.95, 0.01);
+};
+
+// Env tab: ADSR amplitude envelope.
+envSection = vgroup("Env", en.adsr(att, 0.2, 0.7, rel, gate))
+with {
+    att = hslider("attack [unit:s] [idx:2]", 0.005, 0.001, 2, 0.001);
+    rel = hslider("release [unit:s] [idx:3]", 0.4, 0.001, 4, 0.001);
+};
+
+voice = oscSection * envSection * gain : filterSection;
 process = voice <: _, _;
 )FAUST";
 
@@ -178,6 +195,7 @@ struct VoiceHarvester : public ::UI {
         FAUSTFLOAT* zone = nullptr;
         ControlMetadata metadata;
         bool fromProxyGroup = false;  // under the shared "Voices" box → skip
+        juce::String group;           // top-level author group (tab name), may be empty
     };
 
     std::vector<RawControl> raw;
@@ -211,6 +229,21 @@ struct VoiceHarvester : public ::UI {
         return false;
     }
 
+    // The author's intended tab group: the OUTERMOST group label that isn't a
+    // structural poly box ("Polyphonic" / "Voices" / "Voice<n>" / "V<n>").
+    // Empty when the control is declared flat (no author group) → "Params" tab.
+    juce::String topLevelAuthorGroup() const {
+        for (const auto& label : groupLabelStack) {  // outermost → innermost
+            if (label == "Polyphonic" || label == "Voices")
+                continue;
+            if (label.startsWith("Voice") || (label.length() >= 2 && label[0] == 'V' &&
+                                              juce::CharacterFunctions::isDigit(label[1])))
+                continue;
+            return label;
+        }
+        return {};
+    }
+
     ControlMetadata mergedFor(FAUSTFLOAT* zone) {
         ControlMetadata merged;
         for (const auto& g : groupStack)
@@ -238,6 +271,7 @@ struct VoiceHarvester : public ::UI {
         c.zone = zone;
         c.metadata = std::move(merged);
         c.fromProxyGroup = inProxyGroup();
+        c.group = topLevelAuthorGroup();
         raw.push_back(std::move(c));
     }
 
@@ -374,6 +408,7 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
             g.rep.defaultValue = c.defaultValue;
             g.rep.zone = c.zone;  // representative = first voice's zone
             g.rep.metadata = c.metadata;
+            g.rep.group = c.group;
             g.zones.push_back(c.zone);
             byLabel.emplace(c.label, groups.size());
             groups.push_back(std::move(g));

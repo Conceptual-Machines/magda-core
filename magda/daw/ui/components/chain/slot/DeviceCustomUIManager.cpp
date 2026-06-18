@@ -14,7 +14,9 @@
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
+#include "audio/plugins/FaustInstrumentPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
+#include "audio/plugins/IFaustEditorModel.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
@@ -32,6 +34,7 @@
 #include "custom_ui/CompressorUI.hpp"
 #include "custom_ui/DelayUI.hpp"
 #include "custom_ui/EqualiserUI.hpp"
+#include "custom_ui/FaustInstrumentTabbedUI.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "custom_ui/FilterUI.hpp"
 #include "custom_ui/FourOscUI.hpp"
@@ -262,6 +265,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return drumGridUI_.get();
     if (fourOscUI_)
         return fourOscUI_.get();
+    if (faustInstrumentUI_)
+        return faustInstrumentUI_.get();
     if (eqUI_)
         return eqUI_.get();
     if (compressorUI_)
@@ -304,6 +309,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return eqUI_->getLinkableSliders();
     if (fourOscUI_)
         return fourOscUI_->getLinkableSliders();
+    if (faustInstrumentUI_)
+        return faustInstrumentUI_->getLinkableSliders();
     if (toneGeneratorUI_)
         return toneGeneratorUI_->getLinkableSliders();
     if (compressorUI_)
@@ -334,15 +341,18 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 }
 
 bool DeviceCustomUIManager::hasAnyUI() const {
-    return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
-           reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-           impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+    return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || faustInstrumentUI_ ||
+           eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
+           pitchShiftUI_ || impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
+           stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ ||
+           levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
     if (fourOscUI_)
         return 500;
+    if (faustInstrumentUI_)
+        return 560;  // instruments render wider than effect slots
     if (eqUI_)
         return 400;
     if (compressorUI_)
@@ -383,11 +393,15 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
 int DeviceCustomUIManager::getCustomUITabIndex() const {
     if (fourOscUI_)
         return fourOscUI_->getCurrentTabIndex();
+    if (faustInstrumentUI_)
+        return faustInstrumentUI_->getCurrentTabIndex();
     return 0;
 }
 
 void DeviceCustomUIManager::setCustomUITabIndex(int index) {
-    if (fourOscUI_) {
+    if (faustInstrumentUI_) {
+        faustInstrumentUI_->setCurrentTabIndex(index);
+    } else if (fourOscUI_) {
         fourOscUI_->setCurrentTabIndex(index);
     } else {
         pendingCustomUITabIndex_ = index;
@@ -440,6 +454,9 @@ void DeviceCustomUIManager::readAndPushModMatrix(magda::DeviceId /*deviceId*/) {
 }
 
 void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& device) {
+    if (faustInstrumentUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName))
+        faustInstrumentUI_->updateFromParameters(device.parameters);
     if (eqUI_ && device.pluginId.equalsIgnoreCase("eq"))
         eqUI_->updateFromParameters(device.parameters);
     if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
@@ -1086,6 +1103,22 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
         parent->addAndMakeVisible(*drumGridUI_);
         update(device);
+    } else if (device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
+        faustInstrumentUI_ = std::make_unique<FaustInstrumentTabbedUI>();
+        faustInstrumentUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+            if (cb.onParameterChanged)
+                cb.onParameterChanged(paramIndex, value);
+        };
+        parent->addAndMakeVisible(*faustInstrumentUI_);
+        // Bind the live editor model (resolves the pool the tabs read). create()
+        // may run before the path is valid; refreshLivePluginBindings() re-runs
+        // from setDevicePath() once it is.
+        refreshLivePluginBindings();
+        update(device);
+        if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
+            faustInstrumentUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
+            pendingCustomUITabIndex_ = NO_PENDING_TAB;
+        }
     } else if (device.pluginId.containsIgnoreCase("4osc")) {
         fourOscUI_ = std::make_unique<FourOscUI>();
         fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
@@ -1376,6 +1409,16 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
 
 void DeviceCustomUIManager::refreshLivePluginBindings() {
     bindAnalyzerPlugins();
+
+    if (faustInstrumentUI_ != nullptr) {
+        faustInstrumentUI_->setDevicePath(devicePath_);
+        magda::daw::audio::IFaustEditorModel* model = nullptr;
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
+            if (auto* bridge = audioEngine->getAudioBridge())
+                if (auto plugin = bridge->getPlugin(devicePath_))
+                    model = dynamic_cast<magda::daw::audio::IFaustEditorModel*>(plugin.get());
+        faustInstrumentUI_->setPlugin(model);
+    }
 }
 
 void DeviceCustomUIManager::bindAnalyzerPlugins() {
