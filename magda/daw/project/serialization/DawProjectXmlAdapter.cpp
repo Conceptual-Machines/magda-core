@@ -242,6 +242,11 @@ void collectExportableDevices(const TrackInfo& track, std::vector<const DeviceIn
 
 void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     auto* dev = devices.createNewChildElement(deviceElementTag(device));
+    // referenceable id + name and loaded="true" mirror what Bitwig writes;
+    // without loaded="true" Bitwig treats the device as not-loaded and drops it.
+    dev->setAttribute("id", idFor("device", device.id));
+    dev->setAttribute("name", device.name);
+    dev->setAttribute("loaded", "true");
     dev->setAttribute("deviceRole", device.isInstrument ? "instrument" : "audioFX");
     dev->setAttribute("deviceName", device.name);
 
