@@ -72,7 +72,7 @@ class AutomationLaneComponent : public juce::Component,
     // Header dimensions
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int MIN_LANE_HEIGHT = 40;
-    static constexpr int MAX_LANE_HEIGHT = 200;
+    static constexpr int MAX_LANE_HEIGHT = 300;
     static constexpr int DEFAULT_LANE_HEIGHT = 60;
     static constexpr int RESIZE_HANDLE_HEIGHT = 5;
     static constexpr int SCALE_LABEL_WIDTH =

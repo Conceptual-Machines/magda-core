@@ -290,9 +290,11 @@ void MainView::setupComponents() {
     masterAutomationViewport->setViewedComponent(masterAutomationContentPanel.get(), false);
     masterAutomationViewport->setScrollBarsShown(false, false);
     addAndMakeVisible(*masterAutomationViewport);
-    // The playhead line extends down through this band, so keep it on top of the
-    // band components (it was sent to front before they were created). It is
-    // click-through (hitTest == false), so it does not block lane editing.
+    // The time grid and the playhead line both extend down through this band, so
+    // re-raise them above the band components (created after them). Both are
+    // click-through, so they do not block lane editing. Grid first, playhead on
+    // top of it.
+    gridOverlay->toFront(false);
     playheadComponent->toFront(false);
     // A lane added / removed / resized changes the band height: re-run the
     // arrangement layout so the band and the tracks above it resize.
@@ -1171,7 +1173,13 @@ void MainView::resized() {
     trackContentViewport->setBounds(arrangementLayout.trackContentArea);
 
     // Grid overlay (bottom layer - draws vertical time grid lines)
-    gridOverlay->setBounds(arrangementLayout.overlayArea);
+    // Extend the time grid down through the master automation band so its lanes
+    // get the same vertical bar/beat lines as the tracks (the band is a separate
+    // viewport scroll-synced to the arrangement, so the grid stays aligned).
+    auto gridArea = arrangementLayout.overlayArea;
+    if (!arrangementLayout.masterAutomationContentArea.isEmpty())
+        gridArea.setBottom(arrangementLayout.masterAutomationContentArea.getBottom());
+    gridOverlay->setBounds(gridArea);
     gridOverlay->setScrollOffset(trackContentViewport->getViewPositionX());
 
     // Selection overlay (above grid)

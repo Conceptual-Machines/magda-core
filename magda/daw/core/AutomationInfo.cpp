@@ -207,9 +207,9 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
 juce::String getDisplayNameForTarget(const AutomationTarget& target) {
     switch (target.kind) {
         case ControlTarget::Kind::TrackVolume:
-            return "Track Volume";
+            return target.devicePath.trackId == MASTER_TRACK_ID ? "Master Volume" : "Track Volume";
         case ControlTarget::Kind::TrackPan:
-            return "Track Pan";
+            return target.devicePath.trackId == MASTER_TRACK_ID ? "Master Pan" : "Track Pan";
         case ControlTarget::Kind::SendLevel:
             return "Send " + juce::String(target.sendBusIndex + 1);
         case ControlTarget::Kind::PluginParam:
