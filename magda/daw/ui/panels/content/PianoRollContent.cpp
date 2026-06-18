@@ -1594,6 +1594,30 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
+
+    // Hairline dividers framing the icon clusters: the top tool group (chord /
+    // fold / takes) and the bottom lane-toggle group (pitch-glide / CC /
+    // velocity). Layout mirrors resized() so the lines sit in the gaps.
+    const int iconSize = 22;
+    const int padding = (SIDEBAR_WIDTH - iconSize) / 2;
+    const int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
+
+    int topClusterBottom = chordToggleY + iconSize;  // chord only
+    if (foldToggle_)
+        topClusterBottom = chordToggleY + iconSize + padding + iconSize;
+    if (takeLanesToggle_ && takeLanesToggle_->isVisible())
+        topClusterBottom = chordToggleY + 2 * (iconSize + padding) + iconSize;
+
+    const int bottomClusterTop = getHeight() - 3 * (iconSize + padding);
+    const int topDividerY = topClusterBottom + padding / 2;
+    const int bottomDividerY = bottomClusterTop - padding / 2;
+
+    const float x1 = static_cast<float>(area.getX() + 5);
+    const float x2 = static_cast<float>(area.getRight() - 5);
+    if (bottomDividerY - topDividerY > padding) {
+        g.drawHorizontalLine(topDividerY, x1, x2);
+        g.drawHorizontalLine(bottomDividerY, x1, x2);
+    }
 }
 
 void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area) {
