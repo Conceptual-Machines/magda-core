@@ -41,7 +41,7 @@ void Toast::show(const juce::String& text, int durationMs) {
     const int vPad = 8;
     const int h = 32;
     auto font = label_.getFont();
-    int textW = static_cast<int>(font.getStringWidthFloat(text)) + hPad * 2;
+    int textW = juce::GlyphArrangement::getStringWidthInt(font, text) + hPad * 2;
     textW = juce::jmax(120, textW);
     setSize(textW, h + vPad * 2);
 
