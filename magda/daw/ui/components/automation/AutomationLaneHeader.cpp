@@ -8,6 +8,7 @@
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/AutomationManager.hpp"
 #include "../../../core/ParameterUtils.hpp"
+#include "../../../core/TrackManager.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -286,6 +287,17 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     auto nameArea = headerArea.reduced(4, 2);
     g.drawText(lane.getDisplayName(), nameArea, juce::Justification::centredLeft);
+
+    // Track-name watermark on the right edge so a lane reads which track /
+    // device it belongs to (e.g. "Gain ........ Master") without crowding the
+    // param name. Faint so it sits behind the active content.
+    if (const auto* track = TrackManager::getInstance().getTrack(lane.target.devicePath.trackId)) {
+        if (track->name.isNotEmpty()) {
+            g.setColour(juce::Colour(0xFFCCCCCC).withAlpha(0.32f));
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText(track->name, nameArea, juce::Justification::centredRight);
+        }
+    }
 
     // Value tick marks and labels in the lane content area
     {
