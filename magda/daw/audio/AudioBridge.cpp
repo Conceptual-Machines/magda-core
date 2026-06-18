@@ -618,29 +618,6 @@ te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
 }
 }  // namespace
 
-namespace {
-
-// Loads / saves a .vstpreset blob via JUCE's VST3Client extension. Two-mode
-// visitor: when `dataIn` is non-empty we apply it as a preset; otherwise we
-// pull the current state into `dataOut`.
-struct Vst3PresetVisitor : juce::ExtensionsVisitor {
-    juce::MemoryBlock dataIn;
-    juce::MemoryBlock dataOut;
-    bool ok = false;
-    bool save = false;
-
-    void visitVST3Client(const VST3Client& client) override {
-        if (save) {
-            dataOut = client.getPreset();
-            ok = dataOut.getSize() > 0;
-        } else {
-            ok = client.setPreset(dataIn);
-        }
-    }
-};
-
-}  // namespace
-
 int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
     if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {
         if (auto* pi = ext->getAudioPluginInstance())
@@ -695,11 +672,8 @@ bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        Vst3PresetVisitor visitor;
-        visitor.save = false;
-        visitor.dataIn = std::move(raw);
-        pi->getExtensions(visitor);
-        applied = visitor.ok;
+        if (auto* vst3 = pi->getVST3Client())
+            applied = vst3->setPreset(raw);
     } else if (extension == ".aupreset") {
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
@@ -724,13 +698,14 @@ bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
     const auto extension = presetFile.getFileExtension().toLowerCase();
 
     if (extension == ".vstpreset") {
-        Vst3PresetVisitor visitor;
-        visitor.save = true;
-        pi->getExtensions(visitor);
-        if (!visitor.ok)
+        auto* vst3 = pi->getVST3Client();
+        if (vst3 == nullptr)
+            return false;
+        const auto data = vst3->getPreset();
+        if (data.getSize() == 0)
             return false;
         presetFile.getParentDirectory().createDirectory();
-        return presetFile.replaceWithData(visitor.dataOut.getData(), visitor.dataOut.getSize());
+        return presetFile.replaceWithData(data.getData(), data.getSize());
     }
 
     if (extension == ".aupreset") {
