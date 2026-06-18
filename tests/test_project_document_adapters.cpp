@@ -59,8 +59,10 @@ TEST_CASE("NativeProjectDocumentAdapter captures current manager state",
 
     REQUIRE(document.info.name == "Adapter Capture");
     REQUIRE(document.info.tempo == 132.0);
-    REQUIRE(document.tracks.size() == 1);
+    REQUIRE(document.tracks.size() == 2);
     REQUIRE(document.tracks[0].name == "Keys");
+    REQUIRE(document.tracks[1].id == MASTER_TRACK_ID);
+    REQUIRE(document.tracks[1].type == TrackType::Master);
     REQUIRE(document.clips.size() == 1);
     REQUIRE(document.clips[0].name == "Phrase");
     REQUIRE(document.clips[0].midiNotes.size() == 1);
