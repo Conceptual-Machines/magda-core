@@ -163,7 +163,9 @@ class MidiEditorContent : public PanelContent,
 
     // --- Layout constants ---
     static constexpr int RULER_HEIGHT = 48;
-    static constexpr int GRID_LEFT_PADDING = 2;
+    // Leaves room for the playhead triangle (6px half-width) at bar 1 so it
+    // isn't clipped against the keyboard edge.
+    static constexpr int GRID_LEFT_PADDING = 8;
     static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;
     static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;
     static constexpr int DEFAULT_DRAWER_HEIGHT = 100;

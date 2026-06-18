@@ -25,6 +25,11 @@
 namespace magda {
 
 namespace {
+// Clip start/end boundary marker (the vertical edge + soft fade where the
+// editable clip region begins/ends). A muted slate reads as a frame edge that
+// sits in the dark grid instead of glaring like the old near-white grey.
+constexpr juce::uint32 kClipBoundaryColour = 0xFF6A7280;
+
 double timelineStartBeats(const ClipInfo& clip, double bpm) {
     return clip.getStartBeats(bpm);
 }
@@ -166,12 +171,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         // Clip start boundary
         int clipStartX = beatToPixel(clipStartBeats_);
         if (clipStartX >= 0 && clipStartX <= bounds.getRight()) {
-            juce::ColourGradient grad(juce::Colour(0xFFAAAAAA), clipStartX - 1.0f, 0.0f,
-                                      juce::Colour(0xFFAAAAAA).withAlpha(0.0f), clipStartX - 6.0f,
-                                      0.0f, false);
-            g.setGradientFill(grad);
-            g.fillRect(clipStartX - 6, 0, 6, bounds.getHeight());
-            g.setColour(juce::Colour(0xFFAAAAAA));
+            g.setColour(juce::Colour(kClipBoundaryColour));
             g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
         }
 
@@ -186,13 +186,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                juce::ColourGradient grad(juce::Colour(0xFFAAAAAA), clipEndX + 1.0f, 0.0f,
-                                          juce::Colour(0xFFAAAAAA).withAlpha(0.0f), clipEndX + 6.0f,
-                                          0.0f, false);
-                g.setGradientFill(grad);
-                g.fillRect(clipEndX + 1, 0, 6, bounds.getHeight());
-                g.setColour(juce::Colour(0xFFAAAAAA));
-                g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+                g.setColour(juce::Colour(kClipBoundaryColour));
+                g.fillRect(clipEndX - 1, 0, 2, bounds.getHeight());
             }
 
             if (clipEndX < bounds.getRight()) {
@@ -206,13 +201,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                juce::ColourGradient grad(juce::Colour(0xFFAAAAAA), clipEndX + 1.0f, 0.0f,
-                                          juce::Colour(0xFFAAAAAA).withAlpha(0.0f), clipEndX + 6.0f,
-                                          0.0f, false);
-                g.setGradientFill(grad);
-                g.fillRect(clipEndX + 1, 0, 6, bounds.getHeight());
-                g.setColour(juce::Colour(0xFFAAAAAA));
-                g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+                g.setColour(juce::Colour(kClipBoundaryColour));
+                g.fillRect(clipEndX - 1, 0, 2, bounds.getHeight());
             }
 
             if (clipEndX < bounds.getRight()) {
@@ -378,7 +368,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
 
             int playheadX = beatToPixel(displayBeat);
             if (playheadX >= 0 && playheadX <= bounds.getRight()) {
-                g.setColour(juce::Colour(0xFFFF4444));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
                 g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
             }
         }
