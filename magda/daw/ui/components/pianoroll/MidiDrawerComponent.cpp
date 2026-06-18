@@ -155,13 +155,16 @@ juce::Rectangle<int> MidiDrawerComponent::getLaneRowBounds(int laneIndex) const 
 }
 
 void MidiDrawerComponent::resized() {
-    // Lanes are stacked vertically (all visible), right of the left margin column
-    velocityLane_->setBounds(getLaneRowBounds(0).withTrimmedLeft(leftMargin_));
+    // Visible lanes are stacked vertically, right of the left margin column.
+    // Velocity is shown only when toggled on (slot 0); CC lanes follow.
+    velocityLane_->setVisible(velocityVisible_);
+    if (velocityVisible_)
+        velocityLane_->setBounds(getLaneRowBounds(0).withTrimmedLeft(leftMargin_));
 
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
         if (ccTabs_[i].ccLane)
             ccTabs_[i].ccLane->setBounds(
-                getLaneRowBounds(static_cast<int>(i) + 1).withTrimmedLeft(leftMargin_));
+                getLaneRowBounds(firstCcSlot() + static_cast<int>(i)).withTrimmedLeft(leftMargin_));
     }
 
     updatePbRangeVisibility();
@@ -223,9 +226,10 @@ void MidiDrawerComponent::paintLaneHeaders(juce::Graphics& g) {
         if (row.isEmpty())
             continue;
 
-        const bool removable = lane > 0;
-        juce::String name =
-            (lane == 0) ? juce::String("Velocity") : ccTabs_[static_cast<size_t>(lane - 1)].name;
+        const bool isVelocityRow = velocityVisible_ && lane == 0;
+        const bool removable = !isVelocityRow;
+        juce::String name = isVelocityRow ? juce::String("Velocity")
+                                          : ccTabs_[static_cast<size_t>(lane - firstCcSlot())].name;
 
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.setColour(textColour);
@@ -291,10 +295,10 @@ void MidiDrawerComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Close button (top-right corner of a removable lane's header)
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        auto row = getLaneRowBounds(static_cast<int>(i) + 1);
+        auto row = getLaneRowBounds(firstCcSlot() + static_cast<int>(i));
         if (row.contains(e.getPosition())) {
             if (e.x >= leftMargin_ - 18 && e.y <= row.getY() + 18)
-                removeTab(static_cast<int>(i) + 1);
+                removeTab(static_cast<int>(i));
             return;
         }
     }
@@ -375,12 +379,11 @@ void MidiDrawerComponent::addPitchBendTab() {
         onLanesChanged();
 }
 
-void MidiDrawerComponent::removeTab(int tabIndex) {
-    if (tabIndex <= 0 || tabIndex > static_cast<int>(ccTabs_.size()))
-        return;  // Can't remove the velocity lane
+void MidiDrawerComponent::removeTab(int ccIdx) {
+    if (ccIdx < 0 || ccIdx >= static_cast<int>(ccTabs_.size()))
+        return;
 
-    int ccIdx = tabIndex - 1;
-    removeChildComponent(ccTabs_[ccIdx].ccLane.get());
+    removeChildComponent(ccTabs_[static_cast<size_t>(ccIdx)].ccLane.get());
     ccTabs_.erase(ccTabs_.begin() + ccIdx);
 
     resized();
@@ -389,12 +392,21 @@ void MidiDrawerComponent::removeTab(int tabIndex) {
         onLanesChanged();
 }
 
+void MidiDrawerComponent::setVelocityLaneVisible(bool visible) {
+    if (velocityVisible_ == visible)
+        return;
+    velocityVisible_ = visible;
+    velocityLane_->setVisible(visible);
+    resized();
+    repaint();
+}
+
 void MidiDrawerComponent::updatePbRangeVisibility() {
     // The PB range editor sits left of the icon column, in the pitchbend lane's row
     int pbLaneIndex = -1;
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
         if (ccTabs_[i].isPitchBend) {
-            pbLaneIndex = static_cast<int>(i) + 1;
+            pbLaneIndex = firstCcSlot() + static_cast<int>(i);
             if (ccTabs_[i].ccLane) {
                 pbRangeLabel_->setText(juce::String(ccTabs_[i].ccLane->getPitchBendRange()),
                                        juce::dontSendNotification);

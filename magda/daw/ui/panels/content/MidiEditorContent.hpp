@@ -190,12 +190,22 @@ class MidiEditorContent : public PanelContent,
     // Push overlayTrackIds_ into the editor's grid renderer
     virtual void applyOverlayTracks() {}
 
-    // --- Velocity lane state (static so it persists across editor switches) ---
+    // --- Lane drawer state (static so it persists across editor switches) ---
+    // velocityLaneVisible_ is the velocity toggle; velocityDrawerOpen_ is the
+    // derived "drawer area shown" (velocity visible OR a CC lane exists), so the
+    // velocity and CC lanes toggle independently — opening CC no longer forces
+    // the velocity lane.
     static bool velocityDrawerOpen_;
+    static bool velocityLaneVisible_;
     void setVelocityDrawerVisible(bool visible);
     bool isVelocityDrawerVisible() const {
         return velocityDrawerOpen_;
     }
+    // Push the velocity-visible flag into the drawer, recompute drawer-open, and
+    // relayout. Called by the velocity toggle and on CC lane add/remove.
+    void refreshLaneDrawer();
+    // Subclass updates its sidebar toggle active states (velocity + CC).
+    virtual void updateLaneToggleStates() {}
 
     // --- Fold (shared): collapse the vertical axis to the clip's used pitches
     //     (piano roll: used notes; drum grid: used pads). foldEnabled_ is static

@@ -149,7 +149,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::SvgButton> ccLanesBtn_;
 
     // CC strip button is lit while the drawer is open with CC/pitchbend lanes
-    void updateCcLanesButtonState();
+    void updateLaneToggleStates() override;
 
     // Live MIDI note monitor hooks (plumbing lives in MidiEditorContent).
     void highlightMonitoredNote(int noteNumber, bool noteOn) override;
