@@ -400,6 +400,8 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     device.format = PluginFormat::VST3;
     device.isInstrument = false;
     device.uniqueId = "VST3-ProQ3-abc123";
+    // The captured VST3 class id is the portable deviceID other hosts match on.
+    device.vst3ClassId = "ABCDEF019182FAEB786C6E4178414432";
     // pluginState is an opaque TE plugin-state string; it must survive verbatim.
     const juce::String chunk = "<PLUGIN state=\"AQIDBA==\"/>";
     device.pluginState = chunk;
@@ -417,6 +419,8 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     REQUIRE(projectXml.contains("<Vst3Plugin"));
     REQUIRE(projectXml.contains("deviceName=\"Pro-Q 3\""));
     REQUIRE(projectXml.contains("deviceRole=\"audioFX\""));
+    // deviceID is the VST3 class id, not MAGDA's uniqueId.
+    REQUIRE(projectXml.contains("deviceID=\"ABCDEF019182FAEB786C6E4178414432\""));
     REQUIRE(zip.getIndexOfFileName("plugins/device-1.bin", false) >= 0);
 
     ProjectDocument imported;
@@ -431,6 +435,8 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     REQUIRE(d.manufacturer == "FabFilter");
     REQUIRE_FALSE(d.isInstrument);
     REQUIRE_FALSE(d.bypassed);
+    // The class id (deviceID) round-trips as the portable identity.
+    REQUIRE(d.vst3ClassId == "ABCDEF019182FAEB786C6E4178414432");
 
     // The opaque plugin-state string round-trips verbatim through embed/extract.
     REQUIRE(d.pluginState == chunk);

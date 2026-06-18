@@ -165,6 +165,12 @@ struct DeviceInfo {
     // Plugin native state (base64-encoded binary blob from TE ExternalPlugin)
     juce::String pluginState;
 
+    // VST3 class id (32-char hex FUID) for hosted VST3 plugins, captured once
+    // from the .vstpreset header. This is the portable identity other hosts match
+    // on (DAWproject deviceID); unlike uniqueId it is not lossily hashed. Empty
+    // for non-VST3 devices. Runtime/interchange only - not part of native state.
+    juce::String vst3ClassId;
+
     // Plugin loading state (Loading while async load is in-flight)
     DeviceLoadState loadState = DeviceLoadState::Loaded;
 

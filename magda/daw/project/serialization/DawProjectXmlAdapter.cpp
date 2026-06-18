@@ -245,7 +245,11 @@ void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     dev->setAttribute("deviceRole", device.isInstrument ? "instrument" : "audioFX");
     dev->setAttribute("deviceName", device.name);
 
-    const auto deviceId = device.uniqueId.isNotEmpty() ? device.uniqueId : device.fileOrIdentifier;
+    // Prefer the real VST3 class id (what other hosts match on); fall back to
+    // MAGDA's identifier only when it isn't a VST3 / the id wasn't captured.
+    const auto deviceId = device.vst3ClassId.isNotEmpty() ? device.vst3ClassId
+                          : device.uniqueId.isNotEmpty()  ? device.uniqueId
+                                                          : device.fileOrIdentifier;
     if (deviceId.isNotEmpty())
         dev->setAttribute("deviceID", deviceId);
     if (device.manufacturer.isNotEmpty())
@@ -540,8 +544,15 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
 
                         device.id = nextDeviceId++;
                         device.name = devEl->getStringAttribute("deviceName");
-                        device.uniqueId = devEl->getStringAttribute("deviceID");
-                        device.fileOrIdentifier = device.uniqueId;
+                        const auto deviceId = devEl->getStringAttribute("deviceID");
+                        // deviceID is the VST3 class id (32-hex). Keep it as the
+                        // portable identity so a re-export preserves it. Matching
+                        // it back to an installed plugin for load is best-effort
+                        // (MAGDA matches by uniqueId/path, which DAWproject lacks).
+                        if (device.format == PluginFormat::VST3)
+                            device.vst3ClassId = deviceId;
+                        device.uniqueId = deviceId;
+                        device.fileOrIdentifier = deviceId;
                         device.manufacturer = devEl->getStringAttribute("deviceVendor");
                         device.isInstrument =
                             devEl->getStringAttribute("deviceRole") == "instrument";
