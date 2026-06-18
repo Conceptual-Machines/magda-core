@@ -614,3 +614,75 @@ TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send r
     REQUIRE_FALSE(source.sends[0].preFader);
     REQUIRE(source.sends[0].destTrackId == fx.id);
 }
+
+TEST_CASE("DawProjectXmlAdapter exports master role and send routing and roundtrips",
+          "[project][serialization][dawproject][builtin]") {
+    ProjectDocument document;
+    document.info.name = "Routing Test";
+    document.info.version = "0.route";
+    document.info.tempo = 120.0;
+
+    TrackInfo audio;
+    audio.id = 1;
+    audio.name = "Audio 1";
+    audio.type = TrackType::Audio;
+
+    TrackInfo aux;
+    aux.id = 2;
+    aux.name = "Reverb FX";
+    aux.type = TrackType::Aux;
+    aux.auxBusIndex = 0;
+
+    TrackInfo master;
+    master.id = MASTER_TRACK_ID;
+    master.name = "Master";
+    master.type = TrackType::Master;
+
+    SendInfo send;
+    send.busIndex = aux.auxBusIndex;
+    send.level = 0.5f;
+    send.preFader = false;
+    send.destTrackId = aux.id;
+    audio.sends.push_back(send);
+
+    document.tracks.push_back(audio);
+    document.tracks.push_back(aux);
+    document.tracks.push_back(master);
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("role=\"master\""));
+    REQUIRE(xml.contains("role=\"effect\""));
+    REQUIRE(xml.contains("<Sends"));
+    REQUIRE(xml.contains("<Send "));
+    REQUIRE(xml.contains("destination=\"" + juce::String("channel") + juce::String(aux.id) + "\""));
+
+    juce::String validationError;
+    const bool valid = DawProjectValidator::validateProjectXml(xml, validationError);
+    INFO(validationError);
+    REQUIRE(valid);
+
+    // Roundtrip: master peels back onto the master slot, the effect track is an
+    // aux, and the send is restored at its level.
+    ProjectDocument back;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, back, error));
+    auto staged = NativeProjectDocumentAdapter::toStagedProjectData(back);
+    REQUIRE(staged.masterTrack != nullptr);
+    REQUIRE(staged.masterTrack->name == "Master");
+    REQUIRE(staged.tracks.size() == 2);
+
+    const TrackInfo* auxBack = nullptr;
+    const TrackInfo* audioBack = nullptr;
+    for (const auto& t : staged.tracks) {
+        if (t.type == TrackType::Aux)
+            auxBack = &t;
+        else
+            audioBack = &t;
+    }
+    REQUIRE(auxBack != nullptr);
+    REQUIRE(audioBack != nullptr);
+    REQUIRE(audioBack->sends.size() == 1);
+    REQUIRE(audioBack->sends[0].busIndex == auxBack->auxBusIndex);
+    REQUIRE(audioBack->sends[0].level == Catch::Approx(0.5f));
+    REQUIRE(audioBack->sends[0].destTrackId == auxBack->id);
+}

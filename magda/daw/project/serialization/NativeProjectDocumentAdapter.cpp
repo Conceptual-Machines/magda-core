@@ -11,6 +11,14 @@ ProjectDocument NativeProjectDocumentAdapter::captureCurrentProject(const Projec
     ProjectDocument document;
     document.info = info;
     document.tracks = TrackManager::getInstance().getTracks();
+
+    // MAGDA keeps the master as a singleton outside getTracks(); append it so
+    // interchange formats carry its role + FX. It's already TrackType::Master,
+    // so the DAWproject adapter emits role="master" and toStagedProjectData
+    // peels it back onto MASTER_TRACK_ID on re-import.
+    if (auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID))
+        document.tracks.push_back(*master);
+
     document.clips = ClipManager::getInstance().getClips();
     document.automationLanes = AutomationManager::getInstance().getLanes();
     document.automationClips = AutomationManager::getInstance().getClips();

@@ -2,6 +2,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -505,6 +506,13 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     timeSignature->setAttribute("numerator", document.info.timeSignatureNumerator);
     timeSignature->setAttribute("denominator", document.info.timeSignatureDenominator);
 
+    // `destination` is an IDREF, so only route to the master channel when a
+    // master track is actually present in the document (it isn't for partial
+    // documents built outside a full capture).
+    const bool hasMaster =
+        std::any_of(document.tracks.begin(), document.tracks.end(),
+                    [](const TrackInfo& t) { return t.type == TrackType::Master; });
+
     auto* structure = project.createNewChildElement("Structure");
     for (const auto& track : document.tracks) {
         auto* trackElement = structure->createNewChildElement("Track");
@@ -517,11 +525,20 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
 
         auto* channel = trackElement->createNewChildElement("Channel");
         channel->setAttribute("id", idFor("channel", track.id));
-        channel->setAttribute("role", "regular");
+        // Role mirrors MAGDA's track type: the master is "master", aux/return
+        // tracks are "effect", everything else "regular". Non-master channels
+        // output to the master channel via `destination`.
+        const char* role = track.type == TrackType::Master ? "master"
+                           : track.type == TrackType::Aux  ? "effect"
+                                                           : "regular";
+        channel->setAttribute("role", role);
         channel->setAttribute("audioChannels", 2);
+        if (track.type != TrackType::Master && hasMaster)
+            channel->setAttribute("destination", idFor("channel", MASTER_TRACK_ID));
         channel->setAttribute("solo", track.soloed ? "true" : "false");
 
-        // <Devices> is first in the channel sequence (before Mute/Pan/Volume).
+        // Channel child order is fixed by the schema: Devices, Mute, Pan,
+        // Sends, Volume.
         std::vector<const DeviceInfo*> channelDevices;
         collectExportableDevices(track, channelDevices);
         if (!channelDevices.empty()) {
@@ -533,6 +550,26 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
         addBoolParameter(*channel, "Mute", idFor("mute", track.id), "Mute", track.muted);
         addRealParameter(*channel, "Pan", idFor("pan", track.id), "Pan", "normalized",
                          linearToDawProjectPan(track.pan), 0.0, 1.0);
+
+        // Sends to aux/return tracks. Each routes to the destination track's
+        // channel; level is linear, type carries pre/post-fader.
+        if (!track.sends.empty()) {
+            auto* sends = channel->createNewChildElement("Sends");
+            int sendCounter = 0;
+            for (const auto& send : track.sends) {
+                if (send.destTrackId == INVALID_TRACK_ID)
+                    continue;
+                auto* sendEl = sends->createNewChildElement("Send");
+                const auto sendId = idFor("send", track.id) + "_" + juce::String(sendCounter++);
+                sendEl->setAttribute("destination", idFor("channel", send.destTrackId));
+                sendEl->setAttribute("type", send.preFader ? "pre" : "post");
+                sendEl->setAttribute("id", sendId);
+                addBoolParameter(*sendEl, "Enable", sendId + "_en", "Enable", true);
+                addRealParameter(*sendEl, "Volume", sendId + "_vol", "Send", "linear", send.level,
+                                 0.0, 1.0);
+            }
+        }
+
         addRealParameter(*channel, "Volume", idFor("volume", track.id), "Volume", "linear",
                          track.volume, 0.0, 2.0);
     }
