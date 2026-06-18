@@ -21,7 +21,6 @@ void fillSlot(FaustParamSlot& slot, int index, const HarvestedControl& h) {
     slot.active = true;
     slot.label = h.label;
     slot.unit = h.metadata.unit;
-    slot.group = h.group;
     // Style menu/radio overrides the kind even if the harvester
     // reported Continuous — Faust users do `hslider("Mode
     // [style:menu{…}]", …)` and expect a dropdown.

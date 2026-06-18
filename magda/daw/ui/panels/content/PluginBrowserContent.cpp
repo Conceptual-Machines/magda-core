@@ -359,8 +359,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     }
     // Compiled-Faust devices come from their own registry.
     for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
-        list.push_back(PluginBrowserInfo::createInternal(
-            spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory));
+        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId, false,
+                                                         spec->browserCategory));
     }
     return list;
 }

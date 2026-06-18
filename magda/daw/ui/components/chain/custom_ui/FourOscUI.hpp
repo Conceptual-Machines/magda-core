@@ -3,7 +3,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "core/DeviceInfo.hpp"
-#include "custom_ui/LayoutStableTabbedComponent.hpp"
 #include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/TextSlider.hpp"
@@ -301,6 +300,35 @@ class FourOscUI : public juce::Component {
     // =========================================================================
     // Members
     // =========================================================================
+
+    // TabbedComponent subclass that prevents layout operations (setBounds/resized)
+    // from resetting the active tab back to index 0.
+    class LayoutStableTabbedComponent : public juce::TabbedComponent {
+      public:
+        using juce::TabbedComponent::TabbedComponent;
+
+        // Guard against layout-triggered tab changes: only track user-initiated
+        // tab switches (when inLayout_ is false).
+        void currentTabChanged(int newIndex, const juce::String& /*name*/) override {
+            if (!inLayout_)
+                userTabIndex_ = newIndex;
+        }
+        void setBoundsStable(juce::Rectangle<int> bounds) {
+            inLayout_ = true;
+            int saved = userTabIndex_;
+            setBounds(bounds);
+            inLayout_ = false;
+            if (saved >= 0 && saved < getNumTabs() && getCurrentTabIndex() != saved)
+                setCurrentTabIndex(saved, false);
+        }
+        int getUserTabIndex() const {
+            return userTabIndex_;
+        }
+
+      private:
+        bool inLayout_ = false;
+        int userTabIndex_ = 0;
+    };
 
     std::unique_ptr<LayoutStableTabbedComponent> tabs_;
     std::unique_ptr<OscTab> oscTab_;
