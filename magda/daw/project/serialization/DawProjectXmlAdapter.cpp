@@ -218,7 +218,15 @@ PluginFormat resolveDeviceFormat(const DeviceInfo& device) {
     return device.format;
 }
 
+// MAGDA's native Compressor (Faust) maps to DAWproject's standardized <Compressor>
+// builtin - parameter-based, so it round-trips to other hosts' stock compressors.
+bool isBuiltinCompressor(const DeviceInfo& device) {
+    return device.pluginId == "magda_compressor";
+}
+
 bool isExportableDevice(const DeviceInfo& device) {
+    if (isBuiltinCompressor(device))
+        return true;
     const auto format = resolveDeviceFormat(device);
     return format == PluginFormat::VST3 || format == PluginFormat::AU;
 }
@@ -236,6 +244,8 @@ struct DeviceStateFile {
 };
 
 std::optional<DeviceStateFile> deviceStateFile(const DeviceInfo& device) {
+    if (isBuiltinCompressor(device))
+        return std::nullopt;  // mapped as parameters, no opaque state file
     const auto base = "plugins/device-" + juce::String(static_cast<int>(device.id));
 
     if (device.vst3Preset.isNotEmpty()) {
@@ -263,7 +273,47 @@ void collectExportableDevices(const TrackInfo& track, std::vector<const DeviceIn
             out.push_back(&postFx.device);
 }
 
+const ParameterInfo* findDeviceParam(const DeviceInfo& device, juce::StringRef name) {
+    for (const auto& p : device.parameters)
+        if (p.name == name)
+            return &p;
+    return nullptr;
+}
+
+// Emit MAGDA's Faust compressor as a DAWproject <Compressor> builtin. Param
+// children must follow the XSD order (Attack, AutoMakeup, InputGain, OutputGain,
+// Ratio, Release, Threshold); MAGDA's Knee/Mix/Detector/SC-HPF have no field and
+// are dropped. Attack/Release convert ms -> seconds.
+void addCompressorDevice(juce::XmlElement& devices, const DeviceInfo& device) {
+    auto* comp = devices.createNewChildElement("Compressor");
+    comp->setAttribute("id", idFor("device", device.id));
+    comp->setAttribute("name", device.name);
+    comp->setAttribute("loaded", "true");
+    comp->setAttribute("deviceRole", "audioFX");
+    comp->setAttribute("deviceName", device.name);
+
+    auto real = [&](const char* tag, juce::StringRef paramName, const char* unit, double scale) {
+        if (const auto* p = findDeviceParam(device, paramName))
+            addRealParameter(*comp, tag, idFor(tag, device.id), tag, unit, p->currentValue * scale,
+                             p->minValue * scale, p->maxValue * scale);
+    };
+
+    real("Attack", "Attack", "seconds", 0.001);  // MAGDA stores ms
+    if (const auto* autogain = findDeviceParam(device, "Autogain"))
+        addBoolParameter(*comp, "AutoMakeup", idFor("automakeup", device.id), "AutoMakeup",
+                         autogain->currentValue >= 0.5f);
+    real("OutputGain", "Output", "decibel", 1.0);
+    real("Ratio", "Ratio", "linear", 1.0);
+    real("Release", "Release", "seconds", 0.001);  // MAGDA stores ms
+    real("Threshold", "Threshold", "decibel", 1.0);
+}
+
 void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
+    if (isBuiltinCompressor(device)) {
+        addCompressorDevice(devices, device);
+        return;
+    }
+
     auto* dev = devices.createNewChildElement(deviceElementTag(device));
     // referenceable id + name and loaded="true" mirror what Bitwig writes;
     // without loaded="true" Bitwig treats the device as not-loaded and drops it.

@@ -455,3 +455,58 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
 
     archive.deleteFile();
 }
+
+TEST_CASE("DawProjectXmlAdapter maps the native compressor to a <Compressor> builtin",
+          "[project][serialization][dawproject][builtin]") {
+    ProjectDocument document;
+    document.info.name = "Compressor Test";
+    document.info.version = "0.comp";
+    document.info.tempo = 120.0;
+
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Bus";
+
+    DeviceInfo device;
+    device.id = 1;
+    device.name = "Compressor";
+    device.pluginId = "magda_compressor";  // MAGDA's Faust compressor
+    device.deviceType = DeviceType::Effect;
+
+    auto addParam = [&](const char* name, float value, float lo, float hi, const char* unit) {
+        ParameterInfo p;
+        p.name = name;
+        p.currentValue = value;
+        p.minValue = lo;
+        p.maxValue = hi;
+        p.unit = unit;
+        device.parameters.push_back(p);
+    };
+    addParam("Threshold", -18.0f, -60.0f, 0.0f, "dB");
+    addParam("Ratio", 4.0f, 1.0f, 20.0f, "");
+    addParam("Attack", 50.0f, 0.1f, 1000.0f, "ms");
+    addParam("Release", 100.0f, 1.0f, 2000.0f, "ms");
+    addParam("Output", 3.0f, -24.0f, 24.0f, "dB");
+    addParam("Autogain", 1.0f, 0.0f, 1.0f, "");
+    track.chain.fxChainElements.push_back(device);
+    document.tracks.push_back(track);
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("<Compressor"));
+    REQUIRE(xml.contains("<Threshold"));
+    REQUIRE(xml.contains("<Ratio"));
+    REQUIRE(xml.contains("<Attack"));
+    REQUIRE(xml.contains("<Release"));
+    REQUIRE(xml.contains("<OutputGain"));
+    REQUIRE(xml.contains("<AutoMakeup"));
+    REQUIRE(xml.contains("unit=\"decibel\""));
+    REQUIRE(xml.contains("unit=\"seconds\""));  // attack/release ms -> seconds
+    // No opaque plugin state file for a param-mapped builtin.
+    REQUIRE_FALSE(xml.contains(".vstpreset"));
+    REQUIRE_FALSE(xml.contains(".bin"));
+
+    juce::String validationError;
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+    INFO(validationError);
+    REQUIRE(validationError.isEmpty());
+}
