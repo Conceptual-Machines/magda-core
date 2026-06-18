@@ -571,3 +571,46 @@ TEST_CASE("DawProjectXmlAdapter routes a master-role channel to the master track
     REQUIRE(staged.tracks.size() == 1);
     REQUIRE(staged.tracks[0].name == "Audio 1");
 }
+
+TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send routing",
+          "[project][serialization][dawproject][builtin]") {
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="audio" loaded="true" id="t1" name="Audio 1">
+      <Channel audioChannels="2" role="regular" id="c1">
+        <Sends>
+          <Send destination="cFx" type="post" id="s1">
+            <Enable value="true" id="se1"/>
+            <Volume max="1.0" min="0.0" unit="linear" value="0.5" id="sv1" name="Send"/>
+          </Send>
+          <Send destination="cFx" type="post" id="s2">
+            <Enable value="false" id="se2"/>
+            <Volume max="1.0" min="0.0" unit="linear" value="0.0" id="sv2" name="Send"/>
+          </Send>
+        </Sends>
+      </Channel>
+    </Track>
+    <Track contentType="audio" loaded="true" id="t2" name="Reverb FX">
+      <Channel audioChannels="2" role="effect" id="cFx"/>
+    </Track>
+  </Structure>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.tracks.size() == 2);
+
+    const auto& source = doc.tracks[0];
+    const auto& fx = doc.tracks[1];
+    REQUIRE(fx.type == TrackType::Aux);
+    REQUIRE(fx.auxBusIndex >= 0);
+
+    // The enabled send wires onto the aux bus; the disabled one is dropped.
+    REQUIRE(source.sends.size() == 1);
+    REQUIRE(source.sends[0].busIndex == fx.auxBusIndex);
+    REQUIRE(source.sends[0].level == Catch::Approx(0.5f));
+    REQUIRE_FALSE(source.sends[0].preFader);
+    REQUIRE(source.sends[0].destTrackId == fx.id);
+}

@@ -637,6 +637,22 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     std::map<juce::String, TrackId> trackIds;
     TrackId nextTrackId = 1;
     DeviceId nextDeviceId = 1;
+
+    // Send routing is resolved in a second pass: a <Send> references the target
+    // channel's id, which may belong to an effect/aux track declared later.
+    // Map channel id -> imported track index + aux bus, and stash each send to
+    // resolve once every track (and its bus) is known.
+    std::map<juce::String, size_t> channelToTrackIndex;
+    std::map<juce::String, int> channelToAuxBus;
+    struct PendingSend {
+        size_t sourceTrackIndex;
+        juce::String destChannel;
+        float level;
+        bool preFader;
+    };
+    std::vector<PendingSend> pendingSends;
+    int nextAuxBus = 0;
+
     if (auto* structure = root->getChildByName("Structure")) {
         for (auto* trackElement : structure->getChildWithTagNameIterator("Track")) {
             TrackInfo track;
@@ -646,14 +662,43 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
             track.colour = colourFromDawProject(trackElement->getStringAttribute("color"));
             const auto contentType = trackElement->getStringAttribute("contentType");
             track.type = TrackType::Audio;
+            const size_t trackIndex = document.tracks.size();
 
             if (auto* channel = trackElement->getChildByName("Channel")) {
                 // The channel role drives the MAGDA track type. "master" routes
-                // into MAGDA's singleton master (see toStagedProjectData); other
-                // roles (regular/effect) currently load as plain audio tracks
-                // until send routing is wired.
-                if (channel->getStringAttribute("role") == "master")
+                // into MAGDA's singleton master (see toStagedProjectData);
+                // "effect" is an aux/return track and gets a unique bus that its
+                // sources' sends reference.
+                const auto role = channel->getStringAttribute("role", "regular");
+                const auto channelId = channel->getStringAttribute("id");
+                if (role == "master") {
                     track.type = TrackType::Master;
+                } else if (role == "effect") {
+                    track.type = TrackType::Aux;
+                    track.auxBusIndex = nextAuxBus++;
+                    channelToAuxBus[channelId] = track.auxBusIndex;
+                }
+                if (channelId.isNotEmpty())
+                    channelToTrackIndex[channelId] = trackIndex;
+
+                // Sends to aux/effect channels. Skip disabled sends (Bitwig
+                // writes a default disabled send from every track to every
+                // effect bus); resolve the destination bus in the second pass.
+                if (auto* sends = channel->getChildByName("Sends")) {
+                    for (auto* sendEl : sends->getChildWithTagNameIterator("Send")) {
+                        if (auto* en = sendEl->getChildByName("Enable");
+                            en != nullptr && !en->getBoolAttribute("value", true))
+                            continue;
+                        const auto dest = sendEl->getStringAttribute("destination");
+                        if (dest.isEmpty())
+                            continue;
+                        float level = 1.0f;
+                        if (auto* vol = sendEl->getChildByName("Volume"))
+                            level = static_cast<float>(vol->getDoubleAttribute("value", 1.0));
+                        pendingSends.push_back(
+                            {trackIndex, dest, level, sendEl->getStringAttribute("type") == "pre"});
+                    }
+                }
 
                 if (auto* volume = channel->getChildByName("Volume"))
                     track.volume = static_cast<float>(volume->getDoubleAttribute("value", 1.0));
@@ -716,6 +761,22 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
             trackIds[trackElement->getStringAttribute("id")] = track.id;
             document.tracks.push_back(std::move(track));
         }
+    }
+
+    // Second pass: wire sends now that every aux bus is known. Drop sends whose
+    // destination isn't an imported aux/effect channel.
+    for (const auto& ps : pendingSends) {
+        const auto busIt = channelToAuxBus.find(ps.destChannel);
+        if (busIt == channelToAuxBus.end())
+            continue;
+        SendInfo send;
+        send.busIndex = busIt->second;
+        send.level = ps.level;
+        send.preFader = ps.preFader;
+        if (const auto idxIt = channelToTrackIndex.find(ps.destChannel);
+            idxIt != channelToTrackIndex.end())
+            send.destTrackId = document.tracks[idxIt->second].id;
+        document.tracks[ps.sourceTrackIndex].sends.push_back(send);
     }
 
     ClipId nextClipId = 1;
