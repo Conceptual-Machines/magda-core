@@ -29,6 +29,7 @@
 #include "ui/components/pianoroll/NoteComponent.hpp"
 #include "ui/components/pianoroll/NoteGridHost.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
+#include "ui/layout/LayoutConfig.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
 
@@ -679,7 +680,7 @@ class DrumGridClipGrid : public juce::Component,
                 int playheadX = beatToPixel(displayBeat);
 
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
-                    g.setColour(juce::Colour(0xFFFF4444));
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
                     g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
                 }
             }
@@ -1116,7 +1117,7 @@ class DrumGridClipGrid : public juce::Component,
     double defaultNoteLengthBeats_ = 0.0;  // <= 0 follows current grid
     int defaultNoteVelocity_ = 100;
 
-    static constexpr int GRID_LEFT_PADDING = 2;
+    static constexpr int GRID_LEFT_PADDING = magda::LayoutConfig::MIDI_GRID_LEFT_PADDING;
     double pixelsPerBeat_ = 50.0;
     int rowHeight_ = 24;
     magda::ClipId clipId_ = magda::INVALID_CLIP_ID;

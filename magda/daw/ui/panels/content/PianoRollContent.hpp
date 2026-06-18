@@ -121,16 +121,13 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     // Zoom state (vertical — horizontal is in base)
     int noteHeight_ = DEFAULT_NOTE_HEIGHT;
 
-    // Pitch fold (#1464): collapse the vertical axis to used pitches. Shared
-    // map drives grid/keyboard/octave-strip. foldEnabled_ is static so the
-    // toggle persists across clip switches within a session (transient, not
-    // serialized — mirrors velocityDrawerOpen_/overlayTrackIds_).
-    static bool foldEnabled_;
-    magda::PitchFoldMap foldMap_;
-    // Recompute the used-pitch set from the editing clip(s) and refresh.
-    void rebuildFoldMap();
-    // Apply the current fold-enabled flag, rebuild the map, and relayout.
-    void applyFold();
+    // Pitch fold (#1464): collapse the vertical axis to used pitches. The map
+    // (foldMap_), enabled flag, rebuild/apply orchestration now live in the base
+    // MidiEditorContent so the drum grid shares them. The piano roll provides
+    // the pitch source (multi-clip union) and the fold-aware repaints/centering.
+    std::vector<int> collectUsedPitches() const override;
+    void onFoldMapChanged() override;
+    void recenterOnNotes() override;
 
     // Chord row visibility
     bool showChordRow_ = false;

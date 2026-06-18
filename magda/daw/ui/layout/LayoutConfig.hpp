@@ -68,6 +68,11 @@ struct LayoutConfig {
     // Timeline content left padding - shared across timeline, track content, automation lanes
     static constexpr int TIMELINE_LEFT_PADDING = 8;
 
+    // Left padding for the MIDI/drum grid bodies + their ruler, sized so the
+    // playhead triangle (6px half-width) at bar 1 clears the left column. Single
+    // source for both the piano-roll and drum-grid editors so they can't drift.
+    static constexpr int MIDI_GRID_LEFT_PADDING = 8;
+
     // Zoom controls
     int zoomButtonSize = 24;
     int zoomSliderMinWidth = 60;

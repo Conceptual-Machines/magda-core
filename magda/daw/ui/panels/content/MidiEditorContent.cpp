@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 #include "audio/MidiBridge.hpp"
 #include "core/ClipPropertyCommands.hpp"
@@ -22,7 +23,30 @@ namespace magda::daw::ui {
 
 // Static members — persist across editor switches
 bool MidiEditorContent::velocityDrawerOpen_ = false;
+bool MidiEditorContent::foldEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
+
+std::vector<int> MidiEditorContent::collectUsedPitches() const {
+    std::set<int> used;
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_))
+            for (const auto& note : clip->midiNotes)
+                used.insert(note.noteNumber);
+    }
+    return std::vector<int>(used.begin(), used.end());
+}
+
+void MidiEditorContent::rebuildFoldMap() {
+    foldMap_.rebuild(collectUsedPitches());
+    onFoldMapChanged();
+}
+
+void MidiEditorContent::applyFold() {
+    foldMap_.setEnabled(foldEnabled_);
+    rebuildFoldMap();
+    updateGridSize();
+    recenterOnNotes();
+}
 
 namespace {
 // Route clip timeline-seconds through the position-aware tempo facade when
