@@ -310,6 +310,13 @@ class AutomationManager : public TrackManagerListener {
     void clearLanePoints(AutomationLaneId laneId);
 
     /**
+     * @brief Replace every point on an absolute lane in one shot (fresh ids),
+     *        then notify once. Used by the tempo-lane bridge to mirror
+     *        te::Edit::tempoSequence into the lane without per-point churn.
+     */
+    void replaceLanePoints(AutomationLaneId laneId, const std::vector<AutomationPoint>& points);
+
+    /**
      * @brief Delete a point from a clip
      */
     void deletePointFromClip(AutomationClipId clipId, AutomationPointId pointId);

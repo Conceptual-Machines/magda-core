@@ -39,6 +39,9 @@ class CompiledUtilityView final : public juce::Component, public CompiledDeviceP
     void setOnLinkAmountChanged(std::function<void(int, float)> cb) override {
         onLinkAmountChanged = std::move(cb);
     }
+    void setOnShowAutomationLane(std::function<void(int)> cb) override {
+        onShowAutomationLane = std::move(cb);
+    }
     int preferredHeight() const override {
         return 320;
     }
@@ -81,6 +84,7 @@ class CompiledUtilityView final : public juce::Component, public CompiledDeviceP
     std::array<juce::TextButton, 4> btns_;
     std::function<void(int slotIndex, float amount)> onLinkRequested;
     std::function<void(int slotIndex, float amount)> onLinkAmountChanged;
+    std::function<void(int slotIndex)> onShowAutomationLane;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompiledUtilityView)
 };

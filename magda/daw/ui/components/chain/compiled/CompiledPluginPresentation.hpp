@@ -45,6 +45,9 @@ class CompiledDevicePanel {
     virtual void setOnParameterChanged(std::function<void(int slotIndex, float displayValue)>) = 0;
     virtual void setOnLinkRequested(std::function<void(int slotIndex, float amount)>) {}
     virtual void setOnLinkAmountChanged(std::function<void(int slotIndex, float amount)>) {}
+    /// Host wiring: invoked when the panel wants the automation lane for one of
+    /// its slots shown (e.g. a right-click "Show Automation Lane" on a control).
+    virtual void setOnShowAutomationLane(std::function<void(int slotIndex)>) {}
     virtual int preferredHeight() const = 0;
 
     /// True when the panel wants the host slot to hide its param grid and

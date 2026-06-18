@@ -16,11 +16,14 @@
 #include "MagdaUIBehaviour.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "PluginWindowManager.hpp"
+#include "TempoLaneSync.hpp"
 #include "TracktionEngineWrapper.hpp"
+#include "TracktionTempoMap.hpp"
 
 namespace magda {
 
-TracktionEngineWrapper::TracktionEngineWrapper() = default;
+TracktionEngineWrapper::TracktionEngineWrapper()
+    : tempoMap_(std::make_unique<TracktionTempoMap>([this] { return getEdit(); })) {}
 
 TracktionEngineWrapper::~TracktionEngineWrapper() {
     shutdown();
@@ -328,6 +331,13 @@ void TracktionEngineWrapper::createEditAndBridges() {
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_);
     audioBridge_->syncAll();
 
+#ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC
+    // Keep the edit-scoped Tempo automation lane and tempoSequence in sync.
+    // Disabled in test builds (the shared engine would attach to the
+    // AutomationManager singleton and perturb other tests).
+    tempoLaneSync_ = std::make_unique<TempoLaneSync>(*currentEdit_);
+#endif
+
     // Create SessionClipScheduler and PluginWindowManager only when NOT in headless CI
     // Both extend juce::Timer which creates GUI infrastructure and leaks in tests
     // Check: Skip if DISPLAY env var not set (Linux headless) or if explicitly disabled
@@ -541,6 +551,10 @@ void TracktionEngineWrapper::shutdown() {
             audioBridge_->setPluginWindowManager(nullptr);
         pluginWindowManager_.reset();
     }
+
+    // Detach the Tempo lane sync first (it listens to tempoSequence + the
+    // AutomationManager singleton, and holds an Edit reference).
+    tempoLaneSync_.reset();
 
     // Destroy session scheduler before AudioBridge (it references both)
     if (sessionScheduler_) {

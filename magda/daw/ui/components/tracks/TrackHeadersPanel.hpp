@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../../themes/MixerLookAndFeel.hpp"
+#include "../automation/AutomationLaneHeader.hpp"
 #include "../common/DraggableValueLabel.hpp"
 #include "../common/SideColumn.hpp"
 #include "../common/SvgButton.hpp"
@@ -207,18 +208,10 @@ class TrackHeadersPanel : public juce::Component,
     std::vector<TrackId> visibleTrackIds_;  // Track IDs in display order
     std::unordered_map<TrackId, std::vector<AutomationLaneId>> visibleAutomationLanes_;
 
-    // Per-lane header buttons (snap beat grid / snap value / bypass / delete).
-    // All four are custom LaneHeaderButton subclasses defined in the .cpp, but
-    // the struct only needs to hold them as juce::Button base pointers. Real
+    // Per-lane header buttons (snap beat grid / snap value / bypass / delete),
+    // shared with the master automation band via AutomationLaneHeader. Real
     // child components — rebuilt on automationLanesChanged and positioned in
     // updateTrackHeaderLayout.
-    struct AutoLaneHeaderButtons {
-        AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
-        std::unique_ptr<juce::Button> snapEditGridBtn;
-        std::unique_ptr<juce::Button> snapValueBtn;
-        std::unique_ptr<juce::Button> bypassBtn;
-        std::unique_ptr<juce::Button> deleteBtn;
-    };
     std::vector<std::unique_ptr<AutoLaneHeaderButtons>> laneHeaderButtons_;
     std::unordered_set<int> selectedTrackIndices_;
 

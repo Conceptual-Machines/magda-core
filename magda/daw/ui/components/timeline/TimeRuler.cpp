@@ -917,7 +917,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             int playheadX = timeToPixel(displayTime);
             if (playheadX >= 0 && playheadX <= width) {
                 int tickAreaTop = height - tickHeightMajor();
-                g.setColour(juce::Colour(0xFFFF4444));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
                 g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
             }
         }

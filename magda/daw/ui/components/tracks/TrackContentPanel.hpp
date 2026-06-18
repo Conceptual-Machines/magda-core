@@ -386,16 +386,10 @@ class TrackContentPanel : public juce::Component,
     std::vector<AutomationLaneEntry> automationLaneComponents_;
     std::unordered_map<TrackId, std::vector<AutomationLaneId>> visibleAutomationLanes_;
 
-    // Edit-scoped lanes (Tempo, ...) have no owning track. They render in a
-    // single pinned block at the very top of the content, above all tracks.
-    std::vector<AutomationLaneEntry> globalLaneComponents_;
-
     void syncAutomationLaneVisibility();
     void rebuildAutomationLaneComponents();
     void updateAutomationLanePositions();
     int getVisibleAutomationLanesHeight(TrackId trackId) const;
-    // Total height of the pinned global-lane block at the top of the content.
-    int getGlobalLanesHeight() const;
     bool getAutomationLaneStripAtY(int y, int& trackIndex, AutomationLaneId& laneId) const;
 
     // ========================================================================

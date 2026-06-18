@@ -12,11 +12,17 @@ namespace magda {
 
 namespace {
 
+// Route through the position-aware tempo facade when wired (message thread);
+// fall back to constant-tempo bpm only before injection.
 double clipTimelineStart(const ClipInfo& clip, double bpm) {
+    if (auto* tc = TimelineController::getCurrent(); tc && tc->tempoMap())
+        return clip.getTimelineStart(*tc->tempoMap());
     return clip.getTimelineStart(bpm);
 }
 
 double clipTimelineEnd(const ClipInfo& clip, double bpm) {
+    if (auto* tc = TimelineController::getCurrent(); tc && tc->tempoMap())
+        return clip.getTimelineEnd(*tc->tempoMap());
     return clip.getTimelineEnd(bpm);
 }
 

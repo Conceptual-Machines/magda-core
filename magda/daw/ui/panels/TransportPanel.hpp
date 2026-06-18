@@ -68,6 +68,9 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     void setTimeSelection(double startTime, double endTime, bool hasSelection);
     void setLoopRegion(double startTime, double endTime, bool loopEnabled);
     void setTempo(double bpm);
+    // Display-only: update just the BPM readout (e.g. to follow a tempo curve
+    // during playback) without touching the conversion base or other displays.
+    void setLiveTempoDisplay(double bpm);
     void setTimeSignature(int numerator, int denominator);
     void setSnapEnabled(bool enabled);
     void setCountInMode(int mode);

@@ -40,16 +40,14 @@ static float gainToDb(float gain) {
 
 static double deviceCurrentValueToLaneNormalized(float currentValue,
                                                  const ParameterInfo& paramInfo) {
-    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
-    const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
-                                    std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
-
-    if (teSpan > 0.0f && !infoMatchesTeRange) {
-        return juce::jlimit(0.0, 1.0,
-                            static_cast<double>((currentValue - paramInfo.teMinValue) / teSpan));
-    }
-
-    return static_cast<double>(ParameterUtils::realToNormalized(currentValue, paramInfo));
+    // Symmetric inverse of the playback writeback (normalizedToModelValue), so
+    // the seed point matches where the curve will drive the param. Crucially
+    // this honours isDisplayMappedInternalValue: compiled/internal params whose
+    // stored currentValue is in display units (e.g. the Utility gain in dB,
+    // teMin/teMax left at 0..1) map through realToNormalized instead of being
+    // treated as raw TE-native — otherwise 0 dB seeded the lane at 0.0 (-inf).
+    return static_cast<double>(
+        ParameterUtils::modelToNormalizedValue(ParameterModelValue{currentValue}, paramInfo).value);
 }
 
 // Get current normalized value for an automation target
@@ -734,6 +732,24 @@ void AutomationManager::clearLanePoints(AutomationLaneId laneId) {
     notifyPointsChanged(laneId);
 }
 
+void AutomationManager::replaceLanePoints(AutomationLaneId laneId,
+                                          const std::vector<AutomationPoint>& points) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isAbsolute())
+        return;
+
+    lane->absolutePoints.clear();
+    lane->absolutePoints.reserve(points.size());
+    for (auto p : points) {
+        p.id = nextPointId_++;
+        p.beatPosition = juce::jmax(0.0, p.beatPosition);
+        p.value = juce::jlimit(0.0, 1.0, p.value);
+        lane->absolutePoints.push_back(p);
+    }
+    sortPoints(lane->absolutePoints);
+    notifyPointsChanged(laneId);
+}
+
 void AutomationManager::deletePointFromClip(AutomationClipId clipId, AutomationPointId pointId) {
     auto* clip = getClip(clipId);
     if (!clip)
@@ -936,6 +952,15 @@ static double interpolateWithTension(double t, double v1, double v2, double tens
     return v1 + curvedT * (v2 - v1);
 }
 
+// Quadratic bezier through the segment shaper's apex (both handles point to it),
+// matching AutomationCurveEditor's quadraticTo rendering so what you see and
+// what plays back agree. t is the x-fraction along the segment.
+static double interpolateShaper(double t, const AutomationPoint& p1, const AutomationPoint& p2) {
+    const double apex = p1.value + p1.outHandle.value;
+    const double mt = 1.0 - t;
+    return mt * mt * p1.value + 2.0 * mt * t * apex + t * t * p2.value;
+}
+
 double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& points,
                                             double beatPosition) const {
     if (points.empty())
@@ -964,7 +989,10 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
 
             switch (p1.curveType) {
                 case AutomationCurveType::Linear:
-                    // Use tension-based interpolation
+                    // The shaper bends a Linear segment via bezier handles; fall
+                    // back to the tension scalar only when no handle is stored.
+                    if (!p1.outHandle.isZero() || !p2.inHandle.isZero())
+                        return interpolateShaper(t, p1, p2);
                     return interpolateWithTension(t, p1.value, p2.value, p1.tension);
 
                 case AutomationCurveType::Bezier:
@@ -972,6 +1000,21 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
 
                 case AutomationCurveType::Step:
                     return p1.value;  // Hold until next point
+
+                case AutomationCurveType::HardCorner: {
+                    // Two straight segments meeting at the apex (from the
+                    // shaper handle), or the midpoint when no apex was dragged.
+                    double apexT = 0.5;
+                    double apexValue = (p1.value + p2.value) * 0.5;
+                    if (!p1.outHandle.isZero()) {
+                        apexT =
+                            juce::jlimit(1.0e-4, 1.0 - 1.0e-4, p1.outHandle.beatOffset / duration);
+                        apexValue = p1.value + p1.outHandle.value;
+                    }
+                    if (t < apexT)
+                        return p1.value + (t / apexT) * (apexValue - p1.value);
+                    return apexValue + ((t - apexT) / (1.0 - apexT)) * (p2.value - apexValue);
+                }
             }
         }
     }

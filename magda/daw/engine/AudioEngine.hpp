@@ -5,6 +5,7 @@
 
 #include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../core/ClipTypes.hpp"
+#include "../core/TempoMap.hpp"
 #include "../ui/state/TransportStateListener.hpp"
 
 namespace juce {
@@ -90,6 +91,15 @@ class AudioEngine : public AudioEngineListener {
     virtual void setTempo(double bpm) = 0;
     virtual double getTempo() const = 0;
     virtual void setTimeSignature(int numerator, int denominator) = 0;
+
+    /** Position-aware beats<->seconds facade backed by the engine's tempo
+        sequence (the single source of truth). The UI injects this into
+        TimelineController so every conversion walks the tempo curve. The
+        returned pointer is owned by the engine and valid for its lifetime.
+        Defaults to null for engines/mocks that don't provide one. */
+    virtual const TempoMap* tempoMap() const {
+        return nullptr;
+    }
 
     // ===== Loop =====
     virtual void setLooping(bool enabled) = 0;

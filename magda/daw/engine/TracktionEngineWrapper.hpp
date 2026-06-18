@@ -25,6 +25,8 @@ class PluginScanCoordinator;
 class PluginWindowManager;
 class SessionClipScheduler;
 class SessionRecorder;
+class TracktionTempoMap;
+class TempoLaneSync;
 
 /**
  * @brief Tracktion Engine implementation of AudioEngine
@@ -111,6 +113,7 @@ class TracktionEngineWrapper : public AudioEngine,
 #endif
     void setTempo(double bpm) override;
     double getTempo() const override;
+    const TempoMap* tempoMap() const override;
     void setTimeSignature(int numerator, int denominator) override;
     void getTimeSignature(int& numerator, int& denominator) const override;
     void setLooping(bool enabled) override;
@@ -511,6 +514,14 @@ class TracktionEngineWrapper : public AudioEngine,
     // Tracktion Engine components
     std::unique_ptr<tracktion::Engine> engine_;
     std::unique_ptr<tracktion::Edit> currentEdit_;
+
+    // Position-aware beats<->seconds facade over currentEdit_->tempoSequence.
+    // Resolves the current Edit lazily so it survives Edit recreation.
+    std::unique_ptr<TracktionTempoMap> tempoMap_;
+
+    // Keeps the edit-scoped Tempo automation lane in sync with
+    // currentEdit_->tempoSequence (both directions). Recreated per Edit.
+    std::unique_ptr<TempoLaneSync> tempoLaneSync_;
 
     // Audio bridge for TrackManager synchronization
     std::unique_ptr<AudioBridge> audioBridge_;

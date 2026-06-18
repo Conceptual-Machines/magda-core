@@ -684,6 +684,24 @@ void ParamSlotComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
+void ParamSlotComponent::showContextMenu() {
+    showParamLinkMenu(this, buildLinkContext(),
+                      {.onModUnlinked = onModUnlinked,
+                       .onRackModUnlinked = onRackModUnlinked,
+                       .onTrackModUnlinked = onTrackModUnlinked,
+                       .onModLinkedWithAmount = onModLinkedWithAmount,
+                       .onMacroLinked = onMacroLinked,
+                       .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
+                       .onMacroUnlinked = onMacroUnlinked,
+                       .onRackMacroLinked = onRackMacroLinked,
+                       .onTrackMacroLinked = onTrackMacroLinked,
+                       .onRackMacroUnlinked = onRackMacroUnlinked,
+                       .onTrackMacroUnlinked = onTrackMacroUnlinked,
+                       .onShowAutomationLane = onShowAutomationLane,
+                       .onMidiLearn = onMidiLearn,
+                       .onMidiClear = onMidiClear});
+}
+
 void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
     // Right-click — show link menu (value slider handles its own via onRightClicked;
     // discrete/bool controls use their native right-click)
@@ -696,21 +714,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             boolToggle_->getBounds().contains(e.getPosition())) {
             return;
         }
-        showParamLinkMenu(this, buildLinkContext(),
-                          {.onModUnlinked = onModUnlinked,
-                           .onRackModUnlinked = onRackModUnlinked,
-                           .onTrackModUnlinked = onTrackModUnlinked,
-                           .onModLinkedWithAmount = onModLinkedWithAmount,
-                           .onMacroLinked = onMacroLinked,
-                           .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
-                           .onMacroUnlinked = onMacroUnlinked,
-                           .onRackMacroLinked = onRackMacroLinked,
-                           .onTrackMacroLinked = onTrackMacroLinked,
-                           .onRackMacroUnlinked = onRackMacroUnlinked,
-                           .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                           .onShowAutomationLane = onShowAutomationLane,
-                           .onMidiLearn = onMidiLearn,
-                           .onMidiClear = onMidiClear});
+        showContextMenu();
         return;
     }
 

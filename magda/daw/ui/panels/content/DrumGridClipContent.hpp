@@ -88,6 +88,11 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void setGridPhasePreview(double beats, bool active) override;
     void applyOverlayTracks() override;
 
+    // Fold hooks (base owns foldEnabled_/applyFold): drum fold filters the pad
+    // rows to those that have notes rather than using the pitch fold map.
+    void onFoldMapChanged() override;
+    void recenterOnNotes() override;
+
     // Override velocity lane methods
     void updateVelocityLane() override;
 
@@ -120,6 +125,8 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
 
     // Components (DrumGrid-specific)
     std::unique_ptr<DrumGridClipGrid> gridComponent_;
+    std::unique_ptr<magda::SvgButton> foldToggle_;
+    std::unique_ptr<magda::SvgButton> ccLanesBtn_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
     std::unique_ptr<DrumGridLabelDivider> labelDivider_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;

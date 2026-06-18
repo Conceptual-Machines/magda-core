@@ -56,6 +56,11 @@ class AutomationLaneComponent : public juce::Component,
     void setPixelsPerBeat(double ppb);
     void setTempoBPM(double bpm);
 
+    // Place the resize handle on the top edge (and invert the drag direction)
+    // instead of the bottom. Used by bottom-anchored hosts such as the master
+    // automation band, which grows upward, so the grab edge tracks the growth.
+    void setResizeHandleAtTop(bool atTop);
+
     // Height management
     int getPreferredHeight() const;
     bool isExpanded() const;
@@ -67,7 +72,7 @@ class AutomationLaneComponent : public juce::Component,
     // Header dimensions
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int MIN_LANE_HEIGHT = 40;
-    static constexpr int MAX_LANE_HEIGHT = 200;
+    static constexpr int MAX_LANE_HEIGHT = 300;
     static constexpr int DEFAULT_LANE_HEIGHT = 60;
     static constexpr int RESIZE_HANDLE_HEIGHT = 5;
     static constexpr int SCALE_LABEL_WIDTH =
@@ -98,10 +103,11 @@ class AutomationLaneComponent : public juce::Component,
     double pixelsPerBeat_ = 10.0;
     double tempoBPM_ = 120.0;
     bool isSelected_ = false;
+    bool resizeHandleAtTop_ = false;
 
     // Resize state
     bool isResizing_ = false;
-    int resizeStartY_ = 0;
+    int resizeStartScreenY_ = 0;
     int resizeStartHeight_ = 0;
 
     // Header strip time-selection state
@@ -124,6 +130,12 @@ class AutomationLaneComponent : public juce::Component,
 
     // Get lane info
     const AutomationLaneInfo* getLaneInfo() const;
+
+    // Y of the header strip's top edge: below the resize handle in top-handle
+    // mode, otherwise the component's top.
+    int headerTop() const {
+        return resizeHandleAtTop_ ? RESIZE_HANDLE_HEIGHT : 0;
+    }
 
     // Resize helpers
     bool isInResizeArea(int y) const;

@@ -261,22 +261,20 @@ void ValueLabelControl::paint(juce::Graphics& g) {
                                         ? juce::Colour(DarkTheme::TEXT_DISABLED)
                                         : juce::Colour(DarkTheme::ACCENT_PURPLE);
 
-    if (hasTint && drawBackground_) {
+    if (hasTint) {
+        // Automation highlight: a self-contained overlay (fill + outline) drawn
+        // whenever the control is bound to active automation, independent of the
+        // base style — so it shows even on borderless / transparent labels.
         g.setColour(tintColour.withAlpha(0.18f * alpha));
         g.fillRoundedRectangle(bounds, 2.0f);
-    }
-
-    if (drawBorder_) {
-        juce::Colour borderColour;
-        if (hasTint)
-            borderColour = tintColour;
-        else if (dragging_ || coEditing_)
-            borderColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-        else
-            borderColour = DarkTheme::getColour(DarkTheme::BORDER);
-
+        g.setColour(tintColour.withMultipliedAlpha(alpha));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.5f);
+    } else if (drawBorder_) {
+        const juce::Colour borderColour = (dragging_ || coEditing_)
+                                              ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                              : DarkTheme::getColour(DarkTheme::BORDER);
         g.setColour(borderColour.withMultipliedAlpha(alpha));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, hasTint ? 1.5f : 1.0f);
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
     }
 
     if (!editor_ && showText_) {

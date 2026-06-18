@@ -3,6 +3,8 @@
 # parent CMakeLists; everything else is library code linked into magda_daw.
 
 target_sources(magda_daw PRIVATE
+    TempoLaneBridge.cpp
+    TempoLaneSync.cpp
     TracktionEngineWrapper.cpp
     TracktionEngineWrapperInit.cpp
     TracktionEngineWrapperDevices.cpp

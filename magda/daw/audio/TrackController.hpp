@@ -59,6 +59,16 @@ class TrackController {
     te::AudioTrack* getAudioTrack(TrackId trackId) const;
 
     /**
+     * @brief Get the edit's master volume/pan plugin.
+     *
+     * The master channel is not a te::AudioTrack, so its level lives on the
+     * edit's master plugin rather than a track's VolumeAndPanPlugin. Used to
+     * resolve master-volume automation to a te::AutomatableParameter.
+     * @return The master VolumeAndPanPlugin, or nullptr if not available.
+     */
+    te::VolumeAndPanPlugin* getMasterVolumePlugin() const;
+
+    /**
      * @brief Create a Tracktion AudioTrack for a MAGDA track
      * @param trackId MAGDA track ID
      * @param name Track name

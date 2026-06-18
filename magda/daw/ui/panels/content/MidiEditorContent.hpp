@@ -8,6 +8,8 @@
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
 #include "core/GestureRouter.hpp"
+#include "ui/components/pianoroll/PitchFoldMap.hpp"
+#include "ui/layout/LayoutConfig.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineState.hpp"
 
@@ -162,8 +164,11 @@ class MidiEditorContent : public PanelContent,
     void updateGridResolution();
 
     // --- Layout constants ---
-    static constexpr int RULER_HEIGHT = 48;
-    static constexpr int GRID_LEFT_PADDING = 2;
+    static constexpr int RULER_HEIGHT = 34;
+    // Single source in LayoutConfig so the piano-roll and drum-grid bodies +
+    // ruler share one padding and can't drift (leaves room for the bar-1
+    // playhead triangle clear of the left column).
+    static constexpr int GRID_LEFT_PADDING = magda::LayoutConfig::MIDI_GRID_LEFT_PADDING;
     static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;
     static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;
     static constexpr int DEFAULT_DRAWER_HEIGHT = 100;
@@ -191,6 +196,23 @@ class MidiEditorContent : public PanelContent,
     bool isVelocityDrawerVisible() const {
         return velocityDrawerOpen_;
     }
+
+    // --- Fold (shared): collapse the vertical axis to the clip's used pitches
+    //     (piano roll: used notes; drum grid: used pads). foldEnabled_ is static
+    //     so the toggle persists across editor/clip switches within a session
+    //     (transient, not serialized). Subclasses wire their grid/keyboard/row
+    //     components to &foldMap_ once and repaint via onFoldMapChanged(). ---
+    static bool foldEnabled_;
+    magda::PitchFoldMap foldMap_;
+    void rebuildFoldMap();
+    void applyFold();
+    // Default gathers the editing clip's note numbers; the piano roll overrides
+    // to union across a multi-clip selection.
+    virtual std::vector<int> collectUsedPitches() const;
+    // Subclass repaints its fold-aware components (grid + left column).
+    virtual void onFoldMapChanged() {}
+    // Subclass scrolls the used rows back into view after a fold toggle.
+    virtual void recenterOnNotes() {}
 
     // --- Loop drag state (visual preview during drag, commit on mouseUp) ---
     bool draggingLoopRegion_ = false;

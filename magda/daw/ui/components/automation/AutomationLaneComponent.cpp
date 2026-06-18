@@ -43,6 +43,10 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
     juce::Colour bgColour = isSelected_ ? juce::Colour(0xFF2A2A2A) : juce::Colour(0xFF1E1E1E);
     g.fillAll(bgColour);
 
+    // Reserve the top handle strip first (top-handle hosts), so the header
+    // background lines up with the one the header column paints.
+    bounds.removeFromTop(headerTop());
+
     // Header area - just a simple background (name is painted by TrackHeadersPanel)
     auto headerBounds = bounds.removeFromTop(HEADER_HEIGHT);
     g.setColour(juce::Colour(0xFF252525));
@@ -50,21 +54,25 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
 
     // Header border
     g.setColour(juce::Colour(0xFF333333));
-    g.drawHorizontalLine(HEADER_HEIGHT - 1, 0.0f, static_cast<float>(getWidth()));
+    g.drawHorizontalLine(headerBounds.getBottom() - 1, 0.0f, static_cast<float>(getWidth()));
 
-    // Bottom border / resize handle area
+    // Resize handle strip: bottom edge by default, top edge for bottom-anchored
+    // hosts (the master automation band).
     auto resizeArea = getResizeHandleArea();
     g.setColour(juce::Colour(0xFF333333));
     g.fillRect(resizeArea);
     g.setColour(juce::Colour(0xFF444444));
-    g.drawHorizontalLine(getHeight() - RESIZE_HANDLE_HEIGHT, 0.0f, static_cast<float>(getWidth()));
+    int handleLineY =
+        resizeHandleAtTop_ ? RESIZE_HANDLE_HEIGHT - 1 : getHeight() - RESIZE_HANDLE_HEIGHT;
+    g.drawHorizontalLine(handleLineY, 0.0f, static_cast<float>(getWidth()));
 }
 
 void AutomationLaneComponent::paintOverChildren(juce::Graphics& g) {
     // Scale labels in the left padding area - painted AFTER children so they appear on top
     auto scaleBounds = getLocalBounds();
-    scaleBounds.removeFromTop(HEADER_HEIGHT);
-    scaleBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
+    scaleBounds.removeFromTop(headerTop() + HEADER_HEIGHT);
+    if (!resizeHandleAtTop_)
+        scaleBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
     scaleBounds.setWidth(SCALE_LABEL_WIDTH);
     paintScaleLabels(g, scaleBounds);
 }
@@ -72,12 +80,15 @@ void AutomationLaneComponent::paintOverChildren(juce::Graphics& g) {
 void AutomationLaneComponent::resized() {
     auto bounds = getLocalBounds();
 
-    // Skip header area (name is painted by TrackHeadersPanel)
-    bounds.removeFromTop(HEADER_HEIGHT);
+    // Skip the top handle strip (top-handle hosts) and the header area (name is
+    // painted by the header column).
+    bounds.removeFromTop(headerTop() + HEADER_HEIGHT);
 
-    // Content area (leave room for resize handle at bottom)
+    // Content area. A bottom handle eats into the content; a top handle was
+    // already reserved above, so the content runs to the bottom edge.
     auto contentBounds = bounds;
-    contentBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
+    if (!resizeHandleAtTop_)
+        contentBounds.removeFromBottom(RESIZE_HANDLE_HEIGHT);
 
     // Curve editor starts after scale labels
     if (curveEditor_) {
@@ -93,7 +104,9 @@ void AutomationLaneComponent::mouseDown(const juce::MouseEvent& e) {
     // Check for resize handle
     if (isInResizeArea(e.y)) {
         isResizing_ = true;
-        resizeStartY_ = e.y;
+        // Track in screen space: a top-edge resize moves this component while we
+        // drag, so a component-local delta would collapse to zero.
+        resizeStartScreenY_ = e.getScreenPosition().y;
         const auto* lane = getLaneInfo();
         resizeStartHeight_ = lane ? lane->height : DEFAULT_LANE_HEIGHT;
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
@@ -101,7 +114,8 @@ void AutomationLaneComponent::mouseDown(const juce::MouseEvent& e) {
     }
 
     // Right-click on header shows context menu
-    if (e.y < HEADER_HEIGHT && e.mods.isPopupMenu()) {
+    const bool inHeader = e.y >= headerTop() && e.y < headerTop() + HEADER_HEIGHT;
+    if (inHeader && e.mods.isPopupMenu()) {
         showContextMenu();
         return;
     }
@@ -118,7 +132,7 @@ void AutomationLaneComponent::mouseDown(const juce::MouseEvent& e) {
     }
 
     // Click on header selects lane
-    if (e.y < HEADER_HEIGHT) {
+    if (inHeader) {
         SelectionManager::getInstance().selectAutomationLane(laneId_);
     }
 }
@@ -137,7 +151,10 @@ void AutomationLaneComponent::mouseDrag(const juce::MouseEvent& e) {
     }
 
     if (isResizing_) {
-        int deltaY = e.y - resizeStartY_;
+        int deltaY = e.getScreenPosition().y - resizeStartScreenY_;
+        // A top-edge handle grows the lane as the pointer moves up.
+        if (resizeHandleAtTop_)
+            deltaY = -deltaY;
         int newHeight = juce::jlimit(MIN_LANE_HEIGHT, MAX_LANE_HEIGHT, resizeStartHeight_ + deltaY);
 
         // Update lane height in AutomationManager
@@ -183,11 +200,13 @@ void AutomationLaneComponent::mouseMove(const juce::MouseEvent& e) {
 }
 
 bool AutomationLaneComponent::isInResizeArea(int y) const {
+    if (resizeHandleAtTop_)
+        return y < RESIZE_HANDLE_HEIGHT;
     return y >= getHeight() - RESIZE_HANDLE_HEIGHT;
 }
 
 bool AutomationLaneComponent::isInTimeSelectionStrip(int x, int y) const {
-    return y >= 0 && y < HEADER_HEIGHT && x >= SCALE_LABEL_WIDTH;
+    return y >= headerTop() && y < headerTop() + HEADER_HEIGHT && x >= SCALE_LABEL_WIDTH;
 }
 
 double AutomationLaneComponent::xToBeat(int x) const {
@@ -208,8 +227,16 @@ bool AutomationLaneComponent::hitTest(int x, int y) {
 }
 
 juce::Rectangle<int> AutomationLaneComponent::getResizeHandleArea() const {
-    return juce::Rectangle<int>(0, getHeight() - RESIZE_HANDLE_HEIGHT, getWidth(),
-                                RESIZE_HANDLE_HEIGHT);
+    int y = resizeHandleAtTop_ ? 0 : getHeight() - RESIZE_HANDLE_HEIGHT;
+    return juce::Rectangle<int>(0, y, getWidth(), RESIZE_HANDLE_HEIGHT);
+}
+
+void AutomationLaneComponent::setResizeHandleAtTop(bool atTop) {
+    if (resizeHandleAtTop_ == atTop)
+        return;
+    resizeHandleAtTop_ = atTop;
+    resized();
+    repaint();
 }
 
 // AutomationManagerListener
@@ -338,8 +365,8 @@ void AutomationLaneComponent::rebuildClipComponents() {
 
 void AutomationLaneComponent::updateClipPositions() {
     auto& manager = AutomationManager::getInstance();
-    int contentY = HEADER_HEIGHT;
-    int contentHeight = getHeight() - HEADER_HEIGHT - RESIZE_HANDLE_HEIGHT;
+    int contentY = headerTop() + HEADER_HEIGHT;
+    int contentHeight = getHeight() - contentY - (resizeHandleAtTop_ ? 0 : RESIZE_HANDLE_HEIGHT);
 
     for (auto& cc : clipComponents_) {
         const auto* clip = manager.getClip(cc->getClipId());

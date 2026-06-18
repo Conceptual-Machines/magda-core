@@ -34,9 +34,6 @@
 
 namespace magda::daw::ui {
 
-// Transient session state: fold persists across clip switches within a run.
-bool PianoRollContent::foldEnabled_ = false;
-
 PianoRollContent::PianoRollContent() {
     setName("PianoRoll");
     if (timeRuler_)
@@ -311,20 +308,18 @@ void PianoRollContent::refreshTakeLanes() {
     takeLanes_->setScrollOffset(viewport_ ? viewport_->getViewPositionX() : 0);
 }
 
-void PianoRollContent::rebuildFoldMap() {
-    // Collect the used pitches from the editing clip, or the union across all
-    // selected clips in multi-clip mode. Folding only reflects the editable
-    // clip(s)' own notes (not ghost-overlay tracks).
+std::vector<int> PianoRollContent::collectUsedPitches() const {
+    // Union of used pitches across the editing clip, or all selected clips in
+    // multi-clip mode. Folding only reflects the editable clip(s)' own notes
+    // (not ghost-overlay tracks).
     std::set<int> usedPitches;
     auto& clipManager = magda::ClipManager::getInstance();
-
     const auto& selectedClipIds =
         gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
     auto collect = [&](magda::ClipId id) {
-        if (const auto* clip = clipManager.getClip(id)) {
+        if (const auto* clip = clipManager.getClip(id))
             for (const auto& note : clip->midiNotes)
                 usedPitches.insert(note.noteNumber);
-        }
     };
     if (selectedClipIds.size() > 1) {
         for (magda::ClipId id : selectedClipIds)
@@ -332,33 +327,25 @@ void PianoRollContent::rebuildFoldMap() {
     } else if (editingClipId_ != magda::INVALID_CLIP_ID) {
         collect(editingClipId_);
     }
-
-    foldMap_.rebuild(std::vector<int>(usedPitches.begin(), usedPitches.end()));
-
-    // When folded, the keyboard and octave strip must redraw to follow the new
-    // row set (the grid repaints via its own setSize). Skip when unfolded — the
-    // 0..127 axis never changes, so there's nothing to refresh.
-    if (foldMap_.isEnabled()) {
-        if (keyboard_)
-            keyboard_->repaint();
-        if (octaveLabelStrip_)
-            octaveLabelStrip_->repaint();
-    }
+    return std::vector<int>(usedPitches.begin(), usedPitches.end());
 }
 
-void PianoRollContent::applyFold() {
-    foldMap_.setEnabled(foldEnabled_);
-    rebuildFoldMap();
-    updateGridSize();
+void PianoRollContent::onFoldMapChanged() {
+    // Keyboard / octave strip / grid follow the new row set.
     if (gridComponent_)
         gridComponent_->repaint();
     if (keyboard_)
         keyboard_->repaint();
     if (octaveLabelStrip_)
         octaveLabelStrip_->repaint();
-    // After a fold change the content height jumps; bring used rows into view.
-    if (needsInitialCentering_ || foldMap_.isActive())
-        centerOnNotes();
+}
+
+void PianoRollContent::recenterOnNotes() {
+    // After a fold toggle the content height jumps and the previous scroll maps
+    // to a wildly different pitch (folded rows expand back across the full
+    // 0..127 axis, so a folded view sitting on octave 4 lands on octave 7/8 when
+    // unfolded). Recenter on the notes whichever way we toggled.
+    centerOnNotes();
 }
 
 void PianoRollContent::updateCcLanesButtonState() {
@@ -1592,6 +1579,30 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
+
+    // Hairline dividers framing the icon clusters: the top tool group (chord /
+    // fold / takes) and the bottom lane-toggle group (pitch-glide / CC /
+    // velocity). Layout mirrors resized() so the lines sit in the gaps.
+    const int iconSize = 22;
+    const int padding = (SIDEBAR_WIDTH - iconSize) / 2;
+    const int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
+
+    int topClusterBottom = chordToggleY + iconSize;  // chord only
+    if (foldToggle_)
+        topClusterBottom = chordToggleY + iconSize + padding + iconSize;
+    if (takeLanesToggle_ && takeLanesToggle_->isVisible())
+        topClusterBottom = chordToggleY + 2 * (iconSize + padding) + iconSize;
+
+    const int bottomClusterTop = getHeight() - 3 * (iconSize + padding);
+    const int topDividerY = topClusterBottom + padding / 2;
+    const int bottomDividerY = bottomClusterTop - padding / 2;
+
+    const float x1 = static_cast<float>(area.getX() + 5);
+    const float x2 = static_cast<float>(area.getRight() - 5);
+    if (bottomDividerY - topDividerY > padding) {
+        g.drawHorizontalLine(topDividerY, x1, x2);
+        g.drawHorizontalLine(bottomDividerY, x1, x2);
+    }
 }
 
 void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area) {

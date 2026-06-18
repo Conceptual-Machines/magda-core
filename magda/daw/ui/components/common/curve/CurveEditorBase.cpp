@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 
+#include "core/UndoManager.hpp"
 #include "magda/daw/ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -633,6 +634,9 @@ void CurveEditorBase::updateSegmentShaperFromPixel(uint32_t pointId, double pixe
         if (snapYToGrid)
             sy = juce::jlimit(0.0, 1.0, snapYToGrid(sy));
 
+        // Tension-only mode (e.g. the tempo lane): collapse the 2-D apex drag to
+        // a single per-segment tension scalar, which is all the backing store
+        // can hold. Derived by inverting getSegmentShaperPosition's t=0.5 curve.
         shaperPreviewPointId_ = isPreview ? pointId : INVALID_CURVE_POINT_ID;
         shaperPreviewX_ = sx;
         shaperPreviewY_ = sy;
@@ -678,6 +682,9 @@ void CurveEditorBase::toggleSegmentHardCorner(uint32_t pointId) {
     if (pointId == INVALID_CURVE_POINT_ID)
         return;
 
+    // Hard corner is a per-segment property stored on the left point: toggle the
+    // segment between a smooth/linear curve and a sharp kink (two straight
+    // segments meeting at the draggable apex).
     CurveType currentType = CurveType::Linear;
     for (const auto& point : getPoints()) {
         if (point.id == pointId) {
@@ -685,12 +692,8 @@ void CurveEditorBase::toggleSegmentHardCorner(uint32_t pointId) {
             break;
         }
     }
-
-    CurveType newType =
+    const CurveType newType =
         currentType == CurveType::HardCorner ? CurveType::Linear : CurveType::HardCorner;
-    DBG("[HardCorner] right-click segment pointId=" << static_cast<int>(pointId)
-                                                    << " oldType=" << getCurveTypeName(currentType)
-                                                    << " newType=" << getCurveTypeName(newType));
 
     previewPointId_ = INVALID_CURVE_POINT_ID;
     tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;

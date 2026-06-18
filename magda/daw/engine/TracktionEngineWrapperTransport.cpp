@@ -6,6 +6,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/ViewModeController.hpp"
 #include "TracktionEngineWrapper.hpp"
+#include "TracktionTempoMap.hpp"
 
 namespace magda {
 
@@ -240,6 +241,10 @@ double TracktionEngineWrapper::getTempo() const {
         return currentEdit_->tempoSequence.getTempoAt(timePos).getBpm();
     }
     return DEFAULT_BPM;
+}
+
+const TempoMap* TracktionEngineWrapper::tempoMap() const {
+    return tempoMap_.get();
 }
 
 void TracktionEngineWrapper::setTimeSignature(int numerator, int denominator) {

@@ -2,6 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "AutomationPointInspector.hpp"
 #include "ClipInspector.hpp"
 #include "DeviceInspector.hpp"
 #include "InspectorFactory.hpp"
@@ -138,6 +139,14 @@ void InspectorContainer::chainNodeSelectionChanged(const magda::ChainNodePath& p
     }
 }
 
+void InspectorContainer::automationPointSelectionChanged(
+    const magda::AutomationPointSelection& selection) {
+    auto* inspector = dynamic_cast<AutomationPointInspector*>(currentInspector_.get());
+    if (inspector) {
+        inspector->setSelectedPoints(selection);
+    }
+}
+
 void InspectorContainer::switchToInspector(magda::SelectionType type) {
     // Deactivate current inspector
     if (currentInspector_) {
@@ -186,6 +195,10 @@ void InspectorContainer::switchToInspector(magda::SelectionType type) {
             auto* deviceInspector = dynamic_cast<DeviceInspector*>(currentInspector_.get());
             if (deviceInspector)
                 deviceInspector->setSelectedChainNode(sm.getSelectedChainNode());
+        } else if (type == magda::SelectionType::AutomationPoint) {
+            auto* inspector = dynamic_cast<AutomationPointInspector*>(currentInspector_.get());
+            if (inspector)
+                inspector->setSelectedPoints(sm.getAutomationPointSelection());
         }
     }
 

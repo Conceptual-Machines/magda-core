@@ -372,6 +372,13 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     const bool bakedUseTeRange = bakedIsDeviceParam && bakedTeSpan > 0.0f &&
                                  !ParameterUtils::infoMatchesTeRange(bakedInfo) &&
                                  !ParameterUtils::isDisplayMappedInternalValue(bakedInfo);
+    // Compiled/internal params on a 0..1 native range with a display mapping
+    // (gain dB, xover Hz). Their TE-native value == the lane's normalized
+    // value, so bake it through unchanged — routing via normalizedToModelValue
+    // would write the DISPLAY value into the 0..1 curve, pinning the param at a
+    // collapsed value (0 dB -> native 0.0 = -inf) for the whole edit.
+    const bool bakedDisplayMapped =
+        bakedIsDeviceParam && ParameterUtils::isDisplayMappedInternalValue(bakedInfo);
     // For the info == TE-range path (most internal plugins, VSTs without
     // AI-Detect), we still need normalizedToReal to honour info.scale/
     // scaleAnchor. Precompute the info once — convertToTEValue itself
@@ -381,6 +388,8 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     auto convertValue = [&](double magdaNormalized) -> float {
         if (bakedUseTeRange)
             return bakedTeMin + static_cast<float>(magdaNormalized) * bakedTeSpan;
+        if (bakedDisplayMapped)
+            return juce::jlimit(0.0f, 1.0f, static_cast<float>(magdaNormalized));
         if (!bakedIsDeviceParam)
             return convertToTEValue(lane.target, param, magdaNormalized);
         return ParameterUtils::normalizedToModelValue(
@@ -434,9 +443,14 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             if (i > 0) {
                 const auto& prev = (*sourcePoints)[i - 1];
                 const bool isBezier = prev.curveType == AutomationCurveType::Bezier;
+                // The shaper bends a Linear segment via bezier handles (tension
+                // stays 0), so tessellate when either is set, else the bake
+                // writes a straight ramp regardless of the visible curve.
+                const bool hasShaper = !prev.outHandle.isZero() || !point.inHandle.isZero();
                 const bool isCurvedLinear = prev.curveType == AutomationCurveType::Linear &&
-                                            std::abs(prev.tension) >= 0.001;
-                if (isBezier || isCurvedLinear) {
+                                            (std::abs(prev.tension) >= 0.001 || hasShaper);
+                const bool isHardCorner = prev.curveType == AutomationCurveType::HardCorner;
+                if (isBezier || isCurvedLinear || isHardCorner) {
                     const double span = point.beatPosition - prev.beatPosition;
                     if (span > 0.0) {
                         for (int s = 1; s < kBezierSegments; ++s) {
@@ -523,6 +537,15 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
             // range instead, so the lane's normalized [0,1] reaches the
             // plugin unchanged.
             ParameterInfo info = getParameterInfoForTarget(target);
+            // Compiled/internal MAGDA plugins register their TE param on a 0..1
+            // native range with the display mapping (e.g. gain dB, xover Hz)
+            // layered on top via the param's scale. For these the lane's
+            // MAGDA-normalized value already IS the native 0..1 position, so
+            // pass it straight through. Routing it via normalizedToModelValue
+            // would emit the DISPLAY value (e.g. 0 dB) into the 0..1 curve,
+            // collapsing it to native 0.0 (-inf) during playback.
+            if (ParameterUtils::isDisplayMappedInternalValue(info))
+                return juce::jlimit(0.0f, 1.0f, static_cast<float>(magdaNormalized));
             const float teSpan = info.teMaxValue - info.teMinValue;
             if (teSpan <= 0.0f) {
                 if (!param)
@@ -620,6 +643,10 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
             // round-trip (MAGDA normalized -> TE raw -> MAGDA normalized)
             // will drift and the UI will fight the curve.
             ParameterInfo info = getParameterInfoForTarget(target);
+            // Mirror of convertToTEValue: display-mapped internal params keep
+            // the lane normalized == TE native, so pass through directly.
+            if (ParameterUtils::isDisplayMappedInternalValue(info))
+                return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
             const float teSpan = info.teMaxValue - info.teMinValue;
             if (teSpan <= 0.0f) {
                 if (!param)

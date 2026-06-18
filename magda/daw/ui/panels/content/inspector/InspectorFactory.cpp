@@ -1,5 +1,6 @@
 #include "InspectorFactory.hpp"
 
+#include "AutomationPointInspector.hpp"
 #include "ClipInspector.hpp"
 #include "DeviceInspector.hpp"
 #include "NoteInspector.hpp"
@@ -26,6 +27,9 @@ std::unique_ptr<BaseInspector> InspectorFactory::createInspector(magda::Selectio
 
         case magda::SelectionType::ChainNode:
             return std::make_unique<DeviceInspector>();
+
+        case magda::SelectionType::AutomationPoint:
+            return std::make_unique<AutomationPointInspector>();
 
         case magda::SelectionType::None:
         default:

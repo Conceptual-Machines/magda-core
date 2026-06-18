@@ -7,6 +7,7 @@
 
 #include "../layout/LayoutConfig.hpp"
 #include "core/ClipTypes.hpp"
+#include "core/TempoMap.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TypeIds.hpp"
 
@@ -507,15 +508,26 @@ struct TimelineState {
 
     // Layout constant — use LayoutConfig::TIMELINE_LEFT_PADDING directly
 
+    // Position-aware beats<->seconds facade (engine's tempo sequence). Injected
+    // by TimelineController; not owned. Null before injection / in headless
+    // contexts, in which case conversions fall back to the constant-tempo
+    // formula below. Walks the tempo curve, so it is correct under a varying
+    // tempo where `beats * 60 / bpm` would drift.
+    const TempoMap* tempoMap = nullptr;
+
     // ===== Beat/time conversion helpers =====
 
-    /** Convert seconds to beats using current tempo */
+    /** Convert seconds to beats (position-aware via the tempo facade). */
     double secondsToBeats(double seconds) const {
+        if (tempoMap)
+            return tempoMap->timeToBeat(seconds);
         return seconds * tempo.bpm / 60.0;
     }
 
-    /** Convert beats to seconds using current tempo */
+    /** Convert beats to seconds (position-aware via the tempo facade). */
     double beatsToSeconds(double beats) const {
+        if (tempoMap)
+            return tempoMap->beatToTime(beats);
         return beats * 60.0 / tempo.bpm;
     }
 
@@ -590,9 +602,9 @@ struct TimelineState {
             // round-tripping through irrational seconds-per-beat values.
             double beatFraction = getSnapBeatFraction();
             if (beatFraction > 0) {
-                double beats = time * tempo.bpm / 60.0;
+                double beats = secondsToBeats(time);
                 double snappedBeats = std::round(beats / beatFraction) * beatFraction;
-                return snappedBeats * 60.0 / tempo.bpm;
+                return beatsToSeconds(snappedBeats);
             }
         }
 

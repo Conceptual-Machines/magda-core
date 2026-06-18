@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 #include "audio/MidiBridge.hpp"
 #include "core/ClipPropertyCommands.hpp"
@@ -22,9 +23,45 @@ namespace magda::daw::ui {
 
 // Static members — persist across editor switches
 bool MidiEditorContent::velocityDrawerOpen_ = false;
+bool MidiEditorContent::foldEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
+std::vector<int> MidiEditorContent::collectUsedPitches() const {
+    std::set<int> used;
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_))
+            for (const auto& note : clip->midiNotes)
+                used.insert(note.noteNumber);
+    }
+    return std::vector<int>(used.begin(), used.end());
+}
+
+void MidiEditorContent::rebuildFoldMap() {
+    foldMap_.rebuild(collectUsedPitches());
+    onFoldMapChanged();
+}
+
+void MidiEditorContent::applyFold() {
+    foldMap_.setEnabled(foldEnabled_);
+    rebuildFoldMap();
+    updateGridSize();
+    recenterOnNotes();
+}
+
 namespace {
+// Route clip timeline-seconds through the position-aware tempo facade when
+// wired (message thread); fall back to the constant-tempo bpm before injection.
+double facadeTimelineStart(const magda::ClipInfo& c, double bpm) {
+    if (auto* tc = magda::TimelineController::getCurrent(); tc && tc->tempoMap())
+        return c.getTimelineStart(*tc->tempoMap());
+    return c.getTimelineStart(bpm);
+}
+double facadeTimelineLength(const magda::ClipInfo& c, double bpm) {
+    if (auto* tc = magda::TimelineController::getCurrent(); tc && tc->tempoMap())
+        return c.getTimelineLength(*tc->tempoMap());
+    return c.getTimelineLength(bpm);
+}
+
 double effectiveLoopLengthSeconds(const magda::ClipInfo& clip, double bpm) {
     if (clip.loopLength > 0.0)
         return clip.loopLength;
@@ -32,7 +69,7 @@ double effectiveLoopLengthSeconds(const magda::ClipInfo& clip, double bpm) {
     if (clip.loopLengthBeats > 0.0 && isValidBpm(bpm))
         return clip.loopLengthBeats * 60.0 / bpm;
 
-    return clip.getTimelineLength(bpm);
+    return facadeTimelineLength(clip, bpm);
 }
 
 double effectiveLoopStartSeconds(const magda::ClipInfo& clip, double bpm) {
@@ -57,8 +94,8 @@ double relativeDisplaySecondsForGlobalPlayhead(double globalSeconds, const magda
     if (!clip || !relativeMode)
         return globalSeconds;
 
-    const double clipStart = clip->getTimelineStart(bpm);
-    const double clipLength = clip->getTimelineLength(bpm);
+    const double clipStart = facadeTimelineStart(*clip, bpm);
+    const double clipLength = facadeTimelineLength(*clip, bpm);
     const double clipEnd = clipStart + clipLength;
     if (globalSeconds < clipStart || (clipLength > 0.0 && globalSeconds > clipEnd))
         return -1.0;
@@ -77,7 +114,7 @@ double globalSecondsForRelativeDisplayClick(double displaySeconds, double curren
     if (!clip || !relativeMode)
         return displaySeconds;
 
-    const double clipStart = clip->getTimelineStart(bpm);
+    const double clipStart = facadeTimelineStart(*clip, bpm);
     if (!usesRelativeLoopPhaseView(relativeMode, clip, bpm))
         return clipStart + displaySeconds;
 
@@ -90,7 +127,7 @@ double globalSecondsForRelativeDisplayClick(double displaySeconds, double curren
 
     double target = clipStart + loopStart + cycle * loopLength + phase;
 
-    const double clipLength = clip->getTimelineLength(bpm);
+    const double clipLength = facadeTimelineLength(*clip, bpm);
     if (clipLength <= 0.0)
         return juce::jmax(0.0, target);
 
@@ -255,7 +292,7 @@ MidiEditorContent::MidiEditorContent() {
             bpm = controller->getState().tempo.bpm;
 
         double newLoopStart =
-            relativeTimeMode_ ? displayStart : (displayStart - clip->getTimelineStart(bpm));
+            relativeTimeMode_ ? displayStart : (displayStart - facadeTimelineStart(*clip, bpm));
         double newLoopLength = displayEnd - displayStart;
 
         // Update TimeRuler's loop state so the background tint follows the drag
@@ -286,7 +323,7 @@ MidiEditorContent::MidiEditorContent() {
             bpm = controller->getState().tempo.bpm;
 
         double newLoopStart =
-            relativeTimeMode_ ? displayStart : (displayStart - clip->getTimelineStart(bpm));
+            relativeTimeMode_ ? displayStart : (displayStart - facadeTimelineStart(*clip, bpm));
         double newLoopLength = displayEnd - displayStart;
 
         magda::UndoManager::getInstance().executeCommand(
@@ -595,10 +632,10 @@ void MidiEditorContent::updateTimeRuler() {
     if (clip) {
         if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             timeRuler_->setTimeOffset(0.0);
-            timeRuler_->setClipLength(clip->getTimelineLength(tempo));
+            timeRuler_->setClipLength(facadeTimelineLength(*clip, tempo));
         } else {
-            timeRuler_->setTimeOffset(clip->getTimelineStart(tempo));
-            timeRuler_->setClipLength(clip->getTimelineLength(tempo));
+            timeRuler_->setTimeOffset(facadeTimelineStart(*clip, tempo));
+            timeRuler_->setClipLength(facadeTimelineLength(*clip, tempo));
         }
     } else {
         timeRuler_->setTimeOffset(0.0);

@@ -570,6 +570,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     mainView->onPlayheadPositionChanged = [this](double position) {
         transportPanel->setPlayheadPosition(position);
+        // Follow the tempo curve: show the BPM at the playhead, not a static
+        // scalar. Walks the tempo map (constant tempo -> unchanged readout).
+        if (const auto* tm = mainView->getTimelineController().tempoMap())
+            transportPanel->setLiveTempoDisplay(tm->bpmAt(tm->timeToBeat(position)));
     };
     mainView->onTimeSelectionChanged = [this](double start, double end, bool hasTimeSelection) {
         transportPanel->setTimeSelection(start, end, hasTimeSelection);
@@ -827,6 +831,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // Register audio engine as listener on TimelineController
     // This enables the observer pattern: UI -> TimelineController -> AudioEngine
     mainView->getTimelineController().addAudioEngineListener(engine);
+
+    // Inject the position-aware tempo facade (engine -> UI). All beats<->seconds
+    // conversions go through this, backed by the engine's tempo sequence.
+    mainView->getTimelineController().setTempoMap(engine->tempoMap());
 
     // Create position timer for playhead updates (AudioEngine -> UI)
     // Timer runs continuously and detects play/stop state changes

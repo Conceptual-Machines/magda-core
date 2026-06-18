@@ -36,15 +36,25 @@ namespace magda {
 
 namespace {
 
+// These route through the position-aware tempo facade (single source of truth)
+// when it's available, falling back to the constant-tempo bpm only before the
+// facade is wired. ClipComponent runs on the message thread, where
+// TimelineController::getCurrent()->tempoMap() is valid.
 double timelineStartSeconds(const ClipInfo& clip, double bpm) {
+    if (auto* tc = TimelineController::getCurrent(); tc && tc->tempoMap())
+        return clip.getTimelineStart(*tc->tempoMap());
     return clip.getTimelineStart(bpm);
 }
 
 double timelineLengthSeconds(const ClipInfo& clip, double bpm) {
+    if (auto* tc = TimelineController::getCurrent(); tc && tc->tempoMap())
+        return clip.getTimelineLength(*tc->tempoMap());
     return clip.getTimelineLength(bpm);
 }
 
 double timelineEndSeconds(const ClipInfo& clip, double bpm) {
+    if (auto* tc = TimelineController::getCurrent(); tc && tc->tempoMap())
+        return clip.getTimelineEnd(*tc->tempoMap());
     return clip.getTimelineEnd(bpm);
 }
 

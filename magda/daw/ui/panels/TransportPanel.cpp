@@ -931,6 +931,9 @@ void TransportPanel::setupTempoAndQuantize() {
         if (onTempoChange)
             onTempoChange(currentTempo);
     };
+    // Tint the readout purple while a tempo lane is active, matching the volume
+    // / pan controls (the label self-subscribes to AutomationManager).
+    tempoLabel->setAutomationTarget(ControlTarget::tempo());
     addAndMakeVisible(*tempoLabel);
 
     // Time signature — numerator / denominator draggable labels
@@ -1304,6 +1307,13 @@ void TransportPanel::setAutomationWriteEnabled(bool enabled) {
         if (automationWriteLabel)
             automationWriteLabel->setVisible(isAutomationWriteEnabled);
     }
+}
+
+void TransportPanel::setLiveTempoDisplay(double bpm) {
+    const double clamped = clampBpm(bpm);
+    if (std::abs(tempoLabel->getValue() - clamped) < 0.01)
+        return;
+    tempoLabel->setValue(clamped, juce::dontSendNotification);
 }
 
 void TransportPanel::setQwertyKeyboardEnabled(bool enabled) {

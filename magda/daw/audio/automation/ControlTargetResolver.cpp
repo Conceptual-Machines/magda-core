@@ -13,6 +13,13 @@ ControlTargetResolver::ControlTargetResolver(TrackController& trackController,
 te::AutomatableParameter* ControlTargetResolver::resolve(const ControlTarget& target) const {
     switch (target.kind) {
         case ControlTarget::Kind::TrackVolume: {
+            // The master channel is not a te::AudioTrack; its level lives on the
+            // edit's master volume plugin.
+            if (target.devicePath.trackId == MASTER_TRACK_ID) {
+                if (auto* mvp = trackController_.getMasterVolumePlugin())
+                    return mvp->volParam.get();
+                return nullptr;
+            }
             auto* track = trackController_.getAudioTrack(target.devicePath.trackId);
             if (!track)
                 return nullptr;

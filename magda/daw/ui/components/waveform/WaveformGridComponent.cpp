@@ -23,6 +23,19 @@ double currentTimelineBpm() {
         return controller->getState().tempo.bpm;
     return magda::DEFAULT_BPM;
 }
+
+// Route clip timeline-seconds through the position-aware tempo facade when
+// wired (message thread); fall back to the constant-tempo bpm before injection.
+double facadeTimelineStart(const magda::ClipInfo& c, double bpm) {
+    if (auto* tc = magda::TimelineController::getCurrent(); tc && tc->tempoMap())
+        return c.getTimelineStart(*tc->tempoMap());
+    return c.getTimelineStart(bpm);
+}
+double facadeTimelineLength(const magda::ClipInfo& c, double bpm) {
+    if (auto* tc = magda::TimelineController::getCurrent(); tc && tc->tempoMap())
+        return c.getTimelineLength(*tc->tempoMap());
+    return c.getTimelineLength(bpm);
+}
 }  // namespace
 
 WaveformGridComponent::WaveformGridComponent() {
@@ -873,8 +886,8 @@ void WaveformGridComponent::setClip(magda::ClipId clipId) {
     const auto* clip = getClip();
     if (clip) {
         double bpm = timeRuler_ ? timeRuler_->getTempo() : 120.0;
-        clipStartTime_ = clip->getTimelineStart(bpm);
-        clipLength_ = clip->getTimelineLength(bpm);
+        clipStartTime_ = facadeTimelineStart(*clip, bpm);
+        clipLength_ = facadeTimelineLength(*clip, bpm);
     } else {
         clipStartTime_ = 0.0;
         clipLength_ = 0.0;
@@ -1274,9 +1287,9 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     dragStartX_ = x;
     dragStartAudioOffset_ = clip->loopEnabled ? clip->loopStart : clip->offset;
     const double projectBpm = currentTimelineBpm();
-    dragStartStartTime_ = clip->getTimelineStart(projectBpm);
+    dragStartStartTime_ = facadeTimelineStart(*clip, projectBpm);
     dragStartSpeedRatio_ = clip->speedRatio;
-    dragStartClipLength_ = clip->getTimelineLength(projectBpm);
+    dragStartClipLength_ = facadeTimelineLength(*clip, projectBpm);
 
     if (dragMode_ == DragMode::PhaseMarker) {
         double phase = clip->offset - clip->loopStart;
@@ -1294,7 +1307,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     // length if the file extent isn't known (no thumbnail yet).
     dragStartLength_ = displayInfo_.fileExtentTimeline();
     if (dragStartLength_ <= 0.0) {
-        dragStartLength_ = clip->getTimelineLength(projectBpm);
+        dragStartLength_ = facadeTimelineLength(*clip, projectBpm);
     }
 
     // Cache file duration for trim clamping
@@ -1516,8 +1529,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
     {
         double bpm = timeRuler_ ? timeRuler_->getTempo() : 120.0;
         displayInfo_ = magda::ClipDisplayInfo::from(*clip, bpm, dragStartFileDuration_);
-        clipLength_ = clip->getTimelineLength(bpm);
-        clipStartTime_ = clip->getTimelineStart(bpm);
+        clipLength_ = facadeTimelineLength(*clip, bpm);
+        clipStartTime_ = facadeTimelineStart(*clip, bpm);
     }
 
     // Use fast paint during drag
