@@ -557,6 +557,13 @@ double dawSecondsToMs(const juce::XmlElement& e) {
     return (unit == "milliseconds" || unit == "ms") ? v : v * 1000.0;
 }
 
+double dawProjectRatioToLinear(const juce::XmlElement& e) {
+    const double v = e.getDoubleAttribute("value");
+    if (e.getStringAttribute("unit") == "percent")
+        return v >= 100.0 ? 50.0 : 1.0 / (1.0 - v / 100.0);
+    return v;
+}
+
 void initBuiltinDevice(DeviceInfo& device, const juce::XmlElement& el, const char* pluginId,
                        const char* defaultName) {
     device.format = PluginFormat::Internal;
@@ -577,11 +584,7 @@ void parseCompressorDevice(const juce::XmlElement& comp, DeviceInfo& device) {
         // Honour the source unit. DAWproject/Bitwig store ratio as a 0-100%
         // "amount" (ratio = 1/(1 - percent/100)); some writers use a plain
         // linear ratio. MAGDA's ratio is linear, clamped to its [1, 50] range.
-        const double v = r->getDoubleAttribute("value");
-        double ratio = v;
-        if (r->getStringAttribute("unit") == "percent")
-            ratio = v >= 100.0 ? 50.0 : 1.0 / (1.0 - v / 100.0);
-        addBuiltinParam(device, 2, "Ratio", juce::jlimit(1.0, 50.0, ratio));
+        addBuiltinParam(device, 2, "Ratio", juce::jlimit(1.0, 50.0, dawProjectRatioToLinear(*r)));
     }
     if (auto* a = comp.getChildByName("Attack"))
         addBuiltinParam(device, 3, "Attack", dawSecondsToMs(*a));
@@ -603,10 +606,8 @@ void parseGateDevice(const juce::XmlElement& gate, DeviceInfo& device) {
         addBuiltinParam(device, 1, "Release", dawSecondsToMs(*rel));
     if (auto* t = gate.getChildByName("Threshold"))
         addBuiltinParam(device, 4, "Threshold", t->getDoubleAttribute("value"));
-    if (auto* r = gate.getChildByName("Ratio")) {
-        if (r->getStringAttribute("unit") == "linear")
-            addBuiltinParam(device, 5, "Ratio", r->getDoubleAttribute("value"));
-    }
+    if (auto* r = gate.getChildByName("Ratio"))
+        addBuiltinParam(device, 5, "Ratio", juce::jlimit(1.0, 50.0, dawProjectRatioToLinear(*r)));
     if (auto* rg = gate.getChildByName("Range"))
         addBuiltinParam(device, 6, "Range", rg->getDoubleAttribute("value"));
 }
