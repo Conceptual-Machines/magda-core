@@ -2769,6 +2769,24 @@ void DrumGridClipContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> ar
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
+
+    // Hairline dividers framing the icon clusters, matching the piano roll:
+    // the top tool group (fold) and the bottom lane-toggle group (CC /
+    // velocity). Layout mirrors resized() so the lines sit in the gaps.
+    const int iconSize = 22;
+    const int padding = (SIDEBAR_WIDTH - iconSize) / 2;
+
+    const int topClusterBottom = RULER_HEIGHT + padding + iconSize;
+    const int bottomClusterTop = getHeight() - 2 * (iconSize + padding);
+    const int topDividerY = topClusterBottom + padding / 2;
+    const int bottomDividerY = bottomClusterTop - padding / 2;
+
+    const float x1 = static_cast<float>(area.getX() + 5);
+    const float x2 = static_cast<float>(area.getRight() - 5);
+    if (foldToggle_ && bottomDividerY - topDividerY > padding) {
+        g.drawHorizontalLine(topDividerY, x1, x2);
+        g.drawHorizontalLine(bottomDividerY, x1, x2);
+    }
 }
 
 void DrumGridClipContent::updateVelocityLane() {
