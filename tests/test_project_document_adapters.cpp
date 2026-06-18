@@ -92,6 +92,10 @@ TEST_CASE("DawProjectXmlAdapter roundtrips transport tracks and arrangement clip
     midiClip.setPlacementBeats(1.0, 4.0);
     midiClip.midiNotes.push_back(MidiNote{65, 100, 0.0, 0.25});
     midiClip.midiNotes.push_back(MidiNote{53, 80, 1.5, 2.5});
+    // A 2-beat pattern looping across the 4-beat clip (beats-domain loop).
+    midiClip.loopEnabled = true;
+    midiClip.loopStartBeats = 0.0;
+    midiClip.loopLengthBeats = 2.0;
     document.clips.push_back(midiClip);
 
     auto xml = DawProjectXmlAdapter::toProjectXml(document);
@@ -123,6 +127,12 @@ TEST_CASE("DawProjectXmlAdapter roundtrips transport tracks and arrangement clip
     REQUIRE(imported.clips[0].placement.lengthBeats == 4.0);
     REQUIRE(imported.clips[0].midiNotes.size() == 2);
     REQUIRE(imported.clips[0].midiNotes[0].noteNumber == 65);
+
+    // MIDI loop region round-trips in beats.
+    REQUIRE(xml.contains("loopEnd=\"2.0\""));
+    REQUIRE(imported.clips[0].loopEnabled);
+    REQUIRE(imported.clips[0].loopStartBeats == 0.0);
+    REQUIRE(imported.clips[0].loopLengthBeats == 2.0);
 }
 
 TEST_CASE("DawProjectValidator validates vendored project and metadata schemas",
@@ -260,6 +270,12 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     clip.setAudioContent();
     clip.setPlacementBeats(0.0, 4.0);
     clip.audio().source.filePath = source.getFullPathName();
+    // Looped region + read offset (exact binary fractions so they round-trip
+    // bit-for-bit through the double->string->double path).
+    clip.offset = 0.25;
+    clip.loopEnabled = true;
+    clip.loopStart = 0.5;
+    clip.loopLength = 0.25;
     document.clips.push_back(clip);
 
     auto archive = createTempDawProjectFile();
@@ -280,6 +296,11 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     REQUIRE(projectXml.contains("sampleRate=\"48000\""));
     REQUIRE(projectXml.contains("channels=\"1\""));
 
+    // The clip carries its read offset and loop region (content time = seconds).
+    REQUIRE(projectXml.contains("playStart=\"0.25\""));
+    REQUIRE(projectXml.contains("loopStart=\"0.5\""));
+    REQUIRE(projectXml.contains("loopEnd=\"0.75\""));
+
     // Import re-points the clip at an extracted, byte-identical copy of the WAV.
     ProjectDocument imported;
     REQUIRE(DawProjectArchive::readFromFile(archive, imported, error));
@@ -296,7 +317,67 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     REQUIRE(reader->sampleRate == kSampleRate);
     REQUIRE(static_cast<int>(reader->numChannels) == kChannels);
 
+    // Loop region and read offset survive the round-trip.
+    REQUIRE(imported.clips[0].offset == 0.25);
+    REQUIRE(imported.clips[0].loopEnabled);
+    REQUIRE(imported.clips[0].loopStart == 0.5);
+    REQUIRE(imported.clips[0].loopLength == 0.25);
+
     source.deleteFile();
     archive.deleteFile();
     extracted.getParentDirectory().getParentDirectory().deleteRecursively();
+}
+
+TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
+          "[project][serialization][dawproject][audio][warp]") {
+    ProjectDocument document;
+    document.info.name = "Warp Test";
+    document.info.version = "0.warp";
+    document.info.tempo = 120.0;
+
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Beats";
+    document.tracks.push_back(track);
+
+    ClipInfo clip;
+    clip.id = 1;
+    clip.trackId = track.id;
+    clip.name = "Warped";
+    clip.setAudioContent();
+    clip.setPlacementBeats(0.0, 16.0);                       // a 4-beat loop across 16 beats
+    clip.audio().source.filePath = "/nonexistent/beat.wav";  // not embedded; XML-level test
+    clip.audio().source.durationSeconds = 2.0;
+    clip.audio().interpretation.totalBeats = 4.0;  // source is 4 beats long -> 120 bpm
+    clip.autoTempo = true;
+    clip.loopEnabled = true;
+    clip.loopStartBeats = 0.0;
+    clip.loopLengthBeats = 4.0;
+    document.clips.push_back(clip);
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    // Beat-locked audio: clip is beats-domain and the Audio is wrapped in <Warps>
+    // mapping 4 beats -> 2 seconds.
+    REQUIRE(xml.contains("contentTimeUnit=\"beats\""));
+    REQUIRE(xml.contains("<Warps"));
+    REQUIRE(xml.contains("contentTime=\"2.0\""));
+    REQUIRE(xml.contains("loopEnd=\"4.0\""));
+
+    juce::String validationError;
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+    INFO(validationError);
+    REQUIRE(validationError.isEmpty());
+
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    REQUIRE(imported.clips.size() == 1);
+    const auto& ic = imported.clips[0];
+    REQUIRE(ic.isAudio());
+    REQUIRE(ic.autoTempo);
+    REQUIRE(ic.loopEnabled);
+    REQUIRE(ic.loopStartBeats == 0.0);
+    REQUIRE(ic.loopLengthBeats == 4.0);
+    REQUIRE(ic.audio().interpretation.totalBeats == 4.0);
+    REQUIRE(ic.audio().source.durationSeconds == 2.0);
 }

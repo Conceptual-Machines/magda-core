@@ -127,12 +127,17 @@ AudioFileFacts readAudioFileFacts(const juce::File& file) {
     return facts;
 }
 
-void addAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip, const juce::String& id,
-                     const std::map<juce::String, juce::String>& embeddedBySource) {
+// Build the <Audio> media element (channels/sampleRate/duration in seconds +
+// the File reference) under `parent`, returning it. The Audio descriptor is
+// always seconds-domain; whether the clip plays it in seconds or beats is
+// decided by the parent (plain clip vs <Warps>).
+juce::XmlElement& addAudioElement(juce::XmlElement& parent, const ClipInfo& clip,
+                                  const juce::String& id,
+                                  const std::map<juce::String, juce::String>& embeddedBySource) {
     const auto source = clip.audio().source.filePath;
     const auto facts = readAudioFileFacts(juce::File(source));
 
-    auto* audio = clipElement.createNewChildElement("Audio");
+    auto* audio = parent.createNewChildElement("Audio");
     audio->setAttribute("id", id);
     audio->setAttribute("channels", facts.channels > 0 ? facts.channels : 2);
     audio->setAttribute("sampleRate", facts.sampleRate);
@@ -156,6 +161,39 @@ void addAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip, const 
         file->setAttribute("path", source);
         file->setAttribute("external", "true");
     }
+    return *audio;
+}
+
+// Plain seconds-domain audio: the <Audio> sits directly in the clip, whose
+// contentTimeUnit is "seconds".
+void addAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip, const juce::String& id,
+                     const std::map<juce::String, juce::String>& embeddedBySource) {
+    addAudioElement(clipElement, clip, id, embeddedBySource);
+}
+
+// Beat-locked (autoTempo) audio: the clip's content time is beats, and a <Warps>
+// maps that beat timeline onto the source's seconds via two linear warp markers
+// (clip start -> 0s, source length in beats -> source length in seconds). This
+// is how DAWproject keeps stretched audio tempo-synced instead of one-shot.
+void addWarpedAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip,
+                           const juce::String& id,
+                           const std::map<juce::String, juce::String>& embeddedBySource) {
+    auto* warps = clipElement.createNewChildElement("Warps");
+    warps->setAttribute("contentTimeUnit", "seconds");
+    warps->setAttribute("timeUnit", "beats");
+
+    auto& audio = addAudioElement(*warps, clip, id, embeddedBySource);
+
+    const double sourceSeconds =
+        audio.getDoubleAttribute("duration", clip.audio().source.durationSeconds);
+    const double totalBeats = clip.audio().interpretation.totalBeats;
+
+    auto* start = warps->createNewChildElement("Warp");
+    start->setAttribute("time", 0.0);
+    start->setAttribute("contentTime", 0.0);
+    auto* end = warps->createNewChildElement("Warp");
+    end->setAttribute("time", totalBeats);
+    end->setAttribute("contentTime", sourceSeconds);
 }
 
 ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipId clipId) {
@@ -180,6 +218,46 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
                 static_cast<int>(std::round(noteElement->getDoubleAttribute("vel", 0.8) * 127.0)));
             clip.midiNotes.push_back(note);
         }
+
+        // Read offset and loop region (content time = beats for MIDI).
+        clip.offsetBeats = clipElement.getDoubleAttribute("playStart", 0.0);
+        if (clipElement.hasAttribute("loopStart") && clipElement.hasAttribute("loopEnd")) {
+            clip.loopEnabled = true;
+            clip.loopStartBeats = clipElement.getDoubleAttribute("loopStart", 0.0);
+            clip.loopLengthBeats = juce::jmax(0.0, clipElement.getDoubleAttribute("loopEnd", 0.0) -
+                                                       clip.loopStartBeats);
+        }
+        return clip;
+    }
+
+    // Beat-locked (warped) audio: the <Audio> is wrapped in <Warps> and the clip
+    // content is beats-domain. Recover the source length/BPM from the warp
+    // markers and read the offset/loop region in beats.
+    if (auto* warps = clipElement.getChildByName("Warps")) {
+        clip.setAudioContent();
+        clip.autoTempo = true;
+        if (auto* audioElement = warps->getChildByName("Audio")) {
+            clip.audio().source.durationSeconds = audioElement->getDoubleAttribute("duration", 0.0);
+            if (auto* fileElement = audioElement->getChildByName("File"))
+                clip.audio().source.filePath = fileElement->getStringAttribute("path");
+        }
+
+        double maxBeats = 0.0, maxSeconds = 0.0;
+        for (auto* w : warps->getChildWithTagNameIterator("Warp")) {
+            maxBeats = juce::jmax(maxBeats, w->getDoubleAttribute("time", 0.0));
+            maxSeconds = juce::jmax(maxSeconds, w->getDoubleAttribute("contentTime", 0.0));
+        }
+        clip.audio().interpretation.totalBeats = maxBeats;
+        if (maxSeconds > 0.0)
+            clip.audio().interpretation.bpm = maxBeats * 60.0 / maxSeconds;
+
+        clip.offsetBeats = clipElement.getDoubleAttribute("playStart", 0.0);
+        if (clipElement.hasAttribute("loopStart") && clipElement.hasAttribute("loopEnd")) {
+            clip.loopEnabled = true;
+            clip.loopStartBeats = clipElement.getDoubleAttribute("loopStart", 0.0);
+            clip.loopLengthBeats = juce::jmax(0.0, clipElement.getDoubleAttribute("loopEnd", 0.0) -
+                                                       clip.loopStartBeats);
+        }
         return clip;
     }
 
@@ -188,6 +266,15 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
         clip.audio().source.durationSeconds = audioElement->getDoubleAttribute("duration", 0.0);
         if (auto* fileElement = audioElement->getChildByName("File"))
             clip.audio().source.filePath = fileElement->getStringAttribute("path");
+
+        // Source read offset and loop region (content time = seconds for audio).
+        clip.offset = clipElement.getDoubleAttribute("playStart", 0.0);
+        if (clipElement.hasAttribute("loopStart") && clipElement.hasAttribute("loopEnd")) {
+            clip.loopEnabled = true;
+            clip.loopStart = clipElement.getDoubleAttribute("loopStart", 0.0);
+            clip.loopLength =
+                juce::jmax(0.0, clipElement.getDoubleAttribute("loopEnd", 0.0) - clip.loopStart);
+        }
         return clip;
     }
 
@@ -263,13 +350,42 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
             auto* clipElement = clips->createNewChildElement("Clip");
             clipElement->setAttribute("time", clip.placement.startBeat);
             clipElement->setAttribute("duration", clip.placement.lengthBeats);
-            clipElement->setAttribute("playStart", 0.0);
             // The arrangement Lanes are timeUnit="beats" (governs clip time/
-            // duration), but a clip's inner content (Note times, Audio duration)
-            // lives in its own content time. Declare it explicitly: MIDI note
-            // times are clip-relative beats, audio duration is in seconds.
-            // Omitting this lets the importing DAW guess, which misplaces notes.
-            clipElement->setAttribute("contentTimeUnit", clip.isAudio() ? "seconds" : "beats");
+            // duration), but a clip's inner content lives in its own content
+            // time. MIDI note times and beat-locked (autoTempo) audio are
+            // beats-domain; plain audio is seconds-domain. A beat-locked audio
+            // clip carries a <Warps> that maps its beat content onto the source
+            // seconds, so it stays tempo-synced rather than importing as a
+            // fixed-rate one-shot.
+            const bool beatContent = clip.isMidi() || (clip.isAudio() && clip.autoTempo);
+            clipElement->setAttribute("contentTimeUnit", beatContent ? "beats" : "seconds");
+
+            // Playback offset + loop region, in the clip's content time unit. A
+            // loop region makes a short pattern repeat across the clip's
+            // arrangement duration instead of importing as a one-shot.
+            if (beatContent) {
+                clipElement->setAttribute("playStart", clip.offsetBeats);
+                if (clip.loopEnabled && clip.loopLengthBeats > 0.0) {
+                    clipElement->setAttribute("loopStart", clip.loopStartBeats);
+                    clipElement->setAttribute("loopEnd",
+                                              clip.loopStartBeats + clip.loopLengthBeats);
+                }
+            } else {
+                // Plain audio is seconds-domain. Read through the beats-authoritative
+                // accessors (they derive seconds from beats where needed) rather
+                // than the transitional raw seconds fields.
+                clipElement->setAttribute("playStart", clip.getSourceOffset());
+                if (clip.loopEnabled) {
+                    const double loopStart = clip.getSourceLoopStart();
+                    const double loopLen =
+                        clip.getSourceLoopLength() > 0.0
+                            ? clip.getSourceLoopLength()
+                            : juce::jmax(0.0, clip.audio().source.durationSeconds - loopStart);
+                    clipElement->setAttribute("loopStart", loopStart);
+                    clipElement->setAttribute("loopEnd", loopStart + loopLen);
+                }
+            }
+
             if (clip.name.isNotEmpty())
                 clipElement->setAttribute("name", clip.name);
             if (!clip.colour.isTransparent())
@@ -277,6 +393,9 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
 
             if (clip.isMidi())
                 addNotes(*clipElement, clip, idFor("notes", clip.id));
+            else if (clip.isAudio() && clip.autoTempo)
+                addWarpedAudioContent(*clipElement, clip, idFor("audio", clip.id),
+                                      embeddedBySource);
             else if (clip.isAudio())
                 addAudioContent(*clipElement, clip, idFor("audio", clip.id), embeddedBySource);
         }
