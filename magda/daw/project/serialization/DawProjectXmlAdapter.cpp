@@ -203,12 +203,26 @@ void addWarpedAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip,
 // DAWproject representation (a follow-up could emit them as opaque BuiltinDevices
 // for MAGDA<->MAGDA only).
 
-bool isExportableDevice(const DeviceInfo& device) {
-    return device.format == PluginFormat::VST3 || device.format == PluginFormat::AU;
+// DeviceInfo::format isn't always set correctly (an AU can come through as VST3),
+// but uniqueId is JUCE's createIdentifierString, which prefixes the real format.
+// Trust that prefix, falling back to the format field.
+PluginFormat resolveDeviceFormat(const DeviceInfo& device) {
+    if (device.uniqueId.startsWith("AudioUnit"))
+        return PluginFormat::AU;
+    if (device.uniqueId.startsWith("VST3"))
+        return PluginFormat::VST3;
+    if (device.uniqueId.startsWith("VST"))
+        return PluginFormat::VST;  // VST2
+    return device.format;
 }
 
-const char* deviceElementTag(PluginFormat format) {
-    return format == PluginFormat::AU ? "AuPlugin" : "Vst3Plugin";
+bool isExportableDevice(const DeviceInfo& device) {
+    const auto format = resolveDeviceFormat(device);
+    return format == PluginFormat::VST3 || format == PluginFormat::AU;
+}
+
+const char* deviceElementTag(const DeviceInfo& device) {
+    return resolveDeviceFormat(device) == PluginFormat::AU ? "AuPlugin" : "Vst3Plugin";
 }
 
 juce::String deviceStateArchivePath(DeviceId id) {
@@ -227,7 +241,7 @@ void collectExportableDevices(const TrackInfo& track, std::vector<const DeviceIn
 }
 
 void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
-    auto* dev = devices.createNewChildElement(deviceElementTag(device.format));
+    auto* dev = devices.createNewChildElement(deviceElementTag(device));
     dev->setAttribute("deviceRole", device.isInstrument ? "instrument" : "audioFX");
     dev->setAttribute("deviceName", device.name);
 
