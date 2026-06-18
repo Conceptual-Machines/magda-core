@@ -438,7 +438,7 @@ jobs:
     - name: Install libxml2
       shell: powershell
       run: |
-        & "$env:VCPKG_ROOT\vcpkg.exe" install libxml2:x64-windows
+        & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows
 
     - name: Configure CMake (Debug)
       run: |

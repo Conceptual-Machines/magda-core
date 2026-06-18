@@ -548,7 +548,7 @@ jobs:
 
     - name: Install libxml2
       shell: powershell
-      run: '& "$env:VCPKG_ROOT\vcpkg.exe" install libxml2:x64-windows'
+      run: '& "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows'
 
     # Ninja is shipped with the Visual Studio install on windows-latest, so
     # we only need to provision NSIS. The zip is hosted as a release asset
