@@ -308,6 +308,55 @@ void addCompressorDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     real("Threshold", "Threshold", "decibel", 1.0);
 }
 
+// Reconstruct MAGDA's native Faust compressor from a DAWproject <Compressor>
+// builtin (inverse of addCompressorDevice). Values are written at the plugin's
+// host-slot indices (see MagdaCompressorCompiledPlugin: Threshold=1, Ratio=2,
+// Attack=3, Release=4, Output=8, Autogain=14) in the plugin's display units
+// (dB, ms, linear ratio), honouring each DAWproject param's `unit`. Foreign
+// params we can't invert cleanly (e.g. Bitwig writes Ratio as a percent scale)
+// are skipped, leaving the plugin default.
+void parseCompressorDevice(const juce::XmlElement& comp, DeviceInfo& device) {
+    device.format = PluginFormat::Internal;
+    device.pluginId = "magda_compressor";
+    device.deviceType = DeviceType::Effect;
+    device.isInstrument = false;
+    if (device.name.isEmpty())
+        device.name = comp.getStringAttribute("name", "Compressor");
+
+    auto addParam = [&](int slot, juce::StringRef name, double value) {
+        ParameterInfo p;
+        p.paramIndex = slot;
+        p.name = name;
+        p.currentValue = static_cast<float>(value);
+        device.parameters.push_back(std::move(p));
+    };
+
+    // DAWproject's standard time unit is seconds; convert to MAGDA's ms. Honour
+    // an explicit ms unit just in case a host writes one.
+    auto toMs = [](const juce::XmlElement& e) {
+        const double v = e.getDoubleAttribute("value");
+        const auto unit = e.getStringAttribute("unit");
+        return (unit == "milliseconds" || unit == "ms") ? v : v * 1000.0;
+    };
+
+    if (auto* t = comp.getChildByName("Threshold"))
+        addParam(1, "Threshold", t->getDoubleAttribute("value"));
+    if (auto* r = comp.getChildByName("Ratio")) {
+        // MAGDA's ratio is a linear factor; only adopt a value the source
+        // tagged linear. Bitwig writes a percent scale we can't invert.
+        if (r->getStringAttribute("unit") == "linear")
+            addParam(2, "Ratio", r->getDoubleAttribute("value"));
+    }
+    if (auto* a = comp.getChildByName("Attack"))
+        addParam(3, "Attack", toMs(*a));
+    if (auto* rel = comp.getChildByName("Release"))
+        addParam(4, "Release", toMs(*rel));
+    if (auto* o = comp.getChildByName("OutputGain"))
+        addParam(8, "Output", o->getDoubleAttribute("value"));
+    if (auto* mk = comp.getChildByName("AutoMakeup"))
+        addParam(14, "Autogain", mk->getBoolAttribute("value") ? 1.0 : 0.0);
+}
+
 void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     if (isBuiltinCompressor(device)) {
         addCompressorDevice(devices, device);
@@ -613,14 +662,25 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     for (auto* devEl : devices->getChildIterator()) {
                         const auto tag = devEl->getTagName();
                         DeviceInfo device;
+                        device.id = nextDeviceId++;
+
+                        // Standardized builtin: reconstruct MAGDA's native
+                        // compressor instead of treating it as opaque.
+                        if (tag == "Compressor") {
+                            parseCompressorDevice(*devEl, device);
+                            if (auto* enabled = devEl->getChildByName("Enabled"))
+                                device.bypassed = !enabled->getBoolAttribute("value", true);
+                            track.chain.fxChainElements.push_back(std::move(device));
+                            continue;
+                        }
+
                         if (tag == "Vst3Plugin")
                             device.format = PluginFormat::VST3;
                         else if (tag == "AuPlugin")
                             device.format = PluginFormat::AU;
                         else
-                            continue;  // VST2/CLAP/BuiltinDevice not supported
+                            continue;  // VST2/CLAP/other builtins not supported
 
-                        device.id = nextDeviceId++;
                         device.name = devEl->getStringAttribute("deviceName");
                         const auto deviceId = devEl->getStringAttribute("deviceID");
                         // deviceID is the VST3 class id (32-hex). Keep it as the

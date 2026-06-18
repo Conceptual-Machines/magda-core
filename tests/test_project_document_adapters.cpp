@@ -2,6 +2,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/AutomationManager.hpp"
@@ -509,4 +510,30 @@ TEST_CASE("DawProjectXmlAdapter maps the native compressor to a <Compressor> bui
     REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
     INFO(validationError);
     REQUIRE(validationError.isEmpty());
+
+    // Import it back: the <Compressor> builtin reconstructs MAGDA's native
+    // compressor (pluginId, params at their host-slot indices, seconds -> ms).
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    REQUIRE(imported.tracks.size() == 1);
+    REQUIRE(imported.tracks[0].chain.fxChainElements.size() == 1);
+    const auto& back = getDevice(imported.tracks[0].chain.fxChainElements[0]);
+    REQUIRE(back.pluginId == "magda_compressor");
+    REQUIRE(back.format == PluginFormat::Internal);
+    REQUIRE_FALSE(back.isInstrument);
+
+    auto value = [&](int slot) -> float {
+        for (const auto& p : back.parameters)
+            if (p.paramIndex == slot)
+                return p.currentValue;
+        FAIL("missing param slot " << slot);
+        return 0.0f;
+    };
+    REQUIRE(value(1) == Catch::Approx(-18.0f));  // Threshold (dB)
+    REQUIRE(value(2) == Catch::Approx(4.0f));    // Ratio (linear)
+    REQUIRE(value(3) == Catch::Approx(50.0f));   // Attack (ms)
+    REQUIRE(value(4) == Catch::Approx(100.0f));  // Release (ms)
+    REQUIRE(value(8) == Catch::Approx(3.0f));    // Output (dB)
+    REQUIRE(value(14) == Catch::Approx(1.0f));   // Autogain
 }
