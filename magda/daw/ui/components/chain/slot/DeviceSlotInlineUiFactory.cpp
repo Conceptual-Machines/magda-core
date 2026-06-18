@@ -1,7 +1,9 @@
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 
 #include "audio/AudioBridge.hpp"
+#include "audio/plugins/FaustInstrumentPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
+#include "audio/plugins/IFaustEditorModel.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
@@ -58,14 +60,17 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         return DeviceSlotInlineUiKind::Compiled;
     }
 
+    // The Faust EFFECT uses the inline header + standard param grid here. The
+    // Faust INSTRUMENT instead gets its own wider tabbed UI via the
+    // DeviceCustomUIManager path below (DeviceSlotInlineUiKind::Custom).
     if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();
 
         if (auto plugin = getLivePlugin(nodePath)) {
-            if (auto* faustPlugin = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
-                storage.faustUI->setPlugin(faustPlugin);
+            if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get())) {
+                storage.faustUI->setPlugin(faustModel);
                 storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(
-                    faustPlugin->getCustomViewKind(), *faustPlugin);
+                    faustModel->getCustomViewKind(), *faustModel);
                 if (storage.faustCustomView != nullptr)
                     parent.addAndMakeVisible(*storage.faustCustomView);
             }

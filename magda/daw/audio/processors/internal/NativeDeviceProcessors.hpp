@@ -51,4 +51,22 @@ class FaustProcessor : public DeviceProcessor {
     float getParameterByIndex(int paramIndex) const;
 };
 
+/**
+ * @brief Processor for the MAGDA-native Faust polyphonic instrument.
+ *
+ * Identical pool-backed parameter model to FaustProcessor, but bound to
+ * FaustInstrumentPlugin (the synth sibling of the Faust effect host).
+ */
+class FaustInstrumentProcessor : public DeviceProcessor {
+  public:
+    FaustInstrumentProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value) override;
+    float getParameterByIndex(int paramIndex) const;
+};
+
 }  // namespace magda

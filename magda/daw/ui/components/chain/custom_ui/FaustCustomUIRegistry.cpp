@@ -15,7 +15,7 @@ void FaustCustomUIRegistry::registerView(FaustCustomViewKind kind, Factory facto
 }
 
 std::unique_ptr<FaustCustomView> FaustCustomUIRegistry::create(
-    FaustCustomViewKind kind, magda::daw::audio::FaustPlugin& plugin) const {
+    FaustCustomViewKind kind, magda::daw::audio::IFaustEditorModel& plugin) const {
     if (kind == FaustCustomViewKind::None)
         return nullptr;
     auto it = factories_.find(kind);

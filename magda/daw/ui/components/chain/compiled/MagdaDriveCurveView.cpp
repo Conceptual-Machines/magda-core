@@ -4,7 +4,7 @@
 
 #include "audio/plugins/FaustParamPool.hpp"
 #include "audio/plugins/FaustParamSlot.hpp"
-#include "audio/plugins/FaustPlugin.hpp"
+#include "audio/plugins/IFaustEditorModel.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -22,7 +22,8 @@ float dbToLinear(float dB) {
 
 }  // namespace
 
-MagdaDriveCurveView::MagdaDriveCurveView(magda::daw::audio::FaustPlugin& plugin) : plugin_(plugin) {
+MagdaDriveCurveView::MagdaDriveCurveView(magda::daw::audio::IFaustEditorModel& plugin)
+    : plugin_(plugin) {
     setInterceptsMouseClicks(false, false);
 
     // Seed the cached values from current state so the first paint
@@ -132,7 +133,7 @@ void registerBuiltInFaustCustomViews() {
     auto& registry = FaustCustomUIRegistry::getInstance();
 
     registry.registerView(FaustCustomViewKind::MagdaDrive,
-                          [](magda::daw::audio::FaustPlugin& plugin) {
+                          [](magda::daw::audio::IFaustEditorModel& plugin) {
                               return std::make_unique<MagdaDriveCurveView>(plugin);
                           });
 }

@@ -3,6 +3,7 @@
 #include "TracktionHelpers.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/DrumGridPlugin.hpp"
+#include "plugins/FaustInstrumentPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/InstrumentMeterTapPlugin.hpp"
 #include "plugins/LevelsPlugin.hpp"
@@ -134,6 +135,10 @@ const InternalPluginSpec kSpecs[] = {
      "Interpreted Faust device for loading and editing user DSP code.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0, matches<FaustPlugin>,
      makeProcessor<FaustProcessor>, true},
+    {InternalDeviceKind::FaustInstrument, FaustInstrumentPlugin::xmlTypeName, "Faust Instrument",
+     "Experimental", "Polyphonic Faust synth instrument driven by MIDI (POC).",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
+     matches<FaustInstrumentPlugin>, makeProcessor<FaustInstrumentProcessor>, true, true},
     {InternalDeviceKind::MidiReceive, ::magda::MidiReceivePlugin::xmlTypeName, "MIDI Receive",
      "MIDI", "Internal MIDI routing endpoint used by MAGDA track and device routing.",
      InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
