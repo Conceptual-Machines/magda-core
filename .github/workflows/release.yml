@@ -549,9 +549,7 @@ jobs:
     - name: Cache vcpkg packages
       uses: actions/cache@v5
       with:
-        path: |
-          vcpkg_installed
-          .vcpkg-binary-cache
+        path: .vcpkg-binary-cache
         key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
         restore-keys: |
           ${{ runner.os }}-vcpkg-
@@ -560,7 +558,9 @@ jobs:
       shell: powershell
       env:
         VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-binary-cache
-      run: '& "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows'
+      run: |
+        New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+        & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows
 
     # Ninja is shipped with the Visual Studio install on windows-latest, so
     # we only need to provision NSIS. The zip is hosted as a release asset
