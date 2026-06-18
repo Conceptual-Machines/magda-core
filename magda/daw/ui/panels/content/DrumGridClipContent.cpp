@@ -2011,10 +2011,11 @@ DrumGridClipContent::DrumGridClipContent() {
         "ControlsToggle", BinaryData::bar_chart_svg, BinaryData::bar_chart_svgSize);
     controlsToggle_->setTooltip("Toggle velocity lane");
     controlsToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    controlsToggle_->setActive(velocityDrawerOpen_);
+    controlsToggle_->setActive(velocityLaneVisible_);
     controlsToggle_->onClick = [this]() {
-        setVelocityDrawerVisible(!velocityDrawerOpen_);
-        controlsToggle_->setActive(velocityDrawerOpen_);
+        velocityLaneVisible_ = !velocityLaneVisible_;
+        refreshLaneDrawer();
+        updateLaneToggleStates();
     };
     addAndMakeVisible(controlsToggle_.get());
 
@@ -2038,10 +2039,8 @@ DrumGridClipContent::DrumGridClipContent() {
     ccLanesBtn_->setTooltip("Add CC / pitchbend lane");
     ccLanesBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     ccLanesBtn_->onClick = [this]() {
-        if (!velocityDrawerOpen_) {
-            setVelocityDrawerVisible(true);
-            controlsToggle_->setActive(true);
-        }
+        // Adding a CC lane opens the drawer on its own (without the velocity
+        // lane) via onLanesChanged.
         if (midiDrawer_)
             midiDrawer_->showAddLaneMenu();
     };
@@ -2879,6 +2878,13 @@ void DrumGridClipContent::recenterOnNotes() {
     // used rows into view.
     if (viewport_)
         viewport_->setViewPosition(viewport_->getViewPositionX(), 0);
+}
+
+void DrumGridClipContent::updateLaneToggleStates() {
+    if (controlsToggle_)
+        controlsToggle_->setActive(velocityLaneVisible_);
+    if (ccLanesBtn_ && midiDrawer_)
+        ccLanesBtn_->setActive(midiDrawer_->hasExtraLanes());
 }
 
 void DrumGridClipContent::buildPadRows() {

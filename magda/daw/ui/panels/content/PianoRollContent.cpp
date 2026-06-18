@@ -94,11 +94,11 @@ PianoRollContent::PianoRollContent() {
         "VelocityToggle", BinaryData::iconvelocityboldm_svg, BinaryData::iconvelocityboldm_svgSize);
     velocityToggle_->setTooltip("Toggle velocity lane");
     velocityToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    velocityToggle_->setActive(velocityDrawerOpen_);
+    velocityToggle_->setActive(velocityLaneVisible_);
     velocityToggle_->onClick = [this]() {
-        setVelocityDrawerVisible(!velocityDrawerOpen_);
-        velocityToggle_->setActive(velocityDrawerOpen_);
-        updateCcLanesButtonState();
+        velocityLaneVisible_ = !velocityLaneVisible_;
+        refreshLaneDrawer();
+        updateLaneToggleStates();
     };
     addAndMakeVisible(velocityToggle_.get());
 
@@ -121,11 +121,8 @@ PianoRollContent::PianoRollContent() {
     ccLanesBtn_->setTooltip("Add CC / pitchbend lane");
     ccLanesBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     ccLanesBtn_->onClick = [this]() {
-        if (!velocityDrawerOpen_) {
-            setVelocityDrawerVisible(true);
-            velocityToggle_->setActive(true);
-            updateCcLanesButtonState();
-        }
+        // Just open the add-lane menu; adding a CC lane opens the drawer on its
+        // own (without forcing the velocity lane) via onLanesChanged.
         if (midiDrawer_)
             midiDrawer_->showAddLaneMenu();
     };
@@ -268,12 +265,9 @@ PianoRollContent::PianoRollContent() {
     // Apply any overlay tracks chosen in another editor session
     applyOverlayTracks();
 
-    // Setup MIDI drawer (stacked lanes: velocity + CC + pitchbend)
+    // Setup MIDI drawer (stacked lanes: velocity + CC + pitchbend). The base
+    // wires onLanesChanged -> refreshLaneDrawer + updateLaneToggleStates().
     setupMidiDrawer();
-
-    // Keep the CC strip button lit while CC/pitchbend lanes are open
-    if (midiDrawer_)
-        midiDrawer_->onLanesChanged = [this]() { updateCcLanesButtonState(); };
 
     // Register as SelectionManager listener (PianoRoll-specific)
     magda::SelectionManager::getInstance().addListener(this);
@@ -348,9 +342,11 @@ void PianoRollContent::recenterOnNotes() {
     centerOnNotes();
 }
 
-void PianoRollContent::updateCcLanesButtonState() {
+void PianoRollContent::updateLaneToggleStates() {
+    if (velocityToggle_)
+        velocityToggle_->setActive(velocityLaneVisible_);
     if (ccLanesBtn_ && midiDrawer_)
-        ccLanesBtn_->setActive(velocityDrawerOpen_ && midiDrawer_->hasExtraLanes());
+        ccLanesBtn_->setActive(midiDrawer_->hasExtraLanes());
 }
 
 PianoRollContent::~PianoRollContent() {

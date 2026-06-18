@@ -23,6 +23,7 @@ namespace magda::daw::ui {
 
 // Static members — persist across editor switches
 bool MidiEditorContent::velocityDrawerOpen_ = false;
+bool MidiEditorContent::velocityLaneVisible_ = false;
 bool MidiEditorContent::foldEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
@@ -1104,6 +1105,15 @@ void MidiEditorContent::setupMidiDrawer() {
         }
     };
 
+    // Adding/removing a CC lane recomputes whether the drawer is shown (so a CC
+    // lane can open the drawer without the velocity lane, and removing the last
+    // lane closes it) and refreshes the sidebar toggle states.
+    midiDrawer_->setVelocityLaneVisible(velocityLaneVisible_);
+    midiDrawer_->onLanesChanged = [this]() {
+        refreshLaneDrawer();
+        updateLaneToggleStates();
+    };
+
     addChildComponent(midiDrawer_.get());
 }
 
@@ -1114,6 +1124,17 @@ void MidiEditorContent::setVelocityDrawerVisible(bool visible) {
         resized();
         repaint();
     }
+}
+
+void MidiEditorContent::refreshLaneDrawer() {
+    if (midiDrawer_)
+        midiDrawer_->setVelocityLaneVisible(velocityLaneVisible_);
+    // The drawer area is shown when either the velocity lane is toggled on or
+    // any CC lane exists, so velocity and CC are independent.
+    velocityDrawerOpen_ = velocityLaneVisible_ || (midiDrawer_ && midiDrawer_->hasExtraLanes());
+    updateVelocityLane();
+    resized();
+    repaint();
 }
 
 void MidiEditorContent::updateMidiDrawer() {

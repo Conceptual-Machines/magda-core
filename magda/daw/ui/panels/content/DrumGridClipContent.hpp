@@ -92,6 +92,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     // rows to those that have notes rather than using the pitch fold map.
     void onFoldMapChanged() override;
     void recenterOnNotes() override;
+    void updateLaneToggleStates() override;
 
     // Override velocity lane methods
     void updateVelocityLane() override;

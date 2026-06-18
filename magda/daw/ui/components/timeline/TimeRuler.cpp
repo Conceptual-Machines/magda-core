@@ -891,10 +891,14 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             int tickAreaTop = height - tickHeightMajor();
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
 
+            // Size the triangle to the playhead band (the tick area below the
+            // label divider) so it fills that rectangle instead of poking past
+            // the ruler bottom into the grid.
             juce::Path triangle;
             const float x = static_cast<float>(handleX);
-            const float y = static_cast<float>(tickAreaTop + 2);
-            triangle.addTriangle(x - 6.0f, y, x + 6.0f, y, x, y + 13.0f);
+            const float yTop = static_cast<float>(tickAreaTop + 1);
+            const float yTip = static_cast<float>(height - 1);
+            triangle.addTriangle(x - 6.0f, yTop, x + 6.0f, yTop, x, yTip);
             g.fillPath(triangle);
         }
     }

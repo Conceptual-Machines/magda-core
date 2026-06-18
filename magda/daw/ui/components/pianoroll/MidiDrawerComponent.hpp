@@ -69,7 +69,18 @@ class MidiDrawerComponent : public juce::Component {
     // Show the add-lane menu (also reachable from the editor sidebar's CC button)
     void showAddLaneMenu();
 
-    // True when any CC/pitchbend lane is open (beyond the permanent velocity lane)
+    // Velocity is a toggleable lane (not permanently shown), so the editor can
+    // open CC lanes without forcing the velocity lane and vice-versa.
+    void setVelocityLaneVisible(bool visible);
+    bool isVelocityLaneVisible() const {
+        return velocityVisible_;
+    }
+    // True when nothing is shown — the host should hide the drawer entirely.
+    bool isDrawerEmpty() const {
+        return !velocityVisible_ && ccTabs_.empty();
+    }
+
+    // True when any CC/pitchbend lane is open
     bool hasExtraLanes() const {
         return !ccTabs_.empty();
     }
@@ -122,9 +133,18 @@ class MidiDrawerComponent : public juce::Component {
     void paintLaneHeaders(juce::Graphics& g);
     void mouseDown(const juce::MouseEvent& e) override;
 
-    // Stacked lane rows (full component coords)
+    // Velocity visibility — when off, the velocity lane is hidden and CC lanes
+    // take the whole drawer.
+    bool velocityVisible_ = true;
+    // Row slot of the first CC lane: velocity occupies slot 0 only when shown.
+    int firstCcSlot() const {
+        return velocityVisible_ ? 1 : 0;
+    }
+
+    // Stacked lane rows (full component coords). Indexed by visible slot:
+    // slot 0 = velocity (when shown), then CC lanes.
     int getLaneCount() const {
-        return 1 + static_cast<int>(ccTabs_.size());
+        return firstCcSlot() + static_cast<int>(ccTabs_.size());
     }
     juce::Rectangle<int> getLaneRowBounds(int laneIndex) const;
 
