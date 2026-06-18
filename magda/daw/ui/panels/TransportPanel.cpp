@@ -931,6 +931,9 @@ void TransportPanel::setupTempoAndQuantize() {
         if (onTempoChange)
             onTempoChange(currentTempo);
     };
+    // Tint the readout purple while a tempo lane is active, matching the volume
+    // / pan controls (the label self-subscribes to AutomationManager).
+    tempoLabel->setAutomationTarget(ControlTarget::tempo());
     addAndMakeVisible(*tempoLabel);
 
     // Time signature — numerator / denominator draggable labels

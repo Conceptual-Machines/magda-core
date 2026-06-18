@@ -290,6 +290,10 @@ void MainView::setupComponents() {
     masterAutomationViewport->setViewedComponent(masterAutomationContentPanel.get(), false);
     masterAutomationViewport->setScrollBarsShown(false, false);
     addAndMakeVisible(*masterAutomationViewport);
+    // The playhead line extends down through this band, so keep it on top of the
+    // band components (it was sent to front before they were created). It is
+    // click-through (hitTest == false), so it does not block lane editing.
+    playheadComponent->toFront(false);
     // A lane added / removed / resized changes the band height: re-run the
     // arrangement layout so the band and the tracks above it resize.
     masterAutomationContentPanel->onBandHeightChanged = [this]() {

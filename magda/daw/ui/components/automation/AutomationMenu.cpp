@@ -152,7 +152,8 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
         for (const auto& send : trackInfo->sends) {
             AutomationTarget target;
             target.kind = ControlTarget::Kind::SendLevel;
-            target.devicePath.trackId = trackId;
+            // trackLevel() so this matches the bound send control's target.
+            target.devicePath = magda::ChainNodePath::trackLevel(trackId);
             target.sendBusIndex = send.busIndex;
 
             juce::String destName = "Send " + juce::String(send.busIndex + 1);
@@ -389,10 +390,12 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
                 });
             }
         } else if (result == 1) {
-            // Create track volume automation lane
+            // Create track volume automation lane. Use the same trackLevel()
+            // path the bound control uses, or the target won't compare equal
+            // (isTrackLevel flag) and the control's automation tint won't light.
             AutomationTarget target;
             target.kind = ControlTarget::Kind::TrackVolume;
-            target.devicePath.trackId = trackId;
+            target.devicePath = magda::ChainNodePath::trackLevel(trackId);
             auto laneId = automationManager.getOrCreateLane(target, AutomationLaneType::Absolute);
             automationManager.setLaneVisible(laneId, true);
             if (onShowAutomationLane) {
@@ -402,7 +405,7 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
             // Create track pan automation lane
             AutomationTarget target;
             target.kind = ControlTarget::Kind::TrackPan;
-            target.devicePath.trackId = trackId;
+            target.devicePath = magda::ChainNodePath::trackLevel(trackId);
             auto laneId = automationManager.getOrCreateLane(target, AutomationLaneType::Absolute);
             automationManager.setLaneVisible(laneId, true);
             if (onShowAutomationLane) {

@@ -1355,7 +1355,7 @@ void TrackInspector::rebuildSendsUI() {
             auto& autoMgr = magda::AutomationManager::getInstance();
             magda::AutomationTarget target;
             target.kind = magda::ControlTarget::Kind::SendLevel;
-            target.devicePath.trackId = srcId;
+            target.devicePath = magda::ChainNodePath::trackLevel(srcId);
             target.sendBusIndex = busIndex;
 
             auto laneId = autoMgr.getLaneForTarget(target);
