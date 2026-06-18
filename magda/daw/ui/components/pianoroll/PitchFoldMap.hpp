@@ -37,12 +37,12 @@ class PitchFoldMap {
     }
 
     /**
-     * Folding only kicks in with >= 2 distinct used pitches; with 0 or 1 there's
-     * nothing to collapse, so the map behaves as the plain 0..127 axis and the
-     * Fold toggle is effectively a no-op.
+     * Folding kicks in with >= 1 distinct used pitch (a single note collapses to
+     * one row). With 0 used pitches there's nothing to collapse, so the map
+     * behaves as the plain 0..127 axis and the Fold toggle is a no-op.
      */
     bool isActive() const {
-        return enabled_ && rowsDescending_.size() >= 2;
+        return enabled_ && !rowsDescending_.empty();
     }
 
     int rowCount() const {

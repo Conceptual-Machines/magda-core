@@ -34,8 +34,9 @@ void OctaveLabelStrip::paint(juce::Graphics& g) {
     const bool folded = foldMap_ != nullptr && foldMap_->isActive();
 
     if (folded) {
-        // Folded: rows are sparse used pitches. The C row may not exist, so
-        // label the topmost row of each octave that is present and rule a
+        // Folded: rows are sparse used pitches, one row per distinct pitch.
+        // Label every row with its own note name (each row is a different
+        // pitch, so there's no shared octave header to lean on) and rule a
         // hairline wherever the octave changes between adjacent rows.
         const int rows = foldMap_->rowCount();
         int prevOctave = std::numeric_limits<int>::min();
@@ -47,13 +48,13 @@ void OctaveLabelStrip::paint(juce::Graphics& g) {
                 prevOctave = octave;
                 continue;
             }
+            const int labelY = y + (noteHeight_ - labelHeight) / 2;
+            auto labelArea =
+                juce::Rectangle<int>(bounds.getX(), labelY, bounds.getWidth(), labelHeight);
+            g.setColour(juce::Colour(0xFFB3B3B3));
+            g.drawText(noteLabel(note), labelArea.reduced(2, 0), juce::Justification::centred,
+                       false);
             if (octave != prevOctave) {
-                const int labelY = y + (noteHeight_ - labelHeight) / 2;
-                auto labelArea =
-                    juce::Rectangle<int>(bounds.getX(), labelY, bounds.getWidth(), labelHeight);
-                g.setColour(juce::Colour(0xFFB3B3B3));
-                g.drawText(noteLabel(note), labelArea.reduced(2, 0), juce::Justification::centred,
-                           false);
                 g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
                 g.drawHorizontalLine(y, static_cast<float>(bounds.getX()),
                                      static_cast<float>(bounds.getRight()));

@@ -356,9 +356,11 @@ void PianoRollContent::applyFold() {
         keyboard_->repaint();
     if (octaveLabelStrip_)
         octaveLabelStrip_->repaint();
-    // After a fold change the content height jumps; bring used rows into view.
-    if (needsInitialCentering_ || foldMap_.isActive())
-        centerOnNotes();
+    // After a fold toggle the content height jumps and the previous scroll maps
+    // to a wildly different pitch (folded rows expand back across the full
+    // 0..127 axis, so a folded view sitting on octave 4 lands on octave 7/8 when
+    // unfolded). Recenter on the notes whichever way we toggled.
+    centerOnNotes();
 }
 
 void PianoRollContent::updateCcLanesButtonState() {

@@ -21,7 +21,7 @@ void PitchFoldMap::rebuild(const std::vector<int>& usedPitches) {
     rowsDescending_.erase(std::unique(rowsDescending_.begin(), rowsDescending_.end()),
                           rowsDescending_.end());
 
-    if (rowsDescending_.size() < 2)
+    if (rowsDescending_.empty())
         return;
 
     // Precompute the nearest used row for every MIDI note so folded-out pitches
