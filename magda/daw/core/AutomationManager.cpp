@@ -40,16 +40,14 @@ static float gainToDb(float gain) {
 
 static double deviceCurrentValueToLaneNormalized(float currentValue,
                                                  const ParameterInfo& paramInfo) {
-    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
-    const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
-                                    std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
-
-    if (teSpan > 0.0f && !infoMatchesTeRange) {
-        return juce::jlimit(0.0, 1.0,
-                            static_cast<double>((currentValue - paramInfo.teMinValue) / teSpan));
-    }
-
-    return static_cast<double>(ParameterUtils::realToNormalized(currentValue, paramInfo));
+    // Symmetric inverse of the playback writeback (normalizedToModelValue), so
+    // the seed point matches where the curve will drive the param. Crucially
+    // this honours isDisplayMappedInternalValue: compiled/internal params whose
+    // stored currentValue is in display units (e.g. the Utility gain in dB,
+    // teMin/teMax left at 0..1) map through realToNormalized instead of being
+    // treated as raw TE-native — otherwise 0 dB seeded the lane at 0.0 (-inf).
+    return static_cast<double>(
+        ParameterUtils::modelToNormalizedValue(ParameterModelValue{currentValue}, paramInfo).value);
 }
 
 // Get current normalized value for an automation target

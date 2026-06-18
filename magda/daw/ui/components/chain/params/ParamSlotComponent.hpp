@@ -164,6 +164,12 @@ class ParamSlotComponent : public juce::Component,
     std::function<void(magda::ChainNodePath, int paramIndex, juce::String paramName)> onMidiLearn;
     std::function<void(magda::ChainNodePath, int paramIndex)> onMidiClear;
 
+    // Show the standard param context menu (link to mod/macro, show automation
+    // lane, MIDI learn). Public so hosts that overlay this slot on their own
+    // control (e.g. the Utility gain fader) can route a right-click here and
+    // get the exact same menu as a regular device param.
+    void showContextMenu();
+
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;

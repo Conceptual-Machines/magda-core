@@ -2401,6 +2401,9 @@ void DeviceSlotComponent::createCustomUI() {
             updateParamModulation();
         }
     };
+    callbacks.onShowAutomationLane = [this](int paramIndex) {
+        showAutomationLaneForParam(paramIndex);
+    };
     callbacks.getNodePath = [this]() { return nodePath_; };
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,

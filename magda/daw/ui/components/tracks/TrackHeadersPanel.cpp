@@ -1676,6 +1676,34 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     panTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
     header.panLabel->setAutomationTarget(panTarget);
 
+    // Right-click the volume / pan readouts to show (or create) their
+    // automation lane, mirroring the send-label menu in the inspector.
+    auto showAutomationLaneMenu = [](AutomationTarget target) {
+        auto& autoMgr = AutomationManager::getInstance();
+        const bool hasLane = autoMgr.getLaneForTarget(target) != magda::INVALID_AUTOMATION_LANE_ID;
+        juce::PopupMenu menu;
+        menu.addItem(1, hasLane ? "Show Automation Lane" : "Add Automation Lane");
+        if (hasLane)
+            menu.addItem(2, "Delete Automation Lane");
+        menu.showMenuAsync(juce::PopupMenu::Options(), [target](int result) {
+            auto& mgr = AutomationManager::getInstance();
+            if (result == 1) {
+                auto id = mgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+                mgr.setLaneVisible(id, true);
+            } else if (result == 2) {
+                auto id = mgr.getLaneForTarget(target);
+                if (id != magda::INVALID_AUTOMATION_LANE_ID)
+                    mgr.deleteLane(id);
+            }
+        });
+    };
+    header.volumeLabel->onRightClick = [showAutomationLaneMenu, volTarget]() {
+        showAutomationLaneMenu(volTarget);
+    };
+    header.panLabel->onRightClick = [showAutomationLaneMenu, panTarget]() {
+        showAutomationLaneMenu(panTarget);
+    };
+
     // Name label callback - updates TrackManager
     header.nameLabel->onTextChange = [this, trackId]() {
         int index = getVisibleHeaderIndex(trackId);

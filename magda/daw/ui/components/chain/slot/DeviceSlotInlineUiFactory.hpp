@@ -37,6 +37,7 @@ struct DeviceSlotInlineUiCallbacks {
     std::function<void()> onUpdateMacroPanel;
     std::function<void(int, float)> onCompiledParamLinkRequested;
     std::function<void(int, float)> onCompiledParamLinkAmountChanged;
+    std::function<void(int)> onShowAutomationLane;
     std::function<magda::ChainNodePath()> getNodePath;
 };
 

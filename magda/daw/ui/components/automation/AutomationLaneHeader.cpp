@@ -34,7 +34,11 @@ class LaneHeaderButton : public juce::Button {
         constexpr float corner = 3.0f;
 
         const bool on = getToggleState();
-        juce::Colour bg = on ? activeColour_ : DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        // Blended scheme: the active state is a muted accent (mixed well toward
+        // the panel surface) rather than a saturated fill, so the buttons sit
+        // quietly in the header instead of standing out against the dark bg.
+        juce::Colour bg = on ? activeColour_.interpolatedWith(surface, 0.62f) : surface;
         if (isButtonDown)
             bg = bg.darker(0.2f);
         else if (isMouseOver)
@@ -45,9 +49,9 @@ class LaneHeaderButton : public juce::Button {
         g.setColour(bg.darker(0.15f));
         g.drawRoundedRectangle(bounds, corner, 1.0f);
 
-        // Glyph colour: white when on (reads against the coloured fill),
-        // neutral grey when off (reads as inactive against SURFACE).
-        juce::Colour glyph = on ? juce::Colours::white : juce::Colour(0xFFB3B3B3);
+        // Glyph: a soft accent tint when on (reads as active without a loud
+        // fill), neutral grey when off.
+        juce::Colour glyph = on ? activeColour_.brighter(0.5f) : juce::Colour(0xFFB3B3B3);
         paintGlyph(g, glyph);
     }
 
@@ -96,20 +100,25 @@ class DeleteLaneButton : public LaneHeaderButton {
         auto bounds = getLocalBounds().toFloat().reduced(0.5f);
         constexpr float corner = 3.0f;
 
-        juce::Colour bg = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
-                              .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
-                              .darker(0.2f);
+        // Blended scheme: sit on the panel surface like the toggles; the X
+        // glyph carries a muted purple/red tint so it still reads as the
+        // destructive action without a loud fill.
+        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto accent =
+            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f);
+        juce::Colour bg = surface;
         if (isButtonDown)
-            bg = bg.darker(0.2f);
+            bg = accent.interpolatedWith(surface, 0.62f);
         else if (isMouseOver)
-            bg = bg.brighter(0.1f);
+            bg = accent.interpolatedWith(surface, 0.78f);
 
         g.setColour(bg);
         g.fillRoundedRectangle(bounds, corner);
         g.setColour(bg.darker(0.15f));
         g.drawRoundedRectangle(bounds, corner, 1.0f);
 
-        paintGlyph(g, juce::Colours::white);
+        paintGlyph(g, accent.brighter(0.4f));
     }
 
     void paintGlyph(juce::Graphics& g, juce::Colour colour) override {

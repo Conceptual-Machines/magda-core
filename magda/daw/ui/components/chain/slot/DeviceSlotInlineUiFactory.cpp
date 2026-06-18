@@ -46,6 +46,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
             std::move(callbacks.onCompiledParamLinkRequested));
         storage.compiledPanel->setOnLinkAmountChanged(
             std::move(callbacks.onCompiledParamLinkAmountChanged));
+        storage.compiledPanel->setOnShowAutomationLane(std::move(callbacks.onShowAutomationLane));
         if (callbacks.onLayoutChanged)
             storage.compiledPanel->setOnLayoutChanged(callbacks.onLayoutChanged);
 

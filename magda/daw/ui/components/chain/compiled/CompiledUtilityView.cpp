@@ -64,6 +64,10 @@ CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
         gainValue_.setText(formatGainDb(v), juce::dontSendNotification);
         writeParameter(Util::kGainSlot, static_cast<float>(v));
     };
+    // Right-click the gain fader gets the exact same menu as any other device
+    // param (link to mod / macro, show automation lane, MIDI learn) by routing
+    // to the overlay link slot that sits on top of the fader.
+    gainFader_.onRightClick = [this]() { gainLinkSlot_.showContextMenu(); };
     addAndMakeVisible(gainFader_);
 
     styleReadoutLabel(gainValue_);
@@ -223,6 +227,15 @@ void CompiledUtilityView::configureLinkSlots() {
 
     configure(gainLinkSlot_, Util::kGainSlot, "Gain", true);
     configure(panLinkSlot_, Util::kPanSlot, "Pan", false);
+
+    gainLinkSlot_.onShowAutomationLane = [this]() {
+        if (onShowAutomationLane)
+            onShowAutomationLane(Util::kGainSlot);
+    };
+    panLinkSlot_.onShowAutomationLane = [this]() {
+        if (onShowAutomationLane)
+            onShowAutomationLane(Util::kPanSlot);
+    };
 }
 
 void CompiledUtilityView::refreshLinkSlotContext() {
@@ -243,6 +256,28 @@ void CompiledUtilityView::refreshLinkSlotContext() {
     apply(panLinkSlot_);
     gainLinkSlot_.refreshLinkModeState();
     panLinkSlot_.refreshLinkModeState();
+
+    // The overlay link slots hide their own valueSlider_ (the part that paints
+    // the "automated" purple tint), so bind the automation target onto the
+    // visible DraggableValueLabels directly so they highlight like the track
+    // volume / pan readouts.
+    auto bindTarget = [this](magda::DraggableValueLabel& label, int slotIndex) {
+        if (!hasLinkContext_) {
+            label.clearAutomationTarget();
+            return;
+        }
+        magda::AutomationTarget target;
+        target.kind = magda::ControlTarget::Kind::PluginParam;
+        target.devicePath = linkContext_.devicePath;
+        target.paramIndex = slotIndex;
+        label.setAutomationTarget(target);
+    };
+    using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
+    bindTarget(gainFader_, Util::kGainSlot);
+    bindTarget(panLabel_, Util::kPanSlot);
+    bindTarget(widthLabel_, Util::kWidthSlot);
+    bindTarget(xoverLabel_, Util::kLowMonoFreqSlot);
+
     updateLinkSlotValues();
 }
 
