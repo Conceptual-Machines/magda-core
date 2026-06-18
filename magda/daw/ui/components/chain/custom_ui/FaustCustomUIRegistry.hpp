@@ -10,7 +10,7 @@
 #include "audio/plugins/FaustCustomViewKind.hpp"
 
 namespace magda::daw::audio {
-class IFaustEditorModel;
+class FaustPlugin;
 }
 
 namespace magda::daw::ui {
@@ -21,8 +21,7 @@ using magda::daw::audio::FaustCustomViewKind;
  * @brief Base class for per-DSP custom views inside FaustUI.
  *
  * A custom view sits between FaustUI's header strip and the standard
- * device parameter grid, bound to one Faust device (IFaustEditorModel,
- * i.e. either the Faust effect or instrument). It reads
+ * device parameter grid, bound to one FaustPlugin instance. It reads
  * live parameter values via the plugin's FaustParamPool zones (or the
  * matching AutomatableParameter for thread-safe message-side reads)
  * and renders whatever JUCE the host wants — a transfer-curve plot, an
@@ -62,7 +61,7 @@ class FaustCustomView : public juce::Component {
 class FaustCustomUIRegistry {
   public:
     using Factory =
-        std::function<std::unique_ptr<FaustCustomView>(magda::daw::audio::IFaustEditorModel&)>;
+        std::function<std::unique_ptr<FaustCustomView>(magda::daw::audio::FaustPlugin&)>;
 
     static FaustCustomUIRegistry& getInstance();
 
@@ -74,7 +73,7 @@ class FaustCustomUIRegistry {
     /// Returns nullptr if `kind` is `None` or no factory is registered
     /// for it.
     std::unique_ptr<FaustCustomView> create(FaustCustomViewKind kind,
-                                            magda::daw::audio::IFaustEditorModel& plugin) const;
+                                            magda::daw::audio::FaustPlugin& plugin) const;
 
   private:
     FaustCustomUIRegistry() = default;

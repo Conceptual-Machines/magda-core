@@ -7,7 +7,6 @@
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/plugins/FaustInstrumentPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "audio/plugins/LevelsPlugin.hpp"
@@ -104,8 +103,6 @@ const InternalDeviceMetadata kMetadata[] = {
      "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics)."},
     {InternalDeviceKind::Faust, "Faust", "", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code."},
-    {InternalDeviceKind::FaustInstrument, "Faust Instrument", "", "Experimental",
-     "Polyphonic Faust synth instrument driven by MIDI (POC)."},
 };
 
 struct CompiledMetadataCache {
@@ -146,7 +143,6 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     // for each so the classifier doesn't depend on a using-directive.
     using daw::audio::ArpeggiatorPlugin;
     using daw::audio::DrumGridPlugin;
-    using daw::audio::FaustInstrumentPlugin;
     using daw::audio::FaustPlugin;
     using daw::audio::InstrumentMeterTapPlugin;
     using daw::audio::LevelsPlugin;
@@ -190,7 +186,6 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::InstrumentMeterTap, InstrumentMeterTapPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, nullptr},
-        {InternalDeviceKind::FaustInstrument, FaustInstrumentPlugin::xmlTypeName, nullptr},
         // Plugins still in plain magda:: (older infra layers).
         {InternalDeviceKind::MidiReceive, MidiReceivePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::SidechainMonitor, SidechainMonitorPlugin::xmlTypeName, nullptr},
