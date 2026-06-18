@@ -11,6 +11,7 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
@@ -617,6 +618,20 @@ te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
     return dynamic_cast<te::ExternalPlugin*>(plugin.get());
 }
 }  // namespace
+
+juce::String AudioBridge::getVst3DeviceId(const ChainNodePath& devicePath) const {
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath));
+    if (ext == nullptr)
+        return {};
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return {};
+    auto* vst3 = pi->getVST3Client();
+    if (vst3 == nullptr)
+        return {};  // not a VST3 plugin
+    // getPreset() returns a .vstpreset whose header carries the 32-char class id.
+    return vst3::classIdFromPreset(vst3->getPreset());
+}
 
 int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
     if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {

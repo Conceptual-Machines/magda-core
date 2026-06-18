@@ -1,6 +1,7 @@
 # Test sources
 set(TEST_SOURCES
     test_audio_bridge.cpp
+    test_vst3_preset.cpp
     test_audiobridge_track_limit_bug.cpp
     test_audiobridge_plugin_cleanup_bug.cpp
     test_auto_tempo.cpp
