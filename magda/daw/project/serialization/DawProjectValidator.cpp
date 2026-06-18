@@ -11,6 +11,19 @@ namespace magda {
 namespace {
 
 juce::File schemaDirectory() {
+    // Released builds carry the XSDs next to the binary (Contents/Resources on
+    // macOS, exe-adjacent elsewhere) via CMake's POST_BUILD copy + install rules.
+    // Fall back to the build-tree source dir for dev runs and unit tests, where
+    // nothing is staged alongside the executable.
+    auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+#if JUCE_MAC
+    auto bundled = exe.getChildFile("Contents/Resources/dawproject");
+#else
+    auto bundled = exe.getParentDirectory().getChildFile("dawproject");
+#endif
+    if (bundled.isDirectory())
+        return bundled;
+
     return juce::File(MAGDA_DAWPROJECT_SCHEMA_DIR);
 }
 

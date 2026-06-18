@@ -374,4 +374,7 @@ if(NOT APPLE)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
         DESTINATION bin
     )
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/dawproject"
+        DESTINATION bin
+    )
 endif()

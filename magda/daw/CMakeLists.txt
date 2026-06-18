@@ -658,6 +658,27 @@ else()
     )
 endif()
 
+# Copy third_party/dawproject/ (vendored Project.xsd + MetaData.xsd) into the
+# app so DawProjectValidator can validate import/export against the schemas at
+# runtime. Without this, the build-time MAGDA_DAWPROJECT_SCHEMA_DIR source path
+# does not exist on an end-user machine and every validate call fails.
+set(MAGDA_DAWPROJECT_SCHEMA_SRC "${CMAKE_SOURCE_DIR}/third_party/dawproject")
+if(APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_DAWPROJECT_SCHEMA_SRC}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/dawproject"
+        COMMENT "Copying DAWproject schemas to app bundle Resources"
+    )
+else()
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_DAWPROJECT_SCHEMA_SRC}"
+            "$<TARGET_FILE_DIR:magda_daw_app>/dawproject"
+        COMMENT "Copying DAWproject schemas alongside app executable"
+    )
+endif()
+
 # Bundle the ONNX Runtime shared library with the app. The linker only bakes
 # the FetchContent `_deps/onnxruntime-src/lib/` build-dir path into the binary's
 # rpath, which does not exist on an end-user machine, so the distributed app

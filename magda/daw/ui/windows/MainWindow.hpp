@@ -50,6 +50,9 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
     /** Open a .mgd project file (used by menu, command line, and OS file association). */
     void openProjectFile(const juce::File& file);
 
+    /** Import a .dawproject interchange archive as a new unsaved project. */
+    void importDawProjectFile(const juce::File& file);
+
     /** Re-read panel visibility from Config and apply immediately. */
     void applyPanelVisibilityFromConfig();
 
