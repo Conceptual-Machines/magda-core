@@ -196,6 +196,59 @@ void addWarpedAudioContent(juce::XmlElement& clipElement, const ClipInfo& clip,
     end->setAttribute("contentTime", sourceSeconds);
 }
 
+// ---- Devices (VST3 / AU hosted plugins) -----------------------------------
+//
+// VST2 is unsupported in MAGDA and CLAP is not wired yet, so only VST3/AU are
+// exported. Native MAGDA devices and racks are skipped: they have no portable
+// DAWproject representation (a follow-up could emit them as opaque BuiltinDevices
+// for MAGDA<->MAGDA only).
+
+bool isExportableDevice(const DeviceInfo& device) {
+    return device.format == PluginFormat::VST3 || device.format == PluginFormat::AU;
+}
+
+const char* deviceElementTag(PluginFormat format) {
+    return format == PluginFormat::AU ? "AuPlugin" : "Vst3Plugin";
+}
+
+juce::String deviceStateArchivePath(DeviceId id) {
+    return "plugins/device-" + juce::String(static_cast<int>(id)) + ".bin";
+}
+
+// Top-level FX-chain + post-FX devices that map to DAWproject. Racks (parallel
+// routing) are intentionally not descended into.
+void collectExportableDevices(const TrackInfo& track, std::vector<const DeviceInfo*>& out) {
+    for (const auto& element : track.chain.fxChainElements)
+        if (isDevice(element) && isExportableDevice(getDevice(element)))
+            out.push_back(&getDevice(element));
+    for (const auto& postFx : track.chain.postFxChainElements)
+        if (isExportableDevice(postFx.device))
+            out.push_back(&postFx.device);
+}
+
+void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
+    auto* dev = devices.createNewChildElement(deviceElementTag(device.format));
+    dev->setAttribute("deviceRole", device.isInstrument ? "instrument" : "audioFX");
+    dev->setAttribute("deviceName", device.name);
+
+    const auto deviceId = device.uniqueId.isNotEmpty() ? device.uniqueId : device.fileOrIdentifier;
+    if (deviceId.isNotEmpty())
+        dev->setAttribute("deviceID", deviceId);
+    if (device.manufacturer.isNotEmpty())
+        dev->setAttribute("deviceVendor", device.manufacturer);
+
+    // device sequence is Parameters, Enabled, State. We skip Parameters (the
+    // State chunk is what actually restores the plugin).
+    addBoolParameter(*dev, "Enabled", idFor("deviceEnabled", device.id), "Enabled",
+                     !device.bypassed);
+
+    if (device.pluginState.isNotEmpty()) {
+        auto* state = dev->createNewChildElement("State");
+        state->setAttribute("path", deviceStateArchivePath(device.id));
+        state->setAttribute("external", "false");
+    }
+}
+
 ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipId clipId) {
     ClipInfo clip;
     clip.id = clipId;
@@ -322,6 +375,16 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
         channel->setAttribute("role", "regular");
         channel->setAttribute("audioChannels", 2);
         channel->setAttribute("solo", track.soloed ? "true" : "false");
+
+        // <Devices> is first in the channel sequence (before Mute/Pan/Volume).
+        std::vector<const DeviceInfo*> channelDevices;
+        collectExportableDevices(track, channelDevices);
+        if (!channelDevices.empty()) {
+            auto* devices = channel->createNewChildElement("Devices");
+            for (const auto* device : channelDevices)
+                addDevice(*devices, *device);
+        }
+
         addBoolParameter(*channel, "Mute", idFor("mute", track.id), "Mute", track.muted);
         addRealParameter(*channel, "Pan", idFor("pan", track.id), "Pan", "normalized",
                          linearToDawProjectPan(track.pan), 0.0, 1.0);
@@ -428,6 +491,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
 
     std::map<juce::String, TrackId> trackIds;
     TrackId nextTrackId = 1;
+    DeviceId nextDeviceId = 1;
     if (auto* structure = root->getChildByName("Structure")) {
         for (auto* trackElement : structure->getChildWithTagNameIterator("Track")) {
             TrackInfo track;
@@ -446,6 +510,37 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 if (auto* mute = channel->getChildByName("Mute"))
                     track.muted = mute->getBoolAttribute("value", false);
                 track.soloed = channel->getBoolAttribute("solo", false);
+
+                // VST3/AU devices. State holds the archive path here; readFromFile
+                // swaps it for the base64 chunk once the zip is available.
+                if (auto* devices = channel->getChildByName("Devices")) {
+                    for (auto* devEl : devices->getChildIterator()) {
+                        const auto tag = devEl->getTagName();
+                        DeviceInfo device;
+                        if (tag == "Vst3Plugin")
+                            device.format = PluginFormat::VST3;
+                        else if (tag == "AuPlugin")
+                            device.format = PluginFormat::AU;
+                        else
+                            continue;  // VST2/CLAP/BuiltinDevice not supported
+
+                        device.id = nextDeviceId++;
+                        device.name = devEl->getStringAttribute("deviceName");
+                        device.uniqueId = devEl->getStringAttribute("deviceID");
+                        device.fileOrIdentifier = device.uniqueId;
+                        device.manufacturer = devEl->getStringAttribute("deviceVendor");
+                        device.isInstrument =
+                            devEl->getStringAttribute("deviceRole") == "instrument";
+                        device.deviceType =
+                            device.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+                        if (auto* enabled = devEl->getChildByName("Enabled"))
+                            device.bypassed = !enabled->getBoolAttribute("value", true);
+                        if (auto* state = devEl->getChildByName("State"))
+                            device.pluginState = state->getStringAttribute("path");
+
+                        track.chain.fxChainElements.push_back(std::move(device));
+                    }
+                }
             }
 
             trackIds[trackElement->getStringAttribute("id")] = track.id;
@@ -504,6 +599,19 @@ std::vector<DawProjectXmlAdapter::EmbeddedAudioFile> DawProjectXmlAdapter::colle
     }
 
     return files;
+}
+
+std::vector<DawProjectXmlAdapter::EmbeddedDeviceState> DawProjectXmlAdapter::collectDeviceStates(
+    const ProjectDocument& document) {
+    std::vector<const DeviceInfo*> devices;
+    for (const auto& track : document.tracks)
+        collectExportableDevices(track, devices);
+
+    std::vector<EmbeddedDeviceState> states;
+    for (const auto* device : devices)
+        if (device->pluginState.isNotEmpty())
+            states.push_back({device->pluginState, deviceStateArchivePath(device->id)});
+    return states;
 }
 
 }  // namespace magda

@@ -18,6 +18,15 @@ class DawProjectXmlAdapter {
         juce::String archivePath;  // relative path inside the .dawproject zip
     };
 
+    // A plugin state chunk (base64 in the model) and the relative path it gets
+    // stored under inside the archive. DAWproject references device state via a
+    // <State> fileReference; the archive writer decodes the base64 and writes the
+    // raw bytes in.
+    struct EmbeddedDeviceState {
+        juce::String stateBase64;  // DeviceInfo::pluginState
+        juce::String archivePath;  // relative path inside the .dawproject zip
+    };
+
     static juce::String toProjectXml(const ProjectDocument& document);
     static bool fromProjectXml(const juce::String& xml, ProjectDocument& outDocument,
                                juce::String& error);
@@ -26,6 +35,11 @@ class DawProjectXmlAdapter {
     // each assigned a collision-free archive-relative path. toProjectXml() and
     // the archive writer share this so the XML refs and the stored files agree.
     static std::vector<EmbeddedAudioFile> collectEmbeddedAudio(const ProjectDocument& document);
+
+    // Plugin state chunks for the VST3/AU devices the exporter writes, each
+    // assigned an archive-relative path. toProjectXml() and the archive writer
+    // share this so the <State> refs and the stored chunks agree.
+    static std::vector<EmbeddedDeviceState> collectDeviceStates(const ProjectDocument& document);
 };
 
 }  // namespace magda

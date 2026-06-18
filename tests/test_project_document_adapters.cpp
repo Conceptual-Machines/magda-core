@@ -381,3 +381,60 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     REQUIRE(ic.audio().interpretation.totalBeats == 4.0);
     REQUIRE(ic.audio().source.durationSeconds == 2.0);
 }
+
+TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
+          "[project][serialization][dawproject][device]") {
+    ProjectDocument document;
+    document.info.name = "Device Test";
+    document.info.version = "0.device";
+    document.info.tempo = 120.0;
+
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Synth";
+
+    DeviceInfo device;
+    device.id = 1;
+    device.name = "Pro-Q 3";
+    device.manufacturer = "FabFilter";
+    device.format = PluginFormat::VST3;
+    device.isInstrument = false;
+    device.uniqueId = "VST3-ProQ3-abc123";
+    const juce::String chunk = "RAW-PLUGIN-STATE-BYTES";
+    device.pluginState = juce::Base64::toBase64(chunk.toRawUTF8(), chunk.getNumBytesAsUTF8());
+    track.chain.fxChainElements.push_back(device);
+    document.tracks.push_back(track);
+
+    auto archive = createTempDawProjectFile();
+    juce::String error;
+    REQUIRE(DawProjectArchive::writeToFile(archive, document, error));
+    INFO(error);
+    REQUIRE(error.isEmpty());
+
+    juce::ZipFile zip(archive);
+    auto projectXml = readZipTextEntry(zip, "project.xml");
+    REQUIRE(projectXml.contains("<Vst3Plugin"));
+    REQUIRE(projectXml.contains("deviceName=\"Pro-Q 3\""));
+    REQUIRE(projectXml.contains("deviceRole=\"audioFX\""));
+    REQUIRE(zip.getIndexOfFileName("plugins/device-1.bin", false) >= 0);
+
+    ProjectDocument imported;
+    REQUIRE(DawProjectArchive::readFromFile(archive, imported, error));
+    REQUIRE(imported.tracks.size() == 1);
+    const auto& chain = imported.tracks[0].chain.fxChainElements;
+    REQUIRE(chain.size() == 1);
+    REQUIRE(isDevice(chain[0]));
+    const auto& d = getDevice(chain[0]);
+    REQUIRE(d.format == PluginFormat::VST3);
+    REQUIRE(d.name == "Pro-Q 3");
+    REQUIRE(d.manufacturer == "FabFilter");
+    REQUIRE_FALSE(d.isInstrument);
+    REQUIRE_FALSE(d.bypassed);
+
+    // The state chunk round-trips bit-for-bit through embed -> extract -> base64.
+    juce::MemoryOutputStream decoded;
+    REQUIRE(juce::Base64::convertFromBase64(decoded, d.pluginState));
+    REQUIRE(decoded.toString() == chunk);
+
+    archive.deleteFile();
+}
