@@ -101,6 +101,7 @@ option(MAGDA_HAVE_CLAP "Enable CLAP audio/text encoders via ONNX Runtime" ${_mag
 
 # Find packages
 find_package(Threads REQUIRED)
+find_package(LibXml2 REQUIRED)
 
 # Include FetchContent for dependency management
 include(FetchContent)

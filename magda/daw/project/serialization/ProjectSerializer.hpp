@@ -61,6 +61,22 @@ class ProjectSerializer {
     static bool loadAndStage(const juce::File& file, StagedProjectData& outData);
 
     /**
+     * @brief Export current project state to a .dawproject archive
+     * @param file Target .dawproject file
+     * @param info Project metadata
+     * @return true on success, false on error (check getLastError())
+     */
+    static bool exportToDawProject(const juce::File& file, const ProjectInfo& info);
+
+    /**
+     * @brief Read, validate, and stage a .dawproject archive
+     * @param file Source .dawproject file
+     * @param outData Output staged data ready for commitStaged()
+     * @return true on success, false on error (check getLastError())
+     */
+    static bool loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData);
+
+    /**
      * @brief Commit previously staged data to singleton managers (message thread only)
      * @param data Staged data from a successful loadAndStage() call
      */

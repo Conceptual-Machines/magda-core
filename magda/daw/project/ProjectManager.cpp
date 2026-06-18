@@ -281,6 +281,66 @@ bool ProjectManager::loadProject(const juce::File& file,
     return true;
 }
 
+bool ProjectManager::exportDawProject(const juce::File& file) {
+    if (onBeforeSave)
+        onBeforeSave();
+
+    ProjectInfo exportInfo = currentProject_;
+    if (exportInfo.name.isEmpty())
+        exportInfo.name = file.getFileNameWithoutExtension();
+    exportInfo.touch();
+
+    if (!ProjectSerializer::exportToDawProject(file, exportInfo)) {
+        DBG("Failed to export DAWproject: " + ProjectSerializer::getLastError());
+        lastError_ = ProjectSerializer::getLastError();
+        return false;
+    }
+
+    return true;
+}
+
+bool ProjectManager::importDawProject(const juce::File& file,
+                                      std::function<void(const ProjectInfo&)> onBeforeCommit) {
+    if (isDirty_ && !showUnsavedChangesDialog())
+        return false;
+
+    if (!file.existsAsFile()) {
+        lastError_ = "File does not exist: " + file.getFullPathName();
+        return false;
+    }
+
+    StagedProjectData staged;
+    if (!ProjectSerializer::loadDawProjectAndStage(file, staged)) {
+        DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
+        lastError_ = ProjectSerializer::getLastError();
+        return false;
+    }
+
+    resetTransportForProjectBoundary();
+
+    if (onBeforeCommit)
+        onBeforeCommit(staged.info);
+
+    ProjectSerializer::commitStaged(staged);
+
+    currentProject_ = staged.info;
+    currentProject_.filePath = {};
+    currentFile_ = juce::File();
+    isProjectOpen_ = true;
+
+    createTempMediaDirectory();
+    ensureMediaSubdirectories(mediaDirectory_);
+
+    isDirty_ = true;
+    notifyProjectOpened();
+    notifyDirtyStateChanged();
+
+    if (onAfterLoad)
+        onAfterLoad(currentProject_);
+
+    return true;
+}
+
 void ProjectManager::loadProjectAsync(const juce::File& file,
                                       std::function<void(const ProjectInfo&)> onBeforeCommit,
                                       std::function<void(bool, const juce::String&)> onComplete) {

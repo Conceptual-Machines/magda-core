@@ -94,6 +94,17 @@ class ProjectManager : private juce::Timer {
                      std::function<void(const ProjectInfo&)> onBeforeCommit = nullptr);
 
     /**
+     * @brief Export the current project to a .dawproject interchange archive.
+     */
+    bool exportDawProject(const juce::File& file);
+
+    /**
+     * @brief Import a .dawproject archive as a new unsaved Magda project.
+     */
+    bool importDawProject(const juce::File& file,
+                          std::function<void(const ProjectInfo&)> onBeforeCommit = nullptr);
+
+    /**
      * @brief Load project asynchronously (heavy I/O on background thread, commit on message thread)
      * @param file Source file path
      * @param onBeforeCommit Callback invoked on message thread before committing staged data.
