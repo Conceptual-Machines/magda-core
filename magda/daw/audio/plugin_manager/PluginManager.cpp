@@ -142,15 +142,26 @@ void collectValidDevicePaths(const TrackInfo& track, std::set<ChainNodePath>& va
         validDevicePaths.insert(ChainNodePath::mixerAnalysisDevice(track.id, elem.device.id));
 }
 
-// Cache the VST3 class id (the portable DAWproject deviceID) once per device.
-// It is stable for the plugin's lifetime, so skip if already captured; reading it
-// requires serialising a .vstpreset, which we don't want to repeat on every save.
-void captureVst3ClassId(DeviceInfo& devInfo, te::ExternalPlugin* ext) {
-    if (ext == nullptr || devInfo.vst3ClassId.isNotEmpty())
+// Capture the VST3 .vstpreset for a device: the class id (stable, cached once)
+// and the current preset blob (refreshed each capture, since the patch changes).
+// One getPreset() call yields both - the class id lives in the preset header.
+// These feed the portable DAWproject deviceID + <State>.
+void captureVst3Info(DeviceInfo& devInfo, te::ExternalPlugin* ext) {
+    if (ext == nullptr)
         return;
-    if (auto* pi = ext->getAudioPluginInstance())
-        if (auto* vst3 = pi->getVST3Client())
-            devInfo.vst3ClassId = vst3::classIdFromPreset(vst3->getPreset());
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return;
+    auto* vst3 = pi->getVST3Client();
+    if (vst3 == nullptr)
+        return;  // not a VST3
+
+    const auto preset = vst3->getPreset();
+    if (preset.getSize() == 0)
+        return;
+    if (devInfo.vst3ClassId.isEmpty())
+        devInfo.vst3ClassId = vst3::classIdFromPreset(preset);
+    devInfo.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
 }
 
 }  // namespace
@@ -442,7 +453,7 @@ void PluginManager::captureAllPluginStates() {
             auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
             if (devInfo) {
                 devInfo->pluginState = stateStr;
-                captureVst3ClassId(*devInfo, capturedExt);
+                captureVst3Info(*devInfo, capturedExt);
                 if (sd.processor != nullptr)
                     sd.processor->populateParameters(*devInfo);
             }
@@ -481,7 +492,7 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     auto& trackManager = TrackManager::getInstance();
     if (auto* devInfo = trackManager.getDeviceInChainByPath(devicePath)) {
         devInfo->pluginState = stateStr;
-        captureVst3ClassId(*devInfo, capturedExt);
+        captureVst3Info(*devInfo, capturedExt);
         if (it->second.processor)
             it->second.processor->populateParameters(*devInfo);
     }

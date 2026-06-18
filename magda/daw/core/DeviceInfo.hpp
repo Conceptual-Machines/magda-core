@@ -171,6 +171,12 @@ struct DeviceInfo {
     // for non-VST3 devices. Runtime/interchange only - not part of native state.
     juce::String vst3ClassId;
 
+    // Base64 of the plugin's current .vstpreset (Steinberg preset format), captured
+    // for hosted VST3 plugins. Used as the portable DAWproject <State> so other
+    // hosts (and MAGDA on import) can restore the patch via setPreset(). Refreshed
+    // on capture; interchange only - native state uses pluginState.
+    juce::String vst3Preset;
+
     // Plugin loading state (Loading while async load is in-flight)
     DeviceLoadState loadState = DeviceLoadState::Loaded;
 

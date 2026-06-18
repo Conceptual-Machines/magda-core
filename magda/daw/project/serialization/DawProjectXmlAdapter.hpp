@@ -18,13 +18,12 @@ class DawProjectXmlAdapter {
         juce::String archivePath;  // relative path inside the .dawproject zip
     };
 
-    // A plugin state chunk and the relative path it gets stored under inside the
-    // archive. DAWproject references device state via a <State> fileReference.
-    // DeviceInfo::pluginState is an opaque string (TE's serialized plugin state —
-    // JUCE-base64 for external plugins, XML for internal ones), embedded verbatim
-    // so it round-trips MAGDA<->MAGDA byte-for-byte.
+    // Raw bytes of a device's state file and the relative path it gets stored
+    // under inside the archive. For VST3 this is the .vstpreset (Steinberg preset,
+    // loadable by other hosts); for other devices it's MAGDA's opaque TE plugin-
+    // state blob. The <State> fileReference points at this path.
     struct EmbeddedDeviceState {
-        juce::String state;        // DeviceInfo::pluginState, verbatim
+        juce::MemoryBlock bytes;   // exact file contents to write into the archive
         juce::String archivePath;  // relative path inside the .dawproject zip
     };
 

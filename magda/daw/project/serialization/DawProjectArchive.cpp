@@ -85,11 +85,10 @@ bool DawProjectArchive::writeToFile(const juce::File& file, const ProjectDocumen
         for (const auto& audio : DawProjectXmlAdapter::collectEmbeddedAudio(document))
             builder.addFile(juce::File(audio.sourcePath), 0, audio.archivePath);
 
-        // Embed VST3/AU plugin state chunks as the files their <State> references
-        // point at. pluginState is an opaque string (TE plugin state), stored
-        // verbatim so it restores byte-for-byte.
+        // Embed device state files (a VST3 .vstpreset, or the opaque TE blob for
+        // other devices) as the files their <State> references point at.
         for (const auto& state : DawProjectXmlAdapter::collectDeviceStates(document))
-            builder.addEntry(streamForXml(state.state).release(), 9, state.archivePath,
+            builder.addEntry(new juce::MemoryInputStream(state.bytes, true), 9, state.archivePath,
                              juce::Time::getCurrentTime());
 
         double progress = 0.0;
@@ -161,24 +160,34 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
             clip.audio().source.filePath = mediaDir.getChildFile(entryName).getFullPathName();
     }
 
-    // Pull embedded plugin-state chunks back into the model. fromProjectXml left
-    // the archive path in pluginState; replace it with the stored string verbatim
-    // (the same opaque TE plugin-state text that was embedded).
+    // Pull embedded device state back into the model. fromProjectXml left the
+    // archive path in pluginState; resolve it to the stored bytes. A .vstpreset
+    // entry becomes vst3Preset (base64, applied via setPreset on load); anything
+    // else is the opaque TE blob, restored verbatim as a string.
     for (auto& track : outDocument.tracks) {
         for (auto& element : track.chain.fxChainElements) {
             if (!isDevice(element))
                 continue;
             auto& device = getDevice(element);
-            if (device.pluginState.isEmpty())
+            const auto statePath = device.pluginState;
+            if (statePath.isEmpty())
                 continue;
-            const int stateIndex = zip.getIndexOfFileName(device.pluginState, false);
+            const int stateIndex = zip.getIndexOfFileName(statePath, false);
             if (stateIndex < 0)
-                continue;  // not an embedded chunk path; leave untouched
+                continue;  // not an embedded path; leave untouched
 
             std::unique_ptr<juce::InputStream> stream(zip.createStreamForEntry(stateIndex));
             if (!stream)
                 continue;
-            device.pluginState = stream->readEntireStreamAsString();
+
+            if (statePath.endsWithIgnoreCase(".vstpreset")) {
+                juce::MemoryBlock bytes;
+                stream->readIntoMemoryBlock(bytes);
+                device.vst3Preset = juce::Base64::toBase64(bytes.getData(), bytes.getSize());
+                device.pluginState = {};  // clear the path placeholder
+            } else {
+                device.pluginState = stream->readEntireStreamAsString();
+            }
         }
     }
 

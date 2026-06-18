@@ -402,9 +402,18 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     device.uniqueId = "VST3-ProQ3-abc123";
     // The captured VST3 class id is the portable deviceID other hosts match on.
     device.vst3ClassId = "ABCDEF019182FAEB786C6E4178414432";
-    // pluginState is an opaque TE plugin-state string; it must survive verbatim.
-    const juce::String chunk = "<PLUGIN state=\"AQIDBA==\"/>";
-    device.pluginState = chunk;
+    // A VST3 device exports its .vstpreset as <State>. Build a minimal-but-real
+    // preset blob and stash it base64 the way capture does.
+    juce::MemoryBlock presetBytes;
+    {
+        juce::MemoryOutputStream out(presetBytes, false);
+        out.write("VST3", 4);
+        out.writeInt(1);
+        out.write("ABCDEF019182FAEB786C6E4178414432", 32);
+        out.writeInt64(0);
+        out.write("CHUNKDATA", 9);
+    }
+    device.vst3Preset = juce::Base64::toBase64(presetBytes.getData(), presetBytes.getSize());
     track.chain.fxChainElements.push_back(device);
     document.tracks.push_back(track);
 
@@ -421,7 +430,9 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     REQUIRE(projectXml.contains("deviceRole=\"audioFX\""));
     // deviceID is the VST3 class id, not MAGDA's uniqueId.
     REQUIRE(projectXml.contains("deviceID=\"ABCDEF019182FAEB786C6E4178414432\""));
-    REQUIRE(zip.getIndexOfFileName("plugins/device-1.bin", false) >= 0);
+    // State is a .vstpreset (loadable by other hosts), not the opaque .bin blob.
+    REQUIRE(projectXml.contains("path=\"plugins/device-1.vstpreset\""));
+    REQUIRE(zip.getIndexOfFileName("plugins/device-1.vstpreset", false) >= 0);
 
     ProjectDocument imported;
     REQUIRE(DawProjectArchive::readFromFile(archive, imported, error));
@@ -438,8 +449,9 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     // The class id (deviceID) round-trips as the portable identity.
     REQUIRE(d.vst3ClassId == "ABCDEF019182FAEB786C6E4178414432");
 
-    // The opaque plugin-state string round-trips verbatim through embed/extract.
-    REQUIRE(d.pluginState == chunk);
+    // The .vstpreset round-trips (base64) and the path placeholder is cleared.
+    REQUIRE(d.vst3Preset == device.vst3Preset);
+    REQUIRE(d.pluginState.isEmpty());
 
     archive.deleteFile();
 }

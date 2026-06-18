@@ -2,8 +2,10 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <cstring>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 
 #include "../../core/TempoUtils.hpp"
@@ -225,8 +227,29 @@ const char* deviceElementTag(const DeviceInfo& device) {
     return resolveDeviceFormat(device) == PluginFormat::AU ? "AuPlugin" : "Vst3Plugin";
 }
 
-juce::String deviceStateArchivePath(DeviceId id) {
-    return "plugins/device-" + juce::String(static_cast<int>(id)) + ".bin";
+// A device's DAWproject state file: where it lives in the archive and its exact
+// bytes. VST3 devices export their .vstpreset (loadable by other hosts); anything
+// else falls back to MAGDA's opaque TE plugin-state blob. nullopt = no state.
+struct DeviceStateFile {
+    juce::String archivePath;
+    juce::MemoryBlock bytes;
+};
+
+std::optional<DeviceStateFile> deviceStateFile(const DeviceInfo& device) {
+    const auto base = "plugins/device-" + juce::String(static_cast<int>(device.id));
+
+    if (device.vst3Preset.isNotEmpty()) {
+        juce::MemoryOutputStream decoded;
+        if (juce::Base64::convertFromBase64(decoded, device.vst3Preset))
+            return DeviceStateFile{base + ".vstpreset", decoded.getMemoryBlock()};
+    }
+
+    if (device.pluginState.isNotEmpty()) {
+        const auto* utf8 = device.pluginState.toRawUTF8();
+        return DeviceStateFile{base + ".bin", juce::MemoryBlock(utf8, std::strlen(utf8))};
+    }
+
+    return std::nullopt;
 }
 
 // Top-level FX-chain + post-FX devices that map to DAWproject. Racks (parallel
@@ -265,9 +288,9 @@ void addDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     addBoolParameter(*dev, "Enabled", idFor("deviceEnabled", device.id), "Enabled",
                      !device.bypassed);
 
-    if (device.pluginState.isNotEmpty()) {
+    if (auto stateFile = deviceStateFile(device)) {
         auto* state = dev->createNewChildElement("State");
-        state->setAttribute("path", deviceStateArchivePath(device.id));
+        state->setAttribute("path", stateFile->archivePath);
         state->setAttribute("external", "false");
     }
 }
@@ -639,8 +662,8 @@ std::vector<DawProjectXmlAdapter::EmbeddedDeviceState> DawProjectXmlAdapter::col
 
     std::vector<EmbeddedDeviceState> states;
     for (const auto* device : devices)
-        if (device->pluginState.isNotEmpty())
-            states.push_back({device->pluginState, deviceStateArchivePath(device->id)});
+        if (auto stateFile = deviceStateFile(*device))
+            states.push_back({std::move(stateFile->bytes), std::move(stateFile->archivePath)});
     return states;
 }
 
