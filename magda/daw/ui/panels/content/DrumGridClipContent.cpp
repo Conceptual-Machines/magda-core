@@ -2018,6 +2018,19 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(controlsToggle_.get());
 
+    // Fold toggle (collapse to pads that have notes) — mirrors the piano roll.
+    foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::iconfoldboldm_svg,
+                                                     BinaryData::iconfoldboldm_svgSize);
+    foldToggle_->setTooltip("Fold to used pads");
+    foldToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    foldToggle_->setActive(foldEnabled_);
+    foldToggle_->onClick = [this]() {
+        foldEnabled_ = !foldEnabled_;
+        foldToggle_->setActive(foldEnabled_);
+        applyFold();
+    };
+    addAndMakeVisible(foldToggle_.get());
+
     verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
     verticalZoomStrip_->setGestureContext(magda::GestureContext::DrumGrid);
     verticalZoomStrip_->getValue = [this]() { return rowHeight_; };
@@ -2386,9 +2399,12 @@ void DrumGridClipContent::resized() {
     // Skip sidebar (painted in paint())
     bounds.removeFromLeft(SIDEBAR_WIDTH);
 
-    // Position sidebar icon at the bottom of the sidebar
+    // Sidebar icons: fold toggle at the top, controls (velocity/CC) at the
+    // bottom — mirrors the piano roll's sidebar layout.
     int iconSize = 22;
     int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
+    if (foldToggle_)
+        foldToggle_->setBounds(iconPadding, RULER_HEIGHT + iconPadding, iconSize, iconSize);
     controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
                                iconSize);
 
@@ -2824,13 +2840,44 @@ juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
     return juce::MidiMessage::getMidiNoteName(noteNumber, true, true, 3);
 }
 
+void DrumGridClipContent::onFoldMapChanged() {
+    // Drum fold works off the pad-row set (not the pitch fold map): rebuild it
+    // with the current fold filter, then re-point and repaint the grid + labels.
+    buildPadRows();
+    if (gridComponent_) {
+        gridComponent_->setPadRows(&padRows_);
+        gridComponent_->refreshNotes();
+        gridComponent_->repaint();
+    }
+    if (rowLabels_) {
+        rowLabels_->setPadRows(&padRows_);
+        rowLabels_->repaint();
+    }
+}
+
+void DrumGridClipContent::recenterOnNotes() {
+    // After a fold toggle the row set changes height; bring the (now top-packed)
+    // used rows into view.
+    if (viewport_)
+        viewport_->setViewPosition(viewport_->getViewPositionX(), 0);
+}
+
 void DrumGridClipContent::buildPadRows() {
     padRows_.clear();
 
     auto inst = primaryInstanceForClip(editingClipId_);
 
+    // Fold: when enabled, keep only pads that actually have notes in the clip
+    // (hide empty drum lanes). Falls back to the full kit when the clip has no
+    // notes so there's always something to edit.
+    const std::vector<int> usedNotes = foldEnabled_ ? collectUsedPitches() : std::vector<int>{};
+    const bool filterToUsed = foldEnabled_ && !usedNotes.empty();
+
     for (int i = 0; i < numPads_; ++i) {
         int noteNumber = baseNote_ + i;
+        if (filterToUsed &&
+            std::find(usedNotes.begin(), usedNotes.end(), noteNumber) == usedNotes.end())
+            continue;
         bool hasChain = false;
         if (drumGrid_) {
             hasChain = (drumGrid_->getChainForNote(noteNumber) != nullptr);
