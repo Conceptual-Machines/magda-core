@@ -138,6 +138,79 @@ TEST_CASE("DawProjectXmlAdapter roundtrips transport tracks and arrangement clip
     REQUIRE(imported.clips[0].loopLengthBeats == 2.0);
 }
 
+TEST_CASE("DawProjectXmlAdapter roundtrips track volume and pan automation",
+          "[project][serialization][dawproject][automation]") {
+    ProjectDocument document;
+    document.info.name = "Automation Test";
+    document.info.version = "0.automation";
+    document.info.tempo = 120.0;
+
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Automated";
+    track.volume = 1.0f;
+    track.pan = 0.0f;
+    document.tracks.push_back(track);
+
+    AutomationLaneInfo volumeLane;
+    volumeLane.id = 1;
+    volumeLane.target = ControlTarget::trackVolume(track.id);
+    volumeLane.type = AutomationLaneType::Absolute;
+    volumeLane.paramName = "Volume";
+    volumeLane.absolutePoints.push_back(AutomationPoint{1, 0.0, 0.75, AutomationCurveType::Linear});
+    volumeLane.absolutePoints.push_back(AutomationPoint{2, 4.0, 0.5, AutomationCurveType::Step});
+    document.automationLanes.push_back(volumeLane);
+
+    AutomationLaneInfo panLane;
+    panLane.id = 2;
+    panLane.target = ControlTarget::trackPan(track.id);
+    panLane.type = AutomationLaneType::Absolute;
+    panLane.paramName = "Pan";
+    panLane.absolutePoints.push_back(AutomationPoint{3, 0.0, 0.5, AutomationCurveType::Linear});
+    panLane.absolutePoints.push_back(AutomationPoint{4, 2.0, 1.0, AutomationCurveType::Linear});
+    document.automationLanes.push_back(panLane);
+
+    auto xml = DawProjectXmlAdapter::toProjectXml(document);
+    REQUIRE(xml.contains("<Points"));
+    REQUIRE(xml.contains("parameter=\"volume1\""));
+    REQUIRE(xml.contains("parameter=\"pan1\""));
+    REQUIRE(xml.contains("interpolation=\"hold\""));
+
+    juce::String validationError;
+    INFO(validationError);
+    REQUIRE(DawProjectValidator::validateProjectXml(xml, validationError));
+
+    ProjectDocument imported;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, imported, error));
+    REQUIRE(error.isEmpty());
+    REQUIRE(imported.automationLanes.size() == 2);
+
+    const AutomationLaneInfo* importedVolume = nullptr;
+    const AutomationLaneInfo* importedPan = nullptr;
+    for (const auto& lane : imported.automationLanes) {
+        if (lane.target.kind == ControlTarget::Kind::TrackVolume)
+            importedVolume = &lane;
+        else if (lane.target.kind == ControlTarget::Kind::TrackPan)
+            importedPan = &lane;
+    }
+
+    REQUIRE(importedVolume != nullptr);
+    REQUIRE(importedVolume->absolutePoints.size() == 2);
+    REQUIRE(importedVolume->absolutePoints[0].beatPosition == Catch::Approx(0.0));
+    REQUIRE(importedVolume->absolutePoints[0].value == Catch::Approx(0.75));
+    REQUIRE(importedVolume->absolutePoints[1].beatPosition == Catch::Approx(4.0));
+    REQUIRE(importedVolume->absolutePoints[1].value == Catch::Approx(0.5));
+    REQUIRE(importedVolume->absolutePoints[1].curveType == AutomationCurveType::Step);
+
+    REQUIRE(importedPan != nullptr);
+    REQUIRE(importedPan->absolutePoints.size() == 2);
+    REQUIRE(importedPan->absolutePoints[0].beatPosition == Catch::Approx(0.0));
+    REQUIRE(importedPan->absolutePoints[0].value == Catch::Approx(0.5));
+    REQUIRE(importedPan->absolutePoints[1].beatPosition == Catch::Approx(2.0));
+    REQUIRE(importedPan->absolutePoints[1].value == Catch::Approx(1.0));
+}
+
 TEST_CASE("DawProjectValidator validates vendored project and metadata schemas",
           "[project][serialization][dawproject][validation]") {
     juce::String error;

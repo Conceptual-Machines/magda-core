@@ -10,6 +10,7 @@
 #include <optional>
 #include <set>
 
+#include "../../core/ParameterUtils.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "version.hpp"
 
@@ -83,6 +84,92 @@ juce::XmlElement* addBoolParameter(juce::XmlElement& parent, const juce::String&
     parameter->setAttribute("name", name);
     parameter->setAttribute("value", value ? "true" : "false");
     return parameter;
+}
+
+const AutomationLaneInfo* findAbsoluteLane(const ProjectDocument& document,
+                                           const AutomationTarget& target) {
+    for (const auto& lane : document.automationLanes)
+        if (lane.type == AutomationLaneType::Absolute && lane.target == target &&
+            !lane.absolutePoints.empty())
+            return &lane;
+    return nullptr;
+}
+
+double gainToDb(double gain) {
+    constexpr double minDb = -60.0;
+    if (gain <= 0.0)
+        return minDb;
+    return 20.0 * std::log10(gain);
+}
+
+double dbToGain(double db) {
+    constexpr double minDb = -60.0;
+    if (db <= minDb)
+        return 0.0;
+    return std::pow(10.0, db / 20.0);
+}
+
+double normalizedAutomationToDawProjectValue(const AutomationTarget& target, double value) {
+    const auto info = getParameterInfoForTarget(target);
+    const auto normalized = static_cast<float>(juce::jlimit(0.0, 1.0, value));
+    const auto real = static_cast<double>(ParameterUtils::normalizedToReal(normalized, info));
+
+    if (target.kind == ControlTarget::Kind::TrackVolume)
+        return dbToGain(real);
+    if (target.kind == ControlTarget::Kind::TrackPan)
+        return linearToDawProjectPan(static_cast<float>(real));
+    return value;
+}
+
+double dawProjectValueToNormalizedAutomation(const AutomationTarget& target, double value) {
+    const auto info = getParameterInfoForTarget(target);
+
+    if (target.kind == ControlTarget::Kind::TrackVolume)
+        return static_cast<double>(
+            ParameterUtils::realToNormalized(static_cast<float>(gainToDb(value)), info));
+    if (target.kind == ControlTarget::Kind::TrackPan)
+        return static_cast<double>(
+            ParameterUtils::realToNormalized(dawProjectToLinearPan(value), info));
+    return juce::jlimit(0.0, 1.0, value);
+}
+
+const char* interpolationForCurve(AutomationCurveType curveType) {
+    return curveType == AutomationCurveType::Step ? "hold" : "linear";
+}
+
+AutomationCurveType curveForInterpolation(const juce::String& interpolation) {
+    return interpolation == "hold" ? AutomationCurveType::Step : AutomationCurveType::Linear;
+}
+
+void addAutomationPoints(juce::XmlElement& parent, const juce::String& id,
+                         const juce::String& parameterId, const AutomationLaneInfo& lane) {
+    auto* points = parent.createNewChildElement("Points");
+    points->setAttribute("id", id);
+    points->setAttribute("timeUnit", "beats");
+
+    auto* target = points->createNewChildElement("Target");
+    target->setAttribute("parameter", parameterId);
+
+    for (const auto& point : lane.absolutePoints) {
+        auto* realPoint = points->createNewChildElement("RealPoint");
+        realPoint->setAttribute("time", point.beatPosition);
+        realPoint->setAttribute("value",
+                                normalizedAutomationToDawProjectValue(lane.target, point.value));
+        realPoint->setAttribute("interpolation", interpolationForCurve(point.curveType));
+    }
+}
+
+void addTrackAutomation(juce::XmlElement& trackLanes, const ProjectDocument& document,
+                        const TrackInfo& track) {
+    const auto volumeTarget = ControlTarget::trackVolume(track.id);
+    if (auto* lane = findAbsoluteLane(document, volumeTarget))
+        addAutomationPoints(trackLanes, idFor("volumeAutomation", track.id),
+                            idFor("volume", track.id), *lane);
+
+    const auto panTarget = ControlTarget::trackPan(track.id);
+    if (auto* lane = findAbsoluteLane(document, panTarget))
+        addAutomationPoints(trackLanes, idFor("panAutomation", track.id), idFor("pan", track.id),
+                            *lane);
 }
 
 juce::XmlElement* addNotes(juce::XmlElement& clipElement, const ClipInfo& clip,
@@ -891,6 +978,8 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
             else if (clip.isAudio())
                 addAudioContent(*clipElement, clip, idFor("audio", clip.id), embeddedBySource);
         }
+
+        addTrackAutomation(*trackLanes, document, track);
     }
 
     project.createNewChildElement("Scenes");
@@ -919,8 +1008,11 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     }
 
     std::map<juce::String, TrackId> trackIds;
+    std::map<juce::String, AutomationTarget> parameterTargets;
     TrackId nextTrackId = 1;
     DeviceId nextDeviceId = 1;
+    AutomationLaneId nextAutomationLaneId = 1;
+    AutomationPointId nextAutomationPointId = 1;
 
     // Send routing is resolved in a second pass: a <Send> references the target
     // channel's id, which may belong to an effect/aux track declared later.
@@ -986,8 +1078,17 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
 
                 if (auto* volume = channel->getChildByName("Volume"))
                     track.volume = static_cast<float>(volume->getDoubleAttribute("value", 1.0));
-                if (auto* pan = channel->getChildByName("Pan"))
+                if (auto* volume = channel->getChildByName("Volume")) {
+                    const auto parameterId = volume->getStringAttribute("id");
+                    if (parameterId.isNotEmpty())
+                        parameterTargets[parameterId] = ControlTarget::trackVolume(track.id);
+                }
+                if (auto* pan = channel->getChildByName("Pan")) {
                     track.pan = dawProjectToLinearPan(pan->getDoubleAttribute("value", 0.5));
+                    const auto parameterId = pan->getStringAttribute("id");
+                    if (parameterId.isNotEmpty())
+                        parameterTargets[parameterId] = ControlTarget::trackPan(track.id);
+                }
                 if (auto* mute = channel->getChildByName("Mute"))
                     track.muted = mute->getBoolAttribute("value", false);
                 track.soloed = channel->getBoolAttribute("solo", false);
@@ -1084,6 +1185,45 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     for (auto* clipElement : clips->getChildWithTagNameIterator("Clip"))
                         document.clips.push_back(
                             clipFromXml(*clipElement, trackIt->second, nextClipId++));
+                }
+
+                for (auto* pointsElement : trackLanes->getChildWithTagNameIterator("Points")) {
+                    auto* targetElement = pointsElement->getChildByName("Target");
+                    if (targetElement == nullptr)
+                        continue;
+
+                    auto targetIt =
+                        parameterTargets.find(targetElement->getStringAttribute("parameter"));
+                    if (targetIt == parameterTargets.end())
+                        continue;
+
+                    const auto& target = targetIt->second;
+                    if (target.devicePath.trackId != trackIt->second)
+                        continue;
+
+                    AutomationLaneInfo lane;
+                    lane.id = nextAutomationLaneId++;
+                    lane.target = target;
+                    lane.type = AutomationLaneType::Absolute;
+                    lane.paramName =
+                        target.kind == ControlTarget::Kind::TrackPan ? "Pan" : "Volume";
+
+                    for (auto* pointElement :
+                         pointsElement->getChildWithTagNameIterator("RealPoint")) {
+                        AutomationPoint point;
+                        point.id = nextAutomationPointId++;
+                        point.beatPosition = pointElement->getDoubleAttribute("time", 0.0);
+                        point.value = dawProjectValueToNormalizedAutomation(
+                            target, pointElement->getDoubleAttribute("value", 0.0));
+                        point.curveType = curveForInterpolation(
+                            pointElement->getStringAttribute("interpolation", "linear"));
+                        lane.absolutePoints.push_back(point);
+                    }
+
+                    if (!lane.absolutePoints.empty()) {
+                        std::sort(lane.absolutePoints.begin(), lane.absolutePoints.end());
+                        document.automationLanes.push_back(std::move(lane));
+                    }
                 }
             }
         }
