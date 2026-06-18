@@ -4,6 +4,7 @@
 #include "../audio/plugins/ArpeggiatorPlugin.hpp"
 #include "../audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
+#include "../audio/plugins/FaustInstrumentPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
 #include "../audio/plugins/FollowerSourceTapPlugin.hpp"
 #include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
@@ -111,6 +112,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == daw::audio::FaustPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");
             return new daw::audio::FaustPlugin(info);
+        }
+        if (type == daw::audio::FaustInstrumentPlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustInstrumentPlugin");
+            return new daw::audio::FaustInstrumentPlugin(info);
         }
         // Compiled-Faust plugins go through the registry; one factory per
         // device lives in its own .cpp (see CompiledPluginRegistry.hpp).

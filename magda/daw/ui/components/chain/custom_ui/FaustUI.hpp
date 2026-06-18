@@ -8,7 +8,7 @@
 #include "core/ChainNodePath.hpp"
 
 namespace magda::daw::audio {
-class FaustPlugin;
+class IFaustEditorModel;
 }
 
 namespace magda {
@@ -46,7 +46,7 @@ class FaustUI : public juce::Component {
     FaustUI();
     ~FaustUI() override;
 
-    void setPlugin(magda::daw::audio::FaustPlugin* plugin);
+    void setPlugin(magda::daw::audio::IFaustEditorModel* plugin);
 
     /// Path of the device this UI is bound to. Used by the DSP-load
     /// flow to fire a track-devices-changed notification, which
@@ -70,7 +70,7 @@ class FaustUI : public juce::Component {
                  magda::daw::audio::FaustCustomViewKind viewKind);
     void refreshNameLabel();
 
-    magda::daw::audio::FaustPlugin* plugin_ = nullptr;
+    magda::daw::audio::IFaustEditorModel* plugin_ = nullptr;
     ChainNodePath devicePath_;
 
     std::unique_ptr<juce::Drawable> logo_;

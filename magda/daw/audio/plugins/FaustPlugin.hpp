@@ -9,6 +9,7 @@
 
 #include "FaustCustomViewKind.hpp"
 #include "FaustParamPool.hpp"
+#include "IFaustEditorModel.hpp"
 
 // libfaust types are forward-declared here so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
@@ -30,7 +31,7 @@ namespace te = tracktion::engine;
 // writing the zone. This keeps macro / mod / MIDI Learn / automation
 // links pinned to slot indices that survive a recompile — see
 // docs/FAUST_POOL_REFACTOR.md.
-class FaustPlugin : public te::Plugin {
+class FaustPlugin : public te::Plugin, public IFaustEditorModel {
   public:
     FaustPlugin(const te::PluginCreationInfo& info);
     ~FaustPlugin() override;
@@ -84,7 +85,7 @@ class FaustPlugin : public te::Plugin {
     // the message thread while the audio thread is processing — the
     // FaustState swap is atomic.
     bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut,
-                       FaustCustomViewKind viewKind = FaustCustomViewKind::None);
+                       FaustCustomViewKind viewKind = FaustCustomViewKind::None) override;
 
     // Stage source into the editable state WITHOUT compiling or swapping the
     // live DSP. The code editor reads `dspSource` from state, so this puts
@@ -96,15 +97,20 @@ class FaustPlugin : public te::Plugin {
     // Read access for the UI / parameter-info bridge (Phase 4b). The
     // pool's slot table is mutated only by `loadDspSource` on the
     // message thread.
-    const FaustParamPool& getPool() const {
+    const FaustParamPool& getPool() const override {
         return pool_;
     }
 
     // Per-DSP display name (caller-supplied to `loadDspSource`). Used
     // for the inspector label only — the FaustUI custom-view registry
     // keys on `getCustomViewKind()` instead.
-    juce::String getDspName() const {
+    juce::String getDspName() const override {
         return dspName_;
+    }
+
+    // IFaustEditorModel: the live .dsp source the code editor reads/edits.
+    juce::String getDspSource() const override {
+        return dspSource_;
     }
 
     // Identifier for the bespoke FaustUI view registered against this
@@ -112,14 +118,14 @@ class FaustPlugin : public te::Plugin {
     // defaults to `None` for the constructor's passthrough DSP and
     // for user-loaded files (file picker / code editor). Stable
     // across the plugin's lifetime within one loaded DSP.
-    FaustCustomViewKind getCustomViewKind() const {
+    FaustCustomViewKind getCustomViewKind() const override {
         return viewKind_;
     }
 
     // Diagnostics from the most recent rebind (overflow / duplicate idx
     // / out-of-range). UI surfaces these in the FaustUI error label.
     // Read on the message thread.
-    const std::vector<juce::String>& getLastRebindDiagnostics() const {
+    const std::vector<juce::String>& getLastRebindDiagnostics() const override {
         return lastDiagnostics_;
     }
 
