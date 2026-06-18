@@ -2031,6 +2031,22 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(foldToggle_.get());
 
+    // CC lanes button (opens the drawer + the add-lane menu) — same affordance
+    // as the piano roll so drum clips can add CC / pitchbend lanes.
+    ccLanesBtn_ = std::make_unique<magda::SvgButton>("CCLanes", BinaryData::iconccboldm_svg,
+                                                     BinaryData::iconccboldm_svgSize);
+    ccLanesBtn_->setTooltip("Add CC / pitchbend lane");
+    ccLanesBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    ccLanesBtn_->onClick = [this]() {
+        if (!velocityDrawerOpen_) {
+            setVelocityDrawerVisible(true);
+            controlsToggle_->setActive(true);
+        }
+        if (midiDrawer_)
+            midiDrawer_->showAddLaneMenu();
+    };
+    addAndMakeVisible(ccLanesBtn_.get());
+
     verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
     verticalZoomStrip_->setGestureContext(magda::GestureContext::DrumGrid);
     verticalZoomStrip_->getValue = [this]() { return rowHeight_; };
@@ -2406,6 +2422,9 @@ void DrumGridClipContent::resized() {
     if (foldToggle_)
         foldToggle_->setBounds(iconPadding, RULER_HEIGHT + iconPadding, iconSize, iconSize);
     controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
+                               iconSize);
+    if (ccLanesBtn_)
+        ccLanesBtn_->setBounds(iconPadding, getHeight() - 2 * (iconSize + iconPadding), iconSize,
                                iconSize);
 
     // MIDI drawer at bottom (if open)
