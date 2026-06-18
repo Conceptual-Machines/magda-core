@@ -400,8 +400,9 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     device.format = PluginFormat::VST3;
     device.isInstrument = false;
     device.uniqueId = "VST3-ProQ3-abc123";
-    const juce::String chunk = "RAW-PLUGIN-STATE-BYTES";
-    device.pluginState = juce::Base64::toBase64(chunk.toRawUTF8(), chunk.getNumBytesAsUTF8());
+    // pluginState is an opaque TE plugin-state string; it must survive verbatim.
+    const juce::String chunk = "<PLUGIN state=\"AQIDBA==\"/>";
+    device.pluginState = chunk;
     track.chain.fxChainElements.push_back(device);
     document.tracks.push_back(track);
 
@@ -431,10 +432,8 @@ TEST_CASE("DawProjectArchive embeds and restores VST3 device state",
     REQUIRE_FALSE(d.isInstrument);
     REQUIRE_FALSE(d.bypassed);
 
-    // The state chunk round-trips bit-for-bit through embed -> extract -> base64.
-    juce::MemoryOutputStream decoded;
-    REQUIRE(juce::Base64::convertFromBase64(decoded, d.pluginState));
-    REQUIRE(decoded.toString() == chunk);
+    // The opaque plugin-state string round-trips verbatim through embed/extract.
+    REQUIRE(d.pluginState == chunk);
 
     archive.deleteFile();
 }
