@@ -826,7 +826,7 @@ TEST_CASE("DawProjectXmlAdapter maps the native EQ to an <Equalizer> builtin",
     REQUIRE(xml.contains("<Band"));
     REQUIRE(xml.contains("type=\"bell\""));
     REQUIRE(xml.contains("type=\"highShelf\""));
-    REQUIRE(xml.contains("unit=\"hertz\""));
+    REQUIRE(xml.contains("unit=\"semitones\""));  // DAWproject EQ freq is pitch, not Hz
     REQUIRE(xml.contains("<OutputGain"));
 
     juce::String validationError;
@@ -850,4 +850,48 @@ TEST_CASE("DawProjectXmlAdapter maps the native EQ to an <Equalizer> builtin",
         if (p.paramIndex == 11)
             hasBand2 = true;
     REQUIRE_FALSE(hasBand2);
+}
+
+TEST_CASE("DawProjectXmlAdapter imports Bitwig EQ semitones and compressor percent ratio",
+          "[project][serialization][dawproject][builtin]") {
+    // Bitwig writes EQ band Freq in semitones (MIDI pitch) and compressor Ratio
+    // as a 0-100% amount. Both must convert, not be read as Hz / linear.
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="audio" loaded="true" id="t1" name="Bus">
+      <Channel audioChannels="2" role="regular" id="c1">
+        <Devices>
+          <Compressor deviceID="x" deviceName="Compressor" deviceRole="audioFX" loaded="true" id="cmp" name="Compressor">
+            <Ratio max="100.0" min="0.0" unit="percent" value="75.0" id="cr" name="Ratio"/>
+          </Compressor>
+          <Equalizer deviceID="y" deviceName="EQ+" deviceRole="audioFX" loaded="true" id="eq" name="EQ+">
+            <Band type="bell" order="0">
+              <Freq max="135.076232" min="15.486821" unit="semitones" value="43.869309" id="bf" name="Band 1 Frequency"/>
+              <Gain max="30.0" min="-30.0" unit="decibel" value="6.0" id="bg" name="Band 1 Gain"/>
+              <Q max="40.0" min="0.025" unit="linear" value="1.0" id="bq" name="Band 1 Q"/>
+            </Band>
+          </Equalizer>
+        </Devices>
+      </Channel>
+    </Track>
+  </Structure>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.tracks.size() == 1);
+    const auto& fx = doc.tracks[0].chain.fxChainElements;
+    REQUIRE(fx.size() == 2);
+
+    const auto& comp = getDevice(fx[0]);
+    REQUIRE(comp.pluginId == "magda_compressor");
+    // 75% amount -> ratio 1/(1 - 0.75) = 4:1, not a literal 75.
+    REQUIRE(importedSlot(comp, 2) == Catch::Approx(4.0f));
+
+    const auto& eq = getDevice(fx[1]);
+    REQUIRE(eq.pluginId == "magda_eq");
+    // 43.869 semitones -> ~103 Hz (440 * 2^((43.869-69)/12)), not 43.87 Hz.
+    REQUIRE(importedSlot(eq, 2) == Catch::Approx(103.0f).margin(1.0));
 }

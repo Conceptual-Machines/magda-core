@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -336,7 +337,13 @@ void addCompressorDevice(juce::XmlElement& devices, const DeviceInfo& device) {
         addBoolParameter(comp, "AutoMakeup", idFor("automakeup", device.id), "AutoMakeup",
                          autogain->currentValue >= 0.5f);
     addMappedReal(comp, device, "OutputGain", "Output", "decibel", 1.0);
-    addMappedReal(comp, device, "Ratio", "Ratio", "linear", 1.0);
+    // DAWproject hosts (Bitwig) store compressor ratio as a 0-100% "amount"
+    // (percent = (1 - 1/ratio) * 100), not a linear ratio, so emit percent.
+    if (const auto* ratio = findDeviceParam(device, "Ratio")) {
+        const double r = juce::jmax(1.0, static_cast<double>(ratio->currentValue));
+        addRealParameter(comp, "Ratio", idFor("Ratio", device.id), "Ratio", "percent",
+                         (1.0 - 1.0 / r) * 100.0, 0.0, 100.0);
+    }
     addMappedReal(comp, device, "Release", "Release", "seconds", 0.001);  // MAGDA stores ms
     addMappedReal(comp, device, "Threshold", "Threshold", "decibel", 1.0);
 }
@@ -360,6 +367,16 @@ void addLimiterDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     addMappedReal(lim, device, "OutputGain", "Output", "decibel", 1.0);
     addMappedReal(lim, device, "Release", "Release", "seconds", 0.001);
     addMappedReal(lim, device, "Threshold", "Threshold", "decibel", 1.0);
+}
+
+// DAWproject expresses EQ band frequency in semitones (MIDI-note pitch), the
+// same convention Bitwig's EQ+ uses: Hz = 440 * 2^((s - 69)/12). Reading these
+// as raw Hz drops every band well over an octave, so convert both ways.
+double hzToSemitones(double hz) {
+    return hz > 0.0 ? 69.0 + 12.0 * std::log2(hz / 440.0) : 0.0;
+}
+double semitonesToHz(double semitones) {
+    return 440.0 * std::pow(2.0, (semitones - 69.0) / 12.0);
 }
 
 // MAGDA EQ band type (kBandTypeOffset slot value) -> DAWproject eqBandType. MAGDA
@@ -409,8 +426,9 @@ void addEqualizerDevice(juce::XmlElement& devices, const DeviceInfo& device) {
         band->setAttribute("order", order);
         const auto suffix = "_b" + juce::String(b);
         if (freq != nullptr)
-            addRealParameter(*band, "Freq", idFor("freq", device.id) + suffix, "Freq", "hertz",
-                             freq->currentValue, freq->minValue, freq->maxValue);
+            addRealParameter(*band, "Freq", idFor("freq", device.id) + suffix, "Freq", "semitones",
+                             hzToSemitones(freq->currentValue), hzToSemitones(freq->minValue),
+                             hzToSemitones(freq->maxValue));
         if (gain != nullptr)
             addRealParameter(*band, "Gain", idFor("gain", device.id) + suffix, "Gain", "decibel",
                              gain->currentValue, gain->minValue, gain->maxValue);
@@ -468,10 +486,14 @@ void parseCompressorDevice(const juce::XmlElement& comp, DeviceInfo& device) {
     if (auto* t = comp.getChildByName("Threshold"))
         addBuiltinParam(device, 1, "Threshold", t->getDoubleAttribute("value"));
     if (auto* r = comp.getChildByName("Ratio")) {
-        // MAGDA's ratio is a linear factor; only adopt a value the source
-        // tagged linear. Bitwig writes a percent scale we can't invert.
-        if (r->getStringAttribute("unit") == "linear")
-            addBuiltinParam(device, 2, "Ratio", r->getDoubleAttribute("value"));
+        // Honour the source unit. DAWproject/Bitwig store ratio as a 0-100%
+        // "amount" (ratio = 1/(1 - percent/100)); some writers use a plain
+        // linear ratio. MAGDA's ratio is linear, clamped to its [1, 50] range.
+        const double v = r->getDoubleAttribute("value");
+        double ratio = v;
+        if (r->getStringAttribute("unit") == "percent")
+            ratio = v >= 100.0 ? 50.0 : 1.0 / (1.0 - v / 100.0);
+        addBuiltinParam(device, 2, "Ratio", juce::jlimit(1.0, 50.0, ratio));
     }
     if (auto* a = comp.getChildByName("Attack"))
         addBuiltinParam(device, 3, "Attack", dawSecondsToMs(*a));
@@ -551,9 +573,12 @@ void parseEqualizerDevice(const juce::XmlElement& eq, DeviceInfo& device) {
         if (auto* en = band->getChildByName("Enabled"))
             enabled = en->getBoolAttribute("value", true);
         addBuiltinParam(device, base + 0, "Enabled", enabled ? 1.0 : 0.0);
-        if (auto* f = band->getChildByName("Freq"))
-            addBuiltinParam(device, base + 2, "Freq",
-                            juce::jlimit(20.0, 20000.0, f->getDoubleAttribute("value")));
+        if (auto* f = band->getChildByName("Freq")) {
+            double hz = f->getDoubleAttribute("value");
+            if (f->getStringAttribute("unit") == "semitones")
+                hz = semitonesToHz(hz);
+            addBuiltinParam(device, base + 2, "Freq", juce::jlimit(20.0, 20000.0, hz));
+        }
         if (auto* g = band->getChildByName("Gain"))
             addBuiltinParam(device, base + 3, "Gain",
                             juce::jlimit(-24.0, 24.0, g->getDoubleAttribute("value")));
