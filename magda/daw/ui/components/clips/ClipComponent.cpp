@@ -2978,8 +2978,19 @@ void ClipComponent::showContextMenu() {
     }
 
     // Show menu
-    menu.showMenuAsync(juce::PopupMenu::Options(), [this, &clipManager,
-                                                    &selectionManager](int result) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this,
+                                                    safeThis =
+                                                        juce::Component::SafePointer<ClipComponent>(
+                                                            this),
+                                                    &clipManager, &selectionManager](int result) {
+        // The menu is modal-async: the clip (and its parent panel) can be
+        // destroyed while it is open, e.g. a project load/close or track delete
+        // rebuilds every clip via ClipManager::clearAllClips(). Bail before
+        // touching any member — parentPanel_ would otherwise be a dangling
+        // non-null pointer (crash in parentPanel_->getTempo()).
+        if (safeThis == nullptr)
+            return;
+
         if (result == 0)
             return;  // Cancelled
 
