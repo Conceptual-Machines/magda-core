@@ -600,6 +600,15 @@ void AutomationCurveEditor::onPointSelected(uint32_t pointId) {
     SelectionManager::getInstance().selectAutomationPoint(laneId_, pointId, clipId_);
 }
 
+void AutomationCurveEditor::onPointsSelected(const std::vector<uint32_t>& pointIds) {
+    // Lasso selection: publish the whole set so the inspector can edit them
+    // together (delta value across all selected points).
+    if (pointIds.empty())
+        return;
+    std::vector<AutomationPointId> ids(pointIds.begin(), pointIds.end());
+    SelectionManager::getInstance().selectAutomationPoints(laneId_, ids, clipId_);
+}
+
 void AutomationCurveEditor::onTensionChanged(uint32_t pointId, double tension) {
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
         UndoManager::getInstance().executeCommand(
