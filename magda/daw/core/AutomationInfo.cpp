@@ -212,10 +212,12 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
 
 juce::String getDisplayNameForTarget(const AutomationTarget& target) {
     switch (target.kind) {
+        // The lane header watermarks the track name (e.g. "Master") on the
+        // right, so the param label stays generic instead of "Master Volume".
         case ControlTarget::Kind::TrackVolume:
-            return target.devicePath.trackId == MASTER_TRACK_ID ? "Master Volume" : "Track Volume";
+            return "Track Volume";
         case ControlTarget::Kind::TrackPan:
-            return target.devicePath.trackId == MASTER_TRACK_ID ? "Master Pan" : "Track Pan";
+            return "Track Pan";
         case ControlTarget::Kind::SendLevel:
             return "Send " + juce::String(target.sendBusIndex + 1);
         case ControlTarget::Kind::PluginParam: {
