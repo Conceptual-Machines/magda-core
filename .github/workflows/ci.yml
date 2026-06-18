@@ -435,12 +435,19 @@ jobs:
       with:
         arch: x64
 
+    - name: Install libxml2
+      shell: powershell
+      run: |
+        & "$env:VCPKG_ROOT\vcpkg.exe" install libxml2:x64-windows
+
     - name: Configure CMake (Debug)
       run: |
         cmake -B build-debug -G Ninja `
           -DCMAKE_BUILD_TYPE=Debug `
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
-          -DMAGDA_BUILD_TESTS=ON
+          -DMAGDA_BUILD_TESTS=ON `
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows
 
     - name: Build (Debug)
       run: cmake --build build-debug --config Debug
@@ -465,7 +472,9 @@ jobs:
       run: |
         cmake -B build-release -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
-          -DMAGDA_BUILD_TESTS=OFF
+          -DMAGDA_BUILD_TESTS=OFF `
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows
 
     - name: Build (Release)
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'

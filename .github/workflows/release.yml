@@ -546,6 +546,10 @@ jobs:
       with:
         arch: x64
 
+    - name: Install libxml2
+      shell: powershell
+      run: '& "$env:VCPKG_ROOT\vcpkg.exe" install libxml2:x64-windows'
+
     # Ninja is shipped with the Visual Studio install on windows-latest, so
     # we only need to provision NSIS. The zip is hosted as a release asset
     # on this repo's "vendor/nsis-X.Y" tag - GitHub-hosted, rock-solid, no
@@ -642,7 +646,9 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release `
           -DCMAKE_SYSTEM_PROCESSOR=x64 `
           -DMAGDA_BUILD_TESTS=OFF `
-          -DMAGDA_FULL_VERSION="$env:VERSION"
+          -DMAGDA_FULL_VERSION="$env:VERSION" `
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows
 
     - name: Build
       shell: powershell
