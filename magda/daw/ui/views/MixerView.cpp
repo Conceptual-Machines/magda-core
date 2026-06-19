@@ -1388,7 +1388,20 @@ void MixerView::ChannelStrip::resized() {
 
     // Routing selectors (bottommost)
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        if (!isChord && Config::getInstance().getMixerShowRouting()) {
+        if (isChord) {
+            // Chord track: MIDI in/out only (no audio routing).
+            audioInSelector->setVisible(false);
+            audioOutSelector->setVisible(false);
+            const bool showMidi = Config::getInstance().getMixerShowRouting() && !isMultiOut;
+            midiInSelector->setVisible(showMidi);
+            midiOutSelector->setVisible(showMidi);
+            if (showMidi) {
+                bounds.removeFromBottom(2);
+                midiOutSelector->setBounds(bounds.removeFromBottom(16));
+                bounds.removeFromBottom(2);
+                midiInSelector->setBounds(bounds.removeFromBottom(16));
+            }
+        } else if (Config::getInstance().getMixerShowRouting()) {
             bool showInputs = !isMultiOut;
             bool showMidi = !isMultiOut;
 
@@ -1457,8 +1470,7 @@ void MixerView::ChannelStrip::resized() {
 
             auto row = bounds.removeFromBottom(metrics.buttonSize);
             int halfWidth = (row.getWidth() - 2) / 2;
-            chordSpeakerButton->setBounds(row.removeFromLeft(halfWidth).withSizeKeepingCentre(
-                metrics.buttonSize, metrics.buttonSize));
+            chordSpeakerButton->setBounds(row.removeFromLeft(halfWidth));
             row.removeFromLeft(2);
             soloButton->setBounds(row);
             soloButton->setVisible(true);
@@ -1519,8 +1531,8 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // Pan slider — above M/S/R/M (hidden for master)
-    if (isMaster_) {
+    // Pan slider — above M/S/R/M (hidden for master and the chord track)
+    if (isMaster_ || isChord) {
         panSlider->setVisible(false);
     } else {
         panSlider->setVisible(true);
