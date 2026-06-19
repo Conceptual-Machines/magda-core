@@ -2,6 +2,7 @@
 
 #include "../../../../agents/llm_client_factory.hpp"
 #include "BinaryData.h"
+#include "core/ChordProgressionContext.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/MidiFileWriter.hpp"
@@ -1137,6 +1138,13 @@ void ChordPanelContent::startProgressionDrag(int progressionIndex) {
 void ChordPanelContent::AIRequestThread::run() {
     // Build context from chord history and detected key
     juce::String context;
+
+    // The chord-track progression is the song's authored harmony - always part
+    // of the engine's context.
+    if (const auto progression = magda::ChordProgressionContext::summary();
+        progression.isNotEmpty())
+        context += "Chord-track progression: " + progression + "\n";
+
     if (owner_.detectedKey_.isNotEmpty())
         context += "Detected key: " + owner_.detectedKey_ + "\n";
 
