@@ -1015,6 +1015,22 @@ double PianoRollContent::chordRowBeatForX(int x) const {
     return juce::jmax(0.0, absBeat - clipStartBeats);
 }
 
+int PianoRollContent::chordRowXForBeat(double clipRelativeBeat) const {
+    const int leftPanelWidth =
+        sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+    const int scrollX = viewport_ ? viewport_->getViewPositionX() : 0;
+    double clipStartBeats = 0.0;
+    if (const auto* clip = (editingClipId_ != magda::INVALID_CLIP_ID)
+                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                               : nullptr) {
+        if (!relativeTimeMode_ && clip->view != magda::ClipView::Session)
+            clipStartBeats = clip->placement.startBeat;
+    }
+    const double absBeat = clipRelativeBeat + clipStartBeats;
+    return leftPanelWidth + static_cast<int>(absBeat * horizontalZoom_) + GRID_LEFT_PADDING -
+           scrollX;
+}
+
 void PianoRollContent::redetectChords() {
     detectChordsFromNotes();
 }
@@ -1707,14 +1723,30 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         // Draw chord block
         auto blockBounds = juce::Rectangle<int>(drawStartX + 1, area.getY() + 2,
                                                 drawEndX - drawStartX - 2, area.getHeight() - 4);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+        const bool selected =
+            selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
+        const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+
+        g.setColour(accent.withAlpha(selected ? 0.30f : 0.20f));
         g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
 
         // Draw chord name
         if (blockBounds.getWidth() > 10) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            g.drawText(annotation.chordName, blockBounds.reduced(2, 0),
+            g.drawText(annotation.chordName, blockBounds.reduced(6, 0),
                        juce::Justification::centredLeft, true);
+        }
+
+        // Selection ring + edge resize handles
+        if (selected) {
+            g.setColour(accent.withAlpha(0.9f));
+            g.drawRoundedRectangle(blockBounds.toFloat().reduced(0.5f), 3.0f, 1.5f);
+
+            constexpr int handleW = 3;
+            auto lh = blockBounds.withWidth(handleW).reduced(0, 3);
+            auto rh = lh.withX(blockBounds.getRight() - handleW);
+            g.fillRoundedRectangle(lh.toFloat(), 1.5f);
+            g.fillRoundedRectangle(rh.toFloat(), 1.5f);
         }
     }
 }

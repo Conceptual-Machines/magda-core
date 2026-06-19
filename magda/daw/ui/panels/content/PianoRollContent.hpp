@@ -103,6 +103,20 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     virtual int sidebarWidth() const {
         return SIDEBAR_WIDTH;
     }
+    // chordGroup of the selected chord-lane block (0 = none). The chord editor
+    // overrides this so drawChordRow() renders a selection ring + edge resize
+    // handles on it.
+    virtual int selectedChordGroup() const {
+        return 0;
+    }
+    // Pixel x of a chord-lane beat (clip-relative). Inverse of chordRowBeatForX;
+    // used to hit-test and draw chord blocks.
+    int chordRowXForBeat(double clipRelativeBeat) const;
+    // Left pixel x where the chord lane / grid content begins (right of the
+    // keyboard column).
+    int chordLaneLeftX() const {
+        return sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+    }
     // Called when the chord lane is clicked at the given clip-relative beat.
     // Return true to consume the click (the standard piano roll returns false so
     // the event falls through to the base handler). ChordClipContent uses this

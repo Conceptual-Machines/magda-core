@@ -40,6 +40,9 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     void mouseUp(const juce::MouseEvent& e) override;
 
   protected:
+    int selectedChordGroup() const override {
+        return selectedGroup_;
+    }
     int chordRowHeight() const override {
         return laneHeight_;
     }
@@ -62,10 +65,37 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     bool isOnLaneDivider(juce::Point<int> p) const;
     int maxLaneHeight() const;
 
+    // Chord-block move / resize. The block's time span IS its linked notes'
+    // span, so dragging a block previews by moving the annotation and commits by
+    // moving/resizing the chord's notes (the annotation then re-syncs).
+    enum class BlockDrag { None, Move, ResizeLeft, ResizeRight };
+    int annotationIndexAtBeat(double beat) const;
+    BlockDrag dragModeForBlock(int annIndex, int mouseX) const;
+    void beginBlockDrag(int annIndex, BlockDrag mode, int mouseX);
+    void updateBlockDrag(int mouseX);
+    void commitBlockDrag();
+
     static constexpr int MIN_LANE_HEIGHT = 48;
     static constexpr int DIVIDER_HIT = 4;
+    static constexpr int BLOCK_EDGE_PX = 6;
     int laneHeight_ = 110;
     bool draggingDivider_ = false;
+
+    int selectedGroup_ = 0;
+    BlockDrag blockDrag_ = BlockDrag::None;
+    int dragAnnIndex_ = -1;
+    double dragStartMouseBeat_ = 0.0;
+    double dragOrigStart_ = 0.0;
+    double dragOrigEnd_ = 0.0;
+    double dragNewStart_ = 0.0;
+    double dragNewEnd_ = 0.0;
+    struct DragNote {
+        size_t index;
+        double start;
+        double length;
+        int note;
+    };
+    std::vector<DragNote> dragNotes_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordClipContent)
 };
