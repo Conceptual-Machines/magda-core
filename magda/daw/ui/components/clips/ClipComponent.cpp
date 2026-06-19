@@ -845,7 +845,9 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
     if (visibleBounds.isEmpty())
         return;
 
-    auto bgColour = clip.colour.darker(0.4f);
+    // Translucent base so the timeline shows through (track-map style) rather
+    // than a solid pastel card.
+    auto bgColour = clip.colour.withAlpha(0.16f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
@@ -871,8 +873,17 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
                                                  blockArea.getWidth());
             juce::Rectangle<float> block(x, static_cast<float>(blockArea.getY()), w,
                                          static_cast<float>(blockArea.getHeight()));
-            g.setColour(blockColour.withAlpha(0.35f));
-            g.fillRoundedRectangle(block.reduced(1.0f, 0.0f), 2.0f);
+            auto inner = block.reduced(1.0f, 0.0f);
+            // Glassy translucent block: a soft vertical gradient instead of a
+            // flat pastel fill, with a bright top edge and a solid accent spine.
+            g.setGradientFill(juce::ColourGradient(blockColour.withAlpha(0.42f), inner.getX(),
+                                                   inner.getY(), blockColour.withAlpha(0.14f),
+                                                   inner.getX(), inner.getBottom(), false));
+            g.fillRoundedRectangle(inner, 2.0f);
+            g.setColour(blockColour.withAlpha(0.85f));
+            g.fillRect(inner.getX(), inner.getY(), 2.0f, inner.getHeight());  // accent spine
+            g.setColour(juce::Colours::white.withAlpha(0.12f));
+            g.drawRoundedRectangle(inner, 2.0f, 1.0f);  // subtle glass edge
             if (w > MIN_WIDTH_FOR_NAME) {
                 g.setColour(juce::Colours::white);
                 g.drawText(name, block.toNearestInt().reduced(4, 0),
