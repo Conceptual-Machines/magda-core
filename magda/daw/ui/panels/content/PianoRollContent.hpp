@@ -83,6 +83,20 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
         return showChordRow_;
     }
 
+  protected:
+    // Extension points for a chord-focused subclass (ChordClipContent). The
+    // defaults preserve standard piano-roll behaviour, so PianoRollContent has
+    // no chord-track knowledge of its own.
+    //   chordRowHeight() - height of the chord lane when visible.
+    //   chordFocusMode() - when true the chord lane is forced visible and the
+    //                      velocity/CC lanes + toggles are hidden.
+    virtual int chordRowHeight() const {
+        return CHORD_ROW_HEIGHT;
+    }
+    virtual bool chordFocusMode() const {
+        return false;
+    }
+
   private:
     // MidiEditorContent virtual implementations
     int getLeftPanelWidth() const override {
@@ -171,7 +185,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
 
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {
-        return showChordRow_ ? HEADER_HEIGHT : RULER_HEIGHT;
+        return showChordRow_ ? (chordRowHeight() + RULER_HEIGHT) : RULER_HEIGHT;
     }
 
     std::unique_ptr<magda::OctaveLabelStrip> octaveLabelStrip_;

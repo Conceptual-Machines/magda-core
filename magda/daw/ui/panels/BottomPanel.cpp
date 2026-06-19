@@ -614,6 +614,7 @@ void BottomPanel::resized() {
         bool hasMidiControls =
             content && (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
                         content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
+                        content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
                         content->getContentType() == daw::ui::PanelContentType::WaveformEditor);
         if (hasMidiControls)
             layoutMidiHeaderControls(headerBar_->getLocalBounds());
@@ -954,20 +955,27 @@ void BottomPanel::updateContentBasedOnSelection() {
         }
         if (clip) {
             if (clip->isMidi()) {
-                needsTabs = true;
+                const auto* clipTrack = magda::TrackManager::getInstance().getTrack(clip->trackId);
+                if (clipTrack != nullptr && clipTrack->type == magda::TrackType::Chord) {
+                    // Chord-track clips edit in the dedicated chord editor; no
+                    // Piano-Roll / Drum-Grid tab choice applies.
+                    targetContent = daw::ui::PanelContentType::ChordClipView;
+                } else {
+                    needsTabs = true;
 
-                // Auto-default to Drum Grid for DrumGrid tracks (on first selection)
-                if (selectedClip != lastEditorClipId_) {
-                    lastEditorClipId_ = selectedClip;
-                    if (trackPrefersDrumGrid(clip->trackId))
-                        lastEditorTabChoice_ = 1;  // Drum Grid
-                    else
-                        lastEditorTabChoice_ = 0;  // Piano Roll
+                    // Auto-default to Drum Grid for DrumGrid tracks (on first selection)
+                    if (selectedClip != lastEditorClipId_) {
+                        lastEditorClipId_ = selectedClip;
+                        if (trackPrefersDrumGrid(clip->trackId))
+                            lastEditorTabChoice_ = 1;  // Drum Grid
+                        else
+                            lastEditorTabChoice_ = 0;  // Piano Roll
+                    }
+
+                    targetContent = (lastEditorTabChoice_ == 1)
+                                        ? daw::ui::PanelContentType::DrumGridClipView
+                                        : daw::ui::PanelContentType::PianoRoll;
                 }
-
-                targetContent = (lastEditorTabChoice_ == 1)
-                                    ? daw::ui::PanelContentType::DrumGridClipView
-                                    : daw::ui::PanelContentType::PianoRoll;
             } else if (clip->isAudio()) {
                 targetContent = daw::ui::PanelContentType::WaveformEditor;
             }
@@ -1080,7 +1088,8 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
     // Add MIDI controls if incoming is a MIDI editor
     const bool isMidiEditor =
         incoming && (incoming->getContentType() == daw::ui::PanelContentType::PianoRoll ||
-                     incoming->getContentType() == daw::ui::PanelContentType::DrumGridClipView);
+                     incoming->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
+                     incoming->getContentType() == daw::ui::PanelContentType::ChordClipView);
     const bool isWaveformEditor =
         incoming && incoming->getContentType() == daw::ui::PanelContentType::WaveformEditor;
     if (isMidiEditor || isWaveformEditor)
