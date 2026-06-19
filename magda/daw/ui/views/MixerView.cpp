@@ -329,6 +329,9 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
     if (muteButton) {
         muteButton->setToggleState(track.muted, juce::dontSendNotification);
     }
+    if (chordSpeakerButton) {
+        chordSpeakerButton->setActive(!track.muted);  // speaker on = audible
+    }
     if (soloButton) {
         soloButton->setToggleState(track.soloed, juce::dontSendNotification);
     }
@@ -555,6 +558,22 @@ void MixerView::ChannelStrip::setupControls() {
                 std::make_unique<SetTrackMuteCommand>(tid, newState));
     };
     addAndMakeVisible(*muteButton);
+
+    // Chord-track audition (mute) toggle: cyan speaker, mirrors the chord header.
+    chordSpeakerButton = std::make_unique<magda::SvgButton>(
+        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
+        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
+    chordSpeakerButton->setTooltip("Preview chords on playback");
+    chordSpeakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordSpeakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    chordSpeakerButton->onClick = [this]() {
+        const auto* track = TrackManager::getInstance().getTrack(trackId_);
+        const bool nowMuted = track ? !track->muted : true;
+        chordSpeakerButton->setActive(!nowMuted);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackMuteCommand>(trackId_, nowMuted));
+    };
+    addChildComponent(*chordSpeakerButton);
 
     // Solo button (square corners, compact)
     soloButton = std::make_unique<juce::TextButton>("S");
@@ -1242,8 +1261,10 @@ void MixerView::ChannelStrip::resized() {
     // Mini analyzers (Oscilloscope / Spectrum) sit below the header.
     // Each takes a fixed compact height when its rail toggle is on.
     constexpr int miniAnalyzerHeight = 64;
-    const bool showOsc = cfg.getMixerShowOscilloscope();
-    const bool showSpec = cfg.getMixerShowSpectrum();
+    // The chord track emits no audio yet, so it never shows the osc / spectrum.
+    const bool isChord = trackType_ == TrackType::Chord;
+    const bool showOsc = !isChord && cfg.getMixerShowOscilloscope();
+    const bool showSpec = !isChord && cfg.getMixerShowSpectrum();
     if (showOsc && miniOscilloscopeUI_) {
         const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
         miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
@@ -1367,7 +1388,7 @@ void MixerView::ChannelStrip::resized() {
 
     // Routing selectors (bottommost)
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        if (Config::getInstance().getMixerShowRouting()) {
+        if (!isChord && Config::getInstance().getMixerShowRouting()) {
             bool showInputs = !isMultiOut;
             bool showMidi = !isMultiOut;
 
@@ -1415,7 +1436,33 @@ void MixerView::ChannelStrip::resized() {
     {
         bounds.removeFromBottom(2);
 
-        if (isMaster_) {
+        if (chordSpeakerButton)
+            chordSpeakerButton->setVisible(isChord);
+
+        if (isChord) {
+            // Chord track: [speaker | solo], with monitor below. No mute "M" /
+            // record (mirrors the chord track header).
+            muteButton->setVisible(false);
+            if (recordButton)
+                recordButton->setVisible(false);
+
+            if (Config::getInstance().getMixerShowMonitor() && monitorButton) {
+                auto row2 = bounds.removeFromBottom(metrics.buttonSize);
+                monitorButton->setBounds(row2);
+                monitorButton->setVisible(true);
+                bounds.removeFromBottom(2);
+            } else if (monitorButton) {
+                monitorButton->setVisible(false);
+            }
+
+            auto row = bounds.removeFromBottom(metrics.buttonSize);
+            int halfWidth = (row.getWidth() - 2) / 2;
+            chordSpeakerButton->setBounds(row.removeFromLeft(halfWidth).withSizeKeepingCentre(
+                metrics.buttonSize, metrics.buttonSize));
+            row.removeFromLeft(2);
+            soloButton->setBounds(row);
+            soloButton->setVisible(true);
+        } else if (isMaster_) {
             muteButton->setVisible(false);
             soloButton->setVisible(false);
             if (recordButton)

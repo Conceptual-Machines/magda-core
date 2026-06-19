@@ -11,6 +11,7 @@
 #include "../components/chain/custom_ui/OscilloscopeUI.hpp"
 #include "../components/chain/custom_ui/SpectrumAnalyzerUI.hpp"
 #include "../components/common/MixerDebugPanel.hpp"
+#include "../components/common/SvgButton.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
@@ -160,6 +161,7 @@ class MixerView : public juce::Component,
         std::unique_ptr<daw::ui::TextSlider> panSlider;
         std::unique_ptr<daw::ui::TextSlider> volumeSlider;
         std::unique_ptr<juce::TextButton> muteButton;
+        std::unique_ptr<magda::SvgButton> chordSpeakerButton;  // Chord audition (mute) toggle
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;
         std::unique_ptr<juce::TextButton> monitorButton;
