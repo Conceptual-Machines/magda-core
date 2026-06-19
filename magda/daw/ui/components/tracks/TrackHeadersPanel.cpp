@@ -299,7 +299,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         BinaryData::chord_on_svg, BinaryData::chord_on_svgSize);
     chordAuditionButton->setTooltip("Preview chords on playback");
     chordAuditionButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    chordAuditionButton->setCornerRadius(4.0f);
+    chordAuditionButton->setIconPadding(5.0f);
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());

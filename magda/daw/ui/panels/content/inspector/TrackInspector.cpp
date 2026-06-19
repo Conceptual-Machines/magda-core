@@ -25,21 +25,15 @@
 namespace magda::daw::ui {
 namespace {
 void configureMasterSpeakerButton(SvgButton& button) {
+    // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
+    // orange chip (master_off). Toggle state drives which icon shows.
     button.setClickingTogglesState(true);
-    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    button.setNormalColor(juce::Colour(0xFFB3B3B3));
-    button.setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    button.setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    button.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    button.setIconPadding(5.0f);
 }
 
 void syncMasterSpeakerButton(SvgButton& button, bool muted) {
     button.setToggleState(muted, juce::dontSendNotification);
-    button.updateSvgData(muted ? BinaryData::speaker_muted_svg : BinaryData::speaker_svg,
-                         muted ? BinaryData::speaker_muted_svgSize : BinaryData::speaker_svgSize);
     button.setTooltip(muted ? "Unmute master" : "Mute master");
 }
 }  // namespace
@@ -191,8 +185,9 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(muteButton_);
 
     // Speaker icon button (used for master mute instead of "M" text)
-    speakerButton_ = std::make_unique<SvgButton>("Speaker", BinaryData::speaker_svg,
-                                                 BinaryData::speaker_svgSize);
+    speakerButton_ = std::make_unique<SvgButton>(
+        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     configureMasterSpeakerButton(*speakerButton_);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(

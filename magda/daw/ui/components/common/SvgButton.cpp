@@ -62,34 +62,29 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             return;
         }
 
-        auto bounds = getLocalBounds().toFloat();
+        // Match the proportional corner radius single-icon buttons use, so a
+        // dual-icon toggle sits next to them (e.g. the automation icon) cleanly.
+        float radius = juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
 
-        // Apply slight opacity change on hover
         float opacity = 1.0f;
         if (shouldDrawButtonAsHighlighted && !active && !shouldDrawButtonAsDown) {
             opacity = 0.85f;
         }
 
-        // Clip to a rounded rectangle so an icon with a baked-in square
-        // background (e.g. the master / chord mute toggles) gets rounded corners.
-        {
-            juce::Graphics::ScopedSaveState clipState(g);
-            if (cornerRadius > 0.0f) {
-                juce::Path clip;
-                clip.addRoundedRectangle(bounds, cornerRadius);
-                g.reduceClipRegion(clip);
-            }
-            if (!bounds.isEmpty())
-                iconToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
-        }
+        // The "on" icon carries a full-bleed coloured background (a chip, with
+        // its own rounded corners baked into the SVG): fill to the edge. The
+        // "off" icon is a bare glyph: pad it so it is a normal size rather than
+        // edge-to-edge.
+        auto bounds =
+            drawOn ? getLocalBounds().toFloat() : getLocalBounds().toFloat().reduced(iconPadding);
+        if (!bounds.isEmpty())
+            iconToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
 
-        // Draw border on top (rounded to match the clip).
+        // Border on top, full bounds, matching radius.
         if (hasBorder) {
-            g.setColour((active || (getToggleState() && isToggleable())) && hasActiveBorderColor
-                            ? activeBorderColor
-                            : borderColor);
-            g.drawRoundedRectangle(bounds.reduced(borderThickness * 0.5f), cornerRadius,
-                                   borderThickness);
+            g.setColour(borderColor);
+            g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
+                                   radius, borderThickness);
         }
         return;
     }
