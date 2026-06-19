@@ -25,6 +25,8 @@ class AudioEngine;
 class SongNavigatorPanel;
 class MasterAutomationHeaderPanel;
 class MasterAutomationContentPanel;
+class ClickableLabel;
+class LevelMeter;
 
 class MainView : public juce::Component,
                  public juce::ScrollBar::Listener,
@@ -180,7 +182,7 @@ class MainView : public juce::Component,
     int auxSectionHeight = 0;
     bool auxVisible_ = false;
     static constexpr int AUX_ROW_HEIGHT = 30;
-    static constexpr int MIN_MASTER_STRIP_HEIGHT = 40;
+    static constexpr int MIN_MASTER_STRIP_HEIGHT = 60;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
 
     // Cached state from controller for quick access
@@ -355,6 +357,7 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> secondsRulerToggleButton;
     std::unique_ptr<SvgButton> ioToggleButton;
     std::unique_ptr<SvgButton> addTrackButton;
+    std::unique_ptr<SvgButton> showMasterButton;
     std::unique_ptr<SvgButton> hAxisIcon;
     std::unique_ptr<SvgButton> vAxisIcon;
 
@@ -448,12 +451,12 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
 
     std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
     std::unique_ptr<SvgButton> automationButton;          // Show master automation lane
+    std::unique_ptr<SvgButton> hideButton;                // Hide master row in this view
     std::unique_ptr<DraggableValueLabel> volumeLabel;     // Volume as draggable dB label
+    std::unique_ptr<ClickableLabel> peakValueLabel;       // Click to reset held peak
+    float peakValue_ = 0.0f;
 
-    // Horizontal stereo meter component
-    class HorizontalStereoMeter;
-    std::unique_ptr<HorizontalStereoMeter> peakMeter;
-    std::unique_ptr<juce::Label> peakValueLabel;  // Peak dB value
+    std::unique_ptr<LevelMeter> peakMeter;  // Horizontal stereo peak meter
 
     void setupControls();
 

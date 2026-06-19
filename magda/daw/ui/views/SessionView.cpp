@@ -42,7 +42,7 @@ namespace magda {
 namespace {
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;
-constexpr float METER_CURVE_EXPONENT = 2.0f;
+constexpr float METER_CURVE_EXPONENT = 3.0f;
 
 juce::String formatTrackIds(const std::vector<TrackId>& trackIds) {
     juce::String text("[");

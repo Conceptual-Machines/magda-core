@@ -16,7 +16,8 @@ namespace magda {
  * A compact label that displays a value and allows:
  * - Mouse drag to adjust the value
  * - Double-click to reset to the default value
- * - Shift+double-click or Shift+right-click to enter edit mode for keyboard input
+ * - Alt/Option+click to enter edit mode for keyboard input
+ * - Shift+double-click or Shift+right-click to enter edit mode (legacy)
  *
  * Supports different value formats: dB, pan (L/C/R), percentage, etc.
  */

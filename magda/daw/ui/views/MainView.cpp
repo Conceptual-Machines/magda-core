@@ -8,7 +8,8 @@
 #include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
 #include "../components/common/SideColumn.hpp"
-#include "../components/mixer/LevelMeterBallistics.hpp"
+#include "../components/mixer/ClickableLabel.hpp"
+#include "../components/mixer/LevelMeter.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
@@ -39,7 +40,6 @@ namespace magda {
 // dB conversion helpers for meters
 namespace {
 constexpr float MIN_DB = -60.0f;
-constexpr float MAX_DB = 6.0f;
 
 float gainToDb(float gain) {
     if (gain <= 0.0f)
@@ -53,19 +53,12 @@ float dbToGain(float db) {
     return std::pow(10.0f, db / 20.0f);
 }
 
-// Convert dB to normalized meter position (0-1) with power curve
-// Matches the track meter scaling in TrackHeadersPanel
-float dbToMeterPos(float db) {
+juce::String formatDbValue(float db) {
     if (db <= MIN_DB)
-        return 0.0f;
-    if (db >= MAX_DB)
-        return 1.0f;
-
-    // Normalize to 0-1 range
-    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
-
-    // Apply power curve: y = x^3
-    return std::pow(normalized, 3.0f);
+        return "-inf";
+    if (std::abs(db) < 0.05f)
+        db = 0.0f;
+    return juce::String(db, 1);
 }
 
 // Route through the position-aware tempo facade when wired (message thread);
@@ -480,6 +473,17 @@ void MainView::setupComponents() {
             std::make_unique<CreateTrackCommand>(TrackType::Audio));
     };
     addTrackButton->setTooltip("Add track");
+
+    setupCornerButton(showMasterButton, "ShowMasterTrack", BinaryData::bottom_open_svg,
+                      BinaryData::bottom_open_svgSize);
+    showMasterButton->setTooltip("Show master track");
+    showMasterButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    showMasterButton->setNormalColor(juce::Colour(0xFFB3B3B3));
+    showMasterButton->onClick = []() {
+        TrackManager::getInstance().setMasterVisible(
+            ViewModeController::getInstance().getViewMode(), true);
+    };
+    showMasterButton->setVisible(false);
 
     // Axis label icons (non-interactive)
     setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
@@ -1071,6 +1075,16 @@ void MainView::resized() {
     if (masterVisible_) {
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
+    }
+    showMasterButton->setVisible(!masterVisible_);
+    if (!masterVisible_) {
+        const int btnSize = 20;
+        SideColumn headerColumn(!arrangementLayout.swapped);
+        auto restoreArea = arrangementLayout.horizontalScrollBarRowArea;
+        auto headerArea = headerColumn.removeFrom(restoreArea, trackHeaderWidth);
+        showMasterButton->setBounds(
+            headerArea.removeFromRight(btnSize).withSizeKeepingCentre(btnSize, btnSize));
+        showMasterButton->toFront(false);
     }
 
     const bool bandVisible = masterVisible_ && masterAutomationHeight > 0;
@@ -2579,128 +2593,6 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
     }
 }
 
-// ===== Horizontal Stereo Meter for MasterHeaderPanel =====
-
-class MainView::MasterHeaderPanel::HorizontalStereoMeter : public juce::Component,
-                                                           private juce::Timer {
-  public:
-    ~HorizontalStereoMeter() override {
-        stopTimer();
-    }
-
-    void setLevels(float left, float right) {
-        targetL_ = juce::jlimit(0.0f, 2.0f, left);
-        targetR_ = juce::jlimit(0.0f, 2.0f, right);
-
-        float leftDb = gainToDb(targetL_);
-        float rightDb = gainToDb(targetR_);
-        if (leftDb > peakLeftDb_) {
-            peakLeftDb_ = leftDb;
-            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
-        }
-        if (rightDb > peakRightDb_) {
-            peakRightDb_ = rightDb;
-            peakRightHold_ = level_meter_ballistics::peakHoldMs;
-        }
-
-        if (!isTimerRunning()) {
-            lastUpdateMs_ = level_meter_ballistics::restartClock();
-            startTimerHz(60);
-        }
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-        const float gap = 1.0f;
-        float barHeight = (bounds.getHeight() - gap) / 2.0f;
-
-        // Left channel (top bar)
-        auto leftBounds = bounds.removeFromTop(barHeight);
-        drawMeterBar(g, leftBounds, displayL_, peakLeftDb_);
-
-        // Gap
-        bounds.removeFromTop(gap);
-
-        // Right channel (bottom bar)
-        auto rightBounds = bounds.removeFromTop(barHeight);
-        drawMeterBar(g, rightBounds, displayR_, peakRightDb_);
-
-        // 0dB tick mark (vertical line)
-        auto fullBounds = getLocalBounds().toFloat();
-        float zeroDbPos = dbToMeterPos(0.0f);
-        float tickX = fullBounds.getX() + fullBounds.getWidth() * zeroDbPos;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-        g.drawVerticalLine(static_cast<int>(tickX), fullBounds.getY(), fullBounds.getBottom());
-    }
-
-  private:
-    float targetL_ = 0.0f, targetR_ = 0.0f;
-    float displayL_ = 0.0f, displayR_ = 0.0f;
-    float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
-    float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
-    double lastUpdateMs_ = 0.0;
-
-    void timerCallback() override {
-        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
-        bool changed = false;
-        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
-        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
-                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
-                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
-        if (changed)
-            repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
-                 peakRightDb_ <= MIN_DB) {
-            stopTimer();
-            lastUpdateMs_ = 0.0;
-        }
-    }
-
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
-        // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRoundedRectangle(bounds, 1.0f);
-
-        float displayLevel = dbToMeterPos(gainToDb(level));
-        float meterWidth = bounds.getWidth() * displayLevel;
-
-        if (meterWidth >= 1.0f) {
-            auto fillBounds = bounds.withWidth(meterWidth);
-
-            const juce::Colour green(0xFF55AA55);
-            const juce::Colour yellow(0xFFAAAA55);
-            const juce::Colour red(0xFFAA5555);
-
-            float yellowPos = dbToMeterPos(-12.0f);
-            float redPos = dbToMeterPos(0.0f);
-            constexpr float fade = 0.03f;
-
-            juce::ColourGradient grad(green, bounds.getX(), 0.0f, red, bounds.getRight(), 0.0f,
-                                      false);
-            grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-            grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
-            grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-            grad.addColour(std::min(1.0, (double)redPos + fade), red);
-
-            g.setGradientFill(grad);
-            g.fillRoundedRectangle(fillBounds, 1.0f);
-        }
-
-        // Peak hold indicator (vertical line)
-        float peakPos = dbToMeterPos(peakDb);
-        if (peakPos > 0.01f) {
-            float peakX = bounds.getX() + bounds.getWidth() * peakPos;
-            auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
-                              : peakDb >= -12.0f ? juce::Colour(0xFFAAAA55)
-                                                 : juce::Colour(0xFF55AA55);
-            g.setColour(peakColour.withAlpha(0.9f));
-            g.fillRect(peakX, bounds.getY(), 1.5f, bounds.getHeight());
-        }
-    }
-};
-
 // ===== MasterHeaderPanel Implementation =====
 
 MainView::MasterHeaderPanel::MasterHeaderPanel() {
@@ -2761,27 +2653,50 @@ void MainView::MasterHeaderPanel::setupControls() {
     };
     addAndMakeVisible(*automationButton);
 
-    // Volume as draggable dB label
+    hideButton = std::make_unique<SvgButton>("Hide master track", BinaryData::bottom_close_svg,
+                                             BinaryData::bottom_close_svgSize);
+    hideButton->setTooltip("Hide master track");
+    hideButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    hideButton->setNormalColor(juce::Colour(0xFFB3B3B3));
+    hideButton->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    hideButton->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    hideButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    hideButton->setBorderThickness(1.0f);
+    hideButton->onClick = []() {
+        TrackManager::getInstance().setMasterVisible(
+            ViewModeController::getInstance().getViewMode(), false);
+    };
+    addAndMakeVisible(*hideButton);
+
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
-    volumeLabel->setRange(-60.0, 6.0, 0.0);  // -60 dB to +6 dB, default 0 dB
+    volumeLabel->setRange(-60.0, 6.0, 0.0);
     volumeLabel->setDoubleClickResetsValue(true);
     volumeLabel->onValueChange = [this]() {
-        // Convert dB to linear gain
-        float db = static_cast<float>(volumeLabel->getValue());
-        float gain = dbToGain(db);
-        UndoManager::getInstance().executeCommand(std::make_unique<SetMasterVolumeCommand>(gain));
+        const float db = static_cast<float>(volumeLabel->getValue());
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetMasterVolumeCommand>(dbToGain(db)));
     };
     addAndMakeVisible(*volumeLabel);
 
-    // Peak meter
-    peakMeter = std::make_unique<HorizontalStereoMeter>();
+    peakMeter = std::make_unique<LevelMeter>();
+    peakMeter->setOrientation(LevelMeter::Orientation::Horizontal);
     addAndMakeVisible(*peakMeter);
 
-    peakValueLabel = std::make_unique<juce::Label>("peakValue", "-inf");
+    peakValueLabel = std::make_unique<ClickableLabel>();
+    peakValueLabel->setText("-inf", juce::dontSendNotification);
+    peakValueLabel->setJustificationType(juce::Justification::centredLeft);
+    peakValueLabel->setFont(FontManager::getInstance().getMonoFont(9.0f));
     peakValueLabel->setColour(juce::Label::textColourId,
                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    peakValueLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    peakValueLabel->setJustificationType(juce::Justification::centredLeft);
+    peakValueLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    peakValueLabel->setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
+    peakValueLabel->setTooltip("Click to reset peak");
+    peakValueLabel->onClick = [this]() {
+        peakValue_ = 0.0f;
+        peakValueLabel->setText("-inf", juce::dontSendNotification);
+        if (peakMeter)
+            peakMeter->resetPeak();
+    };
     addAndMakeVisible(*peakValueLabel);
 }
 
@@ -2817,28 +2732,30 @@ void MainView::MasterHeaderPanel::showMasterAutomationMenu(juce::Component* anch
 
 void MainView::MasterHeaderPanel::resized() {
     auto contentArea = getLocalBounds().reduced(2);
-    contentArea.removeFromLeft(4);  // Extra left padding
-    contentArea.removeFromTop(14);  // Space for "Master" label
+    hideButton->setBounds(contentArea.removeFromRight(20).removeFromTop(20));
+    contentArea.removeFromTop(14);
 
-    // Use 80% width, left-aligned
+    contentArea.removeFromLeft(4);  // Extra left padding
+
     int usableWidth = contentArea.getWidth() * 80 / 100;
     contentArea.setWidth(usableWidth);
 
-    // Top row: volume + speaker
-    auto topRow = contentArea.removeFromTop(18);
-    // Square to the row height; the icon carries its own border, so don't shrink it.
-    speakerButton->setBounds(
-        topRow.removeFromRight(topRow.getHeight()).withSizeKeepingCentre(16, 16));
-    topRow.removeFromRight(4);
+    auto iconColumn = contentArea.removeFromRight(24);
+    const int iconSize = 20;
+    const int speakerIconSize = 22;
     automationButton->setBounds(
-        topRow.removeFromRight(topRow.getHeight()).withSizeKeepingCentre(16, 16));
-    topRow.removeFromRight(4);
+        iconColumn.removeFromTop(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+    iconColumn.removeFromTop(2);
+    speakerButton->setBounds(iconColumn.removeFromTop(speakerIconSize)
+                                 .withSizeKeepingCentre(speakerIconSize, speakerIconSize));
+    contentArea.removeFromRight(6);
+
+    auto topRow = contentArea.removeFromTop(iconSize);
     volumeLabel->setBounds(topRow);
 
-    contentArea.removeFromTop(2);  // Spacing
+    contentArea.removeFromTop(2);
 
-    // Bottom row: peak meter + value
-    auto peakRow = contentArea.removeFromTop(18);
+    auto peakRow = contentArea.removeFromTop(iconSize);
     peakValueLabel->setBounds(peakRow.removeFromRight(40));
     peakRow.removeFromRight(4);
     peakMeter->setBounds(peakRow);
@@ -2849,9 +2766,7 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
 
     speakerButton->setToggleState(master.muted, juce::dontSendNotification);
 
-    // Convert linear gain to dB for volume label
-    float db = gainToDb(master.volume);
-    volumeLabel->setValue(db, juce::dontSendNotification);
+    volumeLabel->setValue(gainToDb(master.volume), juce::dontSendNotification);
 
     repaint();
 }
@@ -2859,14 +2774,12 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
 void MainView::MasterHeaderPanel::setPeakLevels(float leftPeak, float rightPeak) {
     if (peakMeter) {
         peakMeter->setLevels(leftPeak, rightPeak);
-    }
 
-    // Update peak value label (show current max of both channels)
-    float maxPeak = std::max(leftPeak, rightPeak);
-    if (peakValueLabel) {
-        float db = gainToDb(maxPeak);
-        juce::String text = (db <= MIN_DB) ? "-inf" : juce::String(db, 1);
-        peakValueLabel->setText(text, juce::dontSendNotification);
+        const float peakDb = peakMeter->getPeakDb();
+        if (peakDb > gainToDb(peakValue_)) {
+            peakValue_ = dbToGain(peakDb);
+            peakValueLabel->setText(formatDbValue(peakDb), juce::dontSendNotification);
+        }
     }
 }
 

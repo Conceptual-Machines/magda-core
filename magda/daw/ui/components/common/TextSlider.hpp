@@ -5,6 +5,7 @@
 
 #include <functional>
 
+#include "ValueEditGesture.hpp"
 #include "ValueLabelControl.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
@@ -18,8 +19,8 @@ namespace magda::daw::ui {
 /**
  * @brief A text-based slider that displays value as editable text
  *
- * Drag to change value, double-click to reset, Shift+double-click or Shift+right-click to edit
- * text.
+ * Drag to change value, double-click to reset, Alt/Option+click to edit text.
+ * Shift+double-click and Shift+right-click are retained as legacy edit gestures.
  * Supports dB and pan formatting.
  */
 class TextSlider : public juce::Component, public magda::AutomationManagerListener {
@@ -421,6 +422,13 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
+        if (isDirectValueEditGesture(e)) {
+            cancelGesture();
+            suppressClickAfterDirectEdit_ = true;
+            showValueEditor();
+            return;
+        }
+
         if (!valueControl_.isEditing() && e.mods.isLeftButtonDown()) {
             dragStartValue_ = value_;
             dragStartY_ = e.y;
@@ -580,6 +588,13 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         isLeftButtonDrag_ = false;
         valueControl_.setDragging(false);
 
+        if (suppressClickAfterDirectEdit_) {
+            suppressClickAfterDirectEdit_ = false;
+            hasDragged_ = false;
+            isShiftDrag_ = false;
+            return;
+        }
+
         // Release the transient flags; the lane stays in bypass (override)
         // state until the user explicitly re-enables it from the header.
         if (wasLeftDrag && hasAutomationTarget_) {
@@ -721,6 +736,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     bool overrideLatchedThisGesture_ = false;
     bool isLeftButtonDrag_ = false;
     bool isShiftDrag_ = false;
+    bool suppressClickAfterDirectEdit_ = false;
     float shiftDragStartValue_ = 0.5f;
     Orientation orientation_ = Orientation::Horizontal;
     bool rightClickEditsText_ = true;
