@@ -200,15 +200,16 @@ int ChordClipContent::maxLaneHeight() const {
 
 void ChordClipContent::onGridToggleClicked() {
     const int maxH = maxLaneHeight();
-    if (laneHeight_ >= maxH - 2) {
+    if (laneHeight_ > maxH - 2) {
         // Grid currently hidden - restore it.
         laneHeight_ = juce::jlimit(MIN_LANE_HEIGHT, maxH, expandedLaneHeight_);
     } else {
-        // Hide the grid: lane fills the editor.
-        expandedLaneHeight_ = laneHeight_;
-        laneHeight_ = maxH;
+        // Hide the grid: the lane fills the whole editor, covering the time
+        // ruler too (otherwise it would be stranded at the bottom).
+        expandedLaneHeight_ = juce::jmin(laneHeight_, maxH);
+        laneHeight_ = getHeight();
     }
-    setGridToggleActive(laneHeight_ < maxH - 2);  // active = grid visible
+    setGridToggleActive(laneHeight_ <= maxH - 2);  // active = grid visible
     resized();
     repaint();
 }
