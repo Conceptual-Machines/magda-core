@@ -80,7 +80,9 @@ class TrackInspector : public BaseInspector,
     std::unique_ptr<juce::Component> colourSwatch_;
     std::unique_ptr<juce::DrawableButton> masterGlyph_;  // MAGDA glyph in master colour-swatch slot
     juce::TextButton muteButton_;
-    std::unique_ptr<SvgButton> speakerButton_;  // Speaker icon for master mute
+    std::unique_ptr<SvgButton> speakerButton_;       // Speaker icon for master mute
+    std::unique_ptr<SvgButton> chordSpeakerButton_;  // Chord audition (mute) toggle
+    bool isChordTrack_ = false;                      // selected track is the chord track
     juce::TextButton soloButton_;
     juce::TextButton recordButton_;
     juce::TextButton monitorButton_;
