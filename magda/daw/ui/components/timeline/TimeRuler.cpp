@@ -333,11 +333,14 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
         if (deltaX <= DRAG_THRESHOLD && deltaY <= DRAG_THRESHOLD) {
             double time = pixelToTime(event.x);
             if (time >= 0.0 && time <= timelineLength) {
+                const bool bypassSnap = event.mods.isAltDown();
+                if (!bypassSnap)
+                    time = snapTimeToGrid(time);
                 if (event.y >= getHeight() - tickHeightMajor()) {
                     if (onPlayheadPositionClicked)
-                        onPlayheadPositionClicked(time);
+                        onPlayheadPositionClicked(time, bypassSnap);
                 } else if (onPositionClicked) {
-                    onPositionClicked(time);
+                    onPositionClicked(time, bypassSnap);
                 }
             }
         }
@@ -373,11 +376,14 @@ void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
     // Fall through: treat as a position click using the same ruler zones as mouseUp.
     double time = pixelToTime(event.x);
     if (time >= 0.0 && time <= timelineLength) {
+        const bool bypassSnap = event.mods.isAltDown();
+        if (!bypassSnap)
+            time = snapTimeToGrid(time);
         if (event.y >= getHeight() - tickHeightMajor()) {
             if (onPlayheadPositionClicked)
-                onPlayheadPositionClicked(time);
+                onPlayheadPositionClicked(time, bypassSnap);
         } else if (onPositionClicked) {
-            onPositionClicked(time);
+            onPositionClicked(time, bypassSnap);
         }
     }
 }

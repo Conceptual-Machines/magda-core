@@ -3,6 +3,7 @@
 #include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -1592,6 +1593,7 @@ void FourOscUI::LFOTab::showAddDestPopup(int modSourceId, const juce::String& so
     popup->setSize(200, 70);
 
     auto* destCombo = new juce::ComboBox("Dest");
+    destCombo->setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     destCombo->setBounds(10, 10, 180, 24);
     for (auto& [idx, name] : paramNames_)
         destCombo->addItem(name, idx + 1);
@@ -1716,6 +1718,7 @@ void FourOscUI::ModEnvTab::showAddDestPopup(int modSourceId, const juce::String&
     popup->setSize(200, 70);
 
     auto* destCombo = new juce::ComboBox("Dest");
+    destCombo->setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     destCombo->setBounds(10, 10, 180, 24);
     for (auto& [idx, name] : paramNames_)
         destCombo->addItem(name, idx + 1);

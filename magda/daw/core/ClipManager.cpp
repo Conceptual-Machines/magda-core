@@ -1193,16 +1193,6 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
         rightClip.loopLengthBeats = rightClip.loopLength * srcBpm / 60.0;
     }
 
-    // Time-stretched clips (autoTempo/warp): add small anti-click fades at the
-    // split boundary.  The stretcher's overlapping analysis windows bleed audio
-    // from beyond the boundary, which sounds like a doubled transient.  A short
-    // fade masks this startup/shutdown artifact without being audible.
-    if (clip->isAudio()) {
-        constexpr double kSplitFadeSeconds = 0.005;  // 5 ms
-        clip->fadeOut = kSplitFadeSeconds;
-        rightClip.fadeIn = kSplitFadeSeconds;
-    }
-
     // Add right clip to the clip pool
     clips_[rightClip.id] = rightClip;
     addToSessionSlotIndex(clips_[rightClip.id]);

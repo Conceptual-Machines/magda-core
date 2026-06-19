@@ -82,6 +82,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
         play, stop, record, goToStart, goToEnd, addMarker, goToPreviousMarker, goToNextMarker,
+        goToLoopStart, goToLoopEnd, goToSelectionStart, goToSelectionEnd,
         // Track
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
@@ -246,6 +247,23 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress(juce::KeyPress::rightKey,
                                       juce::ModifierKeys::commandModifier |
                                           juce::ModifierKeys::altModifier);
+            break;
+        case goToLoopStart:
+            result.setInfo("Go to Loop Start", "Move playhead to loop start", "Transport", 0);
+            result.addDefaultKeypress('[', 0);
+            break;
+        case goToLoopEnd:
+            result.setInfo("Go to Loop End", "Move playhead to loop end", "Transport", 0);
+            result.addDefaultKeypress(']', 0);
+            break;
+        case goToSelectionStart:
+            result.setInfo("Go to Selection Start", "Move playhead to selection start", "Transport",
+                           0);
+            result.addDefaultKeypress('[', juce::ModifierKeys::shiftModifier);
+            break;
+        case goToSelectionEnd:
+            result.setInfo("Go to Selection End", "Move playhead to selection end", "Transport", 0);
+            result.addDefaultKeypress(']', juce::ModifierKeys::shiftModifier);
             break;
 
         // Track
@@ -1204,6 +1222,50 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (mainView)
                 mainView->getTimelineController().dispatch(GoToNextMarkerEvent{});
             return true;
+
+        case goToLoopStart:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& loop = timelineController.getState().loop;
+                if (!loop.isValid())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{loop.startBeats});
+                return true;
+            }
+            return false;
+
+        case goToLoopEnd:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& loop = timelineController.getState().loop;
+                if (!loop.isValid())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{loop.endBeats});
+                return true;
+            }
+            return false;
+
+        case goToSelectionStart:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& selection = timelineController.getState().selection;
+                if (!selection.isActive())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{selection.startBeats});
+                return true;
+            }
+            return false;
+
+        case goToSelectionEnd:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& selection = timelineController.getState().selection;
+                if (!selection.isActive())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{selection.endBeats});
+                return true;
+            }
+            return false;
 
         case escapeAction: {
             // Exit any active link mode and clear the edit cursor (#1351).

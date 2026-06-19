@@ -830,6 +830,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         if (onNoteAdded && clipId != INVALID_CLIP_ID) {
             const auto* clip = ClipManager::getInstance().getClip(clipId);
             if (clip && ClipOperations::clipMidiNoteToVisibleRange(*clip, note)) {
+                rememberAddedNoteLength(note.lengthBeats);
                 onNoteAdded(clipId, note.startBeat, note.noteNumber, note.lengthBeats,
                             defaultNoteVelocity_);
             }
@@ -1020,6 +1021,7 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
             return;
         }
 
+        rememberAddedNoteLength(previewNote.lengthBeats);
         onNoteAdded(insertPos->clipId, previewNote.startBeat, previewNote.noteNumber,
                     previewNote.lengthBeats, defaultNoteVelocity_);
     }
@@ -1273,14 +1275,24 @@ void PianoRollGridComponent::setGridResolutionBeats(double beats) {
 }
 
 double PianoRollGridComponent::getDefaultNoteLengthBeats() const {
+    if (rememberLastNoteLength_ && lastAddedNoteLengthBeats_ > 0.0)
+        return lastAddedNoteLengthBeats_;
     if (defaultNoteLengthBeats_ > 0.0)
         return defaultNoteLengthBeats_;
     return juce::jmax(1.0 / 16.0, gridResolutionBeats_);
 }
 
+void PianoRollGridComponent::rememberAddedNoteLength(double lengthBeats) {
+    if (lengthBeats > 0.0)
+        lastAddedNoteLengthBeats_ = lengthBeats;
+}
+
 void PianoRollGridComponent::addDefaultNoteMenuItems(juce::PopupMenu& menu) const {
     juce::PopupMenu lengthMenu;
-    lengthMenu.addItem(100, "Current Grid", true, defaultNoteLengthBeats_ <= 0.0);
+    lengthMenu.addItem(100, "Current Grid", true,
+                       !rememberLastNoteLength_ && defaultNoteLengthBeats_ <= 0.0);
+    lengthMenu.addItem(108, "Remember Note Lengths", true, rememberLastNoteLength_);
+    lengthMenu.addSeparator();
 
     struct LengthOption {
         int id;
@@ -1292,7 +1304,8 @@ void PianoRollGridComponent::addDefaultNoteMenuItems(juce::PopupMenu& menu) cons
         {105, "1/16", 0.25}, {106, "1/32", 0.125}, {107, "1/8T", 1.0 / 3.0}};
     for (const auto& option : lengths)
         lengthMenu.addItem(option.id, option.name, true,
-                           std::abs(defaultNoteLengthBeats_ - option.beats) < 0.000001);
+                           !rememberLastNoteLength_ &&
+                               std::abs(defaultNoteLengthBeats_ - option.beats) < 0.000001);
     menu.addSubMenu("Default Length", lengthMenu);
 
     juce::PopupMenu velocityMenu;
@@ -1306,6 +1319,12 @@ void PianoRollGridComponent::addDefaultNoteMenuItems(juce::PopupMenu& menu) cons
 bool PianoRollGridComponent::handleDefaultNoteMenuResult(int result) {
     if (result == 100) {
         defaultNoteLengthBeats_ = 0.0;
+        rememberLastNoteLength_ = false;
+        return true;
+    }
+
+    if (result == 108) {
+        rememberLastNoteLength_ = !rememberLastNoteLength_;
         return true;
     }
 
@@ -1318,6 +1337,7 @@ bool PianoRollGridComponent::handleDefaultNoteMenuResult(int result) {
     for (const auto& option : lengths) {
         if (result == option.id) {
             defaultNoteLengthBeats_ = option.beats;
+            rememberLastNoteLength_ = false;
             return true;
         }
     }
@@ -2776,9 +2796,11 @@ void PianoRollGridComponent::confirmPendingChord(double endBeat) {
     if (length < gridResolutionBeats_)
         length = gridResolutionBeats_;
 
-    if (onChordDropped)
+    if (onChordDropped) {
+        rememberAddedNoteLength(length);
         onChordDropped(pendingChord_.clipId, pendingChord_.startBeat, length,
                        std::move(pendingChord_.notes), pendingChord_.chordName);
+    }
 
     cancelPendingChord();
 }

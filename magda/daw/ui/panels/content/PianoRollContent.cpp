@@ -719,8 +719,11 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Playhead set from grid — global arrangement transport, matching the timeline ruler.
     gridComponent_->onPlayheadPositionBeatsChanged = [](double positionBeats) {
-        if (auto* controller = magda::TimelineController::getCurrent())
-            controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            const auto& state = controller->getState();
+            controller->dispatch(
+                magda::SetPlayheadPositionBeatsEvent{state.snapBeatsToGrid(positionBeats)});
+        }
     };
 
     // Handle chord block drops from the chord panel
