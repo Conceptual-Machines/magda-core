@@ -190,6 +190,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/browser/icon-audio-boldm.svg
     ../../assets/icons/browser/icon-midi-boldm.svg
     ../../assets/icons/browser/icon-preset-boldm.svg
+    ../../assets/icons/browser/icon-chordtrack-boldm.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg
     ../../assets/icons/fader/fader_track.svg
