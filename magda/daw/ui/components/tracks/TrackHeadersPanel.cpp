@@ -8,6 +8,7 @@
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../core/AutomationCommands.hpp"
+#include "../../../core/ChordProgressionContext.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
 #include "../../../core/GestureRouter.hpp"
@@ -17,9 +18,12 @@
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/StringTable.hpp"
 #include "../../../core/TrackCommands.hpp"
+#include "../../../core/TrackManager.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../../engine/TracktionEngineWrapper.hpp"
+#include "../../../music/ChordEngine.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -29,6 +33,93 @@
 #include "../mixer/LevelMeterBallistics.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
+
+namespace {
+
+// Plays the chord-track progression through the track's instrument, one chord
+// at a time (timed by each chord's length). Singleton; the header Preview button
+// toggles it.
+class ChordProgressionPreviewer : public juce::Timer {
+  public:
+    static ChordProgressionPreviewer& get() {
+        static ChordProgressionPreviewer instance;
+        return instance;
+    }
+
+    std::function<void()> onFinished;
+
+    void toggle(magda::TrackId trackId) {
+        if (active_)
+            finish();
+        else
+            start(trackId);
+    }
+    bool isActive() const {
+        return active_;
+    }
+
+  private:
+    void start(magda::TrackId trackId) {
+        stopTimer();
+        allNotesOff();
+        trackId_ = trackId;
+        chords_ = magda::ChordProgressionContext::current();
+        if (chords_.empty())
+            return;
+        bpm_ = magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        if (bpm_ <= 0.0)
+            bpm_ = 120.0;
+        index_ = 0;
+        active_ = true;
+        playCurrent();
+    }
+
+    void finish() {
+        stopTimer();
+        allNotesOff();
+        const bool was = active_;
+        active_ = false;
+        if (was && onFinished)
+            onFinished();
+    }
+
+    void playCurrent() {
+        allNotesOff();
+        if (index_ >= static_cast<int>(chords_.size())) {
+            finish();
+            return;
+        }
+        const auto& c = chords_[static_cast<size_t>(index_)];
+        const auto spec = magda::music::ChordEngine::parseChordName(c.name);
+        const auto chord = magda::music::ChordEngine::getInstance().buildChordInRootPosition(
+            spec.root, spec.quality);
+        for (const auto& n : chord.notes) {
+            held_.push_back(n.noteNumber);
+            magda::TrackManager::getInstance().previewNote(trackId_, n.noteNumber, 100, true);
+        }
+        startTimer(static_cast<int>(std::max(60.0, c.lengthBeats * 60000.0 / bpm_)));
+    }
+
+    void timerCallback() override {
+        ++index_;
+        playCurrent();
+    }
+
+    void allNotesOff() {
+        for (int p : held_)
+            magda::TrackManager::getInstance().previewNote(trackId_, p, 0, false);
+        held_.clear();
+    }
+
+    magda::TrackId trackId_ = magda::INVALID_TRACK_ID;
+    std::vector<magda::ProgressionChord> chords_;
+    std::vector<int> held_;
+    int index_ = 0;
+    double bpm_ = 120.0;
+    bool active_ = false;
+};
+
+}  // namespace
 
 namespace magda {
 
@@ -424,6 +515,19 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         masterMuteButton->setColour(juce::DrawableButton::backgroundOnColourId,
                                     juce::Colours::transparentBlack);
     }
+
+    // Chord-track-only preview control (created for every header, shown only for
+    // the chord track in the layout).
+    previewButton = std::make_unique<juce::TextButton>("Preview");
+    previewButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
+    previewButton->setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    previewButton->setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour());
+    previewButton->setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    previewButton->setColour(juce::TextButton::textColourOnId,
+                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+    previewButton->setClickingTogglesState(true);
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -985,6 +1089,7 @@ void TrackHeadersPanel::tracksChanged() {
         header->isGroup = track->isGroup() || track->hasChildren();
         header->isMultiOut = (track->type == TrackType::MultiOut);
         header->isMaster = (track->type == TrackType::Master);
+        header->isChordTrack = (track->type == TrackType::Chord);
         header->isCollapsed = track->isCollapsedIn(currentViewMode_);
         header->muted = track->muted;
         header->solo = track->soloed;
@@ -1013,6 +1118,10 @@ void TrackHeadersPanel::tracksChanged() {
             addAndMakeVisible(*header->muteButton);
             addChildComponent(*header->masterMuteButton);
         }
+        if (header->isChordTrack)
+            addAndMakeVisible(*header->previewButton);
+        else
+            addChildComponent(*header->previewButton);
         addAndMakeVisible(*header->soloButton);
         addAndMakeVisible(*header->recordButton);
         addAndMakeVisible(*header->monitorButton);
@@ -1763,6 +1872,22 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Chord track: the Preview button plays the progression through the track's
+    // instrument; it untoggles itself when playback ends.
+    header.previewButton->onClick = [this, trackId]() {
+        auto& previewer = ChordProgressionPreviewer::get();
+        previewer.onFinished = [safe = juce::Component::SafePointer<TrackHeadersPanel>(this),
+                                trackId]() {
+            if (safe == nullptr)
+                return;
+            const int i = safe->getVisibleHeaderIndex(trackId);
+            if (i >= 0 && safe->trackHeaders[static_cast<size_t>(i)]->previewButton)
+                safe->trackHeaders[static_cast<size_t>(i)]->previewButton->setToggleState(
+                    false, juce::dontSendNotification);
+        };
+        previewer.toggle(trackId);
+    };
+
     // Light up every other selected track's volume label the moment the user
     // presses this strip's slider, so the multi-track edit gesture is visible
     // immediately rather than only once a value actually changes.
@@ -2151,6 +2276,23 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     const int rh = 16;  // rowHeight
     const int areaWidth = area.getWidth();
 
+    // Chord track: a single Preview button, nothing else.
+    if (header.isChordTrack) {
+        auto row = area.removeFromTop(rh);
+        auto content = inner.removeFrom(row, std::min(areaWidth, 90));
+        header.previewButton->setBounds(content);
+        header.previewButton->setVisible(true);
+        header.volumeLabel->setVisible(false);
+        header.panLabel->setVisible(false);
+        header.muteButton->setVisible(false);
+        header.masterMuteButton->setVisible(false);
+        header.soloButton->setVisible(false);
+        header.recordButton->setVisible(false);
+        header.monitorButton->setVisible(false);
+        header.automationButton->setVisible(false);
+        return;
+    }
+
     // Master track: volume + mute only (no solo, pan, record, monitor)
     if (header.isMaster) {
         auto row = area.removeFromTop(rh);
@@ -2258,6 +2400,23 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     // Master track: skip name row space (painted "Master" label), then volume + mute
     if (header.isMaster) {
         header.nameLabel->setVisible(false);
+        header.collapseButton->setVisible(false);
+        header.audioInputSelector->setVisible(false);
+        header.inputSelector->setVisible(false);
+        header.outputSelector->setVisible(false);
+        header.midiOutputSelector->setVisible(false);
+        header.audioColumnLabel->setVisible(false);
+        header.midiColumnLabel->setVisible(false);
+        header.inputIcon->setVisible(false);
+        header.outputIcon->setVisible(false);
+        for (auto& sendLabel : header.sendLabels)
+            sendLabel->setVisible(false);
+        layoutVolPanAndButtons(header, tcpArea, inner);
+        return;
+    }
+
+    // Chord track: keep the name, drop all routing/sends, show only Preview.
+    if (header.isChordTrack) {
         header.collapseButton->setVisible(false);
         header.audioInputSelector->setVisible(false);
         header.inputSelector->setVisible(false);

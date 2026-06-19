@@ -142,11 +142,12 @@ class TrackHeadersPanel : public juce::Component,
     struct TrackHeader {
         juce::String name;
         TrackId trackId = INVALID_TRACK_ID;
-        int depth = 0;             // Hierarchy depth for indentation
-        bool isGroup = false;      // Is this a group track?
-        bool isMultiOut = false;   // Is this a multi-out child track?
-        bool isMaster = false;     // Is this the master track?
-        bool isCollapsed = false;  // Is group collapsed?
+        int depth = 0;              // Hierarchy depth for indentation
+        bool isGroup = false;       // Is this a group track?
+        bool isMultiOut = false;    // Is this a multi-out child track?
+        bool isMaster = false;      // Is this the master track?
+        bool isChordTrack = false;  // Is this the singleton chord track?
+        bool isCollapsed = false;   // Is group collapsed?
         bool selected = false;
         bool muted = false;
         bool solo = false;
@@ -169,6 +170,8 @@ class TrackHeadersPanel : public juce::Component,
         // Master-only mute: a speaker toggle matching the inspector/mixer, used
         // in place of the "M" muteButton when isMaster.
         std::unique_ptr<juce::DrawableButton> masterMuteButton;
+        // Chord track only: the sole control - previews the progression.
+        std::unique_ptr<juce::TextButton> previewButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
         std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button
