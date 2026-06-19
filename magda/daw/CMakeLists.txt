@@ -73,6 +73,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/drum_grid.svg
     ../../assets/icons/general/faust-text-logo.svg
     ../../assets/icons/general/script.svg
+    ../../assets/icons/general/speaker.svg
+    ../../assets/icons/general/speaker_muted.svg
     ../../assets/icons/general/speaker_on.svg
     ../../assets/icons/general/speaker_off.svg
     ../../assets/BoldMGlyph.svg

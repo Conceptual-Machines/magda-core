@@ -449,11 +449,11 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     // button). Shared by the icon button and the header right-click.
     void showMasterAutomationMenu(juce::Component* anchor);
 
-    std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
-    std::unique_ptr<SvgButton> automationButton;          // Show master automation lane
-    std::unique_ptr<SvgButton> hideButton;                // Hide master row in this view
-    std::unique_ptr<DraggableValueLabel> volumeLabel;     // Volume as draggable dB label
-    std::unique_ptr<ClickableLabel> peakValueLabel;       // Click to reset held peak
+    std::unique_ptr<SvgButton> speakerButton;          // Speaker on/off toggle
+    std::unique_ptr<SvgButton> automationButton;       // Show master automation lane
+    std::unique_ptr<SvgButton> hideButton;             // Hide master row in this view
+    std::unique_ptr<DraggableValueLabel> volumeLabel;  // Volume as draggable dB label
+    std::unique_ptr<ClickableLabel> peakValueLabel;    // Click to reset held peak
     float peakValue_ = 0.0f;
 
     std::unique_ptr<LevelMeter> peakMeter;  // Horizontal stereo peak meter

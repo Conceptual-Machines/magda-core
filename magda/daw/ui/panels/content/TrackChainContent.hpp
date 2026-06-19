@@ -1,5 +1,7 @@
 #pragma once
 
+#include <BinaryData.h>
+
 #include <map>
 #include <vector>
 
@@ -184,7 +186,7 @@ class TrackChainContent : public PanelContent,
     juce::Label trackNameLabel_;
     juce::TextButton muteButton_;  // Track mute
     // Master uses a speaker toggle (matching the inspector/mixer) instead of "M".
-    juce::DrawableButton masterMuteButton_{"masterMute", juce::DrawableButton::ImageFitted};
+    SvgButton masterMuteButton_{"masterMute", BinaryData::speaker_svg, BinaryData::speaker_svgSize};
     juce::TextButton soloButton_;  // Track solo
     magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};

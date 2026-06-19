@@ -2611,20 +2611,18 @@ MainView::MasterHeaderPanel::~MasterHeaderPanel() {
 
 void MainView::MasterHeaderPanel::setupControls() {
     // Speaker on/off button (toggles master mute)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
-                                                             BinaryData::speaker_on_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
-                                                              BinaryData::speaker_off_svgSize);
-
-    speakerButton =
-        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
-    speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
+    speakerButton = std::make_unique<SvgButton>("Speaker", BinaryData::speaker_svg,
+                                                BinaryData::speaker_svgSize);
     speakerButton->setClickingTogglesState(true);
-    speakerButton->setColour(juce::DrawableButton::backgroundColourId,
-                             juce::Colours::transparentBlack);
-    speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                             juce::Colours::transparentBlack);
-    speakerButton->setEdgeIndent(0);
+    speakerButton->setTooltip("Mute master");
+    speakerButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    speakerButton->setNormalColor(juce::Colour(0xFFB3B3B3));
+    speakerButton->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    speakerButton->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    speakerButton->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    speakerButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2742,12 +2740,11 @@ void MainView::MasterHeaderPanel::resized() {
 
     auto iconColumn = contentArea.removeFromRight(24);
     const int iconSize = 20;
-    const int speakerIconSize = 22;
     automationButton->setBounds(
         iconColumn.removeFromTop(iconSize).withSizeKeepingCentre(iconSize, iconSize));
     iconColumn.removeFromTop(2);
-    speakerButton->setBounds(iconColumn.removeFromTop(speakerIconSize)
-                                 .withSizeKeepingCentre(speakerIconSize, speakerIconSize));
+    speakerButton->setBounds(
+        iconColumn.removeFromTop(iconSize).withSizeKeepingCentre(iconSize, iconSize));
     contentArea.removeFromRight(6);
 
     auto topRow = contentArea.removeFromTop(iconSize);
@@ -2765,6 +2762,10 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
     const auto& master = TrackManager::getInstance().getMasterChannel();
 
     speakerButton->setToggleState(master.muted, juce::dontSendNotification);
+    speakerButton->updateSvgData(
+        master.muted ? BinaryData::speaker_muted_svg : BinaryData::speaker_svg,
+        master.muted ? BinaryData::speaker_muted_svgSize : BinaryData::speaker_svgSize);
+    speakerButton->setTooltip(master.muted ? "Unmute master" : "Mute master");
 
     volumeLabel->setValue(gainToDb(master.volume), juce::dontSendNotification);
 
