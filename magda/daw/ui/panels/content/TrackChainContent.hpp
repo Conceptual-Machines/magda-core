@@ -187,8 +187,8 @@ class TrackChainContent : public PanelContent,
     juce::TextButton muteButton_;  // Track mute
     // Master uses a speaker toggle (matching the inspector/mixer) instead of "M".
     SvgButton masterMuteButton_{"masterMute", BinaryData::master_on_svg,
-                                BinaryData::master_on_svgSize, BinaryData::master_off_svg,
-                                BinaryData::master_off_svgSize};
+                                BinaryData::master_on_svgSize, BinaryData::master_off_1_svg,
+                                BinaryData::master_off_1_svgSize};
     juce::TextButton soloButton_;  // Track solo
     magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};

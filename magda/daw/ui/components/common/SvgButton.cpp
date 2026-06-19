@@ -62,30 +62,39 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             return;
         }
 
-        // Match the proportional corner radius single-icon buttons use, so a
-        // dual-icon toggle sits next to them (e.g. the automation icon) cleanly.
-        float radius = juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
-
         float opacity = 1.0f;
         if (shouldDrawButtonAsHighlighted && !active && !shouldDrawButtonAsDown) {
             opacity = 0.85f;
         }
 
-        // The "on" icon carries a full-bleed coloured background (a chip, with
-        // its own rounded corners baked into the SVG): fill to the edge. The
-        // "off" icon is a bare glyph: pad it so it is a normal size rather than
-        // edge-to-edge.
-        auto bounds =
-            drawOn ? getLocalBounds().toFloat() : getLocalBounds().toFloat().reduced(iconPadding);
-        if (!bounds.isEmpty())
-            iconToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
-
-        // Border on top, full bounds, matching radius.
         if (hasBorder) {
+            // Bordered toggle (master / chord mute). Both icons carry a full
+            // 24x24 frame, so fitting them into the (24x24) button is a true 1:1
+            // - on and off render at the same size.
+            float radius = juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
+            {
+                juce::Graphics::ScopedSaveState clipState(g);
+                juce::Path clip;
+                clip.addRoundedRectangle(getLocalBounds().toFloat(), radius);
+                g.reduceClipRegion(clip);
+                // Active state fills the chip background (e.g. orange when muted)
+                // so the glyph (drawn padded on top) reads as a solid tile.
+                if (drawOn && hasActiveBackgroundColor) {
+                    g.setColour(activeBackgroundColor);
+                    g.fillRoundedRectangle(getLocalBounds().toFloat(), radius);
+                }
+                iconToDraw->drawWithin(g, getLocalBounds().toFloat().reduced(iconPadding),
+                                       juce::RectanglePlacement::centred, opacity);
+            }
             g.setColour(borderColor);
             g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
                                    radius, borderThickness);
+            return;
         }
+
+        // Other dual-icon buttons (transport) fill the button edge-to-edge.
+        iconToDraw->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred,
+                               opacity);
         return;
     }
 

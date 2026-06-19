@@ -296,10 +296,10 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // (chord_off). Matches the S / monitor chips beside it.
     chordAuditionButton = std::make_unique<magda::SvgButton>(
         "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
-        BinaryData::chord_on_svg, BinaryData::chord_on_svgSize);
+        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
     chordAuditionButton->setTooltip("Preview chords on playback");
     chordAuditionButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    chordAuditionButton->setIconPadding(5.0f);
+    chordAuditionButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -2045,10 +2045,10 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     // toggle stands in for mute, framed as "preview chords on playback" (blue =
     // audible, faint grey = silent). No pan / record / automation / routing.
     if (header.isChordTrack) {
-        auto row = area.removeFromTop(rh);
+        auto row = area.removeFromTop(24);
         auto content = inner.removeFrom(row, areaWidth);
         const int mixW = areaWidth * 52 / 100;
-        const int iconW = 18;
+        const int iconW = 24;
         header.volumeLabel->setBounds(content.removeFromLeft(mixW));
         header.volumeLabel->setVisible(true);
         content.removeFromLeft(gap);

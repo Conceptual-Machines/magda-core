@@ -474,16 +474,18 @@ void MainView::setupComponents() {
     };
     addTrackButton->setTooltip("Add track");
 
-    setupCornerButton(showMasterButton, "ShowMasterTrack", BinaryData::bottom_open_svg,
+    // Footer corner toggle for the master track: hide icon when it's visible,
+    // show icon when it's hidden (the hide control lives here, not in the
+    // master header).
+    setupCornerButton(showMasterButton, "ToggleMasterTrack", BinaryData::bottom_open_svg,
                       BinaryData::bottom_open_svgSize);
     showMasterButton->setTooltip("Show master track");
     showMasterButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
     showMasterButton->setNormalColor(juce::Colour(0xFFB3B3B3));
-    showMasterButton->onClick = []() {
+    showMasterButton->onClick = [this]() {
         TrackManager::getInstance().setMasterVisible(
-            ViewModeController::getInstance().getViewMode(), true);
+            ViewModeController::getInstance().getViewMode(), !masterVisible_);
     };
-    showMasterButton->setVisible(false);
 
     // Axis label icons (non-interactive)
     setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
@@ -1076,8 +1078,14 @@ void MainView::resized() {
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
     }
-    showMasterButton->setVisible(!masterVisible_);
-    if (!masterVisible_) {
+    // Always-present footer toggle: hide icon when the master is visible, show
+    // icon when it's hidden.
+    showMasterButton->setVisible(true);
+    showMasterButton->updateSvgData(
+        masterVisible_ ? BinaryData::bottom_close_svg : BinaryData::bottom_open_svg,
+        masterVisible_ ? BinaryData::bottom_close_svgSize : BinaryData::bottom_open_svgSize);
+    showMasterButton->setTooltip(masterVisible_ ? "Hide master track" : "Show master track");
+    {
         const int btnSize = 20;
         SideColumn headerColumn(!arrangementLayout.swapped);
         auto restoreArea = arrangementLayout.horizontalScrollBarRowArea;
@@ -2614,11 +2622,11 @@ void MainView::MasterHeaderPanel::setupControls() {
     // speaker (master_on), muted = orange block (master_off); pre-baked colors.
     speakerButton = std::make_unique<SvgButton>(
         "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
-        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+        BinaryData::master_off_1_svg, BinaryData::master_off_1_svgSize);
     speakerButton->setClickingTogglesState(true);
     speakerButton->setTooltip("Mute master");
     speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    speakerButton->setIconPadding(5.0f);
+    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2636,6 +2644,7 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationButton->setIconPadding(6.0f);  // a touch smaller than the speaker glyph
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2726,41 +2735,54 @@ void MainView::MasterHeaderPanel::showMasterAutomationMenu(juce::Component* anch
 
 void MainView::MasterHeaderPanel::resized() {
     auto contentArea = getLocalBounds().reduced(2);
-    hideButton->setBounds(contentArea.removeFromRight(20).removeFromTop(20));
-    contentArea.removeFromTop(14);
+    // The hide control now lives in the footer (next to the show toggle), not
+    // in the master header.
+    hideButton->setVisible(false);
+    contentArea.removeFromTop(14);  // "Master" label row
+    contentArea.removeFromTop(6);   // padding below the label
 
     contentArea.removeFromLeft(4);  // Extra left padding
 
-    // Two rows: a narrow readout/empty column on the left, the wide slider /
-    // meter column in the middle (the two align), and a narrow icon column on
-    // the right.
-    //   empty   | slider     | mute
-    //   readout | peak meter | automation
+    // Two rows sharing the same three columns. Each segment width is explicit:
+    //   col1 (value / -inf) | col2 (meter, fills) | col3 (icon)
+    //   value 0.0           | (empty)             | mute
+    //   -inf                | peak meter          | automation
     const int rowH = 20;
     const int rowGap = 2;
     const int colGap = 6;
     const int iconSize = 20;
-    const int readoutW = 40;
-    const int iconColW = iconSize;
+    const int rightMargin = 12;  // keep the icons off the right border
+
+    const int totalW = contentArea.getWidth();
+    const int col1 = totalW * 15 / 100;                                // value readout / -inf
+    const int col3 = iconSize;                                         // icon column
+    const int col2 = totalW - col1 - col3 - 2 * colGap - rightMargin;  // meter fills
 
     auto row1 = contentArea.removeFromTop(rowH);
     contentArea.removeFromTop(rowGap);
     auto row2 = contentArea.removeFromTop(rowH);
 
-    // Row 1: empty | slider | mute
-    row1.removeFromLeft(readoutW + colGap);  // empty (aligns with readout below)
-    speakerButton->setBounds(
-        row1.removeFromRight(iconColW).withSizeKeepingCentre(iconSize, iconSize));
-    row1.removeFromRight(colGap);
-    volumeLabel->setBounds(row1);
+    // Split a row into [col1][gap][col2][gap][col3][rightMargin].
+    auto split = [&](juce::Rectangle<int> row) {
+        std::array<juce::Rectangle<int>, 3> c;
+        c[0] = row.removeFromLeft(col1);
+        row.removeFromLeft(colGap);
+        c[1] = row.removeFromLeft(col2);
+        row.removeFromLeft(colGap);
+        c[2] = row.removeFromLeft(col3);
+        return c;
+    };
 
-    // Row 2: readout | peak meter | automation
-    peakValueLabel->setBounds(row2.removeFromLeft(readoutW));
-    row2.removeFromLeft(colGap);
-    automationButton->setBounds(
-        row2.removeFromRight(iconColW).withSizeKeepingCentre(iconSize, iconSize));
-    row2.removeFromRight(colGap);
-    peakMeter->setBounds(row2.reduced(0, 4));
+    auto r1 = split(row1);
+    auto r2 = split(row2);
+
+    // Row 1, col1 is empty; the volume value sits above the meter (col2).
+    volumeLabel->setBounds(r1[1]);
+    speakerButton->setBounds(r1[2].withSizeKeepingCentre(iconSize, iconSize));
+
+    peakValueLabel->setBounds(r2[0]);
+    peakMeter->setBounds(r2[1]);
+    automationButton->setBounds(r2[2].withSizeKeepingCentre(iconSize, iconSize));
 }
 
 void MainView::MasterHeaderPanel::masterChannelChanged() {

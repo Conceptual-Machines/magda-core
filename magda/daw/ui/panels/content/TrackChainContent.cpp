@@ -41,7 +41,7 @@ void configureMasterSpeakerButton(SvgButton& button) {
     // orange chip (master_off). Toggle state drives which icon shows.
     button.setClickingTogglesState(true);
     button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setIconPadding(5.0f);
+    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
 }
 
 void syncMasterSpeakerButton(SvgButton& button, bool muted) {
@@ -2525,7 +2525,7 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         headerArea.removeFromRight(2);
     }
     if (isMaster) {
-        masterMuteButton_.setBounds(headerArea.removeFromRight(20).withSizeKeepingCentre(20, 20));
+        masterMuteButton_.setBounds(headerArea.removeFromRight(24).withSizeKeepingCentre(24, 24));
         masterMuteButton_.setVisible(true);
         muteButton_.setVisible(false);
     } else {
