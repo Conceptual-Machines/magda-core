@@ -291,19 +291,15 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                                     juce::Colours::transparentBlack);
     }
 
-    // Chord-track audition toggle (speaker): blue when chords are audible on
-    // playback, faint grey when silent.
+    // Chord-track audition toggle (speaker). Dual-icon with pre-baked colors:
+    // audible = blue chip with a dark speaker (chord_on), silent = gray speaker
+    // (chord_off). Matches the S / monitor chips beside it.
     chordAuditionButton = std::make_unique<magda::SvgButton>(
-        "ChordAudition", BinaryData::speaker_on_svg, BinaryData::speaker_on_svgSize);
+        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
+        BinaryData::chord_on_svg, BinaryData::chord_on_svgSize);
     chordAuditionButton->setTooltip("Preview chords on playback");
-    // Styled to match the S / monitor chips beside it: solid SURFACE chip when
-    // off (light speaker), solid ACCENT_BLUE chip when audible (dark speaker on
-    // the fill, like the dark-on-orange/green text of solo/monitor).
-    chordAuditionButton->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    chordAuditionButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    chordAuditionButton->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    chordAuditionButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    chordAuditionButton->setIconPadding(4.0f);
+    chordAuditionButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordAuditionButton->setCornerRadius(4.0f);
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());

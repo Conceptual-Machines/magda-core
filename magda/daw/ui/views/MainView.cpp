@@ -2610,19 +2610,15 @@ MainView::MasterHeaderPanel::~MasterHeaderPanel() {
 }
 
 void MainView::MasterHeaderPanel::setupControls() {
-    // Speaker on/off button (toggles master mute)
-    speakerButton = std::make_unique<SvgButton>("Speaker", BinaryData::speaker_svg,
-                                                BinaryData::speaker_svgSize);
+    // Speaker on/off button (toggles master mute). Dual-icon: audible = gray
+    // speaker (master_on), muted = orange block (master_off); pre-baked colors.
+    speakerButton = std::make_unique<SvgButton>(
+        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     speakerButton->setClickingTogglesState(true);
     speakerButton->setTooltip("Mute master");
-    speakerButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    speakerButton->setNormalColor(juce::Colour(0xFFB3B3B3));
-    speakerButton->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    speakerButton->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    speakerButton->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    speakerButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    speakerButton->setCornerRadius(4.0f);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2735,36 +2731,43 @@ void MainView::MasterHeaderPanel::resized() {
 
     contentArea.removeFromLeft(4);  // Extra left padding
 
-    int usableWidth = contentArea.getWidth() * 80 / 100;
-    contentArea.setWidth(usableWidth);
-
-    auto iconColumn = contentArea.removeFromRight(24);
+    // Two rows: a narrow readout/empty column on the left, the wide slider /
+    // meter column in the middle (the two align), and a narrow icon column on
+    // the right.
+    //   empty   | slider     | mute
+    //   readout | peak meter | automation
+    const int rowH = 20;
+    const int rowGap = 2;
+    const int colGap = 6;
     const int iconSize = 20;
-    automationButton->setBounds(
-        iconColumn.removeFromTop(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-    iconColumn.removeFromTop(2);
+    const int readoutW = 40;
+    const int iconColW = iconSize;
+
+    auto row1 = contentArea.removeFromTop(rowH);
+    contentArea.removeFromTop(rowGap);
+    auto row2 = contentArea.removeFromTop(rowH);
+
+    // Row 1: empty | slider | mute
+    row1.removeFromLeft(readoutW + colGap);  // empty (aligns with readout below)
     speakerButton->setBounds(
-        iconColumn.removeFromTop(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-    contentArea.removeFromRight(6);
+        row1.removeFromRight(iconColW).withSizeKeepingCentre(iconSize, iconSize));
+    row1.removeFromRight(colGap);
+    volumeLabel->setBounds(row1);
 
-    auto topRow = contentArea.removeFromTop(iconSize);
-    volumeLabel->setBounds(topRow);
-
-    contentArea.removeFromTop(2);
-
-    auto peakRow = contentArea.removeFromTop(iconSize);
-    peakValueLabel->setBounds(peakRow.removeFromRight(40));
-    peakRow.removeFromRight(4);
-    peakMeter->setBounds(peakRow);
+    // Row 2: readout | peak meter | automation
+    peakValueLabel->setBounds(row2.removeFromLeft(readoutW));
+    row2.removeFromLeft(colGap);
+    automationButton->setBounds(
+        row2.removeFromRight(iconColW).withSizeKeepingCentre(iconSize, iconSize));
+    row2.removeFromRight(colGap);
+    peakMeter->setBounds(row2.reduced(0, 4));
 }
 
 void MainView::MasterHeaderPanel::masterChannelChanged() {
     const auto& master = TrackManager::getInstance().getMasterChannel();
 
+    // Dual-icon: toggle state drives which baked icon (audible vs muted) shows.
     speakerButton->setToggleState(master.muted, juce::dontSendNotification);
-    speakerButton->updateSvgData(
-        master.muted ? BinaryData::speaker_muted_svg : BinaryData::speaker_svg,
-        master.muted ? BinaryData::speaker_muted_svgSize : BinaryData::speaker_svgSize);
     speakerButton->setTooltip(master.muted ? "Unmute master" : "Mute master");
 
     volumeLabel->setValue(gainToDb(master.volume), juce::dontSendNotification);

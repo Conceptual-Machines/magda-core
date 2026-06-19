@@ -62,17 +62,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             return;
         }
 
-        // Draw border if set
-        if (hasBorder) {
-            g.setColour(borderColor);
-            g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
-                                   cornerRadius, borderThickness);
-        }
-
-        // Icons with built-in backgrounds (transport buttons) need no padding;
-        // icons with programmatic borders (punch buttons) need padding
-        auto bounds =
-            hasBorder ? getLocalBounds().reduced(3).toFloat() : getLocalBounds().toFloat();
+        auto bounds = getLocalBounds().toFloat();
 
         // Apply slight opacity change on hover
         float opacity = 1.0f;
@@ -80,8 +70,27 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             opacity = 0.85f;
         }
 
-        if (!bounds.isEmpty())
-            iconToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
+        // Clip to a rounded rectangle so an icon with a baked-in square
+        // background (e.g. the master / chord mute toggles) gets rounded corners.
+        {
+            juce::Graphics::ScopedSaveState clipState(g);
+            if (cornerRadius > 0.0f) {
+                juce::Path clip;
+                clip.addRoundedRectangle(bounds, cornerRadius);
+                g.reduceClipRegion(clip);
+            }
+            if (!bounds.isEmpty())
+                iconToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
+        }
+
+        // Draw border on top (rounded to match the clip).
+        if (hasBorder) {
+            g.setColour((active || (getToggleState() && isToggleable())) && hasActiveBorderColor
+                            ? activeBorderColor
+                            : borderColor);
+            g.drawRoundedRectangle(bounds.reduced(borderThickness * 0.5f), cornerRadius,
+                                   borderThickness);
+        }
         return;
     }
 
