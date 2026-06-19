@@ -684,41 +684,62 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
-    // Routing section — only lay out if visible
-    if (outputSelector_->isVisible()) {
+    // Routing section — only lay out if visible (audio out or, for the chord
+    // track, MIDI out).
+    if (outputSelector_->isVisible() || midiOutputSelector_->isVisible()) {
         const int selectorHeight = 18;
         const int columnHeaderHeight = 14;
         const int iconSize = 16;
         const int dropdownGap = selectorGap;
         const int dropdownWidth = (bounds.getWidth() - dropdownGap - dropdownGap - iconSize) / 2;
 
-        // Column headers: [Audio] [MIDI]
-        if (audioInputSelector_->isVisible()) {
-            auto headerRow = bounds.removeFromTop(columnHeaderHeight);
-            audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-            headerRow.removeFromLeft(dropdownGap);
-            midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-            bounds.removeFromTop(2);
-        }
+        if (outputSelector_->isVisible()) {
+            // Column headers: [Audio] [MIDI]
+            if (audioInputSelector_->isVisible()) {
+                auto headerRow = bounds.removeFromTop(columnHeaderHeight);
+                audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+                headerRow.removeFromLeft(dropdownGap);
+                midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+                bounds.removeFromTop(2);
+            }
 
-        // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
-        if (audioInputSelector_->isVisible()) {
-            auto inputRow = bounds.removeFromTop(selectorHeight);
-            audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-            inputRow.removeFromLeft(dropdownGap);
-            inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-            inputRow.removeFromLeft(dropdownGap);
-            inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
-            bounds.removeFromTop(4);
-        }
+            // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
+            if (audioInputSelector_->isVisible()) {
+                auto inputRow = bounds.removeFromTop(selectorHeight);
+                audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                inputRow.removeFromLeft(dropdownGap);
+                inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                inputRow.removeFromLeft(dropdownGap);
+                inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
+                bounds.removeFromTop(4);
+            }
 
-        // Output row: [Audio Out] [MIDI Out] [outputIcon]
-        auto outputRow = bounds.removeFromTop(selectorHeight);
-        outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-        outputRow.removeFromLeft(dropdownGap);
-        midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-        outputRow.removeFromLeft(dropdownGap);
-        outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+            // Output row: [Audio Out] [MIDI Out] [outputIcon]
+            auto outputRow = bounds.removeFromTop(selectorHeight);
+            outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+            outputRow.removeFromLeft(dropdownGap);
+            midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+            outputRow.removeFromLeft(dropdownGap);
+            outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+        } else {
+            // Chord track: MIDI-only routing in a single column.
+            if (midiColumnLabel_.isVisible()) {
+                auto headerRow = bounds.removeFromTop(columnHeaderHeight);
+                midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+                bounds.removeFromTop(2);
+            }
+            if (inputSelector_->isVisible()) {
+                auto inputRow = bounds.removeFromTop(selectorHeight);
+                inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                inputRow.removeFromLeft(dropdownGap);
+                inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
+                bounds.removeFromTop(4);
+            }
+            auto outputRow = bounds.removeFromTop(selectorHeight);
+            midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+            outputRow.removeFromLeft(dropdownGap);
+            outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+        }
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
         bounds.removeFromTop(separatorPadding);
@@ -1316,17 +1337,19 @@ void TrackInspector::showTrackControls(bool show) {
     gainLabel_->setVisible(show);
     panLabel_->setVisible(show && !isMaster && !isChord);
 
-    // Routing section — hidden for master, aux and chord; input selectors hidden
-    // for multi-out
-    bool showRouting = show && !isMaster && !isAux && !isChord;
+    // Routing section — hidden for master and aux. The chord track shows MIDI
+    // I/O only (no audio in/out, since it drives its own instrument).
+    bool showRouting = show && !isMaster && !isAux;
+    bool showAudio = showRouting && !isChord && !isMultiOut;
+    bool showMidi = showRouting && !isMultiOut;
     routingSectionLabel_.setVisible(false);
-    audioInputSelector_->setVisible(showRouting && !isMultiOut);
-    inputSelector_->setVisible(showRouting && !isMultiOut);
-    audioColumnLabel_.setVisible(showRouting && !isMultiOut);
-    midiColumnLabel_.setVisible(showRouting && !isMultiOut);
-    inputIcon_->setVisible(showRouting && !isMultiOut);
-    outputSelector_->setVisible(showRouting);
-    midiOutputSelector_->setVisible(showRouting && !isMultiOut);
+    audioInputSelector_->setVisible(showAudio);
+    audioColumnLabel_.setVisible(showAudio);
+    inputSelector_->setVisible(showMidi);
+    midiColumnLabel_.setVisible(showMidi);
+    inputIcon_->setVisible(showMidi);
+    outputSelector_->setVisible(showRouting && !isChord);
+    midiOutputSelector_->setVisible(showMidi);
     outputIcon_->setVisible(showRouting);
 
     // Send/Receive section — hidden for master, aux and chord tracks
