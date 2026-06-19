@@ -195,6 +195,10 @@ class ClipComponent : public juce::Component,
     void paintMidiClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintMidiNotes(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> noteArea,
                         juce::Colour noteColour);
+    // Chord-track clips render their chordAnnotations as named blocks instead of
+    // a MIDI-note preview.
+    void paintChordClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
+    bool isChordClip(const ClipInfo& clip) const;
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
     void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,

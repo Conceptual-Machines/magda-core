@@ -243,7 +243,9 @@ void ClipComponent::paint(juce::Graphics& g) {
         return;
 
     // Draw based on clip type
-    if (clip->isAudio()) {
+    if (isChordClip(*clip)) {
+        paintChordClip(g, *clip, bounds);
+    } else if (clip->isAudio()) {
         paintAudioClip(g, *clip, bounds);
     } else {
         paintMidiClip(g, *clip, bounds);
@@ -830,6 +832,64 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
             g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
         }
     }
+}
+
+bool ClipComponent::isChordClip(const ClipInfo& clip) const {
+    const auto* track = TrackManager::getInstance().getTrack(clip.trackId);
+    return track != nullptr && track->type == TrackType::Chord;
+}
+
+void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
+                                   juce::Rectangle<int> bounds) {
+    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
+    if (visibleBounds.isEmpty())
+        return;
+
+    auto bgColour = clip.colour.darker(0.4f);
+    fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
+
+    auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
+    if (!clip.chordAnnotations.empty() && blockArea.getHeight() > 5 && blockArea.getWidth() > 2) {
+        const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+        const double beatsPerSecond = tempo / 60.0;
+        const double displayLength =
+            (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.getTimelineLength(tempo);
+        const double beatRange = juce::jmax(1.0, displayLength * beatsPerSecond);
+
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        const auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+
+        for (const auto& chord : clip.chordAnnotations) {
+            if (chord.beatPosition >= beatRange)
+                continue;
+
+            const double visibleStart = juce::jmax(0.0, chord.beatPosition);
+            const double visibleEnd = juce::jmin(beatRange, chord.beatPosition + chord.lengthBeats);
+            const double visibleLength = visibleEnd - visibleStart;
+            if (visibleLength <= 0.0)
+                continue;
+
+            const float x = blockArea.getX() +
+                            static_cast<float>(visibleStart / beatRange) * blockArea.getWidth();
+            const float w = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *
+                                                 blockArea.getWidth());
+
+            juce::Rectangle<float> block(x, static_cast<float>(blockArea.getY()), w,
+                                         static_cast<float>(blockArea.getHeight()));
+
+            g.setColour(blockColour.withAlpha(0.35f));
+            g.fillRoundedRectangle(block.reduced(1.0f, 0.0f), 2.0f);
+
+            if (w > MIN_WIDTH_FOR_NAME) {
+                g.setColour(juce::Colours::white);
+                g.drawText(chord.chordName, block.toNearestInt().reduced(4, 0),
+                           juce::Justification::centredLeft, true);
+            }
+        }
+    }
+
+    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
+                             1.0f);
 }
 
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
