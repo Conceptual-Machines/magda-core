@@ -152,13 +152,19 @@ void captureVst3Info(DeviceInfo& devInfo, te::ExternalPlugin* ext) {
     auto* pi = ext->getAudioPluginInstance();
     if (pi == nullptr)
         return;
-    auto* vst3 = pi->getVST3Client();
-    if (vst3 == nullptr)
-        return;  // not a VST3
 
-    const auto preset = vst3->getPreset();
+    struct PresetVisitor : juce::ExtensionsVisitor {
+        juce::MemoryBlock data;
+        void visitVST3Client(const VST3Client& client) override {
+            data = client.getPreset();
+        }
+    };
+    PresetVisitor visitor;
+    pi->getExtensions(visitor);
+
+    const auto& preset = visitor.data;
     if (preset.getSize() == 0)
-        return;
+        return;  // not a VST3 / no preset
     if (devInfo.vst3ClassId.isEmpty())
         devInfo.vst3ClassId = vst3::classIdFromPreset(preset);
     devInfo.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());

@@ -358,7 +358,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // ------------------------------------------------------------------------
     // Disk-based plugin preset loading / saving (.vstpreset / .aupreset).
     //
-    // VST3: routed through AudioPluginInstance::getVST3Client(), which feeds
+    // VST3: routed through JUCE's ExtensionsVisitor::VST3Client which feeds
     //       raw .vstpreset bytes to IComponent::setState / IEditController::setState.
     // AU:   uses AudioPluginInstance::setCurrentProgramStateInformation, which
     //       parses the .aupreset plist and calls
@@ -371,7 +371,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // loaded VST3. This is the portable plugin identity other hosts match on
     // (DAWproject <Vst3Plugin deviceID="...">) - unlike DeviceInfo::uniqueId,
     // which is only JUCE's 32-bit hash. Read from the .vstpreset header that
-    // getVST3Client()->getPreset() returns.
+    // the ExtensionsVisitor::VST3Client getPreset() returns.
     juce::String getVst3DeviceId(const ChainNodePath& devicePath) const;
 
     /**

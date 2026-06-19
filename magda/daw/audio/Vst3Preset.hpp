@@ -18,7 +18,7 @@ inline constexpr int kVst3PresetClassIdOffset = 8;
 inline constexpr int kVst3PresetClassIdLength = 32;
 
 // Extract the 32-char VST3 class id from a .vstpreset blob (as produced by
-// AudioPluginInstance::getVST3Client()->getPreset()). Returns an empty string if
+// ExtensionsVisitor::VST3Client::getPreset()). Returns an empty string if
 // the blob is too small, lacks the 'VST3' magic, or the id isn't valid hex.
 inline juce::String classIdFromPreset(const juce::MemoryBlock& preset) {
     if (preset.getSize() < static_cast<size_t>(kVst3PresetClassIdOffset + kVst3PresetClassIdLength))
