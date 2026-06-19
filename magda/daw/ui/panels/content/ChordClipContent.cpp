@@ -583,22 +583,29 @@ std::vector<int> ChordClipContent::chordPitches(int annIndex) const {
 void ChordClipContent::startChordPreview(int annIndex) {
     stopChordPreview();
     const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
-    if (clip == nullptr)
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
         return;
     for (int p : chordPitches(annIndex)) {
         magda::TrackManager::getInstance().previewNote(clip->trackId, p, 100, true);
         previewNotes_.push_back(p);
     }
+    previewGroup_ = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
+    repaint();
 }
 
 void ChordClipContent::stopChordPreview() {
-    if (previewNotes_.empty())
+    previewGroup_ = 0;
+    if (previewNotes_.empty()) {
+        repaint();
         return;
+    }
     const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
     const auto trackId = clip ? clip->trackId : magda::INVALID_TRACK_ID;
     for (int p : previewNotes_)
         magda::TrackManager::getInstance().previewNote(trackId, p, 0, false);
     previewNotes_.clear();
+    repaint();
 }
 
 void ChordClipContent::deleteChord(int annIndex) {

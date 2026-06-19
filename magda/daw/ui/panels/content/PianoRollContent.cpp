@@ -923,6 +923,7 @@ void PianoRollContent::resized() {
             const int gx = (chordLaneLeftX() - detectSize) / 2;
             const int gy = chordRowHeight() - detectSize - 6;
             gridToggleBtn_->setBounds(gx, gy, detectSize, detectSize);
+            gridToggleBtn_->setActive(gridShown());  // accent when the grid is visible
         } else {
             // Rescan button: keyboard column, vertically centred in the chord row.
             const int detectX =
@@ -1758,18 +1759,23 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
                                                 drawEndX - drawStartX - 2, area.getHeight() - 4);
         const bool selected =
             selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
+        const bool previewing =
+            previewChordGroup() != 0 && annotation.chordGroup == previewChordGroup();
         const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        // A playing block glows green; otherwise the accent-blue card.
+        const auto fillColour =
+            previewing ? DarkTheme::getColour(DarkTheme::STATUS_SUCCESS) : accent;
 
         // Direction 4 "accent spine": subtle slate fill, a bright accent bar down
         // the left edge, clean name type.
-        g.setColour(accent.withAlpha(selected ? 0.22f : 0.13f));
+        g.setColour(fillColour.withAlpha(previewing ? 0.40f : selected ? 0.22f : 0.13f));
         g.fillRoundedRectangle(blockBounds.toFloat(), 4.0f);
 
         if (blockBounds.getWidth() > 8) {
             juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
                                          static_cast<float>(blockBounds.getY() + 3), 3.0f,
                                          static_cast<float>(blockBounds.getHeight() - 6));
-            g.setColour(accent.withAlpha(selected ? 1.0f : 0.85f));
+            g.setColour(fillColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
             g.fillRoundedRectangle(spine, 1.5f);
         }
 

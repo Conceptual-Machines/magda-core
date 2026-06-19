@@ -116,9 +116,19 @@ class PianoRollContent : public MidiEditorContent,
     virtual int selectedChordGroup() const {
         return 0;
     }
+    // chordGroup of the chord-lane block currently being auditioned (0 = none);
+    // drawChordRow() tints it to show it's playing.
+    virtual int previewChordGroup() const {
+        return 0;
+    }
     // Chord-focus mode replaces the chord-row "rescan" button with a show/hide
     // grid toggle in the gutter; this fires when it's clicked.
     virtual void onGridToggleClicked() {}
+    // Whether the note grid is currently visible (drives the toggle's active
+    // highlight). The chord editor overrides this.
+    virtual bool gridShown() const {
+        return true;
+    }
     void setGridToggleActive(bool on);
     // Pixel x of a chord-lane beat (clip-relative). Inverse of chordRowBeatForX;
     // used to hit-test and draw chord blocks.

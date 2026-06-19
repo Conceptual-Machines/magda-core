@@ -52,6 +52,9 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     int selectedChordGroup() const override {
         return selectedGroup_;
     }
+    int previewChordGroup() const override {
+        return previewGroup_;
+    }
     int chordRowHeight() const override {
         return laneHeight_;
     }
@@ -64,6 +67,9 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     // Show/hide grid toggle: collapse the note grid (lane fills the editor) or
     // restore it.
     void onGridToggleClicked() override;
+    bool gridShown() const override {
+        return laneHeight_ < maxLaneHeight() - 2;
+    }
     // Clicking an empty spot on the chord lane inserts a chord (a default major
     // triad for now; quality/extensions are edited afterwards). Existing chords
     // are left alone so a stray click never stacks notes.
@@ -88,6 +94,7 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     void startChordPreview(int annIndex);
     void stopChordPreview();
     std::vector<int> previewNotes_;
+    int previewGroup_ = 0;  // chordGroup being auditioned (for the highlight)
     bool isOnLaneDivider(juce::Point<int> p) const;
     int maxLaneHeight() const;
 
