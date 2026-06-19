@@ -14,9 +14,14 @@ namespace magda::daw::ui {
  * unchanged from PianoRollContent; this class only flips the two chord-focus
  * extension points and reports its own content type.
  */
-class ChordClipContent : public PianoRollContent {
+class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTarget {
   public:
     ChordClipContent() = default;
+
+    // Accept a chord dragged from the engine panel (a temp MIDI file) dropped on
+    // the chord lane.
+    bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void filesDropped(const juce::StringArray& files, int x, int y) override;
 
     PanelContentType getContentType() const override {
         return PanelContentType::ChordClipView;
@@ -50,6 +55,10 @@ class ChordClipContent : public PianoRollContent {
     bool onChordRowClicked(double clipRelativeBeat) override;
 
   private:
+    // Insert a chord (set of MIDI pitches) at the bar nearest clipRelativeBeat,
+    // then re-detect so the chord lane shows the linked block. Returns false if
+    // there's no clip or that bar already has a chord.
+    bool insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches);
     bool isOnLaneDivider(juce::Point<int> p) const;
     int maxLaneHeight() const;
 

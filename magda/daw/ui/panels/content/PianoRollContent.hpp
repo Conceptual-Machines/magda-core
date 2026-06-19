@@ -113,6 +113,9 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     }
     // Re-run chord detection from the clip's notes (rebuilds the chord lane).
     void redetectChords();
+    // Clip-relative beat under an x pixel on the chord lane (>= 0). Shared by the
+    // click-to-add handler and chord-drop targets.
+    double chordRowBeatForX(int x) const;
 
   private:
     // MidiEditorContent virtual implementations

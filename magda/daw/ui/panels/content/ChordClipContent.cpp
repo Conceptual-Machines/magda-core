@@ -1,8 +1,11 @@
 #include "ChordClipContent.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <vector>
 
 #include "../../state/TimelineController.hpp"
 #include "core/ClipManager.hpp"
@@ -57,9 +60,9 @@ void ChordClipContent::mouseUp(const juce::MouseEvent& e) {
     PianoRollContent::mouseUp(e);
 }
 
-bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
+bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches) {
     const auto clipId = getEditingClipId();
-    if (clipId == magda::INVALID_CLIP_ID)
+    if (clipId == magda::INVALID_CLIP_ID || pitches.empty())
         return false;
 
     const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
@@ -75,27 +78,72 @@ bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
     const double bar = std::max(0.0, std::round(clipRelativeBeat / barBeats) * barBeats);
     constexpr int kDefaultVelocity = 100;
 
-    // A click on a bar that already has a chord is for editing it, not stacking
-    // a new one - consume it and do nothing for now.
+    // A bar that already has a chord is for editing it, not stacking a new one.
     for (const auto& ann : clip->chordAnnotations) {
         if (bar >= ann.beatPosition && bar < ann.beatPosition + ann.lengthBeats)
-            return true;
+            return false;
     }
 
-    // Default to a C major triad; quality/extensions get edited afterwards. The
-    // notes are inserted and then detection builds the (linked) chord-lane block,
-    // so later note edits re-sync the chord via syncChordAnnotations().
-    const auto chord = magda::music::ChordEngine::getInstance().buildChordInRootPosition(
-        magda::music::ChordRoot::C, magda::music::ChordQuality::Major, 4);
-
+    // Insert the notes, then detection builds the (linked) chord-lane block, so
+    // later note edits re-sync the chord via syncChordAnnotations().
     auto& undo = magda::UndoManager::getInstance();
-    for (const auto& note : chord.notes) {
+    for (int pitch : pitches) {
         undo.executeCommand(std::make_unique<magda::AddMidiNoteCommand>(
-            clipId, bar, note.noteNumber, barBeats, kDefaultVelocity));
+            clipId, bar, std::clamp(pitch, 0, 127), barBeats, kDefaultVelocity));
     }
 
     redetectChords();
     return true;
+}
+
+bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
+    // Default to a C major triad; quality/extensions get edited afterwards.
+    const auto chord = magda::music::ChordEngine::getInstance().buildChordInRootPosition(
+        magda::music::ChordRoot::C, magda::music::ChordQuality::Major, 4);
+    std::vector<int> pitches;
+    for (const auto& note : chord.notes)
+        pitches.push_back(note.noteNumber);
+
+    insertChordAtBeat(clipRelativeBeat, pitches);
+    return true;  // consume the click either way (empty bar adds; occupied is reserved)
+}
+
+bool ChordClipContent::isInterestedInFileDrag(const juce::StringArray& files) {
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
+            return true;
+    return false;
+}
+
+void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y) {
+    // Only the chord lane accepts chord drops.
+    if (y >= chordRowHeight())
+        return;
+
+    for (const auto& f : files) {
+        if (!f.endsWithIgnoreCase(".mid") && !f.endsWithIgnoreCase(".midi"))
+            continue;
+
+        juce::FileInputStream stream{juce::File(f)};
+        if (!stream.openedOk())
+            continue;
+        juce::MidiFile midiFile;
+        if (!midiFile.readFrom(stream))
+            continue;
+
+        std::vector<int> pitches;
+        for (int t = 0; t < midiFile.getNumTracks(); ++t) {
+            const auto* seq = midiFile.getTrack(t);
+            for (int i = 0; i < seq->getNumEvents(); ++i) {
+                const auto& msg = seq->getEventPointer(i)->message;
+                if (msg.isNoteOn())
+                    pitches.push_back(msg.getNoteNumber());
+            }
+        }
+
+        if (insertChordAtBeat(chordRowBeatForX(x), pitches))
+            return;  // one chord per drop
+    }
 }
 
 }  // namespace magda::daw::ui
