@@ -3065,7 +3065,19 @@ void MainView::AuxHeadersPanel::mouseDown(const juce::MouseEvent& event) {
     int rowIndex = event.getPosition().getY() / rowHeight;
 
     if (rowIndex >= 0 && rowIndex < static_cast<int>(auxRows_.size())) {
-        SelectionManager::getInstance().selectTrack(auxRows_[rowIndex]->trackId);
+        const auto trackId = auxRows_[rowIndex]->trackId;
+        SelectionManager::getInstance().selectTrack(trackId);
+
+        if (event.mods.isPopupMenu()) {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Delete Aux Track");
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+                               [trackId](int result) {
+                                   if (result == 1)
+                                       UndoManager::getInstance().executeCommand(
+                                           std::make_unique<DeleteTrackCommand>(trackId));
+                               });
+        }
     }
 }
 
