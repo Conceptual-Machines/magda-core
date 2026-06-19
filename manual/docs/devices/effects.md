@@ -8,7 +8,7 @@ The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped
 |--------|-------------|
 | **Compressor** | Two engines. **Clean**: feedforward with peak/RMS detection, soft knee, stereo link, sidechain HPF, external audio sidechain, parallel mix, output safety limiting. **Glue**: Brouns FBFF compressor with Detector (Peak/RMS), Style (Pre/Post), and FBFF blend. |
 | **Multiband Compressor** | OTT-style 3-band compressor. LR4 crossover split, two OTT stages in series per band, symmetric expander, per-band brickwall limiter, editable crossover frequencies and per-band thresholds in the curve editor. |
-| **Limiter** | Sanfilippo lookahead brickwall limiter. 5 ms lookahead, peak-holder, tau-smoothed attack / release. Threshold sets the output ceiling in dB. |
+| **Limiter** | Native lookahead limiter / autonormalizer. Threshold drives the signal into a fixed 0 dB ceiling, Attack and Release shape gain movement, and Output is a post-limiter trim that can only reduce level. |
 | **Clipper** | Antialiased multi-mode clipper with five ADAA curves: Hard (brickwall), Soft (quadratic), Tanh (tube-style), Hyperbolic, and Sine. Drive pushes input into the curve, Output trims after. |
 | **Gate** | Stereo-linked gate / downward expander with range, timing (attack / hold / release), mix, and output gain. |
 
