@@ -912,18 +912,24 @@ void PianoRollContent::resized() {
     // Skip chord row space if visible (drawn in paint)
     if (showChordRow_) {
         bounds.removeFromTop(chordRowHeight());
-        // Button in the keyboard column of the chord row gutter. Chord-focus mode
-        // shows the grid show/hide toggle here instead of the rescan button.
         const int detectSize = 18;
-        const int detectX = sidebarWidth() + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
-        const int detectY = chordFocusMode() ? 6 : (chordRowHeight() - detectSize) / 2;
         const bool chordMode = chordFocusMode();
+
         chordDetectBtn_->setVisible(!chordMode);
-        if (!chordMode)
-            chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
         gridToggleBtn_->setVisible(chordMode);
-        if (chordMode)
-            gridToggleBtn_->setBounds(detectX, detectY, detectSize, detectSize);
+
+        if (chordMode) {
+            // Grid show/hide toggle: bottom-centre of the chord-lane gutter.
+            const int gx = (chordLaneLeftX() - detectSize) / 2;
+            const int gy = chordRowHeight() - detectSize - 6;
+            gridToggleBtn_->setBounds(gx, gy, detectSize, detectSize);
+        } else {
+            // Rescan button: keyboard column, vertically centred in the chord row.
+            const int detectX =
+                sidebarWidth() + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
+            const int detectY = (chordRowHeight() - detectSize) / 2;
+            chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
+        }
     } else {
         chordDetectBtn_->setVisible(false);
         gridToggleBtn_->setVisible(false);
