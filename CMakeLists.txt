@@ -70,6 +70,10 @@ if(MSVC)
     # composes with CMake's default MSVC init flags (/DWIN32 /_WINDOWS /EHsc etc.)
     # instead of replacing them like a top-level -DCMAKE_CXX_FLAGS would.
     add_compile_options(/FS)
+    # NOMINMAX: stop <windows.h> defining min()/max() macros, which clobber
+    # std::min/std::max. The Faust poly instruments (poly-dsp.h) transitively
+    # pull in <windows.h>, so without this they fail to compile on MSVC.
+    add_compile_definitions(NOMINMAX)
     # /OPT:REF,ICF preserve release dead-stripping; /Zi + /DEBUG applied per-target (see magda/daw/CMakeLists.txt)
     string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /OPT:REF /OPT:ICF")
 else()
