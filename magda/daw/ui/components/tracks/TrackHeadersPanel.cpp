@@ -2885,31 +2885,38 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
-    // Duplicate track
-    menu.addItem(DuplicateWithContent, tr("tracks.duplicate"));
-    menu.addItem(DuplicateNoContent, tr("tracks.duplicate_no_content"));
-    menu.addItem(DuplicateContentOnly, tr("tracks.duplicate_content_only"));
+    // Duplicate track (not for the singleton chord track)
+    if (!header.isChordTrack) {
+        menu.addItem(DuplicateWithContent, tr("tracks.duplicate"));
+        menu.addItem(DuplicateNoContent, tr("tracks.duplicate_no_content"));
+        menu.addItem(DuplicateContentOnly, tr("tracks.duplicate_content_only"));
+    }
 
     // Delete track
     menu.addItem(DeleteTrack, tr("tracks.delete"));
 
-    menu.addSeparator();
+    // The chord track has no audio I/O routing or drum-grid instrument, so it
+    // omits Prefer Drum Grid and Show/Hide I/O.
+    if (!header.isChordTrack) {
+        menu.addSeparator();
 
-    // Prefer Drum Grid for the track's primary instrument plugin. The flag
-    // lives at the plugin-identifier level (user-global), so all tracks using
-    // the same instrument get the same default editor.
-    auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
-    if (primaryInstrument != nullptr) {
-        const auto identifier = magda::PluginPreferences::identifierForDevice(*primaryInstrument);
-        const bool prefersGrid =
-            magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
-        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
-                     prefersGrid);
+        // Prefer Drum Grid for the track's primary instrument plugin. The flag
+        // lives at the plugin-identifier level (user-global), so all tracks
+        // using the same instrument get the same default editor.
+        auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
+        if (primaryInstrument != nullptr) {
+            const auto identifier =
+                magda::PluginPreferences::identifierForDevice(*primaryInstrument);
+            const bool prefersGrid =
+                magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
+            menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
+                         prefersGrid);
+        }
+
+        // Show/Hide I/O routing
+        menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
+                                                           : tr("tracks.show_io_routing"));
     }
-
-    // Show/Hide I/O routing
-    menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
-                                                       : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
     menu.showMenuAsync(
