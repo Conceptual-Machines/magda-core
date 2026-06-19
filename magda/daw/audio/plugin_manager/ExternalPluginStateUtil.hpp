@@ -69,4 +69,43 @@ inline void applyExternalPluginChunk(tracktion::engine::Plugin* plugin, const ju
     refreshExternalPluginParameterCache(ext);
 }
 
+/**
+ * Apply a base64 .vstpreset (Steinberg preset format) to a VST3 via
+ * ExtensionsVisitor::VST3Client::setPreset(), then sync TE's parameter cache.
+ * Used for state imported from DAWproject, where the portable state is a
+ * .vstpreset rather than MAGDA's TE chunk. Requires the instance to be live
+ * (call after async load completes). Returns true if applied; no-op/false for
+ * non-VST3, not-yet-live, or undecodable data.
+ */
+inline bool applyVst3Preset(tracktion::engine::Plugin* plugin, const juce::String& presetBase64) {
+    if (presetBase64.isEmpty())
+        return false;
+    auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin);
+    if (ext == nullptr || ext->isInitialisingAsync() || ext->getAudioPluginInstance() == nullptr)
+        return false;
+
+    juce::MemoryOutputStream decoded;
+    if (!juce::Base64::convertFromBase64(decoded, presetBase64))
+        return false;
+
+    struct ApplyVisitor : juce::ExtensionsVisitor {
+        juce::MemoryBlock data;
+        bool ok = false;
+        void visitVST3Client(const VST3Client& client) override {
+            ok = client.setPreset(data);
+        }
+    };
+    ApplyVisitor visitor;
+    visitor.data = decoded.getMemoryBlock();
+    ext->getAudioPluginInstance()->getExtensions(visitor);
+    if (!visitor.ok)
+        return false;  // not a VST3 instance / apply failed
+
+    // Mirror the applied state into TE's state property so a later graph build /
+    // resync doesn't revert it, then refresh the parameter cache to match.
+    ext->flushPluginStateToValueTree();
+    refreshExternalPluginParameterCache(ext);
+    return true;
+}
+
 }  // namespace magda

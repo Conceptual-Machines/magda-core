@@ -7,6 +7,8 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/ViewModeState.hpp"
+#include "DawProjectArchive.hpp"
+#include "NativeProjectDocumentAdapter.hpp"
 
 namespace magda {
 
@@ -73,6 +75,32 @@ bool ProjectSerializer::loadFromFile(const juce::File& file, ProjectInfo& outInf
 
     outInfo = staged.info;
     commitStaged(staged);
+    return true;
+}
+
+bool ProjectSerializer::exportToDawProject(const juce::File& file, const ProjectInfo& info) {
+    auto document = NativeProjectDocumentAdapter::captureCurrentProject(info);
+    juce::String error;
+
+    if (!DawProjectArchive::writeToFile(file, document, error)) {
+        lastError_ = error;
+        return false;
+    }
+
+    return true;
+}
+
+bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                               const juce::File& audioExtractionDir) {
+    ProjectDocument document;
+    juce::String error;
+
+    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir)) {
+        lastError_ = error;
+        return false;
+    }
+
+    outData = NativeProjectDocumentAdapter::toStagedProjectData(document);
     return true;
 }
 

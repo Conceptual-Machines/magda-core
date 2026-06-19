@@ -1,6 +1,7 @@
 # Test sources
 set(TEST_SOURCES
     test_audio_bridge.cpp
+    test_vst3_preset.cpp
     test_audiobridge_track_limit_bug.cpp
     test_audiobridge_plugin_cleanup_bug.cpp
     test_auto_tempo.cpp
@@ -40,6 +41,7 @@ set(TEST_SOURCES
     test_midi_clip_resize_left.cpp
     test_looped_waveform_tile.cpp
     test_project_serialization.cpp
+    test_project_document_adapters.cpp
     test_session_clip_playback.cpp
     test_sidechain_triggers.cpp
     test_curve_snapshot.cpp

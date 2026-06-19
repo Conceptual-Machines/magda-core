@@ -132,6 +132,33 @@ void MainWindow::openProjectFile(const juce::File& file) {
         });
 }
 
+void MainWindow::importDawProjectFile(const juce::File& file) {
+    if (!file.existsAsFile())
+        return;
+
+    SelectionManager::getInstance().clearSelection();
+    if (mainComponent && mainComponent->mainView)
+        mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
+
+    auto& projectManager = ProjectManager::getInstance();
+    const bool ok = projectManager.importDawProject(file, [this](const ProjectInfo& info) {
+        if (!mainComponent || !mainComponent->mainView)
+            return;
+        auto& tc = mainComponent->mainView->getTimelineController();
+        tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                               info.timeSignatureDenominator, info.loopEnabled, info.loopStartBeats,
+                               info.loopEndBeats, info.markers, info.timelineLengthBars);
+    });
+
+    if (!ok) {
+        // Empty lastError = user cancelled the unsaved-changes prompt; stay silent.
+        const auto error = projectManager.getLastError();
+        if (error.isNotEmpty())
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   tr("dialogs.import_dawproject"), error);
+    }
+}
+
 // ============================================================================
 // Menu Callbacks Implementation
 // ============================================================================
@@ -393,6 +420,65 @@ void MainWindow::setupMenuCallbacks() {
             this,
             [this](const ExportMidiDialog::Settings& settings) { performMidiExport(settings); },
             false, hasLoopRegion);
+    };
+
+    callbacks.onImportDawProject = [this]() {
+        if (fileChooser_ != nullptr)
+            return;
+
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            tr("dialogs.import_dawproject"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.dawproject",
+            true);
+
+        auto flags =
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+        fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+            auto file = chooser.getResult();
+            fileChooser_.reset();
+
+            if (!file.existsAsFile())
+                return;  // User cancelled
+
+            importDawProjectFile(file);
+        });
+    };
+
+    callbacks.onExportDawProject = [this]() {
+        if (fileChooser_ != nullptr)
+            return;
+
+        auto& projectManager = ProjectManager::getInstance();
+        auto currentFile = projectManager.getCurrentProjectFile();
+        auto initialDir = currentFile.existsAsFile()
+                              ? currentFile.getParentDirectory()
+                              : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+
+        fileChooser_ = std::make_unique<juce::FileChooser>(tr("dialogs.export_dawproject"),
+                                                           initialDir, "*.dawproject", true);
+
+        auto flags = juce::FileBrowserComponent::saveMode |
+                     juce::FileBrowserComponent::canSelectFiles |
+                     juce::FileBrowserComponent::warnAboutOverwriting;
+
+        fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser) {
+            auto file = chooser.getResult();
+            fileChooser_.reset();
+
+            if (!file.getFullPathName().isNotEmpty())
+                return;  // User cancelled
+
+            if (!file.hasFileExtension(".dawproject"))
+                file = file.withFileExtension(".dawproject");
+
+            auto& projectManager = ProjectManager::getInstance();
+            if (!projectManager.exportDawProject(file)) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, tr("dialogs.export_dawproject"),
+                    tr("dialogs.error.export_failed") + " " + projectManager.getLastError());
+            }
+        });
     };
 
     callbacks.onQuit = [this]() { closeButtonPressed(); };

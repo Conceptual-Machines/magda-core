@@ -101,6 +101,7 @@ option(MAGDA_HAVE_CLAP "Enable CLAP audio/text encoders via ONNX Runtime" ${_mag
 
 # Find packages
 find_package(Threads REQUIRED)
+find_package(LibXml2 REQUIRED)
 
 # Include FetchContent for dependency management
 include(FetchContent)
@@ -371,6 +372,9 @@ if(NOT APPLE)
         DESTINATION bin
     )
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/models"
+        DESTINATION bin
+    )
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/dawproject"
         DESTINATION bin
     )
 endif()

@@ -12,6 +12,7 @@
 #include "../PluginWindowBridge.hpp"
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
+#include "../Vst3Preset.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -139,6 +140,34 @@ void collectValidDevicePaths(const TrackInfo& track, std::set<ChainNodePath>& va
         validDevicePaths.insert(ChainNodePath::postFxDevice(track.id, elem.device.id));
     for (const auto& elem : track.chain.mixerAnalysisElements)
         validDevicePaths.insert(ChainNodePath::mixerAnalysisDevice(track.id, elem.device.id));
+}
+
+// Capture the VST3 .vstpreset for a device: the class id (stable, cached once)
+// and the current preset blob (refreshed each capture, since the patch changes).
+// One getPreset() call yields both - the class id lives in the preset header.
+// These feed the portable DAWproject deviceID + <State>.
+void captureVst3Info(DeviceInfo& devInfo, te::ExternalPlugin* ext) {
+    if (ext == nullptr)
+        return;
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return;
+
+    struct PresetVisitor : juce::ExtensionsVisitor {
+        juce::MemoryBlock data;
+        void visitVST3Client(const VST3Client& client) override {
+            data = client.getPreset();
+        }
+    };
+    PresetVisitor visitor;
+    pi->getExtensions(visitor);
+
+    const auto& preset = visitor.data;
+    if (preset.getSize() == 0)
+        return;  // not a VST3 / no preset
+    if (devInfo.vst3ClassId.isEmpty())
+        devInfo.vst3ClassId = vst3::classIdFromPreset(preset);
+    devInfo.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
 }
 
 }  // namespace
@@ -405,10 +434,12 @@ void PluginManager::captureAllPluginStates() {
 
             juce::String stateStr;
 
+            te::ExternalPlugin* capturedExt = nullptr;
             if (auto* ext = dynamic_cast<te::ExternalPlugin*>(sd.plugin.get())) {
                 // External plugin: capture base64 blob from TE state property
                 ext->flushPluginStateToValueTree();
                 stateStr = ext->state.getProperty(te::IDs::state).toString();
+                capturedExt = ext;
             } else {
                 // TE internal plugin (4osc, EQ, Compressor, etc.):
                 // Capture the full ValueTree as XML so non-automatable
@@ -428,6 +459,7 @@ void PluginManager::captureAllPluginStates() {
             auto* devInfo = trackManager.getDeviceInChainByPath(devicePath);
             if (devInfo) {
                 devInfo->pluginState = stateStr;
+                captureVst3Info(*devInfo, capturedExt);
                 if (sd.processor != nullptr)
                     sd.processor->populateParameters(*devInfo);
             }
@@ -449,9 +481,11 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     auto* plugin = it->second.plugin.get();
     juce::String stateStr;
 
+    te::ExternalPlugin* capturedExt = nullptr;
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin)) {
         ext->flushPluginStateToValueTree();
         stateStr = ext->state.getProperty(te::IDs::state).toString();
+        capturedExt = ext;
     } else {
         plugin->flushPluginStateToValueTree();
         auto stateCopy = plugin->state.createCopy();
@@ -464,6 +498,7 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
     auto& trackManager = TrackManager::getInstance();
     if (auto* devInfo = trackManager.getDeviceInChainByPath(devicePath)) {
         devInfo->pluginState = stateStr;
+        captureVst3Info(*devInfo, capturedExt);
         if (it->second.processor)
             it->second.processor->populateParameters(*devInfo);
     }

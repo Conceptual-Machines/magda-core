@@ -71,7 +71,7 @@ void CurveEditorBase::paintOverChildren(juce::Graphics& g) {
 
         auto font = FontManager::getInstance().getUIFont(10.0f);
         g.setFont(font);
-        int textW = font.getStringWidth(label) + 6;
+        int textW = juce::GlyphArrangement::getStringWidthInt(font, label) + 6;
         int textH = 14;
 
         // Position above the point

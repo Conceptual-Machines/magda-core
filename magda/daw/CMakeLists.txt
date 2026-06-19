@@ -399,6 +399,7 @@ target_link_libraries(magda_daw
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
     PRIVATE
+    LibXml2::LibXml2
     faust::libfaust
 )
 
@@ -408,6 +409,7 @@ target_compile_definitions(magda_daw
     JUCE_PLUGINHOST_AU=1
     JUCE_MODAL_LOOPS_PERMITTED=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
@@ -653,6 +655,27 @@ else()
             "${MAGDA_FAUST_LIBS_SRC}"
             "$<TARGET_FILE_DIR:magda_daw_app>/faustlibraries"
         COMMENT "Copying Faust standard libraries alongside app executable"
+    )
+endif()
+
+# Copy third_party/dawproject/ (vendored Project.xsd + MetaData.xsd) into the
+# app so DawProjectValidator can validate import/export against the schemas at
+# runtime. Without this, the build-time MAGDA_DAWPROJECT_SCHEMA_DIR source path
+# does not exist on an end-user machine and every validate call fails.
+set(MAGDA_DAWPROJECT_SCHEMA_SRC "${CMAKE_SOURCE_DIR}/third_party/dawproject")
+if(APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_DAWPROJECT_SCHEMA_SRC}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/dawproject"
+        COMMENT "Copying DAWproject schemas to app bundle Resources"
+    )
+else()
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_DAWPROJECT_SCHEMA_SRC}"
+            "$<TARGET_FILE_DIR:magda_daw_app>/dawproject"
+        COMMENT "Copying DAWproject schemas alongside app executable"
     )
 endif()
 

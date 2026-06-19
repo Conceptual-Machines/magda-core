@@ -409,7 +409,7 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
     const juce::String label = formatValueLabel(*currentValue);
     auto font = FontManager::getInstance().getUIFont(10.0f);
     g.setFont(font);
-    const int textW = font.getStringWidth(label) + 8;
+    const int textW = juce::GlyphArrangement::getStringWidthInt(font, label) + 8;
     const int textH = 14;
     const int tx = juce::jmax(content.getX(), content.getRight() - textW - 4);
     const int ty = juce::jlimit(content.getY(), content.getBottom() - textH, y - textH - 4);

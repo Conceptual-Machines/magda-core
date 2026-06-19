@@ -11,6 +11,7 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
@@ -616,9 +617,6 @@ namespace {
 te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
     return dynamic_cast<te::ExternalPlugin*>(plugin.get());
 }
-}  // namespace
-
-namespace {
 
 // Loads / saves a .vstpreset blob via JUCE's VST3Client extension. Two-mode
 // visitor: when `dataIn` is non-empty we apply it as a preset; otherwise we
@@ -640,6 +638,23 @@ struct Vst3PresetVisitor : juce::ExtensionsVisitor {
 };
 
 }  // namespace
+
+juce::String AudioBridge::getVst3DeviceId(const ChainNodePath& devicePath) const {
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath));
+    if (ext == nullptr)
+        return {};
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return {};
+    // Pull the current state as a .vstpreset; its header carries the 32-char
+    // class id. Visitor stays empty for non-VST3 plugins.
+    Vst3PresetVisitor visitor;
+    visitor.save = true;
+    pi->getExtensions(visitor);
+    if (!visitor.ok)
+        return {};  // not a VST3 plugin
+    return vst3::classIdFromPreset(visitor.dataOut);
+}
 
 int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
     if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(devicePath))) {

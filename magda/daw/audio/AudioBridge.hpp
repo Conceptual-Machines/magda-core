@@ -367,6 +367,13 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
     bool savePluginPresetFile(const ChainNodePath& devicePath, const juce::File& presetFile);
 
+    // The VST3 class id (32-char hex FUID) for a device, or empty if it isn't a
+    // loaded VST3. This is the portable plugin identity other hosts match on
+    // (DAWproject <Vst3Plugin deviceID="...">) - unlike DeviceInfo::uniqueId,
+    // which is only JUCE's 32-bit hash. Read from the .vstpreset header that
+    // the ExtensionsVisitor::VST3Client getPreset() returns.
+    juce::String getVst3DeviceId(const ChainNodePath& devicePath) const;
+
     /**
      * @brief Get (or lazily create) the virtual MIDI input device used by
      *        the QWERTY keyboard. Returns nullptr if creation fails.

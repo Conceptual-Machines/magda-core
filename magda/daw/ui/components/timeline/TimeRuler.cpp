@@ -896,7 +896,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             // the ruler bottom into the grid.
             juce::Path triangle;
             const float x = static_cast<float>(handleX);
-            const float yTop = static_cast<float>(tickAreaTop + 1);
+            const float yTop = static_cast<float>(tickAreaTop);
             const float yTip = static_cast<float>(height - 1);
             triangle.addTriangle(x - 6.0f, yTop, x + 6.0f, yTop, x, yTip);
             g.fillPath(triangle);
