@@ -61,6 +61,9 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     int sidebarWidth() const override {
         return 0;
     }
+    // Show/hide grid toggle: collapse the note grid (lane fills the editor) or
+    // restore it.
+    void onGridToggleClicked() override;
     // Clicking an empty spot on the chord lane inserts a chord (a default major
     // triad for now; quality/extensions are edited afterwards). Existing chords
     // are left alone so a stray click never stacks notes.
@@ -97,6 +100,7 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     static constexpr int DIVIDER_HIT = 4;
     static constexpr int BLOCK_EDGE_PX = 6;
     int laneHeight_ = 110;
+    int expandedLaneHeight_ = 110;  // restored when un-hiding the grid
     bool draggingDivider_ = false;
 
     int selectedGroup_ = 0;

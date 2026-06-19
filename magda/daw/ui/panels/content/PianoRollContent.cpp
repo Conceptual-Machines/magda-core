@@ -93,6 +93,16 @@ PianoRollContent::PianoRollContent() {
     chordDetectBtn_->setVisible(showChordRow_);
     addAndMakeVisible(chordDetectBtn_.get());
 
+    // Chord-focus mode shows this in place of the rescan button: a toggle that
+    // shows/hides the note grid.
+    gridToggleBtn_ = std::make_unique<magda::SvgButton>("GridToggle", BinaryData::piano_roll_svg,
+                                                        BinaryData::piano_roll_svgSize);
+    gridToggleBtn_->setTooltip("Show / hide the piano roll");
+    gridToggleBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
+    gridToggleBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gridToggleBtn_->onClick = [this]() { onGridToggleClicked(); };
+    addChildComponent(gridToggleBtn_.get());
+
     // Create velocity toggle button (opens the lanes drawer)
     velocityToggle_ = std::make_unique<magda::SvgButton>(
         "VelocityToggle", BinaryData::iconvelocityboldm_svg, BinaryData::iconvelocityboldm_svgSize);
@@ -902,14 +912,21 @@ void PianoRollContent::resized() {
     // Skip chord row space if visible (drawn in paint)
     if (showChordRow_) {
         bounds.removeFromTop(chordRowHeight());
-        // Position detect button in the keyboard column of the chord row
-        int detectSize = 18;
-        int detectX = sidebarWidth() + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
-        int detectY = (chordRowHeight() - detectSize) / 2;
-        chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
-        chordDetectBtn_->setVisible(true);
+        // Button in the keyboard column of the chord row gutter. Chord-focus mode
+        // shows the grid show/hide toggle here instead of the rescan button.
+        const int detectSize = 18;
+        const int detectX = sidebarWidth() + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
+        const int detectY = chordFocusMode() ? 6 : (chordRowHeight() - detectSize) / 2;
+        const bool chordMode = chordFocusMode();
+        chordDetectBtn_->setVisible(!chordMode);
+        if (!chordMode)
+            chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
+        gridToggleBtn_->setVisible(chordMode);
+        if (chordMode)
+            gridToggleBtn_->setBounds(detectX, detectY, detectSize, detectSize);
     } else {
         chordDetectBtn_->setVisible(false);
+        gridToggleBtn_->setVisible(false);
     }
 
     // MIDI drawer at bottom (if open). Suppressed in chord-focus mode.
@@ -1038,6 +1055,11 @@ int PianoRollContent::chordRowXForBeat(double clipRelativeBeat) const {
 
 void PianoRollContent::redetectChords() {
     detectChordsFromNotes();
+}
+
+void PianoRollContent::setGridToggleActive(bool on) {
+    if (gridToggleBtn_)
+        gridToggleBtn_->setActive(on);
 }
 
 void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,

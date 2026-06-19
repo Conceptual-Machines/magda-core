@@ -116,6 +116,10 @@ class PianoRollContent : public MidiEditorContent,
     virtual int selectedChordGroup() const {
         return 0;
     }
+    // Chord-focus mode replaces the chord-row "rescan" button with a show/hide
+    // grid toggle in the gutter; this fires when it's clicked.
+    virtual void onGridToggleClicked() {}
+    void setGridToggleActive(bool on);
     // Pixel x of a chord-lane beat (clip-relative). Inverse of chordRowBeatForX;
     // used to hit-test and draw chord blocks.
     int chordRowXForBeat(double clipRelativeBeat) const;
@@ -199,6 +203,7 @@ class PianoRollContent : public MidiEditorContent,
     std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
+    std::unique_ptr<magda::SvgButton> gridToggleBtn_;  // chord mode: show/hide grid
     std::unique_ptr<magda::SvgButton> velocityToggle_;
     std::unique_ptr<magda::SvgButton> pitchGlideToggle_;
     std::unique_ptr<magda::SvgButton> ccLanesBtn_;

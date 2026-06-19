@@ -197,6 +197,21 @@ int ChordClipContent::maxLaneHeight() const {
     return std::max(MIN_LANE_HEIGHT, getHeight() - RULER_HEIGHT);
 }
 
+void ChordClipContent::onGridToggleClicked() {
+    const int maxH = maxLaneHeight();
+    if (laneHeight_ >= maxH - 2) {
+        // Grid currently hidden - restore it.
+        laneHeight_ = juce::jlimit(MIN_LANE_HEIGHT, maxH, expandedLaneHeight_);
+    } else {
+        // Hide the grid: lane fills the editor.
+        expandedLaneHeight_ = laneHeight_;
+        laneHeight_ = maxH;
+    }
+    setGridToggleActive(laneHeight_ < maxH - 2);  // active = grid visible
+    resized();
+    repaint();
+}
+
 bool ChordClipContent::isOnLaneDivider(juce::Point<int> p) const {
     // The divider sits at the bottom edge of the chord lane (above the ruler).
     return std::abs(p.y - laneHeight_) <= DIVIDER_HIT;
