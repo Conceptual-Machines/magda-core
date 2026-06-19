@@ -35,6 +35,26 @@
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
+namespace {
+void configureMasterSpeakerButton(SvgButton& button) {
+    button.setClickingTogglesState(true);
+    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    button.setNormalColor(juce::Colour(0xFFB3B3B3));
+    button.setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    button.setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    button.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+}
+
+void syncMasterSpeakerButton(SvgButton& button, bool muted) {
+    button.setToggleState(muted, juce::dontSendNotification);
+    button.updateSvgData(muted ? BinaryData::speaker_muted_svg : BinaryData::speaker_svg,
+                         muted ? BinaryData::speaker_muted_svgSize : BinaryData::speaker_svgSize);
+    button.setTooltip(muted ? "Unmute master" : "Mute master");
+}
+}  // namespace
 
 namespace {
 bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {
@@ -1021,24 +1041,12 @@ TrackChainContent::TrackChainContent()
     addChildComponent(muteButton_);
 
     // Master mute: speaker toggle shown in place of "M" when the master is selected.
-    {
-        auto onIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
-                                                          BinaryData::speaker_on_svgSize);
-        auto offIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
-                                                           BinaryData::speaker_off_svgSize);
-        masterMuteButton_.setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
-        masterMuteButton_.setEdgeIndent(0);
-        masterMuteButton_.setClickingTogglesState(true);
-        masterMuteButton_.setColour(juce::DrawableButton::backgroundColourId,
-                                    juce::Colours::transparentBlack);
-        masterMuteButton_.setColour(juce::DrawableButton::backgroundOnColourId,
-                                    juce::Colours::transparentBlack);
-        masterMuteButton_.onClick = [this]() {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
-        };
-        addChildComponent(masterMuteButton_);
-    }
+    configureMasterSpeakerButton(masterMuteButton_);
+    masterMuteButton_.onClick = [this]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
+    };
+    addChildComponent(masterMuteButton_);
 
     // Solo button
     soloButton_.setButtonText("S");
@@ -1927,7 +1935,7 @@ void TrackChainContent::trackPropertyChanged(int trackId) {
         if (track) {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
-            masterMuteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            syncMasterSpeakerButton(masterMuteButton_, track->muted);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
             volumeLabel_.setValue(gainToDb(track->volume), juce::dontSendNotification);
             panLabel_.setValue(track->pan, juce::dontSendNotification);
@@ -2317,7 +2325,7 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             // Update mute/solo state
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
-            masterMuteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            syncMasterSpeakerButton(masterMuteButton_, track->muted);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
 
             // Convert linear gain to dB for volume slider
@@ -2523,10 +2531,7 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         headerArea.removeFromRight(2);
     }
     if (isMaster) {
-        // Square the speaker to the row height so its built-in border matches the
-        // volume box, instead of the narrow "M" footprint.
-        masterMuteButton_.setBounds(
-            headerArea.removeFromRight(headerArea.getHeight()).withSizeKeepingCentre(18, 18));
+        masterMuteButton_.setBounds(headerArea.removeFromRight(20).withSizeKeepingCentre(20, 20));
         masterMuteButton_.setVisible(true);
         muteButton_.setVisible(false);
     } else {

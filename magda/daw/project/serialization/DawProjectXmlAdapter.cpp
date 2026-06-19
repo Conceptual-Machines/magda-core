@@ -448,7 +448,7 @@ void addGateDevice(juce::XmlElement& devices, const DeviceInfo& device) {
 }
 
 // <Limiter>: Attack, InputGain, OutputGain, Release, Threshold. MAGDA's limiter
-// has no InputGain; its Hold/Mix/Autogain have no field and are dropped.
+// has no InputGain; OutputGain maps to its post-limiter trim.
 void addLimiterDevice(juce::XmlElement& devices, const DeviceInfo& device) {
     auto& lim = addBuiltinElement(devices, "Limiter", device);
     addMappedReal(lim, device, "Attack", "Attack", "seconds", 0.001);
@@ -612,8 +612,8 @@ void parseGateDevice(const juce::XmlElement& gate, DeviceInfo& device) {
         addBuiltinParam(device, 6, "Range", rg->getDoubleAttribute("value"));
 }
 
-// Slots from MagdaLimiterCompiledPlugin: Threshold=0, Attack=1, Release=3,
-// Output=5. DAWproject InputGain has no MAGDA counterpart (skipped).
+// Slots from MagdaLimiterCompiledPlugin: Threshold=0, Attack=1, Release=2,
+// Output=3. DAWproject InputGain has no MAGDA counterpart (skipped).
 void parseLimiterDevice(const juce::XmlElement& lim, DeviceInfo& device) {
     initBuiltinDevice(device, lim, "magda_limiter", "Limiter");
     if (auto* t = lim.getChildByName("Threshold"))
@@ -621,9 +621,10 @@ void parseLimiterDevice(const juce::XmlElement& lim, DeviceInfo& device) {
     if (auto* a = lim.getChildByName("Attack"))
         addBuiltinParam(device, 1, "Attack", dawSecondsToMs(*a));
     if (auto* rel = lim.getChildByName("Release"))
-        addBuiltinParam(device, 3, "Release", dawSecondsToMs(*rel));
+        addBuiltinParam(device, 2, "Release", dawSecondsToMs(*rel));
     if (auto* o = lim.getChildByName("OutputGain"))
-        addBuiltinParam(device, 5, "Output", o->getDoubleAttribute("value"));
+        addBuiltinParam(device, 3, "Output",
+                        juce::jlimit(-24.0, 0.0, o->getDoubleAttribute("value")));
 }
 
 // DAWproject eqBandType -> MAGDA EQ band type slot value. MAGDA has no bandPass;

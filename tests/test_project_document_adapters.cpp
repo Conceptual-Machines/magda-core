@@ -997,15 +997,12 @@ TEST_CASE("DawProjectXmlAdapter maps the native gate to a <NoiseGate> builtin",
 
 TEST_CASE("DawProjectXmlAdapter maps the native limiter to a <Limiter> builtin",
           "[project][serialization][dawproject][builtin]") {
-    // Slots: Threshold=0, Attack=1, Hold=2, Release=3, Mix=4, Output=5, Autogain=6.
+    // Slots: Threshold=0, Attack=1, Release=2, Output=3.
     auto document = makeBuiltinDoc("magda_limiter", "Limiter",
                                    {namedParam("Threshold", 0, -1.0f, -24.0f, 0.0f, "dB"),
                                     namedParam("Attack", 1, 1.0f, 0.1f, 50.0f, "ms"),
-                                    namedParam("Hold", 2, 50.0f, 1.0f, 500.0f, "ms"),
-                                    namedParam("Release", 3, 200.0f, 10.0f, 2000.0f, "ms"),
-                                    namedParam("Mix", 4, 1.0f, 0.0f, 1.0f, ""),
-                                    namedParam("Output", 5, 0.0f, -24.0f, 12.0f, "dB"),
-                                    namedParam("Autogain", 6, 0.0f, 0.0f, 1.0f, "")});
+                                    namedParam("Release", 2, 200.0f, 10.0f, 2000.0f, "ms"),
+                                    namedParam("Output", 3, -3.0f, -24.0f, 0.0f, "dB")});
 
     auto xml = DawProjectXmlAdapter::toProjectXml(document);
     REQUIRE(xml.contains("<Limiter"));
@@ -1024,8 +1021,8 @@ TEST_CASE("DawProjectXmlAdapter maps the native limiter to a <Limiter> builtin",
     REQUIRE(back.pluginId == "magda_limiter");
     REQUIRE(importedSlot(back, 0) == Catch::Approx(-1.0f));   // Threshold dB
     REQUIRE(importedSlot(back, 1) == Catch::Approx(1.0f));    // Attack ms
-    REQUIRE(importedSlot(back, 3) == Catch::Approx(200.0f));  // Release ms
-    REQUIRE(importedSlot(back, 5) == Catch::Approx(0.0f));    // Output dB
+    REQUIRE(importedSlot(back, 2) == Catch::Approx(200.0f));  // Release ms
+    REQUIRE(importedSlot(back, 3) == Catch::Approx(-3.0f));   // Output dB
 }
 
 TEST_CASE("DawProjectXmlAdapter maps the native EQ to an <Equalizer> builtin",

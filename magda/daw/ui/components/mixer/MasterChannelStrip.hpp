@@ -9,6 +9,7 @@
 #include "../chain/custom_ui/SpectrumAnalyzerUI.hpp"
 #include "../common/TextSlider.hpp"
 #include "ClickableLabel.hpp"
+#include "LevelMeter.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -59,8 +60,6 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     std::unique_ptr<juce::DrawableButton> headphoneIcon_;
     std::unique_ptr<daw::ui::TextSlider> cueVolumeSlider_;
 
-    // Meter component
-    class LevelMeter;
     std::unique_ptr<LevelMeter> peakMeter;
     std::unique_ptr<ClickableLabel> peakValueLabel;
     float peakValue_ = 0.0f;
