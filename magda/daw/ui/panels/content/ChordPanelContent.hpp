@@ -149,6 +149,10 @@ class ChordPanelContent : public juce::Component,
     void updateScaleFilterPitchClasses();
 
     magda::daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
+    // Prime the bound engine from the chord-track progression (no-op unless the
+    // bound track is the chord track) so suggestions/key reflect the song.
+    void seedEngineFromProgression();
+
     magda::TrackId trackId_ = magda::INVALID_TRACK_ID;
 
     void previewChord(const magda::music::Chord& chord);

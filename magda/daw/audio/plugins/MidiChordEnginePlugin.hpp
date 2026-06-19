@@ -138,6 +138,10 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     /** Re-generate suggestions from current context + params (call after param changes). */
     void refreshSuggestions();
 
+    /** Prime the engine's context from an authored progression (e.g. the chord
+        track) so key / suggestions / scales appear without live play. */
+    void seedFromChords(const std::vector<magda::music::Chord>& chords);
+
     // --- Listener for UI updates ---
     struct Listener {
         virtual ~Listener() = default;
@@ -208,6 +212,10 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
 
     // Run chord detection on current held notes
     void runDetection();
+
+    // Recompute cached key / suggestions / scales from current engine state.
+    // Caller must hold stateMutex_. Returns true if the key/mode changed.
+    bool recomputeCachesLocked();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiChordEnginePlugin)
 };

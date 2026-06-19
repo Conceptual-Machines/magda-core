@@ -390,6 +390,7 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
     if (chordPlugin_ == plugin) {
         // Plugin unchanged — just update trackId (may arrive late from setNodePath)
         trackId_ = trackId;
+        seedEngineFromProgression();
         return;
     }
 
@@ -418,9 +419,24 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
         // Restore AI progression display if plugin has persisted results
         if (!plugin->getAIProgressions().empty())
             rebuildAIProgressionRows();
+
+        seedEngineFromProgression();
     }
 
     repaint();
+}
+
+void ChordPanelContent::seedEngineFromProgression() {
+    if (chordPlugin_ == nullptr || trackId_ != magda::TrackManager::getInstance().getChordTrackId())
+        return;
+
+    auto& engine = magda::music::ChordEngine::getInstance();
+    std::vector<magda::music::Chord> chords;
+    for (const auto& p : magda::ChordProgressionContext::current()) {
+        const auto spec = magda::music::ChordEngine::parseChordName(p.name);
+        chords.push_back(engine.buildChordInRootPosition(spec.root, spec.quality));
+    }
+    chordPlugin_->seedFromChords(chords);
 }
 
 void ChordPanelContent::chordChanged(magda::daw::audio::MidiChordEnginePlugin*) {
