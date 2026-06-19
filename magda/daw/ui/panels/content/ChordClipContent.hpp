@@ -28,10 +28,13 @@ class ChordClipContent : public PianoRollContent {
 
   protected:
     int chordRowHeight() const override {
-        return 72;
+        return 110;
     }
     bool chordFocusMode() const override {
         return true;
+    }
+    int sidebarWidth() const override {
+        return 0;
     }
     // Clicking an empty spot on the chord lane inserts a chord (a default major
     // triad for now; quality/extensions are edited afterwards). Existing chords

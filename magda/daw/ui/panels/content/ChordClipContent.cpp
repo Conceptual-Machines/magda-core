@@ -4,9 +4,10 @@
 #include <cmath>
 #include <memory>
 
-#include "core/ChordAnnotationCommands.hpp"
+#include "../../state/TimelineController.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/TempoUtils.hpp"
 #include "core/UndoManager.hpp"
 #include "music/ChordEngine.hpp"
 
@@ -21,37 +22,35 @@ bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
     if (clip == nullptr)
         return false;
 
-    // Snap to the nearest beat. A chord defaults to one bar long.
-    const double beat = std::max(0.0, std::floor(clipRelativeBeat + 0.5));
-    constexpr double kDefaultLengthBeats = 4.0;
+    // Chords snap to the bar so the per-bar chord detection picks them up
+    // cleanly. A chord defaults to one bar long.
+    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    if (auto* controller = magda::TimelineController::getCurrent())
+        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
+    const double barBeats = std::max(1, beatsPerBar);
+    const double bar = std::max(0.0, std::round(clipRelativeBeat / barBeats) * barBeats);
     constexpr int kDefaultVelocity = 100;
 
-    // A click that lands on an existing chord is for editing it, not stacking a
-    // new one - consume it and do nothing for now.
+    // A click on a bar that already has a chord is for editing it, not stacking
+    // a new one - consume it and do nothing for now.
     for (const auto& ann : clip->chordAnnotations) {
-        if (beat >= ann.beatPosition && beat < ann.beatPosition + ann.lengthBeats)
+        if (bar >= ann.beatPosition && bar < ann.beatPosition + ann.lengthBeats)
             return true;
     }
 
-    // Default to a C major triad; quality/extensions get edited afterwards.
+    // Default to a C major triad; quality/extensions get edited afterwards. The
+    // notes are inserted and then detection builds the (linked) chord-lane block,
+    // so later note edits re-sync the chord via syncChordAnnotations().
     const auto chord = magda::music::ChordEngine::getInstance().buildChordInRootPosition(
         magda::music::ChordRoot::C, magda::music::ChordQuality::Major, 4);
 
     auto& undo = magda::UndoManager::getInstance();
-
-    // The named block on the chord lane.
-    magda::ClipInfo::ChordAnnotation annotation;
-    annotation.beatPosition = beat;
-    annotation.lengthBeats = kDefaultLengthBeats;
-    annotation.chordName = chord.getName();
-    undo.executeCommand(std::make_unique<magda::AddChordAnnotationCommand>(clipId, annotation));
-
-    // The voicing the user can later nudge in the grid.
     for (const auto& note : chord.notes) {
         undo.executeCommand(std::make_unique<magda::AddMidiNoteCommand>(
-            clipId, beat, note.noteNumber, kDefaultLengthBeats, kDefaultVelocity));
+            clipId, bar, note.noteNumber, barBeats, kDefaultVelocity));
     }
 
+    redetectChords();
     return true;
 }
 
