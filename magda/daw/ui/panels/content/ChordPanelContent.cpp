@@ -49,8 +49,8 @@ void ScaleBlockComponent::paint(juce::Graphics& g) {
     g.setColour(selected_ ? DarkTheme::getTextColour()
                           : DarkTheme::getTextColour().withAlpha(0.8f));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(juce::String(scale_.name), getLocalBounds().reduced(4, 0),
-               juce::Justification::centred);
+    g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
+               getLocalBounds().reduced(4, 0), juce::Justification::centred);
 }
 
 void ScaleBlockComponent::mouseDown(const juce::MouseEvent& e) {
@@ -116,7 +116,8 @@ void ScaleChordsPopup::paint(juce::Graphics& g) {
     auto titleArea = getLocalBounds().reduced(10, 6).removeFromTop(20);
     g.setColour(DarkTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
-    g.drawText(juce::String(scale_.name), titleArea, juce::Justification::centredLeft);
+    g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
+               titleArea, juce::Justification::centredLeft);
 }
 
 void ScaleChordsPopup::resized() {
@@ -216,7 +217,8 @@ void BrowseScaleRowComponent::paint(juce::Graphics& g) {
 
     g.setColour(DarkTheme::getTextColour().withAlpha(0.8f));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(juce::String(scale_.name), bounds.reduced(6, 0), juce::Justification::centredLeft);
+    g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
+               bounds.reduced(6, 0), juce::Justification::centredLeft);
 }
 
 void BrowseScaleRowComponent::resized() {}
@@ -1853,7 +1855,8 @@ void ChordPanelContent::paint(juce::Graphics& g) {
             area.removeFromTop(4);
             g.setColour(DarkTheme::getTextColour());
             g.setFont(FontManager::getInstance().getUIFont(16.0f).boldened());
-            g.drawText(detectedKey_, area.removeFromTop(24), juce::Justification::centredLeft);
+            g.drawText(magda::music::NotationSettings::getInstance().formatRoot(detectedKey_),
+                       area.removeFromTop(24), juce::Justification::centredLeft);
         } else {
             area.removeFromTop(4);
             g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));

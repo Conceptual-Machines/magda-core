@@ -56,6 +56,12 @@ class NotationSettings {
         return englishName;
     }
 
+    // For scale / key names, where doubling the whole label (Both) reads badly:
+    // English mode keeps letters, Solfège and Both both show the solfège root.
+    juce::String formatRoot(const juce::String& englishName) const {
+        return mode_ == NoteNaming::English ? englishName : toSolfege(englishName);
+    }
+
     // Replace note-letter roots (start of string and after '/') with solfège.
     static juce::String toSolfege(const juce::String& name) {
         auto rootFor = [](juce::juce_wchar c) -> const char* {
