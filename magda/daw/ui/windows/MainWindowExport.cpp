@@ -314,6 +314,23 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             te::Renderer::Parameters params(*edit);
             params.destFile = file;
 
+            // The chord track is monitor-only: exclude it from the bounce so its
+            // notes never reach the master render. tracksToDo lists every track
+            // index to render (empty = all), so we set all but the chord track.
+            if (auto chordId = magda::TrackManager::getInstance().getChordTrackId();
+                chordId != magda::INVALID_TRACK_ID) {
+                if (auto* bridge = engine->getAudioBridge()) {
+                    if (auto* chordTe = bridge->getAudioTrack(chordId)) {
+                        auto allTracks = te::getAllTracks(*edit);
+                        juce::BigInteger tracksToDo;
+                        for (int i = 0; i < allTracks.size(); ++i)
+                            if (allTracks[i] != chordTe)
+                                tracksToDo.setBit(i);
+                        params.tracksToDo = tracksToDo;
+                    }
+                }
+            }
+
             // Set audio format
             auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
             if (settings.format.startsWith("WAV")) {
