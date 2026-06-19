@@ -389,8 +389,11 @@ void ChordClipContent::mouseMove(const juce::MouseEvent& e) {
         const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
         if (idx >= 0) {
             const auto mode = dragModeForBlock(idx, e.x);
-            setMouseCursor(mode == BlockDrag::Move ? juce::MouseCursor::DraggingHandCursor
-                                                   : juce::MouseCursor::LeftRightResizeCursor);
+            if (mode == BlockDrag::Move)
+                setMouseCursor(e.mods.isAltDown() ? juce::MouseCursor::CopyingCursor
+                                                  : juce::MouseCursor::DraggingHandCursor);
+            else
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
             return;
         }
     }
@@ -406,6 +409,7 @@ void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
     if (e.y < chordRowHeight() && e.x >= chordLaneLeftX()) {
         const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
         if (idx >= 0) {
+            grabKeyboardFocus();  // so Delete removes the chord, not the clip
             if (e.mods.isPopupMenu()) {
                 showChordContextMenu(idx);
                 return;
@@ -435,6 +439,52 @@ void ChordClipContent::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
     PianoRollContent::mouseDrag(e);
+}
+
+bool ChordClipContent::keyPressed(const juce::KeyPress& key) {
+    if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) &&
+        selectedGroup_ != 0) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+        if (clip != nullptr) {
+            for (int i = 0; i < static_cast<int>(clip->chordAnnotations.size()); ++i)
+                if (clip->chordAnnotations[static_cast<size_t>(i)].chordGroup == selectedGroup_) {
+                    deleteChord(i);
+                    return true;
+                }
+        }
+    }
+    return PianoRollContent::keyPressed(key);
+}
+
+void ChordClipContent::paintOverChildren(juce::Graphics& g) {
+    PianoRollContent::paintOverChildren(g);
+
+    if (!copyDrag_ || blockDrag_ == BlockDrag::None)
+        return;
+
+    const int x1 = std::max(chordLaneLeftX(), chordRowXForBeat(dragNewStart_));
+    const int x2 = chordRowXForBeat(dragNewEnd_);
+    if (x2 <= x1)
+        return;
+
+    const juce::Rectangle<int> ghost(x1 + 1, 2, x2 - x1 - 2, chordRowHeight() - 4);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    g.setColour(accent.withAlpha(0.22f));
+    g.fillRoundedRectangle(ghost.toFloat(), 4.0f);
+    g.setColour(accent.withAlpha(0.7f));
+    g.drawRoundedRectangle(ghost.toFloat().reduced(0.5f), 4.0f, 1.2f);
+
+    // "+" badge (copy affordance)
+    const float s = 14.0f;
+    const juce::Rectangle<float> badge(static_cast<float>(ghost.getRight()) - s - 2.0f,
+                                       static_cast<float>(ghost.getY()) + 2.0f, s, s);
+    g.setColour(accent);
+    g.fillEllipse(badge);
+    g.setColour(juce::Colours::white);
+    const auto c = badge.getCentre();
+    const float r = 3.5f;
+    g.drawLine(c.x - r, c.y, c.x + r, c.y, 1.6f);
+    g.drawLine(c.x, c.y - r, c.x, c.y + r, 1.6f);
 }
 
 void ChordClipContent::mouseUp(const juce::MouseEvent& e) {

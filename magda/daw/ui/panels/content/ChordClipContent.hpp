@@ -16,7 +16,12 @@ namespace magda::daw::ui {
  */
 class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTarget {
   public:
-    ChordClipContent() = default;
+    ChordClipContent() {
+        setWantsKeyboardFocus(true);
+    }
+
+    // Delete the selected chord (not the clip) on Delete/Backspace.
+    bool keyPressed(const juce::KeyPress& key) override;
 
     // Accept a chord dragged from the engine panel (a temp MIDI file) dropped on
     // the chord lane.
@@ -40,6 +45,8 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     void mouseUp(const juce::MouseEvent& e) override;
     // Double-click a chord block to edit its root / quality / octave / inversion.
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    // Draws the alt-drag copy ghost + "+" badge over the lane.
+    void paintOverChildren(juce::Graphics& g) override;
 
   protected:
     int selectedChordGroup() const override {
