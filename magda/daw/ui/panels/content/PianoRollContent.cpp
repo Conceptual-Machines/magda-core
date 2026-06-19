@@ -983,6 +983,35 @@ void PianoRollContent::resized() {
 // Mouse
 // ============================================================================
 
+void PianoRollContent::mouseDown(const juce::MouseEvent& e) {
+    // Chord lane click: offer it to the subclass hook (chord-clip add). The
+    // standard piano roll's hook returns false, so the event falls through.
+    if (showChordRow_ && e.y < chordRowHeight()) {
+        const int leftPanelWidth =
+            sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+        if (e.x >= leftPanelWidth && horizontalZoom_ > 0.0) {
+            const int scrollX = viewport_ ? viewport_->getViewPositionX() : 0;
+            const double absBeat =
+                (e.x - leftPanelWidth + scrollX - GRID_LEFT_PADDING) / horizontalZoom_;
+            double clipStartBeats = 0.0;
+            if (const auto* clip = (editingClipId_ != magda::INVALID_CLIP_ID)
+                                       ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                                       : nullptr) {
+                if (!relativeTimeMode_ && clip->view != magda::ClipView::Session)
+                    clipStartBeats = clip->placement.startBeat;
+            }
+            if (onChordRowClicked(juce::jmax(0.0, absBeat - clipStartBeats)))
+                return;
+        }
+    }
+
+    MidiEditorContent::mouseDown(e);
+}
+
+void PianoRollContent::redetectChords() {
+    detectChordsFromNotes();
+}
+
 void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
                                       const juce::MouseWheelDetails& wheel) {
     int headerHeight = getHeaderHeight();

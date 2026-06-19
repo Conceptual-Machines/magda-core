@@ -45,6 +45,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
     void onActivated() override;
     void onDeactivated() override;
@@ -102,6 +103,16 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     virtual int sidebarWidth() const {
         return SIDEBAR_WIDTH;
     }
+    // Called when the chord lane is clicked at the given clip-relative beat.
+    // Return true to consume the click (the standard piano roll returns false so
+    // the event falls through to the base handler). ChordClipContent uses this
+    // to add a chord at the clicked position.
+    virtual bool onChordRowClicked(double clipRelativeBeat) {
+        (void)clipRelativeBeat;
+        return false;
+    }
+    // Re-run chord detection from the clip's notes (rebuilds the chord lane).
+    void redetectChords();
 
   private:
     // MidiEditorContent virtual implementations

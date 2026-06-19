@@ -33,6 +33,10 @@ class ChordClipContent : public PianoRollContent {
     bool chordFocusMode() const override {
         return true;
     }
+    // Clicking an empty spot on the chord lane inserts a chord (a default major
+    // triad for now; quality/extensions are edited afterwards). Existing chords
+    // are left alone so a stray click never stacks notes.
+    bool onChordRowClicked(double clipRelativeBeat) override;
 
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordClipContent)
