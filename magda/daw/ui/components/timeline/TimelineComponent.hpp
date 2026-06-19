@@ -140,7 +140,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void clearTimeSelection();
 
     // Callback for playhead position changes
-    std::function<void(double)> onPlayheadPositionBeatsChanged;
+    std::function<void(double, bool)> onPlayheadPositionBeatsChanged;
     std::function<void(int, const ArrangementSection&)> onSectionChanged;
     std::function<void(const juce::String&, double, double)> onSectionAddedBeats;
     std::function<void(double, double, int)>
