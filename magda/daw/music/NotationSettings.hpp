@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <juce_events/juce_events.h>
 
 namespace magda::music {
 
@@ -14,7 +15,7 @@ enum class NoteNaming { English, Solfege, Both };
  * converts the leading root (and any slash-bass) to the active notation for
  * display only.
  */
-class NotationSettings {
+class NotationSettings : public juce::ChangeBroadcaster {
   public:
     static NotationSettings& getInstance() {
         static NotationSettings instance;
@@ -25,10 +26,13 @@ class NotationSettings {
         return mode_;
     }
     void setMode(NoteNaming m) {
-        mode_ = m;
+        if (mode_ != m) {
+            mode_ = m;
+            sendChangeMessage();
+        }
     }
     void cycle() {
-        mode_ = static_cast<NoteNaming>((static_cast<int>(mode_) + 1) % 3);
+        setMode(static_cast<NoteNaming>((static_cast<int>(mode_) + 1) % 3));
     }
 
     juce::String label() const {

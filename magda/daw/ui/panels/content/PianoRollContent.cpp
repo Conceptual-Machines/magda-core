@@ -40,6 +40,9 @@ PianoRollContent::PianoRollContent() {
     if (timeRuler_)
         timeRuler_->setGestureContext(magda::GestureContext::PianoRoll);
 
+    // Repaint the chord lane when the C / Do notation changes anywhere.
+    magda::music::NotationSettings::getInstance().addChangeListener(this);
+
     // Create fold toggle button (collapse the vertical axis to used pitches)
     foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::iconfoldboldm_svg,
                                                      BinaryData::iconfoldboldm_svgSize);
@@ -353,6 +356,7 @@ void PianoRollContent::updateLaneToggleStates() {
 PianoRollContent::~PianoRollContent() {
     uninstallMidiNoteMonitor();
     magda::SelectionManager::getInstance().removeListener(this);
+    magda::music::NotationSettings::getInstance().removeChangeListener(this);
 }
 
 void PianoRollContent::setNoteHeight(int height, bool persist) {

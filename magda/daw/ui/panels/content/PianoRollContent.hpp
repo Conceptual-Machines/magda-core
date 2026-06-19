@@ -28,10 +28,17 @@ class MidiTakeLanesComponent;
  * - Note rectangles in the grid representing MIDI notes (interactive)
  * - Time ruler along the top (switchable between absolute/relative)
  */
-class PianoRollContent : public MidiEditorContent, public magda::SelectionManagerListener {
+class PianoRollContent : public MidiEditorContent,
+                         public magda::SelectionManagerListener,
+                         public juce::ChangeListener {
   public:
     PianoRollContent();
     ~PianoRollContent() override;
+
+    // Notation (C / Do) changes repaint the chord lane immediately.
+    void changeListenerCallback(juce::ChangeBroadcaster*) override {
+        repaint();
+    }
 
     PanelContentType getContentType() const override {
         return PanelContentType::PianoRoll;
