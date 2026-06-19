@@ -257,6 +257,11 @@ void ClipInspector::updateFromSelectedClip() {
             takesSection_->setVisible(showAudioProps || showMidiTakes);
         }
 
+        if (chordProgressionSection_) {
+            chordProgressionSection_->setSelectedClips(selectedClipIds_);
+            chordProgressionSection_->setVisible(chordProgressionSection_->hasContent());
+        }
+
         if (isAudioClip) {
             clipTypeIcon_->updateSvgData(BinaryData::iconaudioboldm_svg,
                                          BinaryData::iconaudioboldm_svgSize);
