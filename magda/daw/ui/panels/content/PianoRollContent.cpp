@@ -21,6 +21,7 @@
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "music/ChordEngine.hpp"
+#include "music/NotationSettings.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
@@ -1727,14 +1728,27 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
         const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
 
-        g.setColour(accent.withAlpha(selected ? 0.30f : 0.20f));
-        g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
+        // Direction 4 "accent spine": subtle slate fill, a bright accent bar down
+        // the left edge, clean name type.
+        g.setColour(accent.withAlpha(selected ? 0.22f : 0.13f));
+        g.fillRoundedRectangle(blockBounds.toFloat(), 4.0f);
 
-        // Draw chord name
-        if (blockBounds.getWidth() > 10) {
+        if (blockBounds.getWidth() > 8) {
+            juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
+                                         static_cast<float>(blockBounds.getY() + 3), 3.0f,
+                                         static_cast<float>(blockBounds.getHeight() - 6));
+            g.setColour(accent.withAlpha(selected ? 1.0f : 0.85f));
+            g.fillRoundedRectangle(spine, 1.5f);
+        }
+
+        // Chord name in the active notation (C / solfège / both)
+        if (blockBounds.getWidth() > 14) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            g.drawText(annotation.chordName, blockBounds.reduced(6, 0),
+            g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
+            g.drawText(magda::music::NotationSettings::getInstance().format(annotation.chordName),
+                       blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                        juce::Justification::centredLeft, true);
+            g.setFont(FontManager::getInstance().getUIFont(11.0f));
         }
 
         // Selection ring + edge resize handles
