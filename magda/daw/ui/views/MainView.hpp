@@ -218,6 +218,8 @@ class MainView : public juce::Component,
     bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
 
+    void dispatchUserPlayheadPositionBeats(double positionBeats, bool bypassSnap);
+
     struct ArrangementLayout {
         bool swapped = false;
         juce::Rectangle<int> cornerArea;

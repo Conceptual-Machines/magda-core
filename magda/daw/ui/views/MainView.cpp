@@ -515,8 +515,8 @@ void MainView::setupCallbacks() {
     GestureRouter::getInstance().loadFromConfig();
 
     // Set up timeline callbacks
-    timeline->onPlayheadPositionBeatsChanged = [this](double positionBeats) {
-        timelineController->dispatch(SetPlayheadPositionBeatsEvent{positionBeats});
+    timeline->onPlayheadPositionBeatsChanged = [this](double positionBeats, bool bypassSnap) {
+        dispatchUserPlayheadPositionBeats(positionBeats, bypassSnap);
     };
 
     // Mouse-wheel gestures over the arrangement (ruler + track content) resolve
@@ -1288,6 +1288,14 @@ void MainView::setTimelineLength(double lengthInSeconds) {
 void MainView::setPlayheadPosition(double position) {
     // Dispatch to controller
     timelineController->dispatch(SetPlayheadPositionEvent{position});
+}
+
+void MainView::dispatchUserPlayheadPositionBeats(double positionBeats, bool bypassSnap) {
+    const auto& state = timelineController->getState();
+    double targetBeats = positionBeats;
+    if (!bypassSnap)
+        targetBeats = state.snapBeatsToGrid(targetBeats);
+    timelineController->dispatch(SetPlayheadPositionBeatsEvent{targetBeats});
 }
 
 void MainView::toggleArrangementLock() {
@@ -2246,7 +2254,7 @@ void MainView::setupSelectionCallbacks() {
 
     // Set up playhead position callback from track content panel (click to set playhead)
     trackContentPanel->onPlayheadPositionBeatsChanged = [this](double positionBeats) {
-        timelineController->dispatch(SetPlayheadPositionBeatsEvent{positionBeats});
+        dispatchUserPlayheadPositionBeats(positionBeats, false);
     };
 
     // Set up loop region callback from timeline

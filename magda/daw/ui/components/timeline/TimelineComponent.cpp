@@ -682,13 +682,12 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
             // Move playhead to click position
             double clickBeats = pixelToBeats(event.x);
             clickBeats = juce::jlimit(0.0, getTimelineLengthBeats(), clickBeats);
-            if (snapEnabled) {
+            if (snapEnabled && !event.mods.isAltDown()) {
                 clickBeats = snapBeatsToGrid(clickBeats);
             }
             setPlayheadPositionBeats(clickBeats);
-            if (onPlayheadPositionBeatsChanged) {
-                onPlayheadPositionBeatsChanged(clickBeats);
-            }
+            if (onPlayheadPositionBeatsChanged)
+                onPlayheadPositionBeatsChanged(clickBeats, event.mods.isAltDown());
         }
         isDraggingTimeSelection = false;
         repaint();
@@ -717,11 +716,13 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
             // It was a click - set playhead position
             double clickBeats = pixelToBeats(mouseDownX);
             clickBeats = juce::jlimit(0.0, getTimelineLengthBeats(), clickBeats);
+            if (snapEnabled && !event.mods.isAltDown()) {
+                clickBeats = snapBeatsToGrid(clickBeats);
+            }
             setPlayheadPositionBeats(clickBeats);
 
-            if (onPlayheadPositionBeatsChanged) {
-                onPlayheadPositionBeatsChanged(clickBeats);
-            }
+            if (onPlayheadPositionBeatsChanged)
+                onPlayheadPositionBeatsChanged(clickBeats, event.mods.isAltDown());
         }
     }
 

@@ -377,8 +377,11 @@ class PianoRollGridComponent : public juce::Component,
     double drawingNoteEndBeat_ = 0.0;    // clip-relative
     int drawingNoteNumber_ = 60;
     double defaultNoteLengthBeats_ = 0.0;  // <= 0 follows current grid
+    bool rememberLastNoteLength_ = false;
+    double lastAddedNoteLengthBeats_ = 0.0;
     int defaultNoteVelocity_ = 100;
     double getDefaultNoteLengthBeats() const;
+    void rememberAddedNoteLength(double lengthBeats);
     void addDefaultNoteMenuItems(juce::PopupMenu& menu) const;
     bool handleDefaultNoteMenuResult(int result);
 

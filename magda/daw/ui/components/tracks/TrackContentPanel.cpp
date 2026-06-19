@@ -1720,10 +1720,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         double maxBeats = timelineLength * tempoBPM / 60.0;
         double clickBeats = juce::jlimit(0.0, maxBeats, pixelToBeats(event.x));
 
-        // Apply snap to grid if callback is set
-        if (snapBeatsToGrid) {
+        // Apply snap to grid unless Alt/Option is held for precise cursor placement.
+        if (!event.mods.isAltDown() && snapBeatsToGrid) {
             clickBeats = snapBeatsToGrid(clickBeats);
-        } else if (snapTimeToGrid) {
+        } else if (!event.mods.isAltDown() && snapTimeToGrid) {
             clickBeats = snapTimeToGrid(clickBeats * 60.0 / tempoBPM) * tempoBPM / 60.0;
         }
         clickBeats = juce::jlimit(0.0, maxBeats, clickBeats);
@@ -1762,10 +1762,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                 double maxBeats = timelineLength * tempoBPM / 60.0;
                 double clickBeats = juce::jlimit(0.0, maxBeats, pixelToBeats(event.x));
 
-                // Apply snap to grid if callback is set
-                if (snapBeatsToGrid) {
+                // Apply snap to grid unless Alt/Option is held for precise cursor placement.
+                if (!event.mods.isAltDown() && snapBeatsToGrid) {
                     clickBeats = snapBeatsToGrid(clickBeats);
-                } else if (snapTimeToGrid) {
+                } else if (!event.mods.isAltDown() && snapTimeToGrid) {
                     clickBeats = snapTimeToGrid(clickBeats * 60.0 / tempoBPM) * tempoBPM / 60.0;
                 }
                 clickBeats = juce::jlimit(0.0, maxBeats, clickBeats);
