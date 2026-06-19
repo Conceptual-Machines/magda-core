@@ -990,7 +990,8 @@ void BottomPanel::updateContentBasedOnSelection() {
     // Show chord panel when piano roll is active and track has a chord engine
     {
         TrackId midiTrackId = INVALID_TRACK_ID;
-        if (targetContent == daw::ui::PanelContentType::PianoRoll &&
+        if ((targetContent == daw::ui::PanelContentType::PianoRoll ||
+             targetContent == daw::ui::PanelContentType::ChordClipView) &&
             selectedClip != INVALID_CLIP_ID) {
             const auto* clip = clipManager.getClip(selectedClip);
             if (clip)
