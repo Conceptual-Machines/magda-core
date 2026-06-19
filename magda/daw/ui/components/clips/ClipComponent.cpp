@@ -859,32 +859,52 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         const auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
 
-        for (const auto& chord : clip.chordAnnotations) {
-            if (chord.beatPosition >= beatRange)
-                continue;
-
-            const double visibleStart = juce::jmax(0.0, chord.beatPosition);
-            const double visibleEnd = juce::jmin(beatRange, chord.beatPosition + chord.lengthBeats);
+        auto drawBlock = [&](const juce::String& name, double startBeat, double lengthBeats) {
+            const double visibleStart = juce::jmax(0.0, startBeat);
+            const double visibleEnd = juce::jmin(beatRange, startBeat + lengthBeats);
             const double visibleLength = visibleEnd - visibleStart;
             if (visibleLength <= 0.0)
-                continue;
-
+                return;
             const float x = blockArea.getX() +
                             static_cast<float>(visibleStart / beatRange) * blockArea.getWidth();
             const float w = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *
                                                  blockArea.getWidth());
-
             juce::Rectangle<float> block(x, static_cast<float>(blockArea.getY()), w,
                                          static_cast<float>(blockArea.getHeight()));
-
             g.setColour(blockColour.withAlpha(0.35f));
             g.fillRoundedRectangle(block.reduced(1.0f, 0.0f), 2.0f);
-
             if (w > MIN_WIDTH_FOR_NAME) {
                 g.setColour(juce::Colours::white);
-                g.drawText(chord.chordName, block.toNearestInt().reduced(4, 0),
+                g.drawText(name, block.toNearestInt().reduced(4, 0),
                            juce::Justification::centredLeft, true);
             }
+        };
+
+        // A looped clip tiles its source chords across the timeline, the same way
+        // paintMidiNotes repeats notes.
+        const double srcLength =
+            clip.loopLength > 0.0 ? clip.loopLength : displayLength * clip.speedRatio;
+        const double loopLengthBeats =
+            clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats
+                                       : (srcLength > 0.0 ? srcLength * beatsPerSecond : beatRange);
+
+        if (clip.loopEnabled && loopLengthBeats > 0.5) {
+            const int reps = static_cast<int>(std::ceil(beatRange / loopLengthBeats));
+            for (int r = 0; r < reps; ++r) {
+                const double base = r * loopLengthBeats;
+                if (base >= beatRange)
+                    break;
+                for (const auto& chord : clip.chordAnnotations) {
+                    if (chord.beatPosition >= loopLengthBeats)
+                        continue;  // belongs past this loop iteration
+                    const double len =
+                        juce::jmin(chord.lengthBeats, loopLengthBeats - chord.beatPosition);
+                    drawBlock(chord.chordName, base + chord.beatPosition, len);
+                }
+            }
+        } else {
+            for (const auto& chord : clip.chordAnnotations)
+                drawBlock(chord.chordName, chord.beatPosition, chord.lengthBeats);
         }
     }
 
