@@ -83,6 +83,11 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     void duplicateChord(int annIndex);
     void showChordContextMenu(int annIndex);
     std::vector<int> chordPitches(int annIndex) const;
+    // Audition a chord block through the track instrument (same previewNote infra
+    // the chord engine uses); released on mouseUp.
+    void startChordPreview(int annIndex);
+    void stopChordPreview();
+    std::vector<int> previewNotes_;
     bool isOnLaneDivider(juce::Point<int> p) const;
     int maxLaneHeight() const;
 

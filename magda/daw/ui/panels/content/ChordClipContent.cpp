@@ -11,6 +11,7 @@
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TempoUtils.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/ChordEnums.hpp"
@@ -394,6 +395,8 @@ void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
             }
             const auto mode = dragModeForBlock(idx, e.x);
             copyDrag_ = (mode == BlockDrag::Move && e.mods.isAltDown());
+            if (mode == BlockDrag::Move)
+                startChordPreview(idx);  // audition the chord on click
             beginBlockDrag(idx, mode, e.x);
             return;
         }
@@ -466,6 +469,7 @@ void ChordClipContent::paintOverChildren(juce::Graphics& g) {
 }
 
 void ChordClipContent::mouseUp(const juce::MouseEvent& e) {
+    stopChordPreview();
     if (draggingDivider_) {
         draggingDivider_ = false;
         return;
@@ -573,6 +577,27 @@ std::vector<int> ChordClipContent::chordPitches(int annIndex) const {
         if (group != 0 && n.chordGroup == group)
             pitches.push_back(n.noteNumber);
     return pitches;
+}
+
+void ChordClipContent::startChordPreview(int annIndex) {
+    stopChordPreview();
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr)
+        return;
+    for (int p : chordPitches(annIndex)) {
+        magda::TrackManager::getInstance().previewNote(clip->trackId, p, 100, true);
+        previewNotes_.push_back(p);
+    }
+}
+
+void ChordClipContent::stopChordPreview() {
+    if (previewNotes_.empty())
+        return;
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    const auto trackId = clip ? clip->trackId : magda::INVALID_TRACK_ID;
+    for (int p : previewNotes_)
+        magda::TrackManager::getInstance().previewNote(trackId, p, 0, false);
+    previewNotes_.clear();
 }
 
 void ChordClipContent::deleteChord(int annIndex) {
