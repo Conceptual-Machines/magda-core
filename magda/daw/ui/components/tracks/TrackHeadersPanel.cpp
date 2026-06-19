@@ -2013,9 +2013,10 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
     auto midiArea = outer.removeFrom(workArea, midiIndicatorWidth);
     outer.removeSpacing(workArea, meterPadding);
 
-    // Audio meter spans full track height
+    // Audio meter spans full track height. The chord track emits no audio yet,
+    // so hide its output meter for now (an oscilloscope may replace it later).
     header.meterComponent->setBounds(meterArea);
-    header.meterComponent->setVisible(true);
+    header.meterComponent->setVisible(!header.isChordTrack);
 
     // MIDI indicator in top portion, session mode button in bottom portion
     const int sessionBtnSize = 14;

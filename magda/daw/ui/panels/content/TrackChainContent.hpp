@@ -190,6 +190,9 @@ class TrackChainContent : public PanelContent,
                                 BinaryData::master_on_svgSize, BinaryData::master_off_1_svg,
                                 BinaryData::master_off_1_svgSize};
     juce::TextButton soloButton_;  // Track solo
+    // Chord track mirrors its header: audition (mute) speaker + input monitor.
+    std::unique_ptr<magda::SvgButton> chordSpeakerButton_;
+    juce::TextButton monitorButton_;
     magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
     std::unique_ptr<magda::SvgButton> chainBypassButton_;  // On/off - bypasses entire track chain
