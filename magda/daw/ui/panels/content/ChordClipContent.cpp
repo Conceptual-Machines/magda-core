@@ -176,9 +176,12 @@ void ChordClipContent::updateBlockDrag(int mouseX) {
     }
 
     // Live preview: move the annotation only (display); notes commit on mouseUp.
-    auto& a = clip->chordAnnotations[static_cast<size_t>(dragAnnIndex_)];
-    a.beatPosition = dragNewStart_;
-    a.lengthBeats = dragNewEnd_ - dragNewStart_;
+    // For an alt-copy the original must stay put, so skip the live move.
+    if (!copyDrag_) {
+        auto& a = clip->chordAnnotations[static_cast<size_t>(dragAnnIndex_)];
+        a.beatPosition = dragNewStart_;
+        a.lengthBeats = dragNewEnd_ - dragNewStart_;
+    }
     repaint();
 }
 
@@ -188,6 +191,23 @@ void ChordClipContent::commitBlockDrag() {
 
     const bool moved = std::abs(dragNewStart_ - dragOrigStart_) > 1e-6 ||
                        std::abs(dragNewEnd_ - dragOrigEnd_) > 1e-6;
+
+    // Alt-drag: drop a copy of the chord at the target bar, leaving the original.
+    if (copyDrag_) {
+        if (moved) {
+            std::vector<int> pitches;
+            for (const auto& dn : dragNotes_)
+                pitches.push_back(dn.note);
+            insertChordAtBeat(dragNewStart_, pitches);
+        }
+        copyDrag_ = false;
+        blockDrag_ = BlockDrag::None;
+        dragAnnIndex_ = -1;
+        dragNotes_.clear();
+        repaint();
+        return;
+    }
+
     if (moved) {
         const double startDelta = dragNewStart_ - dragOrigStart_;
         for (const auto& dn : dragNotes_) {
@@ -237,7 +257,13 @@ void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
     if (e.y < chordRowHeight() && e.x >= chordLaneLeftX()) {
         const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
         if (idx >= 0) {
-            beginBlockDrag(idx, dragModeForBlock(idx, e.x), e.x);
+            if (e.mods.isPopupMenu()) {
+                showChordContextMenu(idx);
+                return;
+            }
+            const auto mode = dragModeForBlock(idx, e.x);
+            copyDrag_ = (mode == BlockDrag::Move && e.mods.isAltDown());
+            beginBlockDrag(idx, mode, e.x);
             return;
         }
         if (selectedGroup_ != 0) {
@@ -357,6 +383,99 @@ void ChordClipContent::replaceChordNotes(int annIndex, const std::vector<int>& p
 
     redetectChords();
     repaint();
+}
+
+std::vector<int> ChordClipContent::chordPitches(int annIndex) const {
+    std::vector<int> pitches;
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return pitches;
+    const int group = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
+    for (const auto& n : clip->midiNotes)
+        if (group != 0 && n.chordGroup == group)
+            pitches.push_back(n.noteNumber);
+    return pitches;
+}
+
+void ChordClipContent::deleteChord(int annIndex) {
+    const auto clipId = getEditingClipId();
+    auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return;
+    const int group = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
+
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+        if (group != 0 && clip->midiNotes[i].chordGroup == group)
+            indices.push_back(i);
+    std::sort(indices.rbegin(), indices.rend());
+
+    auto& undo = magda::UndoManager::getInstance();
+    for (size_t idx : indices)
+        undo.executeCommand(std::make_unique<magda::DeleteMidiNoteCommand>(clipId, idx));
+
+    if (selectedGroup_ == group)
+        selectedGroup_ = 0;
+    redetectChords();
+    repaint();
+}
+
+void ChordClipContent::duplicateChord(int annIndex) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return;
+    const auto pitches = chordPitches(annIndex);
+    if (pitches.empty())
+        return;
+    const auto& ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];
+
+    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    if (auto* controller = magda::TimelineController::getCurrent())
+        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
+    const double bar = std::max(1, beatsPerBar);
+
+    // Drop the copy in the next free bar after the chord.
+    double t = ann.beatPosition + std::max(bar, ann.lengthBeats);
+    for (int i = 0; i < 128; ++i, t += bar) {
+        if (annotationIndexAtBeat(t + 0.001) < 0) {
+            insertChordAtBeat(t, pitches);
+            break;
+        }
+    }
+}
+
+void ChordClipContent::showChordContextMenu(int annIndex) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return;
+    selectedGroup_ = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
+    repaint();
+    const double bar = clip->chordAnnotations[static_cast<size_t>(annIndex)].beatPosition;
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Edit...");
+    menu.addItem(2, "Duplicate");
+    menu.addSeparator();
+    menu.addItem(3, "Delete");
+    menu.showMenuAsync(
+        juce::PopupMenu::Options(),
+        [safeThis = juce::Component::SafePointer<ChordClipContent>(this), bar](int result) {
+            if (safeThis == nullptr)
+                return;
+            const int idx = safeThis->annotationIndexAtBeat(bar + 0.001);
+            if (idx < 0)
+                return;
+            if (result == 1)
+                safeThis->openChordEditor(idx);
+            else if (result == 2)
+                safeThis->duplicateChord(idx);
+            else if (result == 3)
+                safeThis->deleteChord(idx);
+        });
 }
 
 bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches) {

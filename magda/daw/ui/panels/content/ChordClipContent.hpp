@@ -68,6 +68,11 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     void openChordEditor(int annIndex);
     // Replace the chord at annIndex with the given pitches (same bar/length).
     void replaceChordNotes(int annIndex, const std::vector<int>& pitches);
+    // Block ops.
+    void deleteChord(int annIndex);
+    void duplicateChord(int annIndex);
+    void showChordContextMenu(int annIndex);
+    std::vector<int> chordPitches(int annIndex) const;
     bool isOnLaneDivider(juce::Point<int> p) const;
     int maxLaneHeight() const;
 
@@ -88,6 +93,7 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     bool draggingDivider_ = false;
 
     int selectedGroup_ = 0;
+    bool copyDrag_ = false;  // alt-drag: copy the chord instead of moving it
     BlockDrag blockDrag_ = BlockDrag::None;
     int dragAnnIndex_ = -1;
     double dragStartMouseBeat_ = 0.0;
