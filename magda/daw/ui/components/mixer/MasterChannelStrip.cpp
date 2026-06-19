@@ -11,7 +11,6 @@
 #include "../../themes/MixerMetrics.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "BinaryData.h"
-#include "LevelMeterBallistics.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
@@ -182,124 +181,6 @@ class MasterChannelStrip::DbScale : public juce::Component {
             g.drawText(labelText, static_cast<int>(labelLeftPad), static_cast<int>(textY),
                        static_cast<int>(labelWidth), static_cast<int>(textHeight),
                        juce::Justification::centredLeft, false);
-        }
-    }
-};
-
-// Stereo level meter component (L/R bars) with smooth ballistics and peak hold
-class MasterChannelStrip::LevelMeter : public juce::Component, private juce::Timer {
-  public:
-    ~LevelMeter() override {
-        stopTimer();
-    }
-
-    void setLevel(float newLevel) {
-        setLevels(newLevel, newLevel);
-    }
-
-    void setLevels(float left, float right) {
-        targetL_ = juce::jlimit(0.0f, 2.0f, left);
-        targetR_ = juce::jlimit(0.0f, 2.0f, right);
-
-        float leftDb = gainToDb(targetL_);
-        float rightDb = gainToDb(targetR_);
-        if (leftDb > peakLeftDb_) {
-            peakLeftDb_ = leftDb;
-            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
-        }
-        if (rightDb > peakRightDb_) {
-            peakRightDb_ = rightDb;
-            peakRightHold_ = level_meter_ballistics::peakHoldMs;
-        }
-
-        if (!isTimerRunning()) {
-            lastUpdateMs_ = level_meter_ballistics::restartClock();
-            startTimerHz(60);
-        }
-    }
-
-    float getLevel() const {
-        return std::max(displayL_, displayR_);
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-
-        const float gap = 1.0f;
-        float barWidth = (bounds.getWidth() - gap) / 2.0f;
-
-        auto leftBounds = bounds.withWidth(barWidth);
-        auto rightBounds = bounds.withWidth(barWidth).withX(bounds.getX() + barWidth + gap);
-
-        drawMeterBar(g, leftBounds, displayL_, peakLeftDb_);
-        drawMeterBar(g, rightBounds, displayR_, peakRightDb_);
-    }
-
-  private:
-    float targetL_ = 0.0f, targetR_ = 0.0f;
-    float displayL_ = 0.0f, displayR_ = 0.0f;
-    float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
-    float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
-    double lastUpdateMs_ = 0.0;
-
-    void timerCallback() override {
-        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
-        bool changed = false;
-        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
-        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
-                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
-                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
-        if (changed)
-            repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
-                 peakRightDb_ <= MIN_DB) {
-            stopTimer();
-            lastUpdateMs_ = 0.0;
-        }
-    }
-
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRoundedRectangle(bounds, 1.0f);
-
-        float displayLevel = dbToMeterPos(gainToDb(level));
-        float meterHeight = bounds.getHeight() * displayLevel;
-
-        if (meterHeight >= 1.0f) {
-            auto fullBounds = bounds;
-            auto fillBounds = bounds;
-            fillBounds = fillBounds.removeFromBottom(meterHeight);
-
-            const juce::Colour green(0xFF55AA55);
-            const juce::Colour yellow(0xFFAAAA55);
-            const juce::Colour red(0xFFAA5555);
-
-            float yellowPos = dbToMeterPos(-12.0f);
-            float redPos = dbToMeterPos(0.0f);
-            constexpr float fade = 0.03f;
-
-            juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f,
-                                      fullBounds.getY(), false);
-            grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-            grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
-            grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-            grad.addColour(std::min(1.0, (double)redPos + fade), red);
-
-            g.setGradientFill(grad);
-            g.fillRoundedRectangle(fillBounds, 1.0f);
-        }
-
-        // Peak hold indicator
-        float peakPos = dbToMeterPos(peakDb);
-        if (peakPos > 0.01f) {
-            float peakY = bounds.getBottom() - bounds.getHeight() * peakPos;
-            auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
-                              : peakDb >= -12.0f ? juce::Colour(0xFFAAAA55)
-                                                 : juce::Colour(0xFF55AA55);
-            g.setColour(peakColour.withAlpha(0.9f));
-            g.fillRect(bounds.getX(), peakY, bounds.getWidth(), 1.5f);
         }
     }
 };

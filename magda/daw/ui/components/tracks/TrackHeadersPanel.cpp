@@ -26,7 +26,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../automation/AutomationMenu.hpp"
-#include "../mixer/LevelMeterBallistics.hpp"
+#include "../mixer/LevelMeter.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
 
@@ -148,140 +148,6 @@ float dbToMeterPos(float db) {
     // Apply power curve: y = x^3
     return std::pow(normalized, 3.0f);
 }
-
-// Simple stereo level meter component for track headers
-// Uses smooth ballistics (fast attack, exponential decay) and peak hold.
-class TrackMeter : public juce::Component, private juce::Timer {
-  public:
-    TrackMeter() = default;
-    ~TrackMeter() override {
-        stopTimer();
-    }
-
-    void setLevels(float left, float right) {
-        targetL_ = juce::jlimit(0.0f, 2.0f, left);
-        targetR_ = juce::jlimit(0.0f, 2.0f, right);
-
-        // Update peak hold
-        float leftDb = gainToDb(targetL_);
-        float rightDb = gainToDb(targetR_);
-        if (leftDb > peakLeftDb_) {
-            peakLeftDb_ = leftDb;
-            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
-        }
-        if (rightDb > peakRightDb_) {
-            peakRightDb_ = rightDb;
-            peakRightHold_ = level_meter_ballistics::peakHoldMs;
-        }
-
-        if (!isTimerRunning()) {
-            lastUpdateMs_ = level_meter_ballistics::restartClock();
-            startTimerHz(60);
-        }
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-        const float gap = 2.0f;
-
-        // Split into L/R bars with gap
-        float barWidth = (bounds.getWidth() - gap) / 2.0f;
-        auto leftBar = bounds.withWidth(barWidth);
-        auto rightBar = bounds.withWidth(barWidth).withX(bounds.getX() + barWidth + gap);
-
-        // Background for each bar (darker background)
-        g.setColour(juce::Colour(0xFF1A1A1A));
-        g.fillRoundedRectangle(leftBar, 2.0f);
-        g.fillRoundedRectangle(rightBar, 2.0f);
-
-        // Draw border so meters are always visible
-        g.setColour(juce::Colour(0xFF404040));
-        g.drawRoundedRectangle(leftBar, 2.0f, 1.0f);
-        g.drawRoundedRectangle(rightBar, 2.0f, 1.0f);
-
-        // Draw level fills
-        drawMeterBar(g, leftBar, displayL_, peakLeftDb_);
-        drawMeterBar(g, rightBar, displayR_, peakRightDb_);
-
-        // 0dB tick mark (aligned with header separator)
-        if (nameRowY_ >= 0) {
-            float localY = static_cast<float>(nameRowY_ - getY());
-            if (localY > 0 && localY < bounds.getBottom()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-                g.drawHorizontalLine(static_cast<int>(localY), bounds.getX(), bounds.getRight());
-            }
-        }
-    }
-
-    void setNameRowY(int y) {
-        nameRowY_ = y;
-    }
-
-  private:
-    float targetL_ = 0.0f, targetR_ = 0.0f;
-    float displayL_ = 0.0f, displayR_ = 0.0f;
-    float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
-    float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
-    int nameRowY_ = -1;
-    double lastUpdateMs_ = 0.0;
-
-    void timerCallback() override {
-        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
-        bool changed = false;
-        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
-        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
-                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
-                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
-        if (changed)
-            repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
-                 peakRightDb_ <= MIN_DB) {
-            stopTimer();
-            lastUpdateMs_ = 0.0;
-        }
-    }
-
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
-        if (level > 0.0f) {
-            float meterPos = dbToMeterPos(gainToDb(level));
-            float meterHeight = bounds.getHeight() * meterPos;
-            auto fillBounds = bounds;
-            auto fullBounds = bounds;
-            fillBounds = fillBounds.removeFromBottom(meterHeight);
-
-            const juce::Colour green(0xFF55AA55);
-            const juce::Colour yellow(0xFFAAAA55);
-            const juce::Colour red(0xFFAA5555);
-
-            float yellowPos = dbToMeterPos(-12.0f);
-            float redPos = dbToMeterPos(0.0f);
-            constexpr float fade = 0.03f;
-
-            juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f,
-                                      fullBounds.getY(), false);
-            grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-            grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
-            grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-            grad.addColour(std::min(1.0, (double)redPos + fade), red);
-
-            g.setGradientFill(grad);
-            g.fillRect(fillBounds);
-        }
-
-        // Peak hold indicator
-        float peakPos = dbToMeterPos(peakDb);
-        if (peakPos > 0.01f) {
-            float peakY = bounds.getBottom() - bounds.getHeight() * peakPos;
-            auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
-                              : peakDb >= -12.0f ? juce::Colour(0xFFAAAA55)
-                                                 : juce::Colour(0xFF55AA55);
-            g.setColour(peakColour.withAlpha(0.9f));
-            g.fillRect(bounds.getX(), peakY, bounds.getWidth(), 1.5f);
-        }
-    }
-};
 
 // MIDI activity indicator - small blinking dot
 class MidiActivityIndicator : public juce::Component {
@@ -524,7 +390,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Send labels — created dynamically in setupTrackHeaderWithId based on actual sends
 
     // Meter component (stereo level display)
-    meterComponent = std::make_unique<TrackMeter>();
+    meterComponent = std::make_unique<LevelMeter>();
     // Levels will be set by timerCallback reading from AudioBridge
 
     // MIDI activity indicator
@@ -664,7 +530,7 @@ void TrackHeadersPanel::timerCallback() {
         MeterData data;
         if (meteringBuffer.popLevels(header->trackId, data)) {
             if (header->meterComponent) {
-                static_cast<TrackMeter*>(header->meterComponent.get())
+                static_cast<LevelMeter*>(header->meterComponent.get())
                     ->setLevels(data.peakL, data.peakR);
             }
         }
@@ -2125,7 +1991,6 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
     // Audio meter spans full track height
     header.meterComponent->setBounds(meterArea);
     header.meterComponent->setVisible(true);
-    static_cast<TrackMeter*>(header.meterComponent.get())->setNameRowY(header.nameRowBottomY);
 
     // MIDI indicator in top portion, session mode button in bottom portion
     const int sessionBtnSize = 14;
