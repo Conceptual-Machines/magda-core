@@ -430,9 +430,14 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     chordAuditionButton = std::make_unique<magda::SvgButton>(
         "ChordAudition", BinaryData::speaker_on_svg, BinaryData::speaker_on_svgSize);
     chordAuditionButton->setTooltip("Preview chords on playback");
-    chordAuditionButton->setNormalColor(
-        DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
-    chordAuditionButton->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    // Styled to match the S / monitor chips beside it: solid SURFACE chip when
+    // off (light speaker), solid ACCENT_BLUE chip when audible (dark speaker on
+    // the fill, like the dark-on-orange/green text of solo/monitor).
+    chordAuditionButton->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    chordAuditionButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    chordAuditionButton->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    chordAuditionButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    chordAuditionButton->setIconPadding(4.0f);
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -2186,8 +2191,7 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
         header.volumeLabel->setBounds(content.removeFromLeft(mixW));
         header.volumeLabel->setVisible(true);
         content.removeFromLeft(gap);
-        header.chordAuditionButton->setBounds(
-            content.removeFromLeft(iconW).withSizeKeepingCentre(iconW, iconW));
+        header.chordAuditionButton->setBounds(content.removeFromLeft(iconW));
         header.chordAuditionButton->setVisible(true);
         header.chordAuditionButton->setActive(!header.muted);
         content.removeFromLeft(gap);
@@ -2195,8 +2199,7 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
         header.soloButton->setBounds(content.removeFromLeft(soloW));
         header.soloButton->setVisible(true);
         content.removeFromLeft(gap);
-        header.monitorButton->setBounds(
-            content.removeFromLeft(iconW).withSizeKeepingCentre(iconW, iconW));
+        header.monitorButton->setBounds(content.removeFromLeft(iconW));
         header.monitorButton->setVisible(true);
         header.muteButton->setVisible(false);
         header.masterMuteButton->setVisible(false);
