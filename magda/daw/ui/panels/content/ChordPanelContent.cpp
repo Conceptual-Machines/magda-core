@@ -883,7 +883,6 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
     add11thsBtn_->setVisible(isKS);
     add13thsBtn_->setVisible(isKS);
     addAltBtn_->setVisible(isKS);
-    notationBtn_->setVisible(isKS);
     scaleFilterBtn_->setVisible(isKS);
 
     // Tab button state
@@ -1920,8 +1919,6 @@ void ChordPanelContent::resized() {
             auto mid = footer.reduced(PADDING, 0);
             scaleFilterBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
             mid.removeFromRight(4);
-            notationBtn_->setBounds(mid.removeFromRight(48).reduced(0, 2));
-            mid.removeFromRight(4);
             noveltyLabel_->setBounds(mid.removeFromLeft(80).reduced(0, 2));
             mid.removeFromLeft(4);
             add7thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
@@ -1945,9 +1942,12 @@ void ChordPanelContent::resized() {
     // Position history blocks in detection column
     {
         auto area = detectionCol_.reduced(PADDING, 0);
-        area.removeFromTop(SECTION_HEADER_HEIGHT);  // "CHORD" header
-        area.removeFromTop(44);                     // chord display box
-        area.removeFromTop(8);                      // gap
+        // "CHORD" header - notation toggle sits at its right, always visible
+        // (independent of the K&S / AI suggestion tab).
+        auto chordHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
+        notationBtn_->setBounds(chordHeader.removeFromRight(48).reduced(0, 2));
+        area.removeFromTop(44);  // chord display box
+        area.removeFromTop(8);   // gap
 
         auto histHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
         clearHistoryBtn_->setBounds(histHeader.removeFromRight(22).reduced(0, 2));
