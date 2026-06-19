@@ -13,6 +13,50 @@
 
 namespace magda::daw::ui {
 
+int ChordClipContent::maxLaneHeight() const {
+    return std::max(MIN_LANE_HEIGHT, getHeight() - RULER_HEIGHT);
+}
+
+bool ChordClipContent::isOnLaneDivider(juce::Point<int> p) const {
+    // The divider sits at the bottom edge of the chord lane (above the ruler).
+    return std::abs(p.y - laneHeight_) <= DIVIDER_HIT;
+}
+
+void ChordClipContent::mouseMove(const juce::MouseEvent& e) {
+    if (isOnLaneDivider(e.getPosition())) {
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        return;
+    }
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+    PianoRollContent::mouseMove(e);
+}
+
+void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
+    if (isOnLaneDivider(e.getPosition())) {
+        draggingDivider_ = true;
+        return;
+    }
+    PianoRollContent::mouseDown(e);
+}
+
+void ChordClipContent::mouseDrag(const juce::MouseEvent& e) {
+    if (draggingDivider_) {
+        laneHeight_ = juce::jlimit(MIN_LANE_HEIGHT, maxLaneHeight(), e.y);
+        resized();
+        repaint();
+        return;
+    }
+    PianoRollContent::mouseDrag(e);
+}
+
+void ChordClipContent::mouseUp(const juce::MouseEvent& e) {
+    if (draggingDivider_) {
+        draggingDivider_ = false;
+        return;
+    }
+    PianoRollContent::mouseUp(e);
+}
+
 bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
     const auto clipId = getEditingClipId();
     if (clipId == magda::INVALID_CLIP_ID)

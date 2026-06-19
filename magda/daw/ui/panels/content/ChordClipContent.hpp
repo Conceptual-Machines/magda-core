@@ -26,9 +26,17 @@ class ChordClipContent : public PianoRollContent {
         return {PanelContentType::ChordClipView, "Chords", "Chord progression editor", "ChordClip"};
     }
 
+    // The chord lane / note-grid divider is draggable: drag it down to give the
+    // chord lane more room (all the way down hides the grid), up to reveal more
+    // of the grid for editing voicings.
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
   protected:
     int chordRowHeight() const override {
-        return 110;
+        return laneHeight_;
     }
     bool chordFocusMode() const override {
         return true;
@@ -42,6 +50,14 @@ class ChordClipContent : public PianoRollContent {
     bool onChordRowClicked(double clipRelativeBeat) override;
 
   private:
+    bool isOnLaneDivider(juce::Point<int> p) const;
+    int maxLaneHeight() const;
+
+    static constexpr int MIN_LANE_HEIGHT = 48;
+    static constexpr int DIVIDER_HIT = 4;
+    int laneHeight_ = 110;
+    bool draggingDivider_ = false;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordClipContent)
 };
 
