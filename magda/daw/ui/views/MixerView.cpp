@@ -1547,6 +1547,7 @@ void MixerView::ChannelStrip::resized() {
     const int bottomStrip = 4;
     bounds.removeFromBottom(bottomStrip);
     peakLabel->setBounds(bounds.removeFromBottom(labelHeight));
+    peakLabel->setVisible(!isChord);  // no peak readout without a meter
 
     // Reserve room above the meter so the top dB label (+6) isn't clipped by
     // the always-on-top resize handle: the scale draws half a line above the
@@ -1568,6 +1569,8 @@ void MixerView::ChannelStrip::resized() {
     meterArea_ = layoutArea;
     faderArea_ = layoutArea;
     levelMeter->setBounds(meterArea_);
+    // Chord track emits no audio yet: just the fader, no meter underlaid.
+    levelMeter->setVisible(!isChord);
     volumeSlider->setBounds(faderArea_);
     volumeSlider->toFront(false);  // thumb sits on top of the meter
 
