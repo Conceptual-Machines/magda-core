@@ -96,6 +96,12 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     virtual bool chordFocusMode() const {
         return false;
     }
+    // Width of the left icon strip. A chord-focus subclass returns 0 to drop the
+    // strip entirely (its toggles - chord/fold/velocity/CC - are all irrelevant
+    // there).
+    virtual int sidebarWidth() const {
+        return SIDEBAR_WIDTH;
+    }
 
   private:
     // MidiEditorContent virtual implementations

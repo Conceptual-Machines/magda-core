@@ -614,7 +614,6 @@ void BottomPanel::resized() {
         bool hasMidiControls =
             content && (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
                         content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
-                        content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
                         content->getContentType() == daw::ui::PanelContentType::WaveformEditor);
         if (hasMidiControls)
             layoutMidiHeaderControls(headerBar_->getLocalBounds());
@@ -1088,8 +1087,7 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
     // Add MIDI controls if incoming is a MIDI editor
     const bool isMidiEditor =
         incoming && (incoming->getContentType() == daw::ui::PanelContentType::PianoRoll ||
-                     incoming->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
-                     incoming->getContentType() == daw::ui::PanelContentType::ChordClipView);
+                     incoming->getContentType() == daw::ui::PanelContentType::DrumGridClipView);
     const bool isWaveformEditor =
         incoming && incoming->getContentType() == daw::ui::PanelContentType::WaveformEditor;
     if (isMidiEditor || isWaveformEditor)
