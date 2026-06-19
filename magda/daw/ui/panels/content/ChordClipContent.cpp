@@ -24,133 +24,77 @@ namespace {
 using magda::music::ChordQuality;
 using magda::music::ChordRoot;
 
-// The editor splits the flat ChordQuality into a base triad/type and a separate
-// extension. These map between the two representations.
+// The editor splits the flat ChordQuality into a Base type and a Base-dependent
+// Extension. This table lists every quality grouped under its base so the
+// Extension dropdown can offer all of them.
+struct ExtOption {
+    const char* label;
+    ChordQuality quality;
+};
+
 const char* const kBaseLabels[] = {"Major", "Minor", "Dim",       "Aug",
                                    "Sus2",  "Sus4",  "5 (Power)", "Dom"};
-const char* const kExtLabels[] = {"None", "6", "7", "9", "11", "13", "add9"};
+
+const std::vector<std::vector<ExtOption>>& baseExtensions() {
+    using Q = ChordQuality;
+    static const std::vector<std::vector<ExtOption>> table = {
+        // Major
+        {{"None", Q::Major},
+         {"add2", Q::MajorAdd2},
+         {"add4", Q::MajorAdd4},
+         {"6", Q::MajorAdd6},
+         {"7", Q::Major7},
+         {"9", Q::Major9},
+         {"add9", Q::MajorAdd9},
+         {"maj7 add13", Q::Major7Add13}},
+        // Minor
+        {{"None", Q::Minor},
+         {"add2", Q::MinorAdd2},
+         {"add4", Q::MinorAdd4},
+         {"add9", Q::MinorAdd9},
+         {"7", Q::Minor7},
+         {"9", Q::Minor9},
+         {"11", Q::Minor11},
+         {"13", Q::Minor13},
+         {"7 add2", Q::Minor7Add2},
+         {"7 add4", Q::Minor7Add4},
+         {"7 add6", Q::Minor7Add6},
+         {"7 add2/6", Q::Minor7Add2Add6},
+         {"7 add2/4", Q::Minor7Add2Add4},
+         {"7 add4/6", Q::Minor7Add4Add6},
+         {"7 add2/4/6", Q::Minor7Add2Add4Add6}},
+        // Diminished
+        {{"None", Q::Diminished}, {"7", Q::Diminished7}, {"9", Q::Diminished9}},
+        // Augmented
+        {{"None", Q::Augmented}},
+        // Sus2
+        {{"None", Q::Sus2}, {"6", Q::Sus2Add6}},
+        // Sus4
+        {{"None", Q::Sus4}, {"6", Q::Sus4Add6}},
+        // Power
+        {{"None", Q::Power}},
+        // Dominant
+        {{"7", Q::Dominant7}, {"9", Q::Dominant9}, {"11", Q::Dominant11}, {"13", Q::Dominant13}},
+    };
+    return table;
+}
 
 ChordQuality qualityFromParts(int base, int ext) {
-    using Q = ChordQuality;
-    switch (base) {
-        case 0:  // Major
-            switch (ext) {
-                case 1:
-                    return Q::MajorAdd6;
-                case 2:
-                    return Q::Major7;
-                case 3:
-                    return Q::Major9;
-                case 5:
-                    return Q::Major7Add13;
-                case 6:
-                    return Q::MajorAdd9;
-                default:
-                    return Q::Major;
-            }
-        case 1:  // Minor
-            switch (ext) {
-                case 1:
-                    return Q::Minor7Add6;
-                case 2:
-                    return Q::Minor7;
-                case 3:
-                    return Q::Minor9;
-                case 4:
-                    return Q::Minor11;
-                case 5:
-                    return Q::Minor13;
-                case 6:
-                    return Q::MinorAdd9;
-                default:
-                    return Q::Minor;
-            }
-        case 2:  // Diminished
-            return ext == 2 ? Q::Diminished7 : ext == 3 ? Q::Diminished9 : Q::Diminished;
-        case 3:
-            return Q::Augmented;
-        case 4:
-            return ext == 1 ? Q::Sus2Add6 : Q::Sus2;
-        case 5:
-            return ext == 1 ? Q::Sus4Add6 : Q::Sus4;
-        case 6:
-            return Q::Power;
-        case 7:  // Dominant
-            switch (ext) {
-                case 3:
-                    return Q::Dominant9;
-                case 4:
-                    return Q::Dominant11;
-                case 5:
-                    return Q::Dominant13;
-                case 0:
-                    return Q::Major;
-                default:
-                    return Q::Dominant7;
-            }
-        default:
-            return Q::Major;
-    }
+    const auto& t = baseExtensions();
+    if (base < 0 || base >= static_cast<int>(t.size()) || t[static_cast<size_t>(base)].empty())
+        return ChordQuality::Major;
+    const auto& exts = t[static_cast<size_t>(base)];
+    ext = juce::jlimit(0, static_cast<int>(exts.size()) - 1, ext);
+    return exts[static_cast<size_t>(ext)].quality;
 }
 
 std::pair<int, int> partsFromQuality(ChordQuality q) {
-    using Q = ChordQuality;
-    switch (q) {
-        case Q::Major:
-            return {0, 0};
-        case Q::MajorAdd6:
-            return {0, 1};
-        case Q::Major7:
-            return {0, 2};
-        case Q::Major9:
-            return {0, 3};
-        case Q::Major7Add13:
-            return {0, 5};
-        case Q::MajorAdd9:
-            return {0, 6};
-        case Q::Minor:
-            return {1, 0};
-        case Q::Minor7Add6:
-            return {1, 1};
-        case Q::Minor7:
-            return {1, 2};
-        case Q::Minor9:
-            return {1, 3};
-        case Q::Minor11:
-            return {1, 4};
-        case Q::Minor13:
-            return {1, 5};
-        case Q::MinorAdd9:
-            return {1, 6};
-        case Q::Diminished:
-            return {2, 0};
-        case Q::Diminished7:
-            return {2, 2};
-        case Q::Diminished9:
-            return {2, 3};
-        case Q::Augmented:
-            return {3, 0};
-        case Q::Sus2:
-            return {4, 0};
-        case Q::Sus2Add6:
-            return {4, 1};
-        case Q::Sus4:
-            return {5, 0};
-        case Q::Sus4Add6:
-            return {5, 1};
-        case Q::Power:
-            return {6, 0};
-        case Q::Dominant7:
-            return {7, 2};
-        case Q::Dominant9:
-            return {7, 3};
-        case Q::Dominant11:
-            return {7, 4};
-        case Q::Dominant13:
-            return {7, 5};
-        default:
-            return {0, 0};
-    }
+    const auto& t = baseExtensions();
+    for (int b = 0; b < static_cast<int>(t.size()); ++b)
+        for (int e = 0; e < static_cast<int>(t[static_cast<size_t>(b)].size()); ++e)
+            if (t[static_cast<size_t>(b)][static_cast<size_t>(e)].quality == q)
+                return {b, e};
+    return {0, 0};
 }
 
 /// Root / base-quality / extension / octave / inversion editor (CallOutBox).
@@ -161,20 +105,13 @@ class ChordEditorPopup : public juce::Component {
     ChordEditorPopup(ChordRoot root, ChordQuality quality, int octave, int inversion) {
         const auto [base, ext] = partsFromQuality(quality);
 
-        auto wire = [this](juce::ComboBox& c) {
+        auto style = [this](juce::ComboBox& c) {
             c.setLookAndFeel(&laf_);
             c.setColour(juce::ComboBox::backgroundColourId,
                         DarkTheme::getColour(DarkTheme::SURFACE));
             c.setColour(juce::ComboBox::textColourId,
                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             c.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-            c.onChange = [this] {
-                if (onChange)
-                    onChange(static_cast<ChordRoot>(rootCombo_.getSelectedId() - 1),
-                             qualityFromParts(baseCombo_.getSelectedId() - 1,
-                                              extCombo_.getSelectedId() - 1),
-                             octaveCombo_.getSelectedId() - 1, inversionCombo_.getSelectedId() - 1);
-            };
             addAndMakeVisible(c);
         };
 
@@ -182,30 +119,36 @@ class ChordEditorPopup : public juce::Component {
             rootCombo_.addItem(magda::music::ChordUtils::rootToString(static_cast<ChordRoot>(i)),
                                i + 1);
         rootCombo_.setSelectedId(static_cast<int>(root) + 1, juce::dontSendNotification);
+        rootCombo_.onChange = [this] { fireChange(); };
 
         for (int i = 0; i < 8; ++i)
             baseCombo_.addItem(kBaseLabels[i], i + 1);
         baseCombo_.setSelectedId(base + 1, juce::dontSendNotification);
+        baseCombo_.onChange = [this] {
+            populateExt(baseCombo_.getSelectedId() - 1, 0);
+            fireChange();
+        };
 
-        for (int i = 0; i < 7; ++i)
-            extCombo_.addItem(kExtLabels[i], i + 1);
-        extCombo_.setSelectedId(ext + 1, juce::dontSendNotification);
+        populateExt(base, ext);
+        extCombo_.onChange = [this] { fireChange(); };
 
         for (int o = 0; o <= 8; ++o)
             octaveCombo_.addItem("Octave " + juce::String(o), o + 1);
         octaveCombo_.setSelectedId(juce::jlimit(0, 8, octave) + 1, juce::dontSendNotification);
+        octaveCombo_.onChange = [this] { fireChange(); };
 
         for (int inv = 0; inv <= 3; ++inv)
             inversionCombo_.addItem(inv == 0 ? "Root position" : ("Inversion " + juce::String(inv)),
                                     inv + 1);
         inversionCombo_.setSelectedId(juce::jlimit(0, 3, inversion) + 1,
                                       juce::dontSendNotification);
+        inversionCombo_.onChange = [this] { fireChange(); };
 
-        wire(rootCombo_);
-        wire(baseCombo_);
-        wire(extCombo_);
-        wire(octaveCombo_);
-        wire(inversionCombo_);
+        style(rootCombo_);
+        style(baseCombo_);
+        style(extCombo_);
+        style(octaveCombo_);
+        style(inversionCombo_);
 
         setSize(200, 5 * 30 + 8);
     }
@@ -224,6 +167,26 @@ class ChordEditorPopup : public juce::Component {
     }
 
   private:
+    void populateExt(int base, int selectExt) {
+        extCombo_.clear(juce::dontSendNotification);
+        const auto& t = baseExtensions();
+        if (base < 0 || base >= static_cast<int>(t.size()))
+            return;
+        const auto& exts = t[static_cast<size_t>(base)];
+        for (int i = 0; i < static_cast<int>(exts.size()); ++i)
+            extCombo_.addItem(exts[static_cast<size_t>(i)].label, i + 1);
+        extCombo_.setSelectedId(juce::jlimit(0, static_cast<int>(exts.size()) - 1, selectExt) + 1,
+                                juce::dontSendNotification);
+    }
+
+    void fireChange() {
+        if (onChange)
+            onChange(
+                static_cast<ChordRoot>(rootCombo_.getSelectedId() - 1),
+                qualityFromParts(baseCombo_.getSelectedId() - 1, extCombo_.getSelectedId() - 1),
+                octaveCombo_.getSelectedId() - 1, inversionCombo_.getSelectedId() - 1);
+    }
+
     InspectorComboBoxLookAndFeel laf_;
     juce::ComboBox rootCombo_, baseCombo_, extCombo_, octaveCombo_, inversionCombo_;
 };
