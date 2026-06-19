@@ -337,6 +337,35 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
         // based on whether the track is selected or record-armed.
     }
 
+    // The chord track ships with a Chord Engine (the authoring/suggestion UI
+    // the chord panel binds to) followed by a default instrument, so chord
+    // previews are audible out of the box. Both are internal devices; the
+    // pluginIds mirror their xmlTypeNames. Done here so the menu action and
+    // ensureChordTrack() both yield a fully-formed chord track.
+    if (type == TrackType::Chord) {
+        DeviceInfo engine;
+        engine.name = "Chord Engine";
+        engine.manufacturer = "MAGDA";
+        engine.pluginId = "midichordengine";
+        engine.uniqueId = "midichordengine";
+        engine.fileOrIdentifier = "midichordengine";
+        engine.isInstrument = false;
+        engine.deviceType = DeviceType::MIDI;
+        engine.format = PluginFormat::Internal;
+        addDeviceToTrack(trackId, engine);
+
+        DeviceInfo instrument;
+        instrument.name = "4OSC";
+        instrument.manufacturer = "MAGDA";
+        instrument.pluginId = "4osc";
+        instrument.uniqueId = "4osc";
+        instrument.fileOrIdentifier = "4osc";
+        instrument.isInstrument = true;
+        instrument.deviceType = DeviceType::Instrument;
+        instrument.format = PluginFormat::Internal;
+        addDeviceToTrack(trackId, instrument);
+    }
+
     return trackId;
 }
 
