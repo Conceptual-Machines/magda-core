@@ -177,6 +177,7 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<juce::TextButton> addAltBtn_;
     std::unique_ptr<juce::TextButton> add11thsBtn_;
     std::unique_ptr<juce::TextButton> add13thsBtn_;
+    std::unique_ptr<juce::TextButton> notationBtn_;  // cycles C / Do / both notation
     std::unique_ptr<magda::SvgButton> scaleFilterBtn_;
     std::unique_ptr<magda::SvgButton> browseBtn_;
     std::unique_ptr<magda::SvgButton> backBtn_;

@@ -7,6 +7,7 @@
 #include "core/MidiFileWriter.hpp"
 #include "core/TrackManager.hpp"
 #include "music/ChordEngine.hpp"
+#include "music/NotationSettings.hpp"
 #include "project/ProjectManager.hpp"
 #include "ui/components/chord/ChordBlockComponent.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
@@ -880,6 +881,7 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
     add11thsBtn_->setVisible(isKS);
     add13thsBtn_->setVisible(isKS);
     addAltBtn_->setVisible(isKS);
+    notationBtn_->setVisible(isKS);
     scaleFilterBtn_->setVisible(isKS);
 
     // Tab button state
@@ -1536,6 +1538,23 @@ void ChordPanelContent::setupFooterControls() {
         return btn;
     };
 
+    // Notation cycle (C / Do / both) - drives the shared NotationSettings, so
+    // it flips both the engine's chord names and the chord-track lane blocks.
+    notationBtn_ =
+        std::make_unique<juce::TextButton>(magda::music::NotationSettings::getInstance().label());
+    notationBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    notationBtn_->setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    notationBtn_->setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    notationBtn_->setTooltip("Note notation: C / Do (solfege) / both");
+    notationBtn_->onClick = [this]() {
+        magda::music::NotationSettings::getInstance().cycle();
+        notationBtn_->setButtonText(magda::music::NotationSettings::getInstance().label());
+        repaint();
+    };
+    addAndMakeVisible(notationBtn_.get());
+
     add7thsBtn_ = makeToggle("7th");
     add7thsBtn_->setToggleState(true, juce::dontSendNotification);
     add7thsBtn_->setTooltip("Include 7th chords (Maj7, min7, dom7, dim7)");
@@ -1897,6 +1916,8 @@ void ChordPanelContent::resized() {
             // K&S footer: novelty / 7th / 9th / 11th / 13th / alt / funnel
             auto mid = footer.reduced(PADDING, 0);
             scaleFilterBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
+            mid.removeFromRight(4);
+            notationBtn_->setBounds(mid.removeFromRight(48).reduced(0, 2));
             mid.removeFromRight(4);
             noveltyLabel_->setBounds(mid.removeFromLeft(80).reduced(0, 2));
             mid.removeFromLeft(4);
