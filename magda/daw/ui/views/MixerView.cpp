@@ -1262,22 +1262,34 @@ void MixerView::ChannelStrip::resized() {
     // Each takes a fixed compact height when its rail toggle is on.
     constexpr int miniAnalyzerHeight = 64;
     // The chord track emits no audio yet, so it never shows the osc / spectrum.
+    // When they're globally enabled it still reserves the same empty space at
+    // the top so its fader stays aligned with the audio channels.
     const bool isChord = trackType_ == TrackType::Chord;
-    const bool showOsc = !isChord && cfg.getMixerShowOscilloscope();
-    const bool showSpec = !isChord && cfg.getMixerShowSpectrum();
-    if (showOsc && miniOscilloscopeUI_) {
-        const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
-        miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
-        miniOscilloscopeUI_->setVisible(true);
-        bounds.removeFromTop(2);
+    const bool oscEnabled = cfg.getMixerShowOscilloscope();
+    const bool specEnabled = cfg.getMixerShowSpectrum();
+    if (oscEnabled && miniOscilloscopeUI_) {
+        if (isChord) {
+            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
+            miniOscilloscopeUI_->setVisible(false);
+        } else {
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
+            miniOscilloscopeUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        }
     } else if (miniOscilloscopeUI_) {
         miniOscilloscopeUI_->setVisible(false);
     }
-    if (showSpec && miniSpectrumUI_) {
-        const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
-        miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
-        miniSpectrumUI_->setVisible(true);
-        bounds.removeFromTop(2);
+    if (specEnabled && miniSpectrumUI_) {
+        if (isChord) {
+            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
+            miniSpectrumUI_->setVisible(false);
+        } else {
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
+            miniSpectrumUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        }
     } else if (miniSpectrumUI_) {
         miniSpectrumUI_->setVisible(false);
     }
