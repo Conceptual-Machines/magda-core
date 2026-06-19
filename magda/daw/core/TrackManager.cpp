@@ -302,7 +302,11 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     TrackInfo track;
     track.id = nextTrackId_++;
     track.type = type;
-    track.name = name.isEmpty() ? generateTrackName() : name;
+    // Chord track defaults to "Chord Track" (still renameable); other tracks get
+    // the generic "N Track".
+    track.name = !name.isEmpty()            ? name
+                 : type == TrackType::Chord ? juce::String("Chord Track")
+                                            : generateTrackName();
     track.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(tracks_.size())));
 
     // Set default routing
@@ -385,7 +389,7 @@ TrackId TrackManager::getChordTrackId() const {
 TrackId TrackManager::ensureChordTrack() {
     if (auto existing = getChordTrackId(); existing != INVALID_TRACK_ID)
         return existing;
-    return createTrack("Chords", TrackType::Chord);
+    return createTrack("", TrackType::Chord);
 }
 
 TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name) {

@@ -422,6 +422,17 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     clip.setMidiContent();
     clip.view = view;
     clip.name = generateClipName(ClipType::MIDI);
+    // Chord-track clips are chord progressions, not generic MIDI clips.
+    if (const auto* nameTrack = TrackManager::getInstance().getTrack(trackId);
+        nameTrack && nameTrack->type == TrackType::Chord) {
+        int n = 1;
+        for (const auto& [id, c] : clips_) {
+            const auto* t = TrackManager::getInstance().getTrack(c.trackId);
+            if (t && t->type == TrackType::Chord)
+                n++;
+        }
+        clip.name = "Progression " + juce::String(n);
+    }
     if (Config::getInstance().getClipColourMode() == 0) {
         const auto* track = TrackManager::getInstance().getTrack(trackId);
         clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));

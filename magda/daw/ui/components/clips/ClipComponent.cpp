@@ -932,6 +932,25 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     fillClippedRoundedRect(g, headerArea.withBottom(headerArea.getBottom() + 2), visibleHeaderArea,
                            headerColour, CORNER_RADIUS);
 
+    // Chord clips show the chord glyph at the left of the header.
+    if (isChordClip(clip) && headerArea.getWidth() > HEADER_HEIGHT + 4) {
+        auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
+        if (iconArea.intersects(g.getClipBounds())) {
+            static auto makeChordIcon = [](juce::Colour fg) {
+                auto icon = juce::Drawable::createFromImageData(BinaryData::iconchordboldm_svg,
+                                                                BinaryData::iconchordboldm_svgSize);
+                if (icon)
+                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
+                return icon;
+            };
+            static auto normalChord = makeChordIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            static auto selectedChord = makeChordIcon(juce::Colours::white);
+            const auto& icon = selected ? selectedChord : normalChord;
+            if (icon)
+                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+    }
+
     // Clip name
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
         auto nameArea = headerArea.withWidth(juce::jmin(headerArea.getWidth(), 300)).reduced(4, 0);
