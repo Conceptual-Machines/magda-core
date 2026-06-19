@@ -1,5 +1,7 @@
 #include "plugins/MidiChordEnginePlugin.hpp"
 
+#include "core/TrackManager.hpp"
+
 namespace magda::daw::audio {
 
 const char* MidiChordEnginePlugin::xmlTypeName = "midichordengine";
@@ -41,6 +43,14 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     if (!fc.bufferForMidiMessages)
         return;
+
+    // Audition muted (chord track speaker off): drop all MIDI here, before it
+    // reaches this engine's detection or the downstream instrument.
+    if (auditionMuted_.load(std::memory_order_relaxed)) {
+        fc.bufferForMidiMessages->clear();
+        heldNoteCount_.store(0, std::memory_order_relaxed);
+        return;
+    }
 
     // Skip recording during preview playback or when plugin is bypassed/disabled
     if (detectionSuppressed_.load(std::memory_order_relaxed) || !isEnabled())
@@ -102,6 +112,19 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 // =============================================================================
 
 void MidiChordEnginePlugin::timerCallback() {
+    // Drop playback MIDI before it enters this engine when the chord track is
+    // muted (audition off) AND the transport is playing. Live authoring while
+    // stopped is unaffected. The chord track is a singleton.
+    {
+        auto& tm = magda::TrackManager::getInstance();
+        const auto chordId = tm.getChordTrackId();
+        const auto* chordTrack =
+            chordId != magda::INVALID_TRACK_ID ? tm.getTrack(chordId) : nullptr;
+        const bool playing = edit.getTransport().isPlaying();
+        auditionMuted_.store(chordTrack != nullptr && chordTrack->muted && playing,
+                             std::memory_order_relaxed);
+    }
+
     if (!isEnabled()) {
         // Flush stale FIFO events by consuming them (safe — we're the reader).
         // Don't call reset() here as it races with the audio thread writer.

@@ -182,6 +182,11 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     // Suppress detection during preview playback
     std::atomic<bool> detectionSuppressed_{false};
 
+    // Audition muted (chord track mute / speaker off): drop all incoming MIDI so
+    // neither this engine's detection nor the downstream instrument sees it.
+    // Polled from the message thread (timerCallback), read on the audio thread.
+    std::atomic<bool> auditionMuted_{false};
+
     // --- Message-thread state ---
     magda::music::ChordSuggestionEngine suggestionEngine_;
     magda::music::KeyModeHistogram keyHistogram_;
