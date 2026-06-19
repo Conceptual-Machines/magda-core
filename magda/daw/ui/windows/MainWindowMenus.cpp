@@ -759,6 +759,14 @@ void MainWindow::setupMenuCallbacks() {
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
+    callbacks.onAddChordTrack = []() {
+        // Chord track is a strict singleton; only create when none exists.
+        if (TrackManager::getInstance().hasChordTrack())
+            return;
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Chord);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
     callbacks.onShowTrackManager = []() { TrackManagerDialog::show(); };
 
     callbacks.onDeleteTrack = [this]() {

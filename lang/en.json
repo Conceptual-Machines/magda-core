@@ -58,6 +58,7 @@
     "track.add_track": "Add Track",
     "track.add_group": "Add Group Track",
     "track.add_aux": "Add Aux Track",
+    "track.add_chord": "Add Chord Track",
     "track.delete": "Delete Track",
     "track.duplicate": "Duplicate Track",
     "track.duplicate_no_content": "Duplicate Track Without Content",

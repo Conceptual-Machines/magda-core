@@ -345,6 +345,20 @@ TrackId TrackManager::createGroupTrack(const juce::String& name) {
     return createTrack(groupName, TrackType::Group);
 }
 
+TrackId TrackManager::getChordTrackId() const {
+    for (const auto& track : tracks_) {
+        if (track.type == TrackType::Chord)
+            return track.id;
+    }
+    return INVALID_TRACK_ID;
+}
+
+TrackId TrackManager::ensureChordTrack() {
+    if (auto existing = getChordTrackId(); existing != INVALID_TRACK_ID)
+        return existing;
+    return createTrack("Chords", TrackType::Chord);
+}
+
 TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name) {
     if (trackIds.size() < 2)
         return INVALID_TRACK_ID;
@@ -747,6 +761,11 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
 
     if (it == tracks_.end()) {
+        return INVALID_TRACK_ID;
+    }
+
+    // The chord track is a strict singleton - never duplicate it.
+    if (it->type == TrackType::Chord) {
         return INVALID_TRACK_ID;
     }
 
