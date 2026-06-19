@@ -170,6 +170,9 @@ class TrackHeadersPanel : public juce::Component,
         // Master-only mute: a speaker toggle matching the inspector/mixer, used
         // in place of the "M" muteButton when isMaster.
         std::unique_ptr<juce::DrawableButton> masterMuteButton;
+        // Chord-track-only: speaker toggle for "preview chords on playback"
+        // (blue = audible, faint grey = silent). Replaces the "M" button.
+        std::unique_ptr<SvgButton> chordAuditionButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
         std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button

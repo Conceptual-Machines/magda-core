@@ -425,6 +425,15 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                                     juce::Colours::transparentBlack);
     }
 
+    // Chord-track audition toggle (speaker): blue when chords are audible on
+    // playback, faint grey when silent.
+    chordAuditionButton = std::make_unique<magda::SvgButton>(
+        "ChordAudition", BinaryData::speaker_on_svg, BinaryData::speaker_on_svgSize);
+    chordAuditionButton->setTooltip("Preview chords on playback");
+    chordAuditionButton->setNormalColor(
+        DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    chordAuditionButton->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     soloButton->setColour(juce::TextButton::buttonColourId,
@@ -1018,6 +1027,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->recordButton);
         addAndMakeVisible(*header->monitorButton);
         addAndMakeVisible(*header->automationButton);
+        addChildComponent(*header->chordAuditionButton);
         addAndMakeVisible(*header->volumeLabel);
         addAndMakeVisible(*header->panLabel);
         addAndMakeVisible(*header->audioInputSelector);
@@ -1752,6 +1762,19 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Chord-track speaker: toggles whether the chord voicing is audible on
+    // playback (it's just the track mute, framed as "preview chords").
+    header.chordAuditionButton->onClick = [this, trackId]() {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
+            auto& header = *trackHeaders[index];
+            header.muted = !header.muted;  // speaker on = audible = not muted
+            header.chordAuditionButton->setActive(!header.muted);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackMuteCommand>(trackId, header.muted));
+        }
+    };
+
     // Solo button callback - updates TrackManager
     header.soloButton->onClick = [this, trackId, getEditTargets]() {
         int index = getVisibleHeaderIndex(trackId);
@@ -2152,27 +2175,33 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     const int rh = 16;  // rowHeight
     const int areaWidth = area.getWidth();
 
-    // Chord track: a single Preview button, nothing else.
-    // Chord track: monitor-only, so volume + mute + solo (mute = audition); no
-    // pan / record / monitor / automation / routing.
+    // Chord track: volume + speaker (audition) + solo + monitor. The speaker
+    // toggle stands in for mute, framed as "preview chords on playback" (blue =
+    // audible, faint grey = silent). No pan / record / automation / routing.
     if (header.isChordTrack) {
         auto row = area.removeFromTop(rh);
         auto content = inner.removeFrom(row, areaWidth);
-        const int mixW = areaWidth * 55 / 100;
-        const int btnsW = areaWidth - mixW - gap;
-        const int btnW = (btnsW - gap) / 2;
+        const int mixW = areaWidth * 52 / 100;
+        const int iconW = 18;
         header.volumeLabel->setBounds(content.removeFromLeft(mixW));
         header.volumeLabel->setVisible(true);
         content.removeFromLeft(gap);
-        header.muteButton->setBounds(content.removeFromLeft(btnW));
-        header.muteButton->setVisible(true);
+        header.chordAuditionButton->setBounds(
+            content.removeFromLeft(iconW).withSizeKeepingCentre(iconW, iconW));
+        header.chordAuditionButton->setVisible(true);
+        header.chordAuditionButton->setActive(!header.muted);
         content.removeFromLeft(gap);
-        header.soloButton->setBounds(content.removeFromLeft(btnW));
+        const int soloW = content.getWidth() - iconW - gap;
+        header.soloButton->setBounds(content.removeFromLeft(soloW));
         header.soloButton->setVisible(true);
+        content.removeFromLeft(gap);
+        header.monitorButton->setBounds(
+            content.removeFromLeft(iconW).withSizeKeepingCentre(iconW, iconW));
+        header.monitorButton->setVisible(true);
+        header.muteButton->setVisible(false);
         header.masterMuteButton->setVisible(false);
         header.panLabel->setVisible(false);
         header.recordButton->setVisible(false);
-        header.monitorButton->setVisible(false);
         header.automationButton->setVisible(false);
         return;
     }
