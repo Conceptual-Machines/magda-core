@@ -13,8 +13,73 @@
 #include "core/TempoUtils.hpp"
 #include "core/UndoManager.hpp"
 #include "music/ChordEngine.hpp"
+#include "music/ChordEnums.hpp"
+#include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+using magda::music::ChordQuality;
+using magda::music::ChordRoot;
+
+/// Compact root / quality / octave / inversion editor shown in a CallOutBox.
+class ChordEditorPopup : public juce::Component {
+  public:
+    std::function<void(ChordRoot, ChordQuality, int octave, int inversion)> onChange;
+
+    ChordEditorPopup(ChordRoot root, ChordQuality quality, int octave, int inversion) {
+        auto wire = [this](juce::ComboBox& c) {
+            c.onChange = [this] {
+                if (onChange)
+                    onChange(static_cast<ChordRoot>(rootCombo_.getSelectedId() - 1),
+                             static_cast<ChordQuality>(qualityCombo_.getSelectedId() - 1),
+                             octaveCombo_.getSelectedId() - 1, inversionCombo_.getSelectedId() - 1);
+            };
+            addAndMakeVisible(c);
+        };
+
+        for (int i = 0; i < 12; ++i)
+            rootCombo_.addItem(magda::music::ChordUtils::rootToString(static_cast<ChordRoot>(i)),
+                               i + 1);
+        rootCombo_.setSelectedId(static_cast<int>(root) + 1, juce::dontSendNotification);
+
+        for (int i = 0; i <= static_cast<int>(ChordQuality::MinorAdd4); ++i)
+            qualityCombo_.addItem(
+                magda::music::ChordUtils::qualityToString(static_cast<ChordQuality>(i)), i + 1);
+        qualityCombo_.setSelectedId(static_cast<int>(quality) + 1, juce::dontSendNotification);
+
+        for (int o = 0; o <= 8; ++o)
+            octaveCombo_.addItem("Octave " + juce::String(o), o + 1);
+        octaveCombo_.setSelectedId(juce::jlimit(0, 8, octave) + 1, juce::dontSendNotification);
+
+        for (int inv = 0; inv <= 3; ++inv)
+            inversionCombo_.addItem(inv == 0 ? "Root position" : ("Inversion " + juce::String(inv)),
+                                    inv + 1);
+        inversionCombo_.setSelectedId(juce::jlimit(0, 3, inversion) + 1,
+                                      juce::dontSendNotification);
+
+        wire(rootCombo_);
+        wire(qualityCombo_);
+        wire(octaveCombo_);
+        wire(inversionCombo_);
+
+        setSize(190, 4 * 30 + 8);
+    }
+
+    void resized() override {
+        auto b = getLocalBounds().reduced(4);
+        for (auto* c : {&rootCombo_, &qualityCombo_, &octaveCombo_, &inversionCombo_}) {
+            c->setBounds(b.removeFromTop(28));
+            b.removeFromTop(2);
+        }
+    }
+
+  private:
+    juce::ComboBox rootCombo_, qualityCombo_, octaveCombo_, inversionCombo_;
+};
+
+}  // namespace
 
 int ChordClipContent::maxLaneHeight() const {
     return std::max(MIN_LANE_HEIGHT, getHeight() - RULER_HEIGHT);
@@ -207,6 +272,91 @@ void ChordClipContent::mouseUp(const juce::MouseEvent& e) {
         return;
     }
     PianoRollContent::mouseUp(e);
+}
+
+void ChordClipContent::mouseDoubleClick(const juce::MouseEvent& e) {
+    if (e.y < chordRowHeight() && e.x >= chordLaneLeftX()) {
+        const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
+        if (idx >= 0) {
+            openChordEditor(idx);
+            return;
+        }
+    }
+    PianoRollContent::mouseDoubleClick(e);
+}
+
+void ChordClipContent::openChordEditor(int annIndex) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
+    if (clip == nullptr || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return;
+    const auto& ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];
+
+    const auto spec = magda::music::ChordEngine::parseChordName(ann.chordName);
+
+    // Derive the octave from the chord's lowest linked note.
+    int octave = 4;
+    int lowest = 128;
+    for (const auto& n : clip->midiNotes)
+        if (ann.chordGroup != 0 && n.chordGroup == ann.chordGroup)
+            lowest = std::min(lowest, n.noteNumber);
+    if (lowest <= 127)
+        octave = lowest / 12 - 1;
+
+    // Anchor the editor at the block; capture the bar (stable across edits, where
+    // the annotation index is not).
+    const double bar = ann.beatPosition;
+    const int x1 = chordRowXForBeat(ann.beatPosition);
+    const int x2 = chordRowXForBeat(ann.beatPosition + ann.lengthBeats);
+    const juce::Rectangle<int> blockLocal(x1, 2, std::max(20, x2 - x1), chordRowHeight() - 4);
+    const auto screenArea = localAreaToGlobal(blockLocal);
+
+    auto popup =
+        std::make_unique<ChordEditorPopup>(spec.root, spec.quality, octave, spec.inversion);
+    popup->onChange = [this, bar](ChordRoot r, ChordQuality q, int oct, int inv) {
+        const auto chord =
+            magda::music::ChordEngine::getInstance().buildChordInversion(r, q, inv, oct);
+        std::vector<int> pitches;
+        for (const auto& note : chord.notes)
+            pitches.push_back(note.noteNumber);
+        const int idx = annotationIndexAtBeat(bar + 0.001);
+        if (idx >= 0)
+            replaceChordNotes(idx, pitches);
+    };
+
+    juce::CallOutBox::launchAsynchronously(std::move(popup), screenArea, nullptr);
+}
+
+void ChordClipContent::replaceChordNotes(int annIndex, const std::vector<int>& pitches) {
+    const auto clipId = getEditingClipId();
+    auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || pitches.empty() || annIndex < 0 ||
+        annIndex >= static_cast<int>(clip->chordAnnotations.size()))
+        return;
+
+    const auto ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];  // copy
+    const double bar = ann.beatPosition;
+    const double length = ann.lengthBeats;
+    const int group = ann.chordGroup;
+
+    auto& undo = magda::UndoManager::getInstance();
+
+    // Delete the chord's existing notes (highest index first so earlier indices
+    // stay valid), then insert the new voicing at the same bar/length.
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+        if (group != 0 && clip->midiNotes[i].chordGroup == group)
+            indices.push_back(i);
+    std::sort(indices.rbegin(), indices.rend());
+    for (size_t idx : indices)
+        undo.executeCommand(std::make_unique<magda::DeleteMidiNoteCommand>(clipId, idx));
+
+    for (int p : pitches)
+        undo.executeCommand(std::make_unique<magda::AddMidiNoteCommand>(
+            clipId, bar, std::clamp(p, 0, 127), length, 100));
+
+    redetectChords();
+    repaint();
 }
 
 bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches) {

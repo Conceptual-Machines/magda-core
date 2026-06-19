@@ -38,6 +38,8 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    // Double-click a chord block to edit its root / quality / octave / inversion.
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
 
   protected:
     int selectedChordGroup() const override {
@@ -62,6 +64,10 @@ class ChordClipContent : public PianoRollContent, public juce::FileDragAndDropTa
     // then re-detect so the chord lane shows the linked block. Returns false if
     // there's no clip or that bar already has a chord.
     bool insertChordAtBeat(double clipRelativeBeat, const std::vector<int>& pitches);
+    // Open the rich chord editor (CallOutBox) for the chord at annIndex.
+    void openChordEditor(int annIndex);
+    // Replace the chord at annIndex with the given pitches (same bar/length).
+    void replaceChordNotes(int annIndex, const std::vector<int>& pitches);
     bool isOnLaneDivider(juce::Point<int> p) const;
     int maxLaneHeight() const;
 
