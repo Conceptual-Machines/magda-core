@@ -25,13 +25,6 @@ bool ChordClipContent::isOnLaneDivider(juce::Point<int> p) const {
     return std::abs(p.y - laneHeight_) <= DIVIDER_HIT;
 }
 
-static double barBeatsNow() {
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
-    if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
-    return std::max(1, beatsPerBar);
-}
-
 int ChordClipContent::annotationIndexAtBeat(double beat) const {
     const auto clipId = getEditingClipId();
     const auto* clip = (clipId != magda::INVALID_CLIP_ID)
@@ -93,21 +86,24 @@ void ChordClipContent::updateBlockDrag(int mouseX) {
         dragAnnIndex_ >= static_cast<int>(clip->chordAnnotations.size()))
         return;
 
-    const double bar = barBeatsNow();
+    // Respect the editor's snap/quantize setting (grid resolution), not a fixed
+    // bar. Snap disabled = free drag.
     const double rawDelta = chordRowBeatForX(mouseX) - dragStartMouseBeat_;
-    const double delta = std::round(rawDelta / bar) * bar;
+    const double minLen = std::max(0.0625, getGridResolutionBeats());
+    auto snap = [this](double beat) { return snapEnabled_ ? snapBeatToGrid(beat) : beat; };
 
     switch (blockDrag_) {
         case BlockDrag::Move:
-            dragNewStart_ = std::max(0.0, dragOrigStart_ + delta);
+            dragNewStart_ = std::max(0.0, snap(dragOrigStart_ + rawDelta));
             dragNewEnd_ = dragNewStart_ + (dragOrigEnd_ - dragOrigStart_);
             break;
         case BlockDrag::ResizeRight:
             dragNewStart_ = dragOrigStart_;
-            dragNewEnd_ = std::max(dragOrigStart_ + bar, dragOrigEnd_ + delta);
+            dragNewEnd_ = std::max(dragOrigStart_ + minLen, snap(dragOrigEnd_ + rawDelta));
             break;
         case BlockDrag::ResizeLeft:
-            dragNewStart_ = juce::jlimit(0.0, dragOrigEnd_ - bar, dragOrigStart_ + delta);
+            dragNewStart_ =
+                juce::jlimit(0.0, dragOrigEnd_ - minLen, snap(dragOrigStart_ + rawDelta));
             dragNewEnd_ = dragOrigEnd_;
             break;
         case BlockDrag::None:
