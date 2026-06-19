@@ -4,25 +4,52 @@
 
 #include <array>
 #include <atomic>
-#include <memory>
 #include <vector>
 
-#include "../FaustParamPool.hpp"
 #include "CompiledFaustInterface.hpp"
 #include "core/ParameterInfo.hpp"
 
-class dsp;
-
 namespace magda::daw::audio::compiled {
 
+class MagdaLimiterDspCore {
+  public:
+    struct Settings {
+        float thresholdDb = -1.0f;
+        float attackMs = 1.0f;
+        float releaseMs = 200.0f;
+        float outputDb = 0.0f;
+    };
+
+    struct Stats {
+        float inputPeak = 0.0f;
+        float outputPeak = 0.0f;
+        float gainReductionDb = 0.0f;
+    };
+
+    void prepare(double sampleRate, int maxBlockSize, int numChannels);
+    void reset();
+    Stats process(juce::AudioBuffer<float>& buffer, int startSample, int numSamples,
+                  const Settings& settings);
+
+  private:
+    static float dbToGain(float db);
+    static float coefficient(float timeMs, double sampleRate);
+
+    double sampleRate_ = 44100.0;
+    int delaySamples_ = 1;
+    int writeIndex_ = 0;
+    float gain_ = 1.0f;
+
+    std::vector<std::vector<float>> delayLines_;
+    std::vector<float> frame_;
+};
+
 /**
- * @brief Compiled-Faust stereo lookahead brickwall limiter.
+ * @brief Native lookahead limiter / autonormalizer.
  *
- * Sanfilippo design from co.limiter_lad_stereo — peak-holder feeding
- * tau-smoothed attack/release with a fixed 5 ms lookahead delay. Used to
- * guard against hard-clipping with minimal coloration. Threshold is the
- * output ceiling in dB; signal above it is attenuated, signal below it
- * passes through unchanged.
+ * Threshold is baked-in normalizer drive into a fixed 0 dB limiter ceiling.
+ * Output is a post-limiter trim and is restricted to negative gain, so it can
+ * only reduce the emitted level after limiting.
  */
 class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
   public:
@@ -57,15 +84,11 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
         return 0.0;
     }
 
-    // Slot ordering matches [idx:N] pins inside magda_limiter.dsp.
     static constexpr int kThresholdSlot = 0;
     static constexpr int kAttackSlot = 1;
-    static constexpr int kHoldSlot = 2;
-    static constexpr int kReleaseSlot = 3;
-    static constexpr int kMixSlot = 4;
-    static constexpr int kOutputSlot = 5;
-    static constexpr int kAutogainSlot = 6;
-    static constexpr int kHostSlotCount = 7;
+    static constexpr int kReleaseSlot = 2;
+    static constexpr int kOutputSlot = 3;
+    static constexpr int kHostSlotCount = 4;
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
 
@@ -105,22 +128,12 @@ class MagdaLimiterCompiledPlugin : public te::Plugin, public ICompiledFaustPlugi
 
   private:
     void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
 
-    std::unique_ptr<::dsp> dsp_;
-    int numInputs_ = 0;
-    int numOutputs_ = 0;
-
-    std::array<FAUSTFLOAT*, kHostSlotCount> zones_{};
+    MagdaLimiterDspCore limiter_;
 
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
     std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-
-    juce::AudioBuffer<float> scratchIn_;
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> inPtrs_;
-    std::vector<float*> outPtrs_;
 
     std::atomic<float> inputPeakDb_{-120.0f};
     std::atomic<float> outputPeakDb_{-120.0f};
