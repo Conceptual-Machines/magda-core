@@ -2886,6 +2886,10 @@ void ClipComponent::showContextMenu() {
     }
     bool canEdit = hasSelection && !isFrozen;
 
+    // Chord progression clips get a trimmed menu: no audio slicing, automation
+    // duplicates, render, bounce, transcribe, or MIDI-library save.
+    const bool isChord = clipForMenu && isChordClip(*clipForMenu);
+
     // "Duplicate Time Selection" is enabled when an active, visible time
     // selection exists — mirrors the gate Cmd+D uses in MainWindowCommands
     // and the empty-area menu in TrackContentPanel.
@@ -2905,9 +2909,11 @@ void ClipComponent::showContextMenu() {
 
     // Duplicate
     menu.addItem(4, "Duplicate", canEdit);
-    menu.addItem(18, "Duplicate With Automation", canEdit);
-    menu.addItem(19, "Duplicate Without Automation", canEdit);
-    menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
+    if (!isChord) {
+        menu.addItem(18, "Duplicate With Automation", canEdit);
+        menu.addItem(19, "Duplicate Without Automation", canEdit);
+        menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
+    }
     menu.addSeparator();
 
     // Split / Trim
@@ -2916,7 +2922,7 @@ void ClipComponent::showContextMenu() {
     // Slice operations (single audio clip only)
     bool canSliceAtMarkers = false;
     bool canSliceAtGrid = false;
-    if (!isMultiSelection && canEdit) {
+    if (!isChord && !isMultiSelection && canEdit) {
         const auto* singleClip = getClipInfo();
         if (singleClip && singleClip->isAudio()) {
             // Check for warp markers
@@ -2938,10 +2944,12 @@ void ClipComponent::showContextMenu() {
             }
         }
     }
-    menu.addItem(13, "Slice at Warp Markers In Place", canSliceAtMarkers);
-    menu.addItem(15, "Slice at Warp Markers to Drum Grid", canSliceAtMarkers);
-    menu.addItem(14, "Slice at Grid In Place", canSliceAtGrid);
-    menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
+    if (!isChord) {
+        menu.addItem(13, "Slice at Warp Markers In Place", canSliceAtMarkers);
+        menu.addItem(15, "Slice at Warp Markers to Drum Grid", canSliceAtMarkers);
+        menu.addItem(14, "Slice at Grid In Place", canSliceAtGrid);
+        menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
+    }
     menu.addSeparator();
 
     // Loop-record takes: pick which captured pass plays back. Single audio clip
@@ -2959,24 +2967,26 @@ void ClipComponent::showContextMenu() {
         }
     }
 
-    bool canEditExternally = false;
-    if (!isMultiSelection && canEdit) {
-        const auto* singleClip = getClipInfo();
-        canEditExternally = singleClip && singleClip->isAudio() &&
-                            juce::File(singleClip->audio().source.filePath).existsAsFile();
-    }
-    menu.addItem(21, "Edit in External Editor", canEditExternally);
+    if (!isChord) {
+        bool canEditExternally = false;
+        if (!isMultiSelection && canEdit) {
+            const auto* singleClip = getClipInfo();
+            canEditExternally = singleClip && singleClip->isAudio() &&
+                                juce::File(singleClip->audio().source.filePath).existsAsFile();
+        }
+        menu.addItem(21, "Edit in External Editor", canEditExternally);
 
-    // Transcribe to MIDI (audio clips only; needs the bundled model)
-    bool canTranscribe = false;
-    if (!isMultiSelection && canEdit) {
-        const auto* singleClip = getClipInfo();
-        canTranscribe = singleClip && singleClip->isAudio() &&
-                        juce::File(singleClip->audio().source.filePath).existsAsFile() &&
-                        magda::transcription::TranscriptionService::getInstance().isAvailable();
+        // Transcribe to MIDI (audio clips only; needs the bundled model)
+        bool canTranscribe = false;
+        if (!isMultiSelection && canEdit) {
+            const auto* singleClip = getClipInfo();
+            canTranscribe = singleClip && singleClip->isAudio() &&
+                            juce::File(singleClip->audio().source.filePath).existsAsFile() &&
+                            magda::transcription::TranscriptionService::getInstance().isAvailable();
+        }
+        menu.addItem(22, "Transcribe to MIDI", canTranscribe);
+        menu.addSeparator();
     }
-    menu.addItem(22, "Transcribe to MIDI", canTranscribe);
-    menu.addSeparator();
 
     // Join Clips (need 2+ adjacent clips on same track)
     bool canJoin = false;
@@ -3023,8 +3033,10 @@ void ClipComponent::showContextMenu() {
         }
 
         if (hasMidi) {
-            menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
-            menu.addSeparator();
+            if (!isChord) {
+                menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
+                menu.addSeparator();
+            }
 
             juce::PopupMenu quantizeMenu;
 
@@ -3100,8 +3112,8 @@ void ClipComponent::showContextMenu() {
         }
     }
 
-    // Render Time Selection - always available
-    {
+    // Render Time Selection - always available (not for chord progressions)
+    if (!isChord) {
         bool hasTimeSelection = false;
         if (parentPanel_ && parentPanel_->getTimelineController()) {
             const auto& state = parentPanel_->getTimelineController()->getState();
@@ -3110,8 +3122,8 @@ void ClipComponent::showContextMenu() {
         menu.addItem(10, "Render Time Selection", hasTimeSelection);
     }
 
-    // Bounce operations
-    {
+    // Bounce operations (not for chord progressions)
+    if (!isChord) {
         menu.addSeparator();
 
         // Bounce In Place: only for MIDI clips on tracks with an instrument
