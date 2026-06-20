@@ -101,6 +101,76 @@ class SetTrackPanCommand : public UndoableCommand {
     float oldPan_ = 0.0f, newPan_;
 };
 
+class SetTrackMixerChannelWidthCommand : public UndoableCommand {
+  public:
+    SetTrackMixerChannelWidthCommand(TrackId trackId, int newWidth)
+        : trackId_(trackId), newWidth_(newWidth) {
+        if (auto* track = TrackManager::getInstance().getTrack(trackId))
+            oldWidth_ = track->mixerChannelWidth;
+    }
+    SetTrackMixerChannelWidthCommand(TrackId trackId, int oldWidth, int newWidth)
+        : trackId_(trackId), oldWidth_(oldWidth), newWidth_(newWidth) {}
+
+    void execute() override {
+        TrackManager::getInstance().setTrackMixerChannelWidth(trackId_, newWidth_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setTrackMixerChannelWidth(trackId_, oldWidth_);
+    }
+    juce::String getDescription() const override {
+        return "Set Mixer Channel Width";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetTrackMixerChannelWidthCommand*>(other))
+            return o->trackId_ == trackId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newWidth_ = static_cast<const SetTrackMixerChannelWidthCommand*>(other)->newWidth_;
+    }
+
+  private:
+    TrackId trackId_;
+    int oldWidth_ = 0;
+    int newWidth_ = 0;
+};
+
+class SetTrackMixerFaderTopInsetCommand : public UndoableCommand {
+  public:
+    SetTrackMixerFaderTopInsetCommand(TrackId trackId, int newInset)
+        : trackId_(trackId), newInset_(newInset) {
+        if (auto* track = TrackManager::getInstance().getTrack(trackId))
+            oldInset_ = track->mixerFaderTopInset;
+    }
+    SetTrackMixerFaderTopInsetCommand(TrackId trackId, int oldInset, int newInset)
+        : trackId_(trackId), oldInset_(oldInset), newInset_(newInset) {}
+
+    void execute() override {
+        TrackManager::getInstance().setTrackMixerFaderTopInset(trackId_, newInset_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setTrackMixerFaderTopInset(trackId_, oldInset_);
+    }
+    juce::String getDescription() const override {
+        return "Set Mixer Fader Height";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetTrackMixerFaderTopInsetCommand*>(other))
+            return o->trackId_ == trackId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newInset_ = static_cast<const SetTrackMixerFaderTopInsetCommand*>(other)->newInset_;
+    }
+
+  private:
+    TrackId trackId_;
+    int oldInset_ = 0;
+    int newInset_ = 0;
+};
+
 /**
  * @brief Command for setting track mute state
  */

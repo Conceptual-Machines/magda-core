@@ -75,6 +75,9 @@ class AddSendButton : public juce::Button {
 namespace {
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;
+constexpr int DEFAULT_CHANNEL_WIDTH = 100;
+constexpr int MIN_CHANNEL_WIDTH = 80;
+constexpr int MAX_CHANNEL_WIDTH = 180;
 
 // Convert linear gain (0-1) to dB
 float gainToDb(float gain) {
@@ -126,6 +129,35 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId, bool isMaster) {
         return std::vector<TrackId>(set.begin(), set.end());
     }
     return {clickedId};
+}
+
+int effectiveMixerChannelWidth(TrackId trackId) {
+    const auto& metrics = MixerMetrics::getInstance();
+    if (auto* track = TrackManager::getInstance().getTrack(trackId)) {
+        if (track->mixerChannelWidth > 0)
+            return juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH, track->mixerChannelWidth);
+    }
+    return juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH,
+                        metrics.channelWidth > 0 ? metrics.channelWidth : DEFAULT_CHANNEL_WIDTH);
+}
+
+int effectiveMixerFaderTopInset(TrackId trackId) {
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        return juce::jlimit(MixerMetrics::minFaderTopInset, MixerMetrics::maxFaderTopInset,
+                            track->mixerFaderTopInset);
+    return MixerMetrics::minFaderTopInset;
+}
+
+int storedMixerChannelWidth(TrackId trackId) {
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        return track->mixerChannelWidth;
+    return 0;
+}
+
+int storedMixerFaderTopInset(TrackId trackId) {
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        return track->mixerFaderTopInset;
+    return 0;
 }
 
 juce::String formatMixerTrackSet(const std::unordered_set<TrackId>& trackIds) {
@@ -189,30 +221,38 @@ class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
     void mouseDown(const juce::MouseEvent& event) override {
         isDragging_ = true;
         dragStartY_ = event.getScreenY();
+        lastMods_ = event.mods;
     }
 
     void mouseDrag(const juce::MouseEvent& event) override {
         if (!isDragging_ || !onResize)
             return;
         int deltaY = event.getScreenY() - dragStartY_;
-        onResize(deltaY);
-        dragStartY_ = event.getScreenY();
+        lastMods_ = event.mods;
+        onResize(deltaY, event.mods);
     }
 
-    void mouseUp(const juce::MouseEvent& /*event*/) override {
+    void mouseUp(const juce::MouseEvent& event) override {
         isDragging_ = false;
         isHovering_ = false;
         if (onResizeEnd)
-            onResizeEnd();
+            onResizeEnd(event.mods);
         repaint();
     }
 
-    std::function<void(int deltaY)> onResize;
-    std::function<void()> onResizeEnd;
+    void mouseDoubleClick(const juce::MouseEvent& event) override {
+        if (onReset)
+            onReset(event.mods);
+    }
+
+    std::function<void(int deltaY, const juce::ModifierKeys& mods)> onResize;
+    std::function<void(const juce::ModifierKeys& mods)> onResizeEnd;
+    std::function<void(const juce::ModifierKeys& mods)> onReset;
 
   private:
     bool isHovering_ = false;
     bool isDragging_ = false;
+    juce::ModifierKeys lastMods_;
     int dragStartY_ = 0;
 };
 
@@ -304,6 +344,14 @@ MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, AudioEngine* audio
 }
 
 MixerView::ChannelStrip::~ChannelStrip() = default;
+
+int MixerView::ChannelStrip::preferredChannelWidth() const {
+    return effectiveMixerChannelWidth(trackId_);
+}
+
+int MixerView::ChannelStrip::faderTopInset() const {
+    return effectiveMixerFaderTopInset(trackId_);
+}
 
 void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncMiniChain) {
     bool wasChild = isChildTrack_;
@@ -695,7 +743,7 @@ void MixerView::ChannelStrip::setupControls() {
         // faderTopInset — drag down shrinks the fader, drag up grows it. Sends
         // auto-size to their slot count and are not user-resizable.
         sendResizeHandle_ = std::make_unique<SendResizeHandle>();
-        sendResizeHandle_->onResize = [this](int deltaY) {
+        sendResizeHandle_->onResize = [this](int deltaY, const juce::ModifierKeys& mods) {
             auto& metrics = MixerMetrics::getInstance();
             // Max inset: clamp so the fader region keeps at least 120px.
             int fixedHeight = 38                        // colour bar + label
@@ -718,14 +766,85 @@ void MixerView::ChannelStrip::setupControls() {
             }
             int maxInset =
                 juce::jmax(MixerMetrics::minFaderTopInset, getHeight() - fixedHeight - sendsHeight);
-            int newInset = juce::jlimit(MixerMetrics::minFaderTopInset,
-                                        juce::jmin(maxInset, MixerMetrics::maxFaderTopInset),
-                                        metrics.faderTopInset + deltaY);
-            if (metrics.faderTopInset != newInset) {
-                metrics.faderTopInset = newInset;
+            const int limit = juce::jmin(maxInset, MixerMetrics::maxFaderTopInset);
+            const bool sameValue = mods.isAltDown();
+            if (faderHeightResizeTargets_.empty()) {
+                if (sameValue) {
+                    if (auto* parent = findParentComponentOfClass<MixerView>())
+                        faderHeightResizeTargets_ = parent->getLayoutEditTargets(trackId_, true);
+                    else
+                        faderHeightResizeTargets_ = {trackId_};
+                } else {
+                    faderHeightResizeTargets_ = getMultiEditTargets(trackId_, isMaster_);
+                }
+
+                faderHeightResizeClickedStartInset_ = faderTopInset();
+                faderHeightResizeStartValues_.clear();
+                faderHeightResizeStartEffective_.clear();
+                for (auto tid : faderHeightResizeTargets_) {
+                    faderHeightResizeStartValues_[tid] = storedMixerFaderTopInset(tid);
+                    faderHeightResizeStartEffective_[tid] = effectiveMixerFaderTopInset(tid);
+                }
+            }
+
+            const int sameInset = juce::jlimit(MixerMetrics::minFaderTopInset, limit,
+                                               faderHeightResizeClickedStartInset_ + deltaY);
+            auto& tm = TrackManager::getInstance();
+            for (auto tid : faderHeightResizeTargets_) {
+                const int baseInset = sameValue ? faderHeightResizeClickedStartInset_
+                                                : faderHeightResizeStartEffective_[tid];
+                const int newInset =
+                    juce::jlimit(MixerMetrics::minFaderTopInset, limit, baseInset + deltaY);
+                tm.setTrackMixerFaderTopInset(tid, sameValue ? sameInset : newInset);
+            }
+            if (!faderHeightResizeTargets_.empty()) {
                 if (onSendAreaResized)
                     onSendAreaResized();
             }
+        };
+        sendResizeHandle_->onResizeEnd = [this](const juce::ModifierKeys&) {
+            std::vector<std::unique_ptr<UndoableCommand>> commands;
+            for (auto tid : faderHeightResizeTargets_) {
+                const auto oldIt = faderHeightResizeStartValues_.find(tid);
+                if (oldIt == faderHeightResizeStartValues_.end())
+                    continue;
+                const int oldInset = oldIt->second;
+                const int newInset = storedMixerFaderTopInset(tid);
+                if (oldInset != newInset) {
+                    commands.push_back(std::make_unique<SetTrackMixerFaderTopInsetCommand>(
+                        tid, oldInset, newInset));
+                }
+            }
+
+            faderHeightResizeTargets_.clear();
+            faderHeightResizeStartValues_.clear();
+            faderHeightResizeStartEffective_.clear();
+
+            if (auto* parent = findParentComponentOfClass<MixerView>())
+                parent->executeMixerLayoutCommands("Resize Mixer Fader Height",
+                                                   std::move(commands));
+        };
+        sendResizeHandle_->onReset = [this](const juce::ModifierKeys& mods) {
+            auto targets = mods.isAltDown() ? std::vector<TrackId>{}
+                                            : getMultiEditTargets(trackId_, isMaster_);
+            if (mods.isAltDown()) {
+                if (auto* parent = findParentComponentOfClass<MixerView>())
+                    targets = parent->getLayoutEditTargets(trackId_, true);
+                else
+                    targets = {trackId_};
+            }
+            std::vector<std::unique_ptr<UndoableCommand>> commands;
+            for (auto tid : targets) {
+                const int oldInset = storedMixerFaderTopInset(tid);
+                if (oldInset != 0) {
+                    commands.push_back(
+                        std::make_unique<SetTrackMixerFaderTopInsetCommand>(tid, oldInset, 0));
+                }
+            }
+            if (auto* parent = findParentComponentOfClass<MixerView>())
+                parent->executeMixerLayoutCommands("Reset Mixer Fader Height", std::move(commands));
+            if (onSendAreaResized)
+                onSendAreaResized();
         };
         addAndMakeVisible(*sendResizeHandle_);
 
@@ -1106,9 +1225,7 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     bool hasGroupChildren = !groupChildren_.empty();
 
     // The group's own controls column (leftmost channelWidth when group has children)
-    auto ownBounds = hasGroupChildren
-                         ? fullBounds.withWidth(MixerMetrics::getInstance().channelWidth)
-                         : fullBounds;
+    auto ownBounds = hasGroupChildren ? fullBounds.withWidth(preferredChannelWidth()) : fullBounds;
 
     // Background
     if (selected) {
@@ -1206,22 +1323,26 @@ void MixerView::ChannelStrip::resized() {
     // If this is a group strip with children, lay out the shared header banner
     // across the full width, then position children below it
     if (hasGroupChildren) {
-        int channelWidth = metrics.channelWidth;
+        int channelWidth = preferredChannelWidth();
         const int borderWidth = 2;
         int childTop = groupHeaderHeight + 1;                    // below separator line
         int childHeight = getHeight() - childTop - borderWidth;  // above bottom border
 
+        int childX = channelWidth;
         for (size_t i = 0; i < groupChildren_.size(); ++i) {
             bool isLast = (i == groupChildren_.size() - 1);
-            int w = isLast ? channelWidth - borderWidth : channelWidth;
-            groupChildren_[i]->setBounds(static_cast<int>(i + 1) * channelWidth, childTop, w,
-                                         childHeight);
+            int childWidth = channelWidth;
+            if (auto* childStrip = dynamic_cast<ChannelStrip*>(groupChildren_[i]))
+                childWidth = childStrip->preferredChannelWidth();
+            int w = isLast ? childWidth - borderWidth : childWidth;
+            groupChildren_[i]->setBounds(childX, childTop, w, childHeight);
+            childX += childWidth;
         }
     }
 
     // For a group with children: own controls in the leftmost column, below the shared header
     // For everything else: full width, full height
-    int ownWidth = hasGroupChildren ? metrics.channelWidth : getWidth();
+    int ownWidth = hasGroupChildren ? preferredChannelWidth() : getWidth();
     int ownTop = hasGroupChildren ? groupHeaderHeight : 0;
     int ownHeight = getHeight() - ownTop;
 
@@ -1230,8 +1351,8 @@ void MixerView::ChannelStrip::resized() {
 
     if (hasGroupChildren) {
         // Group: label in the header, left-aligned next to expand toggle
-        auto headerBounds = juce::Rectangle<int>(0, 0, metrics.channelWidth, groupHeaderHeight)
-                                .reduced(metrics.channelPadding);
+        auto headerBounds =
+            juce::Rectangle<int>(0, 0, ownWidth, groupHeaderHeight).reduced(metrics.channelPadding);
         headerBounds.removeFromTop(6);  // colour bar space
         auto titleRow = headerBounds.removeFromTop(24);
         if (expandToggle_) {
@@ -1383,7 +1504,7 @@ void MixerView::ChannelStrip::resized() {
                 row->setVisible(false);
         }
 
-        bounds.removeFromTop(metrics.faderTopInset);
+        bounds.removeFromTop(faderTopInset());
 
         if (sendResizeHandle_) {
             sendResizeHandle_->setVisible(true);
@@ -1828,6 +1949,9 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Create master strip (uses shared MasterChannelStrip component)
     masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
     masterStrip->onSendAreaResized = [this]() { relayoutAllStrips(); };
+    masterStrip->allVisibleLayoutTargetsProvider = [this]() {
+        return getLayoutEditTargets(MASTER_TRACK_ID, true);
+    };
     addAndMakeVisible(*masterStrip);
 
     // Channel resize handles are created lazily, one per top-level strip, in
@@ -2096,6 +2220,15 @@ void MixerView::trackPropertyChanged(int trackId) {
     if (!track)
         return;
 
+    if (trackId == MASTER_TRACK_ID) {
+        if (masterStrip) {
+            masterStrip->resized();
+            masterStrip->repaint();
+            resized();
+        }
+        return;
+    }
+
     for (auto& strip : channelStrips) {
         if (strip->getTrackId() == trackId) {
             strip->updateFromTrack(*track);
@@ -2196,8 +2329,6 @@ void MixerView::paint(juce::Graphics& g) {
 
     // Plugin drag overlay
     if (showPluginDropOverlay_) {
-        const auto& metrics = MixerMetrics::getInstance();
-
         if (dropTargetStripIndex_ >= 0 &&
             dropTargetStripIndex_ < static_cast<int>(orderedStrips_.size())) {
             // Highlight the specific strip being hovered
@@ -2210,7 +2341,7 @@ void MixerView::paint(juce::Graphics& g) {
         } else {
             // Hovering empty area — show "new track" indicator at right edge of channel area
             auto vpBounds = channelViewport->getBounds();
-            int indicatorWidth = metrics.channelWidth;
+            int indicatorWidth = DEFAULT_CHANNEL_WIDTH;
             int indicatorX = vpBounds.getRight() - indicatorWidth;
             // Clamp to viewport area
             if (indicatorX < vpBounds.getX())
@@ -2231,8 +2362,132 @@ void MixerView::paint(juce::Graphics& g) {
     }
 }
 
+int MixerView::getTopLevelStripWidth(const ChannelStrip& strip) const {
+    int width = strip.preferredChannelWidth();
+    for (auto* child : strip.groupChildren_) {
+        if (auto* childStrip = dynamic_cast<ChannelStrip*>(child))
+            width += childStrip->preferredChannelWidth();
+        else
+            width += DEFAULT_CHANNEL_WIDTH;
+    }
+    return width;
+}
+
+std::vector<TrackId> MixerView::getLayoutEditTargets(TrackId clickedId, bool allVisible) const {
+    std::vector<TrackId> targets;
+    auto& selection = SelectionManager::getInstance();
+    if (!allVisible && selection.isTrackSelected(clickedId) &&
+        selection.getSelectedTrackCount() > 1) {
+        const auto& selected = selection.getSelectedTracks();
+        targets.assign(selected.begin(), selected.end());
+        return targets;
+    }
+
+    if (allVisible) {
+        for (const auto& track : TrackManager::getInstance().getTracks()) {
+            if (track.isVisibleIn(currentViewMode_))
+                targets.push_back(track.id);
+        }
+        if (TrackManager::getInstance().getMasterChannel().isVisibleIn(currentViewMode_))
+            targets.push_back(MASTER_TRACK_ID);
+        return targets;
+    }
+
+    targets.push_back(clickedId);
+    return targets;
+}
+
+void MixerView::applyChannelWidthDelta(TrackId clickedId, int deltaX,
+                                       const juce::ModifierKeys& mods) {
+    const bool sameValue = mods.isAltDown();
+    if (channelWidthResizeTargets_.empty()) {
+        channelWidthResizeTargets_ = getLayoutEditTargets(clickedId, sameValue);
+        channelWidthResizeClickedStartWidth_ = effectiveMixerChannelWidth(clickedId);
+        channelWidthResizeStartValues_.clear();
+        channelWidthResizeStartEffective_.clear();
+        for (auto tid : channelWidthResizeTargets_) {
+            channelWidthResizeStartValues_[tid] = storedMixerChannelWidth(tid);
+            channelWidthResizeStartEffective_[tid] = effectiveMixerChannelWidth(tid);
+        }
+    }
+
+    const int sameWidth = juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH,
+                                       channelWidthResizeClickedStartWidth_ + deltaX);
+    auto& tm = TrackManager::getInstance();
+
+    for (auto tid : channelWidthResizeTargets_) {
+        const int baseWidth = sameValue ? channelWidthResizeClickedStartWidth_
+                                        : channelWidthResizeStartEffective_[tid];
+        const int newWidth = juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH, baseWidth + deltaX);
+        tm.setTrackMixerChannelWidth(tid, sameValue ? sameWidth : newWidth);
+    }
+
+    isResizeDragging_ = true;
+    if (!pendingResizeUpdate_) {
+        pendingResizeUpdate_ = true;
+        juce::Component::SafePointer<MixerView> safeThis(this);
+        juce::MessageManager::callAsync([safeThis]() {
+            if (auto* self = safeThis.getComponent()) {
+                if (self->pendingResizeUpdate_) {
+                    self->pendingResizeUpdate_ = false;
+                    self->updateStripWidths();
+                }
+            }
+        });
+    }
+}
+
+void MixerView::finishChannelWidthResize(const juce::ModifierKeys& /*mods*/) {
+    isResizeDragging_ = false;
+    pendingResizeUpdate_ = false;
+    commitChannelWidthResize();
+    updateStripWidths();
+}
+
+void MixerView::resetChannelWidths(TrackId clickedId, const juce::ModifierKeys& mods) {
+    std::vector<std::unique_ptr<UndoableCommand>> commands;
+    for (auto tid : getLayoutEditTargets(clickedId, mods.isAltDown())) {
+        const int oldWidth = storedMixerChannelWidth(tid);
+        if (oldWidth != 0)
+            commands.push_back(
+                std::make_unique<SetTrackMixerChannelWidthCommand>(tid, oldWidth, 0));
+    }
+    executeMixerLayoutCommands("Reset Mixer Channel Width", std::move(commands));
+    updateStripWidths();
+}
+
+void MixerView::commitChannelWidthResize() {
+    std::vector<std::unique_ptr<UndoableCommand>> commands;
+    for (auto tid : channelWidthResizeTargets_) {
+        const auto oldIt = channelWidthResizeStartValues_.find(tid);
+        if (oldIt == channelWidthResizeStartValues_.end())
+            continue;
+        const int oldWidth = oldIt->second;
+        const int newWidth = storedMixerChannelWidth(tid);
+        if (oldWidth != newWidth) {
+            commands.push_back(
+                std::make_unique<SetTrackMixerChannelWidthCommand>(tid, oldWidth, newWidth));
+        }
+    }
+
+    channelWidthResizeTargets_.clear();
+    channelWidthResizeStartValues_.clear();
+    channelWidthResizeStartEffective_.clear();
+    executeMixerLayoutCommands("Resize Mixer Channel Width", std::move(commands));
+}
+
+void MixerView::executeMixerLayoutCommands(const juce::String& description,
+                                           std::vector<std::unique_ptr<UndoableCommand>> commands) {
+    if (commands.empty())
+        return;
+
+    auto& undo = UndoManager::getInstance();
+    CompoundOperationScope scope(description);
+    for (auto& command : commands)
+        undo.executeCommand(std::move(command));
+}
+
 void MixerView::resized() {
-    const auto& metrics = MixerMetrics::getInstance();
     auto bounds = getLocalBounds();
 
     // Left-edge toggle rail (always visible)
@@ -2242,18 +2497,22 @@ void MixerView::resized() {
 
     // Master strip on the right (only if visible)
     if (masterStrip->isVisible()) {
-        masterStrip->setBounds(bounds.removeFromRight(metrics.channelWidth));
+        masterStrip->setBounds(bounds.removeFromRight(effectiveMixerChannelWidth(MASTER_TRACK_ID)));
     }
 
     // Aux channel strips between regular channels and master
     int numAux = static_cast<int>(auxChannelStrips.size());
-    int auxWidth = numAux * metrics.channelWidth;
+    int auxWidth = 0;
+    for (const auto& strip : auxChannelStrips)
+        auxWidth += strip->preferredChannelWidth();
     if (auxWidth > 0) {
         auto auxArea = bounds.removeFromRight(auxWidth);
         auxContainer->setBounds(auxArea);
+        int auxX = 0;
         for (int i = 0; i < numAux; ++i) {
-            auxChannelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
-                                           auxArea.getHeight());
+            const int stripWidth = auxChannelStrips[i]->preferredChannelWidth();
+            auxChannelStrips[i]->setBounds(auxX, 0, stripWidth, auxArea.getHeight());
+            auxX += stripWidth;
         }
     } else {
         auxContainer->setBounds(0, 0, 0, 0);
@@ -2275,12 +2534,8 @@ void MixerView::resized() {
     int containerHeight = bounds.getHeight();
     int containerWidth = 0;
     for (auto* strip : orderedStrips_) {
-        int stripWidth = metrics.channelWidth;
-        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
-            if (!cs->groupChildren_.empty())
-                stripWidth =
-                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
-        }
+        auto* cs = dynamic_cast<ChannelStrip*>(strip);
+        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
         containerWidth += stripWidth;
     }
     channelContainer->setSize(containerWidth, containerHeight);
@@ -2288,12 +2543,8 @@ void MixerView::resized() {
     // Position all strips with cumulative x (group strips span multiple columns)
     int xPos = 0;
     for (auto* strip : orderedStrips_) {
-        int stripWidth = metrics.channelWidth;
-        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
-            if (!cs->groupChildren_.empty())
-                stripWidth =
-                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
-        }
+        auto* cs = dynamic_cast<ChannelStrip*>(strip);
+        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
         strip->setBounds(xPos, 0, stripWidth, containerHeight);
         xPos += stripWidth;
     }
@@ -2302,38 +2553,20 @@ void MixerView::resized() {
 }
 
 void MixerView::wireChannelResizeHandle(ChannelResizeHandle& handle) {
-    handle.onResize = [this](int deltaX) {
-        auto& metrics = MixerMetrics::getInstance();
-        int newWidth =
-            juce::jlimit(minChannelWidth_, maxChannelWidth_, metrics.channelWidth + deltaX);
-        if (metrics.channelWidth != newWidth) {
-            isResizeDragging_ = true;
-            metrics.channelWidth = newWidth;
-            // Coalesce: just store the new width, apply on next vblank
-            if (!pendingResizeUpdate_) {
-                pendingResizeUpdate_ = true;
-                juce::Component::SafePointer<MixerView> safeThis(this);
-                juce::MessageManager::callAsync([safeThis]() {
-                    if (auto* self = safeThis.getComponent()) {
-                        if (self->pendingResizeUpdate_) {
-                            self->pendingResizeUpdate_ = false;
-                            self->updateStripWidths();
-                        }
-                    }
-                });
-            }
-        }
+    handle.onResize = [this, &handle](int deltaX, const juce::ModifierKeys& mods) {
+        const TrackId trackId = handle.targetTrackId();
+        if (trackId != INVALID_TRACK_ID)
+            applyChannelWidthDelta(trackId, deltaX, mods);
     };
-    handle.onResizeEnd = [this]() {
-        isResizeDragging_ = false;
-        pendingResizeUpdate_ = false;
-        updateStripWidths();  // Ensure final width is applied
+    handle.onResizeEnd = [this](const juce::ModifierKeys& mods) { finishChannelWidthResize(mods); };
+    handle.onReset = [this, &handle](const juce::ModifierKeys& mods) {
+        const TrackId trackId = handle.targetTrackId();
+        if (trackId != INVALID_TRACK_ID)
+            resetChannelWidths(trackId, mods);
     };
 }
 
 void MixerView::layoutChannelResizeHandles(int containerHeight) {
-    const auto& metrics = MixerMetrics::getInstance();
-
     // Keep one handle per top-level strip (grow/shrink the pool as strips
     // change). Each sits on its strip's right edge, so there's a grab point
     // between every pair of headers — and they all resize the shared width.
@@ -2349,13 +2582,10 @@ void MixerView::layoutChannelResizeHandles(int containerHeight) {
     constexpr int handleWidth = 8;
     int xPos = 0;
     for (size_t i = 0; i < orderedStrips_.size(); ++i) {
-        int stripWidth = metrics.channelWidth;
-        if (auto* cs = dynamic_cast<ChannelStrip*>(orderedStrips_[i])) {
-            if (!cs->groupChildren_.empty())
-                stripWidth =
-                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
-        }
+        auto* cs = dynamic_cast<ChannelStrip*>(orderedStrips_[i]);
+        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
         xPos += stripWidth;
+        channelResizeHandles_[i]->setTargetTrackId(cs ? cs->getTrackId() : INVALID_TRACK_ID);
         channelResizeHandles_[i]->setBounds(xPos - handleWidth / 2, 0, handleWidth,
                                             containerHeight);
         channelResizeHandles_[i]->toFront(false);
@@ -2363,18 +2593,13 @@ void MixerView::layoutChannelResizeHandles(int containerHeight) {
 }
 
 void MixerView::updateStripWidths() {
-    const auto& metrics = MixerMetrics::getInstance();
     int containerHeight = channelContainer->getHeight();
 
     // Compute total container width with variable-width group strips
     int containerWidth = 0;
     for (auto* strip : orderedStrips_) {
-        int stripWidth = metrics.channelWidth;
-        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
-            if (!cs->groupChildren_.empty())
-                stripWidth =
-                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
-        }
+        auto* cs = dynamic_cast<ChannelStrip*>(strip);
+        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
         containerWidth += stripWidth;
     }
     channelContainer->setSize(containerWidth, containerHeight);
@@ -2382,12 +2607,8 @@ void MixerView::updateStripWidths() {
     // Position strips with cumulative x
     int xPos = 0;
     for (auto* strip : orderedStrips_) {
-        int stripWidth = metrics.channelWidth;
-        if (auto* cs = dynamic_cast<ChannelStrip*>(strip)) {
-            if (!cs->groupChildren_.empty())
-                stripWidth =
-                    (1 + static_cast<int>(cs->groupChildren_.size())) * metrics.channelWidth;
-        }
+        auto* cs = dynamic_cast<ChannelStrip*>(strip);
+        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
         strip->setBounds(xPos, 0, stripWidth, containerHeight);
         xPos += stripWidth;
     }
@@ -2396,11 +2617,15 @@ void MixerView::updateStripWidths() {
 
     // Update aux strips
     int numAux = static_cast<int>(auxChannelStrips.size());
-    int auxWidth = numAux * metrics.channelWidth;
+    int auxWidth = 0;
+    for (const auto& strip : auxChannelStrips)
+        auxWidth += strip->preferredChannelWidth();
     if (auxWidth > 0) {
+        int auxX = 0;
         for (int i = 0; i < numAux; ++i) {
-            auxChannelStrips[i]->setBounds(i * metrics.channelWidth, 0, metrics.channelWidth,
-                                           auxContainer->getHeight());
+            const int stripWidth = auxChannelStrips[i]->preferredChannelWidth();
+            auxChannelStrips[i]->setBounds(auxX, 0, stripWidth, auxContainer->getHeight());
+            auxX += stripWidth;
         }
     }
 }
@@ -2570,6 +2795,7 @@ void MixerView::ChannelResizeHandle::mouseDown(const juce::MouseEvent& event) {
     isDragging_ = true;
     hasConfirmedHorizontalDrag_ = false;
     dragStartX_ = event.getScreenX();
+    lastMods_ = event.mods;
 }
 
 void MixerView::ChannelResizeHandle::mouseDrag(const juce::MouseEvent& event) {
@@ -2589,15 +2815,20 @@ void MixerView::ChannelResizeHandle::mouseDrag(const juce::MouseEvent& event) {
     }
 
     int deltaX = event.getScreenX() - dragStartX_;
-    onResize(deltaX);
-    dragStartX_ = event.getScreenX();
+    lastMods_ = event.mods;
+    onResize(deltaX, event.mods);
 }
 
-void MixerView::ChannelResizeHandle::mouseUp(const juce::MouseEvent& /*event*/) {
+void MixerView::ChannelResizeHandle::mouseUp(const juce::MouseEvent& event) {
     isDragging_ = false;
     if (onResizeEnd)
-        onResizeEnd();
+        onResizeEnd(event.mods);
     repaint();
+}
+
+void MixerView::ChannelResizeHandle::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (onReset)
+        onReset(event.mods);
 }
 
 void MixerView::selectChannel(int index, bool isMaster) {
@@ -2698,12 +2929,14 @@ void MixerView::itemDragEnter(const SourceDetails& details) {
     int scrollX = channelViewport->getViewPositionX();
     int hitX = viewportPos.getX() + scrollX;
 
-    const auto& metrics = MixerMetrics::getInstance();
     int cumX = 0;
     for (int i = 0; i < static_cast<int>(orderedStrips_.size()); ++i) {
         int stripWidth = orderedStrips_[i]->getWidth();
         if (stripWidth <= 0)
-            stripWidth = metrics.channelWidth;
+            if (auto* strip = dynamic_cast<ChannelStrip*>(orderedStrips_[i]))
+                stripWidth = getTopLevelStripWidth(*strip);
+        if (stripWidth <= 0)
+            stripWidth = DEFAULT_CHANNEL_WIDTH;
         if (hitX >= cumX && hitX < cumX + stripWidth) {
             dropTargetStripIndex_ = i;
             break;
@@ -2724,12 +2957,14 @@ void MixerView::itemDragMove(const SourceDetails& details) {
     int scrollX = channelViewport->getViewPositionX();
     int hitX = viewportPos.getX() + scrollX;
 
-    const auto& metrics = MixerMetrics::getInstance();
     int cumX = 0;
     for (int i = 0; i < static_cast<int>(orderedStrips_.size()); ++i) {
         int stripWidth = orderedStrips_[i]->getWidth();
         if (stripWidth <= 0)
-            stripWidth = metrics.channelWidth;
+            if (auto* strip = dynamic_cast<ChannelStrip*>(orderedStrips_[i]))
+                stripWidth = getTopLevelStripWidth(*strip);
+        if (stripWidth <= 0)
+            stripWidth = DEFAULT_CHANNEL_WIDTH;
         if (hitX >= cumX && hitX < cumX + stripWidth) {
             dropTargetStripIndex_ = i;
             break;
