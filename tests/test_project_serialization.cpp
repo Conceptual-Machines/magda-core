@@ -12,6 +12,8 @@
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/MidiFileWriter.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/TrackPropertyCommands.hpp"
+#include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/engine/AudioEngine.hpp"
 #include "magda/daw/media_db/MediaDbContext.hpp"
 #include "magda/daw/media_db/MediaDbMetadata.hpp"
@@ -289,6 +291,7 @@ struct ProjectTestFixture {
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
         AutomationManager::getInstance().clearAll();
+        UndoManager::getInstance().clearHistory();
     }
 
     ~ProjectTestFixture() {
@@ -310,6 +313,7 @@ struct ProjectTestFixture {
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
         AutomationManager::getInstance().clearAll();
+        UndoManager::getInstance().clearHistory();
         Config::getInstance().setPersistMixerAnalysis(previousPersistMixerAnalysis);
     }
 
@@ -1562,6 +1566,8 @@ TEST_CASE("TrackInfo persistent runtime seeds roundtrip", "[project][serializati
     track->manualVolume = 0.75f;
     track->manualPan = 0.25f;
     track->playbackMode = TrackPlaybackMode::Session;
+    track->mixerChannelWidth = 137;
+    track->mixerFaderTopInset = 42;
 
     ProjectInfo info;
     auto json = ProjectSerializer::serializeProject(info);
@@ -1576,6 +1582,8 @@ TEST_CASE("TrackInfo persistent runtime seeds roundtrip", "[project][serializati
     REQUIRE(trackObj->hasProperty("manualVolume"));
     REQUIRE(trackObj->hasProperty("manualPan"));
     REQUIRE(trackObj->hasProperty("playbackMode"));
+    REQUIRE(trackObj->hasProperty("mixerChannelWidth"));
+    REQUIRE(trackObj->hasProperty("mixerFaderTopInset"));
 
     ProjectInfo loadedInfo;
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
@@ -1586,6 +1594,68 @@ TEST_CASE("TrackInfo persistent runtime seeds roundtrip", "[project][serializati
     REQUIRE(loaded->manualVolume == Approx(0.75f));
     REQUIRE(loaded->manualPan == Approx(0.25f));
     REQUIRE(loaded->playbackMode == TrackPlaybackMode::Session);
+    REQUIRE(loaded->mixerChannelWidth == 137);
+    REQUIRE(loaded->mixerFaderTopInset == 42);
+}
+
+TEST_CASE("TrackInfo mixer layout commands undo redo",
+          "[project][serialization][track][mixer][undo]") {
+    ProjectTestFixture fixture;
+
+    auto& trackManager = TrackManager::getInstance();
+    auto& undoManager = UndoManager::getInstance();
+    auto trackId = trackManager.createTrack("Resizable", TrackType::Audio);
+    auto* track = trackManager.getTrack(trackId);
+    REQUIRE(track != nullptr);
+
+    undoManager.executeCommand(std::make_unique<SetTrackMixerChannelWidthCommand>(trackId, 128));
+    REQUIRE(track->mixerChannelWidth == 128);
+    REQUIRE(undoManager.undo());
+    REQUIRE(track->mixerChannelWidth == 0);
+    REQUIRE(undoManager.redo());
+    REQUIRE(track->mixerChannelWidth == 128);
+
+    undoManager.executeCommand(std::make_unique<SetTrackMixerFaderTopInsetCommand>(trackId, 55));
+    REQUIRE(track->mixerFaderTopInset == 55);
+    REQUIRE(undoManager.undo());
+    REQUIRE(track->mixerFaderTopInset == 0);
+    REQUIRE(undoManager.redo());
+    REQUIRE(track->mixerFaderTopInset == 55);
+
+    undoManager.clearHistory();
+    {
+        CompoundOperationScope scope("Reset Mixer Channel Width");
+        undoManager.executeCommand(
+            std::make_unique<SetTrackMixerChannelWidthCommand>(trackId, 128, 0));
+    }
+    REQUIRE(track->mixerChannelWidth == 0);
+    REQUIRE(undoManager.undo());
+    REQUIRE(track->mixerChannelWidth == 128);
+
+    {
+        CompoundOperationScope scope("Reset Mixer Fader Height");
+        undoManager.executeCommand(
+            std::make_unique<SetTrackMixerFaderTopInsetCommand>(trackId, 55, 0));
+    }
+    REQUIRE(track->mixerFaderTopInset == 0);
+    REQUIRE(undoManager.undo());
+    REQUIRE(track->mixerFaderTopInset == 55);
+
+    auto* master = trackManager.getTrack(MASTER_TRACK_ID);
+    REQUIRE(master != nullptr);
+    undoManager.clearHistory();
+
+    undoManager.executeCommand(
+        std::make_unique<SetTrackMixerChannelWidthCommand>(MASTER_TRACK_ID, 142));
+    REQUIRE(master->mixerChannelWidth == 142);
+    REQUIRE(undoManager.undo());
+    REQUIRE(master->mixerChannelWidth == 0);
+
+    undoManager.executeCommand(
+        std::make_unique<SetTrackMixerFaderTopInsetCommand>(MASTER_TRACK_ID, 64));
+    REQUIRE(master->mixerFaderTopInset == 64);
+    REQUIRE(undoManager.undo());
+    REQUIRE(master->mixerFaderTopInset == 0);
 }
 
 TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][device]") {

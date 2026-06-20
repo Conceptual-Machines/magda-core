@@ -286,6 +286,8 @@ class TrackManager {
     void setAllTracksPlaybackMode(TrackPlaybackMode mode);
     bool isAnyTrackInSessionMode() const;
     void setTrackType(TrackId trackId, TrackType type);
+    void setTrackMixerChannelWidth(TrackId trackId, int width);
+    void setTrackMixerFaderTopInset(TrackId trackId, int inset);
 
     // Track routing setters (notify listeners and forward to bridges)
     void setTrackMidiInput(TrackId trackId, const juce::String& deviceId);

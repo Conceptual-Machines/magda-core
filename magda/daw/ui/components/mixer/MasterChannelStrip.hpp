@@ -4,6 +4,8 @@
 
 #include <functional>
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
 #include "../chain/custom_ui/OscilloscopeUI.hpp"
 #include "../chain/custom_ui/SpectrumAnalyzerUI.hpp"
@@ -46,6 +48,7 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
 
     // Called when the send area resize handle is dragged
     std::function<void()> onSendAreaResized;
+    std::function<std::vector<TrackId>()> allVisibleLayoutTargetsProvider;
 
   private:
     bool selected_ = false;
@@ -85,6 +88,11 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     juce::Rectangle<int> faderRegion_;
     juce::Rectangle<int> faderArea_;
     juce::Rectangle<int> peakMeterArea_;
+
+    std::vector<TrackId> faderHeightResizeTargets_;
+    std::unordered_map<TrackId, int> faderHeightResizeStartValues_;
+    std::unordered_map<TrackId, int> faderHeightResizeStartEffective_;
+    int faderHeightResizeClickedStartInset_ = 0;
 
     void setupControls();
     void updateFromMasterState();

@@ -26,6 +26,19 @@ namespace {
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;  // Allow +6 dB headroom
 
+int effectiveMixerFaderTopInset(TrackId trackId) {
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        return juce::jlimit(MixerMetrics::minFaderTopInset, MixerMetrics::maxFaderTopInset,
+                            track->mixerFaderTopInset);
+    return MixerMetrics::minFaderTopInset;
+}
+
+int storedMixerFaderTopInset(TrackId trackId) {
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        return track->mixerFaderTopInset;
+    return 0;
+}
+
 float gainToDb(float gain) {
     if (gain <= 0.0f)
         return MIN_DB;
@@ -97,17 +110,25 @@ class MasterChannelStrip::ResizeHandle : public juce::Component {
         if (!isDragging_ || !onResize)
             return;
         int deltaY = event.getScreenY() - dragStartY_;
-        onResize(deltaY);
-        dragStartY_ = event.getScreenY();
+        onResize(deltaY, event.mods);
     }
 
-    void mouseUp(const juce::MouseEvent& /*event*/) override {
+    void mouseUp(const juce::MouseEvent& event) override {
         isDragging_ = false;
         isHovering_ = false;
+        if (onResizeEnd)
+            onResizeEnd(event.mods);
         repaint();
     }
 
-    std::function<void(int deltaY)> onResize;
+    void mouseDoubleClick(const juce::MouseEvent& event) override {
+        if (onReset)
+            onReset(event.mods);
+    }
+
+    std::function<void(int deltaY, const juce::ModifierKeys& mods)> onResize;
+    std::function<void(const juce::ModifierKeys& mods)> onResizeEnd;
+    std::function<void(const juce::ModifierKeys& mods)> onReset;
 
   private:
     bool isHovering_ = false;
@@ -301,19 +322,97 @@ void MasterChannelStrip::setupControls() {
 
     // Resize handle — controls faderTopInset to mirror channel strips.
     resizeHandle_ = std::make_unique<ResizeHandle>();
-    resizeHandle_->onResize = [this](int deltaY) {
+    resizeHandle_->onResize = [this](int deltaY, const juce::ModifierKeys& mods) {
         auto& metrics = MixerMetrics::getInstance();
         int fixedHeight = 38 + metrics.controlSpacing + 120 + 24 + metrics.buttonSize +
                           metrics.channelPadding * 2;
         int maxInset = juce::jmax(MixerMetrics::minFaderTopInset, getHeight() - fixedHeight);
-        int newInset = juce::jlimit(MixerMetrics::minFaderTopInset,
-                                    juce::jmin(maxInset, MixerMetrics::maxFaderTopInset),
-                                    metrics.faderTopInset + deltaY);
-        if (metrics.faderTopInset != newInset) {
-            metrics.faderTopInset = newInset;
+        const int limit = juce::jmin(maxInset, MixerMetrics::maxFaderTopInset);
+        const bool sameValue = mods.isAltDown();
+
+        if (faderHeightResizeTargets_.empty()) {
+            if (sameValue && allVisibleLayoutTargetsProvider)
+                faderHeightResizeTargets_ = allVisibleLayoutTargetsProvider();
+            if (faderHeightResizeTargets_.empty())
+                faderHeightResizeTargets_ = {MASTER_TRACK_ID};
+
+            faderHeightResizeClickedStartInset_ = effectiveMixerFaderTopInset(MASTER_TRACK_ID);
+            faderHeightResizeStartValues_.clear();
+            faderHeightResizeStartEffective_.clear();
+            for (auto tid : faderHeightResizeTargets_) {
+                faderHeightResizeStartValues_[tid] = storedMixerFaderTopInset(tid);
+                faderHeightResizeStartEffective_[tid] = effectiveMixerFaderTopInset(tid);
+            }
+        }
+
+        const int sameInset = juce::jlimit(MixerMetrics::minFaderTopInset, limit,
+                                           faderHeightResizeClickedStartInset_ + deltaY);
+        auto& tm = TrackManager::getInstance();
+        for (auto tid : faderHeightResizeTargets_) {
+            const int baseInset = sameValue ? faderHeightResizeClickedStartInset_
+                                            : faderHeightResizeStartEffective_[tid];
+            const int newInset =
+                juce::jlimit(MixerMetrics::minFaderTopInset, limit, baseInset + deltaY);
+            tm.setTrackMixerFaderTopInset(tid, sameValue ? sameInset : newInset);
+        }
+
+        if (!faderHeightResizeTargets_.empty()) {
             if (onSendAreaResized)
                 onSendAreaResized();
         }
+    };
+    resizeHandle_->onResizeEnd = [this](const juce::ModifierKeys&) {
+        std::vector<std::unique_ptr<UndoableCommand>> commands;
+        for (auto tid : faderHeightResizeTargets_) {
+            const auto oldIt = faderHeightResizeStartValues_.find(tid);
+            if (oldIt == faderHeightResizeStartValues_.end())
+                continue;
+            const int oldInset = oldIt->second;
+            const int newInset = storedMixerFaderTopInset(tid);
+            if (oldInset != newInset) {
+                commands.push_back(
+                    std::make_unique<SetTrackMixerFaderTopInsetCommand>(tid, oldInset, newInset));
+            }
+        }
+
+        faderHeightResizeTargets_.clear();
+        faderHeightResizeStartValues_.clear();
+        faderHeightResizeStartEffective_.clear();
+
+        if (commands.empty())
+            return;
+
+        auto& undo = UndoManager::getInstance();
+        CompoundOperationScope scope("Resize Mixer Fader Height");
+        for (auto& command : commands)
+            undo.executeCommand(std::move(command));
+    };
+    resizeHandle_->onReset = [this](const juce::ModifierKeys& mods) {
+        auto targets = std::vector<TrackId>{MASTER_TRACK_ID};
+        if (mods.isAltDown() && allVisibleLayoutTargetsProvider) {
+            targets = allVisibleLayoutTargetsProvider();
+            if (targets.empty())
+                targets = {MASTER_TRACK_ID};
+        }
+
+        std::vector<std::unique_ptr<UndoableCommand>> commands;
+        for (auto tid : targets) {
+            const int oldInset = storedMixerFaderTopInset(tid);
+            if (oldInset != 0) {
+                commands.push_back(
+                    std::make_unique<SetTrackMixerFaderTopInsetCommand>(tid, oldInset, 0));
+            }
+        }
+
+        if (!commands.empty()) {
+            auto& undo = UndoManager::getInstance();
+            CompoundOperationScope scope("Reset Mixer Fader Height");
+            for (auto& command : commands)
+                undo.executeCommand(std::move(command));
+        }
+
+        if (onSendAreaResized)
+            onSendAreaResized();
     };
     addAndMakeVisible(*resizeHandle_);
 
@@ -498,7 +597,7 @@ void MasterChannelStrip::resized() {
             bounds.removeFromTop(6);  // breathing room before handle
         }
 
-        bounds.removeFromTop(metrics.faderTopInset);
+        bounds.removeFromTop(effectiveMixerFaderTopInset(MASTER_TRACK_ID));
 
         if (resizeHandle_) {
             resizeHandle_->setBounds(bounds.removeFromTop(6));
