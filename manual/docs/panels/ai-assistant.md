@@ -68,6 +68,8 @@ The console follows the view you are working in. The context label above the inp
 - **Session view** — requests are scoped to session workflows (scenes, clip slots, launching).
 - **Mixer and master views** — requests are routed to the **mixing agent**.
 
+Each view keeps its own conversation, so switching between Arrangement, Session, and Mixer picks up the thread you left in that view rather than mixing them together.
+
 ## Mixing Agent
 
 In the mixer view, the console talks to a specialised mixing agent. It can read the per-track measurement layer — loudness, peaks, stereo width and correlation, and detected frequency collisions between tracks — and ground its feedback in those numbers.

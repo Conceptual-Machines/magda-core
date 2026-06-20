@@ -14,6 +14,9 @@ MAGDA has eight top-level menus.
 | Save Project As | Save the current project to a new file |
 | Collect Files... | Copy every externally-referenced audio file (clips, sampler and drum-pad samples) into the project's media folder and repoint the project at the copies, so it travels self-contained. Shows progress and can be cancelled. |
 | Export Audio | Export/render the project to an audio file |
+| Import DAWproject... | Import a `.dawproject` interchange file (see [File Formats](../reference/file-formats.md#dawproject-interchange)) |
+| Export DAWproject... | Export the project as a `.dawproject` interchange file |
+| Project Settings | Open the [Project Settings](../arrangement-view.md#project-settings) dialog (song length, sample rate, render/bounce bit depth) |
 | Quit | Exit MAGDA (Windows/Linux only — use Cmd+Q on macOS) |
 
 ## Edit
@@ -70,6 +73,7 @@ Each track has a checkbox for each view mode: **Live**, **Arrange**, **Mix**, an
 | Add Track | Add a new track |
 | Add Group Track | Add a new group track |
 | Add Aux Track | Add a new aux/return track |
+| Add Chord Track | Add the project's [chord track](../chord-track.md) (disabled once one exists) |
 | Delete Track | Delete the selected track |
 | Duplicate Track | Duplicate the selected track with clips and FX chain (++ctrl+d++ / ++cmd+d++) |
 | Duplicate Track Without Content | Duplicate track structure and FX chain only, no clips (++ctrl+shift+d++ / ++cmd+shift+d++) |

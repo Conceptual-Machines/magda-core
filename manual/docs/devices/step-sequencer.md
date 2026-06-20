@@ -2,6 +2,9 @@
 
 The Step Sequencer is a MIDI device that generates melodic and rhythmic patterns from a grid of programmable steps. Each step has a pitch, velocity, gate length, and optional glide — giving you precise control over every note in the sequence.
 
+!!! tip "Need chords or a drum grid?"
+    The Step Sequencer is monophonic — one note per step. For chords (up to eight notes per step) and a switchable keyboard/drum view, use the [Poly Sequencer](poly-sequencer.md).
+
 ## Overview
 
 ![Step Sequencer](../assets/images/devices/step-sequencer.png)

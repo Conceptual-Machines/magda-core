@@ -17,6 +17,7 @@ MAGDA uses a **hybrid track system**: there is no strict distinction between aud
 | **MIDI** | Track that sends MIDI to external devices |
 | **Group** | Bus track that groups multiple child tracks |
 | **Aux** | Auxiliary/send-return track for shared effects |
+| **Chord** | Guide track holding a chord progression — one per project (see [Chord Track](chord-track.md)) |
 | **Master** | Final stereo output — one per project |
 
 ## Track Controls
@@ -79,6 +80,17 @@ A common use case is keeping the Arrangement View clean while having full contro
 ### Multi-Track Selection
 
 Click a track header to select it. Hold ++shift++ and click another header to extend the selection to a contiguous range; ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.
+
+## Grouping Tracks
+
+Group tracks collect several tracks under a single bus so you can fold them away and control them together. Right-click a track header for the grouping actions:
+
+- **Group tracks** — with two or more tracks selected, collects them into a new group track.
+- **Ungroup tracks** — on a group track, dissolves it and promotes its children back to the top level.
+- **Remove from group** — moves a track out of its group, back to the top level.
+- **Move to group** — a submenu listing the existing group tracks; pick one to move the track into it.
+
+Collapse or expand a group's children from the [Track Manager](#track-view-manager) or the group header.
 
 ## Duplicating Tracks
 
