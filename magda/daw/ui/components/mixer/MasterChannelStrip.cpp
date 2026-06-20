@@ -482,21 +482,16 @@ void MasterChannelStrip::setupControls() {
     cueVolumeSlider_->onValueChanged = [](double /*pos*/) {};
     addAndMakeVisible(*cueVolumeSlider_);
 
-    // Speaker on/off button (toggles master mute)
-    auto speakerOnIcon =
-        juce::Drawable::createFromImageData(BinaryData::speaker_svg, BinaryData::speaker_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_muted_svg,
-                                                              BinaryData::speaker_muted_svgSize);
-
-    speakerButton =
-        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
-    speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
-    speakerButton->setEdgeIndent(0);
+    // Speaker on/off button (toggles master mute). Dual-icon SvgButton matching
+    // the inspector: gray speaker (master_on) when audible, orange chip
+    // (master_off) when muted. SvgButton's iconPadding + cornerRadius give the
+    // padding and rounded box a raw DrawableButton can't.
+    speakerButton = std::make_unique<magda::SvgButton>(
+        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     speakerButton->setClickingTogglesState(true);
-    speakerButton->setColour(juce::DrawableButton::backgroundColourId,
-                             juce::Colours::transparentBlack);
-    speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                             juce::Colours::transparentBlack);
+    speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -552,9 +547,17 @@ void MasterChannelStrip::resized() {
 
         // Title row: [speaker icon] [Master label]
         auto titleRow = bounds.removeFromTop(24);
-        speakerButton->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+        auto speakerSlot = titleRow.removeFromLeft(20);
         titleRow.removeFromLeft(2);
-        titleLabel->setBounds(titleRow);
+        // Both the speaker and the "Master" label center vertically in the
+        // painted title bar (component y in [1, labelRowBottom] — see paint()),
+        // which is anchored to the component top and so sits ~6px higher than
+        // the padded titleRow.
+        constexpr int kTitleBarBottom = 4 + 26;  // labelRowBottom in paint()
+        const int barMidY = (1 + kTitleBarBottom) / 2;
+        titleLabel->setBounds(titleRow.withY(1).withHeight(kTitleBarBottom - 1));
+        speakerButton->setBounds(
+            juce::Rectangle<int>(0, 0, 18, 18).withCentre({speakerSlot.getCentreX(), barMidY}));
 
         bounds.removeFromTop(metrics.controlSpacing);
 

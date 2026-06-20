@@ -276,19 +276,16 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Master-only speaker mute (shown instead of the "M" button for the master),
     // matching the inspector and mixer master strips.
     {
-        auto onIcon = juce::Drawable::createFromImageData(BinaryData::speaker_svg,
-                                                          BinaryData::speaker_svgSize);
-        auto offIcon = juce::Drawable::createFromImageData(BinaryData::speaker_muted_svg,
-                                                           BinaryData::speaker_muted_svgSize);
-        masterMuteButton =
-            std::make_unique<juce::DrawableButton>("masterMute", juce::DrawableButton::ImageFitted);
-        masterMuteButton->setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
-        masterMuteButton->setEdgeIndent(0);
+        // Dual-icon SvgButton matching the inspector/mixer: gray speaker
+        // (master_on) when audible, orange chip (master_off) when muted.
+        // SvgButton's iconPadding + cornerRadius give the padding and rounded
+        // box a raw DrawableButton can't.
+        masterMuteButton = std::make_unique<magda::SvgButton>(
+            "masterMute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+            BinaryData::master_off_svg, BinaryData::master_off_svgSize);
         masterMuteButton->setClickingTogglesState(true);
-        masterMuteButton->setColour(juce::DrawableButton::backgroundColourId,
-                                    juce::Colours::transparentBlack);
-        masterMuteButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                                    juce::Colours::transparentBlack);
+        masterMuteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        masterMuteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     }
 
     // Chord-track audition toggle (speaker). Dual-icon with pre-baked colors:

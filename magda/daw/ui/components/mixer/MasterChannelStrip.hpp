@@ -9,6 +9,7 @@
 
 #include "../chain/custom_ui/OscilloscopeUI.hpp"
 #include "../chain/custom_ui/SpectrumAnalyzerUI.hpp"
+#include "../common/SvgButton.hpp"
 #include "../common/TextSlider.hpp"
 #include "ClickableLabel.hpp"
 #include "LevelMeter.hpp"
@@ -57,7 +58,7 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // UI Components
     std::unique_ptr<juce::Label> titleLabel;
     std::unique_ptr<daw::ui::TextSlider> volumeSlider;
-    std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
+    std::unique_ptr<magda::SvgButton> speakerButton;  // Speaker on/off toggle
 
     // Cue/headphone output
     std::unique_ptr<juce::DrawableButton> headphoneIcon_;
