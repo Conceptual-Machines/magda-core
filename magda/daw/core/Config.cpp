@@ -221,6 +221,7 @@ void Config::save() {
     root->setProperty("loadModelOnStartup", loadModelOnStartup);
     root->setProperty("stopUpdatesPlayhead", stopUpdatesPlayhead);
     root->setProperty("followPlayhead", followPlayhead);
+    root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -613,6 +614,7 @@ void Config::load() {
     loadModelOnStartup = getBool("loadModelOnStartup", loadModelOnStartup);
     stopUpdatesPlayhead = getBool("stopUpdatesPlayhead", stopUpdatesPlayhead);
     followPlayhead = getBool("followPlayhead", followPlayhead);
+    chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 

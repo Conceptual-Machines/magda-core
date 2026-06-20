@@ -1805,6 +1805,14 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     const bool isChordTrackLane =
         clip->trackId == magda::TrackManager::getInstance().getChordTrackId();
     const bool overlay = showProgressionOverlay_ && !isChordTrackLane;
+
+    // The accent spine takes its colour from the chord track (the chord that
+    // owns the spine always belongs to the chord track, whether shown on its
+    // own lane or as an overlay on a MIDI track).
+    juce::Colour chordTrackColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    if (auto* chordTrackInfo = magda::TrackManager::getInstance().getTrack(
+            magda::TrackManager::getInstance().getChordTrackId()))
+        chordTrackColour = chordTrackInfo->colour;
     const auto master = overlay ? magda::ChordProgressionContext::current()
                                 : std::vector<magda::ProgressionChord>{};
     auto intendedAt = [&](double absBeat) -> juce::String {
@@ -1858,7 +1866,8 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
                                          static_cast<float>(blockBounds.getY() + 3), 3.0f,
                                          static_cast<float>(blockBounds.getHeight() - 6));
-            g.setColour(fillColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
+            const auto spineColour = previewing ? fillColour : chordTrackColour;
+            g.setColour(spineColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
             g.fillRoundedRectangle(spine, 1.5f);
         }
 

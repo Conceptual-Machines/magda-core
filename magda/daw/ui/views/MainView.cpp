@@ -2205,6 +2205,15 @@ void MainView::setupSelectionCallbacks() {
     trackContentPanel->getGridSpacingBeats = [this]() -> double {
         return timelineController->getState().getSnapBeatFraction();
     };
+    // Master automation band (tempo, master volume) snaps to the same grid.
+    if (masterAutomationContentPanel) {
+        masterAutomationContentPanel->snapBeatToGrid = [this](double beats) {
+            return timelineController->getState().snapBeatsToGrid(beats);
+        };
+        masterAutomationContentPanel->getGridSpacingBeats = [this]() -> double {
+            return timelineController->getState().getSnapBeatFraction();
+        };
+    }
 
     // Set up render callbacks (bubble up to MainWindow)
     trackContentPanel->onClipRenderRequested = [this](ClipId id) {

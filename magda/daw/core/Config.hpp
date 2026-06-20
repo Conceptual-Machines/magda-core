@@ -301,6 +301,15 @@ class Config {
         followPlayhead = enabled;
     }
 
+    // Whether a newly created chord track auditions its progression on playback
+    // by default (the chord-track speaker toggle, which is the track's mute).
+    bool getChordPreviewOnByDefault() const {
+        return chordPreviewOnByDefault;
+    }
+    void setChordPreviewOnByDefault(bool enabled) {
+        chordPreviewOnByDefault = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -1047,6 +1056,9 @@ class Config {
 
     // Auto-scroll the arrangement to follow the playhead during playback.
     bool followPlayhead = true;
+
+    // Audition a new chord track's progression on playback by default.
+    bool chordPreviewOnByDefault = false;
 
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;    // Show audio files by default
