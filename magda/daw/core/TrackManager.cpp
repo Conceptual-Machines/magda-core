@@ -1346,6 +1346,26 @@ void TrackManager::setTrackType(TrackId trackId, TrackType type) {
     }
 }
 
+void TrackManager::setTrackMixerChannelWidth(TrackId trackId, int width) {
+    if (auto* track = getTrack(trackId)) {
+        const int clamped = juce::jlimit(0, 180, width);
+        if (track->mixerChannelWidth == clamped)
+            return;
+        track->mixerChannelWidth = clamped;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackMixerFaderTopInset(TrackId trackId, int inset) {
+    if (auto* track = getTrack(trackId)) {
+        const int clamped = juce::jlimit(0, 400, inset);
+        if (track->mixerFaderTopInset == clamped)
+            return;
+        track->mixerFaderTopInset = clamped;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
 void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
     audioEngine_ = audioEngine;
 

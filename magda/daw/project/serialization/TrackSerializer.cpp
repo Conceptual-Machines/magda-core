@@ -55,6 +55,10 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("inputMonitor", static_cast<int>(track.inputMonitor));
     obj->setProperty("frozen", track.frozen);
     obj->setProperty("playbackMode", static_cast<int>(track.playbackMode));
+    if (track.mixerChannelWidth > 0)
+        obj->setProperty("mixerChannelWidth", track.mixerChannelWidth);
+    if (track.mixerFaderTopInset > 0)
+        obj->setProperty("mixerFaderTopInset", track.mixerFaderTopInset);
     if (track.activeSessionClipId != INVALID_CLIP_ID)
         obj->setProperty("activeSessionClipId", track.activeSessionClipId);
 
@@ -195,6 +199,12 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     if (obj->hasProperty("playbackMode")) {
         outTrack.playbackMode =
             static_cast<TrackPlaybackMode>(static_cast<int>(obj->getProperty("playbackMode")));
+    }
+    if (obj->hasProperty("mixerChannelWidth")) {
+        outTrack.mixerChannelWidth = static_cast<int>(obj->getProperty("mixerChannelWidth"));
+    }
+    if (obj->hasProperty("mixerFaderTopInset")) {
+        outTrack.mixerFaderTopInset = static_cast<int>(obj->getProperty("mixerFaderTopInset"));
     }
     if (obj->hasProperty("activeSessionClipId")) {
         outTrack.activeSessionClipId = static_cast<int>(obj->getProperty("activeSessionClipId"));

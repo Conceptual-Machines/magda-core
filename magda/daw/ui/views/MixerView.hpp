@@ -29,6 +29,7 @@ namespace magda {
 
 // Forward declarations
 class AudioEngine;
+class UndoableCommand;
 
 /**
  * @brief Mixer view - channel strip mixer interface
@@ -134,6 +135,8 @@ class MixerView : public juce::Component,
         bool isMasterChannel() const {
             return isMaster_;
         }
+        int preferredChannelWidth() const;
+        int faderTopInset() const;
 
         // Update from track info
         void updateFromTrack(const TrackInfo& track, bool syncMiniChain = false);
@@ -277,6 +280,11 @@ class MixerView : public juce::Component,
         double multiTrackDragStartDb_ = 0.0;
         double multiTrackDragStartPan_ = 0.0;
 
+        std::vector<TrackId> faderHeightResizeTargets_;
+        std::unordered_map<TrackId, int> faderHeightResizeStartValues_;
+        std::unordered_map<TrackId, int> faderHeightResizeStartEffective_;
+        int faderHeightResizeClickedStartInset_ = 0;
+
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
     };
 
@@ -297,21 +305,31 @@ class MixerView : public juce::Component,
     class ChannelResizeHandle : public juce::Component {
       public:
         ChannelResizeHandle();
+        void setTargetTrackId(TrackId trackId) {
+            targetTrackId_ = trackId;
+        }
+        TrackId targetTrackId() const {
+            return targetTrackId_;
+        }
         void paint(juce::Graphics& g) override;
         void mouseEnter(const juce::MouseEvent& event) override;
         void mouseExit(const juce::MouseEvent& event) override;
         void mouseDown(const juce::MouseEvent& event) override;
         void mouseDrag(const juce::MouseEvent& event) override;
         void mouseUp(const juce::MouseEvent& event) override;
+        void mouseDoubleClick(const juce::MouseEvent& event) override;
 
-        std::function<void(int deltaX)> onResize;
-        std::function<void()> onResizeEnd;
+        std::function<void(int deltaX, const juce::ModifierKeys& mods)> onResize;
+        std::function<void(const juce::ModifierKeys& mods)> onResizeEnd;
+        std::function<void(const juce::ModifierKeys& mods)> onReset;
 
       private:
         bool isHovering_ = false;
         bool isDragging_ = false;
         bool hasConfirmedHorizontalDrag_ = false;
+        juce::ModifierKeys lastMods_;
         int dragStartX_ = 0;
+        TrackId targetTrackId_ = INVALID_TRACK_ID;
     };
     // One resize handle per top-level strip, sitting on each strip's right edge
     // so a grab point exists between every pair of channel headers (not just at
@@ -319,6 +337,14 @@ class MixerView : public juce::Component,
     std::vector<std::unique_ptr<ChannelResizeHandle>> channelResizeHandles_;
     void wireChannelResizeHandle(ChannelResizeHandle& handle);
     void layoutChannelResizeHandles(int containerHeight);
+    int getTopLevelStripWidth(const ChannelStrip& strip) const;
+    std::vector<TrackId> getLayoutEditTargets(TrackId clickedId, bool allVisible) const;
+    void applyChannelWidthDelta(TrackId clickedId, int deltaX, const juce::ModifierKeys& mods);
+    void finishChannelWidthResize(const juce::ModifierKeys& mods);
+    void resetChannelWidths(TrackId clickedId, const juce::ModifierKeys& mods);
+    void commitChannelWidthResize();
+    void executeMixerLayoutCommands(const juce::String& description,
+                                    std::vector<std::unique_ptr<UndoableCommand>> commands);
 
     // Left-edge vertical rail of view-toggle buttons (sends, routing, monitor,
     // mini oscilloscope, mini spectrum, mini FX chain). State persisted via
@@ -335,6 +361,10 @@ class MixerView : public juce::Component,
     bool wasPlaying_ = false;  // tracks transport edge to auto-reset peak holds
     bool pendingResizeUpdate_ = false;
     bool pendingSendResizeUpdate_ = false;
+    std::vector<TrackId> channelWidthResizeTargets_;
+    std::unordered_map<TrackId, int> channelWidthResizeStartValues_;
+    std::unordered_map<TrackId, int> channelWidthResizeStartEffective_;
+    int channelWidthResizeClickedStartWidth_ = 100;
 
     // Selection state
     int selectedChannelIndex = 0;  // Track index, -1 for no selection
