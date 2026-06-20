@@ -1821,6 +1821,9 @@ void ClipInspector::initFadesSection() {
 
     takesSection_ = std::make_unique<ClipTakesSection>();
     clipPropsContainer_.addChildComponent(*takesSection_);
+
+    chordProgressionSection_ = std::make_unique<ChordProgressionSection>();
+    clipPropsContainer_.addChildComponent(*chordProgressionSection_);
 }
 
 // ========================================================================

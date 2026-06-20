@@ -201,6 +201,18 @@ class TrackManager {
     // Track operations
     TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
     TrackId createGroupTrack(const juce::String& name = "");
+
+    // Chord track is a strict singleton (TrackType::Chord). It lives in the
+    // normal track list so it gets clip hosting / arrangement rendering for
+    // free, but it is monitor-only: its instrument voices chord previews and it
+    // is excluded from the render/bounce graph. ensureChordTrack() creates it on
+    // first use (idempotent) and returns its id; getChordTrackId() returns the
+    // existing one or INVALID_TRACK_ID.
+    TrackId ensureChordTrack();
+    TrackId getChordTrackId() const;
+    bool hasChordTrack() const {
+        return getChordTrackId() != INVALID_TRACK_ID;
+    }
     TrackId groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name = "Group");
     std::vector<TrackId> ungroupTrack(TrackId groupId);
     void deleteTrack(TrackId trackId);

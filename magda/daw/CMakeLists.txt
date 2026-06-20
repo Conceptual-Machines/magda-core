@@ -77,6 +77,12 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/speaker_muted.svg
     ../../assets/icons/general/speaker_on.svg
     ../../assets/icons/general/speaker_off.svg
+    ../../assets/icons/general/master_on.svg
+    ../../assets/icons/general/master_off.svg
+    ../../assets/icons/general/master_off_1.svg
+    ../../assets/icons/general/chord_on.svg
+    ../../assets/icons/general/chord_off.svg
+    ../../assets/icons/general/chord_on_1.svg
     ../../assets/BoldMGlyph.svg
     ../../assets/icons/general/headphones.svg
     ../../assets/icons/general/record-monitor.svg
@@ -192,6 +198,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/browser/icon-audio-boldm.svg
     ../../assets/icons/browser/icon-midi-boldm.svg
     ../../assets/icons/browser/icon-preset-boldm.svg
+    ../../assets/icons/browser/icon-chordtrack-boldm.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg
     ../../assets/icons/fader/fader_track.svg

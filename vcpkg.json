@@ -1,7 +1,7 @@
 {
   "name": "magda-core",
   "version-string": "0.0.0",
-  "builtin-baseline": "a4676fa5be1d5e94250745b4614d5d2a9034290b",
+  "builtin-baseline": "a0b1c8d3a477c1cb4813d8e127a56961707ca42b",
   "dependencies": [
     "libxml2"
   ]

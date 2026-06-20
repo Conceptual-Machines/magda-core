@@ -21,6 +21,7 @@
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "music/ChordEngine.hpp"
+#include "music/NotationSettings.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
@@ -38,6 +39,9 @@ PianoRollContent::PianoRollContent() {
     setName("PianoRoll");
     if (timeRuler_)
         timeRuler_->setGestureContext(magda::GestureContext::PianoRoll);
+
+    // Repaint the chord lane when the C / Do notation changes anywhere.
+    magda::music::NotationSettings::getInstance().addChangeListener(this);
 
     // Create fold toggle button (collapse the vertical axis to used pitches)
     foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::iconfoldboldm_svg,
@@ -88,6 +92,16 @@ PianoRollContent::PianoRollContent() {
     chordDetectBtn_->onClick = [this]() { detectChordsFromNotes(); };
     chordDetectBtn_->setVisible(showChordRow_);
     addAndMakeVisible(chordDetectBtn_.get());
+
+    // Chord-focus mode shows this in place of the rescan button: a toggle that
+    // shows/hides the note grid.
+    gridToggleBtn_ = std::make_unique<magda::SvgButton>("GridToggle", BinaryData::piano_roll_svg,
+                                                        BinaryData::piano_roll_svgSize);
+    gridToggleBtn_->setTooltip("Show / hide the piano roll");
+    gridToggleBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
+    gridToggleBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gridToggleBtn_->onClick = [this]() { onGridToggleClicked(); };
+    addChildComponent(gridToggleBtn_.get());
 
     // Create velocity toggle button (opens the lanes drawer)
     velocityToggle_ = std::make_unique<magda::SvgButton>(
@@ -352,6 +366,7 @@ void PianoRollContent::updateLaneToggleStates() {
 PianoRollContent::~PianoRollContent() {
     uninstallMidiNoteMonitor();
     magda::SelectionManager::getInstance().removeListener(this);
+    magda::music::NotationSettings::getInstance().removeChangeListener(this);
 }
 
 void PianoRollContent::setNoteHeight(int height, bool persist) {
@@ -814,28 +829,30 @@ void PianoRollContent::paint(juce::Graphics& g) {
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
 
-    // Draw sidebar on the left
-    auto sidebarArea = getLocalBounds().removeFromLeft(SIDEBAR_WIDTH);
-    drawSidebar(g, sidebarArea);
+    // Draw sidebar on the left (chord-focus mode drops it entirely)
+    if (sidebarWidth() > 0) {
+        auto sidebarArea = getLocalBounds().removeFromLeft(sidebarWidth());
+        drawSidebar(g, sidebarArea);
+    }
 
     // Draw chord row at the top (if visible)
     if (showChordRow_) {
         auto chordArea = getLocalBounds();
-        chordArea.removeFromLeft(SIDEBAR_WIDTH);
-        chordArea = chordArea.removeFromTop(CHORD_ROW_HEIGHT);
+        chordArea.removeFromLeft(sidebarWidth());
+        chordArea = chordArea.removeFromTop(chordRowHeight());
         chordArea.removeFromLeft(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
         drawChordRow(g, chordArea);
 
         // Horizontal separator at bottom of chord row — full width
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(CHORD_ROW_HEIGHT - 1, static_cast<float>(SIDEBAR_WIDTH),
+        g.drawHorizontalLine(chordRowHeight() - 1, static_cast<float>(sidebarWidth()),
                              static_cast<float>(getWidth()));
     }
 
     // Draw velocity drawer header (if open) — only for legacy path without MidiDrawer
     if (velocityDrawerOpen_ && !midiDrawer_) {
         auto drawerHeaderArea = getLocalBounds();
-        drawerHeaderArea.removeFromLeft(SIDEBAR_WIDTH);
+        drawerHeaderArea.removeFromLeft(sidebarWidth());
         drawerHeaderArea = drawerHeaderArea.removeFromBottom(drawerHeight_);
         drawerHeaderArea = drawerHeaderArea.removeFromTop(VELOCITY_HEADER_HEIGHT);
         drawVelocityHeader(g, drawerHeaderArea);
@@ -844,31 +861,38 @@ void PianoRollContent::paint(juce::Graphics& g) {
 
 void PianoRollContent::paintOverChildren(juce::Graphics& g) {
     // Extend the ruler's tick-area border line through the sidebar/keyboard corner
-    int rulerTop = showChordRow_ ? CHORD_ROW_HEIGHT : 0;
+    int rulerTop = showChordRow_ ? chordRowHeight() : 0;
     int tickLineY = rulerTop + RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.fillRect(SIDEBAR_WIDTH, tickLineY, ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH, 1);
+    g.fillRect(sidebarWidth(), tickLineY, ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH,
+               1);
 }
 
 void PianoRollContent::resized() {
     auto bounds = getLocalBounds();
 
     // Skip sidebar (painted in paint())
-    bounds.removeFromLeft(SIDEBAR_WIDTH);
+    bounds.removeFromLeft(sidebarWidth());
 
-    // Position sidebar icons
+    // Position sidebar icons. Chord-focus mode drops the whole strip, so every
+    // toggle that lives in it is hidden.
+    const bool hasSidebar = sidebarWidth() > 0;
     int iconSize = 22;
-    int padding = (SIDEBAR_WIDTH - iconSize) / 2;
+    int padding = (sidebarWidth() - iconSize) / 2;
     // Chord toggle at top of sidebar — vertically centered in chord row height
-    int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
+    int chordToggleY = showChordRow_ ? (chordRowHeight() - iconSize) / 2 : padding;
+    chordToggle_->setVisible(hasSidebar);
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
     // Fold toggle directly below the chord toggle
-    if (foldToggle_)
+    if (foldToggle_) {
+        foldToggle_->setVisible(hasSidebar);
         foldToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
+    }
     // Take-lanes toggle below the fold toggle (only when the clip has takes)
     if (takeLanesToggle_) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-        const bool hasTakes = clip != nullptr && clip->isMidi() && clip->midi().takes.size() >= 2;
+        const bool hasTakes =
+            hasSidebar && clip != nullptr && clip->isMidi() && clip->midi().takes.size() >= 2;
         takeLanesToggle_->setVisible(hasTakes);
         if (hasTakes) {
             takeLanesToggle_->setActive(clip->takesExpanded);
@@ -876,7 +900,13 @@ void PianoRollContent::resized() {
                                         iconSize);
         }
     }
-    // Lane buttons stacked at the bottom, top to bottom: MPE, CC, velocity
+    // Lane buttons stacked at the bottom, top to bottom: MPE, CC, velocity.
+    // Chord-focus mode hides them entirely - a chord clip has no per-note
+    // velocity/CC editing surface.
+    const bool laneTogglesVisible = hasSidebar && !chordFocusMode();
+    velocityToggle_->setVisible(laneTogglesVisible);
+    ccLanesBtn_->setVisible(laneTogglesVisible);
+    pitchGlideToggle_->setVisible(laneTogglesVisible);
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
     ccLanesBtn_->setBounds(padding, getHeight() - 2 * (iconSize + padding), iconSize, iconSize);
     pitchGlideToggle_->setBounds(padding, getHeight() - 3 * (iconSize + padding), iconSize,
@@ -884,19 +914,33 @@ void PianoRollContent::resized() {
 
     // Skip chord row space if visible (drawn in paint)
     if (showChordRow_) {
-        bounds.removeFromTop(CHORD_ROW_HEIGHT);
-        // Position detect button in the keyboard column of the chord row
-        int detectSize = 18;
-        int detectX = SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
-        int detectY = (CHORD_ROW_HEIGHT - detectSize) / 2;
-        chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
-        chordDetectBtn_->setVisible(true);
+        bounds.removeFromTop(chordRowHeight());
+        const int detectSize = 18;
+        const bool chordMode = chordFocusMode();
+
+        chordDetectBtn_->setVisible(!chordMode);
+        gridToggleBtn_->setVisible(chordMode);
+
+        if (chordMode) {
+            // Grid show/hide toggle: bottom-centre of the chord-lane gutter.
+            const int gx = (chordLaneLeftX() - detectSize) / 2;
+            const int gy = chordRowHeight() - detectSize - 6;
+            gridToggleBtn_->setBounds(gx, gy, detectSize, detectSize);
+            gridToggleBtn_->setActive(gridShown());  // accent when the grid is visible
+        } else {
+            // Rescan button: keyboard column, vertically centred in the chord row.
+            const int detectX =
+                sidebarWidth() + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
+            const int detectY = (chordRowHeight() - detectSize) / 2;
+            chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
+        }
     } else {
         chordDetectBtn_->setVisible(false);
+        gridToggleBtn_->setVisible(false);
     }
 
-    // MIDI drawer at bottom (if open)
-    if (velocityDrawerOpen_) {
+    // MIDI drawer at bottom (if open). Suppressed in chord-focus mode.
+    if (velocityDrawerOpen_ && !chordFocusMode()) {
         auto drawerArea = bounds.removeFromBottom(drawerHeight_);
         if (midiDrawer_) {
             // MidiDrawerComponent gets the full width including the left column,
@@ -971,15 +1015,72 @@ void PianoRollContent::resized() {
 // Mouse
 // ============================================================================
 
+void PianoRollContent::mouseDown(const juce::MouseEvent& e) {
+    // Chord lane click: offer it to the subclass hook (chord-clip add). The
+    // standard piano roll's hook returns false, so the event falls through.
+    if (showChordRow_ && e.y < chordRowHeight()) {
+        const int leftPanelWidth =
+            sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+        if (e.x >= leftPanelWidth && horizontalZoom_ > 0.0) {
+            if (onChordRowClicked(chordRowBeatForX(e.x)))
+                return;
+        }
+    }
+
+    MidiEditorContent::mouseDown(e);
+}
+
+double PianoRollContent::chordRowBeatForX(int x) const {
+    if (horizontalZoom_ <= 0.0)
+        return 0.0;
+    const int leftPanelWidth =
+        sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+    const int scrollX = viewport_ ? viewport_->getViewPositionX() : 0;
+    const double absBeat = (x - leftPanelWidth + scrollX - GRID_LEFT_PADDING) / horizontalZoom_;
+    double clipStartBeats = 0.0;
+    if (const auto* clip = (editingClipId_ != magda::INVALID_CLIP_ID)
+                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                               : nullptr) {
+        if (!relativeTimeMode_ && clip->view != magda::ClipView::Session)
+            clipStartBeats = clip->placement.startBeat;
+    }
+    return juce::jmax(0.0, absBeat - clipStartBeats);
+}
+
+int PianoRollContent::chordRowXForBeat(double clipRelativeBeat) const {
+    const int leftPanelWidth =
+        sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+    const int scrollX = viewport_ ? viewport_->getViewPositionX() : 0;
+    double clipStartBeats = 0.0;
+    if (const auto* clip = (editingClipId_ != magda::INVALID_CLIP_ID)
+                               ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                               : nullptr) {
+        if (!relativeTimeMode_ && clip->view != magda::ClipView::Session)
+            clipStartBeats = clip->placement.startBeat;
+    }
+    const double absBeat = clipRelativeBeat + clipStartBeats;
+    return leftPanelWidth + static_cast<int>(absBeat * horizontalZoom_) + GRID_LEFT_PADDING -
+           scrollX;
+}
+
+void PianoRollContent::redetectChords() {
+    detectChordsFromNotes();
+}
+
+void PianoRollContent::setGridToggleActive(bool on) {
+    if (gridToggleBtn_)
+        gridToggleBtn_->setActive(on);
+}
+
 void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
                                       const juce::MouseWheelDetails& wheel) {
     int headerHeight = getHeaderHeight();
-    int leftPanelWidth = SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+    int leftPanelWidth = sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
     const auto gesture = magda::GestureRouter::getInstance().resolve(
         magda::GestureContext::PianoRoll, wheel, e.mods, e.getPosition());
 
     // Check if mouse is over the chord row area (very top, only when visible)
-    if (showChordRow_ && e.y < CHORD_ROW_HEIGHT && e.x >= leftPanelWidth) {
+    if (showChordRow_ && e.y < chordRowHeight() && e.x >= leftPanelWidth) {
         if (gesture.type == magda::GestureActionType::ScrollHorizontal &&
             timeRuler_->onScrollRequested) {
             int scrollAmount = static_cast<int>(-gesture.magnitude);
@@ -990,7 +1091,7 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
     }
 
     // Check if mouse is over the time ruler area
-    int rulerTop = showChordRow_ ? CHORD_ROW_HEIGHT : 0;
+    int rulerTop = showChordRow_ ? chordRowHeight() : 0;
     if (e.y >= rulerTop && e.y < headerHeight && e.x >= leftPanelWidth) {
         if (gesture.type == magda::GestureActionType::ScrollHorizontal &&
             timeRuler_->onScrollRequested) {
@@ -1002,7 +1103,7 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
     }
 
     // Check if mouse is over the keyboard area (left side, below header)
-    if (e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH && e.x < leftPanelWidth && e.y >= headerHeight) {
+    if (e.x >= sidebarWidth() + ZOOM_STRIP_WIDTH && e.x < leftPanelWidth && e.y >= headerHeight) {
         if (gesture.type == magda::GestureActionType::ScrollVertical &&
             keyboard_->onScrollRequested) {
             int scrollAmount = static_cast<int>(-gesture.magnitude);
@@ -1546,6 +1647,11 @@ void PianoRollContent::noteSelectionChanged(const magda::NoteSelection& selectio
 // ============================================================================
 
 void PianoRollContent::setClip(magda::ClipId clipId) {
+    // Chord-focus editors always show the chord lane, independent of the
+    // per-track chord-engine auto-show used by the standard piano roll.
+    if (chordFocusMode())
+        setChordRowVisible(true);
+
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
         loadNoteHeightFromClip(editingClipId_);
@@ -1583,8 +1689,8 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
     // fold / takes) and the bottom lane-toggle group (pitch-glide / CC /
     // velocity). Layout mirrors resized() so the lines sit in the gaps.
     const int iconSize = 22;
-    const int padding = (SIDEBAR_WIDTH - iconSize) / 2;
-    const int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
+    const int padding = (sidebarWidth() - iconSize) / 2;
+    const int chordToggleY = showChordRow_ ? (chordRowHeight() - iconSize) / 2 : padding;
 
     int topClusterBottom = chordToggleY + iconSize;  // chord only
     if (foldToggle_)
@@ -1654,14 +1760,48 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         // Draw chord block
         auto blockBounds = juce::Rectangle<int>(drawStartX + 1, area.getY() + 2,
                                                 drawEndX - drawStartX - 2, area.getHeight() - 4);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
-        g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
+        const bool selected =
+            selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
+        const bool previewing =
+            previewChordGroup() != 0 && annotation.chordGroup == previewChordGroup();
+        const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        // A playing block glows green; otherwise the accent-blue card.
+        const auto fillColour =
+            previewing ? DarkTheme::getColour(DarkTheme::STATUS_SUCCESS) : accent;
 
-        // Draw chord name
-        if (blockBounds.getWidth() > 10) {
+        // Direction 4 "accent spine": subtle slate fill, a bright accent bar down
+        // the left edge, clean name type.
+        g.setColour(fillColour.withAlpha(previewing ? 0.40f : selected ? 0.22f : 0.13f));
+        g.fillRoundedRectangle(blockBounds.toFloat(), 4.0f);
+
+        if (blockBounds.getWidth() > 8) {
+            juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
+                                         static_cast<float>(blockBounds.getY() + 3), 3.0f,
+                                         static_cast<float>(blockBounds.getHeight() - 6));
+            g.setColour(fillColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
+            g.fillRoundedRectangle(spine, 1.5f);
+        }
+
+        // Chord name in the active notation (C / solfège / both)
+        if (blockBounds.getWidth() > 14) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            g.drawText(annotation.chordName, blockBounds.reduced(2, 0),
+            g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
+            g.drawText(magda::music::NotationSettings::getInstance().format(annotation.chordName),
+                       blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                        juce::Justification::centredLeft, true);
+            g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        }
+
+        // Selection ring + edge resize handles
+        if (selected) {
+            g.setColour(accent.withAlpha(0.9f));
+            g.drawRoundedRectangle(blockBounds.toFloat().reduced(0.5f), 3.0f, 1.5f);
+
+            constexpr int handleW = 3;
+            auto lh = blockBounds.withWidth(handleW).reduced(0, 3);
+            auto rh = lh.withX(blockBounds.getRight() - handleW);
+            g.fillRoundedRectangle(lh.toFloat(), 1.5f);
+            g.fillRoundedRectangle(rh.toFloat(), 1.5f);
         }
     }
 }

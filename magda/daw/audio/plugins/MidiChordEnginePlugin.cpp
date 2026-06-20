@@ -1,5 +1,7 @@
 #include "plugins/MidiChordEnginePlugin.hpp"
 
+#include "core/TrackManager.hpp"
+
 namespace magda::daw::audio {
 
 const char* MidiChordEnginePlugin::xmlTypeName = "midichordengine";
@@ -41,6 +43,14 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     if (!fc.bufferForMidiMessages)
         return;
+
+    // Audition muted (chord track speaker off): drop all MIDI here, before it
+    // reaches this engine's detection or the downstream instrument.
+    if (auditionMuted_.load(std::memory_order_relaxed)) {
+        fc.bufferForMidiMessages->clear();
+        heldNoteCount_.store(0, std::memory_order_relaxed);
+        return;
+    }
 
     // Skip recording during preview playback or when plugin is bypassed/disabled
     if (detectionSuppressed_.load(std::memory_order_relaxed) || !isEnabled())
@@ -102,6 +112,19 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 // =============================================================================
 
 void MidiChordEnginePlugin::timerCallback() {
+    // Drop playback MIDI before it enters this engine when the chord track is
+    // muted (audition off) AND the transport is playing. Live authoring while
+    // stopped is unaffected. The chord track is a singleton.
+    {
+        auto& tm = magda::TrackManager::getInstance();
+        const auto chordId = tm.getChordTrackId();
+        const auto* chordTrack =
+            chordId != magda::INVALID_TRACK_ID ? tm.getTrack(chordId) : nullptr;
+        const bool playing = edit.getTransport().isPlaying();
+        auditionMuted_.store(chordTrack != nullptr && chordTrack->muted && playing,
+                             std::memory_order_relaxed);
+    }
+
     if (!isEnabled()) {
         // Flush stale FIFO events by consuming them (safe — we're the reader).
         // Don't call reset() here as it races with the audio thread writer.
@@ -147,6 +170,79 @@ void MidiChordEnginePlugin::processNoteEvents() {
         processRange(start2, size2);
 
     noteFifo_.finishedRead(size1 + size2);
+}
+
+bool MidiChordEnginePlugin::recomputeCachesLocked() {
+    // Caller holds stateMutex_. Refresh key / suggestions / scales from the
+    // current suggestionEngine_ + keyHistogram_ + chordHistory_ state.
+    auto newKeyMode = keyHistogram_.inferKeyMode();
+    const bool keyChanged = newKeyMode != cachedKeyMode_;
+    cachedKeyMode_ = newKeyMode;
+
+    auto recentChords = suggestionEngine_.getRecentChords();
+    if (cachedKeyMode_.has_value()) {
+        cachedSuggestions_ = suggestionEngine_.generateSuggestions(
+            recentChords, suggestionParams_, cachedKeyMode_->first, cachedKeyMode_->second);
+    } else {
+        cachedSuggestions_ = suggestionEngine_.generateSuggestions(recentChords, suggestionParams_);
+    }
+
+    std::set<int> pitchClasses;
+    for (const auto& chord : chordHistory_) {
+        for (const auto& note : chord.notes)
+            pitchClasses.insert(note.noteNumber % 12);
+    }
+    if (pitchClasses.size() >= 3) {
+        int preferredRoot = -1;
+        if (cachedKeyMode_.has_value()) {
+            auto keyRoot = cachedKeyMode_->first;
+            static const juce::String noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                     "F#", "G",  "G#", "A",  "A#", "B"};
+            static const juce::String flatNames[] = {"C",  "Db", "D",  "Eb", "E",  "F",
+                                                     "Gb", "G",  "Ab", "A",  "Bb", "B"};
+            for (int i = 0; i < 12; ++i)
+                if (keyRoot == noteNames[i] || keyRoot == flatNames[i]) {
+                    preferredRoot = i;
+                    break;
+                }
+        }
+        auto scored = magda::music::detectScalesFromPitchClasses(
+            pitchClasses, magda::music::getAllScalesWithChordsCached(), preferredRoot);
+        cachedScales_.clear();
+        int limit = std::min(static_cast<int>(scored.size()), 8);
+        for (int i = 0; i < limit; ++i)
+            cachedScales_.push_back(scored[static_cast<size_t>(i)].first);
+    }
+
+    return keyChanged;
+}
+
+void MidiChordEnginePlugin::seedFromChords(const std::vector<magda::music::Chord>& chords) {
+    // Prime the engine's context from an authored progression (e.g. the chord
+    // track) so key / suggestions / scales appear without live play. Message
+    // thread; serialised with runDetection via stateMutex_.
+    std::lock_guard<std::mutex> lock(stateMutex_);
+
+    suggestionEngine_.reset();
+    keyHistogram_.reset();
+    chordHistory_.clear();
+
+    double t = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    for (const auto& c : chords) {
+        if (c.notes.empty())
+            continue;
+        chordHistory_.push_back(c);
+        if (chordHistory_.size() > MAX_CHORD_HISTORY)
+            chordHistory_.erase(chordHistory_.begin());
+        suggestionEngine_.processNewChord(c, t, suggestionParams_);
+        keyHistogram_.updateWithChord(c, t);
+        t += 1.0;
+    }
+
+    recomputeCachesLocked();
+    listeners_.call(&Listener::chordChanged, this);
+    listeners_.call(&Listener::keyModeChanged, this);
+    listeners_.call(&Listener::suggestionsChanged, this);
 }
 
 void MidiChordEnginePlugin::runDetection() {
@@ -197,61 +293,7 @@ void MidiChordEnginePlugin::runDetection() {
         suggestionEngine_.processNewChord(detected, nowSeconds, suggestionParams_);
         keyHistogram_.updateWithChord(detected, nowSeconds);
 
-        // Update cached key/mode
-        auto newKeyMode = keyHistogram_.inferKeyMode();
-        bool keyChanged = newKeyMode != cachedKeyMode_;
-        cachedKeyMode_ = newKeyMode;
-
-        // Update cached suggestions
-        auto recentChords = suggestionEngine_.getRecentChords();
-        if (cachedKeyMode_.has_value()) {
-            cachedSuggestions_ = suggestionEngine_.generateSuggestions(
-                recentChords, suggestionParams_, cachedKeyMode_->first, cachedKeyMode_->second);
-        } else {
-            cachedSuggestions_ =
-                suggestionEngine_.generateSuggestions(recentChords, suggestionParams_);
-        }
-
-        // Update cached scales from chord history pitch classes
-        {
-            std::set<int> pitchClasses;
-            for (const auto& chord : chordHistory_) {
-                for (const auto& note : chord.notes)
-                    pitchClasses.insert(note.noteNumber % 12);
-            }
-            if (pitchClasses.size() >= 3) {
-                // Pass detected key root so scales rooted on it rank higher
-                int preferredRoot = -1;
-                if (cachedKeyMode_.has_value()) {
-                    auto keyRoot = cachedKeyMode_->first;
-                    static const juce::String noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
-                                                             "F#", "G",  "G#", "A",  "A#", "B"};
-                    for (int i = 0; i < 12; ++i) {
-                        if (keyRoot == noteNames[i]) {
-                            preferredRoot = i;
-                            break;
-                        }
-                    }
-                    // Handle flats
-                    if (preferredRoot < 0) {
-                        static const juce::String flatNames[] = {"C",  "Db", "D",  "Eb", "E",  "F",
-                                                                 "Gb", "G",  "Ab", "A",  "Bb", "B"};
-                        for (int i = 0; i < 12; ++i) {
-                            if (keyRoot == flatNames[i]) {
-                                preferredRoot = i;
-                                break;
-                            }
-                        }
-                    }
-                }
-                auto scored = magda::music::detectScalesFromPitchClasses(
-                    pitchClasses, magda::music::getAllScalesWithChordsCached(), preferredRoot);
-                cachedScales_.clear();
-                int limit = std::min(static_cast<int>(scored.size()), 8);
-                for (int i = 0; i < limit; ++i)
-                    cachedScales_.push_back(scored[static_cast<size_t>(i)].first);
-            }
-        }
+        const bool keyChanged = recomputeCachesLocked();
 
         listeners_.call(&Listener::chordChanged, this);
         if (keyChanged)

@@ -243,7 +243,9 @@ void ClipComponent::paint(juce::Graphics& g) {
         return;
 
     // Draw based on clip type
-    if (clip->isAudio()) {
+    if (isChordClip(*clip)) {
+        paintChordClip(g, *clip, bounds);
+    } else if (clip->isAudio()) {
         paintAudioClip(g, *clip, bounds);
     } else {
         paintMidiClip(g, *clip, bounds);
@@ -832,6 +834,95 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
     }
 }
 
+bool ClipComponent::isChordClip(const ClipInfo& clip) const {
+    const auto* track = TrackManager::getInstance().getTrack(clip.trackId);
+    return track != nullptr && track->type == TrackType::Chord;
+}
+
+void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
+                                   juce::Rectangle<int> bounds) {
+    auto visibleBounds = bounds.getIntersection(g.getClipBounds());
+    if (visibleBounds.isEmpty())
+        return;
+
+    // Translucent base so the timeline shows through (track-map style) rather
+    // than a solid pastel card.
+    auto bgColour = clip.colour.withAlpha(0.16f);
+    fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
+
+    auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
+    if (!clip.chordAnnotations.empty() && blockArea.getHeight() > 5 && blockArea.getWidth() > 2) {
+        const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+        const double beatsPerSecond = tempo / 60.0;
+        const double displayLength =
+            (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.getTimelineLength(tempo);
+        const double beatRange = juce::jmax(1.0, displayLength * beatsPerSecond);
+
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        const auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+
+        auto drawBlock = [&](const juce::String& name, double startBeat, double lengthBeats) {
+            const double visibleStart = juce::jmax(0.0, startBeat);
+            const double visibleEnd = juce::jmin(beatRange, startBeat + lengthBeats);
+            const double visibleLength = visibleEnd - visibleStart;
+            if (visibleLength <= 0.0)
+                return;
+            const float x = blockArea.getX() +
+                            static_cast<float>(visibleStart / beatRange) * blockArea.getWidth();
+            const float w = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *
+                                                 blockArea.getWidth());
+            juce::Rectangle<float> block(x, static_cast<float>(blockArea.getY()), w,
+                                         static_cast<float>(blockArea.getHeight()));
+            auto inner = block.reduced(1.0f, 0.0f);
+            // Glassy translucent block: a soft vertical gradient instead of a
+            // flat pastel fill, with a bright top edge and a solid accent spine.
+            g.setGradientFill(juce::ColourGradient(blockColour.withAlpha(0.42f), inner.getX(),
+                                                   inner.getY(), blockColour.withAlpha(0.14f),
+                                                   inner.getX(), inner.getBottom(), false));
+            g.fillRoundedRectangle(inner, 2.0f);
+            g.setColour(blockColour.withAlpha(0.85f));
+            g.fillRect(inner.getX(), inner.getY(), 2.0f, inner.getHeight());  // accent spine
+            g.setColour(juce::Colours::white.withAlpha(0.12f));
+            g.drawRoundedRectangle(inner, 2.0f, 1.0f);  // subtle glass edge
+            if (w > MIN_WIDTH_FOR_NAME) {
+                g.setColour(juce::Colours::white);
+                g.drawText(name, block.toNearestInt().reduced(4, 0),
+                           juce::Justification::centredLeft, true);
+            }
+        };
+
+        // A looped clip tiles its source chords across the timeline, the same way
+        // paintMidiNotes repeats notes.
+        const double srcLength =
+            clip.loopLength > 0.0 ? clip.loopLength : displayLength * clip.speedRatio;
+        const double loopLengthBeats =
+            clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats
+                                       : (srcLength > 0.0 ? srcLength * beatsPerSecond : beatRange);
+
+        if (clip.loopEnabled && loopLengthBeats > 0.5) {
+            const int reps = static_cast<int>(std::ceil(beatRange / loopLengthBeats));
+            for (int r = 0; r < reps; ++r) {
+                const double base = r * loopLengthBeats;
+                if (base >= beatRange)
+                    break;
+                for (const auto& chord : clip.chordAnnotations) {
+                    if (chord.beatPosition >= loopLengthBeats)
+                        continue;  // belongs past this loop iteration
+                    const double len =
+                        juce::jmin(chord.lengthBeats, loopLengthBeats - chord.beatPosition);
+                    drawBlock(chord.chordName, base + chord.beatPosition, len);
+                }
+            }
+        } else {
+            for (const auto& chord : clip.chordAnnotations)
+                drawBlock(chord.chordName, chord.beatPosition, chord.lengthBeats);
+        }
+    }
+
+    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
+                             1.0f);
+}
+
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                                     juce::Rectangle<int> bounds) {
     auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
@@ -851,6 +942,25 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
 
     fillClippedRoundedRect(g, headerArea.withBottom(headerArea.getBottom() + 2), visibleHeaderArea,
                            headerColour, CORNER_RADIUS);
+
+    // Chord clips show the chord glyph at the left of the header.
+    if (isChordClip(clip) && headerArea.getWidth() > HEADER_HEIGHT + 4) {
+        auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
+        if (iconArea.intersects(g.getClipBounds())) {
+            static auto makeChordIcon = [](juce::Colour fg) {
+                auto icon = juce::Drawable::createFromImageData(BinaryData::iconchordboldm_svg,
+                                                                BinaryData::iconchordboldm_svgSize);
+                if (icon)
+                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
+                return icon;
+            };
+            static auto normalChord = makeChordIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            static auto selectedChord = makeChordIcon(juce::Colours::white);
+            const auto& icon = selected ? selectedChord : normalChord;
+            if (icon)
+                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+    }
 
     // Clip name
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
@@ -2776,6 +2886,10 @@ void ClipComponent::showContextMenu() {
     }
     bool canEdit = hasSelection && !isFrozen;
 
+    // Chord progression clips get a trimmed menu: no audio slicing, automation
+    // duplicates, render, bounce, transcribe, or MIDI-library save.
+    const bool isChord = clipForMenu && isChordClip(*clipForMenu);
+
     // "Duplicate Time Selection" is enabled when an active, visible time
     // selection exists — mirrors the gate Cmd+D uses in MainWindowCommands
     // and the empty-area menu in TrackContentPanel.
@@ -2795,9 +2909,11 @@ void ClipComponent::showContextMenu() {
 
     // Duplicate
     menu.addItem(4, "Duplicate", canEdit);
-    menu.addItem(18, "Duplicate With Automation", canEdit);
-    menu.addItem(19, "Duplicate Without Automation", canEdit);
-    menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
+    if (!isChord) {
+        menu.addItem(18, "Duplicate With Automation", canEdit);
+        menu.addItem(19, "Duplicate Without Automation", canEdit);
+        menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
+    }
     menu.addSeparator();
 
     // Split / Trim
@@ -2806,7 +2922,7 @@ void ClipComponent::showContextMenu() {
     // Slice operations (single audio clip only)
     bool canSliceAtMarkers = false;
     bool canSliceAtGrid = false;
-    if (!isMultiSelection && canEdit) {
+    if (!isChord && !isMultiSelection && canEdit) {
         const auto* singleClip = getClipInfo();
         if (singleClip && singleClip->isAudio()) {
             // Check for warp markers
@@ -2828,10 +2944,12 @@ void ClipComponent::showContextMenu() {
             }
         }
     }
-    menu.addItem(13, "Slice at Warp Markers In Place", canSliceAtMarkers);
-    menu.addItem(15, "Slice at Warp Markers to Drum Grid", canSliceAtMarkers);
-    menu.addItem(14, "Slice at Grid In Place", canSliceAtGrid);
-    menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
+    if (!isChord) {
+        menu.addItem(13, "Slice at Warp Markers In Place", canSliceAtMarkers);
+        menu.addItem(15, "Slice at Warp Markers to Drum Grid", canSliceAtMarkers);
+        menu.addItem(14, "Slice at Grid In Place", canSliceAtGrid);
+        menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
+    }
     menu.addSeparator();
 
     // Loop-record takes: pick which captured pass plays back. Single audio clip
@@ -2849,24 +2967,26 @@ void ClipComponent::showContextMenu() {
         }
     }
 
-    bool canEditExternally = false;
-    if (!isMultiSelection && canEdit) {
-        const auto* singleClip = getClipInfo();
-        canEditExternally = singleClip && singleClip->isAudio() &&
-                            juce::File(singleClip->audio().source.filePath).existsAsFile();
-    }
-    menu.addItem(21, "Edit in External Editor", canEditExternally);
+    if (!isChord) {
+        bool canEditExternally = false;
+        if (!isMultiSelection && canEdit) {
+            const auto* singleClip = getClipInfo();
+            canEditExternally = singleClip && singleClip->isAudio() &&
+                                juce::File(singleClip->audio().source.filePath).existsAsFile();
+        }
+        menu.addItem(21, "Edit in External Editor", canEditExternally);
 
-    // Transcribe to MIDI (audio clips only; needs the bundled model)
-    bool canTranscribe = false;
-    if (!isMultiSelection && canEdit) {
-        const auto* singleClip = getClipInfo();
-        canTranscribe = singleClip && singleClip->isAudio() &&
-                        juce::File(singleClip->audio().source.filePath).existsAsFile() &&
-                        magda::transcription::TranscriptionService::getInstance().isAvailable();
+        // Transcribe to MIDI (audio clips only; needs the bundled model)
+        bool canTranscribe = false;
+        if (!isMultiSelection && canEdit) {
+            const auto* singleClip = getClipInfo();
+            canTranscribe = singleClip && singleClip->isAudio() &&
+                            juce::File(singleClip->audio().source.filePath).existsAsFile() &&
+                            magda::transcription::TranscriptionService::getInstance().isAvailable();
+        }
+        menu.addItem(22, "Transcribe to MIDI", canTranscribe);
+        menu.addSeparator();
     }
-    menu.addItem(22, "Transcribe to MIDI", canTranscribe);
-    menu.addSeparator();
 
     // Join Clips (need 2+ adjacent clips on same track)
     bool canJoin = false;
@@ -2913,8 +3033,10 @@ void ClipComponent::showContextMenu() {
         }
 
         if (hasMidi) {
-            menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
-            menu.addSeparator();
+            if (!isChord) {
+                menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
+                menu.addSeparator();
+            }
 
             juce::PopupMenu quantizeMenu;
 
@@ -2990,8 +3112,8 @@ void ClipComponent::showContextMenu() {
         }
     }
 
-    // Render Time Selection - always available
-    {
+    // Render Time Selection - always available (not for chord progressions)
+    if (!isChord) {
         bool hasTimeSelection = false;
         if (parentPanel_ && parentPanel_->getTimelineController()) {
             const auto& state = parentPanel_->getTimelineController()->getState();
@@ -3000,8 +3122,8 @@ void ClipComponent::showContextMenu() {
         menu.addItem(10, "Render Time Selection", hasTimeSelection);
     }
 
-    // Bounce operations
-    {
+    // Bounce operations (not for chord progressions)
+    if (!isChord) {
         menu.addSeparator();
 
         // Bounce In Place: only for MIDI clips on tracks with an instrument

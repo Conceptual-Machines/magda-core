@@ -34,6 +34,8 @@ SvgIconData getSvgForContentType(PanelContentType type) {
             return {BinaryData::sinewave_svg, BinaryData::sinewave_svgSize};
         case PanelContentType::DrumGridClipView:
             return {BinaryData::script_svg, BinaryData::script_svgSize};
+        case PanelContentType::ChordClipView:
+            return {BinaryData::iconchordtrackboldm_svg, BinaryData::iconchordtrackboldm_svgSize};
         case PanelContentType::AudioClipProperties:
             return {BinaryData::knob_svg, BinaryData::knob_svgSize};
         case PanelContentType::Empty:

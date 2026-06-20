@@ -329,6 +329,9 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
     if (muteButton) {
         muteButton->setToggleState(track.muted, juce::dontSendNotification);
     }
+    if (chordSpeakerButton) {
+        chordSpeakerButton->setActive(!track.muted);  // speaker on = audible
+    }
     if (soloButton) {
         soloButton->setToggleState(track.soloed, juce::dontSendNotification);
     }
@@ -555,6 +558,22 @@ void MixerView::ChannelStrip::setupControls() {
                 std::make_unique<SetTrackMuteCommand>(tid, newState));
     };
     addAndMakeVisible(*muteButton);
+
+    // Chord-track audition (mute) toggle: cyan speaker, mirrors the chord header.
+    chordSpeakerButton = std::make_unique<magda::SvgButton>(
+        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
+        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
+    chordSpeakerButton->setTooltip("Preview chords on playback");
+    chordSpeakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordSpeakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    chordSpeakerButton->onClick = [this]() {
+        const auto* track = TrackManager::getInstance().getTrack(trackId_);
+        const bool nowMuted = track ? !track->muted : true;
+        chordSpeakerButton->setActive(!nowMuted);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetTrackMuteCommand>(trackId_, nowMuted));
+    };
+    addChildComponent(*chordSpeakerButton);
 
     // Solo button (square corners, compact)
     soloButton = std::make_unique<juce::TextButton>("S");
@@ -1242,21 +1261,35 @@ void MixerView::ChannelStrip::resized() {
     // Mini analyzers (Oscilloscope / Spectrum) sit below the header.
     // Each takes a fixed compact height when its rail toggle is on.
     constexpr int miniAnalyzerHeight = 64;
-    const bool showOsc = cfg.getMixerShowOscilloscope();
-    const bool showSpec = cfg.getMixerShowSpectrum();
-    if (showOsc && miniOscilloscopeUI_) {
-        const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
-        miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
-        miniOscilloscopeUI_->setVisible(true);
-        bounds.removeFromTop(2);
+    // The chord track emits no audio yet, so it never shows the osc / spectrum.
+    // When they're globally enabled it still reserves the same empty space at
+    // the top so its fader stays aligned with the audio channels.
+    const bool isChord = trackType_ == TrackType::Chord;
+    const bool oscEnabled = cfg.getMixerShowOscilloscope();
+    const bool specEnabled = cfg.getMixerShowSpectrum();
+    if (oscEnabled && miniOscilloscopeUI_) {
+        if (isChord) {
+            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
+            miniOscilloscopeUI_->setVisible(false);
+        } else {
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
+            miniOscilloscopeUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        }
     } else if (miniOscilloscopeUI_) {
         miniOscilloscopeUI_->setVisible(false);
     }
-    if (showSpec && miniSpectrumUI_) {
-        const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
-        miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
-        miniSpectrumUI_->setVisible(true);
-        bounds.removeFromTop(2);
+    if (specEnabled && miniSpectrumUI_) {
+        if (isChord) {
+            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
+            miniSpectrumUI_->setVisible(false);
+        } else {
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
+            miniSpectrumUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        }
     } else if (miniSpectrumUI_) {
         miniSpectrumUI_->setVisible(false);
     }
@@ -1367,7 +1400,20 @@ void MixerView::ChannelStrip::resized() {
 
     // Routing selectors (bottommost)
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        if (Config::getInstance().getMixerShowRouting()) {
+        if (isChord) {
+            // Chord track: MIDI in/out only (no audio routing).
+            audioInSelector->setVisible(false);
+            audioOutSelector->setVisible(false);
+            const bool showMidi = Config::getInstance().getMixerShowRouting() && !isMultiOut;
+            midiInSelector->setVisible(showMidi);
+            midiOutSelector->setVisible(showMidi);
+            if (showMidi) {
+                bounds.removeFromBottom(2);
+                midiOutSelector->setBounds(bounds.removeFromBottom(16));
+                bounds.removeFromBottom(2);
+                midiInSelector->setBounds(bounds.removeFromBottom(16));
+            }
+        } else if (Config::getInstance().getMixerShowRouting()) {
             bool showInputs = !isMultiOut;
             bool showMidi = !isMultiOut;
 
@@ -1415,7 +1461,32 @@ void MixerView::ChannelStrip::resized() {
     {
         bounds.removeFromBottom(2);
 
-        if (isMaster_) {
+        if (chordSpeakerButton)
+            chordSpeakerButton->setVisible(isChord);
+
+        if (isChord) {
+            // Chord track: [speaker | solo], with monitor below. No mute "M" /
+            // record (mirrors the chord track header).
+            muteButton->setVisible(false);
+            if (recordButton)
+                recordButton->setVisible(false);
+
+            if (Config::getInstance().getMixerShowMonitor() && monitorButton) {
+                auto row2 = bounds.removeFromBottom(metrics.buttonSize);
+                monitorButton->setBounds(row2);
+                monitorButton->setVisible(true);
+                bounds.removeFromBottom(2);
+            } else if (monitorButton) {
+                monitorButton->setVisible(false);
+            }
+
+            auto row = bounds.removeFromBottom(metrics.buttonSize);
+            int halfWidth = (row.getWidth() - 2) / 2;
+            chordSpeakerButton->setBounds(row.removeFromLeft(halfWidth));
+            row.removeFromLeft(2);
+            soloButton->setBounds(row);
+            soloButton->setVisible(true);
+        } else if (isMaster_) {
             muteButton->setVisible(false);
             soloButton->setVisible(false);
             if (recordButton)
@@ -1472,8 +1543,8 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // Pan slider — above M/S/R/M (hidden for master)
-    if (isMaster_) {
+    // Pan slider — above M/S/R/M (hidden for master and the chord track)
+    if (isMaster_ || isChord) {
         panSlider->setVisible(false);
     } else {
         panSlider->setVisible(true);
@@ -1488,6 +1559,7 @@ void MixerView::ChannelStrip::resized() {
     const int bottomStrip = 4;
     bounds.removeFromBottom(bottomStrip);
     peakLabel->setBounds(bounds.removeFromBottom(labelHeight));
+    peakLabel->setVisible(!isChord);  // no peak readout without a meter
 
     // Reserve room above the meter so the top dB label (+6) isn't clipped by
     // the always-on-top resize handle: the scale draws half a line above the
@@ -1509,6 +1581,8 @@ void MixerView::ChannelStrip::resized() {
     meterArea_ = layoutArea;
     faderArea_ = layoutArea;
     levelMeter->setBounds(meterArea_);
+    // Chord track emits no audio yet: just the fader, no meter underlaid.
+    levelMeter->setVisible(!isChord);
     volumeSlider->setBounds(faderArea_);
     volumeSlider->toFront(false);  // thumb sits on top of the meter
 

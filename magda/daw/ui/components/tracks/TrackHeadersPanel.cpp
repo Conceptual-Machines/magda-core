@@ -291,6 +291,16 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                                     juce::Colours::transparentBlack);
     }
 
+    // Chord-track audition toggle (speaker). Dual-icon with pre-baked colors:
+    // audible = blue chip with a dark speaker (chord_on), silent = gray speaker
+    // (chord_off). Matches the S / monitor chips beside it.
+    chordAuditionButton = std::make_unique<magda::SvgButton>(
+        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
+        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
+    chordAuditionButton->setTooltip("Preview chords on playback");
+    chordAuditionButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordAuditionButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     soloButton->setColour(juce::TextButton::buttonColourId,
@@ -851,6 +861,7 @@ void TrackHeadersPanel::tracksChanged() {
         header->isGroup = track->isGroup() || track->hasChildren();
         header->isMultiOut = (track->type == TrackType::MultiOut);
         header->isMaster = (track->type == TrackType::Master);
+        header->isChordTrack = (track->type == TrackType::Chord);
         header->isCollapsed = track->isCollapsedIn(currentViewMode_);
         header->muted = track->muted;
         header->solo = track->soloed;
@@ -883,6 +894,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->recordButton);
         addAndMakeVisible(*header->monitorButton);
         addAndMakeVisible(*header->automationButton);
+        addChildComponent(*header->chordAuditionButton);
         addAndMakeVisible(*header->volumeLabel);
         addAndMakeVisible(*header->panLabel);
         addAndMakeVisible(*header->audioInputSelector);
@@ -1617,6 +1629,19 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Chord-track speaker: toggles whether the chord voicing is audible on
+    // playback (it's just the track mute, framed as "preview chords").
+    header.chordAuditionButton->onClick = [this, trackId]() {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
+            auto& header = *trackHeaders[index];
+            header.muted = !header.muted;  // speaker on = audible = not muted
+            header.chordAuditionButton->setActive(!header.muted);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackMuteCommand>(trackId, header.muted));
+        }
+    };
+
     // Solo button callback - updates TrackManager
     header.soloButton->onClick = [this, trackId, getEditTargets]() {
         int index = getVisibleHeaderIndex(trackId);
@@ -1988,9 +2013,10 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
     auto midiArea = outer.removeFrom(workArea, midiIndicatorWidth);
     outer.removeSpacing(workArea, meterPadding);
 
-    // Audio meter spans full track height
+    // Audio meter spans full track height. The chord track emits no audio yet,
+    // so hide its output meter for now (an oscilloscope may replace it later).
     header.meterComponent->setBounds(meterArea);
-    header.meterComponent->setVisible(true);
+    header.meterComponent->setVisible(!header.isChordTrack);
 
     // MIDI indicator in top portion, session mode button in bottom portion
     const int sessionBtnSize = 14;
@@ -2015,6 +2041,35 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     const int gap = 2;
     const int rh = 16;  // rowHeight
     const int areaWidth = area.getWidth();
+
+    // Chord track: volume + speaker (audition) + solo + monitor. The speaker
+    // toggle stands in for mute, framed as "preview chords on playback" (blue =
+    // audible, faint grey = silent). No pan / record / automation / routing.
+    if (header.isChordTrack) {
+        auto row = area.removeFromTop(24);
+        auto content = inner.removeFrom(row, areaWidth);
+        const int mixW = areaWidth * 52 / 100;
+        const int iconW = 24;
+        header.volumeLabel->setBounds(content.removeFromLeft(mixW));
+        header.volumeLabel->setVisible(true);
+        content.removeFromLeft(gap);
+        header.chordAuditionButton->setBounds(content.removeFromLeft(iconW));
+        header.chordAuditionButton->setVisible(true);
+        header.chordAuditionButton->setActive(!header.muted);
+        content.removeFromLeft(gap);
+        const int soloW = content.getWidth() - iconW - gap;
+        header.soloButton->setBounds(content.removeFromLeft(soloW));
+        header.soloButton->setVisible(true);
+        content.removeFromLeft(gap);
+        header.monitorButton->setBounds(content.removeFromLeft(iconW));
+        header.monitorButton->setVisible(true);
+        header.muteButton->setVisible(false);
+        header.masterMuteButton->setVisible(false);
+        header.panLabel->setVisible(false);
+        header.recordButton->setVisible(false);
+        header.automationButton->setVisible(false);
+        return;
+    }
 
     // Master track: volume + mute only (no solo, pan, record, monitor)
     if (header.isMaster) {
@@ -2123,6 +2178,23 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     // Master track: skip name row space (painted "Master" label), then volume + mute
     if (header.isMaster) {
         header.nameLabel->setVisible(false);
+        header.collapseButton->setVisible(false);
+        header.audioInputSelector->setVisible(false);
+        header.inputSelector->setVisible(false);
+        header.outputSelector->setVisible(false);
+        header.midiOutputSelector->setVisible(false);
+        header.audioColumnLabel->setVisible(false);
+        header.midiColumnLabel->setVisible(false);
+        header.inputIcon->setVisible(false);
+        header.outputIcon->setVisible(false);
+        for (auto& sendLabel : header.sendLabels)
+            sendLabel->setVisible(false);
+        layoutVolPanAndButtons(header, tcpArea, inner);
+        return;
+    }
+
+    // Chord track: keep the name, drop all routing/sends, show only Preview.
+    if (header.isChordTrack) {
         header.collapseButton->setVisible(false);
         header.audioInputSelector->setVisible(false);
         header.inputSelector->setVisible(false);
@@ -2814,31 +2886,38 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
-    // Duplicate track
-    menu.addItem(DuplicateWithContent, tr("tracks.duplicate"));
-    menu.addItem(DuplicateNoContent, tr("tracks.duplicate_no_content"));
-    menu.addItem(DuplicateContentOnly, tr("tracks.duplicate_content_only"));
+    // Duplicate track (not for the singleton chord track)
+    if (!header.isChordTrack) {
+        menu.addItem(DuplicateWithContent, tr("tracks.duplicate"));
+        menu.addItem(DuplicateNoContent, tr("tracks.duplicate_no_content"));
+        menu.addItem(DuplicateContentOnly, tr("tracks.duplicate_content_only"));
+    }
 
     // Delete track
     menu.addItem(DeleteTrack, tr("tracks.delete"));
 
-    menu.addSeparator();
+    // The chord track has no audio I/O routing or drum-grid instrument, so it
+    // omits Prefer Drum Grid and Show/Hide I/O.
+    if (!header.isChordTrack) {
+        menu.addSeparator();
 
-    // Prefer Drum Grid for the track's primary instrument plugin. The flag
-    // lives at the plugin-identifier level (user-global), so all tracks using
-    // the same instrument get the same default editor.
-    auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
-    if (primaryInstrument != nullptr) {
-        const auto identifier = magda::PluginPreferences::identifierForDevice(*primaryInstrument);
-        const bool prefersGrid =
-            magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
-        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
-                     prefersGrid);
+        // Prefer Drum Grid for the track's primary instrument plugin. The flag
+        // lives at the plugin-identifier level (user-global), so all tracks
+        // using the same instrument get the same default editor.
+        auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
+        if (primaryInstrument != nullptr) {
+            const auto identifier =
+                magda::PluginPreferences::identifierForDevice(*primaryInstrument);
+            const bool prefersGrid =
+                magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
+            menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
+                         prefersGrid);
+        }
+
+        // Show/Hide I/O routing
+        menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
+                                                           : tr("tracks.show_io_routing"));
     }
-
-    // Show/Hide I/O routing
-    menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
-                                                       : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
     menu.showMenuAsync(

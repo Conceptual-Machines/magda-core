@@ -1539,6 +1539,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
     const bool pluginPresetsAvailable =
         !collapsed_ && !traits_.isFaust && hasPluginPresetsAvailable();
+    // Chord-track devices emit no audio yet, so they show no output meter.
+    const auto* slotTrack = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
+    const bool onChordTrack = slotTrack && slotTrack->type == magda::TrackType::Chord;
     if (!prepareDeviceSlotContentFrame(
             contentArea, traits_, device_, collapsed_, isInternalDevice(), pluginPresetsAvailable,
             {.pluginPresetsButton = presetsButton_.get(),
@@ -1555,7 +1558,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .uiButton = uiButton_.get(),
              .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
              .mixKnob = mixKnob_.get()},
-            stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT)) {
+            (stripsAnalysisChrome() || onChordTrack) ? 0 : METER_STRIP_WIDTH,
+            CONTENT_HEADER_HEIGHT)) {
         return;
     }
 

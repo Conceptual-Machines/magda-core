@@ -2,11 +2,13 @@
 
 #include "../../../../agents/llm_client_factory.hpp"
 #include "BinaryData.h"
+#include "core/ChordProgressionContext.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/TrackManager.hpp"
 #include "music/ChordEngine.hpp"
+#include "music/NotationSettings.hpp"
 #include "project/ProjectManager.hpp"
 #include "ui/components/chord/ChordBlockComponent.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
@@ -48,8 +50,8 @@ void ScaleBlockComponent::paint(juce::Graphics& g) {
     g.setColour(selected_ ? DarkTheme::getTextColour()
                           : DarkTheme::getTextColour().withAlpha(0.8f));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(juce::String(scale_.name), getLocalBounds().reduced(4, 0),
-               juce::Justification::centred);
+    g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
+               getLocalBounds().reduced(4, 0), juce::Justification::centred);
 }
 
 void ScaleBlockComponent::mouseDown(const juce::MouseEvent& e) {
@@ -115,7 +117,8 @@ void ScaleChordsPopup::paint(juce::Graphics& g) {
     auto titleArea = getLocalBounds().reduced(10, 6).removeFromTop(20);
     g.setColour(DarkTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
-    g.drawText(juce::String(scale_.name), titleArea, juce::Justification::centredLeft);
+    g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
+               titleArea, juce::Justification::centredLeft);
 }
 
 void ScaleChordsPopup::resized() {
@@ -215,7 +218,8 @@ void BrowseScaleRowComponent::paint(juce::Graphics& g) {
 
     g.setColour(DarkTheme::getTextColour().withAlpha(0.8f));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(juce::String(scale_.name), bounds.reduced(6, 0), juce::Justification::centredLeft);
+    g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
+               bounds.reduced(6, 0), juce::Justification::centredLeft);
 }
 
 void BrowseScaleRowComponent::resized() {}
@@ -386,6 +390,7 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
     if (chordPlugin_ == plugin) {
         // Plugin unchanged — just update trackId (may arrive late from setNodePath)
         trackId_ = trackId;
+        seedEngineFromProgression();
         return;
     }
 
@@ -414,9 +419,24 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
         // Restore AI progression display if plugin has persisted results
         if (!plugin->getAIProgressions().empty())
             rebuildAIProgressionRows();
+
+        seedEngineFromProgression();
     }
 
     repaint();
+}
+
+void ChordPanelContent::seedEngineFromProgression() {
+    if (chordPlugin_ == nullptr || trackId_ != magda::TrackManager::getInstance().getChordTrackId())
+        return;
+
+    auto& engine = magda::music::ChordEngine::getInstance();
+    std::vector<magda::music::Chord> chords;
+    for (const auto& p : magda::ChordProgressionContext::current()) {
+        const auto spec = magda::music::ChordEngine::parseChordName(p.name);
+        chords.push_back(engine.buildChordInRootPosition(spec.root, spec.quality));
+    }
+    chordPlugin_->seedFromChords(chords);
 }
 
 void ChordPanelContent::chordChanged(magda::daw::audio::MidiChordEnginePlugin*) {
@@ -1134,6 +1154,13 @@ void ChordPanelContent::startProgressionDrag(int progressionIndex) {
 void ChordPanelContent::AIRequestThread::run() {
     // Build context from chord history and detected key
     juce::String context;
+
+    // The chord-track progression is the song's authored harmony - always part
+    // of the engine's context.
+    if (const auto progression = magda::ChordProgressionContext::summary();
+        progression.isNotEmpty())
+        context += "Chord-track progression: " + progression + "\n";
+
     if (owner_.detectedKey_.isNotEmpty())
         context += "Detected key: " + owner_.detectedKey_ + "\n";
 
@@ -1536,6 +1563,23 @@ void ChordPanelContent::setupFooterControls() {
         return btn;
     };
 
+    // Notation cycle (C / Do / both) - drives the shared NotationSettings, so
+    // it flips both the engine's chord names and the chord-track lane blocks.
+    notationBtn_ =
+        std::make_unique<juce::TextButton>(magda::music::NotationSettings::getInstance().label());
+    notationBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    notationBtn_->setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    notationBtn_->setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    notationBtn_->setTooltip("Note notation: C / Do (solfege) / both");
+    notationBtn_->onClick = [this]() {
+        magda::music::NotationSettings::getInstance().cycle();
+        notationBtn_->setButtonText(magda::music::NotationSettings::getInstance().label());
+        repaint();
+    };
+    addAndMakeVisible(notationBtn_.get());
+
     add7thsBtn_ = makeToggle("7th");
     add7thsBtn_->setToggleState(true, juce::dontSendNotification);
     add7thsBtn_->setTooltip("Include 7th chords (Maj7, min7, dom7, dim7)");
@@ -1834,7 +1878,8 @@ void ChordPanelContent::paint(juce::Graphics& g) {
             area.removeFromTop(4);
             g.setColour(DarkTheme::getTextColour());
             g.setFont(FontManager::getInstance().getUIFont(16.0f).boldened());
-            g.drawText(detectedKey_, area.removeFromTop(24), juce::Justification::centredLeft);
+            g.drawText(magda::music::NotationSettings::getInstance().formatRoot(detectedKey_),
+                       area.removeFromTop(24), juce::Justification::centredLeft);
         } else {
             area.removeFromTop(4);
             g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
@@ -1921,9 +1966,12 @@ void ChordPanelContent::resized() {
     // Position history blocks in detection column
     {
         auto area = detectionCol_.reduced(PADDING, 0);
-        area.removeFromTop(SECTION_HEADER_HEIGHT);  // "CHORD" header
-        area.removeFromTop(44);                     // chord display box
-        area.removeFromTop(8);                      // gap
+        // "CHORD" header - notation toggle sits at its right, always visible
+        // (independent of the K&S / AI suggestion tab).
+        auto chordHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
+        notationBtn_->setBounds(chordHeader.removeFromRight(48).reduced(0, 2));
+        area.removeFromTop(44);  // chord display box
+        area.removeFromTop(8);   // gap
 
         auto histHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
         clearHistoryBtn_->setBounds(histHeader.removeFromRight(22).reduced(0, 2));

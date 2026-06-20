@@ -3,6 +3,7 @@
 #include "CommandIDs.hpp"
 #include "Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
@@ -228,6 +229,9 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          tr("menu.track.add_group") + keyHint(CommandIDs::newMidiTrack), true,
                          false);
             menu.addItem(AddAuxTrack, tr("menu.track.add_aux"), true, false);
+            // Chord track is a singleton - disable once one already exists.
+            menu.addItem(AddChordTrack, tr("menu.track.add_chord"),
+                         !TrackManager::getInstance().hasChordTrack(), false);
             menu.addSeparator();
             menu.addItem(DeleteTrack, tr("menu.track.delete") + keyHint(CommandIDs::deleteCmd),
                          true, false);
@@ -517,6 +521,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case AddAuxTrack:
             if (callbacks_.onAddAuxTrack)
                 callbacks_.onAddAuxTrack();
+            break;
+        case AddChordTrack:
+            if (callbacks_.onAddChordTrack)
+                callbacks_.onAddChordTrack();
             break;
         case DeleteTrack:
             if (callbacks_.onDeleteTrack)

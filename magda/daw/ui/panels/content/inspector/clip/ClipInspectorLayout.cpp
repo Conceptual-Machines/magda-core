@@ -167,6 +167,15 @@ void ClipInspector::resized() {
         }
     }
 
+    // Chord-track-clip progression list (0 height for any other clip).
+    if (chordProgressionSection_) {
+        int ph = chordProgressionSection_->getPreferredHeight();
+        if (ph > 0) {
+            chordProgressionSection_->setBounds(addRow(ph));
+            addSpace(4);
+        }
+    }
+
     // 2-column grid: warp toggles | combo  /  BPM | speed/beats
     {
         const int colGap = 8;

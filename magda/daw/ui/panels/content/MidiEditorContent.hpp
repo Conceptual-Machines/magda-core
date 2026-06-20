@@ -164,7 +164,8 @@ class MidiEditorContent : public PanelContent,
     void updateGridResolution();
 
     // --- Layout constants ---
-    static constexpr int RULER_HEIGHT = 34;
+    // A bit taller so the bar numbers + loop markers don't look crammed.
+    static constexpr int RULER_HEIGHT = 42;
     // Single source in LayoutConfig so the piano-roll and drum-grid bodies +
     // ruler share one padding and can't drift (leaves room for the bar-1
     // playhead triangle clear of the left column).
