@@ -13,6 +13,8 @@
 #include "audio/MidiBridge.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "core/ChordAnnotationCommands.hpp"
+#include "core/ChordProgressionContext.hpp"
+#include "core/ChordProgressionConverter.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -34,6 +36,8 @@
 #include "ui/components/timeline/TimeRuler.hpp"
 
 namespace magda::daw::ui {
+
+bool PianoRollContent::showProgressionOverlay_ = false;
 
 PianoRollContent::PianoRollContent() {
     setName("PianoRoll");
@@ -92,6 +96,22 @@ PianoRollContent::PianoRollContent() {
     chordDetectBtn_->onClick = [this]() { detectChordsFromNotes(); };
     chordDetectBtn_->setVisible(showChordRow_);
     addAndMakeVisible(chordDetectBtn_.get());
+
+    // Progression overlay toggle: ghost the chord-track progression behind this
+    // track's chord lane (#1504). Only meaningful on non-chord tracks.
+    progressionOverlayToggle_ = std::make_unique<magda::SvgButton>(
+        "ProgressionOverlay", BinaryData::iconchordtrackboldm_svg,
+        BinaryData::iconchordtrackboldm_svgSize);
+    progressionOverlayToggle_->setTooltip("Compare against the chord-track progression");
+    progressionOverlayToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    progressionOverlayToggle_->setActive(showProgressionOverlay_);
+    progressionOverlayToggle_->onClick = [this]() {
+        showProgressionOverlay_ = !showProgressionOverlay_;
+        progressionOverlayToggle_->setActive(showProgressionOverlay_);
+        repaint();
+    };
+    progressionOverlayToggle_->setVisible(false);
+    addAndMakeVisible(progressionOverlayToggle_.get());
 
     // Chord-focus mode shows this in place of the rescan button: a toggle that
     // shows/hides the note grid.
@@ -921,6 +941,18 @@ void PianoRollContent::resized() {
         chordDetectBtn_->setVisible(!chordMode);
         gridToggleBtn_->setVisible(chordMode);
 
+        // The overlay toggle is only useful on a non-chord track when a chord
+        // track exists to overlay from.
+        bool onChordTrack = false;
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_)) {
+            const auto* tr = magda::TrackManager::getInstance().getTrack(clip->trackId);
+            onChordTrack = tr != nullptr && tr->type == magda::TrackType::Chord;
+        }
+        const bool overlayApplies =
+            !chordMode && !onChordTrack && magda::TrackManager::getInstance().hasChordTrack();
+        progressionOverlayToggle_->setVisible(overlayApplies);
+        progressionOverlayToggle_->setActive(showProgressionOverlay_);
+
         if (chordMode) {
             // Grid show/hide toggle: bottom-centre of the chord-lane gutter.
             const int gx = (chordLaneLeftX() - detectSize) / 2;
@@ -933,10 +965,14 @@ void PianoRollContent::resized() {
                 sidebarWidth() + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
             const int detectY = (chordRowHeight() - detectSize) / 2;
             chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
+            if (overlayApplies)
+                progressionOverlayToggle_->setBounds(detectX + detectSize + 2, detectY, detectSize,
+                                                     detectSize);
         }
     } else {
         chordDetectBtn_->setVisible(false);
         gridToggleBtn_->setVisible(false);
+        progressionOverlayToggle_->setVisible(false);
     }
 
     // MIDI drawer at bottom (if open). Suppressed in chord-focus mode.
@@ -1418,9 +1454,20 @@ void PianoRollContent::clipsChanged() {
     }
     MidiEditorContent::clipsChanged();
     updateVelocityLane();
+
+    // The comparison overlay reads the chord track's progression, which lives on
+    // a different track than this editor — repaint so it refreshes when chords
+    // are added, moved off the chord track, or cleared.
+    if (showProgressionOverlay_)
+        repaint();
 }
 
 void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
+    // A chord-track clip change won't be "displayed" here, but the comparison
+    // overlay still needs to reflect it.
+    if (showProgressionOverlay_)
+        repaint();
+
     // Check if this clip is one of the displayed clips
     const auto& displayedClips = gridComponent_->getClipIds();
     bool isDisplayed = false;
@@ -1724,11 +1771,17 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     const auto* clip = (editingClipId_ != magda::INVALID_CLIP_ID)
                            ? magda::ClipManager::getInstance().getClip(editingClipId_)
                            : nullptr;
+
     if (!clip || clip->chordAnnotations.empty()) {
-        // Empty state hint
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+        // Empty-state hint. The chord lane is populated by chord detection, so
+        // say how to get chords here: the chord-track editor adds them on click;
+        // a normal track detects them from its own notes via the scan button.
+        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.4f));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText("No chords detected", area.reduced(4, 0), juce::Justification::centredLeft);
+        const juce::String hint = chordFocusMode()
+                                      ? "Click the lane to add a chord"
+                                      : "No chords - press the scan button to detect from notes";
+        g.drawText(hint, area.reduced(8, 0), juce::Justification::centredLeft, true);
         return;
     }
 
@@ -1742,6 +1795,24 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     if (!relativeTimeMode_ && clip->view != magda::ClipView::Session) {
         clipStartBeats = clip->placement.startBeat;
     }
+
+    // Chord-block layout (#1504):
+    //   chord-track chord -> LEFT, with the accent spine
+    //   MIDI-track chord  -> RIGHT, no decoration (always the same spot)
+    // On the chord track's own editor the blocks ARE chord-track chords (left +
+    // spine). On a normal track the MIDI chord sits right/bare, and when the
+    // overlay is on the intended chord-track chord is added left + spine.
+    const bool isChordTrackLane =
+        clip->trackId == magda::TrackManager::getInstance().getChordTrackId();
+    const bool overlay = showProgressionOverlay_ && !isChordTrackLane;
+    const auto master = overlay ? magda::ChordProgressionContext::current()
+                                : std::vector<magda::ProgressionChord>{};
+    auto intendedAt = [&](double absBeat) -> juce::String {
+        for (const auto& mc : master)
+            if (absBeat >= mc.startBeat - 0.01 && absBeat < mc.startBeat + mc.lengthBeats - 0.01)
+                return mc.name;
+        return {};
+    };
 
     for (const auto& annotation : clip->chordAnnotations) {
         double absBeat = annotation.beatPosition + clipStartBeats;
@@ -1765,16 +1836,25 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         const bool previewing =
             previewChordGroup() != 0 && annotation.chordGroup == previewChordGroup();
         const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+
+        // The intended chord-track chord shown alongside this track's chord.
+        // (Agreement/disagreement signalling is deferred — see follow-up issue.)
+        const juce::String intendedName = overlay ? intendedAt(absBeat) : juce::String();
+        const bool comparing = intendedName.isNotEmpty();
+
         // A playing block glows green; otherwise the accent-blue card.
         const auto fillColour =
             previewing ? DarkTheme::getColour(DarkTheme::STATUS_SUCCESS) : accent;
+        const float fillAlpha = previewing ? 0.40f : selected ? 0.22f : 0.13f;
 
-        // Direction 4 "accent spine": subtle slate fill, a bright accent bar down
-        // the left edge, clean name type.
-        g.setColour(fillColour.withAlpha(previewing ? 0.40f : selected ? 0.22f : 0.13f));
+        // Slate card fill.
+        g.setColour(fillColour.withAlpha(fillAlpha));
         g.fillRoundedRectangle(blockBounds.toFloat(), 4.0f);
 
-        if (blockBounds.getWidth() > 8) {
+        // The accent spine belongs to the chord-track chord (left). The MIDI
+        // track's own chord is bare (no spine).
+        const bool hasChordTrackChord = isChordTrackLane || comparing;
+        if (hasChordTrackChord && blockBounds.getWidth() > 8) {
             juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
                                          static_cast<float>(blockBounds.getY() + 3), 3.0f,
                                          static_cast<float>(blockBounds.getHeight() - 6));
@@ -1782,13 +1862,30 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             g.fillRoundedRectangle(spine, 1.5f);
         }
 
-        // Chord name in the active notation (C / solfège / both)
+        // Chord name(s) in the active notation (C / solfège / both).
         if (blockBounds.getWidth() > 14) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            const auto& notation = magda::music::NotationSettings::getInstance();
             g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
-            g.drawText(magda::music::NotationSettings::getInstance().format(annotation.chordName),
-                       blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
-                       juce::Justification::centredLeft, true);
+            if (isChordTrackLane) {
+                // Chord track's own chord: left, with spine.
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.drawText(notation.format(annotation.chordName),
+                           blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
+                           juce::Justification::centredLeft, true);
+            } else {
+                // MIDI track chord: always right, no decoration.
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.drawText(notation.format(annotation.chordName),
+                           blockBounds.withTrimmedLeft(8).withTrimmedRight(8),
+                           juce::Justification::centredRight, true);
+                // Intended chord-track chord (overlay only): left, with spine.
+                if (comparing) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.drawText(notation.format(intendedName),
+                               blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
+                               juce::Justification::centredLeft, true);
+                }
+            }
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
         }
 
@@ -1872,45 +1969,9 @@ void PianoRollContent::detectChordsFromNotes() {
     if (auto* controller = magda::TimelineController::getCurrent())
         beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
 
-    // Find the end of the last note (not the full clip length)
-    double lastNoteEnd = 0.0;
-    for (const auto& note : clip->midiNotes)
-        lastNoteEnd = juce::jmax(lastNoteEnd, note.startBeat + note.lengthBeats);
-
-    double scanLength = lastNoteEnd;
-    double step = beatsPerBar;
-
-    // Collect detected chords with their contributing note indices
-    struct DetectedChord {
-        double beat;
-        juce::String name;
-        std::vector<size_t> noteIndices;
-    };
-    std::vector<DetectedChord> detected;
-
-    auto& engine = magda::music::ChordEngine::getInstance();
-    for (double beat = 0.0; beat < scanLength; beat += step) {
-        // Collect notes sounding at this beat
-        std::vector<magda::music::ChordNote> chordNotes;
-        std::vector<size_t> indices;
-        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
-            const auto& note = clip->midiNotes[i];
-            if (note.startBeat <= beat && (note.startBeat + note.lengthBeats) > beat) {
-                chordNotes.push_back({note.noteNumber, note.velocity});
-                indices.push_back(i);
-            }
-        }
-
-        if (chordNotes.size() < 2)
-            continue;
-
-        auto chord = engine.detect(chordNotes);
-        if (chord.name == "none" || chord.name == "unknown" || chord.name.isEmpty())
-            continue;
-
-        detected.push_back({beat, chord.getDisplayName(), std::move(indices)});
-    }
-
+    // Bar-by-bar detection lives in the shared converter so this and the
+    // "extract to chord track" feature stay in sync.
+    const auto detected = magda::extractChordsFromNotes(clip->midiNotes, beatsPerBar);
     if (detected.empty())
         return;
 
@@ -1923,23 +1984,20 @@ void PianoRollContent::detectChordsFromNotes() {
     // Assign chordGroup IDs to annotations and their notes
     std::vector<std::pair<size_t, int>> noteGroupAssignments;
 
-    for (size_t i = 0; i < detected.size(); ++i) {
+    for (const auto& ex : detected) {
         int groupId = clip->nextChordGroupId++;
 
         magda::ClipInfo::ChordAnnotation annotation;
-        annotation.beatPosition = detected[i].beat;
-        // Extend to next chord or end of last note
-        annotation.lengthBeats = (i + 1 < detected.size())
-                                     ? (detected[i + 1].beat - detected[i].beat)
-                                     : (lastNoteEnd - detected[i].beat);
-        annotation.chordName = detected[i].name;
+        annotation.beatPosition = ex.startBeat;
+        annotation.lengthBeats = ex.lengthBeats;
+        annotation.chordName = ex.name;
         annotation.chordGroup = groupId;
 
         auto cmd = std::make_unique<magda::AddChordAnnotationCommand>(editingClipId_, annotation);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
 
         // Collect note-to-group assignments
-        for (size_t noteIdx : detected[i].noteIndices)
+        for (size_t noteIdx : ex.noteIndices)
             noteGroupAssignments.emplace_back(noteIdx, groupId);
     }
 

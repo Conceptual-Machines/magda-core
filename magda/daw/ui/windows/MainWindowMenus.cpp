@@ -681,6 +681,10 @@ void MainWindow::setupMenuCallbacks() {
         MenuManager::getInstance().menuItemsChanged();
         if (mainComponent && mainComponent->mainView) {
             mainComponent->mainView->resized();
+            // The header column swaps sides, but MainView::paint() draws
+            // side-dependent backgrounds; without a repaint the old side keeps
+            // its painted pixels (the stale grid / song-map fragment).
+            mainComponent->mainView->repaint();
         }
     };
 
