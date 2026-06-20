@@ -7,8 +7,8 @@ bool MidiFileWriter::writeToFile(const juce::File& outFile, const std::vector<Mi
                                  const std::vector<MidiPitchBendData>& pitchBendData, double tempo,
                                  const juce::String& nameHint,
                                  const std::vector<ChordMarker>& chordMarkers) {
-    if ((notes.empty() && ccData.empty() && pitchBendData.empty()) || tempo <= 0.0 ||
-        outFile == juce::File()) {
+    if ((notes.empty() && ccData.empty() && pitchBendData.empty() && chordMarkers.empty()) ||
+        tempo <= 0.0 || outFile == juce::File()) {
         return false;
     }
 

@@ -3195,18 +3195,18 @@ void ClipComponent::showContextMenu() {
         }
 
         if (hasMidi) {
-            if (!isChord) {
-                menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
-
-                // Extract detected chords onto the (singleton) chord track.
-                if (!isMultiSelection) {
-                    juce::PopupMenu extractMenu;
-                    extractMenu.addItem(23, "Append");
-                    extractMenu.addItem(24, "Replace Chord Track");
-                    menu.addSubMenu("Extract Chords to Chord Track", extractMenu);
-                }
-                menu.addSeparator();
+            // Progressions (chord-track clips) save to the library too — their
+            // chords round-trip as CHORD: markers — so the Save item is shown
+            // for every MIDI clip. Extracting chords onto the chord track only
+            // makes sense for clips that aren't already on it.
+            menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
+            if (!isChord && !isMultiSelection) {
+                juce::PopupMenu extractMenu;
+                extractMenu.addItem(23, "Append");
+                extractMenu.addItem(24, "Replace Chord Track");
+                menu.addSubMenu("Extract Chords to Chord Track", extractMenu);
             }
+            menu.addSeparator();
 
             juce::PopupMenu quantizeMenu;
 

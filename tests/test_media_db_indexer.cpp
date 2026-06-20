@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "../magda/daw/core/MidiFileWriter.hpp"
 #include "../magda/daw/media_db/MediaDatabase.hpp"
 #include "../magda/daw/media_db/MediaDbIndexer.hpp"
 
@@ -314,4 +315,32 @@ TEST_CASE("indexer: progress callback fires for each file", "[media_db][indexer]
     indexer.indexDirectory(dir.path());
     REQUIRE(lastTotal == 3);
     REQUIRE(lastDone == 3);
+}
+
+TEST_CASE("indexer: a .mid carrying CHORD markers indexes as kind='progression'",
+          "[media_db][indexer]") {
+    TempDir dir;
+    const auto out = dir.path() / "progression.mid";
+
+    std::vector<magda::MidiNote> notes;
+    notes.push_back({60, 100, 0.0, 4.0});  // a voicing note under the first chord
+    std::vector<magda::daw::ChordMarker> markers;
+    markers.push_back({0.0, 4.0, "Cmaj7"});
+    markers.push_back({4.0, 4.0, "Am7"});
+    REQUIRE(magda::daw::MidiFileWriter::writeToFile(juce::File(juce::String(out.string())), notes,
+                                                    {}, {}, 120.0, "progression", markers));
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    const auto stats = indexer.indexFile(out, MediaDbIndexer::Mode::ForceAll);
+    REQUIRE(stats.inserted == 1);
+
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT kind, format FROM media_file LIMIT 1", -1,
+                               &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) ==
+            "progression");
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "mid");
+    sqlite3_finalize(stmt);
 }

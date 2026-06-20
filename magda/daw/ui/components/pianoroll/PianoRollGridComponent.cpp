@@ -17,6 +17,7 @@
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/GestureRouter.hpp"
+#include "core/MidiChordMarkers.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -2647,13 +2648,9 @@ void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x,
     if (ticksPerQN <= 0)
         return;
 
-    // Extract chord markers (MIDI marker meta events type 6, format "CHORD:name:length")
-    struct ChordMarker {
-        double beatPosition = 0.0;
-        double lengthBeats = 4.0;
-        juce::String chordName;
-    };
-    std::vector<ChordMarker> chordMarkers;
+    // Extract embedded chord markers (the reverse of MidiFileWriter's marker
+    // writing). Parsed up front; note linkage to each chord happens below.
+    const auto chordMarkers = magda::daw::readChordMarkers(midi);
 
     // Extract full note data (with timing) and simple note list
     struct NoteData {
@@ -2671,24 +2668,6 @@ void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x,
             continue;
         for (int i = 0; i < track->getNumEvents(); ++i) {
             auto& msg = track->getEventPointer(i)->message;
-            if (msg.isTextMetaEvent() && msg.getMetaEventType() == 6) {
-                auto text = msg.getTextFromTextMetaEvent();
-                if (text.startsWith("CHORD:")) {
-                    auto parts = juce::StringArray::fromTokens(text.substring(6), ":", "");
-                    if (parts.size() >= 2) {
-                        ChordMarker marker;
-                        marker.beatPosition = msg.getTimeStamp() / ticksPerQN;
-                        // Last token is length; everything before is the chord name
-                        // (chord names can contain colons, e.g. "C:maj7")
-                        marker.lengthBeats = parts[parts.size() - 1].getDoubleValue();
-                        parts.remove(parts.size() - 1);
-                        marker.chordName = parts.joinIntoString(":");
-                        if (marker.lengthBeats <= 0.0)
-                            marker.lengthBeats = 4.0;
-                        chordMarkers.push_back(marker);
-                    }
-                }
-            }
             if (msg.isNoteOn()) {
                 simpleNotes.emplace_back(msg.getNoteNumber(), msg.getVelocity());
 

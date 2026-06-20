@@ -15,16 +15,28 @@ struct sqlite3;
 
 namespace magda::media {
 
-// Bumped whenever Schema.hpp changes in a way that requires a rebuild.
-// On open we assert PRAGMA user_version matches; mismatch means the file
-// was written by a different version of MAGDA and the user must rebuild
-// the cache (the DB is rebuildable, files are source of truth).
-inline constexpr int kSchemaVersion = 8;
+// Bumped whenever Schema.hpp changes. The migration ladder (migrate() in
+// MediaDatabase.cpp) reads PRAGMA user_version and applies ordered steps up
+// to this value, then stamps it. The media DB is a rebuildable cache (files
+// on disk are the source of truth), so a migration can never lose data,
+// only recompute time.
+//
+// History: v4 user-override columns, v5 warp markers, v6 display_name,
+// v7 total_beats/beat_mode, v8 preset_kind, v9 kind='progression' (extends
+// the kind CHECK via a table rebuild).
+inline constexpr int kSchemaVersion = 9;
 
 class MediaDatabaseError : public std::runtime_error {
   public:
     using std::runtime_error::runtime_error;
 };
+
+// Run the version-gated migration ladder against an open connection,
+// upgrading from `fromVersion` to kSchemaVersion and stamping user_version.
+// The MediaDatabase constructor calls this internally after applying the
+// schema; it is exposed so tests can drive it against a hand-built old DB.
+// Throws MediaDatabaseError on failure.
+void migrateMediaDatabase(sqlite3* db, int fromVersion);
 
 class MediaDatabase {
   public:
