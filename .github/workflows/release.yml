@@ -523,6 +523,7 @@ jobs:
     runs-on: windows-latest-8core
     env:
       NSIS_VERSION: "3.10"
+      VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
     steps:
     - uses: actions/checkout@v4
       with:
@@ -546,13 +547,22 @@ jobs:
       with:
         arch: x64
 
+    - name: Setup pinned vcpkg
+      shell: powershell
+      run: |
+        $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
+        git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
+        git -C $vcpkgRoot checkout $env:VCPKG_COMMIT
+        & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
     - name: Cache vcpkg packages
       uses: actions/cache@v5
       with:
         path: .vcpkg-binary-cache
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-
+          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-
 
     - name: Install libxml2
       shell: powershell
