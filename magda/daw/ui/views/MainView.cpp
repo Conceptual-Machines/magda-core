@@ -861,6 +861,7 @@ void MainView::masterChannelChanged() {
         masterHeaderPanel->setVisible(masterVisible_);
         masterContentPanel->setVisible(masterVisible_);
         resized();
+        repaint();  // clear the vacated master-strip area (stale-paint fix)
     }
 }
 
@@ -883,6 +884,7 @@ void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profil
     tracksChanged();
 
     resized();
+    repaint();  // clear stale pixels from the previous view (song map / grid)
 }
 
 void MainView::paint(juce::Graphics& g) {
@@ -1077,6 +1079,12 @@ void MainView::resized() {
     if (masterVisible_) {
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
+    } else {
+        // Clear stale bounds when the master strip is hidden: otherwise the song
+        // map / master header keep their previous-view bounds and can leave a
+        // fragment behind when the view switches.
+        masterHeaderPanel->setBounds({});
+        masterContentPanel->setBounds({});
     }
     // Always-present footer toggle: hide icon when the master is visible, show
     // icon when it's hidden.
