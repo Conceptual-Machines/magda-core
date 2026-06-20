@@ -18,6 +18,7 @@ target_sources(magda_daw PRIVATE
     ClipManager.cpp
     ChordProgressionConverter.cpp
     SessionLaunchService.cpp
+    MidiChordMarkers.cpp
     MidiFileWriter.cpp
     SelectionManager.cpp
     GestureRouter.cpp

@@ -1620,8 +1620,10 @@ bool ClipManager::canSaveClipToLibrary(ClipId clipId) const {
         return false;
     }
     if (clip->isMidi()) {
+        // Chord-track progressions can be all-chords with their voicings
+        // implied, so annotations alone make a clip worth saving.
         return !clip->midiNotes.empty() || !clip->midiCCData.empty() ||
-               !clip->midiPitchBendData.empty();
+               !clip->midiPitchBendData.empty() || !clip->chordAnnotations.empty();
     }
     if (!clip->isAudio()) {
         return false;
@@ -1649,7 +1651,20 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
             return false;
         }
 
-        const juce::File midiDir(juce::String(ctx.midiClipsDir().string()));
+        // Chord-track clips are progressions: persist their chords as CHORD:
+        // markers and save under the progressions dir so the indexer models
+        // them as kind='progression'. A plain MIDI clip saves its notes only.
+        const bool isProgression = TrackManager::getInstance().getChordTrackId() == clip->trackId;
+
+        std::vector<magda::daw::ChordMarker> chordMarkers;
+        if (isProgression) {
+            for (const auto& ann : clip->chordAnnotations) {
+                chordMarkers.push_back({ann.beatPosition, ann.lengthBeats, ann.chordName});
+            }
+        }
+
+        const auto dir = isProgression ? ctx.progressionsDir() : ctx.midiClipsDir();
+        const juce::File midiDir(juce::String(dir.string()));
         if (!midiDir.createDirectory()) {
             return false;
         }
@@ -1657,7 +1672,8 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
         const auto outFile = midiLibraryFileForClip(*clip, midiDir);
         const double tempo = currentProjectTempoOrDefault();
         if (!magda::daw::MidiFileWriter::writeToFile(outFile, clip->midiNotes, clip->midiCCData,
-                                                     clip->midiPitchBendData, tempo, clip->name)) {
+                                                     clip->midiPitchBendData, tempo, clip->name,
+                                                     chordMarkers)) {
             return false;
         }
 

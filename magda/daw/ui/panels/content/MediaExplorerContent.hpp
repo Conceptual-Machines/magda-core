@@ -77,10 +77,11 @@ class MediaExplorerContent : public PanelContent,
     // Top Bar Components
     juce::ComboBox sourceSelector_;  // Left: Source dropdown (User, Library, etc.)
     juce::TextEditor searchBox_;     // Center-left: Search
-    std::unique_ptr<magda::SvgButton> audioFilterButton_;   // Center: Audio type filter
-    std::unique_ptr<magda::SvgButton> midiFilterButton_;    // Center: MIDI type filter
-    std::unique_ptr<magda::SvgButton> presetFilterButton_;  // Center: Preset type filter
-    juce::ComboBox viewModeSelector_;                       // Right: View mode dropdown
+    std::unique_ptr<magda::SvgButton> audioFilterButton_;        // Center: Audio type filter
+    std::unique_ptr<magda::SvgButton> midiFilterButton_;         // Center: MIDI type filter
+    std::unique_ptr<magda::SvgButton> presetFilterButton_;       // Center: Preset type filter
+    std::unique_ptr<magda::SvgButton> progressionFilterButton_;  // Center: Progression filter
+    juce::ComboBox viewModeSelector_;                            // Right: View mode dropdown
 
     // Navigation buttons (may be moved to sidebar later)
     juce::TextButton homeButton_;
@@ -146,6 +147,8 @@ class MediaExplorerContent : public PanelContent,
     bool audioFilterActive_ = true;
     bool midiFilterActive_ = false;
     bool presetFilterActive_ = false;
+    // Library-mode only (kind='progression'); not persisted to Config.
+    bool progressionFilterActive_ = false;
     juce::String searchTerm_;
 
     // Audio engine reference for shared device manager

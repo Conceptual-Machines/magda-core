@@ -25,6 +25,7 @@ using Catch::Approx;
 using magda::media::kSchemaVersion;
 using magda::media::MediaDatabase;
 using magda::media::MediaDatabaseError;
+using magda::media::migrateMediaDatabase;
 namespace fs = std::filesystem;
 
 namespace {
@@ -371,4 +372,104 @@ TEST_CASE("Duplicate file path cleanup removes rows pointing to the same physica
     REQUIRE(sqlite3_column_double(stmt, 1) == Approx(172.0));
     REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
+}
+
+TEST_CASE("Migration ladder rebuilds media_file to accept kind='progression'",
+          "[media_db][migration]") {
+    // Build a pre-v9 DB by hand: the kind CHECK lacks 'progression', plus the
+    // full v8 column set and a child table to prove FK preservation across the
+    // table rebuild. MediaDatabase always applies the latest schema, so the
+    // old shape has to be created against a raw handle.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open(":memory:", &db) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(db, "PRAGMA foreign_keys=ON", nullptr, nullptr, nullptr) == SQLITE_OK);
+
+    const char* oldSchema = R"SQL(
+        CREATE TABLE media_file (
+            id INTEGER PRIMARY KEY,
+            path TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL CHECK (kind IN ('audio','preset','clip')),
+            format TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            mtime_ns INTEGER NOT NULL,
+            content_hash BLOB,
+            indexed_at INTEGER NOT NULL,
+            display_name TEXT,
+            duration_s REAL, sample_rate INTEGER, channels INTEGER, bpm REAL,
+            key_root TEXT, key_scale TEXT, rms REAL, spectral_centroid REAL,
+            spectral_flatness REAL, transient_density REAL, key_confidence REAL,
+            bpm_user REAL, key_root_user TEXT, key_scale_user TEXT,
+            total_beats_user REAL, beat_mode_user INTEGER CHECK (beat_mode_user IN (0,1)),
+            warp_markers_json TEXT,
+            shape TEXT, family TEXT, tonal INTEGER,
+            preset_kind TEXT CHECK (preset_kind IN ('chain','rack','device'))
+        );
+        CREATE TABLE media_tag (
+            file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
+            tag TEXT NOT NULL, confidence REAL NOT NULL, source_model TEXT NOT NULL,
+            PRIMARY KEY (file_id, tag, source_model)
+        );
+        PRAGMA user_version = 8;
+    )SQL";
+    REQUIRE(sqlite3_exec(db, oldSchema, nullptr, nullptr, nullptr) == SQLITE_OK);
+
+    REQUIRE(sqlite3_exec(
+                db,
+                "INSERT INTO media_file (id, path, kind, format, size_bytes, mtime_ns, indexed_at, "
+                "bpm_user, key_root_user) VALUES (42, 'loop.wav', 'audio', 'wav', 10, 1, 2, 174.0, "
+                "'G')",
+                nullptr, nullptr, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(db, "INSERT INTO media_tag VALUES (42, 'amen', 1.0, 'path')", nullptr,
+                         nullptr, nullptr) == SQLITE_OK);
+
+    // The old CHECK rejects 'progression'.
+    REQUIRE(sqlite3_exec(db,
+                         "INSERT INTO media_file (path, kind, format, size_bytes, mtime_ns, "
+                         "indexed_at) VALUES ('p.mid', 'progression', 'mid', 0, 0, 0)",
+                         nullptr, nullptr, nullptr) != SQLITE_OK);
+
+    migrateMediaDatabase(db, 8);
+
+    // The rebuilt CHECK accepts 'progression'.
+    REQUIRE(sqlite3_exec(db,
+                         "INSERT INTO media_file (path, kind, format, size_bytes, mtime_ns, "
+                         "indexed_at) VALUES ('p.mid', 'progression', 'mid', 0, 0, 0)",
+                         nullptr, nullptr, nullptr) == SQLITE_OK);
+
+    // Row id and user overrides survive the rebuild.
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db, "SELECT bpm_user, key_root_user FROM media_file WHERE id=42", -1,
+                               &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_double(stmt, 0) == Approx(174.0));
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "G");
+    sqlite3_finalize(stmt);
+
+    // user_version is stamped to the current schema version.
+    sqlite3_stmt* ver = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &ver, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(ver) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(ver, 0) == kSchemaVersion);
+    sqlite3_finalize(ver);
+
+    // The FK is preserved and still cascades: deleting the file clears its tag.
+    REQUIRE(sqlite3_exec(db, "DELETE FROM media_file WHERE id=42", nullptr, nullptr, nullptr) ==
+            SQLITE_OK);
+    sqlite3_stmt* tag = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM media_tag", -1, &tag, nullptr) ==
+            SQLITE_OK);
+    REQUIRE(sqlite3_step(tag) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(tag, 0) == 0);
+    sqlite3_finalize(tag);
+
+    sqlite3_close(db);
+}
+
+TEST_CASE("Fresh DB reports current schema version and accepts progression rows",
+          "[media_db][migration]") {
+    MediaDatabase db(":memory:");
+    REQUIRE(db.schemaVersion() == kSchemaVersion);
+    REQUIRE_NOTHROW(db.execute("INSERT INTO media_file "
+                               "(path, kind, format, size_bytes, mtime_ns, indexed_at) "
+                               "VALUES ('p.mid', 'progression', 'mid', 0, 0, 0)"));
 }

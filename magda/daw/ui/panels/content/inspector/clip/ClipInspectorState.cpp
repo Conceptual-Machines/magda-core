@@ -353,14 +353,12 @@ void ClipInspector::updateFromSelectedClip() {
         } else if (clip->isMidi() && !isMulti) {
             clipKeyLabel_.setVisible(false);
             clipKeyRootCombo_.setVisible(false);
-            // Progressions (chord-track clips) have no library model yet, and a
-            // plain MIDI save would silently drop their chords. Hide the button
-            // for them until the progression library lands (see follow-up issues).
-            const bool isProgression =
-                clip->trackId == magda::TrackManager::getInstance().getChordTrackId();
-            saveLibraryButton_.setVisible(!isProgression);
+            // Progressions (chord-track clips) round-trip their chords through
+            // the library now (saved as a kind='progression' .mid with CHORD:
+            // markers), so the button is enabled for them like any MIDI clip.
+            saveLibraryButton_.setVisible(true);
             saveLibraryButton_.setEnabled(
-                !isProgression && magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
+                magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
         } else {
             clipKeyLabel_.setVisible(false);
             clipKeyRootCombo_.setVisible(false);

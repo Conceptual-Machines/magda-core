@@ -80,6 +80,13 @@ std::filesystem::path MediaDbContext::midiClipsDir() const {
     return parent / "clips" / "midi";
 }
 
+std::filesystem::path MediaDbContext::progressionsDir() const {
+    // Sibling of clips/midi. Chord-track progressions are saved here as .mid
+    // files carrying CHORD: markers; the indexer classifies them as
+    // kind='progression' from their content, not their location.
+    return midiClipsDir().parent_path() / "progressions";
+}
+
 std::filesystem::path MediaDbContext::audioModelPath() const {
     return modelsDir() / kAudioModelFilename;
 }
@@ -179,9 +186,9 @@ bool MediaDbContext::wipeAll() {
         return false;
     }
 
-    juce::Logger::writeToLog("[wipeAll] committed (after: media_file=" +
-                             juce::String(countRows("media_file")) +
-                             ", media_fts=" + juce::String(countRows("media_fts")) + ")");
+    juce::Logger::writeToLog(
+        "[wipeAll] committed (after: media_file=" + juce::String(countRows("media_file")) +
+        ", media_fts=" + juce::String(countRows("media_fts")) + ")");
 
     // Signal listeners (MediaDbBrowserContent polls this on a timer) that
     // their cached result sets are stale, otherwise the browser keeps

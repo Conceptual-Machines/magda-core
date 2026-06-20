@@ -24,6 +24,7 @@
 #include "PathRules.hpp"
 #include "RobertaTokenizer.hpp"
 #include "Scan.hpp"
+#include "core/MidiChordMarkers.hpp"
 
 namespace magda::media {
 
@@ -382,7 +383,8 @@ void bindOptFloat(sqlite3_stmt* stmt, int idx, const std::optional<float>& v) {
     }
 }
 
-std::int64_t upsertFile(sqlite3* db, const ScannedFile& f, const std::vector<std::uint8_t>& hash,
+std::int64_t upsertFile(sqlite3* db, const ScannedFile& f, const std::string& kind,
+                        const std::vector<std::uint8_t>& hash,
                         const std::optional<AudioFeatures>& feats, const std::string& shape,
                         const std::string& family, int tonal) {
     static constexpr const char* kSql = R"SQL(
@@ -430,7 +432,7 @@ std::int64_t upsertFile(sqlite3* db, const ScannedFile& f, const std::vector<std
     auto p = [&](const char* name) { return sqlite3_bind_parameter_index(stmt, name); };
 
     sqlite3_bind_text(stmt, p(":path"), pathStr.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, p(":kind"), f.kind.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, p(":kind"), kind.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, p(":format"), f.format.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, p(":size"), f.sizeBytes);
     sqlite3_bind_int64(stmt, p(":mtime"), f.mtimeNs);
@@ -709,6 +711,17 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats&
             return;
         }
 
+        // A .mid that carries CHORD: markers is a chord-track progression
+        // (only MAGDA writes those markers). It is processed like any MIDI
+        // clip but stored under kind='progression' so the library can model
+        // and filter it as a first-class entity. Detection is content-based,
+        // so it survives a full rescan regardless of where the file lives.
+        std::string storedKind = f.kind;
+        if (f.kind == "clip" &&
+            !magda::daw::readChordMarkers(juce::File(juce::String(f.path.string()))).empty()) {
+            storedKind = "progression";
+        }
+
         std::optional<AudioFeatures> feats;
         std::optional<MidiClipFeatures> midiFeats;
         if (f.kind == "audio") {
@@ -750,7 +763,8 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats&
             transactionOpen = true;
         }
 
-        const std::int64_t fileId = upsertFile(sqlDb, f, hash, feats, shape, family, tonal);
+        const std::int64_t fileId =
+            upsertFile(sqlDb, f, storedKind, hash, feats, shape, family, tonal);
         if (fileId < 0) {
             throw MediaDatabaseError("upsert media_file failed: " + sqliteLastError(sqlDb));
         }

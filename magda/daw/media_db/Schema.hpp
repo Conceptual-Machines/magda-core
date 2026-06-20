@@ -12,15 +12,20 @@
 
 namespace magda::media {
 
+// The schema DDL. user_version is NOT set here: it is owned by the
+// migration ladder in MediaDatabase.cpp, which reads PRAGMA user_version to
+// gate per-version steps and stamps kSchemaVersion once they apply. Setting
+// it here would clobber that gate on every open. foreign_keys is a
+// per-connection pragma (defaults OFF, not persisted) so it must run on
+// every open; it stays here.
 inline constexpr const char* kSchemaSql = R"SQL(
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
-	PRAGMA user_version = 8;
 
 CREATE TABLE IF NOT EXISTS media_file (
     id              INTEGER PRIMARY KEY,
     path            TEXT    NOT NULL UNIQUE,
-    kind            TEXT    NOT NULL CHECK (kind IN ('audio','preset','clip')),
+    kind            TEXT    NOT NULL CHECK (kind IN ('audio','preset','clip','progression')),
     format          TEXT    NOT NULL,
     size_bytes      INTEGER NOT NULL,
     mtime_ns        INTEGER NOT NULL,

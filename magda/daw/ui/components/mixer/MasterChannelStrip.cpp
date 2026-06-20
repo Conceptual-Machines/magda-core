@@ -483,10 +483,10 @@ void MasterChannelStrip::setupControls() {
     addAndMakeVisible(*cueVolumeSlider_);
 
     // Speaker on/off button (toggles master mute)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
-                                                             BinaryData::speaker_on_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
-                                                              BinaryData::speaker_off_svgSize);
+    auto speakerOnIcon =
+        juce::Drawable::createFromImageData(BinaryData::speaker_svg, BinaryData::speaker_svgSize);
+    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_muted_svg,
+                                                              BinaryData::speaker_muted_svgSize);
 
     speakerButton =
         std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
