@@ -202,6 +202,11 @@ class PianoRollContent : public MidiEditorContent,
     bool showChordRow_ = false;
     bool isSyncingChords_ = false;  // Re-entry guard for syncChordAnnotations
 
+    // Progression overlay (#1504): ghost the chord-track progression behind a
+    // normal track's chord lane for reference. Global toggle, shared across
+    // editors so it stays on as you move between clips.
+    static bool showProgressionOverlay_;
+
     // Initial centering flag
     bool needsInitialCentering_ = true;
 
@@ -213,7 +218,8 @@ class PianoRollContent : public MidiEditorContent,
     std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
-    std::unique_ptr<magda::SvgButton> gridToggleBtn_;  // chord mode: show/hide grid
+    std::unique_ptr<magda::SvgButton> progressionOverlayToggle_;  // #1504 ghost overlay
+    std::unique_ptr<magda::SvgButton> gridToggleBtn_;             // chord mode: show/hide grid
     std::unique_ptr<magda::SvgButton> velocityToggle_;
     std::unique_ptr<magda::SvgButton> pitchGlideToggle_;
     std::unique_ptr<magda::SvgButton> ccLanesBtn_;

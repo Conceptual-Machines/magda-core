@@ -237,6 +237,7 @@ target_sources(magda_juce_tests PRIVATE
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
     test_external_plugin_state_restore_juce.cpp
+    test_chord_progression_converter_juce.cpp
 )
 
 # Link required libraries for JUCE tests
@@ -304,6 +305,9 @@ add_test(NAME external_plugin_state_restore_juce
 
 add_test(NAME section_scoped_device_ids_juce
          COMMAND magda_juce_tests "Section-Scoped Device IDs")
+
+add_test(NAME chord_progression_converter_juce
+         COMMAND magda_juce_tests "Chord Progression Converter Tests")
 
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy

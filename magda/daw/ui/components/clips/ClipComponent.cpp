@@ -20,6 +20,8 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
+#include "core/ChordAnnotationCommands.hpp"
+#include "core/ChordProgressionConverter.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
@@ -69,6 +71,119 @@ void showExternalEditorFailedAlert(const juce::String& message) {
                                            "Edit in External Editor Failed", message);
 }
 
+// Run chord detection on a MIDI clip and write the result onto the singleton
+// chord track as a new "Progression" clip (canonical voicings + linked chord
+// blocks). When `replace` is set the chord track's existing clips are cleared
+// first; otherwise the new progression is appended. One undo step. (#1506)
+void extractChordsToChordTrack(magda::ClipId sourceClipId, bool replace) {
+    auto& cm = ClipManager::getInstance();
+    const auto* source = cm.getClip(sourceClipId);
+    if (source == nullptr || !source->isMidi() || source->midiNotes.empty())
+        return;
+
+    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    if (auto* controller = TimelineController::getCurrent())
+        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
+
+    const auto extracted = magda::extractChordsFromNotes(source->midiNotes, beatsPerBar);
+    if (extracted.empty()) {
+        magda::daw::ui::Toast::showGlobal("No chords detected in clip");
+        return;
+    }
+
+    // Span the chord clip over the source's beat range so the progression sits
+    // beneath the notes it came from.
+    const double clipStart = source->placement.startBeat;
+    double extractEnd = 0.0;
+    for (const auto& ex : extracted)
+        extractEnd = std::max(extractEnd, ex.startBeat + ex.lengthBeats);
+    const double clipLength = std::max(source->placement.lengthBeats, extractEnd);
+
+    auto& tm = TrackManager::getInstance();
+    const auto chordTrackId = tm.ensureChordTrack();
+    if (chordTrackId == magda::INVALID_TRACK_ID)
+        return;
+
+    magda::CompoundOperationScope scope("Extract Chords to Chord Track");
+    auto& undo = UndoManager::getInstance();
+
+    if (replace) {
+        for (const auto cid : cm.getClipsOnTrack(chordTrackId))
+            undo.executeCommand(std::make_unique<DeleteClipCommand>(cid));
+    }
+
+    auto createCmd = std::make_unique<CreateClipCommand>(
+        magda::ClipType::MIDI, chordTrackId, BeatPosition{clipStart}, BeatDuration{clipLength});
+    auto* createPtr = createCmd.get();
+    undo.executeCommand(std::move(createCmd));
+    const auto newClipId = createPtr->getCreatedClipId();
+    auto* newClip = cm.getClip(newClipId);
+    if (newClip == nullptr)
+        return;
+
+    for (const auto& ex : extracted) {
+        const int groupId = newClip->nextChordGroupId++;
+
+        auto notes =
+            magda::buildVoicingNotes(ex.root, ex.quality, ex.startBeat, ex.lengthBeats, 100);
+        for (auto& n : notes)
+            n.chordGroup = groupId;
+
+        magda::ClipInfo::ChordAnnotation annotation;
+        annotation.beatPosition = ex.startBeat;
+        annotation.lengthBeats = ex.lengthBeats;
+        annotation.chordName = ex.name;
+        annotation.chordGroup = groupId;
+        undo.executeCommand(std::make_unique<AddChordAnnotationCommand>(newClipId, annotation));
+
+        if (!notes.empty())
+            undo.executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+                newClipId, std::move(notes), "Add Chord Voicing"));
+    }
+
+    cm.forceNotifyClipPropertyChanged(newClipId);
+    magda::daw::ui::Toast::showGlobal(
+        replace ? juce::String("Replaced chord track with detected chords")
+                : "Extracted " + juce::String(static_cast<int>(extracted.size())) +
+                      " chords to chord track");
+}
+
+// Bake a chord-track progression onto a normal track as a plain, editable MIDI
+// clip: the voicings come across as notes, the chord-lane annotations are
+// dropped so the result is decoupled from the chord engine. (#1503)
+void sendProgressionToTrack(magda::ClipId chordClipId, magda::TrackId targetTrackId) {
+    auto& cm = ClipManager::getInstance();
+    const auto* src = cm.getClip(chordClipId);
+    if (src == nullptr || !src->isMidi() || targetTrackId == magda::INVALID_TRACK_ID)
+        return;
+
+    double tempo = 120.0;
+    if (auto* tc = TimelineController::getCurrent())
+        tempo = tc->getState().tempo.bpm;
+
+    magda::CompoundOperationScope scope("Progression to MIDI Clip");
+    auto& undo = UndoManager::getInstance();
+
+    auto dupCmd = std::make_unique<DuplicateClipCommand>(
+        chordClipId, BeatPosition{src->placement.startBeat}, targetTrackId, tempo);
+    auto* dupPtr = dupCmd.get();
+    undo.executeCommand(std::move(dupCmd));
+
+    const auto newClipId = dupPtr->getDuplicatedClipId();
+    auto* newClip = cm.getClip(newClipId);
+    if (newClip == nullptr)
+        return;
+
+    // Strip the chord-ness: a plain MIDI clip with the voicings baked into notes.
+    newClip->chordAnnotations.clear();
+    for (auto& n : newClip->midiNotes)
+        n.chordGroup = 0;
+    newClip->name = src->name;
+    cm.forceNotifyClipPropertyChanged(newClipId);
+
+    magda::daw::ui::Toast::showGlobal("Progression copied as MIDI clip");
+}
+
 constexpr int MIDI_PREVIEW_MIN_NOTE = 21;   // A0
 constexpr int MIDI_PREVIEW_MAX_NOTE = 108;  // C8
 
@@ -76,6 +191,10 @@ constexpr int MIDI_PREVIEW_MAX_NOTE = 108;  // C8
 // the fixed item IDs and the 100-range quantize grid.
 constexpr int kTakeMenuBaseId = 300;
 constexpr int kTakeMenuMaxItems = 64;
+
+// Context-menu IDs for "Send Progression to Track" (one per eligible track),
+// kept clear of the take-selection range (300..363).
+constexpr int kProgressionTargetBaseId = 400;
 
 juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds,
                                       juce::Rectangle<int> visibleBounds, float radius) {
@@ -1742,15 +1861,29 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartTime_ = finalTime;
 
             if (isDuplicating_) {
-                // Alt+drag duplicate: show ghost at NEW position, keep original in place
+                // Alt+drag duplicate: show ghost at the NEW position, following the
+                // mouse onto the target track, keeping the original in place.
                 const auto* clip = getClipInfo();
                 if (clip && parentPanel_) {
                     double finalBeats = finalTime * tempoBPM / 60.0;
                     int ghostX = parentPanel_->beatsToPixel(finalBeats);
                     double lengthBeats = dragStartLength_ * tempoBPM / 60.0;
                     int ghostWidth = static_cast<int>(std::round(lengthBeats * pixelsPerBeat));
-                    juce::Rectangle<int> ghostBounds(ghostX, getY(), juce::jmax(10, ghostWidth),
-                                                     getHeight());
+
+                    // Follow the mouse vertically so the ghost lands on whatever
+                    // track the copy will drop onto (matches the mouseUp target).
+                    int ghostY = getY();
+                    int ghostH = getHeight();
+                    const int localY =
+                        e.getScreenPosition().y - parentPanel_->getScreenBounds().getPosition().y;
+                    const int trackIndex = parentPanel_->getTrackIndexAtY(localY);
+                    if (trackIndex >= 0) {
+                        ghostY = parentPanel_->getTrackYPosition(trackIndex);
+                        ghostH = parentPanel_->getTrackTotalHeight(trackIndex);
+                    }
+
+                    juce::Rectangle<int> ghostBounds(ghostX, ghostY, juce::jmax(10, ghostWidth),
+                                                     ghostH);
                     parentPanel_->setClipGhost(clipId_, ghostBounds, clip->colour);
                 }
                 // Don't move the original clip component
@@ -2890,6 +3023,16 @@ void ClipComponent::showContextMenu() {
     // duplicates, render, bounce, transcribe, or MIDI-library save.
     const bool isChord = clipForMenu && isChordClip(*clipForMenu);
 
+    // Eligible destinations for "Send Progression to Track" (chord clips only):
+    // regular hybrid tracks, which can host the baked MIDI clip. Captured below
+    // so the async handler can map menu IDs back to track IDs.
+    std::vector<TrackId> progressionTargets;
+    if (isChord && !isMultiSelection) {
+        for (const auto& t : TrackManager::getInstance().getTracks())
+            if (t.type == TrackType::Audio)
+                progressionTargets.push_back(t.id);
+    }
+
     // "Duplicate Time Selection" is enabled when an active, visible time
     // selection exists — mirrors the gate Cmd+D uses in MainWindowCommands
     // and the empty-area menu in TrackContentPanel.
@@ -2906,6 +3049,25 @@ void ClipComponent::showContextMenu() {
     menu.addItem(2, "Cut", canEdit);
     menu.addItem(3, "Paste", !isFrozen);
     menu.addSeparator();
+
+    // Bake the progression onto a regular track as a plain MIDI clip (#1503).
+    if (isChord && !isMultiSelection) {
+        juce::PopupMenu targetMenu;
+        const auto& tracks = TrackManager::getInstance().getTracks();
+        int idx = 0;
+        for (const auto targetId : progressionTargets) {
+            juce::String label = "Track " + juce::String(targetId);
+            for (const auto& t : tracks)
+                if (t.id == targetId) {
+                    label = t.name.isNotEmpty() ? t.name : label;
+                    break;
+                }
+            targetMenu.addItem(kProgressionTargetBaseId + idx, label);
+            ++idx;
+        }
+        menu.addSubMenu("Send Progression to Track", targetMenu, !progressionTargets.empty());
+        menu.addSeparator();
+    }
 
     // Duplicate
     menu.addItem(4, "Duplicate", canEdit);
@@ -3035,6 +3197,14 @@ void ClipComponent::showContextMenu() {
         if (hasMidi) {
             if (!isChord) {
                 menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
+
+                // Extract detected chords onto the (singleton) chord track.
+                if (!isMultiSelection) {
+                    juce::PopupMenu extractMenu;
+                    extractMenu.addItem(23, "Append");
+                    extractMenu.addItem(24, "Replace Chord Track");
+                    menu.addSubMenu("Extract Chords to Chord Track", extractMenu);
+                }
                 menu.addSeparator();
             }
 
@@ -3146,7 +3316,8 @@ void ClipComponent::showContextMenu() {
                                                     safeThis =
                                                         juce::Component::SafePointer<ClipComponent>(
                                                             this),
-                                                    &clipManager, &selectionManager](int result) {
+                                                    progressionTargets, &clipManager,
+                                                    &selectionManager](int result) {
         // The menu is modal-async: the clip (and its parent panel) can be
         // destroyed while it is open, e.g. a project load/close or track delete
         // rebuilds every clip via ClipManager::clearAllClips(). Bail before
@@ -3170,6 +3341,16 @@ void ClipComponent::showContextMenu() {
                 c->audio().source.filePath = c->audio().takes[takeIndex].filePath;
                 clipManager.forceNotifyClipPropertyChanged(clipId_);
             }
+            return;
+        }
+
+        // Send Progression to Track (IDs 400+): bake the chord progression onto
+        // the chosen regular track as a plain MIDI clip.
+        if (result >= kProgressionTargetBaseId &&
+            result < kProgressionTargetBaseId + static_cast<int>(progressionTargets.size())) {
+            const auto targetId =
+                progressionTargets[static_cast<size_t>(result - kProgressionTargetBaseId)];
+            sendProgressionToTrack(clipId_, targetId);
             return;
         }
 
@@ -3270,6 +3451,16 @@ void ClipComponent::showContextMenu() {
                         else
                             magda::daw::ui::Toast::showGlobal("Transcription complete");
                     });
+                break;
+            }
+
+            case 23: {  // Extract Chords to Chord Track (Append)
+                extractChordsToChordTrack(clipId_, false);
+                break;
+            }
+
+            case 24: {  // Extract Chords to Chord Track (Replace)
+                extractChordsToChordTrack(clipId_, true);
                 break;
             }
 
