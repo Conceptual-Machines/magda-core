@@ -9,6 +9,10 @@ MAGDA saves projects in Tracktion Engine's Edit format (`.tracktionedit`), an XM
 - Plugin chains and parameters
 - Automation data
 
+## DAWproject Interchange
+
+MAGDA can import and export the **DAWproject** format (`.dawproject`), an open interchange format for moving a project between different DAWs. Use **File → Import DAWproject...** to open one, or **File → Export DAWproject...** to write the current project out. It carries tracks, clips, and basic plugin/automation data — use it to hand a session to another DAW that supports the format, and use the native `.tracktionedit` for full-fidelity MAGDA projects.
+
 ## Audio Formats
 
 MAGDA supports the following audio formats:

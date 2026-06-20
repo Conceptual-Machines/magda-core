@@ -174,6 +174,12 @@ groove.list()
 groove.set(template="Basic 8th Swing", strength=0.5)
 ```
 
+## Transcribe Audio to MIDI
+
+MAGDA can detect the notes in an audio clip and turn them into MIDI. Right-click an audio clip and choose **Transcribe to MIDI**: the audio is analysed and a MIDI clip of the detected notes is created, ready to drive an instrument. It works on a single audio clip at a time and needs the clip's source file on disk.
+
+Transcription works best on clearly pitched, reasonably clean material (a solo vocal, a bassline, a lead). Dense mixes and heavily layered audio give rougher results that usually want some cleanup in the [Piano Roll](panels/piano-roll.md).
+
 ## Freeze, Bounce, and Render
 
 These operations render a track or clip's output to audio, useful for reducing CPU load or committing effects.
