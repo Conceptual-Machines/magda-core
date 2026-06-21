@@ -138,6 +138,11 @@ class PianoRollContent : public MidiEditorContent,
     int chordLaneLeftX() const {
         return sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
     }
+    // Top y of the chord lane. The ruler sits at the very top, so the chord lane
+    // (when visible) starts just below it; 0 when the chord row is hidden.
+    int chordRowTop() const {
+        return showChordRow_ ? RULER_HEIGHT : 0;
+    }
     // Called when the chord lane is clicked at the given clip-relative beat.
     // Return true to consume the click (the standard piano roll returns false so
     // the event falls through to the base handler). ChordClipContent uses this
