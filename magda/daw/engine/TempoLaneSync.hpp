@@ -35,6 +35,13 @@ class TempoLaneSync : public AutomationManagerListener, private juce::ValueTree:
     void syncLaneToSequence();  // lane points -> tempoSequence
     void syncSequenceToLane();  // tempoSequence -> lane points
 
+    // Called when the tempo lane first becomes available. Picks the sync
+    // direction: a lane restored from a saved project carries the real tempo
+    // curve and is authoritative (lane -> sequence); a lane freshly created in
+    // the UI has a single default point and should be seeded from the current
+    // sequence (sequence -> lane).
+    void reconcileAppearingTempoLane();
+
     // juce::ValueTree::Listener (tempoSequence state subtree)
     void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) override;
     void valueTreeChildAdded(juce::ValueTree&, juce::ValueTree&) override;
