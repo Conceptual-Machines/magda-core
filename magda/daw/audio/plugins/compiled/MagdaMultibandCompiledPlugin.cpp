@@ -180,27 +180,29 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                   .maxValue = 1.0f,
                                   .defaultValue = 0.8f};
     hostSlotInfo_[kAttackSlot] = {.name = "Attack",
-                                  .unit = "ms",
+                                  .unit =
+                                      magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 0.1f,
                                   .maxValue = 100.0f,
                                   .defaultValue = 3.0f,
                                   .scaleAnchor = 10.0f};
-    hostSlotInfo_[kReleaseSlot] = {.name = "Release",
-                                   .unit = "ms",
-                                   .scale = magda::ParameterScale::Logarithmic,
-                                   .minValue = 5.0f,
-                                   .maxValue = 1000.0f,
-                                   .defaultValue = 120.0f,
-                                   .scaleAnchor = 100.0f};
+    hostSlotInfo_[kReleaseSlot] = {
+        .name = "Release",
+        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+        .scale = magda::ParameterScale::Logarithmic,
+        .minValue = 5.0f,
+        .maxValue = 1000.0f,
+        .defaultValue = 120.0f,
+        .scaleAnchor = 100.0f};
     hostSlotInfo_[kInputSlot] = {.name = "Input",
-                                 .unit = "dB",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = -24.0f,
                                  .maxValue = 24.0f,
                                  .defaultValue = 0.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 24.0f,
@@ -212,7 +214,7 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                .defaultValue = 1.0f};
     auto setGain = [this](int slot, juce::String name) {
         hostSlotInfo_[slot] = {.name = std::move(name),
-                               .unit = "dB",
+                               .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                .scale = magda::ParameterScale::Linear,
                                .minValue = -24.0f,
                                .maxValue = 24.0f,
@@ -227,7 +229,7 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
 
     auto setThreshold = [this](int slot, juce::String name, float defaultValue) {
         hostSlotInfo_[slot] = {.name = std::move(name),
-                               .unit = "dB",
+                               .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                .scale = magda::ParameterScale::Linear,
                                .minValue = -80.0f,
                                .maxValue = 0.0f,
@@ -241,20 +243,22 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
                                .defaultValue = 8.0f};
     };
     auto setTiming = [this](int attackSlot, int releaseSlot, const juce::String& bandName) {
-        hostSlotInfo_[attackSlot] = {.name = bandName + " Attack",
-                                     .unit = "ms",
-                                     .scale = magda::ParameterScale::Logarithmic,
-                                     .minValue = 0.1f,
-                                     .maxValue = 100.0f,
-                                     .defaultValue = 3.0f,
-                                     .scaleAnchor = 10.0f};
-        hostSlotInfo_[releaseSlot] = {.name = bandName + " Release",
-                                      .unit = "ms",
-                                      .scale = magda::ParameterScale::Logarithmic,
-                                      .minValue = 5.0f,
-                                      .maxValue = 1000.0f,
-                                      .defaultValue = 120.0f,
-                                      .scaleAnchor = 100.0f};
+        hostSlotInfo_[attackSlot] = {
+            .name = bandName + " Attack",
+            .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+            .scale = magda::ParameterScale::Logarithmic,
+            .minValue = 0.1f,
+            .maxValue = 100.0f,
+            .defaultValue = 3.0f,
+            .scaleAnchor = 10.0f};
+        hostSlotInfo_[releaseSlot] = {
+            .name = bandName + " Release",
+            .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+            .scale = magda::ParameterScale::Logarithmic,
+            .minValue = 5.0f,
+            .maxValue = 1000.0f,
+            .defaultValue = 120.0f,
+            .scaleAnchor = 100.0f};
     };
     auto setBand = [this, setThreshold,
                     setRatio](int lowerThresholdSlot, int upperThresholdSlot, int belowRatioSlot,
@@ -265,13 +269,15 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
         setRatio(belowRatioSlot, bandName + " Below Ratio");
         setRatio(aboveRatioSlot, bandName + " Above Ratio");
         hostSlotInfo_[rangeSlot] = {.name = bandName + " Range",
-                                    .unit = "dB",
+                                    .unit =
+                                        magda::technicalText(magda::TechnicalTextToken::Decibels),
                                     .scale = magda::ParameterScale::Linear,
                                     .minValue = 0.0f,
                                     .maxValue = 48.0f,
                                     .defaultValue = 24.0f};
         hostSlotInfo_[limitSlot] = {.name = bandName + " Limit",
-                                    .unit = "dB",
+                                    .unit =
+                                        magda::technicalText(magda::TechnicalTextToken::Decibels),
                                     .scale = magda::ParameterScale::Linear,
                                     .minValue = -24.0f,
                                     .maxValue = 12.0f,
@@ -289,14 +295,14 @@ void MagdaMultibandCompiledPlugin::buildHostParameters() {
     setTiming(kHighAttackSlot, kHighReleaseSlot, "High");
 
     hostSlotInfo_[kLowXoSlot] = {.name = "Low XO",
-                                 .unit = "Hz",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                  .scale = magda::ParameterScale::Logarithmic,
                                  .minValue = 40.0f,
                                  .maxValue = 500.0f,
                                  .defaultValue = 120.0f,
                                  .scaleAnchor = 200.0f};
     hostSlotInfo_[kHighXoSlot] = {.name = "High XO",
-                                  .unit = "Hz",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 500.0f,
                                   .maxValue = 8000.0f,

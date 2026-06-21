@@ -88,6 +88,7 @@ void Config::save() {
     root->setProperty("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     root->setProperty("uiScale", uiScale);
     root->setProperty("uiFontScale", uiFontScale);
+    root->setProperty("localizedUIFontScale", localizedUIFontScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
@@ -397,6 +398,11 @@ void Config::load() {
         getBool("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     uiScale = getDouble("uiScale", uiScale);
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
+    localizedUIFontScaleExplicit = obj->hasProperty("localizedUIFontScale");
+    if (localizedUIFontScaleExplicit)
+        setLocalizedUIFontScale(getDouble("localizedUIFontScale", localizedUIFontScale));
+    else
+        localizedUIFontScale = defaultLocalizedUIFontScaleForLanguage(juce::String(language));
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);

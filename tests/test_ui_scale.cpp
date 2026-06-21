@@ -1,7 +1,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "magda/daw/core/Config.hpp"
+#include "magda/daw/core/TechnicalText.hpp"
 #include "magda/daw/core/UIScale.hpp"
+#include "magda/daw/ui/themes/LocalizedText.hpp"
 
 using Catch::Approx;
 using magda::kUIScaleSteps;
@@ -84,4 +87,62 @@ TEST_CASE("kUIScaleSteps is monotonically increasing and non-empty", "[ui_scale]
     for (size_t i = 1; i < kUIScaleSteps.size(); ++i) {
         REQUIRE(kUIScaleSteps[i] > kUIScaleSteps[i - 1]);
     }
+}
+
+TEST_CASE("localized UI font defaults boost CJK locales", "[ui_scale][font]") {
+    CHECK(magda::Config::defaultLocalizedUIFontScaleForLanguage("en") == Approx(1.0));
+    CHECK(magda::Config::defaultLocalizedUIFontScaleForLanguage("zh") == Approx(1.15));
+    CHECK(magda::Config::defaultLocalizedUIFontScaleForLanguage("zh-Hans") == Approx(1.15));
+    CHECK(magda::Config::defaultLocalizedUIFontScaleForLanguage("ja") == Approx(1.10));
+    CHECK(magda::Config::defaultLocalizedUIFontScaleForLanguage("ja_JP") == Approx(1.10));
+}
+
+TEST_CASE("effective UI font scale compounds global and localized sliders", "[ui_scale][font]") {
+    auto& config = magda::Config::getInstance();
+    const auto oldLanguage = config.getLanguage();
+    const auto oldGlobalScale = config.getUIFontScale();
+    const auto oldLocalizedScale = config.getLocalizedUIFontScale();
+
+    config.setLanguage("en");
+    config.setUIFontScale(1.5);
+    config.setLocalizedUIFontScale(1.2);
+
+    CHECK(config.getEffectiveUIFontScale() == Approx(1.8));
+
+    config.setLanguage(oldLanguage);
+    config.setUIFontScale(oldGlobalScale);
+    config.setLocalizedUIFontScale(oldLocalizedScale);
+}
+
+TEST_CASE("localized UI font scale allows accessibility-sized boosts", "[ui_scale][font]") {
+    auto& config = magda::Config::getInstance();
+    const auto oldLocalizedScale = config.getLocalizedUIFontScale();
+
+    config.setLocalizedUIFontScale(2.5);
+    CHECK(config.getLocalizedUIFontScale() == Approx(2.5));
+
+    config.setLocalizedUIFontScale(4.0);
+    CHECK(config.getLocalizedUIFontScale() == Approx(3.0));
+
+    config.setLocalizedUIFontScale(oldLocalizedScale);
+}
+
+TEST_CASE("localized UI font detection excludes Latin technical text", "[ui_scale][font]") {
+    const auto chineseText = juce::String::charToString(juce::juce_wchar(0x663e)) +
+                             juce::String::charToString(juce::juce_wchar(0x793a));
+    const auto japaneseText = juce::String::charToString(juce::juce_wchar(0x30d5)) +
+                              juce::String::charToString(juce::juce_wchar(0x30a9)) +
+                              juce::String::charToString(juce::juce_wchar(0x30f3)) +
+                              juce::String::charToString(juce::juce_wchar(0x30c8));
+
+    CHECK_FALSE(magda::daw::ui::containsLocalizedUIFontText("DPI"));
+    CHECK_FALSE(magda::daw::ui::containsLocalizedUIFontText("130%"));
+    CHECK_FALSE(magda::daw::ui::containsLocalizedUIFontText("Filter"));
+    CHECK_FALSE(magda::daw::ui::containsLocalizedUIFontText("By Category"));
+    CHECK(magda::technicalText(magda::TechnicalTextToken::Master) == "Master");
+    CHECK_FALSE(magda::daw::ui::containsLocalizedUIFontText(
+        magda::technicalText(magda::TechnicalTextToken::Master)));
+    CHECK(magda::daw::ui::containsLocalizedUIFontText(chineseText));
+    CHECK(magda::daw::ui::containsLocalizedUIFontText(japaneseText));
+    CHECK(magda::daw::ui::containsLocalizedUIFontText(chineseText + " DPI"));
 }

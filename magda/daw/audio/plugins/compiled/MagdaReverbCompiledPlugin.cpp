@@ -192,12 +192,13 @@ void MagdaReverbCompiledPlugin::buildHostParameters() {
                                .minValue = 0.0f,
                                .maxValue = 1.0f,
                                .defaultValue = 0.3f};
-    hostSlotInfo_[kPredelaySlot] = {.name = "Predelay",
-                                    .unit = "ms",
-                                    .scale = magda::ParameterScale::Linear,
-                                    .minValue = 0.0f,
-                                    .maxValue = 250.0f,
-                                    .defaultValue = 20.0f};
+    hostSlotInfo_[kPredelaySlot] = {
+        .name = "Predelay",
+        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+        .scale = magda::ParameterScale::Linear,
+        .minValue = 0.0f,
+        .maxValue = 250.0f,
+        .defaultValue = 20.0f};
     hostSlotInfo_[kDecaySlot] = {.name = "Decay",
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
@@ -209,14 +210,14 @@ void MagdaReverbCompiledPlugin::buildHostParameters() {
                                    .maxValue = 100.0f,
                                    .defaultValue = 30.0f};
     hostSlotInfo_[kLowCutSlot] = {.name = "Low Cut",
-                                  .unit = "Hz",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 20.0f,
                                   .maxValue = 500.0f,
                                   .defaultValue = 40.0f,
                                   .scaleAnchor = 80.0f};
     hostSlotInfo_[kHighCutSlot] = {.name = "High Cut",
-                                   .unit = "Hz",
+                                   .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                    .scale = magda::ParameterScale::Logarithmic,
                                    .minValue = 1000.0f,
                                    .maxValue = 18000.0f,
@@ -228,7 +229,7 @@ void MagdaReverbCompiledPlugin::buildHostParameters() {
                                  .maxValue = 200.0f,
                                  .defaultValue = 100.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,

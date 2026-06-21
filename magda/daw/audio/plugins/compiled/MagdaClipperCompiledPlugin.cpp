@@ -145,7 +145,7 @@ void MagdaClipperCompiledPlugin::rebuildEngineState(int sampleRate) {
 
 void MagdaClipperCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kDriveSlot] = {.name = "Drive",
-                                 .unit = "dB",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
                                  .maxValue = 24.0f,
@@ -157,7 +157,7 @@ void MagdaClipperCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kModeSlot].maxValue = static_cast<float>(kModeCount - 1);
     hostSlotInfo_[kModeSlot].defaultValue = 0.0f;
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,

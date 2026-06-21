@@ -192,7 +192,7 @@ void MagdaModCompiledPlugin::buildHostParameters() {
 
     // Slot 2: Rate (Hz, log).
     hostSlotInfo_[kRateSlot] = {.name = "Rate",
-                                .unit = "Hz",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                 .scale = magda::ParameterScale::Logarithmic,
                                 .minValue = 0.05f,
                                 .maxValue = 20.0f,

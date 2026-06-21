@@ -24,6 +24,7 @@
 #include "core/Config.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/UIScale.hpp"
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,14 @@ void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider,
     owner.addAndMakeVisible(slider);
 }
 
+void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider, juce::Label& label,
+                     const juce::String& labelText, double min, double max, double interval,
+                     magda::TechnicalTextToken suffix, int decimals = 0,
+                     bool leadingSpace = false) {
+    setupTextSlider(owner, slider, label, labelText, min, max, interval, decimals,
+                    magda::technicalTextSuffix(suffix, leadingSpace));
+}
+
 void setupToggle(juce::Component& owner, juce::ToggleButton& toggle, const juce::String& text) {
     toggle.setButtonText(text);
     toggle.setColour(juce::ToggleButton::textColourId,
@@ -73,6 +82,11 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     header.setFont(magda::FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(header);
+}
+
+juce::String trOr(const juce::String& key, const juce::String& fallback) {
+    const auto translated = magda::tr(key);
+    return translated == key ? fallback : translated;
 }
 
 void setupPathRowLabel(juce::Component& owner, juce::Label& label, const juce::String& text,
@@ -136,7 +150,8 @@ class GeneralPage : public juce::Component {
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
         // Total timeline length is per-project (File > Project Settings).
         setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
-                        tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, 0, " bars");
+                        tr("preferences.slider.default_view"), 4.0, 128.0, 1.0,
+                        magda::TechnicalTextToken::Bars, 0, true);
 
         setupSectionHeader(*this, transportHeader, tr("preferences.section.transport"));
         setupToggle(*this, stopUpdatesPlayheadToggle,
@@ -146,7 +161,8 @@ class GeneralPage : public juce::Component {
         setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
         setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
         setupTextSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
-                        tr("preferences.slider.interval"), 10.0, 300.0, 10.0, 0, " sec");
+                        tr("preferences.slider.interval"), 10.0, 300.0, 10.0,
+                        magda::TechnicalTextToken::ShortSeconds, 0, true);
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
@@ -179,8 +195,15 @@ class GeneralPage : public juce::Component {
 
         languageCombo.onChange = [this] {
             int idx = languageCombo.getSelectedId() - 1;
-            if (idx >= 0 && idx < static_cast<int>(availableLanguages_.size()))
+            if (idx >= 0 && idx < static_cast<int>(availableLanguages_.size())) {
                 restartHint.setVisible(availableLanguages_[idx] != initialLanguage_);
+                if (!localizedFontScaleExplicit_) {
+                    localizedFontScaleSlider.setValue(
+                        Config::defaultLocalizedUIFontScaleForLanguage(availableLanguages_[idx]) *
+                            100.0,
+                        juce::dontSendNotification);
+                }
+            }
         };
 
         setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
@@ -195,7 +218,13 @@ class GeneralPage : public juce::Component {
         addAndMakeVisible(scaleCombo);
 
         setupTextSlider(*this, fontScaleSlider, fontScaleLabel, tr("preferences.font_scale.label"),
-                        80.0, 150.0, 5.0, 0, "%");
+                        80.0, 150.0, 5.0, magda::TechnicalTextToken::Percent);
+        setupTextSlider(*this, localizedFontScaleSlider, localizedFontScaleLabel,
+                        trOr("preferences.localized_font_scale.label", "Localized Font Size"),
+                        100.0, 300.0, 5.0, magda::TechnicalTextToken::Percent);
+        localizedFontScaleSlider.onValueChanged = [this](double) {
+            localizedFontScaleExplicit_ = true;
+        };
     }
 
     int getPreferredHeight(int width) const {
@@ -276,6 +305,9 @@ class GeneralPage : public juce::Component {
 
         scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
         fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
+        localizedFontScaleExplicit_ = config.hasExplicitLocalizedUIFontScale();
+        localizedFontScaleSlider.setValue(config.getLocalizedUIFontScale() * 100.0,
+                                          juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -316,6 +348,7 @@ class GeneralPage : public juce::Component {
         }
 
         config.setUIFontScale(fontScaleSlider.getValue() / 100.0);
+        config.setLocalizedUIFontScale(localizedFontScaleSlider.getValue() / 100.0);
     }
 
   private:
@@ -334,7 +367,7 @@ class GeneralPage : public juce::Component {
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 6) + 16 + secGap + headerH + 4 +
-               rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
+               rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -357,9 +390,9 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH   // Layout
-               + secGap + headerH + 4 + (rowH * 6) + 20  // Behaviour
-               + secGap + headerH + 4 + rowH + 4 + rowH  // Display Scale
+        return padding + headerH + 4 + rowH + 4 + rowH              // Layout
+               + secGap + headerH + 4 + (rowH * 6) + 20             // Behaviour
+               + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH  // Display Scale
                + padding;
     }
 
@@ -434,6 +467,9 @@ class GeneralPage : public juce::Component {
         layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, fontScaleLabel, fontScaleSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
+                            sliderH);
     }
 
     void layoutTwoColumns(juce::Rectangle<int> bounds, int rowH, int sliderH, int headerH,
@@ -513,6 +549,9 @@ class GeneralPage : public juce::Component {
         layoutComboRow(right, scaleLabel, scaleCombo, rowH);
         right.removeFromTop(4);
         layoutTextSliderRow(right, fontScaleLabel, fontScaleSlider, rowH, sliderH);
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
+                            sliderH);
     }
 
     void setupComboLabel(juce::Label& label, const juce::String& text) {
@@ -613,6 +652,9 @@ class GeneralPage : public juce::Component {
     juce::ComboBox scaleCombo;
     juce::Label fontScaleLabel;
     magda::daw::ui::TextSlider fontScaleSlider;
+    juce::Label localizedFontScaleLabel;
+    magda::daw::ui::TextSlider localizedFontScaleSlider;
+    bool localizedFontScaleExplicit_ = false;
 };
 
 // ---- Colours tab: Track colour palette ------------------------------------
@@ -2397,7 +2439,8 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
         viewport.setViewedComponent(&page, false);
         viewport.setScrollBarsShown(true, false, true, false);
-        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::all);
+        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
+        page.setViewportIgnoreDragFlag(true);
     };
     setupPageViewport(generalPageViewport, *generalPage);
     setupPageViewport(coloursPageViewport, *coloursPage);

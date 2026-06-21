@@ -12,6 +12,7 @@
 #include "../../agents/llm_client_factory.hpp"
 #include "AppPaths.hpp"
 #include "Config.hpp"
+#include "TechnicalText.hpp"
 
 namespace magda {
 namespace {
@@ -150,23 +151,23 @@ bool isLabelText(const juce::String& text) {
 juce::String normaliseUnit(const juce::String& unit) {
     auto lower = unit.toLowerCase().trim();
     if (lower == "hz" || lower == "hertz")
-        return "Hz";
+        return technicalText(TechnicalTextToken::Hertz);
     if (lower == "khz" || lower == "kilohertz")
-        return "kHz";
+        return technicalText(TechnicalTextToken::Kilohertz);
     if (lower == "db" || lower == "decibels" || lower == "decibel")
-        return "dB";
+        return technicalText(TechnicalTextToken::Decibels);
     if (lower == "ms" || lower == "milliseconds" || lower == "msec")
-        return "ms";
+        return technicalText(TechnicalTextToken::Milliseconds);
     if (lower == "s" || lower == "sec" || lower == "seconds")
-        return "sec";
+        return technicalText(TechnicalTextToken::ShortSeconds);
     if (lower == "%" || lower == "percent" || lower == "pct")
-        return "%";
+        return technicalText(TechnicalTextToken::Percent);
     if (lower == "st" || lower == "semitones" || lower == "semitone")
-        return "semitones";
+        return technicalText(TechnicalTextToken::SemitonesName);
     if (lower == "ct" || lower == "cents" || lower == "cent")
-        return "cents";
+        return technicalText(TechnicalTextToken::Cents);
     if (lower == "bpm")
-        return "BPM";
+        return technicalText(TechnicalTextToken::Bpm);
     // Unrecognised label — return empty so callers fall through to other heuristics
     return {};
 }
@@ -193,26 +194,26 @@ bool parseNumberFromBracketedUnit(const juce::String& text, const juce::String& 
 juce::String inferUnitFromName(const juce::String& name) {
     auto lower = name.toLowerCase();
     if (lower.contains("freq") || lower.contains("cutoff") || lower == "fc")
-        return "Hz";
+        return technicalText(TechnicalTextToken::Hertz);
     if (lower.contains("attack") || lower.contains("release") || lower.contains("decay") ||
         lower.contains("delay") || lower.contains("time") || lower.contains("predelay"))
-        return "ms";
+        return technicalText(TechnicalTextToken::Milliseconds);
     if (lower.contains("gain") || lower.contains("vol") || lower.contains("level") ||
         lower.contains("output") || lower.contains("input") || lower.contains("threshold") ||
         lower.contains("makeup"))
-        return "dB";
+        return technicalText(TechnicalTextToken::Decibels);
     if (lower.contains("mix") || lower.contains("wet") || lower.contains("dry") ||
         lower.contains("blend") || lower.contains("width") || lower.contains("feedback") ||
         lower.contains("drive") || lower.contains("resonance") || lower.contains("depth") ||
         lower.contains("amount") || lower.contains("intensity"))
-        return "%";
+        return technicalText(TechnicalTextToken::Percent);
     if (lower.contains("tune") || lower.contains("detune") || lower.contains("transpose") ||
         lower.contains("semitone") || lower.contains("pitch"))
-        return "semitones";
+        return technicalText(TechnicalTextToken::SemitonesName);
     if (lower.contains("tempo") || lower.contains("bpm"))
-        return "BPM";
+        return technicalText(TechnicalTextToken::Bpm);
     if (lower.contains("pan"))
-        return "%";
+        return technicalText(TechnicalTextToken::Percent);
     return {};
 }
 
@@ -388,12 +389,12 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
     }
 
     // If display text gives us a real unit (not %), parse range deterministically
-    if (displayUnit.isNotEmpty() && displayUnit != "%") {
+    if (displayUnit.isNotEmpty() && displayUnit != technicalText(TechnicalTextToken::Percent)) {
         result.unit = displayUnit;
 
         // Handle kHz → Hz
-        if (result.unit == "kHz")
-            result.unit = "Hz";
+        if (result.unit == technicalText(TechnicalTextToken::Kilohertz))
+            result.unit = technicalText(TechnicalTextToken::Hertz);
 
         // Parse numeric values from display texts
         std::vector<float> parsedValues;
@@ -406,7 +407,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
                                           << val);
             } else if (parseNumberFromDisplayText(text, val)) {
                 auto unitSuffix = normaliseUnit(extractUnitFromDisplayText(text));
-                if (unitSuffix == "kHz")
+                if (unitSuffix == technicalText(TechnicalTextToken::Kilohertz))
                     val *= 1000.0f;
                 parsedValues.push_back(val);
                 DETECT_LOG("  [detect] '" << input.name << "' parsed '" << text << "' -> " << val);
@@ -429,9 +430,11 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
 
             // Scale heuristics from unit
             if (result.scale == ParameterScale::Linear) {
-                if (result.unit == "Hz" && result.maxValue > result.minValue * 10.0f)
+                if (result.unit == technicalText(TechnicalTextToken::Hertz) &&
+                    result.maxValue > result.minValue * 10.0f)
                     result.scale = ParameterScale::Logarithmic;
-                else if (result.unit == "ms" && result.maxValue > result.minValue * 10.0f)
+                else if (result.unit == technicalText(TechnicalTextToken::Milliseconds) &&
+                         result.maxValue > result.minValue * 10.0f)
                     result.scale = ParameterScale::Logarithmic;
             }
 
@@ -474,7 +477,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
                                               << text << "' -> " << val);
                 } else if (parseNumberFromDisplayText(text, val)) {
                     auto unitSuffix = normaliseUnit(extractUnitFromDisplayText(text));
-                    if (unitSuffix == "kHz")
+                    if (unitSuffix == technicalText(TechnicalTextToken::Kilohertz))
                         val *= 1000.0f;
                     parsedValues.push_back(val);
                     DETECT_LOG("  [detect] '" << input.name << "' name-path parsed '" << text
@@ -499,9 +502,11 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
                     result.scale = detectScaleFromSamples(parsedValues);
 
                 if (result.scale == ParameterScale::Linear) {
-                    if (result.unit == "Hz" && result.maxValue > result.minValue * 10.0f)
+                    if (result.unit == technicalText(TechnicalTextToken::Hertz) &&
+                        result.maxValue > result.minValue * 10.0f)
                         result.scale = ParameterScale::Logarithmic;
-                    else if (result.unit == "ms" && result.maxValue > result.minValue * 10.0f)
+                    else if (result.unit == technicalText(TechnicalTextToken::Milliseconds) &&
+                             result.maxValue > result.minValue * 10.0f)
                         result.scale = ParameterScale::Logarithmic;
                 }
             }
@@ -526,7 +531,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
     // 5. No clear unit from display text or name — send to AI for refinement.
     // Default to "%" in case AI doesn't reach this param.
     DETECT_LOG("  [detect] '" << input.name << "' AMBIGUOUS — no unit from display or name");
-    result.unit = "%";
+    result.unit = technicalText(TechnicalTextToken::Percent);
     result.confidence = 0.0f;
     result.minValue = input.rangeMin;
     result.maxValue = input.rangeMax;
@@ -714,7 +719,13 @@ void detectWithAI(const juce::String& pluginName, const std::vector<ParameterSca
     auto paramSchema = llm::Schema::object({
         {"paramIndex", llm::Schema::integer()},
         {"unit",
-         llm::Schema::oneOf({"Hz", "dB", "ms", "%", "semitones", "cents", "BPM", "sec", ""})},
+         llm::Schema::oneOf(
+             {technicalText(TechnicalTextToken::Hertz), technicalText(TechnicalTextToken::Decibels),
+              technicalText(TechnicalTextToken::Milliseconds),
+              technicalText(TechnicalTextToken::Percent),
+              technicalText(TechnicalTextToken::SemitonesName),
+              technicalText(TechnicalTextToken::Cents), technicalText(TechnicalTextToken::Bpm),
+              technicalText(TechnicalTextToken::ShortSeconds), ""})},
         {"scale", llm::Schema::oneOf(
                       {"linear", "logarithmic", "exponential", "discrete", "boolean", "fader_db"})},
         {"minValue", llm::Schema::number()},

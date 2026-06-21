@@ -16,6 +16,7 @@
 #include "../../../core/RackInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/StringTable.hpp"
+#include "../../../core/TechnicalText.hpp"
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
@@ -1024,7 +1025,7 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
 
         // MultiOut children: show where audio actually goes (parent's output destination)
         if (header.isMultiOut && track->hasParent()) {
-            juce::String outputName = "Master";
+            juce::String outputName = magda::technicalText(magda::TechnicalTextToken::Master);
             if (auto* parent = TrackManager::getInstance().getTrack(track->parentId)) {
                 if (parent->hasParent()) {
                     if (auto* group = TrackManager::getInstance().getTrack(parent->parentId)) {

@@ -153,7 +153,8 @@ void AutomationPointInspector::updateFromSelection() {
     countLabel_.setText(title, juce::dontSendNotification);
 
     using F = magda::DraggableValueLabel::Format;
-    if (info_.scale == magda::ParameterScale::FaderDB || info_.unit == "dB") {
+    if (info_.scale == magda::ParameterScale::FaderDB ||
+        info_.unit == magda::technicalText(magda::TechnicalTextToken::Decibels)) {
         valueValue_->setFormat(F::Decibels);
         valueValue_->setSuffix("");
     } else if (lane->target.kind == magda::ControlTarget::Kind::TrackPan) {

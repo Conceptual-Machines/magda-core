@@ -154,32 +154,35 @@ void MagdaGateExpanderCompiledPlugin::rebuildEngineState(int sampleRate) {
 
 void MagdaGateExpanderCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kAttackSlot] = {.name = "Attack",
-                                  .unit = "ms",
+                                  .unit =
+                                      magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 0.1f,
                                   .maxValue = 100.0f,
                                   .defaultValue = 1.0f,
                                   .scaleAnchor = 1.0f};
-    hostSlotInfo_[kReleaseSlot] = {.name = "Release",
-                                   .unit = "ms",
-                                   .scale = magda::ParameterScale::Logarithmic,
-                                   .minValue = 5.0f,
-                                   .maxValue = 1000.0f,
-                                   .defaultValue = 120.0f,
-                                   .scaleAnchor = 100.0f};
+    hostSlotInfo_[kReleaseSlot] = {
+        .name = "Release",
+        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+        .scale = magda::ParameterScale::Logarithmic,
+        .minValue = 5.0f,
+        .maxValue = 1000.0f,
+        .defaultValue = 120.0f,
+        .scaleAnchor = 100.0f};
     hostSlotInfo_[kMixSlot] = {.name = "Mix",
                                .scale = magda::ParameterScale::Linear,
                                .minValue = 0.0f,
                                .maxValue = 1.0f,
                                .defaultValue = 1.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 24.0f,
                                   .defaultValue = 0.0f};
     hostSlotInfo_[kThresholdSlot] = {.name = "Threshold",
-                                     .unit = "dB",
+                                     .unit =
+                                         magda::technicalText(magda::TechnicalTextToken::Decibels),
                                      .scale = magda::ParameterScale::Linear,
                                      .minValue = -80.0f,
                                      .maxValue = 0.0f,
@@ -191,7 +194,7 @@ void MagdaGateExpanderCompiledPlugin::buildHostParameters() {
                                  .defaultValue = 4.0f,
                                  .scaleAnchor = 4.0f};
     hostSlotInfo_[kRangeSlot] = {.name = "Range",
-                                 .unit = "dB",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
                                  .maxValue = 80.0f,

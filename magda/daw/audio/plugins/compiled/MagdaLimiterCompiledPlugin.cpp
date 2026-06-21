@@ -146,27 +146,30 @@ juce::String MagdaLimiterCompiledPlugin::getSelectableDescription() {
 
 void MagdaLimiterCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kThresholdSlot] = {.name = "Threshold",
-                                     .unit = "dB",
+                                     .unit =
+                                         magda::technicalText(magda::TechnicalTextToken::Decibels),
                                      .scale = magda::ParameterScale::Linear,
                                      .minValue = -24.0f,
                                      .maxValue = 0.0f,
                                      .defaultValue = -1.0f};
     hostSlotInfo_[kAttackSlot] = {.name = "Attack",
-                                  .unit = "ms",
+                                  .unit =
+                                      magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 0.1f,
                                   .maxValue = 50.0f,
                                   .defaultValue = 1.0f,
                                   .scaleAnchor = 1.0f};
-    hostSlotInfo_[kReleaseSlot] = {.name = "Release",
-                                   .unit = "ms",
-                                   .scale = magda::ParameterScale::Logarithmic,
-                                   .minValue = 10.0f,
-                                   .maxValue = 2000.0f,
-                                   .defaultValue = 200.0f,
-                                   .scaleAnchor = 200.0f};
+    hostSlotInfo_[kReleaseSlot] = {
+        .name = "Release",
+        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+        .scale = magda::ParameterScale::Logarithmic,
+        .minValue = 10.0f,
+        .maxValue = 2000.0f,
+        .defaultValue = 200.0f,
+        .scaleAnchor = 200.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 0.0f,

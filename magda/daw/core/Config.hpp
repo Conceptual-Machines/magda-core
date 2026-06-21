@@ -214,6 +214,33 @@ class Config {
         uiFontScale = std::clamp(scale, 0.8, 1.5);
     }
 
+    // Extra font multiplier for UI text. This compounds with the global UI font scale.
+    // English defaults to 100%; locale defaults can seed it higher for denser scripts.
+    double getLocalizedUIFontScale() const {
+        return localizedUIFontScale;
+    }
+    void setLocalizedUIFontScale(double scale) {
+        localizedUIFontScale = std::clamp(scale, 1.0, 3.0);
+        localizedUIFontScaleExplicit = true;
+    }
+
+    bool hasExplicitLocalizedUIFontScale() const {
+        return localizedUIFontScaleExplicit;
+    }
+
+    double getEffectiveUIFontScale() const {
+        return uiFontScale * localizedUIFontScale;
+    }
+
+    static double defaultLocalizedUIFontScaleForLanguage(const juce::String& languageCode) {
+        const auto lang = languageCode.toLowerCase();
+        if (lang == "zh" || lang.startsWith("zh-") || lang.startsWith("zh_"))
+            return 1.15;
+        if (lang == "ja" || lang.startsWith("ja-") || lang.startsWith("ja_"))
+            return 1.10;
+        return 1.0;
+    }
+
     // Audio Device Configuration
     std::string getPreferredAudioDevice() const {
         return preferredAudioDevice;
@@ -1034,6 +1061,10 @@ class Config {
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;
+
+    // Localized UI font scale: additional multiplier for non-English UI languages.
+    double localizedUIFontScale = 1.0;
+    bool localizedUIFontScaleExplicit = false;
 
     // Recent projects (most recent first, max 10)
     std::vector<std::string> recentProjects;

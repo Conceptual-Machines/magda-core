@@ -4,6 +4,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/LocalizedText.hpp"
 
 namespace magda::daw::ui {
 
@@ -288,8 +289,10 @@ void ValueLabelControl::paint(juce::Graphics& g) {
     }
 
     if (!editor_ && showText_) {
-        g.setColour(customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY))
-                        .withMultipliedAlpha(alpha));
+        const auto textColour =
+            customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY))
+                .withMultipliedAlpha(alpha);
+        g.setColour(textColour);
         g.setFont(font_);
         const auto text = textOverride_.isNotEmpty() ? textOverride_ : displayText_;
         if (vertical_) {
@@ -299,10 +302,12 @@ void ValueLabelControl::paint(juce::Graphics& g) {
             auto rotBounds = juce::Rectangle<float>(bounds.getCentreX() - bounds.getHeight() * 0.5f,
                                                     bounds.getCentreY() - bounds.getWidth() * 0.5f,
                                                     bounds.getHeight(), bounds.getWidth());
-            g.drawText(text, rotBounds.reduced(2.0f, 1.0f), justification_, false);
+            drawLocalizedText(g, text, rotBounds.reduced(2.0f, 1.0f), justification_, textColour,
+                              false);
             g.restoreState();
         } else {
-            g.drawText(text, bounds.reduced(2.0f, 0.0f), justification_, false);
+            drawLocalizedText(g, text, bounds.reduced(2.0f, 0.0f), justification_, textColour,
+                              false);
         }
     }
 }

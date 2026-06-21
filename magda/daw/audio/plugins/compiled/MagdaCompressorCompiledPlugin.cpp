@@ -229,7 +229,8 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kEngineSlot].defaultValue = 0.0f;
 
     hostSlotInfo_[kThresholdSlot] = {.name = "Threshold",
-                                     .unit = "dB",
+                                     .unit =
+                                         magda::technicalText(magda::TechnicalTextToken::Decibels),
                                      .scale = magda::ParameterScale::Linear,
                                      .minValue = -60.0f,
                                      .maxValue = 0.0f,
@@ -241,27 +242,29 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
                                  .defaultValue = 4.0f,
                                  .scaleAnchor = 4.0f};
     hostSlotInfo_[kAttackSlot] = {.name = "Attack",
-                                  .unit = "ms",
+                                  .unit =
+                                      magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 0.1f,
                                   .maxValue = 200.0f,
                                   .defaultValue = 10.0f,
                                   .scaleAnchor = 10.0f};
-    hostSlotInfo_[kReleaseSlot] = {.name = "Release",
-                                   .unit = "ms",
-                                   .scale = magda::ParameterScale::Logarithmic,
-                                   .minValue = 5.0f,
-                                   .maxValue = 1000.0f,
-                                   .defaultValue = 120.0f,
-                                   .scaleAnchor = 100.0f};
+    hostSlotInfo_[kReleaseSlot] = {
+        .name = "Release",
+        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+        .scale = magda::ParameterScale::Logarithmic,
+        .minValue = 5.0f,
+        .maxValue = 1000.0f,
+        .defaultValue = 120.0f,
+        .scaleAnchor = 100.0f};
     hostSlotInfo_[kKneeSlot] = {.name = "Knee",
-                                .unit = "dB",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                 .scale = magda::ParameterScale::Linear,
                                 .minValue = 0.0f,
                                 .maxValue = 24.0f,
                                 .defaultValue = 6.0f};
     hostSlotInfo_[kMakeupSlot] = {.name = "Makeup",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = 0.0f,
                                   .maxValue = 24.0f,
@@ -272,7 +275,7 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
                                .maxValue = 1.0f,
                                .defaultValue = 1.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,
@@ -291,7 +294,8 @@ void MagdaCompressorCompiledPlugin::buildHostParameters() {
                                 .maxValue = 1.0f,
                                 .defaultValue = 1.0f};
     hostSlotInfo_[kSidechainHpfSlot] = {.name = "SC HPF",
-                                        .unit = "Hz",
+                                        .unit =
+                                            magda::technicalText(magda::TechnicalTextToken::Hertz),
                                         .scale = magda::ParameterScale::Logarithmic,
                                         .minValue = 20.0f,
                                         .maxValue = 500.0f,

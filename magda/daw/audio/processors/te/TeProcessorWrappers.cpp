@@ -109,7 +109,7 @@ ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
 
         case 2: {  // Frequency (log sweep, 1 kHz at visual midpoint)
             info.name = "Frequency";
-            info.unit = "Hz";
+            info.unit = magda::technicalText(magda::TechnicalTextToken::Hertz);
             info.minValue = 20.0f;
             info.maxValue = 20000.0f;
             info.teMinValue = 20.0f;
@@ -123,7 +123,7 @@ ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
 
         case 3: {  // Level — UI is in dB; plugin-native is linear, converted at the bridge
             info.name = "Level";
-            info.unit = "dB";
+            info.unit = magda::technicalText(magda::TechnicalTextToken::Decibels);
             info.minValue = -60.0f;
             info.maxValue = 0.0f;
             info.teMinValue = -60.0f;
@@ -340,12 +340,12 @@ ParameterInfo EqualiserProcessor::getParameterInfo(int index) const {
         // name so the automation lane shows dB/Hz instead of falling back to %.
         juce::String lowerName = eqInfo.name.toLowerCase();
         if (lowerName.contains("gain")) {
-            eqInfo.unit = "dB";
+            eqInfo.unit = magda::technicalText(magda::TechnicalTextToken::Decibels);
             eqInfo.scale = ParameterScale::Linear;
             eqInfo.displayFormat = DisplayFormat::Decibels;
             eqInfo.bipolarModulation = true;  // gain is symmetric around 0 dB
         } else if (lowerName.contains("freq")) {
-            eqInfo.unit = "Hz";
+            eqInfo.unit = magda::technicalText(magda::TechnicalTextToken::Hertz);
             eqInfo.scale = ParameterScale::Logarithmic;  // frequency sweeps log
             // Place 1 kHz at the slider's visual midpoint — the EQ convention.
             // ParameterUtils now applies a log-space skew so the lane's labels
@@ -519,7 +519,7 @@ ParameterInfo DelayProcessor::getParameterInfo(int index) const {
     if (index == autoCount) {
         // Virtual parameter: delay length in ms
         info.name = "Length";
-        info.unit = "ms";
+        info.unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds);
         info.minValue = 1.0f;
         info.maxValue = 2000.0f;
         info.defaultValue = 150.0f;
@@ -596,7 +596,7 @@ ParameterInfo ChorusProcessor::getParameterInfo(int index) const {
     switch (index) {
         case 0:
             info.name = "Depth";
-            info.unit = "ms";
+            info.unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds);
             info.minValue = 0.1f;
             info.maxValue = 20.0f;
             info.defaultValue = 3.0f;
@@ -604,7 +604,7 @@ ParameterInfo ChorusProcessor::getParameterInfo(int index) const {
             break;
         case 1:
             info.name = "Speed";
-            info.unit = "Hz";
+            info.unit = magda::technicalText(magda::TechnicalTextToken::Hertz);
             info.minValue = 0.1f;
             info.maxValue = 10.0f;
             info.defaultValue = 1.0f;
