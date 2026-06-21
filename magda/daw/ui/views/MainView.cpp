@@ -2713,6 +2713,9 @@ void MainView::MasterHeaderPanel::setupControls() {
 
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(-60.0, 6.0, 0.0);
+    // Curve the fill to match the level meter's power scale so the volume fill
+    // edge lines up with the meter's 0 dB tick below it.
+    volumeLabel->setFillExponent(static_cast<double>(LevelMeter::METER_CURVE_EXPONENT));
     volumeLabel->setDoubleClickResetsValue(true);
     volumeLabel->onValueChange = [this]() {
         const float db = static_cast<float>(volumeLabel->getValue());

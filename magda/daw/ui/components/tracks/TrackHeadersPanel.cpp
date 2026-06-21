@@ -355,6 +355,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Volume label (shows dB, draggable)
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(MIN_DB, MAX_DB, 0.0);  // -60 to +6 dB, default 0 dB
+    // Curve the fill to match the level meter's power scale (consistent with the
+    // master volume and the meters elsewhere).
+    volumeLabel->setFillExponent(static_cast<double>(LevelMeter::METER_CURVE_EXPONENT));
     volumeLabel->setValue(gainToDb(volume), juce::dontSendNotification);
 
     // Pan label (shows L/C/R, draggable)

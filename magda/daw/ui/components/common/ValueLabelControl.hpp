@@ -28,6 +28,11 @@ class ValueLabelControl : public juce::Component {
     void clearTextOverride();
     void setFillMode(FillMode mode);
     void setShowFillIndicator(bool show);
+    // Curve the fill so its extent matches a non-linear scale (e.g. a level
+    // meter's power curve). The fill uses pow(linearNorm, exponent); 1.0 (the
+    // default) is the usual linear fill. Lets the master volume fill line up
+    // with the level meter's 0 dB tick.
+    void setFillExponent(double exponent);
     void setDrawBackground(bool draw);
     void setDrawBorder(bool draw);
     void setFont(const juce::Font& font);
@@ -77,6 +82,7 @@ class ValueLabelControl : public juce::Component {
     juce::String displayText_;
     juce::String textOverride_;
     FillMode fillMode_ = FillMode::LeftToRight;
+    double fillExponent_ = 1.0;
     TintState tintState_ = TintState::None;
     bool showFillIndicator_ = true;
     bool drawBackground_ = true;

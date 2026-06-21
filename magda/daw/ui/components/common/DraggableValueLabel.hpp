@@ -106,6 +106,12 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setShowFillIndicator(show);
     }
 
+    // Curve the fill (pow(linearNorm, exponent)) so it lines up with a
+    // non-linear scale such as a level meter's power curve. 1.0 = linear.
+    void setFillExponent(double exponent) {
+        valueControl_.setFillExponent(exponent);
+    }
+
     // Font size for display text
     void setFontSize(float size) {
         fontSize_ = size;
