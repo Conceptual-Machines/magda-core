@@ -189,8 +189,25 @@ void AutomationPointInspector::refreshDisplay() {
     valueDragStart_ = real;
 
     if (selection_.isSinglePoint()) {
+        valueValue_->clearTextOverride();
         posValue_->setValue(rep->beatPosition, juce::dontSendNotification);
         posDragStart_ = rep->beatPosition;
+    } else {
+        // Multiple points: show the range of values across the selection. The
+        // field still drags as a delta applied to every selected point.
+        double minR = real, maxR = real;
+        for (auto id : selection_.pointIds) {
+            if (const auto* p = findPoint(id)) {
+                const double r = normToReal(p->value);
+                minR = juce::jmin(minR, r);
+                maxR = juce::jmax(maxR, r);
+            }
+        }
+        if (maxR - minR > 1.0e-9)
+            valueValue_->setTextOverride(valueValue_->formatForDisplay(minR) + " .. " +
+                                         valueValue_->formatForDisplay(maxR));
+        else
+            valueValue_->clearTextOverride();
     }
 }
 

@@ -907,6 +907,10 @@ void MainView::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(cornerBottomBorderLine);
     }
+    if (!markerCornerRightBorderLine.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(markerCornerRightBorderLine);
+    }
 
     auto arrangementLayout = computeArrangementLayout();
     SideColumn headerColumn(!arrangementLayout.swapped);
@@ -1155,6 +1159,17 @@ void MainView::resized() {
         markerLaneSeparatorLine =
             markerLaneVisible_ ? juce::Rectangle<int>(lineX, markerCornerArea.getBottom(), lineW, 1)
                                : juce::Rectangle<int>();
+        // Vertical border closing off the marker-lane gutter from the marker
+        // content beside it (the content sits opposite the header column).
+        if (!markerCornerRightBorderLine.isEmpty())
+            repaint(markerCornerRightBorderLine.expanded(1));
+        const int markerBorderX = arrangementLayout.swapped
+                                      ? arrangementLayout.markerLaneArea.getRight()
+                                      : arrangementLayout.markerLaneArea.getX() - 1;
+        markerCornerRightBorderLine =
+            markerLaneVisible_
+                ? juce::Rectangle<int>(markerBorderX, markerCornerArea.getY(), 1, markerLaneHeight)
+                : juce::Rectangle<int>();
         cornerSeparatorLine =
             juce::Rectangle<int>(lineX, topRow.getBottom() + rowGap / 2, lineW, 1);
         // Bottom border closing off the gutter at the ruler/track boundary, so
@@ -2205,6 +2220,15 @@ void MainView::setupSelectionCallbacks() {
     trackContentPanel->getGridSpacingBeats = [this]() -> double {
         return timelineController->getState().getSnapBeatFraction();
     };
+    // Master automation band (tempo, master volume) snaps to the same grid.
+    if (masterAutomationContentPanel) {
+        masterAutomationContentPanel->snapBeatToGrid = [this](double beats) {
+            return timelineController->getState().snapBeatsToGrid(beats);
+        };
+        masterAutomationContentPanel->getGridSpacingBeats = [this]() -> double {
+            return timelineController->getState().getSnapBeatFraction();
+        };
+    }
 
     // Set up render callbacks (bubble up to MainWindow)
     trackContentPanel->onClipRenderRequested = [this](ClipId id) {
@@ -2689,6 +2713,9 @@ void MainView::MasterHeaderPanel::setupControls() {
 
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(-60.0, 6.0, 0.0);
+    // Curve the fill to match the level meter's power scale so the volume fill
+    // edge lines up with the meter's 0 dB tick below it.
+    volumeLabel->setFillExponent(static_cast<double>(LevelMeter::METER_CURVE_EXPONENT));
     volumeLabel->setDoubleClickResetsValue(true);
     volumeLabel->onValueChange = [this]() {
         const float db = static_cast<float>(volumeLabel->getValue());

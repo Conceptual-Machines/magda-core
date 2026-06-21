@@ -50,6 +50,13 @@ void ValueLabelControl::clearTextOverride() {
     repaint();
 }
 
+void ValueLabelControl::setFillExponent(double exponent) {
+    if (fillExponent_ != exponent) {
+        fillExponent_ = exponent;
+        repaint();
+    }
+}
+
 void ValueLabelControl::setFillMode(FillMode mode) {
     fillMode_ = mode;
     repaint();
@@ -237,16 +244,19 @@ void ValueLabelControl::paint(juce::Graphics& g) {
                 g.fillRect(centreX, bounds.getY(), fillWidth, bounds.getHeight());
             }
         } else if (fillMode_ == FillMode::BottomToTop && maxValue_ > minValue_) {
-            const double norm =
-                juce::jlimit(0.0, 1.0, (value_ - minValue_) / (maxValue_ - minValue_));
+            double norm = juce::jlimit(0.0, 1.0, (value_ - minValue_) / (maxValue_ - minValue_));
+            if (fillExponent_ != 1.0)
+                norm = std::pow(norm, fillExponent_);
             if (norm > 0.0) {
                 float fillH = static_cast<float>(bounds.getHeight() * norm);
                 g.fillRoundedRectangle(bounds.getX(), bounds.getBottom() - fillH, bounds.getWidth(),
                                        fillH, 2.0f);
             }
         } else if (maxValue_ > minValue_) {
-            const double normalizedValue =
+            double normalizedValue =
                 juce::jlimit(0.0, 1.0, (value_ - minValue_) / (maxValue_ - minValue_));
+            if (fillExponent_ != 1.0)
+                normalizedValue = std::pow(normalizedValue, fillExponent_);
 
             if (normalizedValue > 0.0) {
                 auto fillBounds =

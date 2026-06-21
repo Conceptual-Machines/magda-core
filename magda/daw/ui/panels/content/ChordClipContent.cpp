@@ -204,10 +204,10 @@ void ChordClipContent::onGridToggleClicked() {
         // Grid currently hidden - restore it.
         laneHeight_ = juce::jlimit(MIN_LANE_HEIGHT, maxH, expandedLaneHeight_);
     } else {
-        // Hide the grid: the lane fills the whole editor, covering the time
-        // ruler too (otherwise it would be stranded at the bottom).
+        // Hide the grid only: the lane grows to cover the note grid but stops
+        // above the time ruler, so the timeline stays visible.
         expandedLaneHeight_ = juce::jmin(laneHeight_, maxH);
-        laneHeight_ = getHeight();
+        laneHeight_ = maxH;
     }
     setGridToggleActive(laneHeight_ <= maxH - 2);  // active = grid visible
     resized();

@@ -106,6 +106,12 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setShowFillIndicator(show);
     }
 
+    // Curve the fill (pow(linearNorm, exponent)) so it lines up with a
+    // non-linear scale such as a level meter's power curve. 1.0 = linear.
+    void setFillExponent(double exponent) {
+        valueControl_.setFillExponent(exponent);
+    }
+
     // Font size for display text
     void setFontSize(float size) {
         fontSize_ = size;
@@ -188,6 +194,12 @@ class DraggableValueLabel : public juce::Component,
     void clearTextOverride() {
         textOverride_.clear();
         valueControl_.clearTextOverride();
+    }
+
+    // Format a value exactly as this control would display it (units, decimals),
+    // for building read-outs such as a multi-selection range.
+    juce::String formatForDisplay(double val) const {
+        return formatValue(val);
     }
 
     // Callback when value changes (fires on every drag pixel, wheel tick, or edit commit)

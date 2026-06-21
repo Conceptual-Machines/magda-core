@@ -6,6 +6,7 @@
 #include <thread>
 
 #include "../../../../agents/gain_staging_agent.hpp"
+#include "../../components/mixer/LevelMeter.hpp"
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
 #include "../../dialogs/GainStagingDialog.hpp"
@@ -1120,6 +1121,9 @@ TrackChainContent::TrackChainContent()
 
     // Volume label (dB format, draggable)
     volumeLabel_.setRange(-60.0, 6.0, 0.0);
+    // Curve the fill to match the level meter's power scale (consistent with the
+    // other volume controls).
+    volumeLabel_.setFillExponent(static_cast<double>(magda::LevelMeter::METER_CURVE_EXPONENT));
     volumeLabel_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
     volumeLabel_.setFontSize(10.0f);
     volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));

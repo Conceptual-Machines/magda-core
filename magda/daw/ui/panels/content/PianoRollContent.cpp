@@ -114,9 +114,10 @@ PianoRollContent::PianoRollContent() {
     addAndMakeVisible(progressionOverlayToggle_.get());
 
     // Chord-focus mode shows this in place of the rescan button: a toggle that
-    // shows/hides the note grid.
-    gridToggleBtn_ = std::make_unique<magda::SvgButton>("GridToggle", BinaryData::piano_roll_svg,
-                                                        BinaryData::piano_roll_svgSize);
+    // shows/hides the note grid below the chord lane. A light chevron keeps the
+    // gutter unobtrusive; it accents when the grid is shown.
+    gridToggleBtn_ = std::make_unique<magda::SvgButton>("GridToggle", BinaryData::chevron_down_svg,
+                                                        BinaryData::chevron_down_svgSize);
     gridToggleBtn_->setTooltip("Show / hide the piano roll");
     gridToggleBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
     gridToggleBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -954,10 +955,13 @@ void PianoRollContent::resized() {
         progressionOverlayToggle_->setActive(showProgressionOverlay_);
 
         if (chordMode) {
-            // Grid show/hide toggle: bottom-centre of the chord-lane gutter.
-            const int gx = (chordLaneLeftX() - detectSize) / 2;
-            const int gy = chordRowHeight() - detectSize - 6;
-            gridToggleBtn_->setBounds(gx, gy, detectSize, detectSize);
+            // Grid show/hide toggle: right side of the ruler row, just below the
+            // chord lane (the ruler stays visible when the grid is hidden).
+            const int gridSize = 14;
+            const int rightMargin = 6;
+            const int gx = chordLaneLeftX() - gridSize - rightMargin;
+            const int gy = chordRowHeight() + (RULER_HEIGHT - gridSize) / 2;
+            gridToggleBtn_->setBounds(gx, gy, gridSize, gridSize);
             gridToggleBtn_->setActive(gridShown());  // accent when the grid is visible
         } else {
             // Rescan button: keyboard column, vertically centred in the chord row.
@@ -1772,7 +1776,22 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
                            ? magda::ClipManager::getInstance().getClip(editingClipId_)
                            : nullptr;
 
-    if (!clip || clip->chordAnnotations.empty()) {
+    // Chord-block layout (#1504):
+    //   chord-track chord -> LEFT, with the accent spine
+    //   MIDI-track chord  -> RIGHT, no decoration (always the same spot)
+    // On the chord track's own editor the blocks ARE chord-track chords (left +
+    // spine). On a normal track the MIDI chord sits right/bare, and when the
+    // overlay is on the intended chord-track chord is added left + spine. The
+    // overlay's chord-track progression is drawn even where this track has no
+    // chord of its own (the master-blocks pass after the own-chord loop).
+    const bool isChordTrackLane =
+        clip != nullptr && clip->trackId == magda::TrackManager::getInstance().getChordTrackId();
+    const bool overlay = showProgressionOverlay_ && !isChordTrackLane;
+    const auto master = overlay ? magda::ChordProgressionContext::current()
+                                : std::vector<magda::ProgressionChord>{};
+
+    const bool haveOwnChords = clip != nullptr && !clip->chordAnnotations.empty();
+    if (!clip || (!haveOwnChords && master.empty())) {
         // Empty-state hint. The chord lane is populated by chord detection, so
         // say how to get chords here: the chord-track editor adds them on click;
         // a normal track detects them from its own notes via the scan button.
@@ -1796,17 +1815,13 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         clipStartBeats = clip->placement.startBeat;
     }
 
-    // Chord-block layout (#1504):
-    //   chord-track chord -> LEFT, with the accent spine
-    //   MIDI-track chord  -> RIGHT, no decoration (always the same spot)
-    // On the chord track's own editor the blocks ARE chord-track chords (left +
-    // spine). On a normal track the MIDI chord sits right/bare, and when the
-    // overlay is on the intended chord-track chord is added left + spine.
-    const bool isChordTrackLane =
-        clip->trackId == magda::TrackManager::getInstance().getChordTrackId();
-    const bool overlay = showProgressionOverlay_ && !isChordTrackLane;
-    const auto master = overlay ? magda::ChordProgressionContext::current()
-                                : std::vector<magda::ProgressionChord>{};
+    // The accent spine takes its colour from the chord track (the chord that
+    // owns the spine always belongs to the chord track, whether shown on its
+    // own lane or as an overlay on a MIDI track).
+    juce::Colour chordTrackColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    if (auto* chordTrackInfo = magda::TrackManager::getInstance().getTrack(
+            magda::TrackManager::getInstance().getChordTrackId()))
+        chordTrackColour = chordTrackInfo->colour;
     auto intendedAt = [&](double absBeat) -> juce::String {
         for (const auto& mc : master)
             if (absBeat >= mc.startBeat - 0.01 && absBeat < mc.startBeat + mc.lengthBeats - 0.01)
@@ -1858,7 +1873,8 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
                                          static_cast<float>(blockBounds.getY() + 3), 3.0f,
                                          static_cast<float>(blockBounds.getHeight() - 6));
-            g.setColour(fillColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
+            const auto spineColour = previewing ? fillColour : chordTrackColour;
+            g.setColour(spineColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
             g.fillRoundedRectangle(spine, 1.5f);
         }
 
@@ -1899,6 +1915,60 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             auto rh = lh.withX(blockBounds.getRight() - handleW);
             g.fillRoundedRectangle(lh.toFloat(), 1.5f);
             g.fillRoundedRectangle(rh.toFloat(), 1.5f);
+        }
+    }
+
+    // Overlay: draw the chord-track progression as reference blocks (left +
+    // spine, chord-track colour) so the chord track is visible even where this
+    // track has no chord of its own. Master chords already shown alongside an
+    // own chord (via intendedAt) are skipped to avoid drawing them twice.
+    if (overlay) {
+        const auto& notation = magda::music::NotationSettings::getInstance();
+        for (const auto& mc : master) {
+            bool covered = false;
+            for (const auto& ann : clip->chordAnnotations) {
+                const double annAbs = ann.beatPosition + clipStartBeats;
+                if (mc.startBeat >= annAbs - 0.01 &&
+                    mc.startBeat < annAbs + ann.lengthBeats - 0.01) {
+                    covered = true;
+                    break;
+                }
+            }
+            if (covered)
+                continue;
+
+            int startX =
+                static_cast<int>(mc.startBeat * horizontalZoom_) + GRID_LEFT_PADDING - scrollX;
+            int endX = static_cast<int>((mc.startBeat + mc.lengthBeats) * horizontalZoom_) +
+                       GRID_LEFT_PADDING - scrollX;
+            if (endX < 0 || startX > area.getWidth())
+                continue;
+
+            int drawStartX = juce::jmax(0, startX) + area.getX();
+            int drawEndX = juce::jmin(area.getWidth(), endX) + area.getX();
+            auto blockBounds = juce::Rectangle<int>(
+                drawStartX + 1, area.getY() + 2, drawEndX - drawStartX - 2, area.getHeight() - 4);
+            if (blockBounds.getWidth() <= 0)
+                continue;
+
+            // Faint reference card + chord-track spine.
+            g.setColour(chordTrackColour.withAlpha(0.10f));
+            g.fillRoundedRectangle(blockBounds.toFloat(), 4.0f);
+            if (blockBounds.getWidth() > 8) {
+                juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
+                                             static_cast<float>(blockBounds.getY() + 3), 3.0f,
+                                             static_cast<float>(blockBounds.getHeight() - 6));
+                g.setColour(chordTrackColour.withAlpha(0.85f));
+                g.fillRoundedRectangle(spine, 1.5f);
+            }
+            if (blockBounds.getWidth() > 14) {
+                g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.drawText(notation.format(mc.name),
+                           blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
+                           juce::Justification::centredLeft, true);
+                g.setFont(FontManager::getInstance().getUIFont(11.0f));
+            }
         }
     }
 }

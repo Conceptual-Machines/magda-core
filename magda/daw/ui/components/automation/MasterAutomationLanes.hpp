@@ -77,6 +77,11 @@ class MasterAutomationContentPanel : public juce::Component, public AutomationMa
     // so MainView can re-run its arrangement layout.
     std::function<void()> onBandHeightChanged;
 
+    // Beat-grid snapping, wired from MainView so master-band lanes (tempo,
+    // master volume) snap their edits to the grid like per-track lanes do.
+    std::function<double(double)> snapBeatToGrid;
+    std::function<double()> getGridSpacingBeats;
+
     void resized() override;
 
     // AutomationManagerListener

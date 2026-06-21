@@ -309,6 +309,11 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
                                             : generateTrackName();
     track.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(tracks_.size())));
 
+    // The chord-track audition (speaker) toggle is the track's mute state. Seed
+    // it from the preference so chord preview can be on by default if desired.
+    if (type == TrackType::Chord)
+        track.muted = !Config::getInstance().getChordPreviewOnByDefault();
+
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)

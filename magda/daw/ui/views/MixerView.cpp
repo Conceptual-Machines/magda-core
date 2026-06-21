@@ -17,7 +17,6 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/SelectionPolicy.hpp"
-#include "core/AppPaths.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
@@ -158,29 +157,6 @@ int storedMixerFaderTopInset(TrackId trackId) {
     if (auto* track = TrackManager::getInstance().getTrack(trackId))
         return track->mixerFaderTopInset;
     return 0;
-}
-
-juce::String formatMixerTrackSet(const std::unordered_set<TrackId>& trackIds) {
-    juce::StringArray parts;
-    for (auto id : trackIds)
-        parts.add(juce::String(static_cast<int>(id)));
-    return "[" + parts.joinIntoString(",") + "]";
-}
-
-void logMixerSelect(const juce::String& message) {
-    const auto line =
-        juce::Time::getCurrentTime().toString(true, true, true, true) + " [MixerSelect] " + message;
-    DBG(line);
-    juce::Logger::writeToLog(line);
-
-    auto logFile = paths::logsDir().getChildFile("mixer-select.log");
-    logFile.getParentDirectory().createDirectory();
-    if (!logFile.appendText(line + "\n", false, false, "\n")) {
-        const auto failureLine =
-            "[MixerSelect] failed to append dedicated log file: " + logFile.getFullPathName();
-        DBG(failureLine);
-        juce::Logger::writeToLog(failureLine);
-    }
 }
 
 }  // namespace
@@ -1771,24 +1747,6 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
 
     auto& selection = SelectionManager::getInstance();
     const bool fromChild = event.originalComponent != this;
-    juce::String originalName = "<null>";
-    if (event.originalComponent != nullptr)
-        originalName = event.originalComponent->getName();
-
-    logMixerSelect(
-        "ChannelStrip::mouseDown track=" + juce::String(trackId_) +
-        " master=" + juce::String(isMaster_ ? 1 : 0) +
-        " fromChild=" + juce::String(fromChild ? 1 : 0) + " original='" + originalName + "'" +
-        " popup=" + juce::String(event.mods.isPopupMenu() ? 1 : 0) +
-        " cmd=" + juce::String(event.mods.isCommandDown() ? 1 : 0) +
-        " ctrl=" + juce::String(event.mods.isCtrlDown() ? 1 : 0) +
-        " shift=" + juce::String(event.mods.isShiftDown() ? 1 : 0) +
-        " alt=" + juce::String(event.mods.isAltDown() ? 1 : 0) +
-        " togglePolicy=" + juce::String(magda::isToggleSelectClick(event.mods) ? 1 : 0) +
-        " rangePolicy=" + juce::String(magda::isRangeSelectClick(event.mods) ? 1 : 0) +
-        " selectedBefore=" + formatMixerTrackSet(selection.getSelectedTracks()) +
-        " selectedThisBefore=" + juce::String(selection.isTrackSelected(trackId_) ? 1 : 0));
-
     // A group parent strip listens recursively to its nested child strips, so a
     // click inside a child also fires the parent's handler. Only the strip that
     // actually owns the clicked component should act — otherwise shift/cmd
@@ -1797,8 +1755,6 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
     for (juce::Component* c = event.originalComponent; c != nullptr && c != this;
          c = c->getParentComponent()) {
         if (dynamic_cast<ChannelStrip*>(c) != nullptr) {
-            logMixerSelect("ChannelStrip::mouseDown ignored parent recursive event track=" +
-                           juce::String(trackId_) + " child='" + c->getName() + "'");
             return;  // a nested child strip handles its own click
         }
     }
@@ -1810,11 +1766,9 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
 
     if (event.mods.isPopupMenu()) {
         if (fromChild) {
-            logMixerSelect("ChannelStrip popup ignored from child track=" + juce::String(trackId_));
             return;  // children manage their own right-click behaviour
         }
         if (isMaster_) {
-            logMixerSelect("ChannelStrip popup ignored for master");
             return;  // master strip has nothing to offer here
         }
 
@@ -1865,13 +1819,7 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         });
     } else if (magda::isToggleSelectClick(event.mods)) {
         // Cmd+click: toggle this strip in the multi-selection
-        logMixerSelect("ChannelStrip toggle branch track=" + juce::String(trackId_) +
-                       " selectedBefore=" + formatMixerTrackSet(selection.getSelectedTracks()));
         selection.toggleTrackSelection(trackId_);
-        logMixerSelect(
-            "ChannelStrip toggle complete track=" + juce::String(trackId_) +
-            " selectedAfter=" + formatMixerTrackSet(selection.getSelectedTracks()) +
-            " selectedThisAfter=" + juce::String(selection.isTrackSelected(trackId_) ? 1 : 0));
     } else if (!isMaster_ && magda::isRangeSelectClick(event.mods)) {
         // Shift+click: range-select from the anchor track to this one (using
         // the visible track order from TrackManager).
@@ -1891,21 +1839,12 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
             std::unordered_set<TrackId> rangeIds;
             for (int k = lo; k <= hi; ++k)
                 rangeIds.insert(tracks[k].id);
-            logMixerSelect("ChannelStrip range branch track=" + juce::String(trackId_) +
-                           " anchor=" + juce::String(anchor) +
-                           " range=" + formatMixerTrackSet(rangeIds));
             sel.selectTracks(rangeIds);
         } else if (onClicked) {
-            logMixerSelect("ChannelStrip range fallback plain click track=" +
-                           juce::String(trackId_) + " anchor=" + juce::String(anchor));
             onClicked(trackId_, isMaster_);
         }
     } else if (!fromChild && onClicked) {
-        logMixerSelect("ChannelStrip plain click track=" + juce::String(trackId_));
         onClicked(trackId_, isMaster_);
-    } else {
-        logMixerSelect("ChannelStrip child click ignored for plain selection track=" +
-                       juce::String(trackId_));
     }
 }
 
@@ -2832,9 +2771,6 @@ void MixerView::ChannelResizeHandle::mouseDoubleClick(const juce::MouseEvent& ev
 }
 
 void MixerView::selectChannel(int index, bool isMaster) {
-    logMixerSelect("MixerView::selectChannel index=" + juce::String(index) +
-                   " master=" + juce::String(isMaster ? 1 : 0));
-
     // Deselect all channel strips (including aux)
     for (auto& strip : channelStrips) {
         strip->setSelected(false);
@@ -2882,10 +2818,6 @@ void MixerView::syncSelectionVisuals() {
     // its track is in the current selection set. Master is master-track-id.
     auto& sel = SelectionManager::getInstance();
     const TrackId primary = sel.getSelectedTrack();
-    logMixerSelect("MixerView::syncSelectionVisuals primary=" + juce::String(primary) +
-                   " selected=" + formatMixerTrackSet(sel.getSelectedTracks()) +
-                   " count=" + juce::String(sel.getSelectedTrackCount()));
-
     for (auto& strip : channelStrips) {
         strip->setSelected(sel.isTrackSelected(strip->getTrackId()));
     }

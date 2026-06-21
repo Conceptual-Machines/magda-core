@@ -367,6 +367,9 @@ class MainView : public juce::Component,
     juce::Rectangle<int> markerLaneSeparatorLine;
     juce::Rectangle<int> cornerSeparatorLine;
     juce::Rectangle<int> cornerBottomBorderLine;
+    // Vertical border on the marker-lane row, separating the corner gutter
+    // from the marker-lane content to its side.
+    juce::Rectangle<int> markerCornerRightBorderLine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };

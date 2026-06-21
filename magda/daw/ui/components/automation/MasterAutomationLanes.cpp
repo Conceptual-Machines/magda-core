@@ -230,6 +230,8 @@ void MasterAutomationContentPanel::rebuildLanes() {
         entry.component = std::make_unique<AutomationLaneComponent>(laneId);
         entry.component->setPixelsPerBeat(pixelsPerBeat_);
         entry.component->setTempoBPM(tempoBPM_);
+        entry.component->snapBeatToGrid = snapBeatToGrid;
+        entry.component->getGridSpacingBeats = getGridSpacingBeats;
         // The master band is pinned above the master strip and grows upward, so
         // the resize grab edge sits on top of each lane.
         entry.component->setResizeHandleAtTop(true);

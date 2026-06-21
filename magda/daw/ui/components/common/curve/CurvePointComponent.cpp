@@ -18,8 +18,9 @@ void CurvePointComponent::paint(juce::Graphics& g) {
     float centerX = bounds.getCentreX();
     float centerY = bounds.getCentreY();
 
-    int pointSize = isSelected_ ? POINT_SIZE_SELECTED : POINT_SIZE;
-    float radius = pointSize / 2.0f;
+    const float scale = pointScale();
+    float radius = (isSelected_ ? POINT_SIZE_SELECTED : POINT_SIZE) * scale / 2.0f;
+    float pointSize = radius * 2.0f;
     const auto accent = juce::Colour(0xFFFF8A2A);
 
     // Draw connection lines to handles if visible
@@ -43,8 +44,7 @@ void CurvePointComponent::paint(juce::Graphics& g) {
 
     const bool isHardPoint = point_.curveType == CurveType::HardCorner;
     const auto pointRect =
-        juce::Rectangle<float>(centerX - radius, centerY - radius, static_cast<float>(pointSize),
-                               static_cast<float>(pointSize));
+        juce::Rectangle<float>(centerX - radius, centerY - radius, pointSize, pointSize);
 
     g.setColour(isHovered_ ? accent.brighter(0.25f) : accent);
     if (isHardPoint)
@@ -72,7 +72,16 @@ bool CurvePointComponent::hitTest(int x, int y) {
     float centerX = bounds.getCentreX();
     float centerY = bounds.getCentreY();
     float dist = std::sqrt(std::pow(x - centerX, 2) + std::pow(y - centerY, 2));
-    return dist <= HIT_SIZE / 2.0f;
+    // Grow the grab radius with the anchor so the larger external points stay
+    // comfortable to hit, but keep a sensible floor for the small inline editor.
+    float hitRadius = juce::jmax(POINT_SIZE_SELECTED * pointScale() / 2.0f + 4.0f, 7.0f);
+    return dist <= hitRadius;
+}
+
+float CurvePointComponent::pointScale() const {
+    if (parentEditor_ == nullptr)
+        return 1.0f;
+    return juce::jlimit(1.0f, 1.7f, static_cast<float>(parentEditor_->getHeight()) / 170.0f);
 }
 
 void CurvePointComponent::mouseDown(const juce::MouseEvent& e) {

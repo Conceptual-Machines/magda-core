@@ -293,6 +293,15 @@ struct ModInfo {
     float randomSmooth = 0.0f;     // 0..1, S-curve smoothing of the phase ramp
     float randomStepDepth = 1.0f;  // 0..1, range of variation per step
 
+    // Random modulator runtime state (not serialized). Drives the MAGDA-side
+    // visual simulation in TrackManager::updateAllMods so the editor preview
+    // keeps animating between audio-thread updates (the TE RandomModifier only
+    // advances while the playback graph is processing). Mirrors te::Random-
+    // Modifier's previousRandom/currentRandom/randomDifference.
+    float randomCurrent = 0.5f;
+    float randomPrev = 0.5f;
+    float randomDiff = 0.0f;
+
     // Envelope follower settings (type == Follower; serialized). Defaults
     // mirror te::EnvelopeFollowerModifier's parameter defaults. The follower
     // tracks the amplitude of its host scope's (post-FX) audio; modulation
