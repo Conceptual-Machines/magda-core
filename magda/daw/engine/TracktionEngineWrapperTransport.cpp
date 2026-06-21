@@ -237,8 +237,8 @@ void TracktionEngineWrapper::setTempo(double bpm) {
 
 double TracktionEngineWrapper::getTempo() const {
     if (currentEdit_) {
-        auto timePos = tracktion::TimePosition::fromSeconds(0.0);
-        return currentEdit_->tempoSequence.getTempoAt(timePos).getBpm();
+        auto beatPos = currentEdit_->getTransport().getPositionBeats();
+        return currentEdit_->tempoSequence.getBpmAtBeat(beatPos);
     }
     return DEFAULT_BPM;
 }

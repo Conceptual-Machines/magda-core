@@ -38,10 +38,8 @@ class TracktionTempoMap final : public TempoMap {
     }
 
     double bpmAt(double beat) const override {
-        if (auto* edit = currentEdit()) {
-            auto time = edit->tempoSequence.toTime(tracktion::BeatPosition::fromBeats(beat));
-            return edit->tempoSequence.getBpmAt(time);
-        }
+        if (auto* edit = currentEdit())
+            return edit->tempoSequence.getBpmAtBeat(tracktion::BeatPosition::fromBeats(beat));
         return DEFAULT_BPM;
     }
 
