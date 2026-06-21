@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cmath>
 
+#include "../../core/CurveMath.hpp"
 #include "../../core/ModInfo.hpp"
 
 namespace magda {
@@ -190,31 +191,16 @@ struct CurveSnapshot {
             return shaper.value + u * (p2->value - shaper.value);
         }
 
-        const auto shaper = getShaper();
-        if (shaper.stored) {
-            float uLow = 0.0f;
-            float uHigh = 1.0f;
-            float u = t;
-            for (int i = 0; i < 10; ++i) {
-                u = (uLow + uHigh) * 0.5f;
-                const float oneMinusU = 1.0f - u;
-                const float x = 2.0f * oneMinusU * u * shaper.t + u * u;
-                if (x < t)
-                    uLow = u;
-                else
-                    uHigh = u;
-            }
-            const float oneMinusU = 1.0f - u;
-            return oneMinusU * oneMinusU * p1->value + 2.0f * oneMinusU * u * shaper.value +
-                   u * u * p2->value;
-        }
-
-        if (std::abs(tension) < 0.001f) {
-            return p1->value + t * (p2->value - p1->value);
-        } else {
-            float curvedT = applyTension(t);
-            return p1->value + curvedT * (p2->value - p1->value);
-        }
+        // Linear segment: shared bounded power warp so the audio output matches
+        // exactly what the curve editor draws (see core/CurveMath.hpp).
+        constexpr float kLinearHandleEps = 0.000001f;
+        const bool hasStoredShaper =
+            p2->phase > p1->phase && (std::abs(p1->outHandleX) > kLinearHandleEps ||
+                                      std::abs(p1->outHandleY) > kLinearHandleEps ||
+                                      std::abs(p2->inHandleX) > kLinearHandleEps ||
+                                      std::abs(p2->inHandleY) > kLinearHandleEps);
+        return magda::curvemath::evalSegment(p1->value, p2->value, p1->value + p1->outHandleY,
+                                             tension, hasStoredShaper, t);
     }
 };
 

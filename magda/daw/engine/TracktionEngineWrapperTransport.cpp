@@ -79,6 +79,25 @@ void TracktionEngineWrapper::play() {
             }
         }
 
+        // [BPM #8] Log the boundaries the transport will play within so we can
+        // see whether it stops at the true content end or a wrongly-computed
+        // one (e.g. a loop/length in seconds derived from a fixed tempo).
+        // TEMPORARY instrumentation.
+        {
+            auto& ts = currentEdit_->tempoSequence;
+            const auto editLen = currentEdit_->getLength();
+            const auto editEnd = tracktion::TimePosition::fromSeconds(editLen.inSeconds());
+            const auto loop = transport.getLoopRange();
+            juce::Logger::writeToLog(
+                "[BPM #8] PLAY: editLen=" + juce::String(editLen.inSeconds(), 3) + "s / " +
+                juce::String(ts.toBeats(editEnd).inBeats(), 2) + " beats" +
+                "  looping=" + juce::String(transport.looping.get() ? 1 : 0) + "  loopRange=[" +
+                juce::String(loop.getStart().inSeconds(), 3) + ".." +
+                juce::String(loop.getEnd().inSeconds(), 3) + "]s / [" +
+                juce::String(ts.toBeats(loop.getStart()).inBeats(), 2) + ".." +
+                juce::String(ts.toBeats(loop.getEnd()).inBeats(), 2) + "] beats");
+        }
+
         transport.play(false);
     }
 }
@@ -312,6 +331,34 @@ void TracktionEngineWrapper::updateTriggerState() {
 
     bool currentlyPlaying = isPlaying();
     double currentPosition = getCurrentPosition();
+
+    // [BPM-BUG #8] Trace the RAMPED tempo (sampled at the playhead, so it
+    // follows the curve) and transport state during playback. Samples as the
+    // position advances and on any play/stop transition, so we can see the BPM
+    // and beat at which playback stops, and whether the transport keeps running
+    // (audio-only stop) or halts entirely. TEMPORARY instrumentation.
+    if (currentEdit_) {
+        const auto timePos = tracktion::TimePosition::fromSeconds(currentPosition);
+        const double bpmHere = currentEdit_->tempoSequence.getBpmAt(timePos);
+        const double beatHere = currentEdit_->tempoSequence.toBeats(timePos).inBeats();
+        static double lastLoggedPos = -1.0e9;
+        static bool lastLoggedPlaying = false;
+        const double dPos = currentPosition > lastLoggedPos ? currentPosition - lastLoggedPos
+                                                            : lastLoggedPos - currentPosition;
+        if (currentlyPlaying != lastLoggedPlaying || dPos >= 0.25) {
+            const double editLenBeats = currentEdit_->tempoSequence
+                                            .toBeats(tracktion::TimePosition::fromSeconds(
+                                                currentEdit_->getLength().inSeconds()))
+                                            .inBeats();
+            juce::Logger::writeToLog("[BPM #8] playing=" + juce::String(currentlyPlaying ? 1 : 0) +
+                                     " bpm=" + juce::String(bpmHere, 2) +
+                                     " beat=" + juce::String(beatHere, 2) +
+                                     " posSec=" + juce::String(currentPosition, 3) +
+                                     " editLenBeats=" + juce::String(editLenBeats, 2));
+            lastLoggedPos = currentPosition;
+            lastLoggedPlaying = currentlyPlaying;
+        }
+    }
 
     // Update transport position for MIDI recording preview
     transportPositionForMidi_.store(currentPosition, std::memory_order_relaxed);

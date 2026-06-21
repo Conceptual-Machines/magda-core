@@ -313,16 +313,14 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                 // disrupting a playing LaunchHandle.
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
-                    // Issue #1157: read clip length through the accessor —
-                    // for autoTempo session clips this is lengthBeats × 60 /
-                    // projectBPM regardless of whether the seconds cache is
-                    // fresh, so TE never gets a stale length after a project
-                    // tempo change.
-                    const double syncBPM = edit_.tempoSequence.getBpmAt(te::TimePosition());
-                    const double clipLengthSeconds = clip->getTimelineLength(syncBPM);
-                    auto currentLength = teClip->getPosition().getLength();
-                    if (std::abs(currentLength.inSeconds() - clipLengthSeconds) > 0.0001) {
-                        teClip->setLength(te::TimeDuration::fromSeconds(clipLengthSeconds), false);
+                    // Push the length to TE in beats and let the engine resolve
+                    // the seconds from its tempo sequence. This stays correct
+                    // under a tempo ramp with no re-push, and avoids the
+                    // beat->seconds round-trip that drifts when the tempo curve
+                    // varies (issue #1157).
+                    const double clipLengthBeats = clip->placement.lengthBeats;
+                    if (std::abs(teClip->getLengthBeats().inBeats() - clipLengthBeats) > 1.0e-6) {
+                        teClip->setLength(te::BeatDuration::fromBeats(clipLengthBeats), false);
                     }
 
                     // Update launch quantization (lightweight CachedValue, always safe)
@@ -330,8 +328,10 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                     if (lq) {
                         lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
                     }
+                    const double followBpm = edit_.tempoSequence.getBpmAtBeat(
+                        te::BeatPosition::fromBeats(clip->placement.startBeat));
                     needsGraphReallocation =
-                        syncFollowActionToTracktionClip(*teClip, *clip, syncBPM) ||
+                        syncFollowActionToTracktionClip(*teClip, *clip, followBpm) ||
                         needsGraphReallocation;
 
                     // AutoTempo handling for audio clips
@@ -1632,11 +1632,15 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             return needsGraphReallocation;
         }
 
-        const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double createStart = timelineStartSeconds(*clip, projectBpm);
-        double createEnd = timelineEndSeconds(*clip, projectBpm);
-        auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(createStart),
-                                       te::TimePosition::fromSeconds(createEnd));
+        // Curve-aware: place the new clip by converting its beat range through
+        // insertWaveClip only accepts a time ClipPosition, so let the engine's
+        // tempo sequence resolve the beat range to time (curve-exact). Section 4
+        // below re-anchors the clip in beats immediately after, so this is just
+        // the initial placement.
+        auto& ts = edit_.tempoSequence;
+        auto timeRange =
+            te::TimeRange(ts.toTime(te::BeatPosition::fromBeats(clip->placement.startBeat)),
+                          ts.toTime(te::BeatPosition::fromBeats(clip->placement.endBeat())));
 
         auto clipRef =
             insertWaveClip(*audioTrack, audioFile.getFileNameWithoutExtension(), audioFile,
@@ -1738,22 +1742,24 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     }
 
     // 4. UPDATE clip position/length
-    const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-    double engineStart = timelineStartSeconds(*clip, projectBpm);
-    double engineEnd = timelineEndSeconds(*clip, projectBpm);
+    // Push the placement to TE in beats. The engine owns the tempo sequence and
+    // resolves the seconds itself, so the clip stays anchored to its musical
+    // position under a tempo ramp with no re-push (no beat->seconds round-trip
+    // that would drift and cut playback short on a downward ramp).
+    const double startBeat = clip->placement.startBeat;
+    const double lengthBeats = clip->placement.lengthBeats;
 
-    auto currentPos = audioClipPtr->getPosition();
-    auto currentStart = currentPos.getStart().inSeconds();
-    auto currentEnd = currentPos.getEnd().inSeconds();
+    const double currentStartBeat = audioClipPtr->getStartBeats().inBeats();
+    const double currentLengthBeats = audioClipPtr->getLengthBeats().inBeats();
 
-    // Use setPosition() to update start and length atomically (reduces audio glitches)
-    bool needsPositionUpdate =
-        std::abs(currentStart - engineStart) > 0.001 || std::abs(currentEnd - engineEnd) > 0.001;
+    bool needsPositionUpdate = std::abs(currentStartBeat - startBeat) > 1.0e-6 ||
+                               std::abs(currentLengthBeats - lengthBeats) > 1.0e-6;
 
     if (needsPositionUpdate) {
-        auto newTimeRange = te::TimeRange(te::TimePosition::fromSeconds(engineStart),
-                                          te::TimePosition::fromSeconds(engineEnd));
-        audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
+        // preserveSync=false keeps the content read offset; keepLength=true
+        // moves the clip first, then setLength applies the exact beat length.
+        audioClipPtr->setStart(te::BeatPosition::fromBeats(startBeat), false, true);
+        audioClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
     }
 
     // 5. UPDATE speed ratio and auto-tempo mode

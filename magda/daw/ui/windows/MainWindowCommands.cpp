@@ -790,6 +790,25 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
 
         case deleteCmd: {
+            // Automation-point selection takes priority — the user is editing a
+            // curve. Routing it through this command (rather than the curve
+            // editor's keyPressed) is robust: selecting a point publishes to the
+            // SelectionManager, but the editor loses keyboard focus when the
+            // inspector relayouts, so the key never reaches its keyPressed.
+            const auto& autoPtSel = selectionManager.getAutomationPointSelection();
+            if (autoPtSel.isValid()) {
+                auto& undo = UndoManager::getInstance();
+                const bool many = autoPtSel.pointIds.size() > 1;
+                if (many)
+                    undo.beginCompoundOperation("Delete Automation Points");
+                for (auto it = autoPtSel.pointIds.rbegin(); it != autoPtSel.pointIds.rend(); ++it)
+                    undo.executeCommand(std::make_unique<DeleteAutomationPointCommand>(
+                        autoPtSel.laneId, autoPtSel.clipId, *it));
+                if (many)
+                    undo.endCompoundOperation();
+                selectionManager.clearAutomationPointSelection();
+                return true;
+            }
             // Note selection takes priority — user is actively editing in the piano roll
             const auto& noteSel = selectionManager.getNoteSelection();
             if (noteSel.isValid()) {

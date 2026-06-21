@@ -190,6 +190,12 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.clearTextOverride();
     }
 
+    // Format a value exactly as this control would display it (units, decimals),
+    // for building read-outs such as a multi-selection range.
+    juce::String formatForDisplay(double val) const {
+        return formatValue(val);
+    }
+
     // Callback when value changes (fires on every drag pixel, wheel tick, or edit commit)
     std::function<void()> onValueChange;
 
