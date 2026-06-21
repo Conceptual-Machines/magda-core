@@ -2493,12 +2493,16 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
         return juce::Colours::grey;
     }
 
-    // Use clip's color, but slightly desaturated for multi-clip view
-    if (clipIds_.size() == 1) {
-        return clip->colour;
-    } else {
-        return clip->colour.withSaturation(0.7f);
-    }
+    // Chord clips follow the chord track's colour live (rather than the colour
+    // snapshotted onto clip->colour at creation), so their notes match the
+    // chord-lane blocks even after the track colour changes.
+    juce::Colour base = clip->colour;
+    if (const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+        track != nullptr && track->type == TrackType::Chord)
+        base = track->colour;
+
+    // Use the colour as-is, but slightly desaturated for multi-clip view
+    return clipIds_.size() == 1 ? base : base.withSaturation(0.7f);
 }
 
 bool PianoRollGridComponent::isClipSelected(ClipId clipId) const {

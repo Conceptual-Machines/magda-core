@@ -978,7 +978,11 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         const double beatRange = juce::jmax(1.0, displayLength * beatsPerSecond);
 
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        const auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        // The chord blocks (glassy card + spine) take the chord track's colour.
+        auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        if (auto* chordTrack = magda::TrackManager::getInstance().getTrack(
+                magda::TrackManager::getInstance().getChordTrackId()))
+            blockColour = chordTrack->colour;
 
         auto drawBlock = [&](const juce::String& name, double startBeat, double lengthBeats) {
             const double visibleStart = juce::jmax(0.0, startBeat);
