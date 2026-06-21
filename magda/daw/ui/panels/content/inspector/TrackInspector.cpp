@@ -8,6 +8,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../components/mixer/LevelMeter.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
@@ -296,6 +297,9 @@ TrackInspector::TrackInspector() {
     gainLabel_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Decibels);
     gainLabel_->setRange(-60.0, 6.0, 0.0);  // -60 to +6 dB, default 0 dB
+    // Curve the fill to match the level meter's power scale (consistent with the
+    // other volume controls).
+    gainLabel_->setFillExponent(static_cast<double>(magda::LevelMeter::METER_CURVE_EXPONENT));
     gainLabel_->onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             double db = gainLabel_->getValue();
