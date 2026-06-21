@@ -2,6 +2,7 @@
 
 #include "../themes/DarkTheme.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 
 namespace magda {
 
@@ -102,8 +103,8 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
             if (columnId == TrackName) {
                 // Draw master track name with special styling
                 g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-                g.drawText(tr("common.master"), 5, 0, width - 10, height,
-                           juce::Justification::centredLeft);
+                g.drawText(magda::technicalText(magda::TechnicalTextToken::Master), 5, 0,
+                           width - 10, height, juce::Justification::centredLeft);
             } else {
                 // Draw checkbox for view mode columns
                 ViewMode mode = columnIdToViewMode(columnId);

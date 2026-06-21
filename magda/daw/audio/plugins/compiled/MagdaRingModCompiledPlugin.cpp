@@ -181,7 +181,7 @@ void MagdaRingModCompiledPlugin::buildHostParameters() {
                                 .choices = {"Off", "On"}};
 
     hostSlotInfo_[kFrequencySlot] = {.name = "Frequency",
-                                     .unit = "Hz",
+                                     .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                      .scale = magda::ParameterScale::Logarithmic,
                                      .minValue = 1.0f,
                                      .maxValue = 5000.0f,

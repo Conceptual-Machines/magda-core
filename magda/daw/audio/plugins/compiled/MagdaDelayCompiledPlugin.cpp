@@ -184,7 +184,8 @@ void MagdaDelayCompiledPlugin::buildHostParameters() {
     // Slot 0: Time (ms, 1..2000). Faust smooths internally; host slot is
     // greyed when Sync is on (gateSlotIndex below).
     hostSlotInfo_[kTimeSlot] = {.name = "Time",
-                                .unit = "ms",
+                                .unit =
+                                    magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                 .scale = magda::ParameterScale::Linear,
                                 .minValue = 1.0f,
                                 .maxValue = 2000.0f,

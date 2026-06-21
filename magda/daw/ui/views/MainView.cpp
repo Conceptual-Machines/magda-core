@@ -23,6 +23,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -2759,7 +2760,8 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText(tr("common.master"), labelArea, juce::Justification::centredLeft);
+    g.drawText(magda::technicalText(magda::TechnicalTextToken::Master), labelArea,
+               juce::Justification::centredLeft);
 }
 
 void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& event) {

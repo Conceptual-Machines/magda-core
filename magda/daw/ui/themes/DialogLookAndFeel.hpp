@@ -4,6 +4,7 @@
 
 #include "DarkTheme.hpp"
 #include "FontManager.hpp"
+#include "LocalizedText.hpp"
 
 namespace magda::daw::ui {
 
@@ -46,13 +47,16 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
                         bool /*isButtonDown*/) override {
         auto font = FontManager::getInstance().getButtonFont(13.0f);
         g.setFont(font);
-        g.setColour(button
-                        .findColour(button.getToggleState() ? juce::TextButton::textColourOnId
-                                                            : juce::TextButton::textColourOffId)
-                        .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+        const auto textColour =
+            button
+                .findColour(button.getToggleState() ? juce::TextButton::textColourOnId
+                                                    : juce::TextButton::textColourOffId)
+                .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f);
+        g.setColour(textColour);
 
         auto bounds = button.getLocalBounds().toFloat();
-        g.drawText(button.getButtonText(), bounds, juce::Justification::centred, false);
+        drawLocalizedText(g, button.getButtonText(), bounds, juce::Justification::centred,
+                          textColour, false);
     }
 
     // ── ToggleButton ────────────────────────────────────────────────────
@@ -67,17 +71,17 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
                     tickWidth, tickWidth, button.getToggleState(), button.isEnabled(),
                     shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
 
-        g.setColour(button.findColour(juce::ToggleButton::textColourId));
+        auto textColour = button.findColour(juce::ToggleButton::textColourId);
         g.setFont(FontManager::getInstance().getUIFont(fontSize));
 
         if (!button.isEnabled())
-            g.setOpacity(0.5f);
+            textColour = textColour.withMultipliedAlpha(0.5f);
 
-        g.drawFittedText(button.getButtonText(),
-                         button.getLocalBounds()
-                             .withTrimmedLeft(juce::roundToInt(tickWidth) + 10)
-                             .withTrimmedRight(2),
-                         juce::Justification::centredLeft, 10);
+        drawLocalizedFittedText(g, button.getButtonText(),
+                                button.getLocalBounds()
+                                    .withTrimmedLeft(juce::roundToInt(tickWidth) + 10)
+                                    .withTrimmedRight(2),
+                                juce::Justification::centredLeft, 10, textColour);
     }
 
     // ── ComboBox ────────────────────────────────────────────────────────
@@ -143,11 +147,14 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
             g.fillRect(area);
         }
 
-        g.setColour(textColour != nullptr ? *textColour
-                                          : (isActive ? DarkTheme::getTextColour()
-                                                      : DarkTheme::getSecondaryTextColour()));
+        const auto popupTextColour =
+            textColour != nullptr
+                ? *textColour
+                : (isActive ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour());
+        g.setColour(popupTextColour);
         g.setFont(getPopupMenuFont());
-        g.drawFittedText(text, textArea, juce::Justification::centredLeft, 1);
+        drawLocalizedFittedText(g, text, textArea, juce::Justification::centredLeft, 1,
+                                popupTextColour);
 
         juce::ignoreUnused(isTicked, hasSubMenu, shortcutKeyText, icon);
     }
@@ -166,6 +173,35 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         if (label.getFont() != juce::Font(juce::FontOptions()))
             return label.getFont();
         return FontManager::getInstance().getUIFont(14.0f);
+    }
+
+    void drawLabel(juce::Graphics& g, juce::Label& label) override {
+        g.fillAll(label.findColour(juce::Label::backgroundColourId));
+
+        if (!label.isBeingEdited()) {
+            auto alpha = label.isEnabled() ? 1.0f : 0.5f;
+            const auto font = getLabelFont(label);
+            g.setFont(font);
+            const auto textColour =
+                label.findColour(juce::Label::textColourId).withMultipliedAlpha(alpha);
+            g.setColour(textColour);
+
+            auto textArea = getLabelBorderSize(label).subtractedFrom(label.getLocalBounds());
+            drawLocalizedFittedText(
+                g, label.getText(), textArea, label.getJustificationType(),
+                juce::jmax(1, textArea.getHeight() / juce::roundToInt(font.getHeight())),
+                textColour);
+        }
+
+        const auto outlineColourId = label.isBeingEdited() ? juce::Label::outlineWhenEditingColourId
+                                                           : juce::Label::outlineColourId;
+        if (label.isColourSpecified(outlineColourId)) {
+            const auto outlineColour = label.findColour(outlineColourId);
+            if (!outlineColour.isTransparent()) {
+                g.setColour(outlineColour);
+                g.drawRect(label.getLocalBounds());
+            }
+        }
     }
 
     // ── Slider ──────────────────────────────────────────────────────────
@@ -213,15 +249,15 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         }
 
         // Text
-        auto textColour =
+        auto tabTextColour =
             isFrontTab ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour();
         if (isMouseDown)
-            textColour = textColour.brighter(0.2f);
+            tabTextColour = tabTextColour.brighter(0.2f);
 
-        g.setColour(textColour);
+        g.setColour(tabTextColour);
         g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
-        g.drawFittedText(button.getButtonText(), button.getTextArea(), juce::Justification::centred,
-                         1);
+        drawLocalizedFittedText(g, button.getButtonText(), button.getTextArea(),
+                                juce::Justification::centred, 1, tabTextColour);
     }
 
     void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int, int) override {

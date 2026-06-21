@@ -191,7 +191,7 @@ void MagdaEqCompiledPlugin::buildHostParameters() {
 
         const int freqSlot = bandSlot(band, kBandFreqOffset);
         hostSlotInfo_[freqSlot] = {.name = prefix + " Freq",
-                                   .unit = "Hz",
+                                   .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                    .scale = magda::ParameterScale::Logarithmic,
                                    .minValue = 20.0f,
                                    .maxValue = 20000.0f,
@@ -200,7 +200,8 @@ void MagdaEqCompiledPlugin::buildHostParameters() {
 
         const int gainSlot = bandSlot(band, kBandGainOffset);
         hostSlotInfo_[gainSlot] = {.name = prefix + " Gain",
-                                   .unit = "dB",
+                                   .unit =
+                                       magda::technicalText(magda::TechnicalTextToken::Decibels),
                                    .scale = magda::ParameterScale::Linear,
                                    .minValue = -24.0f,
                                    .maxValue = 24.0f,
@@ -216,7 +217,7 @@ void MagdaEqCompiledPlugin::buildHostParameters() {
     }
 
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,

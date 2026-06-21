@@ -9,6 +9,7 @@
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -171,16 +172,16 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
 class ParameterConfigDialog::ComboCell : public juce::Component {
   public:
     ComboCell(ParameterConfigDialog& owner, int row) : owner_(owner), row_(row) {
-        combo_.addItem("%", 1);
-        combo_.addItem("Hz", 2);
-        combo_.addItem("dB", 3);
-        combo_.addItem("ms", 4);
-        combo_.addItem("sec", 5);
-        combo_.addItem("semitones", 6);
-        combo_.addItem("cents", 7);
-        combo_.addItem("BPM", 8);
-        combo_.addItem("discrete", 9);
-        combo_.addItem("boolean", 10);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Percent), 1);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Hertz), 2);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Decibels), 3);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Milliseconds), 4);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::ShortSeconds), 5);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::SemitonesName), 6);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Cents), 7);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Bpm), 8);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Discrete), 9);
+        combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Boolean), 10);
 
         combo_.setColour(juce::ComboBox::backgroundColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
@@ -690,21 +691,36 @@ void ParameterConfigDialog::buildMockParameters() {
     };
 
     parameters_ = {
-        makeParam("Output Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
-        makeParam("Mix", 1.0f, true, "%", 0.0f, 100.0f, 50.0f),
-        makeParam("Band 1 Frequency", 0.3f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
-        makeParam("Band 1 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
-        makeParam("Band 1 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
-        makeParam("Band 1 Type", 0.0f, true, "%", 0.0f, 1.0f, 0.5f),
-        makeParam("Band 2 Frequency", 0.5f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
-        makeParam("Band 2 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
-        makeParam("Band 2 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
-        makeParam("Band 3 Frequency", 0.7f, true, "Hz", 20.0f, 20000.0f, 1000.0f),
-        makeParam("Band 3 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f),
-        makeParam("Band 3 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f),
-        makeParam("Analyzer Mode", 0.0f, false, "%", 0.0f, 1.0f, 0.5f),
-        makeParam("Auto Gain", 0.0f, true, "%", 0.0f, 1.0f, 0.5f),
-        makeParam("Master Level", 0.8f, true, "dB", -60.0f, 12.0f, 0.0f),
+        makeParam("Output Gain", 0.5f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Decibels), -30.0f, 30.0f, 0.0f),
+        makeParam("Mix", 1.0f, true, magda::technicalText(magda::TechnicalTextToken::Percent), 0.0f,
+                  100.0f, 50.0f),
+        makeParam("Band 1 Frequency", 0.3f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Hertz), 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 1 Gain", 0.5f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Decibels), -30.0f, 30.0f, 0.0f),
+        makeParam("Band 1 Q", 0.5f, true, magda::technicalText(magda::TechnicalTextToken::Percent),
+                  0.1f, 10.0f, 1.0f),
+        makeParam("Band 1 Type", 0.0f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Percent), 0.0f, 1.0f, 0.5f),
+        makeParam("Band 2 Frequency", 0.5f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Hertz), 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 2 Gain", 0.5f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Decibels), -30.0f, 30.0f, 0.0f),
+        makeParam("Band 2 Q", 0.5f, true, magda::technicalText(magda::TechnicalTextToken::Percent),
+                  0.1f, 10.0f, 1.0f),
+        makeParam("Band 3 Frequency", 0.7f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Hertz), 20.0f, 20000.0f, 1000.0f),
+        makeParam("Band 3 Gain", 0.5f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Decibels), -30.0f, 30.0f, 0.0f),
+        makeParam("Band 3 Q", 0.5f, true, magda::technicalText(magda::TechnicalTextToken::Percent),
+                  0.1f, 10.0f, 1.0f),
+        makeParam("Analyzer Mode", 0.0f, false,
+                  magda::technicalText(magda::TechnicalTextToken::Percent), 0.0f, 1.0f, 0.5f),
+        makeParam("Auto Gain", 0.0f, true, magda::technicalText(magda::TechnicalTextToken::Percent),
+                  0.0f, 1.0f, 0.5f),
+        makeParam("Master Level", 0.8f, true,
+                  magda::technicalText(magda::TechnicalTextToken::Decibels), -60.0f, 12.0f, 0.0f),
     };
 }
 
@@ -864,9 +880,11 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
         // Only keep short, clean labels as the unit; discard the rest.
         auto rawLabel = param->getLabel().trim();
         if (rawLabel.length() <= 6 && !rawLabel.contains("[") && !rawLabel.contains("("))
-            info.unit = rawLabel.isEmpty() ? "%" : rawLabel;
+            info.unit = rawLabel.isEmpty()
+                            ? magda::technicalText(magda::TechnicalTextToken::Percent)
+                            : rawLabel;
         else
-            info.unit = "%";
+            info.unit = magda::technicalText(magda::TechnicalTextToken::Percent);
 
         // Build scan input for detection
         magda::ParameterScanInput scanInput;
@@ -1021,7 +1039,9 @@ bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId)
         info.rangeMin = rangeMin;
         info.rangeMax = rangeMax;
         info.rangeCenter = (rangeMin + rangeMax) * 0.5f;
-        info.unit = "%";  // Detect can refine units/scale from the display texts
+        info.unit = magda::technicalText(
+            magda::TechnicalTextToken::Percent);  // Detect can refine units/scale from the display
+                                                  // texts
 
         const int numStates = param->getNumberOfStates();
         if (numStates == 2)
@@ -1092,7 +1112,7 @@ void ParameterConfigDialog::resetParameterConfiguration() {
     }
 
     for (auto& param : parameters_) {
-        param.unit = "%";
+        param.unit = magda::technicalText(magda::TechnicalTextToken::Percent);
         param.scale = magda::ParameterScale::Linear;
         param.rangeMin = 0.0f;
         param.rangeMax = 1.0f;
@@ -1304,11 +1324,12 @@ void ParameterConfigDialog::applyDetectionResults(
         // Discrete/boolean params show their scale type instead of a unit.
         // Continuous params with no detected unit default to "%".
         if (r.scale == magda::ParameterScale::Discrete) {
-            param.unit = "discrete";
+            param.unit = magda::technicalText(magda::TechnicalTextToken::Discrete);
         } else if (r.scale == magda::ParameterScale::Boolean) {
-            param.unit = "boolean";
+            param.unit = magda::technicalText(magda::TechnicalTextToken::Boolean);
         } else {
-            param.unit = r.unit.isEmpty() ? "%" : r.unit;
+            param.unit = r.unit.isEmpty() ? magda::technicalText(magda::TechnicalTextToken::Percent)
+                                          : r.unit;
         }
     }
     table_.updateContent();

@@ -172,7 +172,8 @@ void MagdaGrainDelayCompiledPlugin::rebuildEngineState(int sampleRate) {
 
 void MagdaGrainDelayCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kTimeSlot] = {.name = "Time",
-                                .unit = "ms",
+                                .unit =
+                                    magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                 .scale = magda::ParameterScale::Linear,
                                 .minValue = 1.0f,
                                 .maxValue = 2000.0f,
@@ -190,13 +191,14 @@ void MagdaGrainDelayCompiledPlugin::buildHostParameters() {
                                 .scaleAnchor = std::numeric_limits<float>::quiet_NaN(),
                                 .choices = {"Off", "On"}};
     hostSlotInfo_[kSizeSlot] = {.name = "Size",
-                                .unit = "ms",
+                                .unit =
+                                    magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                 .scale = magda::ParameterScale::Linear,
                                 .minValue = 20.0f,
                                 .maxValue = 500.0f,
                                 .defaultValue = 120.0f};
     hostSlotInfo_[kPitchSlot] = {.name = "Pitch",
-                                 .unit = "st",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Semitones),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = -24.0f,
                                  .maxValue = 24.0f,

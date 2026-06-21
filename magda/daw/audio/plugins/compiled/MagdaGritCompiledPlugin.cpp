@@ -163,7 +163,7 @@ void MagdaGritCompiledPlugin::buildHostParameters() {
     // Slot 0: Frequency (log Hz, anchored at 1 kHz so the slider mid lands
     // on the most musically useful range).
     hostSlotInfo_[kFrequencySlot] = {.name = "Frequency",
-                                     .unit = "Hz",
+                                     .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                      .scale = magda::ParameterScale::Logarithmic,
                                      .minValue = 20.0f,
                                      .maxValue = 16000.0f,

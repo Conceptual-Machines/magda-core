@@ -107,6 +107,7 @@ target_sources(magda_daw PRIVATE
     ParameterDetector.hpp
     ParameterUtils.hpp
     TempoUtils.hpp
+    TechnicalText.hpp
     AutomationTypes.hpp
     AutomationInfo.hpp
     AutomationManager.hpp

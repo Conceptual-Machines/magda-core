@@ -14,12 +14,14 @@
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -36,6 +38,14 @@ void configureMasterSpeakerButton(SvgButton& button) {
 void syncMasterSpeakerButton(SvgButton& button, bool muted) {
     button.setToggleState(muted, juce::dontSendNotification);
     button.setTooltip(muted ? "Unmute master" : "Mute master");
+}
+
+void useLocalizedLabelPainter(juce::Label& label) {
+    label.setLookAndFeel(&DialogLookAndFeel::getInstance());
+}
+
+void clearLocalizedLabelPainter(juce::Label& label) {
+    label.setLookAndFeel(nullptr);
 }
 }  // namespace
 
@@ -464,6 +474,13 @@ TrackInspector::TrackInspector() {
     latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
     latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addAndMakeVisible(latencyValue_);
+
+    for (auto* label :
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
+          &clipsSectionLabel_, &clipCountLabel_, &latencyLabel_, &latencyValue_}) {
+        useLocalizedLabelPainter(*label);
+    }
 }
 
 void TrackInspector::midiDeviceListChanged() {
@@ -471,6 +488,15 @@ void TrackInspector::midiDeviceListChanged() {
 }
 
 TrackInspector::~TrackInspector() {
+    for (auto* label :
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
+          &clipsSectionLabel_, &clipCountLabel_, &latencyLabel_, &latencyValue_}) {
+        clearLocalizedLabelPainter(*label);
+    }
+    for (auto& label : sendDestLabels_)
+        clearLocalizedLabelPainter(*label);
+
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
@@ -1008,7 +1034,8 @@ void TrackInspector::updateFromSelectedTrack() {
     // Master track — show basic controls from MasterChannelState
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
         const auto& master = magda::TrackManager::getInstance().getMasterChannel();
-        trackNameValue_.setText(tr("common.master"), juce::dontSendNotification);
+        trackNameValue_.setText(magda::technicalText(magda::TechnicalTextToken::Master),
+                                juce::dontSendNotification);
         trackNameValue_.setEditable(false);  // master cannot be renamed
         syncMasterSpeakerButton(*speakerButton_, master.muted);
         soloButton_.setToggleState(false, juce::dontSendNotification);
@@ -1380,8 +1407,10 @@ void TrackInspector::showTrackControls(bool show) {
 
 void TrackInspector::rebuildSendsUI() {
     // Remove existing send UI components
-    for (auto& l : sendDestLabels_)
+    for (auto& l : sendDestLabels_) {
+        clearLocalizedLabelPainter(*l);
         removeChildComponent(l.get());
+    }
     for (auto& l : sendLevelLabels_)
         removeChildComponent(l.get());
     for (auto& b : sendDeleteButtons_)
@@ -1408,6 +1437,7 @@ void TrackInspector::rebuildSendsUI() {
         destLabel->setText(destTrack ? destTrack->name : "?", juce::dontSendNotification);
         destLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
         destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        useLocalizedLabelPainter(*destLabel);
         addAndMakeVisible(*destLabel);
         sendDestLabels_.push_back(std::move(destLabel));
 

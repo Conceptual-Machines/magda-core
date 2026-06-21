@@ -145,7 +145,7 @@ void MagdaFreqShiftCompiledPlugin::rebuildEngineState(int sampleRate) {
 
 void MagdaFreqShiftCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kShiftSlot] = {.name = "Shift",
-                                 .unit = "Hz",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = -1000.0f,
                                  .maxValue = 1000.0f,

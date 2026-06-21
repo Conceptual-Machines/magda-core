@@ -181,7 +181,7 @@ void MagdaFlangerCompiledPlugin::buildHostParameters() {
                                 .choices = {"Off", "On"}};
 
     hostSlotInfo_[kRateSlot] = {.name = "Rate",
-                                .unit = "Hz",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                 .scale = magda::ParameterScale::Logarithmic,
                                 .minValue = 0.05f,
                                 .maxValue = 10.0f,

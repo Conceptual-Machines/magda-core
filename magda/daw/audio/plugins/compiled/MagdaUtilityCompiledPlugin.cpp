@@ -64,7 +64,7 @@ juce::String MagdaUtilityCompiledPlugin::getSelectableDescription() {
 
 void MagdaUtilityCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kGainSlot] = {.name = "Gain",
-                                .unit = "dB",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                 .scale = magda::ParameterScale::FaderDB,
                                 .minValue = -60.0f,
                                 .maxValue = 12.0f,
@@ -80,7 +80,8 @@ void MagdaUtilityCompiledPlugin::buildHostParameters() {
                                  .maxValue = 2.0f,
                                  .defaultValue = 1.0f};
     hostSlotInfo_[kLowMonoFreqSlot] = {.name = "Low Mono Freq",
-                                       .unit = "Hz",
+                                       .unit =
+                                           magda::technicalText(magda::TechnicalTextToken::Hertz),
                                        .scale = magda::ParameterScale::Logarithmic,
                                        .minValue = 20.0f,
                                        .maxValue = 500.0f,

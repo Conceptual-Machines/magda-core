@@ -189,7 +189,7 @@ void MagdaDimensionCompiledPlugin::buildHostParameters() {
                                   .maxValue = 1.0f,
                                   .defaultValue = 0.5f};
     hostSlotInfo_[kRateSlot] = {.name = "Rate",
-                                .unit = "Hz",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                 .scale = magda::ParameterScale::Logarithmic,
                                 .minValue = 0.05f,
                                 .maxValue = 4.0f,
@@ -206,7 +206,7 @@ void MagdaDimensionCompiledPlugin::buildHostParameters() {
                                .maxValue = 1.0f,
                                .defaultValue = 1.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,

@@ -145,7 +145,7 @@ void MagdaPhaserCompiledPlugin::rebuildEngineState(int sampleRate) {
 
 void MagdaPhaserCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kRateSlot] = {.name = "Rate",
-                                .unit = "Hz",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                 .scale = magda::ParameterScale::Logarithmic,
                                 .minValue = 0.05f,
                                 .maxValue = 10.0f,
@@ -169,14 +169,14 @@ void MagdaPhaserCompiledPlugin::buildHostParameters() {
         static_cast<float>(hostSlotInfo_[kStagesSlot].choices.size() - 1);
     hostSlotInfo_[kStagesSlot].defaultValue = 1.0f;
     hostSlotInfo_[kMinHzSlot] = {.name = "Min Hz",
-                                 .unit = "Hz",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                  .scale = magda::ParameterScale::Logarithmic,
                                  .minValue = 30.0f,
                                  .maxValue = 1000.0f,
                                  .defaultValue = 100.0f,
                                  .scaleAnchor = 200.0f};
     hostSlotInfo_[kMaxHzSlot] = {.name = "Max Hz",
-                                 .unit = "Hz",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                  .scale = magda::ParameterScale::Logarithmic,
                                  .minValue = 500.0f,
                                  .maxValue = 8000.0f,

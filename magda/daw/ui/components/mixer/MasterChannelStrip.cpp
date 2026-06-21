@@ -15,6 +15,7 @@
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -256,7 +257,8 @@ void MasterChannelStrip::refreshMiniAnalyzers() {
 
 void MasterChannelStrip::setupControls() {
     // Title label
-    titleLabel = std::make_unique<juce::Label>("Master", tr("common.master"));
+    titleLabel = std::make_unique<juce::Label>(
+        "Master", magda::technicalText(magda::TechnicalTextToken::Master));
     titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     titleLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel->setJustificationType(juce::Justification::centredLeft);
