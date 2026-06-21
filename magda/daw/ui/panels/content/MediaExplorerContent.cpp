@@ -750,9 +750,9 @@ MediaExplorerContent::MediaExplorerContent() {
     volumeSlider_.setColour(juce::Slider::backgroundColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     volumeSlider_.setColour(juce::Slider::thumbColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                            DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
     volumeSlider_.setColour(juce::Slider::trackColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+                            DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     volumeSlider_.onValueChange = [this]() {
         if (transportSource_) {
             transportSource_->setGain(static_cast<float>(volumeSlider_.getValue()));

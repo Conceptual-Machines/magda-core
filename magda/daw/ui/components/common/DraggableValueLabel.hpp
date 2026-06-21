@@ -139,7 +139,7 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setDrawBorder(draw);
     }
 
-    // Custom fill indicator colour (defaults to ACCENT_BLUE if not set)
+    // Custom fill indicator colour (defaults to the theme value fill if not set)
     void setFillColour(juce::Colour colour) {
         customFillColour_ = colour;
         valueControl_.setFillColour(colour);
