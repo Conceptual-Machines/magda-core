@@ -2,6 +2,7 @@
 
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/transport/StepClock.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -28,6 +29,49 @@ bool isBlackKey(int noteNumber) {
     static const bool isBlack[] = {false, true,  false, true,  false, false,
                                    true,  false, true,  false, true,  false};
     return isBlack[((noteNumber % 12) + 12) % 12];
+}
+
+constexpr int kStepRulerHeight = 13;  // mini step ruler above the grid
+
+// Step ruler above the grid: a tick per step, heavier + numbered every 4, with
+// the playing step highlighted. Columns align with the cell grid. Shared by the
+// keys and drum-lane views.
+void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
+                   juce::Rectangle<int> cellArea, int count, float colW, int playStep) {
+    if (timelineArea.isEmpty())
+        return;
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
+    g.fillRect(timelineArea);
+
+    const float top = static_cast<float>(timelineArea.getY());
+    const float bottom = static_cast<float>(timelineArea.getBottom());
+
+    // Highlight the playing step.
+    if (playStep >= 0 && playStep < count) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.45f));
+        g.fillRect(
+            juce::Rectangle<float>(cellArea.getX() + playStep * colW, top, colW, bottom - top));
+    }
+
+    g.setFont(FontManager::getInstance().getUIFont(8.0f));
+    for (int i = 0; i < count; ++i) {
+        const float x = cellArea.getX() + i * colW;
+        const bool group = (i % 4 == 0);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
+        g.drawVerticalLine(juce::roundToInt(x), group ? top : top + 4.0f, bottom);
+        if (group) {
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.drawText(
+                juce::String(i + 1),
+                juce::Rectangle<float>(x + 2.0f, top, colW - 2.0f, bottom - top).toNearestInt(),
+                juce::Justification::centredLeft);
+        }
+    }
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.drawHorizontalLine(timelineArea.getBottom() - 1, static_cast<float>(cellArea.getX()),
+                         static_cast<float>(cellArea.getRight()));
 }
 
 }  // namespace
@@ -62,7 +106,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
             return;
 
         // Mini timeline (step ruler) across the top, above the whole grid.
-        timelineArea_ = bounds.removeFromTop(TIMELINE_H);
+        timelineArea_ = bounds.removeFromTop(kStepRulerHeight);
 
         auto arrowStrip = bounds.removeFromLeft(ARROW_STRIP_WIDTH);
         // Left strip, top to bottom: zoom in (+), octave up, octave down,
@@ -84,7 +128,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         const float rowH = static_cast<float>(cellArea_.getHeight()) / visibleNotes_;
         const float colW = static_cast<float>(cellArea_.getWidth()) / static_cast<float>(count);
 
-        drawTimeline(g, count, colW);
+        drawStepRuler(g, timelineArea_, cellArea_, count, colW, playStep_);
 
         g.setFont(FontManager::getInstance().getUIFont(7.0f));
 
@@ -216,7 +260,6 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
     static constexpr int MIN_VISIBLE_NOTES = 12;      // zoomed in: one octave
     static constexpr int MAX_VISIBLE_NOTES = 48;      // zoomed out: four octaves
     static constexpr int ARROW_STRIP_WIDTH = 14;
-    static constexpr int TIMELINE_H = 13;  // mini step ruler above the grid
 
     void shiftWindow(int semitones) {
         const int next = juce::jlimit(0, 127 - visibleNotes_ + 1, lowNote_ + semitones);
@@ -368,45 +411,6 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
             g.drawLine(cx, cy - s, cx, cy + s, 1.0f);  // plus vertical bar
     }
 
-    // Step ruler above the grid: a tick per step, heavier + numbered every 4,
-    // with the playing step highlighted. Aligned to the cell columns.
-    void drawTimeline(juce::Graphics& g, int count, float colW) {
-        if (timelineArea_.isEmpty())
-            return;
-
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
-        g.fillRect(timelineArea_);
-
-        const float top = static_cast<float>(timelineArea_.getY());
-        const float bottom = static_cast<float>(timelineArea_.getBottom());
-
-        // Highlight the playing step.
-        if (playStep_ >= 0 && playStep_ < count) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.45f));
-            g.fillRect(juce::Rectangle<float>(cellArea_.getX() + playStep_ * colW, top, colW,
-                                              bottom - top));
-        }
-
-        g.setFont(FontManager::getInstance().getUIFont(8.0f));
-        for (int i = 0; i < count; ++i) {
-            const float x = cellArea_.getX() + i * colW;
-            const bool group = (i % 4 == 0);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
-            g.drawVerticalLine(juce::roundToInt(x), group ? top : top + 4.0f, bottom);
-            if (group) {
-                g.setColour(DarkTheme::getSecondaryTextColour());
-                g.drawText(
-                    juce::String(i + 1),
-                    juce::Rectangle<float>(x + 2.0f, top, colW - 2.0f, bottom - top).toNearestInt(),
-                    juce::Justification::centredLeft);
-            }
-        }
-
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
-        g.drawHorizontalLine(timelineArea_.getBottom() - 1, static_cast<float>(cellArea_.getX()),
-                             static_cast<float>(cellArea_.getRight()));
-    }
-
     PolySeqPlugin* plugin_ = nullptr;
     int playStep_ = -1;
     int lowNote_ = 48;                          // C2..B3 window — C3 (60) centered
@@ -474,6 +478,9 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         if (bounds.isEmpty() || plugin_ == nullptr || lanes_.empty())
             return;
 
+        // Mini timeline (step ruler) across the top, above the whole grid.
+        timelineArea_ = bounds.removeFromTop(kStepRulerHeight);
+
         auto arrowStrip = bounds.removeFromLeft(ARROW_STRIP_WIDTH);
         scrollUpArea_ = arrowStrip.removeFromTop(arrowStrip.getHeight() / 2);
         scrollDownArea_ = arrowStrip;
@@ -494,6 +501,8 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
 
         const int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
         const float colW = static_cast<float>(cellArea_.getWidth()) / static_cast<float>(count);
+
+        drawStepRuler(g, timelineArea_, cellArea_, count, colW, playStep_);
 
         for (int row = 0; row < visible; ++row) {
             const int laneIdx = scrollOffset_ + (visible - 1 - row);
@@ -917,6 +926,7 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
     juce::Rectangle<int> scrollDownArea_;
     juce::Rectangle<int> labelArea_;
     juce::Rectangle<int> cellArea_;
+    juce::Rectangle<int> timelineArea_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumLanesView)
 };
@@ -1071,26 +1081,14 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
             plugin_->hardAngle = hardAngle;
     };
 
-    // --- MIDI controls ---
-    midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
-                                                         BinaryData::compare_svgSize);
-    midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    midiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
-    midiThruButton_->setToggleable(true);
-    midiThruButton_->setActive(false);
-    midiThruButton_->onClick = [this] {
-        if (plugin_) {
-            bool newState = !midiThruButton_->isActive();
-            midiThruButton_->setActive(newState);
-            plugin_->midiThru = newState;
-        }
-    };
-    addAndMakeVisible(midiThruButton_.get());
+    // MIDI thru / step record live in the device-slot header, owned by
+    // DeviceSlotComponent — not in this body.
 
     // --- View mode toggle (keys / drum) ---
     viewModeButton_.setButtonText("KEYS");
     viewModeButton_.setClickingTogglesState(true);
+    // Theme font + box-style rounding, matching the side-panel sliders/combo.
+    viewModeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     viewModeButton_.setColour(juce::TextButton::buttonColourId,
                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
     viewModeButton_.setColour(juce::TextButton::buttonOnColourId,
@@ -1116,6 +1114,7 @@ PolyStepSequencerUI::~PolyStepSequencerUI() {
     if (watchedState_.isValid())
         watchedState_.removeListener(this);
     dirCombo_.setLookAndFeel(nullptr);
+    viewModeButton_.setLookAndFeel(nullptr);
 }
 
 // =============================================================================
@@ -1177,7 +1176,6 @@ void PolyStepSequencerUI::syncFromPlugin() {
                                 juce::dontSendNotification);
     cyclesSlider_.setValue(static_cast<double>(juce::jlimit(1, steps, plugin_->rampCycles.get())),
                            juce::dontSendNotification);
-    midiThruButton_->setActive(plugin_->midiThru.get());
     patternView_->patternChanged();
     repaint();
 }
@@ -1262,16 +1260,14 @@ void PolyStepSequencerUI::resized() {
     gridRow(swingLabel_, swingSlider_, gateLengthLabel_, gateLengthSlider_);
     gridRow(quantizeLabel_, quantizeSlider_, quantizeSubLabel_, quantizeSubSlider_);
 
-    // DIR on the left, view-mode (keys/drum) + MIDI thru buttons on the right.
+    // DIR on the left, view-mode (keys/drum) toggle on the right.
     {
         auto row = panel.removeFromTop(GRID_CELL_H);
         const int half = (row.getWidth() - COL_GAP) / 2;
         gridCell(dirLabel_, dirCombo_, row.removeFromLeft(half));
         row.removeFromLeft(COL_GAP);
-        row.removeFromTop(CELL_LABEL_H);  // align buttons with the combo, not the label
-        midiThruButton_->setBounds(row.removeFromRight(row.getHeight()));
-        row.removeFromRight(4);
-        viewModeButton_.setBounds(row.reduced(0, 2));
+        row.removeFromTop(CELL_LABEL_H);  // align button with the combo, not the label
+        viewModeButton_.setBounds(row.removeFromLeft(juce::jmin(48, row.getWidth())).reduced(0, 2));
         panel.removeFromTop(ROW_GAP);
     }
 

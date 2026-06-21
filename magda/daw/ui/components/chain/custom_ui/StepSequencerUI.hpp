@@ -72,13 +72,6 @@ class StepSequencerUI : public juce::Component,
     juce::Label quantizeSubLabel_;
     LinkableTextSlider quantizeSubSlider_;
 
-    // --- MIDI controls ---
-    std::unique_ptr<magda::SvgButton> midiThruButton_;
-    std::unique_ptr<magda::SvgButton> stepRecordButton_;
-
-    // --- Pattern generation ---
-    std::unique_ptr<magda::SvgButton> randomButton_;
-
     // --- State ---
     int selectedStep_ = 0;       // Currently selected step for editing
     int currentPlayStep_ = -1;   // Step being played (for highlight)
@@ -89,6 +82,7 @@ class StepSequencerUI : public juce::Component,
 
     // --- Layout constants ---
     static constexpr int CONTROL_ROW_HEIGHT = 22;
+    static constexpr int TIMELINE_HEIGHT = 12;
     static constexpr int STEP_BOX_SIZE = 22;
     static constexpr int TOGGLE_ROW_HEIGHT = 16;
     static constexpr int KEYBOARD_HEIGHT = 48;
@@ -104,6 +98,7 @@ class StepSequencerUI : public juce::Component,
     static constexpr int MAX_BASE_NOTE = 108;  // C8 (108 + 24 would be > 127)
 
     // --- Drawing helpers ---
+    void drawTimeline(juce::Graphics& g, juce::Rectangle<int> area);
     void drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area);
     void drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> area);
@@ -115,6 +110,7 @@ class StepSequencerUI : public juce::Component,
     int getKeyboardNoteAtPosition(juce::Point<int> pos, juce::Rectangle<int> area) const;
 
     // --- Layout bounds (computed in resized, used in paint/mouseDown) ---
+    juce::Rectangle<int> timelineArea_;
     juce::Rectangle<int> stepBoxArea_;
     juce::Rectangle<int> accentArea_;
     juce::Rectangle<int> glideTieArea_;

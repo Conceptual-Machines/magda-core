@@ -72,6 +72,21 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
         setVisibleIfPresent(controls.aiButton, false);
     }
 
+    // Step-sequencer action buttons in the header, next to the AI button:
+    // randomize, step record, MIDI thru.
+    if (traits.isStepSequencer || traits.isPolyStepSequencer) {
+        setVisibleIfPresent(controls.randomButton, true);
+        setVisibleIfPresent(controls.stepRecordButton, true);
+        setVisibleIfPresent(controls.midiThruButton, true);
+        placeLeft(headerArea, controls.randomButton, buttonSize);
+        placeLeft(headerArea, controls.stepRecordButton, buttonSize);
+        placeLeft(headerArea, controls.midiThruButton, buttonSize);
+    } else {
+        setVisibleIfPresent(controls.randomButton, false);
+        setVisibleIfPresent(controls.stepRecordButton, false);
+        setVisibleIfPresent(controls.midiThruButton, false);
+    }
+
     if (isMidiUtility(traits)) {
         setVisibleIfPresent(controls.learnButton, false);
         setVisibleIfPresent(controls.sidechainButton, false);

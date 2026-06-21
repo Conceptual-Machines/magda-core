@@ -10,6 +10,7 @@
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
+#include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
@@ -465,6 +466,64 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         addAndMakeVisible(*exportClipButton_);
     }
 
+    // Randomize-pattern button in the header (next to the AI button). Lives at
+    // the slot level so it sits in the header chrome rather than the step
+    // sequencer's body. Shared by the mono and poly step sequencers.
+    if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
+        randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
+                                                           BinaryData::random_svgSize);
+        applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                             /*toggling*/ false);
+        randomButton_->setTooltip("Randomize pattern");
+        randomButton_->onClick = [this]() {
+            if (traits_.isPolyStepSequencer) {
+                if (auto* poly = customUI_.getPolyStepSeqPlugin())
+                    poly->randomizePattern();
+            } else if (auto* stepSeqPlugin = customUI_.getStepSeqPlugin()) {
+                stepSeqPlugin->randomizePattern();
+            }
+        };
+        addAndMakeVisible(*randomButton_);
+
+        // MIDI-thru toggle (moved out of the sequencer body into the header).
+        midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
+                                                             BinaryData::compare_svgSize);
+        midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        midiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
+        midiThruButton_->setToggleable(true);
+        midiThruButton_->onClick = [this]() {
+            const bool on = !midiThruButton_->isActive();
+            midiThruButton_->setActive(on);
+            if (traits_.isPolyStepSequencer) {
+                if (auto* p = customUI_.getPolyStepSeqPlugin())
+                    p->midiThru = on;
+            } else if (auto* p = customUI_.getStepSeqPlugin()) {
+                p->midiThru = on;
+            }
+        };
+        addAndMakeVisible(*midiThruButton_);
+
+        // Step-record toggle (moved out of the sequencer body into the header).
+        stepRecordButton_ = std::make_unique<magda::SvgButton>(
+            "StepRecord", BinaryData::record_circle_svg, BinaryData::record_circle_svgSize);
+        stepRecordButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        stepRecordButton_->setNormalColor(juce::Colour(0xFFCC3333));
+        stepRecordButton_->setTooltip("Step record: play notes to fill steps");
+        stepRecordButton_->setToggleable(true);
+        stepRecordButton_->onClick = [this]() {
+            const bool on = !stepRecordButton_->isActive();
+            stepRecordButton_->setActive(on);
+            if (traits_.isPolyStepSequencer) {
+                if (auto* p = customUI_.getPolyStepSeqPlugin())
+                    p->setStepRecording(on);
+            } else if (auto* p = customUI_.getStepSeqPlugin()) {
+                p->setStepRecording(on);
+            }
+        };
+        addAndMakeVisible(*stepRecordButton_);
+    }
+
     // Create parameter grid (owns slots + pagination).
     paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
@@ -851,6 +910,25 @@ void DeviceSlotComponent::timerCallback() {
         traits_.isChordEngine) {
         refreshDeviceSlotMidiActivity(traits_, customUI_, midiNoteStrip_, lastMidiNote_,
                                       lastChordNotes_, lastChordCount_);
+
+        // Keep the step-seq header toggles in sync with plugin state.
+        if (midiThruButton_ != nullptr || stepRecordButton_ != nullptr) {
+            bool thru = false;
+            bool rec = false;
+            if (traits_.isPolyStepSequencer) {
+                if (auto* p = customUI_.getPolyStepSeqPlugin()) {
+                    thru = p->midiThru.get();
+                    rec = p->isStepRecording();
+                }
+            } else if (auto* p = customUI_.getStepSeqPlugin()) {
+                thru = p->midiThru.get();
+                rec = p->isStepRecording();
+            }
+            if (midiThruButton_ != nullptr && midiThruButton_->isActive() != thru)
+                midiThruButton_->setActive(thru);
+            if (stepRecordButton_ != nullptr && stepRecordButton_->isActive() != rec)
+                stepRecordButton_->setActive(rec);
+        }
     } else {
         // Poll device peak levels for right-side meter strip
         magda::DeviceMeteringManager::DeviceMeterData data;
@@ -1603,7 +1681,10 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .uiButton = uiButton_.get(),
          .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
          .presetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
-         .exportClipButton = exportClipButton_.get()},
+         .exportClipButton = exportClipButton_.get(),
+         .randomButton = randomButton_.get(),
+         .stepRecordButton = stepRecordButton_.get(),
+         .midiThruButton = midiThruButton_.get()},
         BUTTON_SIZE);
 }
 

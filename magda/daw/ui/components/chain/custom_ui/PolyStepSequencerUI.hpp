@@ -91,9 +91,6 @@ class PolyStepSequencerUI : public juce::Component,
     juce::Label cyclesLabel_;
     LinkableTextSlider cyclesSlider_;
 
-    // --- MIDI controls ---
-    std::unique_ptr<magda::SvgButton> midiThruButton_;
-
     // --- View mode toggle (keys / drum) ---
     juce::TextButton viewModeButton_;
     bool drumViewActive_ = false;
