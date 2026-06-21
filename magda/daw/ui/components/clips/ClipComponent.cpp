@@ -964,9 +964,12 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
     if (visibleBounds.isEmpty())
         return;
 
+    const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+
     // Translucent base so the timeline shows through (track-map style) rather
-    // than a solid pastel card.
-    auto bgColour = clip.colour.withAlpha(0.16f);
+    // than a solid pastel card. Selection makes the clip body read as the track
+    // colour while keeping the black selected header separate.
+    auto bgColour = clip.colour.withAlpha(selected ? 0.24f : 0.16f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
@@ -978,7 +981,9 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         const double beatRange = juce::jmax(1.0, displayLength * beatsPerSecond);
 
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        // The chord blocks (glassy card + spine) take the chord track's colour.
+        // The chord blocks (glassy card + spine) take the chord track's colour
+        // live, so they stay correct after a track recolour (matches the
+        // piano-roll grid notes for chord clips).
         auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
         if (auto* chordTrack = magda::TrackManager::getInstance().getTrack(
                 magda::TrackManager::getInstance().getChordTrackId()))

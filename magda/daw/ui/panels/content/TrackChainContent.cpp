@@ -1122,7 +1122,7 @@ TrackChainContent::TrackChainContent()
     volumeLabel_.setRange(-60.0, 6.0, 0.0);
     volumeLabel_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
     volumeLabel_.setFontSize(10.0f);
-    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     volumeLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             float gain = dbToGain(static_cast<float>(volumeLabel_.getValue()));
@@ -1136,7 +1136,7 @@ TrackChainContent::TrackChainContent()
     panLabel_.setRange(-1.0, 1.0, 0.0);
     panLabel_.setValue(0.0, juce::dontSendNotification);  // Center
     panLabel_.setFontSize(10.0f);
-    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     panLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(

@@ -41,9 +41,9 @@ OscilloscopeUI::OscilloscopeUI() {
     timeSlider_.setColour(juce::Slider::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     timeSlider_.setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                          DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     timeSlider_.setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT));
+                          DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
     timeSlider_.onValueChange = [this] {
         updateTimeReadout();
         if (plugin_ != nullptr) {

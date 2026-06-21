@@ -43,9 +43,9 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
 
     // Slider colors
     laf.setColour(juce::Slider::backgroundColourId, getColour(SURFACE));
-    laf.setColour(juce::Slider::thumbColourId, getColour(ACCENT_BLUE));
+    laf.setColour(juce::Slider::thumbColourId, getColour(CONTROL_SLIDER_THUMB));
     laf.setColour(juce::Slider::trackColourId, getColour(BUTTON_NORMAL));
-    laf.setColour(juce::Slider::rotarySliderFillColourId, getColour(ACCENT_BLUE));
+    laf.setColour(juce::Slider::rotarySliderFillColourId, getColour(CONTROL_VALUE_FILL));
     laf.setColour(juce::Slider::rotarySliderOutlineColourId, getColour(BORDER));
     laf.setColour(juce::Slider::textBoxTextColourId, getColour(TEXT_PRIMARY));
     laf.setColour(juce::Slider::textBoxBackgroundColourId, getColour(SURFACE));

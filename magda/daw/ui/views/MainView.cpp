@@ -2781,48 +2781,45 @@ void MainView::MasterHeaderPanel::resized() {
     contentArea.removeFromTop(14);  // "Master" label row
     contentArea.removeFromTop(6);   // padding below the label
 
-    contentArea.removeFromLeft(4);  // Extra left padding
-
-    // Two rows sharing the same three columns. Each segment width is explicit:
-    //   col1 (value / -inf) | col2 (meter, fills) | col3 (icon)
-    //   value 0.0           | (empty)             | mute
-    //   -inf                | peak meter          | automation
+    // Two rows sharing a fixed icon column. The value/meter column takes the
+    // remaining width; the peak readout sits below the meter instead of
+    // occupying a separate empty-left column.
     const int rowH = 20;
     const int rowGap = 2;
     const int colGap = 6;
     const int iconSize = 20;
-    const int rightMargin = 12;  // keep the icons off the right border
+    const int rowLeftInset = 6;
+    const int iconRightInset = 8;
 
-    const int totalW = contentArea.getWidth();
-    const int col1 = totalW * 15 / 100;                                // value readout / -inf
-    const int col3 = iconSize;                                         // icon column
-    const int col2 = totalW - col1 - col3 - 2 * colGap - rightMargin;  // meter fills
+    const int iconColumnWidth = iconSize;
+    const int mainColumnWidth =
+        juce::jmax(0, contentArea.getWidth() - iconColumnWidth - colGap - iconRightInset);
 
     auto row1 = contentArea.removeFromTop(rowH);
     contentArea.removeFromTop(rowGap);
-    auto row2 = contentArea.removeFromTop(rowH);
+    auto meterRow = contentArea;
 
-    // Split a row into [col1][gap][col2][gap][col3][rightMargin].
-    auto split = [&](juce::Rectangle<int> row) {
-        std::array<juce::Rectangle<int>, 3> c;
-        c[0] = row.removeFromLeft(col1);
-        row.removeFromLeft(colGap);
-        c[1] = row.removeFromLeft(col2);
-        row.removeFromLeft(colGap);
-        c[2] = row.removeFromLeft(col3);
-        return c;
-    };
+    auto topMain = row1.removeFromLeft(mainColumnWidth);
+    row1.removeFromLeft(colGap);
+    auto topIcon = row1.removeFromLeft(iconColumnWidth);
 
-    auto r1 = split(row1);
-    auto r2 = split(row2);
+    auto meterMain = meterRow.removeFromLeft(mainColumnWidth);
+    meterRow.removeFromLeft(colGap);
+    auto meterIcon = meterRow.removeFromLeft(iconColumnWidth);
 
-    // Row 1, col1 is empty; the volume value sits above the meter (col2).
-    volumeLabel->setBounds(r1[1]);
-    speakerButton->setBounds(r1[2].withSizeKeepingCentre(iconSize, iconSize));
+    topMain.removeFromLeft(rowLeftInset);
+    meterMain.removeFromLeft(rowLeftInset);
 
-    peakValueLabel->setBounds(r2[0]);
-    peakMeter->setBounds(r2[1]);
-    automationButton->setBounds(r2[2].withSizeKeepingCentre(iconSize, iconSize));
+    constexpr int peakReadoutHeight = 10;
+    auto peakReadout = meterMain.removeFromBottom(peakReadoutHeight);
+    auto peakMeterBounds = meterMain;
+
+    volumeLabel->setBounds(topMain);
+    speakerButton->setBounds(topIcon.withSizeKeepingCentre(iconSize, iconSize));
+
+    peakMeter->setBounds(peakMeterBounds);
+    peakValueLabel->setBounds(peakReadout);
+    automationButton->setBounds(meterIcon.withSizeKeepingCentre(iconSize, iconSize));
 }
 
 void MainView::MasterHeaderPanel::masterChannelChanged() {
