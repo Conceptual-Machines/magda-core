@@ -268,7 +268,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainLabel_.setRange(-60.0, 12.0, 0.0);
     gainLabel_.setValue(device_.gainDb, juce::dontSendNotification);
     gainLabel_.setFontSize(10.0f);
-    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     gainLabel_.onValueChange = [this]() {
         // Use TrackManager method to notify AudioBridge for audio sync
         magda::TrackManager::getInstance().setDeviceGainDb(

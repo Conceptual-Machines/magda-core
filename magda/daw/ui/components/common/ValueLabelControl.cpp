@@ -219,9 +219,9 @@ void ValueLabelControl::paint(juce::Graphics& g) {
     }
 
     if (showFillIndicator_) {
-        auto fillBase = customFillColour_.value_or(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        const float fillAlpha = customFillColour_ ? fillBase.getFloatAlpha() : 0.3f;
-        g.setColour(fillBase.withAlpha(fillAlpha * alpha));
+        auto fillBase =
+            customFillColour_.value_or(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+        g.setColour(fillBase.withMultipliedAlpha(alpha));
 
         if (fillMode_ == FillMode::PanCentre) {
             const float centreX = bounds.getCentreX();
