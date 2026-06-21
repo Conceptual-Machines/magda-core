@@ -364,7 +364,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (stepSequencerUI_)
         return 500;
     if (polyStepSequencerUI_)
-        return 560;
+        return 720;  // 560 grid + ~156 right-hand control panel
     if (oscilloscopeUI_)
         return 500;
     if (spectrumAnalyzerUI_)
