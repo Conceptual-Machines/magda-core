@@ -344,34 +344,11 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     }
 
     // Draw playhead line if playing
-    if (playheadPosition_ >= 0.0 && clipLengthBeats_ > 0.0) {
-        // Convert seconds to beats
-        double tempo = 120.0;
-        if (auto* controller = TimelineController::getCurrent()) {
-            tempo = controller->getState().tempo.bpm;
-        }
-        double secondsPerBeat = 60.0 / tempo;
-        double playheadBeats = playheadPosition_ / secondsPerBeat;
-
-        // Only draw when playhead falls within the clip's time range
-        double relBeat = playheadBeats - clipStartBeats_;
-        if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
-            double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
-
-            // Wrap playhead within loop region when looping is enabled
-            if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-                double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
-                beatPos = std::fmod(beatPos, loopLengthBeats_);
-                if (beatPos < 0.0)
-                    beatPos += loopLengthBeats_;
-                displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
-            }
-
-            int playheadX = beatToPixel(displayBeat);
-            if (playheadX >= 0 && playheadX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-                g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
-            }
+    {
+        int playheadX = 0;
+        if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }
 
@@ -2528,6 +2505,37 @@ void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {
         playheadPosition_ = positionSeconds;
         repaint();
     }
+}
+
+bool PianoRollGridComponent::getPlayheadDisplayX(int& gridLocalX) const {
+    if (playheadPosition_ < 0.0 || clipLengthBeats_ <= 0.0)
+        return false;
+
+    // Convert seconds to beats
+    double tempo = 120.0;
+    if (auto* controller = TimelineController::getCurrent())
+        tempo = controller->getState().tempo.bpm;
+    double secondsPerBeat = 60.0 / tempo;
+    double playheadBeats = playheadPosition_ / secondsPerBeat;
+
+    // Only visible when the playhead falls within the clip's time range
+    double relBeat = playheadBeats - clipStartBeats_;
+    if (relBeat < 0.0 || relBeat > clipLengthBeats_)
+        return false;
+
+    double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
+
+    // Wrap playhead within loop region when looping is enabled
+    if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+        double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
+        beatPos = std::fmod(beatPos, loopLengthBeats_);
+        if (beatPos < 0.0)
+            beatPos += loopLengthBeats_;
+        displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
+    }
+
+    gridLocalX = beatToPixel(displayBeat);
+    return true;
 }
 
 void PianoRollGridComponent::setEditCursorPosition(double positionSeconds, bool blinkVisible) {

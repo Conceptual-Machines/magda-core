@@ -215,8 +215,9 @@ void ChordClipContent::onGridToggleClicked() {
 }
 
 bool ChordClipContent::isOnLaneDivider(juce::Point<int> p) const {
-    // The divider sits at the bottom edge of the chord lane (above the ruler).
-    return std::abs(p.y - laneHeight_) <= DIVIDER_HIT;
+    // The divider sits at the bottom edge of the chord lane (the ruler is above
+    // the lane, so the lane starts at chordRowTop()).
+    return std::abs(p.y - (chordRowTop() + laneHeight_)) <= DIVIDER_HIT;
 }
 
 int ChordClipContent::annotationIndexAtBeat(double beat) const {
@@ -365,7 +366,7 @@ void ChordClipContent::mouseMove(const juce::MouseEvent& e) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
         return;
     }
-    if (e.y < chordRowHeight() && e.x >= chordLaneLeftX()) {
+    if (e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight() && e.x >= chordLaneLeftX()) {
         const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
         if (idx >= 0) {
             const auto mode = dragModeForBlock(idx, e.x);
@@ -386,7 +387,7 @@ void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
         draggingDivider_ = true;
         return;
     }
-    if (e.y < chordRowHeight() && e.x >= chordLaneLeftX()) {
+    if (e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight() && e.x >= chordLaneLeftX()) {
         const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
         if (idx >= 0) {
             grabKeyboardFocus();  // so Delete removes the chord, not the clip
@@ -411,7 +412,7 @@ void ChordClipContent::mouseDown(const juce::MouseEvent& e) {
 
 void ChordClipContent::mouseDrag(const juce::MouseEvent& e) {
     if (draggingDivider_) {
-        laneHeight_ = juce::jlimit(MIN_LANE_HEIGHT, maxLaneHeight(), e.y);
+        laneHeight_ = juce::jlimit(MIN_LANE_HEIGHT, maxLaneHeight(), e.y - chordRowTop());
         resized();
         repaint();
         return;
@@ -449,7 +450,7 @@ void ChordClipContent::paintOverChildren(juce::Graphics& g) {
     if (x2 <= x1)
         return;
 
-    const juce::Rectangle<int> ghost(x1 + 1, 2, x2 - x1 - 2, chordRowHeight() - 4);
+    const juce::Rectangle<int> ghost(x1 + 1, chordRowTop() + 2, x2 - x1 - 2, chordRowHeight() - 4);
     const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
     g.setColour(accent.withAlpha(0.22f));
     g.fillRoundedRectangle(ghost.toFloat(), 4.0f);
@@ -483,7 +484,7 @@ void ChordClipContent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void ChordClipContent::mouseDoubleClick(const juce::MouseEvent& e) {
-    if (e.y < chordRowHeight() && e.x >= chordLaneLeftX()) {
+    if (e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight() && e.x >= chordLaneLeftX()) {
         const int idx = annotationIndexAtBeat(chordRowBeatForX(e.x));
         if (idx >= 0) {
             openChordEditor(idx);
@@ -516,7 +517,8 @@ void ChordClipContent::openChordEditor(int annIndex) {
     const double bar = ann.beatPosition;
     const int x1 = chordRowXForBeat(ann.beatPosition);
     const int x2 = chordRowXForBeat(ann.beatPosition + ann.lengthBeats);
-    const juce::Rectangle<int> blockLocal(x1, 2, std::max(20, x2 - x1), chordRowHeight() - 4);
+    const juce::Rectangle<int> blockLocal(x1, chordRowTop() + 2, std::max(20, x2 - x1),
+                                          chordRowHeight() - 4);
     const auto screenArea = localAreaToGlobal(blockLocal);
 
     auto popup =
@@ -745,7 +747,7 @@ bool ChordClipContent::isInterestedInFileDrag(const juce::StringArray& files) {
 
 void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y) {
     // Only the chord lane accepts chord drops.
-    if (y >= chordRowHeight())
+    if (y < chordRowTop() || y >= chordRowTop() + chordRowHeight())
         return;
 
     for (const auto& f : files) {

@@ -805,6 +805,10 @@ void PianoRollContent::setGridPixelsPerBeat(double ppb) {
 void PianoRollContent::setGridPlayheadPosition(double position) {
     if (gridComponent_)
         gridComponent_->setPlayheadPosition(position);
+    // The chord-band playhead is painted by this component (over the chord row),
+    // so repaint that strip to keep it in step with the grid's playhead.
+    if (showChordRow_)
+        repaint(chordLaneLeftX(), chordRowTop(), getWidth() - chordLaneLeftX(), chordRowHeight());
 }
 
 void PianoRollContent::setGridEditCursorPosition(double pos, bool visible) {
@@ -856,18 +860,19 @@ void PianoRollContent::paint(juce::Graphics& g) {
         drawSidebar(g, sidebarArea);
     }
 
-    // Draw chord row at the top (if visible)
+    // Draw chord row below the ruler (if visible)
     if (showChordRow_) {
         auto chordArea = getLocalBounds();
         chordArea.removeFromLeft(sidebarWidth());
+        chordArea.removeFromTop(chordRowTop());  // ruler occupies the top band
         chordArea = chordArea.removeFromTop(chordRowHeight());
         chordArea.removeFromLeft(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
         drawChordRow(g, chordArea);
 
         // Horizontal separator at bottom of chord row — full width
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(chordRowHeight() - 1, static_cast<float>(sidebarWidth()),
-                             static_cast<float>(getWidth()));
+        g.drawHorizontalLine(chordRowTop() + chordRowHeight() - 1,
+                             static_cast<float>(sidebarWidth()), static_cast<float>(getWidth()));
     }
 
     // Draw velocity drawer header (if open) — only for legacy path without MidiDrawer
@@ -881,12 +886,26 @@ void PianoRollContent::paint(juce::Graphics& g) {
 }
 
 void PianoRollContent::paintOverChildren(juce::Graphics& g) {
-    // Extend the ruler's tick-area border line through the sidebar/keyboard corner
-    int rulerTop = showChordRow_ ? chordRowHeight() : 0;
-    int tickLineY = rulerTop + RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
+    // The ruler now sits at the very top; extend its tick-area border line
+    // through the sidebar/keyboard corner.
+    int tickLineY = RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.fillRect(sidebarWidth(), tickLineY, ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH,
                1);
+
+    // Playhead over the chord blocks. The grid only draws the playhead across
+    // the note grid, so mirror it in the chord-row band using the exact x the
+    // grid drew (incl. loop wrap) so the two stay locked while scrolling.
+    if (showChordRow_ && gridComponent_ && viewport_) {
+        int gridX = 0;
+        if (gridComponent_->getPlayheadDisplayX(gridX)) {
+            const int contentX = viewport_->getX() + gridX - viewport_->getViewPositionX();
+            if (contentX >= chordLaneLeftX() && contentX <= getWidth()) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                g.fillRect(contentX - 1, chordRowTop(), 2, chordRowHeight());
+            }
+        }
+    }
 }
 
 void PianoRollContent::resized() {
@@ -900,8 +919,8 @@ void PianoRollContent::resized() {
     const bool hasSidebar = sidebarWidth() > 0;
     int iconSize = 22;
     int padding = (sidebarWidth() - iconSize) / 2;
-    // Chord toggle at top of sidebar — vertically centered in chord row height
-    int chordToggleY = showChordRow_ ? (chordRowHeight() - iconSize) / 2 : padding;
+    // Chord toggle in the sidebar — vertically centered in the chord-row band
+    int chordToggleY = showChordRow_ ? chordRowTop() + (chordRowHeight() - iconSize) / 2 : padding;
     chordToggle_->setVisible(hasSidebar);
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
     // Fold toggle directly below the chord toggle
@@ -933,7 +952,14 @@ void PianoRollContent::resized() {
     pitchGlideToggle_->setBounds(padding, getHeight() - 3 * (iconSize + padding), iconSize,
                                  iconSize);
 
-    // Skip chord row space if visible (drawn in paint)
+    // Ruler row at the very top, above the chord lane.
+    {
+        auto rulerArea = bounds.removeFromTop(RULER_HEIGHT);
+        rulerArea.removeFromLeft(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
+        timeRuler_->setBounds(rulerArea);
+    }
+
+    // Chord lane sits directly below the ruler (drawn in paint).
     if (showChordRow_) {
         bounds.removeFromTop(chordRowHeight());
         const int detectSize = 18;
@@ -955,19 +981,19 @@ void PianoRollContent::resized() {
         progressionOverlayToggle_->setActive(showProgressionOverlay_);
 
         if (chordMode) {
-            // Grid show/hide toggle: right side of the ruler row, just below the
-            // chord lane (the ruler stays visible when the grid is hidden).
+            // Grid show/hide toggle: right side of the ruler row at the top (the
+            // ruler stays visible when the grid is hidden).
             const int gridSize = 14;
             const int rightMargin = 6;
             const int gx = chordLaneLeftX() - gridSize - rightMargin;
-            const int gy = chordRowHeight() + (RULER_HEIGHT - gridSize) / 2;
+            const int gy = (RULER_HEIGHT - gridSize) / 2;
             gridToggleBtn_->setBounds(gx, gy, gridSize, gridSize);
             gridToggleBtn_->setActive(gridShown());  // accent when the grid is visible
         } else {
             // Rescan button: keyboard column, vertically centred in the chord row.
             const int detectX =
                 sidebarWidth() + ZOOM_STRIP_WIDTH + (KEYBOARD_WIDTH - detectSize) / 2;
-            const int detectY = (chordRowHeight() - detectSize) / 2;
+            const int detectY = chordRowTop() + (chordRowHeight() - detectSize) / 2;
             chordDetectBtn_->setBounds(detectX, detectY, detectSize, detectSize);
             if (overlayApplies)
                 progressionOverlayToggle_->setBounds(detectX + detectSize + 2, detectY, detectSize,
@@ -1019,11 +1045,6 @@ void PianoRollContent::resized() {
         takeLanes_->setVisible(false);
     }
 
-    // Ruler row
-    auto headerArea = bounds.removeFromTop(RULER_HEIGHT);
-    headerArea.removeFromLeft(ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH);
-    timeRuler_->setBounds(headerArea);
-
     auto zoomStripArea = bounds.removeFromLeft(ZOOM_STRIP_WIDTH);
     verticalZoomStrip_->setBounds(zoomStripArea);
 
@@ -1058,7 +1079,7 @@ void PianoRollContent::resized() {
 void PianoRollContent::mouseDown(const juce::MouseEvent& e) {
     // Chord lane click: offer it to the subclass hook (chord-clip add). The
     // standard piano roll's hook returns false, so the event falls through.
-    if (showChordRow_ && e.y < chordRowHeight()) {
+    if (showChordRow_ && e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight()) {
         const int leftPanelWidth =
             sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
         if (e.x >= leftPanelWidth && horizontalZoom_ > 0.0) {
@@ -1119,8 +1140,9 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
     const auto gesture = magda::GestureRouter::getInstance().resolve(
         magda::GestureContext::PianoRoll, wheel, e.mods, e.getPosition());
 
-    // Check if mouse is over the chord row area (very top, only when visible)
-    if (showChordRow_ && e.y < chordRowHeight() && e.x >= leftPanelWidth) {
+    // Check if mouse is over the chord row band (below the ruler, when visible)
+    if (showChordRow_ && e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight() &&
+        e.x >= leftPanelWidth) {
         if (gesture.type == magda::GestureActionType::ScrollHorizontal &&
             timeRuler_->onScrollRequested) {
             int scrollAmount = static_cast<int>(-gesture.magnitude);
@@ -1130,9 +1152,8 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
         return;
     }
 
-    // Check if mouse is over the time ruler area
-    int rulerTop = showChordRow_ ? chordRowHeight() : 0;
-    if (e.y >= rulerTop && e.y < headerHeight && e.x >= leftPanelWidth) {
+    // Check if mouse is over the time ruler area (very top)
+    if (e.y < RULER_HEIGHT && e.x >= leftPanelWidth) {
         if (gesture.type == magda::GestureActionType::ScrollHorizontal &&
             timeRuler_->onScrollRequested) {
             int scrollAmount = static_cast<int>(-gesture.magnitude);
@@ -1741,7 +1762,8 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
     // velocity). Layout mirrors resized() so the lines sit in the gaps.
     const int iconSize = 22;
     const int padding = (sidebarWidth() - iconSize) / 2;
-    const int chordToggleY = showChordRow_ ? (chordRowHeight() - iconSize) / 2 : padding;
+    const int chordToggleY =
+        showChordRow_ ? chordRowTop() + (chordRowHeight() - iconSize) / 2 : padding;
 
     int topClusterBottom = chordToggleY + iconSize;  // chord only
     if (foldToggle_)
