@@ -114,9 +114,10 @@ PianoRollContent::PianoRollContent() {
     addAndMakeVisible(progressionOverlayToggle_.get());
 
     // Chord-focus mode shows this in place of the rescan button: a toggle that
-    // shows/hides the note grid.
-    gridToggleBtn_ = std::make_unique<magda::SvgButton>("GridToggle", BinaryData::piano_roll_svg,
-                                                        BinaryData::piano_roll_svgSize);
+    // shows/hides the note grid below the chord lane. A light chevron keeps the
+    // gutter unobtrusive; it accents when the grid is shown.
+    gridToggleBtn_ = std::make_unique<magda::SvgButton>("GridToggle", BinaryData::chevron_down_svg,
+                                                        BinaryData::chevron_down_svgSize);
     gridToggleBtn_->setTooltip("Show / hide the piano roll");
     gridToggleBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
     gridToggleBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -954,10 +955,13 @@ void PianoRollContent::resized() {
         progressionOverlayToggle_->setActive(showProgressionOverlay_);
 
         if (chordMode) {
-            // Grid show/hide toggle: bottom-centre of the chord-lane gutter.
-            const int gx = (chordLaneLeftX() - detectSize) / 2;
-            const int gy = chordRowHeight() - detectSize - 6;
-            gridToggleBtn_->setBounds(gx, gy, detectSize, detectSize);
+            // Grid show/hide toggle: right side of the ruler row, just below the
+            // chord lane (the ruler stays visible when the grid is hidden).
+            const int gridSize = 14;
+            const int rightMargin = 6;
+            const int gx = chordLaneLeftX() - gridSize - rightMargin;
+            const int gy = chordRowHeight() + (RULER_HEIGHT - gridSize) / 2;
+            gridToggleBtn_->setBounds(gx, gy, gridSize, gridSize);
             gridToggleBtn_->setActive(gridShown());  // accent when the grid is visible
         } else {
             // Rescan button: keyboard column, vertically centred in the chord row.
