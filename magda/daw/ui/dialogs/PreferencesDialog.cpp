@@ -333,7 +333,7 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 5) + 12 + secGap + headerH + 4 +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 6) + 16 + secGap + headerH + 4 +
                rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
     }
 
@@ -347,6 +347,7 @@ class GeneralPage : public juce::Component {
                + secGap + headerH + 4 + rowH             // Timeline
                + secGap + headerH + 4 + rowH + 4 + rowH  // Transport
                + secGap + headerH + 4 + rowH + 4 + rowH  // Auto-Save
+               + secGap + headerH + 4 + rowH + 18        // Language
                + padding;
     }
 
@@ -357,8 +358,7 @@ class GeneralPage : public juce::Component {
         constexpr int secGap = 12;
 
         return padding + headerH + 4 + rowH + 4 + rowH   // Layout
-               + secGap + headerH + 4 + (rowH * 5) + 16  // Behaviour
-               + secGap + headerH + 4 + rowH + 18        // Language
+               + secGap + headerH + 4 + (rowH * 6) + 20  // Behaviour
                + secGap + headerH + 4 + rowH + 4 + rowH  // Display Scale
                + padding;
     }
@@ -475,6 +475,13 @@ class GeneralPage : public juce::Component {
         autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
         left.removeFromTop(4);
         layoutTextSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
+        left.removeFromTop(secGap);
+
+        // Language
+        languageHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutComboRow(left, languageLabel, languageCombo, rowH);
+        restartHint.setBounds(left.removeFromTop(18));
 
         // Layout
         layoutHeader.setBounds(right.removeFromTop(headerH));
@@ -498,13 +505,6 @@ class GeneralPage : public juce::Component {
         openPluginWindowOnDropToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
-        right.removeFromTop(secGap);
-
-        // Language
-        languageHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        layoutComboRow(right, languageLabel, languageCombo, rowH);
-        restartHint.setBounds(right.removeFromTop(18));
         right.removeFromTop(secGap);
 
         // Display Scale
