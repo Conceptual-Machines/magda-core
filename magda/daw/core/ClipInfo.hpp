@@ -138,6 +138,12 @@ struct AudioSourceInterpretation {
  * Loop recording captures each pass as its own audio file (Tracktion splits the
  * continuous recording at the loop boundaries). filePath is the on-disk source
  * for that pass; durationSeconds is its audio length.
+ *
+ * Takes have no per-take time offset: they are loop-aligned alternatives that
+ * all share the clip start (take 0 at t=0). Recording before the loop with Loop
+ * on therefore does not preserve the pre-loop lead-in as a take; the clip is
+ * loop-aligned. Supporting a lead-in would require a per-take offset here and in
+ * the comp model.
  */
 struct AudioTake {
     juce::String filePath;

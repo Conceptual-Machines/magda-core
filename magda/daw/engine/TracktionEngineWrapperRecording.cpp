@@ -138,6 +138,16 @@ void TracktionEngineWrapper::recordingFinished(
             double startSeconds = audioClip->getPosition().getStart().inSeconds();
             double lengthSeconds = audioClip->getPosition().getLength().inSeconds();
 
+            // NOTE: loop recording is loop-aligned. Tracktion anchors the clip
+            // at the loop region and splits the capture into one take per loop
+            // pass, so if recording started before the loop, the pre-loop
+            // lead-in is NOT preserved as part of a take. By design: our take
+            // model (AudioTake) has no per-take time offset and comping assumes
+            // all takes share the clip start (take 0 at t=0), so loop-only takes
+            // could not be aligned inside a clip that began before the loop.
+            // Recording before the loop with Loop on therefore yields a
+            // loop-region clip, not a lead-in plus takes.
+
             // Loop recording: Tracktion split the continuous capture into one
             // take (audio file) per loop pass and registered them on the clip.
             // Harvest them before we drop TE's clip, so no pass is lost. Each
@@ -331,25 +341,37 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
         DBG("RecPreview::drain: popped=" << eventsPopped);
     }
 
-    // Grow each preview's length to match the playhead, in beats.
+    // Grow each preview's length to match the playhead and sample its waveform.
     double currentBeat = transportSecondsToBeats(edit, getCurrentPosition());
     for (auto& [trackId, preview] : recordingPreviews_) {
-        juce::ignoreUnused(trackId);
         double newLength = currentBeat - preview.startBeat;
-        if (newLength > preview.currentLengthBeats)
+        const bool extending = newLength > preview.currentLengthBeats;
+        if (extending)
             preview.currentLengthBeats = newLength;
-    }
 
-    // Sample metering data for audio-recording tracks
-    if (audioBridge_) {
-        auto& meteringBuffer = audioBridge_->getRecordingMeteringBuffer();
-        for (auto& [trackId, preview] : recordingPreviews_) {
-            if (!preview.isAudioRecording)
-                continue;
-
+        if (preview.isAudioRecording && audioBridge_) {
             MeterData data;
-            if (meteringBuffer.drainToLatest(trackId, data)) {
-                preview.audioPeaks.push_back({data.peakL, data.peakR});
+            if (audioBridge_->getRecordingMeteringBuffer().drainToLatest(trackId, data)) {
+                const AudioPeakSample peak{data.peakL, data.peakR};
+                if (extending || preview.audioPeaks.empty() || preview.currentLengthBeats <= 0.0) {
+                    // First pass (incl. any pre-loop lead-in): append as the
+                    // preview grows.
+                    preview.audioPeaks.push_back(peak);
+                } else {
+                    // Loop recording wrapped the playhead back: the preview
+                    // length is frozen at the first pass, so overwrite the peak
+                    // at the current playhead position instead of appending.
+                    // Each loop pass then redraws its own take live — the
+                    // pre-loop lead-in stays put while the loop region updates
+                    // every cycle — rather than the preview freezing or every
+                    // pass piling into the same rectangle (which looked like the
+                    // waveform scrolling backwards past the loop end).
+                    const int n = static_cast<int>(preview.audioPeaks.size());
+                    const double frac =
+                        (currentBeat - preview.startBeat) / preview.currentLengthBeats;
+                    const int idx = juce::jlimit(0, n - 1, static_cast<int>(frac * n));
+                    preview.audioPeaks[static_cast<size_t>(idx)] = peak;
+                }
             }
         }
     }
