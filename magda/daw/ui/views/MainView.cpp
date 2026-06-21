@@ -907,6 +907,10 @@ void MainView::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(cornerBottomBorderLine);
     }
+    if (!markerCornerRightBorderLine.isEmpty()) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(markerCornerRightBorderLine);
+    }
 
     auto arrangementLayout = computeArrangementLayout();
     SideColumn headerColumn(!arrangementLayout.swapped);
@@ -1155,6 +1159,17 @@ void MainView::resized() {
         markerLaneSeparatorLine =
             markerLaneVisible_ ? juce::Rectangle<int>(lineX, markerCornerArea.getBottom(), lineW, 1)
                                : juce::Rectangle<int>();
+        // Vertical border closing off the marker-lane gutter from the marker
+        // content beside it (the content sits opposite the header column).
+        if (!markerCornerRightBorderLine.isEmpty())
+            repaint(markerCornerRightBorderLine.expanded(1));
+        const int markerBorderX = arrangementLayout.swapped
+                                      ? arrangementLayout.markerLaneArea.getRight()
+                                      : arrangementLayout.markerLaneArea.getX() - 1;
+        markerCornerRightBorderLine =
+            markerLaneVisible_
+                ? juce::Rectangle<int>(markerBorderX, markerCornerArea.getY(), 1, markerLaneHeight)
+                : juce::Rectangle<int>();
         cornerSeparatorLine =
             juce::Rectangle<int>(lineX, topRow.getBottom() + rowGap / 2, lineW, 1);
         // Bottom border closing off the gutter at the ruler/track boundary, so
