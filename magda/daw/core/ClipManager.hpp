@@ -600,6 +600,11 @@ class ClipManager {
      */
     void clearClipboard();
 
+    /**
+     * @brief Set the clip clipboard from external MIDI notes, such as a sequencer pattern.
+     */
+    void setMidiClipClipboard(std::vector<MidiNote> notes, juce::String name = "Sequencer Pattern");
+
     // ========================================================================
     // Note Clipboard Operations (for MIDI note copy/paste)
     // ========================================================================

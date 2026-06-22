@@ -46,6 +46,7 @@
 #include "slot/DeviceSlotMidiUiBinding.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
 #include "slot/DeviceSlotTraits.hpp"
+#include "slot/SequencerDeviceControls.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -475,14 +476,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
                              /*toggling*/ false);
         randomButton_->setTooltip("Randomize pattern");
-        randomButton_->onClick = [this]() {
-            if (traits_.isPolyStepSequencer) {
-                if (auto* poly = customUI_.getPolyStepSeqPlugin())
-                    poly->randomizePattern();
-            } else if (auto* stepSeqPlugin = customUI_.getStepSeqPlugin()) {
-                stepSeqPlugin->randomizePattern();
-            }
-        };
+        randomButton_->onClick = [this]() { randomizeSequencerPattern(traits_, customUI_); };
         addAndMakeVisible(*randomButton_);
 
         // MIDI-thru toggle (moved out of the sequencer body into the header).
@@ -493,14 +487,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
         midiThruButton_->setToggleable(true);
         midiThruButton_->onClick = [this]() {
-            const bool on = !midiThruButton_->isActive();
-            midiThruButton_->setActive(on);
-            if (traits_.isPolyStepSequencer) {
-                if (auto* p = customUI_.getPolyStepSeqPlugin())
-                    p->midiThru = on;
-            } else if (auto* p = customUI_.getStepSeqPlugin()) {
-                p->midiThru = on;
-            }
+            if (auto enabled = toggleSequencerMidiThru(traits_, customUI_))
+                midiThruButton_->setActive(*enabled);
         };
         addAndMakeVisible(*midiThruButton_);
 
@@ -512,14 +500,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         stepRecordButton_->setTooltip("Step record: play notes to fill steps");
         stepRecordButton_->setToggleable(true);
         stepRecordButton_->onClick = [this]() {
-            const bool on = !stepRecordButton_->isActive();
-            stepRecordButton_->setActive(on);
-            if (traits_.isPolyStepSequencer) {
-                if (auto* p = customUI_.getPolyStepSeqPlugin())
-                    p->setStepRecording(on);
-            } else if (auto* p = customUI_.getStepSeqPlugin()) {
-                p->setStepRecording(on);
-            }
+            if (auto enabled = toggleSequencerStepRecording(traits_, customUI_))
+                stepRecordButton_->setActive(*enabled);
         };
         addAndMakeVisible(*stepRecordButton_);
     }
@@ -913,21 +895,18 @@ void DeviceSlotComponent::timerCallback() {
 
         // Keep the step-seq header toggles in sync with plugin state.
         if (midiThruButton_ != nullptr || stepRecordButton_ != nullptr) {
-            bool thru = false;
-            bool rec = false;
-            if (traits_.isPolyStepSequencer) {
-                if (auto* p = customUI_.getPolyStepSeqPlugin()) {
-                    thru = p->midiThru.get();
-                    rec = p->isStepRecording();
-                }
-            } else if (auto* p = customUI_.getStepSeqPlugin()) {
-                thru = p->midiThru.get();
-                rec = p->isStepRecording();
+            const auto sequencerState = getSequencerDeviceHeaderState(traits_, customUI_);
+            if (sequencerState.available) {
+                if (midiThruButton_ != nullptr &&
+                    midiThruButton_->isActive() != sequencerState.midiThru)
+                    midiThruButton_->setActive(sequencerState.midiThru);
+                const bool recChanged = stepRecordButton_ != nullptr &&
+                                        stepRecordButton_->isActive() != sequencerState.recording;
+                if (recChanged)
+                    stepRecordButton_->setActive(sequencerState.recording);
+                if (sequencerState.recording || recChanged)
+                    repaint();
             }
-            if (midiThruButton_ != nullptr && midiThruButton_->isActive() != thru)
-                midiThruButton_->setActive(thru);
-            if (stepRecordButton_ != nullptr && stepRecordButton_->isActive() != rec)
-                stepRecordButton_->setActive(rec);
         }
     } else {
         // Poll device peak levels for right-side meter strip
@@ -1588,13 +1567,7 @@ juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    DeviceSlotStepRecordingPaintState stepRecording;
-    if (auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-        traits_.isStepSequencer && stepSeqPlugin != nullptr && stepSeqPlugin->isStepRecording()) {
-        stepRecording.active = true;
-        stepRecording.position = stepSeqPlugin->stepRecordPosition_.load(std::memory_order_relaxed);
-        stepRecording.maxSteps = juce::jlimit(1, 32, stepSeqPlugin->numSteps.get());
-    }
+    const auto stepRecording = getSequencerDeviceHeaderState(traits_, customUI_).stepRecording;
 
     paintDeviceSlotContent(g, contentArea,
                            {.traits = traits_,

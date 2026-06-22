@@ -490,8 +490,12 @@ void PolyStepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                     --recordHeldCount_;
                 if (recordHeldCount_ == 0) {
                     const int pos = stepRecordPosition_.load(std::memory_order_relaxed);
-                    if (pos < maxSteps)
-                        stepRecordPosition_.store(pos + 1, std::memory_order_relaxed);
+                    if (pos < maxSteps) {
+                        const int nextPos = pos + 1;
+                        stepRecordPosition_.store(nextPos, std::memory_order_relaxed);
+                        if (nextPos >= maxSteps)
+                            stepRecording_.store(false, std::memory_order_relaxed);
+                    }
                 }
             }
         }

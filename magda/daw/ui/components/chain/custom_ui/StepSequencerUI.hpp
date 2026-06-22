@@ -129,6 +129,9 @@ class StepSequencerUI : public juce::Component,
 
     // ValueTree::Listener
     void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
+    void valueTreeChildAdded(juce::ValueTree& parentTree, juce::ValueTree& child) override;
+    void valueTreeChildRemoved(juce::ValueTree& parentTree, juce::ValueTree& child,
+                               int indexFromWhichChildWasRemoved) override;
 
     // Timer — poll playback position
     void timerCallback() override;

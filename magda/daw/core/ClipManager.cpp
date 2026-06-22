@@ -3092,6 +3092,35 @@ void ClipManager::clearClipboard() {
     clipboardReferenceTime_ = 0.0;
 }
 
+void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String name) {
+    clipboard_.clear();
+    clipboardReferenceTime_ = 0.0;
+
+    if (notes.empty())
+        return;
+
+    double minBeat = notes.front().startBeat;
+    double maxEndBeat = notes.front().startBeat + notes.front().lengthBeats;
+    for (const auto& note : notes) {
+        minBeat = std::min(minBeat, note.startBeat);
+        maxEndBeat = std::max(maxEndBeat, note.startBeat + note.lengthBeats);
+    }
+
+    for (auto& note : notes)
+        note.startBeat -= minBeat;
+
+    ClipInfo clip;
+    clip.setMidiContent();
+    clip.name = std::move(name);
+    clip.trackId = INVALID_TRACK_ID;
+    clip.view = ClipView::Arrangement;
+    clip.midiNotes = std::move(notes);
+    clip.setPlacementBeats(0.0, juce::jmax(0.25, maxEndBeat - minBeat));
+    clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
+
+    clipboard_.push_back(std::move(clip));
+}
+
 // ============================================================================
 // Note Clipboard Operations
 // ============================================================================

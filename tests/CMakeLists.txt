@@ -238,6 +238,7 @@ target_sources(magda_juce_tests PRIVATE
     test_arrangement_transport_loop_juce.cpp
     test_external_plugin_state_restore_juce.cpp
     test_chord_progression_converter_juce.cpp
+    ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 
 # Link required libraries for JUCE tests

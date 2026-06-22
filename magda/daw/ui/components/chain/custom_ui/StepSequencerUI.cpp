@@ -231,6 +231,20 @@ void StepSequencerUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Ide
     });
 }
 
+void StepSequencerUI::valueTreeChildAdded(juce::ValueTree&, juce::ValueTree&) {
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
+        if (safeThis)
+            safeThis->syncFromPlugin();
+    });
+}
+
+void StepSequencerUI::valueTreeChildRemoved(juce::ValueTree&, juce::ValueTree&, int) {
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
+        if (safeThis)
+            safeThis->syncFromPlugin();
+    });
+}
+
 void StepSequencerUI::timerCallback() {
     if (!plugin_)
         return;
@@ -249,7 +263,9 @@ void StepSequencerUI::timerCallback() {
     // Track step record position for highlight + parent header banner
     bool isRec = plugin_->isStepRecording();
     if (isRec) {
-        int recPos = plugin_->stepRecordPosition_.load(std::memory_order_relaxed);
+        int numSteps = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+        int recPos = juce::jlimit(0, numSteps - 1,
+                                  plugin_->stepRecordPosition_.load(std::memory_order_relaxed));
         if (recPos != selectedStep_) {
             selectedStep_ = recPos;
             needsRepaint = true;
