@@ -86,12 +86,31 @@ class GainSliderWithMeterTooltip : public juce::Slider {
         : juce::Slider(style, textPos), meter_(meter) {}
 
     double valueToProportionOfLength(double value) override {
-        return magda::level_meter_scale::dbFillProportion(value);
+        const auto minDb = getMinimum();
+        const auto maxDb = getMaximum();
+        value = juce::jlimit(minDb, maxDb, value);
+
+        if (maxDb <= magda::level_meter_scale::maxDb || value <= 0.0)
+            return magda::level_meter_scale::dbFillProportion(value);
+
+        const auto zeroDbPos = magda::level_meter_scale::dbFillProportion(0.0);
+        const auto headroomNorm = juce::jlimit(0.0, 1.0, value / maxDb);
+        return zeroDbPos + headroomNorm * (1.0 - zeroDbPos);
     }
 
     double proportionOfLengthToValue(double proportion) override {
-        return magda::level_meter_scale::meterPosToDb(
-            static_cast<float>(juce::jlimit(0.0, 1.0, proportion)));
+        const auto minDb = getMinimum();
+        const auto maxDb = getMaximum();
+        proportion = juce::jlimit(0.0, 1.0, proportion);
+
+        const auto zeroDbPos = magda::level_meter_scale::dbFillProportion(0.0);
+        if (maxDb <= magda::level_meter_scale::maxDb || proportion <= zeroDbPos) {
+            const auto db = magda::level_meter_scale::meterPosToDb(static_cast<float>(proportion));
+            return juce::jlimit(minDb, maxDb, static_cast<double>(db));
+        }
+
+        const auto headroomNorm = (proportion - zeroDbPos) / (1.0 - zeroDbPos);
+        return juce::jlimit(minDb, maxDb, headroomNorm * maxDb);
     }
 
     juce::String getTooltip() override {
