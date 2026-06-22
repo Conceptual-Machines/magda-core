@@ -141,3 +141,6 @@ mix-analysis-*.txt
 # Local exploratory scratch dirs (not tracked)
 eval/
 tools/
+
+# Local app export artifact
+MAGDA.zip
