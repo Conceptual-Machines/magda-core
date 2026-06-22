@@ -19,6 +19,10 @@ Displayed in the bottom panel when a drum clip is selected or a DrumGrid device 
     - **Overlay tracks** — Show other tracks' notes as a ghost overlay, same as in the [Piano Roll](piano-roll.md#overlay-tracks-ghost-notes). Ghost hits land on the row matching their pitch; notes that do not map to a pad row are skipped.
     - **Fullscreen** — Pinned to the far right, this toggle expands the editor to fill the window. Click again to restore. Shared with the Piano Roll.
 
+!!! note "Sidebar controls"
+    - **Fold** — Collapse the grid to only the pads in use, hiding empty lanes (**Fold to used pads**)
+    - **CC** — Add a CC or pitchbend lane to the drawer, the same way as in the [Piano Roll](piano-roll.md#control-lanes). The menu offers **Pitchbend**, common controllers (**CC 1 (Mod Wheel)**, **CC 7 (Volume)**, **CC 11 (Expression)**, **CC 64 (Sustain)**), and **Custom CC...**
+
 !!! note "Footer controls"
     - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity lane at the bottom of the editor
 

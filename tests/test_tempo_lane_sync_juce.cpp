@@ -2,6 +2,7 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ControlTarget.hpp"
@@ -19,6 +20,8 @@ class TempoLaneSyncTest final : public juce::UnitTest {
     TempoLaneSyncTest() : juce::UnitTest("Tempo Lane Sync Tests", "magda") {}
 
     void runTest() override {
+        magda::test::ScopedJuceTestState state;
+
         auto& wrapper = magda::test::getSharedEngine();
         auto edit =
             te::Edit::createSingleTrackEdit(*wrapper.getEngine(), te::Edit::EditRole::forEditing);
@@ -78,8 +81,6 @@ class TempoLaneSyncTest final : public juce::UnitTest {
         am.deleteLane(laneId);  // keep the AutomationManager singleton clean.
 
         edit.reset();
-        if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
-            mm->runDispatchLoopUntil(50);
     }
 };
 

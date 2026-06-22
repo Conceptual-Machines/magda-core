@@ -39,6 +39,10 @@ enum {
     addMarker = 0x2005,
     goToPreviousMarker = 0x2006,
     goToNextMarker = 0x2007,
+    goToLoopStart = 0x2008,
+    goToLoopEnd = 0x2009,
+    goToSelectionStart = 0x200A,
+    goToSelectionEnd = 0x200B,
 
     // Track menu
     newAudioTrack = 0x3000,

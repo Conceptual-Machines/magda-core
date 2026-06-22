@@ -7,6 +7,7 @@
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
@@ -37,7 +38,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
                          tracktion::engine::TransportControl& transport,
                          std::function<void()> onComplete, double prerollSeconds = 0.0,
                          double leadInSilence = 0.0)
-        : ThreadWithProgressWindow(tr("export.progress.exporting_audio"), true, true),
+        : ThreadWithProgressWindow(trEllipsis("export.progress.exporting_audio"), true, true),
           params_(params),
           outputFile_(outputFile),
           reallocationInhibitor_(transport),
@@ -48,14 +49,14 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
           // isn't thread-safe and the user can change language mid-export, so
           // reading it from the background thread would data-race.
           strRendering_(tr("export.progress.rendering")),
-          strTrimming_(tr("export.progress.trimming")),
+          strTrimming_(trEllipsis("export.progress.trimming")),
           strComplete_(tr("export.progress.complete")),
           strFailed_(tr("export.progress.failed")),
           errTrimFailed_(tr("export.error.trim_failed")),
           errFileNotCreated_(tr("export.error.file_not_created")),
           errRenderFailed_(tr("export.error.render_failed")),
           errCancelled_(tr("export.error.cancelled")) {
-        setStatusMessage(tr("export.progress.preparing"));
+        setStatusMessage(trEllipsis("export.progress.preparing"));
     }
 
     void run() override {
@@ -314,6 +315,23 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             te::Renderer::Parameters params(*edit);
             params.destFile = file;
 
+            // The chord track is monitor-only: exclude it from the bounce so its
+            // notes never reach the master render. tracksToDo lists every track
+            // index to render (empty = all), so we set all but the chord track.
+            if (auto chordId = magda::TrackManager::getInstance().getChordTrackId();
+                chordId != magda::INVALID_TRACK_ID) {
+                if (auto* bridge = engine->getAudioBridge()) {
+                    if (auto* chordTe = bridge->getAudioTrack(chordId)) {
+                        auto allTracks = te::getAllTracks(*edit);
+                        juce::BigInteger tracksToDo;
+                        for (int i = 0; i < allTracks.size(); ++i)
+                            if (allTracks[i] != chordTe)
+                                tracksToDo.setBit(i);
+                        params.tracksToDo = tracksToDo;
+                    }
+                }
+            }
+
             // Set audio format
             auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
             if (settings.format.startsWith("WAV")) {
@@ -470,9 +488,12 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
     if (rangeEndBeats <= rangeStartBeats) {
         DBG("No MIDI clips found - rangeEndBeats <= rangeStartBeats");
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                               tr("export.alert.midi_title"),
-                                               tr("export.error.no_midi_clips"));
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            tr("action.export")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+            tr("export.error.no_midi_clips")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
         return;
     }
 
@@ -514,9 +535,12 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     DBG("Track data count: " << trackData.size());
     if (trackData.empty()) {
         DBG("No MIDI clips with notes found");
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                               tr("export.alert.midi_title"),
-                                               tr("export.error.no_midi_notes"));
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            tr("action.export")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+            tr("export.error.no_midi_notes")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
         return;
     }
 
@@ -530,8 +554,9 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     auto defaultFile = defaultDir.getChildFile(projName + ".mid");
 
     // Launch file chooser
-    fileChooser_ = std::make_unique<juce::FileChooser>(tr("export.alert.midi_title"), defaultFile,
-                                                       "*.mid", true);
+    fileChooser_ = std::make_unique<juce::FileChooser>(
+        tr("action.export").replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+        defaultFile, "*.mid", true);
 
     auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                  juce::FileBrowserComponent::warnAboutOverwriting;
@@ -689,11 +714,14 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             if (written) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::InfoIcon, tr("export.alert.complete_title"),
-                    tr("export.alert.midi_success_prefix") + "\n" + file.getFullPathName());
+                    tr("export.alert.midi_success_prefix")
+                            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)) +
+                        "\n" + file.getFullPathName());
             } else {
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                       tr("export.alert.failed_title"),
-                                                       tr("export.error.midi_write_failed"));
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, tr("export.alert.failed_title"),
+                    tr("export.error.midi_write_failed")
+                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
             }
         } else {
             DBG("Failed to open output stream for: " << file.getFullPathName());

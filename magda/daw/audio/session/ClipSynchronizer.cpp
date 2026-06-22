@@ -18,16 +18,12 @@ namespace magda {
 
 namespace {
 
-double timelineStartSeconds(const ClipInfo& clip, double bpm) {
-    return clip.getTimelineStart(bpm);
-}
-
-double timelineLengthSeconds(const ClipInfo& clip, double bpm) {
-    return clip.getTimelineLength(bpm);
-}
-
-double timelineEndSeconds(const ClipInfo& clip, double bpm) {
-    return clip.getTimelineEnd(bpm);
+// Project tempo sampled at the clip's start beat (curve-aware), for the
+// source<->time conversions TE's time-only APIs (clip offset, non-autoTempo
+// loop range) still require. Never sample at time 0: that ignores the tempo
+// automation and is wrong the moment the tempo isn't constant.
+double projectBpmAtClip(te::Edit& edit, const ClipInfo& clip) {
+    return edit.tempoSequence.getBpmAtBeat(te::BeatPosition::fromBeats(clip.placement.startBeat));
 }
 
 double timelineLengthBeats(const ClipInfo& clip, double bpm) {
@@ -313,16 +309,14 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                 // disrupting a playing LaunchHandle.
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
-                    // Issue #1157: read clip length through the accessor —
-                    // for autoTempo session clips this is lengthBeats × 60 /
-                    // projectBPM regardless of whether the seconds cache is
-                    // fresh, so TE never gets a stale length after a project
-                    // tempo change.
-                    const double syncBPM = edit_.tempoSequence.getBpmAt(te::TimePosition());
-                    const double clipLengthSeconds = clip->getTimelineLength(syncBPM);
-                    auto currentLength = teClip->getPosition().getLength();
-                    if (std::abs(currentLength.inSeconds() - clipLengthSeconds) > 0.0001) {
-                        teClip->setLength(te::TimeDuration::fromSeconds(clipLengthSeconds), false);
+                    // Push the length to TE in beats and let the engine resolve
+                    // the seconds from its tempo sequence. This stays correct
+                    // under a tempo ramp with no re-push, and avoids the
+                    // beat->seconds round-trip that drifts when the tempo curve
+                    // varies (issue #1157).
+                    const double clipLengthBeats = clip->placement.lengthBeats;
+                    if (std::abs(teClip->getLengthBeats().inBeats() - clipLengthBeats) > 1.0e-6) {
+                        teClip->setLength(te::BeatDuration::fromBeats(clipLengthBeats), false);
                     }
 
                     // Update launch quantization (lightweight CachedValue, always safe)
@@ -330,8 +324,10 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                     if (lq) {
                         lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
                     }
+                    const double followBpm = edit_.tempoSequence.getBpmAtBeat(
+                        te::BeatPosition::fromBeats(clip->placement.startBeat));
                     needsGraphReallocation =
-                        syncFollowActionToTracktionClip(*teClip, *clip, syncBPM) ||
+                        syncFollowActionToTracktionClip(*teClip, *clip, followBpm) ||
                         needsGraphReallocation;
 
                     // AutoTempo handling for audio clips
@@ -347,7 +343,7 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                         // and toggling it breaks the audio pipeline.
 
                         // Time-based loop state (existing behavior)
-                        double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                        double projectBpm = projectBpmAtClip(edit_, *clip);
                         if (clip->loopEnabled) {
                             if (clip->getSourceLength(projectBpm) > 0.0) {
                                 teClip->setLoopRange(te::TimeRange(
@@ -376,14 +372,14 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                         if (clip->loopEnabled) {
                             if (isAutoTempoAudio) {
                                 // AutoTempo: loop beats come from beat fields
-                                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                                double bpm = projectBpmAtClip(edit_, *clip);
                                 auto [loopStartBeats, loopLengthBeats] =
                                     ClipOperations::getAutoTempoBeatRange(*clip, bpm);
                                 if (loopLengthBeats > 0.0)
                                     launchHandle->setLooping(
                                         te::BeatDuration::fromBeats(loopLengthBeats));
                             } else {
-                                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                                double bpm = projectBpmAtClip(edit_, *clip);
                                 double loopLengthSeconds =
                                     clip->getSourceLength(bpm) / clip->speedRatio;
                                 double bps = bpm / 60.0;
@@ -438,7 +434,7 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                             sequence.clear(nullptr);
 
                             // For MIDI, use beat-authoritative clip length as boundary.
-                            const double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                            const double bpm = projectBpmAtClip(edit_, *clip);
                             double clipLengthBeats = timelineLengthBeats(*clip, bpm);
                             for (const auto& note : clip->midiNotes) {
                                 double start = note.startBeat;
@@ -645,11 +641,13 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             return false;
         }
 
-        // Create clip directly in the slot
-        const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double clipDuration = timelineLengthSeconds(*clip, projectBpm);
+        // Create the clip in the slot. insertWaveClip only takes a time range,
+        // so let the engine resolve the beat length to time; the length is then
+        // anchored in beats below (TE owns the tempo sequence).
+        auto& ts = edit_.tempoSequence;
+        const double lengthBeats = clip->placement.lengthBeats;
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                       te::TimePosition::fromSeconds(clipDuration));
+                                       ts.toTime(te::BeatPosition::fromBeats(lengthBeats)));
 
         auto clipRef = te::insertWaveClip(*slot, audioFile.getFileNameWithoutExtension(), audioFile,
                                           te::ClipPosition{timeRange}, te::DeleteExistingClips::no);
@@ -658,6 +656,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             return false;
 
         auto* audioClipPtr = clipRef.get();
+        audioClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
 
         // Populate source file metadata from TE's loopInfo. For a freshly
         // imported session clip, loopLengthBeats starts as a sentinel and is
@@ -673,7 +672,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
                                                loopInfoRef.getBpm(waveInfo));
                 initialiseSourceLoopBeatsFromMetadata(*mutableClip);
                 if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
-                    double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    double projectBpm = projectBpmAtClip(edit_, *clip);
                     cm.refreshDerivedSeconds(clipId, projectBpm);
                     cm.forceNotifyClipPropertyChanged(clipId);
                 }
@@ -710,13 +709,13 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
             // Set file offset (trim point) - relative to loop start, in stretched time
             {
-                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                double bpm = projectBpmAtClip(edit_, *clip);
                 audioClipPtr->setOffset(
                     te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled, bpm)));
             }
 
             // Set looping properties
-            double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+            double bpm = projectBpmAtClip(edit_, *clip);
             if (clip->loopEnabled && clip->getSourceLength(bpm) > 0.0) {
                 audioClipPtr->setLoopRange(
                     te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
@@ -727,7 +726,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             // Neutralize embedded tempo metadata by setting source BPM = project
             // BPM so the stretch ratio is 1.0 and no unwanted speed change occurs.
             {
-                double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                double projectBpm = projectBpmAtClip(edit_, *clip);
                 auto& li = audioClipPtr->getLoopInfo();
                 auto waveInfo = audioClipPtr->getWaveInfo();
                 li.setBpm(projectBpm, waveInfo);
@@ -739,8 +738,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (auto* lq = audioClipPtr->getLaunchQuantisation()) {
             lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
         }
-        syncFollowActionToTracktionClip(*audioClipPtr, *clip,
-                                        edit_.tempoSequence.getBpmAt(te::TimePosition()));
+        syncFollowActionToTracktionClip(*audioClipPtr, *clip, projectBpmAtClip(edit_, *clip));
 
         // Sync session-applicable audio properties at creation
         {
@@ -777,13 +775,13 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (auto lh = audioClipPtr->getLaunchHandle()) {
             if (clip->loopEnabled) {
                 if (clip->autoTempo) {
-                    double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    double bpm = projectBpmAtClip(edit_, *clip);
                     auto [loopStartBeats, loopLengthBeats] =
                         ClipOperations::getAutoTempoBeatRange(*clip, bpm);
                     if (loopLengthBeats > 0.0)
                         lh->setLooping(te::BeatDuration::fromBeats(loopLengthBeats));
                 } else {
-                    double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    double bpm = projectBpmAtClip(edit_, *clip);
                     const double sourceLength = clip->getSourceLength(bpm);
                     if (sourceLength > 0.0) {
                         double loopDurationBeats = (sourceLength / clip->speedRatio) * (bpm / 60.0);
@@ -801,17 +799,20 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         return true;
 
     } else if (clip->isMidi()) {
-        // Create MIDI clip directly in the slot
-        const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double clipDuration = timelineLengthSeconds(*clip, projectBpm);
+        // Create the MIDI clip in the slot. insertMIDIClip only takes a time
+        // range, so let the engine resolve the beat length to time; the length
+        // is then anchored in beats below.
+        auto& ts = edit_.tempoSequence;
+        const double lengthBeats = clip->placement.lengthBeats;
         auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                       te::TimePosition::fromSeconds(clipDuration));
+                                       ts.toTime(te::BeatPosition::fromBeats(lengthBeats)));
 
         auto clipRef = te::insertMIDIClip(*slot, timeRange);
         if (!clipRef)
             return false;
 
         auto* midiClipPtr = clipRef.get();
+        midiClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
 
         // Force offset to 0 — note shifting is handled manually below
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
@@ -819,7 +820,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         // Add MIDI notes (skip/truncate at loop boundary to prevent stuck notes)
         // Apply midiOffset: exclude notes before offset, shift remaining notes
         auto& sequence = midiClipPtr->getSequence();
-        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double bpm = projectBpmAtClip(edit_, *clip);
         double srcLength = clip->getSourceLength(bpm);
         double loopStartBeat = clip->loopStart * (bpm / 60.0);
         double loopLengthBeats = srcLength * (bpm / 60.0);
@@ -866,7 +867,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (auto* lq = midiClipPtr->getLaunchQuantisation()) {
             lq->type = clip_launch::toTracktionLaunchQType(clip->launchQuantize);
         }
-        syncFollowActionToTracktionClip(*midiClipPtr, *clip, projectBpm);
+        syncFollowActionToTracktionClip(*midiClipPtr, *clip, bpm);
 
         // Set LaunchHandle looping state at creation time
         if (auto lh = midiClipPtr->getLaunchHandle()) {
@@ -907,7 +908,7 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip) {
         if (clip->loopEnabled) {
-            double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+            double bpm = projectBpmAtClip(edit_, *clip);
             double srcLength = clip->getSourceLength(bpm);
             if (clip->isAudio() && clip->autoTempo) {
                 auto [loopStartBeats, loopLengthBeats] =
@@ -1102,13 +1103,13 @@ void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
         audioClip->setAutoTempo(true);
 
     // Set offset — for autoTempo, convert source seconds to timeline seconds
-    double bpmForOffset = edit_.tempoSequence.getBpmAt(te::TimePosition());
+    double bpmForOffset = projectBpmAtClip(edit_, *clip);
     audioClip->setOffset(
         te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled, bpmForOffset)));
 
     // Set beat-based loop range using the same helper as arrangement path
     if (clip->loopEnabled) {
-        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double bpm = projectBpmAtClip(edit_, *clip);
         auto [loopStartBeats, loopLengthBeats] = ClipOperations::getAutoTempoBeatRange(*clip, bpm);
         if (loopLengthBeats > 0.0) {
             audioClip->setLoopRangeBeats(
@@ -1453,7 +1454,7 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
             {te::BeatPosition::fromBeats(0.0), te::BeatPosition::fromBeats(loopBeats)});
 
         // Set TE offset from midiOffset (beats) so playback starts at the phase position
-        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double bpm = projectBpmAtClip(edit_, *clip);
         double phaseSeconds = clip->midiOffset * (60.0 / bpm);
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(phaseSeconds));
     } else {
@@ -1632,11 +1633,15 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             return needsGraphReallocation;
         }
 
-        const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double createStart = timelineStartSeconds(*clip, projectBpm);
-        double createEnd = timelineEndSeconds(*clip, projectBpm);
-        auto timeRange = te::TimeRange(te::TimePosition::fromSeconds(createStart),
-                                       te::TimePosition::fromSeconds(createEnd));
+        // Curve-aware: place the new clip by converting its beat range through
+        // insertWaveClip only accepts a time ClipPosition, so let the engine's
+        // tempo sequence resolve the beat range to time (curve-exact). Section 4
+        // below re-anchors the clip in beats immediately after, so this is just
+        // the initial placement.
+        auto& ts = edit_.tempoSequence;
+        auto timeRange =
+            te::TimeRange(ts.toTime(te::BeatPosition::fromBeats(clip->placement.startBeat)),
+                          ts.toTime(te::BeatPosition::fromBeats(clip->placement.endBeat())));
 
         auto clipRef =
             insertWaveClip(*audioTrack, audioFile.getFileNameWithoutExtension(), audioFile,
@@ -1681,7 +1686,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
                                                loopInfoRef.getBpm(waveInfo));
                 initialiseSourceLoopBeatsFromMetadata(*mutableClip);
                 if (sourceInterpretationBpmWasUnset && mutableClip->autoTempo) {
-                    double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    double projectBpm = projectBpmAtClip(edit_, *clip);
                     cm.refreshDerivedSeconds(clipId, projectBpm);
                     cm.forceNotifyClipPropertyChanged(clipId);
                 }
@@ -1738,22 +1743,24 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     }
 
     // 4. UPDATE clip position/length
-    const double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-    double engineStart = timelineStartSeconds(*clip, projectBpm);
-    double engineEnd = timelineEndSeconds(*clip, projectBpm);
+    // Push the placement to TE in beats. The engine owns the tempo sequence and
+    // resolves the seconds itself, so the clip stays anchored to its musical
+    // position under a tempo ramp with no re-push (no beat->seconds round-trip
+    // that would drift and cut playback short on a downward ramp).
+    const double startBeat = clip->placement.startBeat;
+    const double lengthBeats = clip->placement.lengthBeats;
 
-    auto currentPos = audioClipPtr->getPosition();
-    auto currentStart = currentPos.getStart().inSeconds();
-    auto currentEnd = currentPos.getEnd().inSeconds();
+    const double currentStartBeat = audioClipPtr->getStartBeats().inBeats();
+    const double currentLengthBeats = audioClipPtr->getLengthBeats().inBeats();
 
-    // Use setPosition() to update start and length atomically (reduces audio glitches)
-    bool needsPositionUpdate =
-        std::abs(currentStart - engineStart) > 0.001 || std::abs(currentEnd - engineEnd) > 0.001;
+    bool needsPositionUpdate = std::abs(currentStartBeat - startBeat) > 1.0e-6 ||
+                               std::abs(currentLengthBeats - lengthBeats) > 1.0e-6;
 
     if (needsPositionUpdate) {
-        auto newTimeRange = te::TimeRange(te::TimePosition::fromSeconds(engineStart),
-                                          te::TimePosition::fromSeconds(engineEnd));
-        audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
+        // preserveSync=false keeps the content read offset; keepLength=true
+        // moves the clip first, then setLength applies the exact beat length.
+        audioClipPtr->setStart(te::BeatPosition::fromBeats(startBeat), false, true);
+        audioClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
     }
 
     // 5. UPDATE speed ratio and auto-tempo mode
@@ -1854,8 +1861,8 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // The loop range defines the clip's musical extent (not just the loop region)
 
         if (clip->loopEnabled) {
-            // Get tempo for beat calculations
-            double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
+            // Get tempo for beat calculations (curve-aware, at the clip's beat).
+            double bpm = projectBpmAtClip(edit_, *clip);
 
             // Override TE's loopInfo to match our calibrated source interpretation.
             // setAutoTempo calibrates source interpretation BPM = projectBPM / speedRatio so that
@@ -1879,7 +1886,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // Time-based mode: Use time-based loop range
         // Only use setLoopRange (time-based), NOT setLoopRangeBeats which forces
         // autoTempo=true and speedRatio=1.0, breaking time-stretch.
-        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double bpm = projectBpmAtClip(edit_, *clip);
         if (clip->loopEnabled && clip->getSourceLength(bpm) > 0.0) {
             auto loopStartTime = te::TimePosition::fromSeconds(clip->getTeLoopStart());
             auto loopEndTime = te::TimePosition::fromSeconds(clip->getTeLoopEnd(bpm));
@@ -1892,7 +1899,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     // 7. UPDATE audio offset (trim point in file)
     // Must come AFTER loop range — setLoopRangeBeats resets offset internally
     {
-        double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double projectBpm = projectBpmAtClip(edit_, *clip);
         double teOffset = juce::jmax(0.0, clip->getTeOffset(clip->loopEnabled, projectBpm));
         auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
         if (std::abs(currentOffset - teOffset) > 0.001) {

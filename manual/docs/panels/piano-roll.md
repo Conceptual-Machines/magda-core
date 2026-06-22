@@ -25,8 +25,9 @@ Displayed in the bottom panel when a MIDI clip is selected. Provides a grid for 
     - **Fullscreen** — Pinned to the far right, this toggle expands the MIDI editor to fill the window. Click again to restore. Available for the Piano Roll and Drum Grid Editor.
 
 !!! note "Sidebar controls"
-    Stacked at the bottom of the left sidebar:
+    Stacked on the left sidebar:
 
+    - **Fold** — Collapse the grid to only the pitches in use (see [Fold](#fold))
     - **MPE** — Toggle pitch glide editing (see [Pitch Glides](#pitch-glides-mpe))
     - **CC** — Add a CC or pitchbend lane to the drawer
     - **Velocity** — Toggle the control-lane drawer at the bottom of the editor
@@ -39,6 +40,14 @@ The drawer at the bottom of the editor holds the clip's control lanes, stacked v
 - Add **CC** and **pitchbend** lanes with the **+** button at the bottom of the lane header column (or the **CC** sidebar button). The menu offers **Pitchbend**, common controllers (**CC 1 (Mod Wheel)**, **CC 7 (Volume)**, **CC 11 (Expression)**, **CC 64 (Sustain)**) and **Custom CC...** for any controller number.
 - Each added lane shows its name in the header column with a close button; the pitchbend lane also has a **Range** field for the bend range in semitones.
 - Drag the drawer's top edge to resize it. The drawer grows automatically as lanes are added.
+
+## Fold
+
+The **Fold** sidebar button collapses the vertical axis to only the pitches that are actually used in the clip, hiding the empty rows in between. Every remaining row is labelled, and the view re-centres on the used notes when you toggle it. Folding is handy on sparse parts — a bassline or a lead — so you can see all the notes without scrolling. With Fold on, dragging a note vertically snaps through the used-pitch rows. The same control exists in the [Drum Grid Editor](drum-grid-editor.md) as **Fold to used pads**.
+
+## Take Lanes
+
+When a MIDI clip holds more than one recorded take, click **Show take lanes** in the editor header to reveal the folded take strip below the grid and comp the takes together. See [Recording Takes & Comping](../recording-comping.md#comping-midi).
 
 ## Pitch Glides (MPE)
 

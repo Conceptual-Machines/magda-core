@@ -2,15 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <map>
 
 #include "core/ParameterUtils.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_limiter.generated.cpp"
-#include "plugins/FaustMetadataParser.hpp"
-#include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
@@ -19,90 +12,115 @@ const char* MagdaLimiterCompiledPlugin::xmlTypeName = "magda_limiter";
 
 namespace {
 
-struct LimiterHarvest {
-    struct Control {
-        int idx = -1;
-        FaustParamSlot::Kind kind = FaustParamSlot::Kind::Continuous;
-        FAUSTFLOAT* zone = nullptr;
-    };
-    std::vector<Control> controls;
-};
+float ampToDb(float amp) {
+    return 20.0f * std::log10(std::max(amp, 1.0e-6f));
+}
 
-class LimiterHarvester : public ::UI {
-  public:
-    LimiterHarvest harvest;
-
-    void openTabBox(const char*) override {}
-    void openHorizontalBox(const char*) override {}
-    void openVerticalBox(const char*) override {}
-    void closeBox() override {}
-
-    void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone);
-    }
-    void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                           FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT,
-                             FAUSTFLOAT, FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT,
-                     FAUSTFLOAT) override {
-        emitControl(FaustParamSlot::Kind::Continuous, label, zone);
-    }
-    void addHorizontalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addVerticalBargraph(const char*, FAUSTFLOAT*, FAUSTFLOAT, FAUSTFLOAT) override {}
-    void addSoundfile(const char*, const char*, Soundfile**) override {}
-
-    void declare(FAUSTFLOAT* zone, const char* key, const char* value) override {
-        if (zone == nullptr)
-            return;
-        const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
-        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
-        applyFaustAnnotation(k, v, pendingByZone_[zone]);
-    }
-
-  private:
-    void emitControl(FaustParamSlot::Kind kind, const char* rawLabel, FAUSTFLOAT* zone) {
-        const auto parsed =
-            parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
-        ControlMetadata merged = parsed.metadata;
-        if (zone != nullptr) {
-            if (auto it = pendingByZone_.find(zone); it != pendingByZone_.end()) {
-                mergeFaustMetadata(merged, it->second);
-                pendingByZone_.erase(it);
-            }
-        }
-
-        LimiterHarvest::Control c;
-        c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
-        c.zone = zone;
-        harvest.controls.push_back(std::move(c));
-    }
-
-    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
-};
-
-const LimiterHarvest::Control* findByIdx(const LimiterHarvest& h, int idx) {
-    for (const auto& c : h.controls)
-        if (c.idx == idx)
-            return &c;
-    return nullptr;
+float realForSlot(const MagdaLimiterCompiledPlugin::HostSlotInfo& s,
+                  te::AutomatableParameter* param) {
+    magda::ParameterInfo info;
+    info.minValue = s.minValue;
+    info.maxValue = s.maxValue;
+    info.scale = s.scale;
+    if (std::isfinite(s.scaleAnchor))
+        info.scaleAnchor = s.scaleAnchor;
+    info.choices = s.choices;
+    return magda::ParameterUtils::normalizedToReal(
+        param != nullptr ? param->getCurrentValue() : 0.0f, info);
 }
 
 }  // namespace
 
+float MagdaLimiterDspCore::dbToGain(float db) {
+    return std::pow(10.0f, db / 20.0f);
+}
+
+float MagdaLimiterDspCore::coefficient(float timeMs, double sampleRate) {
+    const auto samples = std::max(1.0, static_cast<double>(timeMs) * 0.001 * sampleRate);
+    return static_cast<float>(std::exp(-1.0 / samples));
+}
+
+void MagdaLimiterDspCore::prepare(double sampleRate, int, int numChannels) {
+    sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
+    delaySamples_ = std::max(1, static_cast<int>(std::ceil(sampleRate_ * 0.005)));
+    const auto channels = static_cast<size_t>(std::max(1, numChannels));
+    const auto lineLength = static_cast<size_t>(delaySamples_ + 1);
+
+    delayLines_.assign(channels, std::vector<float>(lineLength, 0.0f));
+    frame_.assign(channels, 0.0f);
+    reset();
+}
+
+void MagdaLimiterDspCore::reset() {
+    writeIndex_ = 0;
+    gain_ = 1.0f;
+    for (auto& line : delayLines_)
+        std::fill(line.begin(), line.end(), 0.0f);
+}
+
+MagdaLimiterDspCore::Stats MagdaLimiterDspCore::process(juce::AudioBuffer<float>& buffer,
+                                                        int startSample, int numSamples,
+                                                        const Settings& settings) {
+    Stats stats;
+    const int channels = buffer.getNumChannels();
+    if (channels <= 0 || numSamples <= 0)
+        return stats;
+
+    if (static_cast<int>(delayLines_.size()) < channels)
+        prepare(sampleRate_, numSamples, channels);
+
+    const float thresholdDb = juce::jlimit(-24.0f, 0.0f, settings.thresholdDb);
+    const float preGain = dbToGain(-thresholdDb);
+    const float outputGain = dbToGain(juce::jlimit(-24.0f, 0.0f, settings.outputDb));
+    const float attackCoeff = coefficient(std::max(0.1f, settings.attackMs), sampleRate_);
+    const float releaseCoeff = coefficient(std::max(10.0f, settings.releaseMs), sampleRate_);
+    const int lineLength = static_cast<int>(delayLines_.front().size());
+
+    float maxReduction = 0.0f;
+    for (int i = 0; i < numSamples; ++i) {
+        float detectorPeak = 0.0f;
+        for (int ch = 0; ch < channels; ++ch) {
+            const float input = buffer.getSample(ch, startSample + i);
+            const float finiteInput = std::isfinite(input) ? input : 0.0f;
+            stats.inputPeak = std::max(stats.inputPeak, std::abs(finiteInput));
+
+            const float driven = finiteInput * preGain;
+            delayLines_[static_cast<size_t>(ch)][static_cast<size_t>(writeIndex_)] = driven;
+            detectorPeak = std::max(detectorPeak, std::abs(driven));
+        }
+
+        const float desiredGain = detectorPeak > 1.0f ? 1.0f / detectorPeak : 1.0f;
+        const float coeff = desiredGain < gain_ ? attackCoeff : releaseCoeff;
+        gain_ = desiredGain + coeff * (gain_ - desiredGain);
+        maxReduction = std::max(maxReduction, gain_ < 1.0f ? -ampToDb(gain_) : 0.0f);
+
+        const int readIndex = (writeIndex_ + 1) % lineLength;
+        float postPeak = 0.0f;
+        for (int ch = 0; ch < channels; ++ch) {
+            const float limited =
+                delayLines_[static_cast<size_t>(ch)][static_cast<size_t>(readIndex)] * gain_;
+            frame_[static_cast<size_t>(ch)] = limited;
+            postPeak = std::max(postPeak, std::abs(limited));
+        }
+
+        const float safetyGain = postPeak > 1.0f ? 1.0f / postPeak : 1.0f;
+        for (int ch = 0; ch < channels; ++ch) {
+            const float output = frame_[static_cast<size_t>(ch)] * safetyGain * outputGain;
+            const float clean = std::isfinite(output) ? juce::jlimit(-1.0f, 1.0f, output) : 0.0f;
+            buffer.setSample(ch, startSample + i, clean);
+            stats.outputPeak = std::max(stats.outputPeak, std::abs(clean));
+        }
+
+        writeIndex_ = (writeIndex_ + 1) % lineLength;
+    }
+
+    stats.gainReductionDb = maxReduction;
+    return stats;
+}
+
 MagdaLimiterCompiledPlugin::MagdaLimiterCompiledPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
-    dsp_ = std::make_unique<MagdaLimiterDsp>();
-    constexpr int kProvisionalSampleRate = 44100;
-    rebuildEngineState(kProvisionalSampleRate);
+    limiter_.prepare(44100.0, 512, 2);
     buildHostParameters();
 }
 
@@ -126,68 +144,36 @@ juce::String MagdaLimiterCompiledPlugin::getSelectableDescription() {
     return "Limiter";
 }
 
-void MagdaLimiterCompiledPlugin::rebuildEngineState(int sampleRate) {
-    if (!dsp_)
-        return;
-    dsp_->init(sampleRate);
-    numInputs_ = dsp_->getNumInputs();
-    numOutputs_ = dsp_->getNumOutputs();
-
-    LimiterHarvester harvester;
-    dsp_->buildUserInterface(&harvester);
-
-    zones_.fill(nullptr);
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto* c = findByIdx(harvester.harvest, i))
-            zones_[static_cast<size_t>(i)] = c->zone;
-    }
-}
-
 void MagdaLimiterCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kThresholdSlot] = {.name = "Threshold",
-                                     .unit = "dB",
+                                     .unit =
+                                         magda::technicalText(magda::TechnicalTextToken::Decibels),
                                      .scale = magda::ParameterScale::Linear,
                                      .minValue = -24.0f,
                                      .maxValue = 0.0f,
                                      .defaultValue = -1.0f};
     hostSlotInfo_[kAttackSlot] = {.name = "Attack",
-                                  .unit = "ms",
+                                  .unit =
+                                      magda::technicalText(magda::TechnicalTextToken::Milliseconds),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 0.1f,
                                   .maxValue = 50.0f,
                                   .defaultValue = 1.0f,
                                   .scaleAnchor = 1.0f};
-    hostSlotInfo_[kHoldSlot] = {.name = "Hold",
-                                .unit = "ms",
-                                .scale = magda::ParameterScale::Logarithmic,
-                                .minValue = 1.0f,
-                                .maxValue = 500.0f,
-                                .defaultValue = 50.0f,
-                                .scaleAnchor = 50.0f};
-    hostSlotInfo_[kReleaseSlot] = {.name = "Release",
-                                   .unit = "ms",
-                                   .scale = magda::ParameterScale::Logarithmic,
-                                   .minValue = 10.0f,
-                                   .maxValue = 2000.0f,
-                                   .defaultValue = 200.0f,
-                                   .scaleAnchor = 200.0f};
-    hostSlotInfo_[kMixSlot] = {.name = "Mix",
-                               .scale = magda::ParameterScale::Linear,
-                               .minValue = 0.0f,
-                               .maxValue = 1.0f,
-                               .defaultValue = 1.0f};
+    hostSlotInfo_[kReleaseSlot] = {
+        .name = "Release",
+        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+        .scale = magda::ParameterScale::Logarithmic,
+        .minValue = 10.0f,
+        .maxValue = 2000.0f,
+        .defaultValue = 200.0f,
+        .scaleAnchor = 200.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
-                                  .maxValue = 12.0f,
+                                  .maxValue = 0.0f,
                                   .defaultValue = 0.0f};
-    hostSlotInfo_[kAutogainSlot].name = "Autogain";
-    hostSlotInfo_[kAutogainSlot].scale = magda::ParameterScale::Discrete;
-    hostSlotInfo_[kAutogainSlot].choices = {"Off", "On"};
-    hostSlotInfo_[kAutogainSlot].minValue = 0.0f;
-    hostSlotInfo_[kAutogainSlot].maxValue = 1.0f;
-    hostSlotInfo_[kAutogainSlot].defaultValue = 0.0f;
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
@@ -206,13 +192,14 @@ void MagdaLimiterCompiledPlugin::buildHostParameters() {
     };
 
     for (int i = 0; i < kHostSlotCount; ++i) {
-        const auto& slot = hostSlotInfo_[i];
+        const auto& slot = hostSlotInfo_[static_cast<size_t>(i)];
         const juce::String id = "magda_limiter_" + slot.name.toLowerCase().replace(" ", "_");
         const juce::Identifier identifier(id);
         const auto info = buildInfo(slot);
         const float defaultNormalized =
             magda::ParameterUtils::realToNormalized(slot.defaultValue, info);
-        hostCached_[i].referTo(state, identifier, undoManager, defaultNormalized);
+        hostCached_[static_cast<size_t>(i)].referTo(state, identifier, undoManager,
+                                                    defaultNormalized);
 
         auto param = addParam(
             id, slot.name, normalisedRange,
@@ -226,112 +213,38 @@ void MagdaLimiterCompiledPlugin::buildHostParameters() {
                     return magda::ParameterUtils::realToNormalized(*parsed, info);
                 return 0.0f;
             });
-        param->attachToCurrentValue(hostCached_[i]);
-        hostParams_[i] = param;
+        param->attachToCurrentValue(hostCached_[static_cast<size_t>(i)]);
+        hostParams_[static_cast<size_t>(i)] = param;
     }
 }
 
 void MagdaLimiterCompiledPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    rebuildEngineState(static_cast<int>(info.sampleRate));
-    scratchIn_.setSize(numInputs_, info.blockSizeSamples, false, true, true);
-    scratchOut_.setSize(numOutputs_, info.blockSizeSamples, false, true, true);
-    inPtrs_.assign(static_cast<size_t>(numInputs_), nullptr);
-    outPtrs_.assign(static_cast<size_t>(numOutputs_), nullptr);
+    limiter_.prepare(info.sampleRate, info.blockSizeSamples, 2);
 }
 
 void MagdaLimiterCompiledPlugin::deinitialise() {
-    scratchIn_.setSize(0, 0);
-    scratchOut_.setSize(0, 0);
-    inPtrs_.clear();
-    outPtrs_.clear();
+    limiter_.reset();
 }
 
 void MagdaLimiterCompiledPlugin::reset() {
-    if (dsp_)
-        dsp_->instanceClear();
+    limiter_.reset();
 }
 
 void MagdaLimiterCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0 || !dsp_)
+    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
 
-    auto realForSlot = [&](int slot) -> float {
-        const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
-        magda::ParameterInfo info;
-        info.minValue = s.minValue;
-        info.maxValue = s.maxValue;
-        info.scale = s.scale;
-        if (std::isfinite(s.scaleAnchor))
-            info.scaleAnchor = s.scaleAnchor;
-        // For Discrete params, normalizedToReal returns 0 when choices is
-        // empty — must copy the choice list across or the conversion is
-        // silently broken for Autogain / Output dropdowns.
-        info.choices = s.choices;
-        const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
-        return magda::ParameterUtils::normalizedToReal(norm, info);
-    };
-    auto writeSlot = [&](int slot) {
-        if (auto* zone = zones_[static_cast<size_t>(slot)])
-            *zone = static_cast<FAUSTFLOAT>(realForSlot(slot));
-    };
-    for (int i = 0; i < kHostSlotCount; ++i)
-        writeSlot(i);
+    MagdaLimiterDspCore::Settings settings;
+    settings.thresholdDb = realForSlot(hostSlotInfo_[kThresholdSlot], hostParams_[kThresholdSlot]);
+    settings.attackMs = realForSlot(hostSlotInfo_[kAttackSlot], hostParams_[kAttackSlot]);
+    settings.releaseMs = realForSlot(hostSlotInfo_[kReleaseSlot], hostParams_[kReleaseSlot]);
+    settings.outputDb = realForSlot(hostSlotInfo_[kOutputSlot], hostParams_[kOutputSlot]);
 
-    const int numSamples = fc.bufferNumSamples;
-    const int startSample = fc.bufferStartSample;
-    const int hostChannels = fc.destBuffer->getNumChannels();
-    if (hostChannels <= 0 || numInputs_ <= 0 || numOutputs_ <= 0)
-        return;
-
-    if (scratchIn_.getNumChannels() < numInputs_ || scratchIn_.getNumSamples() < numSamples)
-        scratchIn_.setSize(numInputs_, numSamples, false, true, true);
-    if (scratchOut_.getNumChannels() < numOutputs_ || scratchOut_.getNumSamples() < numSamples)
-        scratchOut_.setSize(numOutputs_, numSamples, false, true, true);
-    if (static_cast<int>(inPtrs_.size()) < numInputs_)
-        inPtrs_.resize(static_cast<size_t>(numInputs_), nullptr);
-    if (static_cast<int>(outPtrs_.size()) < numOutputs_)
-        outPtrs_.resize(static_cast<size_t>(numOutputs_), nullptr);
-
-    float inputPeak = 0.0f;
-    for (int ch = 0; ch < numInputs_; ++ch) {
-        float* dst = scratchIn_.getWritePointer(ch);
-        if (ch < hostChannels) {
-            const float* src = fc.destBuffer->getReadPointer(ch, startSample);
-            std::copy(src, src + numSamples, dst);
-            for (int i = 0; i < numSamples; ++i)
-                inputPeak = std::max(inputPeak, std::fabs(dst[i]));
-        } else {
-            std::fill(dst, dst + numSamples, 0.0f);
-        }
-        inPtrs_[static_cast<size_t>(ch)] = dst;
-    }
-    for (int ch = 0; ch < numOutputs_; ++ch) {
-        outPtrs_[static_cast<size_t>(ch)] = (ch < hostChannels)
-                                                ? fc.destBuffer->getWritePointer(ch, startSample)
-                                                : scratchOut_.getWritePointer(ch);
-    }
-
-    dsp_->compute(numSamples, inPtrs_.data(), outPtrs_.data());
-
-    float outputPeak = 0.0f;
-    const int channelsToSanitise = std::min(hostChannels, numOutputs_);
-    for (int ch = 0; ch < channelsToSanitise; ++ch) {
-        float* out = fc.destBuffer->getWritePointer(ch, startSample);
-        for (int i = 0; i < numSamples; ++i) {
-            const float sample = out[i];
-            out[i] = std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
-            outputPeak = std::max(outputPeak, std::fabs(out[i]));
-        }
-    }
-
-    // Metering taps for the curve view. GR is the per-block dB difference;
-    // the limiter only attenuates, so input - output is non-negative.
-    auto ampToDb = [](float amp) { return 20.0f * std::log10(std::max(amp, 1.0e-6f)); };
-    const float inDb = ampToDb(inputPeak);
-    const float outDb = ampToDb(outputPeak);
-    inputPeakDb_.store(inDb, std::memory_order_relaxed);
-    outputPeakDb_.store(outDb, std::memory_order_relaxed);
-    gainReductionDb_.store(std::max(0.0f, inDb - outDb), std::memory_order_relaxed);
+    auto stats =
+        limiter_.process(*fc.destBuffer, fc.bufferStartSample, fc.bufferNumSamples, settings);
+    inputPeakDb_.store(ampToDb(stats.inputPeak), std::memory_order_relaxed);
+    outputPeakDb_.store(ampToDb(stats.outputPeak), std::memory_order_relaxed);
+    gainReductionDb_.store(stats.gainReductionDb, std::memory_order_relaxed);
 }
 
 te::AutomatableParameter* MagdaLimiterCompiledPlugin::getSlotParameter(int slotIndex) const {
@@ -379,9 +292,10 @@ float MagdaLimiterCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
 }
 
 constexpr AliasSpec kAliases[] = {
-    {"threshold", 0, "Threshold"}, {"attack", 1, "Attack"}, {"hold", 2, "Hold"},
-    {"release", 3, "Release"},     {"mix", 4, "Mix"},       {"output", 5, "Output"},
-    {"autogain", 6, "Autogain"},
+    {"threshold", 0, "Threshold"},
+    {"attack", 1, "Attack"},
+    {"release", 2, "Release"},
+    {"output", 3, "Output"},
 };
 
 const CompiledPluginSpec& getMagdaLimiterSpec() {
@@ -389,14 +303,10 @@ const CompiledPluginSpec& getMagdaLimiterSpec() {
         .pluginId = MagdaLimiterCompiledPlugin::xmlTypeName,
         .displayName = "Limiter",
         .browserCategory = "Dynamics",
-        .description = "Compiled Faust stereo lookahead brickwall limiter. "
-                       "Sanfilippo co.limiter_lad_stereo design with 5 ms lookahead, "
-                       "peak-holder and tau-smoothed Attack / Hold / Release envelope. "
-                       "Threshold sets the output ceiling in dB; peaks above it are attenuated "
-                       "with minimal coloration, signal below passes through unchanged. "
-                       "Autogain mode reinterprets Threshold as a drive amount, pushing into "
-                       "the limiter for loudness with automatic make-up. "
-                       "Mix and Output blend and trim.",
+        .description = "Native stereo lookahead limiter / autonormalizer. "
+                       "Threshold drives the signal into a fixed 0 dB ceiling, "
+                       "Attack and Release shape gain recovery, and Output is a "
+                       "post-limiter trim limited to negative gain.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaLimiterCompiledPlugin(info);
         },

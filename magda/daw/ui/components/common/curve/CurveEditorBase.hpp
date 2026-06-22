@@ -200,7 +200,13 @@ class CurveEditorBase : public juce::Component {
     void paintDrawingPreview(juce::Graphics& g);
     uint32_t findSegmentOwnerAt(double x) const;
     void toggleSegmentHardCorner(uint32_t pointId);
+    // Flatten a segment back to a straight line (double-click on its handle).
+    void resetSegmentToCenter(uint32_t pointId);
     std::pair<double, double> getSegmentShaperPosition(const CurvePoint& p1, const CurvePoint& p2,
+                                                       double effectiveTension) const;
+    // The position of the draggable segment handle: a point ON the rendered
+    // curve (the quadratic's t=0.5 point), not the off-curve control point.
+    std::pair<double, double> getSegmentHandlePosition(const CurvePoint& p1, const CurvePoint& p2,
                                                        double effectiveTension) const;
     void updateSegmentShaperFromPixel(uint32_t pointId, double pixelX, double pixelY,
                                       bool isPreview);

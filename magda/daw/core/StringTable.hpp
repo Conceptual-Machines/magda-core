@@ -75,4 +75,34 @@ inline juce::String tr(const juce::String& key) {
     return StringTable::getInstance().get(key);
 }
 
+/** The ellipsis affordance glyph (U+2026 …). It is presentation, not
+ *  translatable data, so it is appended in code rather than stored in the
+ *  locale files — this keeps it consistent and at the correct font scale in
+ *  every locale (CJK in particular). */
+inline juce::String ellipsisGlyph() {
+    return juce::String::fromUTF8("\xe2\x80\xa6");
+}
+
+/**
+ * Look up a localized string and guarantee exactly one trailing ellipsis.
+ *
+ * Any ellipsis already present in the source or a translation (ASCII "..." or
+ * one or more "…" glyphs) is stripped first, so this is idempotent and the
+ * locale files can never double up — a translation that still carries "..."
+ * gets normalized to a single "…". Use for menu items, dialog-opening buttons,
+ * and progress messages.
+ */
+inline juce::String trEllipsis(const juce::String& key) {
+    auto s = tr(key).trimEnd();
+    for (;;) {
+        if (s.endsWith(ellipsisGlyph()))
+            s = s.dropLastCharacters(1).trimEnd();
+        else if (s.endsWith("..."))
+            s = s.dropLastCharacters(3).trimEnd();
+        else
+            break;
+    }
+    return s + ellipsisGlyph();
+}
+
 }  // namespace magda

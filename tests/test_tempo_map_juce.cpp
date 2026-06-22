@@ -2,6 +2,7 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/engine/TracktionTempoMap.hpp"
 
@@ -18,6 +19,8 @@ class TempoMapTest final : public juce::UnitTest {
     TempoMapTest() : juce::UnitTest("Tempo Map Tests", "magda") {}
 
     void runTest() override {
+        magda::test::ScopedJuceTestState state;
+
         auto& wrapper = magda::test::getSharedEngine();
 
         // A throwaway Edit with a 120 -> 60 BPM change at beat 16. Separate from
@@ -66,7 +69,7 @@ class TempoMapTest final : public juce::UnitTest {
         expectWithinAbsoluteError(map.bpmAt(0.0), 120.0, 1.0e-6);
         expectWithinAbsoluteError(map.bpmAt(16.0), 60.0, 1.0e-6);
         for (double beat : {0.0, 8.0, 16.0, 24.0}) {
-            double expected = ts.getBpmAt(ts.toTime(te::BeatPosition::fromBeats(beat)));
+            double expected = ts.getBpmAtBeat(te::BeatPosition::fromBeats(beat));
             expectWithinAbsoluteError(map.bpmAt(beat), expected, tol);
         }
 
@@ -76,6 +79,36 @@ class TempoMapTest final : public juce::UnitTest {
             expectWithinAbsoluteError(nullMap.beatToTime(2.0), 1.0, tol);  // 0.5 s/beat
             expectWithinAbsoluteError(nullMap.timeToBeat(1.0), 2.0, tol);
             expectWithinAbsoluteError(nullMap.bpmAt(0.0), 120.0, tol);
+        }
+
+        beginTest("engine wrapper getTempo follows the current playhead position");
+        {
+            auto& engine = magda::test::getSharedEngine();
+            magda::test::resetTransport(engine);
+
+            auto* sharedEdit = engine.getEdit();
+            expect(sharedEdit != nullptr, "Shared Tracktion edit should be available");
+            if (sharedEdit != nullptr) {
+                auto& sharedTempoSeq = sharedEdit->tempoSequence;
+                for (int i = sharedTempoSeq.getNumTempos(); --i > 0;)
+                    sharedTempoSeq.removeTempo(i, false);
+
+                if (auto first = sharedTempoSeq.getTempo(0))
+                    first->setBpm(120.0);
+
+                sharedTempoSeq.insertTempo(te::BeatPosition::fromBeats(16.0), 60.0, 0.0f);
+                const auto laterTime =
+                    sharedTempoSeq.toTime(te::BeatPosition::fromBeats(20.0)).inSeconds();
+
+                engine.locate(laterTime);
+                expectWithinAbsoluteError(engine.getTempo(), 60.0, 1.0e-6);
+
+                engine.locate(0.0);
+                for (int i = sharedTempoSeq.getNumTempos(); --i > 0;)
+                    sharedTempoSeq.removeTempo(i, false);
+                if (auto first = sharedTempoSeq.getTempo(0))
+                    first->setBpm(120.0);
+            }
         }
     }
 };

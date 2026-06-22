@@ -216,7 +216,7 @@ void MagdaFilterCompiledPlugin::rebuildEngineState(int sampleRate) {
 void MagdaFilterCompiledPlugin::buildHostParameters() {
     // Slot 0: Cutoff (continuous, log, anchored at 1 kHz)
     hostSlotInfo_[kCutoffSlot] = {.name = "Cutoff",
-                                  .unit = "Hz",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                   .scale = magda::ParameterScale::Logarithmic,
                                   .minValue = 20.0f,
                                   .maxValue = 20000.0f,

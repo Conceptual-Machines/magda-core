@@ -25,6 +25,8 @@ class AudioEngine;
 class SongNavigatorPanel;
 class MasterAutomationHeaderPanel;
 class MasterAutomationContentPanel;
+class ClickableLabel;
+class LevelMeter;
 
 class MainView : public juce::Component,
                  public juce::ScrollBar::Listener,
@@ -160,7 +162,7 @@ class MainView : public juce::Component,
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
     // Song navigator / minimap occupying the master content strip (issue #1474).
     std::unique_ptr<SongNavigatorPanel> masterContentPanel;
-    int masterStripHeight = 60;
+    int masterStripHeight = 76;
 
     // Master automation band: a pinned strip directly above the master strip
     // hosting the master channel's automation lanes (issue #1482). Fixed-width
@@ -180,7 +182,7 @@ class MainView : public juce::Component,
     int auxSectionHeight = 0;
     bool auxVisible_ = false;
     static constexpr int AUX_ROW_HEIGHT = 30;
-    static constexpr int MIN_MASTER_STRIP_HEIGHT = 40;
+    static constexpr int MIN_MASTER_STRIP_HEIGHT = 76;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
 
     // Cached state from controller for quick access
@@ -215,6 +217,8 @@ class MainView : public juce::Component,
     bool markerLaneVisible_ = true;
     bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
+
+    void dispatchUserPlayheadPositionBeats(double positionBeats, bool bypassSnap);
 
     struct ArrangementLayout {
         bool swapped = false;
@@ -355,6 +359,7 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> secondsRulerToggleButton;
     std::unique_ptr<SvgButton> ioToggleButton;
     std::unique_ptr<SvgButton> addTrackButton;
+    std::unique_ptr<SvgButton> showMasterButton;
     std::unique_ptr<SvgButton> hAxisIcon;
     std::unique_ptr<SvgButton> vAxisIcon;
 
@@ -362,6 +367,9 @@ class MainView : public juce::Component,
     juce::Rectangle<int> markerLaneSeparatorLine;
     juce::Rectangle<int> cornerSeparatorLine;
     juce::Rectangle<int> cornerBottomBorderLine;
+    // Vertical border on the marker-lane row, separating the corner gutter
+    // from the marker-lane content to its side.
+    juce::Rectangle<int> markerCornerRightBorderLine;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };
@@ -446,14 +454,14 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     // button). Shared by the icon button and the header right-click.
     void showMasterAutomationMenu(juce::Component* anchor);
 
-    std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
-    std::unique_ptr<SvgButton> automationButton;          // Show master automation lane
-    std::unique_ptr<DraggableValueLabel> volumeLabel;     // Volume as draggable dB label
+    std::unique_ptr<SvgButton> speakerButton;          // Speaker on/off toggle
+    std::unique_ptr<SvgButton> automationButton;       // Show master automation lane
+    std::unique_ptr<SvgButton> hideButton;             // Hide master row in this view
+    std::unique_ptr<DraggableValueLabel> volumeLabel;  // Volume as draggable dB label
+    std::unique_ptr<ClickableLabel> peakValueLabel;    // Click to reset held peak
+    float peakValue_ = 0.0f;
 
-    // Horizontal stereo meter component
-    class HorizontalStereoMeter;
-    std::unique_ptr<HorizontalStereoMeter> peakMeter;
-    std::unique_ptr<juce::Label> peakValueLabel;  // Peak dB value
+    std::unique_ptr<LevelMeter> peakMeter;  // Horizontal stereo peak meter
 
     void setupControls();
 

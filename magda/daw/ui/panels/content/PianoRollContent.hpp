@@ -28,10 +28,17 @@ class MidiTakeLanesComponent;
  * - Note rectangles in the grid representing MIDI notes (interactive)
  * - Time ruler along the top (switchable between absolute/relative)
  */
-class PianoRollContent : public MidiEditorContent, public magda::SelectionManagerListener {
+class PianoRollContent : public MidiEditorContent,
+                         public magda::SelectionManagerListener,
+                         public juce::ChangeListener {
   public:
     PianoRollContent();
     ~PianoRollContent() override;
+
+    // Notation (C / Do) changes repaint the chord lane immediately.
+    void changeListenerCallback(juce::ChangeBroadcaster*) override {
+        repaint();
+    }
 
     PanelContentType getContentType() const override {
         return PanelContentType::PianoRoll;
@@ -45,6 +52,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
     void onActivated() override;
     void onDeactivated() override;
@@ -82,6 +90,72 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     bool isChordRowVisible() const {
         return showChordRow_;
     }
+
+  protected:
+    // Extension points for a chord-focused subclass (ChordClipContent). The
+    // defaults preserve standard piano-roll behaviour, so PianoRollContent has
+    // no chord-track knowledge of its own.
+    //   chordRowHeight() - height of the chord lane when visible.
+    //   chordFocusMode() - when true the chord lane is forced visible and the
+    //                      velocity/CC lanes + toggles are hidden.
+    virtual int chordRowHeight() const {
+        return CHORD_ROW_HEIGHT;
+    }
+    virtual bool chordFocusMode() const {
+        return false;
+    }
+    // Width of the left icon strip. A chord-focus subclass returns 0 to drop the
+    // strip entirely (its toggles - chord/fold/velocity/CC - are all irrelevant
+    // there).
+    virtual int sidebarWidth() const {
+        return SIDEBAR_WIDTH;
+    }
+    // chordGroup of the selected chord-lane block (0 = none). The chord editor
+    // overrides this so drawChordRow() renders a selection ring + edge resize
+    // handles on it.
+    virtual int selectedChordGroup() const {
+        return 0;
+    }
+    // chordGroup of the chord-lane block currently being auditioned (0 = none);
+    // drawChordRow() tints it to show it's playing.
+    virtual int previewChordGroup() const {
+        return 0;
+    }
+    // Chord-focus mode replaces the chord-row "rescan" button with a show/hide
+    // grid toggle in the gutter; this fires when it's clicked.
+    virtual void onGridToggleClicked() {}
+    // Whether the note grid is currently visible (drives the toggle's active
+    // highlight). The chord editor overrides this.
+    virtual bool gridShown() const {
+        return true;
+    }
+    void setGridToggleActive(bool on);
+    // Pixel x of a chord-lane beat (clip-relative). Inverse of chordRowBeatForX;
+    // used to hit-test and draw chord blocks.
+    int chordRowXForBeat(double clipRelativeBeat) const;
+    // Left pixel x where the chord lane / grid content begins (right of the
+    // keyboard column).
+    int chordLaneLeftX() const {
+        return sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+    }
+    // Top y of the chord lane. The ruler sits at the very top, so the chord lane
+    // (when visible) starts just below it; 0 when the chord row is hidden.
+    int chordRowTop() const {
+        return showChordRow_ ? RULER_HEIGHT : 0;
+    }
+    // Called when the chord lane is clicked at the given clip-relative beat.
+    // Return true to consume the click (the standard piano roll returns false so
+    // the event falls through to the base handler). ChordClipContent uses this
+    // to add a chord at the clicked position.
+    virtual bool onChordRowClicked(double clipRelativeBeat) {
+        (void)clipRelativeBeat;
+        return false;
+    }
+    // Re-run chord detection from the clip's notes (rebuilds the chord lane).
+    void redetectChords();
+    // Clip-relative beat under an x pixel on the chord lane (>= 0). Shared by the
+    // click-to-add handler and chord-drop targets.
+    double chordRowBeatForX(int x) const;
 
   private:
     // MidiEditorContent virtual implementations
@@ -133,6 +207,11 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     bool showChordRow_ = false;
     bool isSyncingChords_ = false;  // Re-entry guard for syncChordAnnotations
 
+    // Progression overlay (#1504): ghost the chord-track progression behind a
+    // normal track's chord lane for reference. Global toggle, shared across
+    // editors so it stays on as you move between clips.
+    static bool showProgressionOverlay_;
+
     // Initial centering flag
     bool needsInitialCentering_ = true;
 
@@ -144,6 +223,8 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
+    std::unique_ptr<magda::SvgButton> progressionOverlayToggle_;  // #1504 ghost overlay
+    std::unique_ptr<magda::SvgButton> gridToggleBtn_;             // chord mode: show/hide grid
     std::unique_ptr<magda::SvgButton> velocityToggle_;
     std::unique_ptr<magda::SvgButton> pitchGlideToggle_;
     std::unique_ptr<magda::SvgButton> ccLanesBtn_;
@@ -171,7 +252,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
 
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {
-        return showChordRow_ ? HEADER_HEIGHT : RULER_HEIGHT;
+        return showChordRow_ ? (chordRowHeight() + RULER_HEIGHT) : RULER_HEIGHT;
     }
 
     std::unique_ptr<magda::OctaveLabelStrip> octaveLabelStrip_;

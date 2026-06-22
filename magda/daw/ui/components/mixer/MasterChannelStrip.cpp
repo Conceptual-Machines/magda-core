@@ -11,11 +11,11 @@
 #include "../../themes/MixerMetrics.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "BinaryData.h"
-#include "LevelMeterBallistics.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -26,6 +26,19 @@ namespace magda {
 namespace {
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;  // Allow +6 dB headroom
+
+int effectiveMixerFaderTopInset(TrackId trackId) {
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        return juce::jlimit(MixerMetrics::minFaderTopInset, MixerMetrics::maxFaderTopInset,
+                            track->mixerFaderTopInset);
+    return MixerMetrics::minFaderTopInset;
+}
+
+int storedMixerFaderTopInset(TrackId trackId) {
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        return track->mixerFaderTopInset;
+    return 0;
+}
 
 float gainToDb(float gain) {
     if (gain <= 0.0f)
@@ -98,17 +111,25 @@ class MasterChannelStrip::ResizeHandle : public juce::Component {
         if (!isDragging_ || !onResize)
             return;
         int deltaY = event.getScreenY() - dragStartY_;
-        onResize(deltaY);
-        dragStartY_ = event.getScreenY();
+        onResize(deltaY, event.mods);
     }
 
-    void mouseUp(const juce::MouseEvent& /*event*/) override {
+    void mouseUp(const juce::MouseEvent& event) override {
         isDragging_ = false;
         isHovering_ = false;
+        if (onResizeEnd)
+            onResizeEnd(event.mods);
         repaint();
     }
 
-    std::function<void(int deltaY)> onResize;
+    void mouseDoubleClick(const juce::MouseEvent& event) override {
+        if (onReset)
+            onReset(event.mods);
+    }
+
+    std::function<void(int deltaY, const juce::ModifierKeys& mods)> onResize;
+    std::function<void(const juce::ModifierKeys& mods)> onResizeEnd;
+    std::function<void(const juce::ModifierKeys& mods)> onReset;
 
   private:
     bool isHovering_ = false;
@@ -186,124 +207,6 @@ class MasterChannelStrip::DbScale : public juce::Component {
     }
 };
 
-// Stereo level meter component (L/R bars) with smooth ballistics and peak hold
-class MasterChannelStrip::LevelMeter : public juce::Component, private juce::Timer {
-  public:
-    ~LevelMeter() override {
-        stopTimer();
-    }
-
-    void setLevel(float newLevel) {
-        setLevels(newLevel, newLevel);
-    }
-
-    void setLevels(float left, float right) {
-        targetL_ = juce::jlimit(0.0f, 2.0f, left);
-        targetR_ = juce::jlimit(0.0f, 2.0f, right);
-
-        float leftDb = gainToDb(targetL_);
-        float rightDb = gainToDb(targetR_);
-        if (leftDb > peakLeftDb_) {
-            peakLeftDb_ = leftDb;
-            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
-        }
-        if (rightDb > peakRightDb_) {
-            peakRightDb_ = rightDb;
-            peakRightHold_ = level_meter_ballistics::peakHoldMs;
-        }
-
-        if (!isTimerRunning()) {
-            lastUpdateMs_ = level_meter_ballistics::restartClock();
-            startTimerHz(60);
-        }
-    }
-
-    float getLevel() const {
-        return std::max(displayL_, displayR_);
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-
-        const float gap = 1.0f;
-        float barWidth = (bounds.getWidth() - gap) / 2.0f;
-
-        auto leftBounds = bounds.withWidth(barWidth);
-        auto rightBounds = bounds.withWidth(barWidth).withX(bounds.getX() + barWidth + gap);
-
-        drawMeterBar(g, leftBounds, displayL_, peakLeftDb_);
-        drawMeterBar(g, rightBounds, displayR_, peakRightDb_);
-    }
-
-  private:
-    float targetL_ = 0.0f, targetR_ = 0.0f;
-    float displayL_ = 0.0f, displayR_ = 0.0f;
-    float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
-    float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
-    double lastUpdateMs_ = 0.0;
-
-    void timerCallback() override {
-        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
-        bool changed = false;
-        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
-        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
-                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
-                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
-        if (changed)
-            repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
-                 peakRightDb_ <= MIN_DB) {
-            stopTimer();
-            lastUpdateMs_ = 0.0;
-        }
-    }
-
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRoundedRectangle(bounds, 1.0f);
-
-        float displayLevel = dbToMeterPos(gainToDb(level));
-        float meterHeight = bounds.getHeight() * displayLevel;
-
-        if (meterHeight >= 1.0f) {
-            auto fullBounds = bounds;
-            auto fillBounds = bounds;
-            fillBounds = fillBounds.removeFromBottom(meterHeight);
-
-            const juce::Colour green(0xFF55AA55);
-            const juce::Colour yellow(0xFFAAAA55);
-            const juce::Colour red(0xFFAA5555);
-
-            float yellowPos = dbToMeterPos(-12.0f);
-            float redPos = dbToMeterPos(0.0f);
-            constexpr float fade = 0.03f;
-
-            juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f,
-                                      fullBounds.getY(), false);
-            grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-            grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
-            grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-            grad.addColour(std::min(1.0, (double)redPos + fade), red);
-
-            g.setGradientFill(grad);
-            g.fillRoundedRectangle(fillBounds, 1.0f);
-        }
-
-        // Peak hold indicator
-        float peakPos = dbToMeterPos(peakDb);
-        if (peakPos > 0.01f) {
-            float peakY = bounds.getBottom() - bounds.getHeight() * peakPos;
-            auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
-                              : peakDb >= -12.0f ? juce::Colour(0xFFAAAA55)
-                                                 : juce::Colour(0xFF55AA55);
-            g.setColour(peakColour.withAlpha(0.9f));
-            g.fillRect(bounds.getX(), peakY, bounds.getWidth(), 1.5f);
-        }
-    }
-};
-
 MasterChannelStrip::MasterChannelStrip(Orientation orientation) : orientation_(orientation) {
     setupControls();
 
@@ -354,7 +257,8 @@ void MasterChannelStrip::refreshMiniAnalyzers() {
 
 void MasterChannelStrip::setupControls() {
     // Title label
-    titleLabel = std::make_unique<juce::Label>("Master", tr("common.master"));
+    titleLabel = std::make_unique<juce::Label>(
+        "Master", magda::technicalText(magda::TechnicalTextToken::Master));
     titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     titleLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel->setJustificationType(juce::Justification::centredLeft);
@@ -420,19 +324,97 @@ void MasterChannelStrip::setupControls() {
 
     // Resize handle — controls faderTopInset to mirror channel strips.
     resizeHandle_ = std::make_unique<ResizeHandle>();
-    resizeHandle_->onResize = [this](int deltaY) {
+    resizeHandle_->onResize = [this](int deltaY, const juce::ModifierKeys& mods) {
         auto& metrics = MixerMetrics::getInstance();
         int fixedHeight = 38 + metrics.controlSpacing + 120 + 24 + metrics.buttonSize +
                           metrics.channelPadding * 2;
         int maxInset = juce::jmax(MixerMetrics::minFaderTopInset, getHeight() - fixedHeight);
-        int newInset = juce::jlimit(MixerMetrics::minFaderTopInset,
-                                    juce::jmin(maxInset, MixerMetrics::maxFaderTopInset),
-                                    metrics.faderTopInset + deltaY);
-        if (metrics.faderTopInset != newInset) {
-            metrics.faderTopInset = newInset;
+        const int limit = juce::jmin(maxInset, MixerMetrics::maxFaderTopInset);
+        const bool sameValue = mods.isAltDown();
+
+        if (faderHeightResizeTargets_.empty()) {
+            if (sameValue && allVisibleLayoutTargetsProvider)
+                faderHeightResizeTargets_ = allVisibleLayoutTargetsProvider();
+            if (faderHeightResizeTargets_.empty())
+                faderHeightResizeTargets_ = {MASTER_TRACK_ID};
+
+            faderHeightResizeClickedStartInset_ = effectiveMixerFaderTopInset(MASTER_TRACK_ID);
+            faderHeightResizeStartValues_.clear();
+            faderHeightResizeStartEffective_.clear();
+            for (auto tid : faderHeightResizeTargets_) {
+                faderHeightResizeStartValues_[tid] = storedMixerFaderTopInset(tid);
+                faderHeightResizeStartEffective_[tid] = effectiveMixerFaderTopInset(tid);
+            }
+        }
+
+        const int sameInset = juce::jlimit(MixerMetrics::minFaderTopInset, limit,
+                                           faderHeightResizeClickedStartInset_ + deltaY);
+        auto& tm = TrackManager::getInstance();
+        for (auto tid : faderHeightResizeTargets_) {
+            const int baseInset = sameValue ? faderHeightResizeClickedStartInset_
+                                            : faderHeightResizeStartEffective_[tid];
+            const int newInset =
+                juce::jlimit(MixerMetrics::minFaderTopInset, limit, baseInset + deltaY);
+            tm.setTrackMixerFaderTopInset(tid, sameValue ? sameInset : newInset);
+        }
+
+        if (!faderHeightResizeTargets_.empty()) {
             if (onSendAreaResized)
                 onSendAreaResized();
         }
+    };
+    resizeHandle_->onResizeEnd = [this](const juce::ModifierKeys&) {
+        std::vector<std::unique_ptr<UndoableCommand>> commands;
+        for (auto tid : faderHeightResizeTargets_) {
+            const auto oldIt = faderHeightResizeStartValues_.find(tid);
+            if (oldIt == faderHeightResizeStartValues_.end())
+                continue;
+            const int oldInset = oldIt->second;
+            const int newInset = storedMixerFaderTopInset(tid);
+            if (oldInset != newInset) {
+                commands.push_back(
+                    std::make_unique<SetTrackMixerFaderTopInsetCommand>(tid, oldInset, newInset));
+            }
+        }
+
+        faderHeightResizeTargets_.clear();
+        faderHeightResizeStartValues_.clear();
+        faderHeightResizeStartEffective_.clear();
+
+        if (commands.empty())
+            return;
+
+        auto& undo = UndoManager::getInstance();
+        CompoundOperationScope scope("Resize Mixer Fader Height");
+        for (auto& command : commands)
+            undo.executeCommand(std::move(command));
+    };
+    resizeHandle_->onReset = [this](const juce::ModifierKeys& mods) {
+        auto targets = std::vector<TrackId>{MASTER_TRACK_ID};
+        if (mods.isAltDown() && allVisibleLayoutTargetsProvider) {
+            targets = allVisibleLayoutTargetsProvider();
+            if (targets.empty())
+                targets = {MASTER_TRACK_ID};
+        }
+
+        std::vector<std::unique_ptr<UndoableCommand>> commands;
+        for (auto tid : targets) {
+            const int oldInset = storedMixerFaderTopInset(tid);
+            if (oldInset != 0) {
+                commands.push_back(
+                    std::make_unique<SetTrackMixerFaderTopInsetCommand>(tid, oldInset, 0));
+            }
+        }
+
+        if (!commands.empty()) {
+            auto& undo = UndoManager::getInstance();
+            CompoundOperationScope scope("Reset Mixer Fader Height");
+            for (auto& command : commands)
+                undo.executeCommand(std::move(command));
+        }
+
+        if (onSendAreaResized)
+            onSendAreaResized();
     };
     addAndMakeVisible(*resizeHandle_);
 
@@ -502,21 +484,16 @@ void MasterChannelStrip::setupControls() {
     cueVolumeSlider_->onValueChanged = [](double /*pos*/) {};
     addAndMakeVisible(*cueVolumeSlider_);
 
-    // Speaker on/off button (toggles master mute)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
-                                                             BinaryData::speaker_on_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
-                                                              BinaryData::speaker_off_svgSize);
-
-    speakerButton =
-        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
-    speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
-    speakerButton->setEdgeIndent(0);
+    // Speaker on/off button (toggles master mute). Dual-icon SvgButton matching
+    // the inspector: gray speaker (master_on) when audible, orange chip
+    // (master_off) when muted. SvgButton's iconPadding + cornerRadius give the
+    // padding and rounded box a raw DrawableButton can't.
+    speakerButton = std::make_unique<magda::SvgButton>(
+        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     speakerButton->setClickingTogglesState(true);
-    speakerButton->setColour(juce::DrawableButton::backgroundColourId,
-                             juce::Colours::transparentBlack);
-    speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                             juce::Colours::transparentBlack);
+    speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -572,9 +549,17 @@ void MasterChannelStrip::resized() {
 
         // Title row: [speaker icon] [Master label]
         auto titleRow = bounds.removeFromTop(24);
-        speakerButton->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+        auto speakerSlot = titleRow.removeFromLeft(20);
         titleRow.removeFromLeft(2);
-        titleLabel->setBounds(titleRow);
+        // Both the speaker and the "Master" label center vertically in the
+        // painted title bar (component y in [1, labelRowBottom] — see paint()),
+        // which is anchored to the component top and so sits ~6px higher than
+        // the padded titleRow.
+        constexpr int kTitleBarBottom = 4 + 26;  // labelRowBottom in paint()
+        const int barMidY = (1 + kTitleBarBottom) / 2;
+        titleLabel->setBounds(titleRow.withY(1).withHeight(kTitleBarBottom - 1));
+        speakerButton->setBounds(
+            juce::Rectangle<int>(0, 0, 18, 18).withCentre({speakerSlot.getCentreX(), barMidY}));
 
         bounds.removeFromTop(metrics.controlSpacing);
 
@@ -617,7 +602,7 @@ void MasterChannelStrip::resized() {
             bounds.removeFromTop(6);  // breathing room before handle
         }
 
-        bounds.removeFromTop(metrics.faderTopInset);
+        bounds.removeFromTop(effectiveMixerFaderTopInset(MASTER_TRACK_ID));
 
         if (resizeHandle_) {
             resizeHandle_->setBounds(bounds.removeFromTop(6));

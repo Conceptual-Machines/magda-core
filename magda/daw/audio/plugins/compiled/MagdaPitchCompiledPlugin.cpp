@@ -177,7 +177,7 @@ void MagdaPitchCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kEngineSlot].defaultValue = 0.0f;
 
     hostSlotInfo_[kPitchSlot] = {.name = "Pitch",
-                                 .unit = "st",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Semitones),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = -24.0f,
                                  .maxValue = 24.0f,
@@ -188,20 +188,21 @@ void MagdaPitchCompiledPlugin::buildHostParameters() {
                                 .minValue = -100.0f,
                                 .maxValue = 100.0f,
                                 .defaultValue = 0.0f};
-    hostSlotInfo_[kTextureSlot] = {.name = "Texture",
-                                   .unit = "ms",
-                                   .scale = magda::ParameterScale::Logarithmic,
-                                   .minValue = 8.0f,
-                                   .maxValue = 200.0f,
-                                   .defaultValue = 50.0f,
-                                   .scaleAnchor = 50.0f};
+    hostSlotInfo_[kTextureSlot] = {
+        .name = "Texture",
+        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+        .scale = magda::ParameterScale::Logarithmic,
+        .minValue = 8.0f,
+        .maxValue = 200.0f,
+        .defaultValue = 50.0f,
+        .scaleAnchor = 50.0f};
     hostSlotInfo_[kMixSlot] = {.name = "Mix",
                                .scale = magda::ParameterScale::Linear,
                                .minValue = 0.0f,
                                .maxValue = 1.0f,
                                .defaultValue = 1.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,

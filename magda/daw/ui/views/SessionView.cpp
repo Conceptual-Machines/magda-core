@@ -30,6 +30,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/SessionLaunchService.hpp"
 #include "core/SessionViewState.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -42,7 +43,7 @@ namespace magda {
 namespace {
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;
-constexpr float METER_CURVE_EXPONENT = 2.0f;
+constexpr float METER_CURVE_EXPONENT = 3.0f;
 
 juce::String formatTrackIds(const std::vector<TrackId>& trackIds) {
     juce::String text("[");
@@ -1686,7 +1687,8 @@ SessionView::SessionView() {
     setupSceneButtons();
 
     // Master label (top-right corner, above scene buttons)
-    masterLabel_ = std::make_unique<juce::TextButton>("Master");
+    masterLabel_ =
+        std::make_unique<juce::TextButton>(magda::technicalText(magda::TechnicalTextToken::Master));
     masterLabel_->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
     masterLabel_->setColour(juce::TextButton::textColourOffId,

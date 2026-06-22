@@ -153,7 +153,8 @@ void AutomationPointInspector::updateFromSelection() {
     countLabel_.setText(title, juce::dontSendNotification);
 
     using F = magda::DraggableValueLabel::Format;
-    if (info_.scale == magda::ParameterScale::FaderDB || info_.unit == "dB") {
+    if (info_.scale == magda::ParameterScale::FaderDB ||
+        info_.unit == magda::technicalText(magda::TechnicalTextToken::Decibels)) {
         valueValue_->setFormat(F::Decibels);
         valueValue_->setSuffix("");
     } else if (lane->target.kind == magda::ControlTarget::Kind::TrackPan) {
@@ -189,8 +190,25 @@ void AutomationPointInspector::refreshDisplay() {
     valueDragStart_ = real;
 
     if (selection_.isSinglePoint()) {
+        valueValue_->clearTextOverride();
         posValue_->setValue(rep->beatPosition, juce::dontSendNotification);
         posDragStart_ = rep->beatPosition;
+    } else {
+        // Multiple points: show the range of values across the selection. The
+        // field still drags as a delta applied to every selected point.
+        double minR = real, maxR = real;
+        for (auto id : selection_.pointIds) {
+            if (const auto* p = findPoint(id)) {
+                const double r = normToReal(p->value);
+                minR = juce::jmin(minR, r);
+                maxR = juce::jmax(maxR, r);
+            }
+        }
+        if (maxR - minR > 1.0e-9)
+            valueValue_->setTextOverride(valueValue_->formatForDisplay(minR) + " .. " +
+                                         valueValue_->formatForDisplay(maxR));
+        else
+            valueValue_->clearTextOverride();
     }
 }
 

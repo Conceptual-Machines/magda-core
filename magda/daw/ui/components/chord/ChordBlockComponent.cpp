@@ -1,6 +1,7 @@
 #include "ChordBlockComponent.hpp"
 
 #include "core/MidiFileWriter.hpp"
+#include "music/NotationSettings.hpp"
 #include "project/ProjectManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -26,8 +27,9 @@ void ChordBlockComponent::paint(juce::Graphics& g) {
 
     auto textBounds = getLocalBounds().reduced(4, 0);
 
-    // Chord name
-    auto displayName = chord_.getDisplayName();
+    // Chord name (in the active C / solfège notation)
+    auto displayName =
+        magda::music::NotationSettings::getInstance().format(chord_.getDisplayName());
     g.setColour(DarkTheme::getTextColour());
     if (degree_.isEmpty()) {
         g.setFont(FontManager::getInstance().getUIFont(11.0f));

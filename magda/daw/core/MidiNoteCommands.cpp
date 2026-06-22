@@ -39,24 +39,48 @@ std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
     if (validStarts.size() < 2)
         return {};
 
-    double minBeat = std::numeric_limits<double>::max();
-    double maxBeat = std::numeric_limits<double>::lowest();
-    for (const auto& start : validStarts) {
-        minBeat = std::min(minBeat, start.startBeat);
-        maxBeat = std::max(maxBeat, start.startBeat);
+    // Order the selection as a sequence of events: by onset, then by pitch so a
+    // chord strums low -> high. Each note then samples the curve at its own
+    // ordinal slot, so notes stacked on one onset (a chord) fan out in time
+    // instead of moving as a rigid block.
+    std::sort(validStarts.begin(), validStarts.end(),
+              [&clip](const MidiNoteStartBeat& a, const MidiNoteStartBeat& b) {
+                  if (a.startBeat != b.startBeat)
+                      return a.startBeat < b.startBeat;
+                  return clip.midiNotes[a.noteIndex].noteNumber <
+                         clip.midiNotes[b.noteIndex].noteNumber;
+              });
+
+    const double minBeat = validStarts.front().startBeat;
+    const double maxBeat = validStarts.back().startBeat;
+    double span = maxBeat - minBeat;
+
+    // Lone chord (all notes share an onset): no grid to warp, so give the strum
+    // a window to spread into, derived from the shortest selected note so it
+    // scales with the part rather than a fixed amount.
+    if (span < 1e-9) {
+        double minLen = std::numeric_limits<double>::max();
+        for (const auto& start : validStarts)
+            minLen = std::min(minLen, clip.midiNotes[start.noteIndex].lengthBeats);
+        if (minLen >= std::numeric_limits<double>::max() || minLen < 1e-9)
+            return {};
+        span = minLen;
     }
 
-    const double span = maxBeat - minBeat;
-    if (span < 1e-9)
-        return {};
+    const int noteCount = static_cast<int>(validStarts.size());
+    const double ordinalDenom = static_cast<double>(noteCount - 1);
 
     std::vector<MidiNoteStartBeat> bentStarts;
     bentStarts.reserve(validStarts.size());
-    for (const auto& start : validStarts) {
-        const double t = (start.startBeat - minBeat) / span;
+    for (int i = 0; i < noteCount; ++i) {
+        const auto& start = validStarts[static_cast<size_t>(i)];
+        const double t = static_cast<double>(i) / ordinalDenom;
         const double tEased =
             daw::audio::StepClock::applyRampCurveWithCycles(t, depth, skew, cycles, hardAngle);
-        double newBeat = minBeat + tEased * span;
+        // Shift each note by how far the curve pushes its ordinal slot, anchored
+        // on its true onset. Depth 0 -> tEased == t -> identity; a uniform mono
+        // line reduces to minBeat + curve(t) * span (the prior behaviour).
+        double newBeat = start.startBeat + (tEased - t) * span;
 
         if (quantize > 0.0f && quantizeSub > 0) {
             const double gridSpacing = span / static_cast<double>(quantizeSub);

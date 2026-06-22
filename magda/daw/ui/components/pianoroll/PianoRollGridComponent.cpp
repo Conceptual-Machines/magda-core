@@ -17,6 +17,7 @@
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/GestureRouter.hpp"
+#include "core/MidiChordMarkers.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -343,34 +344,11 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     }
 
     // Draw playhead line if playing
-    if (playheadPosition_ >= 0.0 && clipLengthBeats_ > 0.0) {
-        // Convert seconds to beats
-        double tempo = 120.0;
-        if (auto* controller = TimelineController::getCurrent()) {
-            tempo = controller->getState().tempo.bpm;
-        }
-        double secondsPerBeat = 60.0 / tempo;
-        double playheadBeats = playheadPosition_ / secondsPerBeat;
-
-        // Only draw when playhead falls within the clip's time range
-        double relBeat = playheadBeats - clipStartBeats_;
-        if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
-            double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
-
-            // Wrap playhead within loop region when looping is enabled
-            if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-                double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
-                beatPos = std::fmod(beatPos, loopLengthBeats_);
-                if (beatPos < 0.0)
-                    beatPos += loopLengthBeats_;
-                displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
-            }
-
-            int playheadX = beatToPixel(displayBeat);
-            if (playheadX >= 0 && playheadX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-                g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
-            }
+    {
+        int playheadX = 0;
+        if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }
 
@@ -830,6 +808,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         if (onNoteAdded && clipId != INVALID_CLIP_ID) {
             const auto* clip = ClipManager::getInstance().getClip(clipId);
             if (clip && ClipOperations::clipMidiNoteToVisibleRange(*clip, note)) {
+                rememberAddedNoteLength(note.lengthBeats);
                 onNoteAdded(clipId, note.startBeat, note.noteNumber, note.lengthBeats,
                             defaultNoteVelocity_);
             }
@@ -1020,6 +999,7 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
             return;
         }
 
+        rememberAddedNoteLength(previewNote.lengthBeats);
         onNoteAdded(insertPos->clipId, previewNote.startBeat, previewNote.noteNumber,
                     previewNote.lengthBeats, defaultNoteVelocity_);
     }
@@ -1273,14 +1253,24 @@ void PianoRollGridComponent::setGridResolutionBeats(double beats) {
 }
 
 double PianoRollGridComponent::getDefaultNoteLengthBeats() const {
+    if (rememberLastNoteLength_ && lastAddedNoteLengthBeats_ > 0.0)
+        return lastAddedNoteLengthBeats_;
     if (defaultNoteLengthBeats_ > 0.0)
         return defaultNoteLengthBeats_;
     return juce::jmax(1.0 / 16.0, gridResolutionBeats_);
 }
 
+void PianoRollGridComponent::rememberAddedNoteLength(double lengthBeats) {
+    if (lengthBeats > 0.0)
+        lastAddedNoteLengthBeats_ = lengthBeats;
+}
+
 void PianoRollGridComponent::addDefaultNoteMenuItems(juce::PopupMenu& menu) const {
     juce::PopupMenu lengthMenu;
-    lengthMenu.addItem(100, "Current Grid", true, defaultNoteLengthBeats_ <= 0.0);
+    lengthMenu.addItem(100, "Current Grid", true,
+                       !rememberLastNoteLength_ && defaultNoteLengthBeats_ <= 0.0);
+    lengthMenu.addItem(108, "Remember Note Lengths", true, rememberLastNoteLength_);
+    lengthMenu.addSeparator();
 
     struct LengthOption {
         int id;
@@ -1292,7 +1282,8 @@ void PianoRollGridComponent::addDefaultNoteMenuItems(juce::PopupMenu& menu) cons
         {105, "1/16", 0.25}, {106, "1/32", 0.125}, {107, "1/8T", 1.0 / 3.0}};
     for (const auto& option : lengths)
         lengthMenu.addItem(option.id, option.name, true,
-                           std::abs(defaultNoteLengthBeats_ - option.beats) < 0.000001);
+                           !rememberLastNoteLength_ &&
+                               std::abs(defaultNoteLengthBeats_ - option.beats) < 0.000001);
     menu.addSubMenu("Default Length", lengthMenu);
 
     juce::PopupMenu velocityMenu;
@@ -1306,6 +1297,12 @@ void PianoRollGridComponent::addDefaultNoteMenuItems(juce::PopupMenu& menu) cons
 bool PianoRollGridComponent::handleDefaultNoteMenuResult(int result) {
     if (result == 100) {
         defaultNoteLengthBeats_ = 0.0;
+        rememberLastNoteLength_ = false;
+        return true;
+    }
+
+    if (result == 108) {
+        rememberLastNoteLength_ = !rememberLastNoteLength_;
         return true;
     }
 
@@ -1318,6 +1315,7 @@ bool PianoRollGridComponent::handleDefaultNoteMenuResult(int result) {
     for (const auto& option : lengths) {
         if (result == option.id) {
             defaultNoteLengthBeats_ = option.beats;
+            rememberLastNoteLength_ = false;
             return true;
         }
     }
@@ -2472,12 +2470,16 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
         return juce::Colours::grey;
     }
 
-    // Use clip's color, but slightly desaturated for multi-clip view
-    if (clipIds_.size() == 1) {
-        return clip->colour;
-    } else {
-        return clip->colour.withSaturation(0.7f);
-    }
+    // Chord clips follow the chord track's colour live (rather than the colour
+    // snapshotted onto clip->colour at creation), so their notes match the
+    // chord-lane blocks even after the track colour changes.
+    juce::Colour base = clip->colour;
+    if (const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+        track != nullptr && track->type == TrackType::Chord)
+        base = track->colour;
+
+    // Use the colour as-is, but slightly desaturated for multi-clip view
+    return clipIds_.size() == 1 ? base : base.withSaturation(0.7f);
 }
 
 bool PianoRollGridComponent::isClipSelected(ClipId clipId) const {
@@ -2503,6 +2505,37 @@ void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {
         playheadPosition_ = positionSeconds;
         repaint();
     }
+}
+
+bool PianoRollGridComponent::getPlayheadDisplayX(int& gridLocalX) const {
+    if (playheadPosition_ < 0.0 || clipLengthBeats_ <= 0.0)
+        return false;
+
+    // Convert seconds to beats
+    double tempo = 120.0;
+    if (auto* controller = TimelineController::getCurrent())
+        tempo = controller->getState().tempo.bpm;
+    double secondsPerBeat = 60.0 / tempo;
+    double playheadBeats = playheadPosition_ / secondsPerBeat;
+
+    // Only visible when the playhead falls within the clip's time range
+    double relBeat = playheadBeats - clipStartBeats_;
+    if (relBeat < 0.0 || relBeat > clipLengthBeats_)
+        return false;
+
+    double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
+
+    // Wrap playhead within loop region when looping is enabled
+    if (loopEnabled_ && loopLengthBeats_ > 0.0) {
+        double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
+        beatPos = std::fmod(beatPos, loopLengthBeats_);
+        if (beatPos < 0.0)
+            beatPos += loopLengthBeats_;
+        displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
+    }
+
+    gridLocalX = beatToPixel(displayBeat);
+    return true;
 }
 
 void PianoRollGridComponent::setEditCursorPosition(double positionSeconds, bool blinkVisible) {
@@ -2627,13 +2660,9 @@ void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x,
     if (ticksPerQN <= 0)
         return;
 
-    // Extract chord markers (MIDI marker meta events type 6, format "CHORD:name:length")
-    struct ChordMarker {
-        double beatPosition = 0.0;
-        double lengthBeats = 4.0;
-        juce::String chordName;
-    };
-    std::vector<ChordMarker> chordMarkers;
+    // Extract embedded chord markers (the reverse of MidiFileWriter's marker
+    // writing). Parsed up front; note linkage to each chord happens below.
+    const auto chordMarkers = magda::daw::readChordMarkers(midi);
 
     // Extract full note data (with timing) and simple note list
     struct NoteData {
@@ -2651,24 +2680,6 @@ void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x,
             continue;
         for (int i = 0; i < track->getNumEvents(); ++i) {
             auto& msg = track->getEventPointer(i)->message;
-            if (msg.isTextMetaEvent() && msg.getMetaEventType() == 6) {
-                auto text = msg.getTextFromTextMetaEvent();
-                if (text.startsWith("CHORD:")) {
-                    auto parts = juce::StringArray::fromTokens(text.substring(6), ":", "");
-                    if (parts.size() >= 2) {
-                        ChordMarker marker;
-                        marker.beatPosition = msg.getTimeStamp() / ticksPerQN;
-                        // Last token is length; everything before is the chord name
-                        // (chord names can contain colons, e.g. "C:maj7")
-                        marker.lengthBeats = parts[parts.size() - 1].getDoubleValue();
-                        parts.remove(parts.size() - 1);
-                        marker.chordName = parts.joinIntoString(":");
-                        if (marker.lengthBeats <= 0.0)
-                            marker.lengthBeats = 4.0;
-                        chordMarkers.push_back(marker);
-                    }
-                }
-            }
             if (msg.isNoteOn()) {
                 simpleNotes.emplace_back(msg.getNoteNumber(), msg.getVelocity());
 
@@ -2776,9 +2787,11 @@ void PianoRollGridComponent::confirmPendingChord(double endBeat) {
     if (length < gridResolutionBeats_)
         length = gridResolutionBeats_;
 
-    if (onChordDropped)
+    if (onChordDropped) {
+        rememberAddedNoteLength(length);
         onChordDropped(pendingChord_.clipId, pendingChord_.startBeat, length,
                        std::move(pendingChord_.notes), pendingChord_.chordName);
+    }
 
     cancelPendingChord();
 }

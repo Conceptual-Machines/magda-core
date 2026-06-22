@@ -596,9 +596,20 @@ class ClipManager {
     bool hasClipsInClipboard() const;
 
     /**
+     * @brief True when clipboard clips have no source track and paste must supply one.
+     */
+    bool clipboardRequiresTargetTrack() const;
+
+    /**
      * @brief Clear clipboard
      */
     void clearClipboard();
+
+    /**
+     * @brief Set the clip clipboard from external MIDI notes, such as a sequencer pattern.
+     */
+    void setMidiClipClipboard(std::vector<MidiNote> notes, juce::String name = "Sequencer Pattern",
+                              double lengthBeats = 0.0);
 
     // ========================================================================
     // Note Clipboard Operations (for MIDI note copy/paste)
@@ -688,6 +699,18 @@ class ClipManager {
         }
         BatchScope(const BatchScope&) = delete;
         BatchScope& operator=(const BatchScope&) = delete;
+    };
+
+    /// Test-only guard for model assertions that must not drive engine/UI listeners.
+    class ScopedListenerMuteForTests {
+      public:
+        ScopedListenerMuteForTests();
+        ~ScopedListenerMuteForTests();
+        ScopedListenerMuteForTests(const ScopedListenerMuteForTests&) = delete;
+        ScopedListenerMuteForTests& operator=(const ScopedListenerMuteForTests&) = delete;
+
+      private:
+        std::vector<ClipManagerListener*> savedListeners_;
     };
 
     /**

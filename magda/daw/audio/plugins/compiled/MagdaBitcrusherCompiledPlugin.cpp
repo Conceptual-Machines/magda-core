@@ -158,7 +158,7 @@ void MagdaBitcrusherCompiledPlugin::rebuildEngineState(int sampleRate) {
 
 void MagdaBitcrusherCompiledPlugin::buildHostParameters() {
     hostSlotInfo_[kRateSlot] = {.name = "Rate",
-                                .unit = "Hz",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                 .scale = magda::ParameterScale::Logarithmic,
                                 .minValue = 100.0f,
                                 .maxValue = 48000.0f,
@@ -170,13 +170,13 @@ void MagdaBitcrusherCompiledPlugin::buildHostParameters() {
                                 .maxValue = 16.0f,
                                 .defaultValue = 8.0f};
     hostSlotInfo_[kDriveSlot] = {.name = "Drive",
-                                 .unit = "dB",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
                                  .maxValue = 24.0f,
                                  .defaultValue = 0.0f};
     hostSlotInfo_[kToneSlot] = {.name = "Tone",
-                                .unit = "Hz",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
                                 .scale = magda::ParameterScale::Logarithmic,
                                 .minValue = 200.0f,
                                 .maxValue = 20000.0f,
@@ -188,7 +188,7 @@ void MagdaBitcrusherCompiledPlugin::buildHostParameters() {
                                .maxValue = 1.0f,
                                .defaultValue = 1.0f};
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 12.0f,

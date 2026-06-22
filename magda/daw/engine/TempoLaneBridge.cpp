@@ -75,6 +75,16 @@ void TempoLaneBridge::writePointsToSequence(const std::vector<AutomationPoint>& 
 
     auto& ts = edit.tempoSequence;
 
+    // Clips and automation are beat-based (Clip::syncType defaults to
+    // syncBarsBeats): TE keeps them anchored to their bar/beat position across a
+    // tempo change, but ONLY when the change runs through its remapper. The
+    // individual tempo mutators below pass remapEdit=false, so snapshot every
+    // clip's beat position up front and remap once after the rebuild. Without
+    // this, edits to the tempo automation leave clips pinned to stale wall-clock
+    // seconds and they drift off the grid under a varying tempo.
+    te::EditTimecodeRemapperSnapshot snap;
+    snap.savePreChangeState(edit);
+
     // Drop every tempo except index 0 (high -> low so indices stay valid).
     for (int i = ts.getNumTempos() - 1; i >= 1; --i)
         ts.removeTempo(i, false);
@@ -95,6 +105,10 @@ void TempoLaneBridge::writePointsToSequence(const std::vector<AutomationPoint>& 
         ts.insertTempo(te::BeatPosition::fromBeats(p.beatPosition), normalizedToBpm(p.value),
                        curveForSegment(points, i));
     }
+
+    // Reposition every clip / automation point to its saved bar/beat under the
+    // new tempo map. This is what makes clips follow the tempo curve.
+    snap.remapEdit(edit);
 }
 
 std::vector<AutomationPoint> TempoLaneBridge::readPointsFromSequence(te::Edit& edit) {

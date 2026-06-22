@@ -374,7 +374,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (stepSequencerUI_)
         return 500;
     if (polyStepSequencerUI_)
-        return 560;
+        return 720;  // 560 grid + ~156 right-hand control panel
     if (oscilloscopeUI_)
         return 500;
     if (spectrumAnalyzerUI_)
@@ -1405,6 +1405,12 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
     // create() bound the analyzer UIs while the path was still invalid; now that
     // it is set, resolve their plugin for real.
     refreshLivePluginBindings();
+
+    // 4OSC's modulation destination dropdown is built from the live TE plugin,
+    // and create() can run before the slot has a valid path. Repopulate it once
+    // the path is bound so LFO/Mod Env destination lists are not left empty.
+    if (fourOscUI_ && devicePath_.isValid())
+        readAndPushModMatrix(devicePath_.getDeviceId());
 }
 
 void DeviceCustomUIManager::refreshLivePluginBindings() {

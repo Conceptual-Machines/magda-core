@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ChainNodePath.hpp"
+#include "TechnicalText.hpp"
 
 namespace magda {
 
@@ -210,7 +211,7 @@ inline ParameterInfo frequency(int index, const juce::String& name, float minHz 
     ParameterInfo info;
     info.paramIndex = index;
     info.name = name;
-    info.unit = "Hz";
+    info.unit = technicalText(TechnicalTextToken::Hertz);
     info.minValue = minHz;
     info.maxValue = maxHz;
     info.defaultValue = std::sqrt(minHz * maxHz);  // Geometric mean
@@ -230,7 +231,7 @@ inline ParameterInfo time(int index, const juce::String& name, float minMs = 0.1
     ParameterInfo info;
     info.paramIndex = index;
     info.name = name;
-    info.unit = "ms";
+    info.unit = technicalText(TechnicalTextToken::Milliseconds);
     info.minValue = minMs;
     info.maxValue = maxMs;
     info.defaultValue = std::sqrt(minMs * maxMs);  // Geometric mean
@@ -247,7 +248,7 @@ inline ParameterInfo percent(int index, const juce::String& name) {
     ParameterInfo info;
     info.paramIndex = index;
     info.name = name;
-    info.unit = "%";
+    info.unit = technicalText(TechnicalTextToken::Percent);
     info.minValue = 0.0f;
     info.maxValue = 100.0f;
     info.defaultValue = 50.0f;
@@ -268,7 +269,7 @@ inline ParameterInfo decibels(int index, const juce::String& name, float minDb =
     ParameterInfo info;
     info.paramIndex = index;
     info.name = name;
-    info.unit = "dB";
+    info.unit = technicalText(TechnicalTextToken::Decibels);
     info.minValue = minDb;
     info.maxValue = maxDb;
     info.defaultValue = 0.0f;  // Unity gain
@@ -289,7 +290,7 @@ inline ParameterInfo semitones(int index, const juce::String& name, float minSt 
     ParameterInfo info;
     info.paramIndex = index;
     info.name = name;
-    info.unit = "st";
+    info.unit = technicalText(TechnicalTextToken::Semitones);
     info.minValue = minSt;
     info.maxValue = maxSt;
     info.defaultValue = 0.0f;  // No pitch shift
@@ -351,7 +352,7 @@ inline ParameterInfo faderVolume(int index, const juce::String& name) {
     ParameterInfo info;
     info.paramIndex = index;
     info.name = name;
-    info.unit = "dB";
+    info.unit = technicalText(TechnicalTextToken::Decibels);
     info.minValue = -60.0f;
     info.maxValue = 6.0f;
     info.defaultValue = 0.0f;  // Unity gain

@@ -149,6 +149,10 @@ class ChordPanelContent : public juce::Component,
     void updateScaleFilterPitchClasses();
 
     magda::daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
+    // Prime the bound engine from the chord-track progression (no-op unless the
+    // bound track is the chord track) so suggestions/key reflect the song.
+    void seedEngineFromProgression();
+
     magda::TrackId trackId_ = magda::INVALID_TRACK_ID;
 
     void previewChord(const magda::music::Chord& chord);
@@ -177,6 +181,7 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<juce::TextButton> addAltBtn_;
     std::unique_ptr<juce::TextButton> add11thsBtn_;
     std::unique_ptr<juce::TextButton> add13thsBtn_;
+    std::unique_ptr<juce::TextButton> notationBtn_;  // cycles C / Do / both notation
     std::unique_ptr<magda::SvgButton> scaleFilterBtn_;
     std::unique_ptr<magda::SvgButton> browseBtn_;
     std::unique_ptr<magda::SvgButton> backBtn_;

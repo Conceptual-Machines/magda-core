@@ -122,8 +122,9 @@ void ZoomControls::setupSlider() {
     zoomSlider.setColour(juce::Slider::backgroundColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
     zoomSlider.setColour(juce::Slider::trackColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
-    zoomSlider.setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                         DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    zoomSlider.setColour(juce::Slider::thumbColourId,
+                         DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
 }
 
 }  // namespace magda

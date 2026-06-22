@@ -161,7 +161,7 @@ void MagdaSaturatorCompiledPlugin::rebuildEngineState(int sampleRate) {
 void MagdaSaturatorCompiledPlugin::buildHostParameters() {
     // Slot 0: Drive (dB, linear, 0..24). Smoothing happens inside the DSP.
     hostSlotInfo_[kDriveSlot] = {.name = "Drive",
-                                 .unit = "dB",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
                                  .maxValue = 24.0f,
@@ -194,7 +194,7 @@ void MagdaSaturatorCompiledPlugin::buildHostParameters() {
                                .defaultValue = 1.0f};
     // Slot 5: Output (dB, -24..6)
     hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = "dB",
+                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
                                   .scale = magda::ParameterScale::Linear,
                                   .minValue = -24.0f,
                                   .maxValue = 6.0f,

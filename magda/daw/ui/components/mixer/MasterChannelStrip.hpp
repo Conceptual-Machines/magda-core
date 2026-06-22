@@ -4,11 +4,15 @@
 
 #include <functional>
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
 #include "../chain/custom_ui/OscilloscopeUI.hpp"
 #include "../chain/custom_ui/SpectrumAnalyzerUI.hpp"
+#include "../common/SvgButton.hpp"
 #include "../common/TextSlider.hpp"
 #include "ClickableLabel.hpp"
+#include "LevelMeter.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -45,6 +49,7 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
 
     // Called when the send area resize handle is dragged
     std::function<void()> onSendAreaResized;
+    std::function<std::vector<TrackId>()> allVisibleLayoutTargetsProvider;
 
   private:
     bool selected_ = false;
@@ -53,14 +58,12 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // UI Components
     std::unique_ptr<juce::Label> titleLabel;
     std::unique_ptr<daw::ui::TextSlider> volumeSlider;
-    std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
+    std::unique_ptr<magda::SvgButton> speakerButton;  // Speaker on/off toggle
 
     // Cue/headphone output
     std::unique_ptr<juce::DrawableButton> headphoneIcon_;
     std::unique_ptr<daw::ui::TextSlider> cueVolumeSlider_;
 
-    // Meter component
-    class LevelMeter;
     std::unique_ptr<LevelMeter> peakMeter;
     std::unique_ptr<ClickableLabel> peakValueLabel;
     float peakValue_ = 0.0f;
@@ -86,6 +89,11 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     juce::Rectangle<int> faderRegion_;
     juce::Rectangle<int> faderArea_;
     juce::Rectangle<int> peakMeterArea_;
+
+    std::vector<TrackId> faderHeightResizeTargets_;
+    std::unordered_map<TrackId, int> faderHeightResizeStartValues_;
+    std::unordered_map<TrackId, int> faderHeightResizeStartEffective_;
+    int faderHeightResizeClickedStartInset_ = 0;
 
     void setupControls();
     void updateFromMasterState();

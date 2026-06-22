@@ -65,6 +65,11 @@ struct TrackInfo {
     bool frozen = false;  // Track is frozen (rendered to audio, plugins disabled)
     TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 
+    // Mixer UI layout. Zero/negative channel width means "use default"; fader
+    // inset is the empty space above the fader and therefore controls fader height.
+    int mixerChannelWidth = 0;
+    int mixerFaderTopInset = 0;
+
     // The session clip currently active on this track. Set on launch, cleared on
     // explicit stop.  Transport stop/start does not touch this — it is the
     // single source of truth for which clip to re-launch on transport resume.
@@ -127,6 +132,8 @@ struct TrackInfo {
           inputMonitor(other.inputMonitor),
           frozen(other.frozen),
           playbackMode(other.playbackMode),
+          mixerChannelWidth(other.mixerChannelWidth),
+          mixerFaderTopInset(other.mixerFaderTopInset),
           activeSessionClipId(other.activeSessionClipId),
           midiInputDevice(other.midiInputDevice),
           midiOutputDevice(other.midiOutputDevice),
@@ -163,6 +170,8 @@ struct TrackInfo {
             inputMonitor = other.inputMonitor;
             frozen = other.frozen;
             playbackMode = other.playbackMode;
+            mixerChannelWidth = other.mixerChannelWidth;
+            mixerFaderTopInset = other.mixerFaderTopInset;
             activeSessionClipId = other.activeSessionClipId;
             midiInputDevice = other.midiInputDevice;
             midiOutputDevice = other.midiOutputDevice;

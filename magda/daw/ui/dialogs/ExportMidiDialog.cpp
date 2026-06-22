@@ -4,6 +4,7 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 
 namespace magda {
 
@@ -11,7 +12,9 @@ ExportMidiDialog::ExportMidiDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     // MIDI format selection
-    formatLabel_.setText(tr("export_midi.label.midi_format"), juce::dontSendNotification);
+    formatLabel_.setText(tr("export_midi.label.midi_format")
+                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+                         juce::dontSendNotification);
     formatLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(formatLabel_);
 
@@ -134,7 +137,8 @@ void ExportMidiDialog::showDialog(juce::Component* parent,
     dialog->onExport = exportCallback;
 
     juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = tr("export_midi.dialog.title");
+    options.dialogTitle =
+        tr("action.export").replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi));
     options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;

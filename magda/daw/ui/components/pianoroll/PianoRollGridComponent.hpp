@@ -172,6 +172,11 @@ class PianoRollGridComponent : public juce::Component,
     double getPlayheadPosition() const {
         return playheadPosition_;
     }
+    // Grid-local x of the playhead exactly as drawn over the note grid (incl.
+    // loop wrap / relative-mode mapping). Lets the chord lane above the grid
+    // draw a matching playhead line that stays locked while scrolling. Returns
+    // false when the playhead is out of the clip's range (nothing to draw).
+    bool getPlayheadDisplayX(int& gridLocalX) const;
 
     // Edit cursor position (for drawing blinking edit cursor line)
     void setEditCursorPosition(double positionSeconds, bool blinkVisible);
@@ -377,8 +382,11 @@ class PianoRollGridComponent : public juce::Component,
     double drawingNoteEndBeat_ = 0.0;    // clip-relative
     int drawingNoteNumber_ = 60;
     double defaultNoteLengthBeats_ = 0.0;  // <= 0 follows current grid
+    bool rememberLastNoteLength_ = false;
+    double lastAddedNoteLengthBeats_ = 0.0;
     int defaultNoteVelocity_ = 100;
     double getDefaultNoteLengthBeats() const;
+    void rememberAddedNoteLength(double lengthBeats);
     void addDefaultNoteMenuItems(juce::PopupMenu& menu) const;
     bool handleDefaultNoteMenuResult(int result);
 

@@ -9,6 +9,7 @@
 
 #include "../../../audio/MidiBridge.hpp"
 #include "RoutingSelector.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackInfo.hpp"
 #include "core/TrackManager.hpp"
 
@@ -141,7 +142,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         return;
 
     std::vector<RoutingSelector::RoutingOption> options;
-    options.push_back({1, "Master"});
+    options.push_back({1, technicalText(TechnicalTextToken::Master)});
     options.push_back({2, "None"});
 
     auto& trackManager = TrackManager::getInstance();

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/DeviceMeteringManager.hpp"
@@ -50,14 +51,18 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
     SectionScopedDeviceIdsTest() : juce::UnitTest("Section-Scoped Device IDs", "magda") {}
 
     void runTest() override {
-        testOverlappingIdsResolveByPath();
-        testRemovingPostFxDeviceDoesNotRemoveSameIdTopLevelDevice();
-        testPostFxPropertyChangeDoesNotBypassSameIdTopLevelDevice();
-        testParameterConfigWritesArePathScoped();
-        testTrackChainBypassNotifiesNestedDevicePaths();
-        testDeviceMetersArePathKeyed();
-        testTopLevelReorderMovesLivePlugins();
-        testMismatchedCompiledPluginStateDoesNotOverridePluginId();
+        magda::test::runWithCleanJuceState([this] { testOverlappingIdsResolveByPath(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testRemovingPostFxDeviceDoesNotRemoveSameIdTopLevelDevice(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testPostFxPropertyChangeDoesNotBypassSameIdTopLevelDevice(); });
+        magda::test::runWithCleanJuceState([this] { testParameterConfigWritesArePathScoped(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testTrackChainBypassNotifiesNestedDevicePaths(); });
+        magda::test::runWithCleanJuceState([this] { testDeviceMetersArePathKeyed(); });
+        magda::test::runWithCleanJuceState([this] { testTopLevelReorderMovesLivePlugins(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testMismatchedCompiledPluginStateDoesNotOverridePluginId(); });
     }
 
   private:

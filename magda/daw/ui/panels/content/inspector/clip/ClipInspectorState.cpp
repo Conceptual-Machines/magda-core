@@ -239,6 +239,8 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Update type icon based on clip type
         bool isAudioClip = (clip->isAudio());
+        const auto* clipTrack = magda::TrackManager::getInstance().getTrack(clip->trackId);
+        const bool isChordClip = clipTrack && clipTrack->type == magda::TrackType::Chord;
         bool showAudioProps = isAudioClip && !audioPropsCollapsed_;
         audioPropsCollapseToggle_.setVisible(isAudioClip);
         audioPropsLabel_.setVisible(isAudioClip);
@@ -257,7 +259,16 @@ void ClipInspector::updateFromSelectedClip() {
             takesSection_->setVisible(showAudioProps || showMidiTakes);
         }
 
-        if (isAudioClip) {
+        if (chordProgressionSection_) {
+            chordProgressionSection_->setSelectedClips(selectedClipIds_);
+            chordProgressionSection_->setVisible(chordProgressionSection_->hasContent());
+        }
+
+        if (isChordClip) {
+            clipTypeIcon_->updateSvgData(BinaryData::iconchordtrackboldm_svg,
+                                         BinaryData::iconchordtrackboldm_svgSize);
+            clipTypeIcon_->setTooltip("Chord progression");
+        } else if (isAudioClip) {
             clipTypeIcon_->updateSvgData(BinaryData::iconaudioboldm_svg,
                                          BinaryData::iconaudioboldm_svgSize);
             clipTypeIcon_->setTooltip("Audio clip");
@@ -342,6 +353,9 @@ void ClipInspector::updateFromSelectedClip() {
         } else if (clip->isMidi() && !isMulti) {
             clipKeyLabel_.setVisible(false);
             clipKeyRootCombo_.setVisible(false);
+            // Progressions (chord-track clips) round-trip their chords through
+            // the library now (saved as a kind='progression' .mid with CHORD:
+            // markers), so the button is enabled for them like any MIDI clip.
             saveLibraryButton_.setVisible(true);
             saveLibraryButton_.setEnabled(
                 magda::ClipManager::getInstance().canSaveClipToLibrary(pid));
@@ -547,12 +561,13 @@ void ClipInspector::updateFromSelectedClip() {
             }
         }
 
-        // Groove section (MIDI clips only)
-        grooveSectionLabel_.setVisible(isMidiClip);
-        grooveTemplateButton_.setVisible(isMidiClip);
-        grooveStrengthLabel_.setVisible(isMidiClip);
-        grooveStrengthValue_->setVisible(isMidiClip);
-        if (isMidiClip) {
+        // Groove section (MIDI clips only; not chord progressions)
+        const bool showGroove = isMidiClip && !isChordClip;
+        grooveSectionLabel_.setVisible(showGroove);
+        grooveTemplateButton_.setVisible(showGroove);
+        grooveStrengthLabel_.setVisible(showGroove);
+        grooveStrengthValue_->setVisible(showGroove);
+        if (showGroove) {
             // Update button text to show current template
             grooveTemplateButton_.setButtonText(
                 clip->grooveTemplate.isNotEmpty() ? clip->grooveTemplate : "None");

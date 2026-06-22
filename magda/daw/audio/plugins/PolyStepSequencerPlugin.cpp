@@ -332,6 +332,39 @@ void PolyStepSequencerPlugin::clearPattern() {
     }
 }
 
+void PolyStepSequencerPlugin::setStepRecording(bool enabled) {
+    stepRecording_.store(enabled, std::memory_order_relaxed);
+    if (enabled) {
+        stepRecordPosition_.store(0, std::memory_order_relaxed);
+        recordHeldCount_ = 0;
+    }
+}
+
+void PolyStepSequencerPlugin::randomizePattern() {
+    juce::Random rng;
+    auto* um = getUndoManager();
+    if (um != nullptr)
+        um->beginNewTransaction();
+
+    // Clear existing steps first.
+    for (int i = state.getNumChildren() - 1; i >= 0; --i) {
+        if (state.getChild(i).hasType(PSeqIDs::stepTree))
+            state.removeChild(i, um);
+    }
+
+    const int stepCount = juce::jlimit(1, MAX_STEPS, numSteps.get());
+    for (int i = 0; i < stepCount; ++i) {
+        const bool gate = rng.nextFloat() < 0.7f;
+        getOrCreateStepTree(i).setProperty(PSeqIDs::stepGate, gate, um);
+        if (!gate)
+            continue;
+        // 1-3 notes per active step, C2-B3 (addStepNote dedups + caps voices).
+        const int noteCount = 1 + rng.nextInt(3);
+        for (int n = 0; n < noteCount; ++n)
+            addStepNote(i, 36 + rng.nextInt(24));
+    }
+}
+
 bool PolyStepSequencerPlugin::transposePattern(int semitones) {
     if (semitones == 0)
         return true;
@@ -435,6 +468,37 @@ void PolyStepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (needsAllNotesOff_) {
         midi.addMidiMessage(juce::MidiMessage::allNotesOff(1), 0.0, te::MPESourceID{});
         needsAllNotesOff_ = false;
+    }
+
+    // --- Step recording: held notes form a chord on the current step; the
+    // step advances once the whole chord is released. ---
+    if (stepRecording_.load(std::memory_order_relaxed)) {
+        const int maxSteps = juce::jlimit(1, MAX_STEPS, numSteps.get());
+        for (auto& msg : midi) {
+            if (msg.isNoteOn()) {
+                const int pos = stepRecordPosition_.load(std::memory_order_relaxed);
+                if (pos < maxSteps) {
+                    const int note = msg.getNoteNumber();
+                    juce::MessageManager::callAsync([this, pos, note] {
+                        addStepNote(pos, note);
+                        setStepGate(pos, true);
+                    });
+                }
+                ++recordHeldCount_;
+            } else if (msg.isNoteOff()) {
+                if (recordHeldCount_ > 0)
+                    --recordHeldCount_;
+                if (recordHeldCount_ == 0) {
+                    const int pos = stepRecordPosition_.load(std::memory_order_relaxed);
+                    if (pos < maxSteps) {
+                        const int nextPos = pos + 1;
+                        stepRecordPosition_.store(nextPos, std::memory_order_relaxed);
+                        if (nextPos >= maxSteps)
+                            stepRecording_.store(false, std::memory_order_relaxed);
+                    }
+                }
+            }
+        }
     }
 
     // Save incoming MIDI for thru, then clear for sequencer output

@@ -155,7 +155,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     directoriesList_.setRowHeight(22);
     addAndMakeVisible(directoriesList_);
 
-    addDirButton_.setButtonText(tr("plugin_settings.button.add"));
+    addDirButton_.setButtonText(trEllipsis("plugin_settings.button.add"));
     addDirButton_.onClick = [this]() {
         fileChooser_ =
             std::make_unique<juce::FileChooser>(tr("plugin_settings.dialog.select_directory"));
@@ -193,7 +193,8 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
 
         setScanningUIEnabled(false);
         scanProgress_ = 0.0;
-        scanStatusLabel_.setText(tr("plugin_settings.status.starting"), juce::dontSendNotification);
+        scanStatusLabel_.setText(trEllipsis("plugin_settings.status.starting"),
+                                 juce::dontSendNotification);
         scanProgressBar_.setVisible(true);
         scanStatusLabel_.setVisible(true);
 
@@ -262,7 +263,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
 
         setScanningUIEnabled(false);
         scanProgress_ = -1.0;  // detectNewPlugins doesn't report fractional progress
-        scanStatusLabel_.setText(tr("plugin_settings.status.checking_new"),
+        scanStatusLabel_.setText(trEllipsis("plugin_settings.status.checking_new"),
                                  juce::dontSendNotification);
         scanProgressBar_.setVisible(true);
         scanStatusLabel_.setVisible(true);
@@ -279,7 +280,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                     switch (phase) {
                         case Phase::Discovering:
                             safeThis->scanStatusLabel_.setText(
-                                tr("plugin_settings.status.checking_new"),
+                                trEllipsis("plugin_settings.status.checking_new"),
                                 juce::dontSendNotification);
                             break;
                         case Phase::UpToDate:

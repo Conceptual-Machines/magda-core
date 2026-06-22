@@ -118,7 +118,7 @@ class NodeComponent : public juce::Component,
     std::function<void()> onLayoutChanged;         // Called when size changes (e.g., panel toggle)
     std::function<void()> onSelected;              // Called when node is clicked/selected
     std::function<void(bool)> onCollapsedChanged;  // Called when collapsed state changes
-    std::function<void(float)> onZoomDelta;        // Called for Cmd+scroll zoom (delta amount)
+    std::function<void(float)> onZoomDelta;        // Called for Alt/Cmd+scroll zoom (delta amount)
 
     // Toggle side panel visibility programmatically
     void setModPanelVisible(bool visible);

@@ -5,6 +5,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "ValueEditGesture.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/ParameterUtils.hpp"
@@ -280,6 +281,11 @@ void DraggableValueLabel::resized() {
 
 void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
     if (valueControl_.isEditing()) {
+        return;
+    }
+
+    if (daw::ui::isDirectValueEditGesture(e)) {
+        startEditing();
         return;
     }
 

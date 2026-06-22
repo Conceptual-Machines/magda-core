@@ -121,8 +121,21 @@ class PolyStepSequencerPlugin : public MidiDevicePlugin {
     /** Remove all steps from the pattern in one undo transaction. */
     void clearPattern();
 
+    /** Replace the pattern with a simple random one: ~70% gates, 1-3 notes per
+     *  active step across two octaves (C2-B3). Single undo transaction. A
+     *  musically-aware variant (scale/chord heuristics) can replace this later. */
+    void randomizePattern();
+
     /** Current playback step index for UI highlight (-1 if not playing). */
     std::atomic<int> currentPlayStep_{-1};
+
+    // --- Step recording: play notes to fill steps. A chord (notes held
+    // together) lands on one step; the step advances when the chord releases.
+    bool isStepRecording() const {
+        return stepRecording_.load(std::memory_order_relaxed);
+    }
+    void setStepRecording(bool enabled);
+    std::atomic<int> stepRecordPosition_{0};  // next step to write (UI highlight)
 
   private:
     // Step clock (handles timing, transport, swing, direction)
@@ -130,6 +143,10 @@ class PolyStepSequencerPlugin : public MidiDevicePlugin {
 
     // --- Step state (mirrored from ValueTree, read on audio thread) ---
     std::array<Step, MAX_STEPS> steps_{};
+
+    // --- Step recording state ---
+    std::atomic<bool> stepRecording_{false};
+    int recordHeldCount_ = 0;  // notes currently held during recording (audio thread)
 
     // --- Audio-thread state ---
     std::array<int, MAX_NOTES_PER_STEP> soundingNotes_{};

@@ -251,10 +251,10 @@ MidiEditorContent::MidiEditorContent() {
     };
 
     // TimeRuler upper click callback — set local edit cursor (independent from arrangement)
-    timeRuler_->onPositionClicked = [this](double time) { setLocalEditCursor(time); };
+    timeRuler_->onPositionClicked = [this](double time, bool) { setLocalEditCursor(time); };
 
     // TimeRuler lower strip click callback — set the global arrangement playhead.
-    timeRuler_->onPlayheadPositionClicked = [this](double time) {
+    timeRuler_->onPlayheadPositionClicked = [this](double time, bool bypassSnap) {
         auto* controller = magda::TimelineController::getCurrent();
         if (!controller)
             return;
@@ -271,7 +271,8 @@ MidiEditorContent::MidiEditorContent() {
             time, state.playhead.getCurrentPosition(), clip, tempo, relativeTimeMode_);
 
         double positionBeats = absoluteSeconds * tempo / 60.0;
-        positionBeats = snapBeatToGrid(positionBeats);
+        if (!bypassSnap)
+            positionBeats = state.snapBeatsToGrid(positionBeats);
         controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
     };
 

@@ -302,8 +302,17 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     TrackInfo track;
     track.id = nextTrackId_++;
     track.type = type;
-    track.name = name.isEmpty() ? generateTrackName() : name;
+    // Chord track defaults to "Chord Track" (still renameable); other tracks get
+    // the generic "N Track".
+    track.name = !name.isEmpty()            ? name
+                 : type == TrackType::Chord ? juce::String("Chord Track")
+                                            : generateTrackName();
     track.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(tracks_.size())));
+
+    // The chord-track audition (speaker) toggle is the track's mute state. Seed
+    // it from the preference so chord preview can be on by default if desired.
+    if (type == TrackType::Chord)
+        track.muted = !Config::getInstance().getChordPreviewOnByDefault();
 
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
@@ -337,12 +346,55 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
         // based on whether the track is selected or record-armed.
     }
 
+    // The chord track ships with a Chord Engine (the authoring/suggestion UI
+    // the chord panel binds to) followed by a default instrument, so chord
+    // previews are audible out of the box. Both are internal devices; the
+    // pluginIds mirror their xmlTypeNames. Done here so the menu action and
+    // ensureChordTrack() both yield a fully-formed chord track.
+    if (type == TrackType::Chord) {
+        DeviceInfo engine;
+        engine.name = "Chord Engine";
+        engine.manufacturer = "MAGDA";
+        engine.pluginId = "midichordengine";
+        engine.uniqueId = "midichordengine";
+        engine.fileOrIdentifier = "midichordengine";
+        engine.isInstrument = false;
+        engine.deviceType = DeviceType::MIDI;
+        engine.format = PluginFormat::Internal;
+        addDeviceToTrack(trackId, engine);
+
+        DeviceInfo instrument;
+        instrument.name = "4OSC";
+        instrument.manufacturer = "MAGDA";
+        instrument.pluginId = "4osc";
+        instrument.uniqueId = "4osc";
+        instrument.fileOrIdentifier = "4osc";
+        instrument.isInstrument = true;
+        instrument.deviceType = DeviceType::Instrument;
+        instrument.format = PluginFormat::Internal;
+        addDeviceToTrack(trackId, instrument);
+    }
+
     return trackId;
 }
 
 TrackId TrackManager::createGroupTrack(const juce::String& name) {
     juce::String groupName = name.isEmpty() ? "Group" : name;
     return createTrack(groupName, TrackType::Group);
+}
+
+TrackId TrackManager::getChordTrackId() const {
+    for (const auto& track : tracks_) {
+        if (track.type == TrackType::Chord)
+            return track.id;
+    }
+    return INVALID_TRACK_ID;
+}
+
+TrackId TrackManager::ensureChordTrack() {
+    if (auto existing = getChordTrackId(); existing != INVALID_TRACK_ID)
+        return existing;
+    return createTrack("", TrackType::Chord);
 }
 
 TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name) {
@@ -747,6 +799,11 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
 
     if (it == tracks_.end()) {
+        return INVALID_TRACK_ID;
+    }
+
+    // The chord track is a strict singleton - never duplicate it.
+    if (it->type == TrackType::Chord) {
         return INVALID_TRACK_ID;
     }
 
@@ -1290,6 +1347,26 @@ void TrackManager::setTrackType(TrackId trackId, TrackType type) {
             return;
         }
         track->type = type;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackMixerChannelWidth(TrackId trackId, int width) {
+    if (auto* track = getTrack(trackId)) {
+        const int clamped = juce::jlimit(0, 180, width);
+        if (track->mixerChannelWidth == clamped)
+            return;
+        track->mixerChannelWidth = clamped;
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackMixerFaderTopInset(TrackId trackId, int inset) {
+    if (auto* track = getTrack(trackId)) {
+        const int clamped = juce::jlimit(0, 400, inset);
+        if (track->mixerFaderTopInset == clamped)
+            return;
+        track->mixerFaderTopInset = clamped;
         notifyTrackPropertyChanged(trackId);
     }
 }
@@ -2671,6 +2748,17 @@ void TrackManager::endBatch() {
         tracksChangedPending_ = false;
         notifyTracksChanged();
     }
+}
+
+TrackManager::ScopedListenerMuteForTests::ScopedListenerMuteForTests() {
+    auto& manager = TrackManager::getInstance();
+    savedListeners_ = std::move(manager.listeners_);
+    manager.listeners_.clear();
+}
+
+TrackManager::ScopedListenerMuteForTests::~ScopedListenerMuteForTests() {
+    auto& manager = TrackManager::getInstance();
+    manager.listeners_ = std::move(savedListeners_);
 }
 
 void TrackManager::notifyTrackPropertyChanged(int trackId) {

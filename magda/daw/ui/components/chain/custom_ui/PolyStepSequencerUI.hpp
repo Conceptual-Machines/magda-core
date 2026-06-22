@@ -81,7 +81,7 @@ class PolyStepSequencerUI : public juce::Component,
     juce::Label quantizeSubLabel_;
     LinkableTextSlider quantizeSubSlider_;
 
-    // --- Ramp curve ---
+    // --- Ramp curve (time bend) ---
     juce::Label rampLabel_;
     RampCurveDisplay rampCurveDisplay_;
     juce::Label depthLabel_;
@@ -91,12 +91,12 @@ class PolyStepSequencerUI : public juce::Component,
     juce::Label cyclesLabel_;
     LinkableTextSlider cyclesSlider_;
 
-    // --- MIDI controls ---
-    std::unique_ptr<magda::SvgButton> midiThruButton_;
-
     // --- View mode toggle (keys / drum) ---
     juce::TextButton viewModeButton_;
     bool drumViewActive_ = false;
+
+    // Right-side control panel bounds (controls + time bend), painted as a card.
+    juce::Rectangle<int> sidePanelArea_;
 
     // --- Pattern view (swapped between KeysView and DrumLanesView) ---
     std::unique_ptr<PatternView> patternView_;

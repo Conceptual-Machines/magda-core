@@ -937,6 +937,70 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     mod.value = 0.0f;
             }
         }
+
+        if (mod.type == ModType::Random) {
+            // The TE RandomModifier only advances while the playback graph is
+            // processing, so its value freezes when the transport is stopped.
+            // Simulate it here for the editor preview, mirroring
+            // te::RandomModifier::setPhase: a phase ramp at `rate`, a fresh
+            // random target each time the phase wraps, and a shape-driven
+            // hold->ramp between targets. The live audio value is overlaid on
+            // top (syncLFOValuesToVisuals) when the graph is running.
+            bool triggerRequested = computeTriggerRequest(mod, inputs);
+            if (shouldApplyTrigger(mod, triggerRequested)) {
+                mod.phase = 0.0f;
+                mod.triggered = true;
+                mod.triggerCount++;
+                mod.running = true;
+            } else {
+                mod.triggered = false;
+            }
+            if (shouldStopRunning(mod, inputs))
+                mod.running = false;
+            if (mod.triggerMode == LFOTriggerMode::Transport && inputs.transportPlaying &&
+                !inputs.transportJustStopped)
+                mod.running = true;
+
+            bool shouldAdvance = (mod.triggerMode == LFOTriggerMode::Free) || mod.running;
+            if (shouldAdvance) {
+                float effectiveRate =
+                    mod.tempoSync ? ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm)
+                                  : mod.rate;
+                const float prevPhase = mod.phase;
+                mod.phase += static_cast<float>(effectiveRate * deltaTime);
+                bool stepped = false;
+                while (mod.phase >= 1.0f) {
+                    mod.phase -= 1.0f;
+                    stepped = true;
+                }
+                if (stepped || mod.phase < prevPhase) {
+                    // New step: pick a target within stepDepth of the current
+                    // value, clamped to the unipolar [0,1] visual range (per-link
+                    // amount/bipolar carry the actual modulation depth).
+                    mod.randomPrev = mod.randomCurrent;
+                    const float sd = mod.randomStepDepth * 0.5f;
+                    const float lo = juce::jmax(0.0f, mod.randomCurrent - sd);
+                    const float hi = juce::jmin(1.0f, mod.randomCurrent + sd);
+                    static juce::Random rng;  // visual-only, message thread
+                    mod.randomCurrent = lo + rng.nextFloat() * (hi - lo);
+                    mod.randomDiff = mod.randomCurrent - mod.randomPrev;
+                }
+                // Smooth the phase (S-curve blend) then apply the shape ramp.
+                const float s = mod.randomSmooth;
+                const float sc = mod.phase * mod.phase * (3.0f - 2.0f * mod.phase);
+                const float ph = (1.0f - s) * mod.phase + s * sc;
+                const float shapeVal = mod.randomShape;
+                if (shapeVal <= 0.0f || ph < (1.0f - shapeVal)) {
+                    mod.value = mod.randomPrev;
+                } else {
+                    const float skewed = ((ph - 1.0f) / shapeVal) + 1.0f;
+                    mod.value = mod.randomDiff * skewed + mod.randomPrev;
+                }
+                mod.value = juce::jlimit(0.0f, 1.0f, mod.value);
+            } else {
+                mod.value = 0.0f;
+            }
+        }
         return mod.running != wasRunning;
     };
 

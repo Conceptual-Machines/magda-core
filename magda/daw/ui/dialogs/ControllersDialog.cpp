@@ -8,6 +8,7 @@
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerActivation.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
@@ -64,7 +65,7 @@ class ControllerProfilesPage : public juce::Component,
         openFolderButton_.onClick = [this]() { onOpenFolderClicked(); };
         addAndMakeVisible(openFolderButton_);
 
-        uploadButton_.setButtonText(tr("controllers.upload_profile"));
+        uploadButton_.setButtonText(trEllipsis("controllers.upload_profile"));
         uploadButton_.onClick = [this]() { onUploadClicked(); };
         addAndMakeVisible(uploadButton_);
 
@@ -291,7 +292,7 @@ void ControllerProfilesPage::onOpenFolderClicked() {
 }
 
 void ControllerProfilesPage::onUploadClicked() {
-    auto title = tr("controllers.upload_profile");
+    auto title = trEllipsis("controllers.upload_profile");
     uploadChooser_ = std::make_unique<juce::FileChooser>(
         title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.json");
     juce::Component::SafePointer<ControllerProfilesPage> safeThis(this);
@@ -314,11 +315,13 @@ void ControllerProfilesPage::importProfileFile(const juce::File& file, const juc
 
     auto parsed = juce::JSON::parse(file.loadFileAsString());
     if (parsed.isVoid())
-        return fail(tr("controllers.upload_invalid_json"));
+        return fail(tr("controllers.upload_invalid_json")
+                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Json)));
 
     auto profileOpt = decodeControllerProfile(parsed);
     if (!profileOpt.has_value())
-        return fail(tr("controllers.upload_invalid_profile"));
+        return fail(tr("controllers.upload_invalid_profile")
+                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Json)));
 
     auto issues = validateControllerProfile(*profileOpt);
     if (!issues.empty()) {
@@ -573,7 +576,7 @@ class LuaScriptsPage : public juce::Component {
         openScriptsFolderButton_.onClick = [this]() { onOpenScriptsFolderClicked(); };
         addAndMakeVisible(openScriptsFolderButton_);
 
-        importButton_.setButtonText(tr("controllers.scripts.import"));
+        importButton_.setButtonText(trEllipsis("controllers.scripts.import"));
         importButton_.onClick = [this]() { onImportClicked(); };
         addAndMakeVisible(importButton_);
 
@@ -804,12 +807,15 @@ class LuaScriptsPage : public juce::Component {
 
     void onReloadLuaClicked() {
         if (!scripting_app::reloadActiveLuaScript() && scripting_app::hasAnyLuaScripts()) {
-            juce::AlertWindow::showAsync(juce::MessageBoxOptions()
-                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                             .withTitle(tr("controllers.tab.scripts"))
-                                             .withMessage(tr("controllers.scripts.reload_failed"))
-                                             .withButton(tr("dialogs.ok")),
-                                         nullptr);
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions()
+                    .withIconType(juce::MessageBoxIconType::WarningIcon)
+                    .withTitle(
+                        tr("controllers.tab.scripts")
+                            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)))
+                    .withMessage(tr("controllers.scripts.reload_failed"))
+                    .withButton(tr("dialogs.ok")),
+                nullptr);
         }
         rebuildScripts();
     }
@@ -820,7 +826,7 @@ class LuaScriptsPage : public juce::Component {
     }
 
     void onImportClicked() {
-        auto title = tr("controllers.scripts.import");
+        auto title = trEllipsis("controllers.scripts.import");
         importChooser_ = std::make_unique<juce::FileChooser>(
             title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.lua");
         juce::Component::SafePointer<LuaScriptsPage> self(this);
@@ -840,7 +846,8 @@ class LuaScriptsPage : public juce::Component {
             juce::AlertWindow::showMessageBox(juce::AlertWindow::WarningIcon, title, reason);
         };
         if (!file.existsAsFile() || !file.hasFileExtension("lua"))
-            return fail(tr("controllers.scripts.import_invalid"));
+            return fail(tr("controllers.scripts.import_invalid")
+                            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)));
 
         auto scriptsDir = scripting_app::luaScriptsFolder();
         if (!scriptsDir.isDirectory())
@@ -961,8 +968,14 @@ ControllersDialog::ControllersDialog() {
     scriptsPage_ = std::make_unique<LuaScriptsPage>();
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
-    tabbedComponent_.addTab(tr("controllers.tab.profiles"), tabBg, profilesPage_.get(), false);
-    tabbedComponent_.addTab(tr("controllers.tab.scripts"), tabBg, scriptsPage_.get(), false);
+    tabbedComponent_.addTab(
+        tr("controllers.tab.profiles")
+            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+        tabBg, profilesPage_.get(), false);
+    tabbedComponent_.addTab(
+        tr("controllers.tab.scripts")
+            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)),
+        tabBg, scriptsPage_.get(), false);
     addAndMakeVisible(tabbedComponent_);
 
     setSize(560, 512);

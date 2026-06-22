@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <limits>
 
+#include "TechnicalText.hpp"
 #include "TempoUtils.hpp"
 
 namespace magda {
@@ -257,27 +258,32 @@ juce::String formatDecibels(float db, int decimalPlaces) {
     if (!std::isfinite(db) || db <= -60.0f + 0.001f)
         return "-inf";
     juce::String sign = db > 0.0f ? "+" : "";
-    return sign + juce::String(db, decimalPlaces) + " dB";
+    return sign + juce::String(db, decimalPlaces) +
+           technicalTextSuffix(TechnicalTextToken::Decibels);
 }
 
 juce::String formatHz(float hz, int decimalPlaces) {
     if (hz >= 1000.0f)
-        return juce::String(hz / 1000.0f, decimalPlaces) + " kHz";
-    return juce::String(hz, decimalPlaces) + " Hz";
+        return juce::String(hz / 1000.0f, decimalPlaces) +
+               technicalTextSuffix(TechnicalTextToken::Kilohertz);
+    return juce::String(hz, decimalPlaces) + technicalTextSuffix(TechnicalTextToken::Hertz);
 }
 
 juce::String formatMs(float ms, int decimalPlaces) {
     if (ms >= 1000.0f)
-        return juce::String(ms / 1000.0f, decimalPlaces) + " s";
-    return juce::String(ms, decimalPlaces) + " ms";
+        return juce::String(ms / 1000.0f, decimalPlaces) +
+               technicalTextSuffix(TechnicalTextToken::Seconds);
+    return juce::String(ms, decimalPlaces) + technicalTextSuffix(TechnicalTextToken::Milliseconds);
 }
 
 juce::String formatPan(float value) {
     if (std::abs(value) < 0.005f)
-        return "C";
+        return technicalText(TechnicalTextToken::PanCenter);
     if (value < 0.0f)
-        return "L" + juce::String(static_cast<int>(std::round(-value * 100.0f)));
-    return "R" + juce::String(static_cast<int>(std::round(value * 100.0f)));
+        return technicalText(TechnicalTextToken::PanLeft) +
+               juce::String(static_cast<int>(std::round(-value * 100.0f)));
+    return technicalText(TechnicalTextToken::PanRight) +
+           juce::String(static_cast<int>(std::round(value * 100.0f)));
 }
 
 juce::String formatMidiNote(float value) {
@@ -302,13 +308,18 @@ bool storesPercentAsUnitFraction(const ParameterInfo& info) {
     return info.minValue >= -1.0e-6f && info.maxValue <= 1.0f + 1.0e-6f;
 }
 
+bool unitEquals(const juce::String& unit, TechnicalTextToken token) {
+    return unit == technicalText(token);
+}
+
 std::optional<float> parseDecibels(juce::String text) {
     auto lower = text.trim().toLowerCase();
     if (lower == "-inf" || lower == "-infinity" || lower == "inf")
         return lower.startsWith("-") ? -std::numeric_limits<float>::infinity()
                                      : std::numeric_limits<float>::infinity();
-    if (lower.endsWith("db"))
-        lower = lower.dropLastCharacters(2).trim();
+    const auto db = technicalText(TechnicalTextToken::Decibels).toLowerCase();
+    if (lower.endsWith(db))
+        lower = lower.dropLastCharacters(db.length()).trim();
     if (lower.isEmpty())
         return std::nullopt;
     bool ok = lower.containsAnyOf("0123456789");
@@ -371,14 +382,16 @@ std::optional<float> parseMidiNote(juce::String text) {
 
 std::optional<float> parseHz(juce::String text) {
     auto lower = text.trim().toLowerCase();
-    if (lower.endsWith("khz")) {
-        auto num = lower.dropLastCharacters(3).trim();
+    const auto khz = technicalText(TechnicalTextToken::Kilohertz).toLowerCase();
+    const auto hz = technicalText(TechnicalTextToken::Hertz).toLowerCase();
+    if (lower.endsWith(khz)) {
+        auto num = lower.dropLastCharacters(khz.length()).trim();
         if (num.isEmpty())
             return std::nullopt;
         return static_cast<float>(num.getDoubleValue() * 1000.0);
     }
-    if (lower.endsWith("hz"))
-        lower = lower.dropLastCharacters(2).trim();
+    if (lower.endsWith(hz))
+        lower = lower.dropLastCharacters(hz.length()).trim();
     if (lower.endsWith("k"))
         return static_cast<float>(lower.dropLastCharacters(1).trim().getDoubleValue() * 1000.0);
     if (lower.isEmpty())
@@ -388,10 +401,13 @@ std::optional<float> parseHz(juce::String text) {
 
 std::optional<float> parseMs(juce::String text) {
     auto lower = text.trim().toLowerCase();
-    if (lower.endsWith("ms"))
-        lower = lower.dropLastCharacters(2).trim();
-    else if (lower.endsWith("s"))
-        return static_cast<float>(lower.dropLastCharacters(1).trim().getDoubleValue() * 1000.0);
+    const auto ms = technicalText(TechnicalTextToken::Milliseconds).toLowerCase();
+    const auto seconds = technicalText(TechnicalTextToken::Seconds).toLowerCase();
+    if (lower.endsWith(ms))
+        lower = lower.dropLastCharacters(ms.length()).trim();
+    else if (lower.endsWith(seconds))
+        return static_cast<float>(
+            lower.dropLastCharacters(seconds.length()).trim().getDoubleValue() * 1000.0);
     if (lower.isEmpty())
         return std::nullopt;
     return static_cast<float>(lower.getDoubleValue());
@@ -460,11 +476,11 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
         case DisplayFormat::Percent:
             return juce::String(storesPercentAsUnitFraction(info) ? realValue * 100.0f : realValue,
                                 decimalPlaces) +
-                   "%";
+                   technicalText(TechnicalTextToken::Percent);
         case DisplayFormat::MidiNote:
             return formatMidiNote(realValue);
         case DisplayFormat::Beats:
-            return juce::String(realValue, 2) + " beats";
+            return juce::String(realValue, 2) + technicalTextSuffix(TechnicalTextToken::Beats);
         case DisplayFormat::BarsBeats:
             return formatBars(realValue);
         case DisplayFormat::Default:
@@ -472,19 +488,20 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     }
 
     // Default: dispatch on unit.
-    if (info.unit == "Hz")
+    if (unitEquals(info.unit, TechnicalTextToken::Hertz))
         return formatHz(realValue, decimalPlaces);
-    if (info.unit == "ms")
+    if (unitEquals(info.unit, TechnicalTextToken::Milliseconds))
         return formatMs(realValue, decimalPlaces);
-    if (info.unit == "%")
+    if (unitEquals(info.unit, TechnicalTextToken::Percent))
         return juce::String(storesPercentAsUnitFraction(info) ? realValue * 100.0f : realValue,
                             decimalPlaces) +
-               "%";
-    if (info.unit == "dB")
+               technicalText(TechnicalTextToken::Percent);
+    if (unitEquals(info.unit, TechnicalTextToken::Decibels))
         return formatDecibels(realValue, decimalPlaces);
-    if (info.unit == "st") {
+    if (unitEquals(info.unit, TechnicalTextToken::Semitones)) {
         juce::String sign = realValue > 0.0f ? "+" : "";
-        return sign + juce::String(realValue, decimalPlaces) + " st";
+        return sign + juce::String(realValue, decimalPlaces) +
+               technicalTextSuffix(TechnicalTextToken::Semitones);
     }
     if (info.unit.isNotEmpty())
         return juce::String(realValue, decimalPlaces) + " " + info.unit;
@@ -495,7 +512,8 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     // unit/displayFormat manually.
     if (info.scale == ParameterScale::Linear && info.minValue >= -1.0e-6f &&
         info.maxValue <= 1.0f + 1.0e-6f) {
-        return juce::String(realValue * 100.0f, decimalPlaces) + "%";
+        return juce::String(realValue * 100.0f, decimalPlaces) +
+               technicalText(TechnicalTextToken::Percent);
     }
 
     return juce::String(realValue, decimalPlaces);
@@ -539,8 +557,9 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             return clamp(parsePan(trimmed));
         case DisplayFormat::Percent: {
             auto t = trimmed;
-            if (t.endsWith("%"))
-                t = t.dropLastCharacters(1).trim();
+            const auto percent = technicalText(TechnicalTextToken::Percent);
+            if (t.endsWith(percent))
+                t = t.dropLastCharacters(percent.length()).trim();
             if (t.isEmpty())
                 return std::nullopt;
             float parsed = static_cast<float>(t.getDoubleValue());
@@ -552,8 +571,9 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             return clamp(parseMidiNote(trimmed));
         case DisplayFormat::Beats: {
             auto t = trimmed.toLowerCase();
-            if (t.endsWith("beats"))
-                t = t.dropLastCharacters(5).trim();
+            const auto beats = technicalText(TechnicalTextToken::Beats).toLowerCase();
+            if (t.endsWith(beats))
+                t = t.dropLastCharacters(beats.length()).trim();
             if (t.isEmpty())
                 return std::nullopt;
             return clamp(static_cast<float>(t.getDoubleValue()));
@@ -578,16 +598,17 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
     }
 
     // Default: dispatch on unit.
-    if (info.unit == "Hz")
+    if (unitEquals(info.unit, TechnicalTextToken::Hertz))
         return clamp(parseHz(trimmed));
-    if (info.unit == "ms")
+    if (unitEquals(info.unit, TechnicalTextToken::Milliseconds))
         return clamp(parseMs(trimmed));
-    if (info.unit == "dB")
+    if (unitEquals(info.unit, TechnicalTextToken::Decibels))
         return clamp(parseDecibels(trimmed));
-    if (info.unit == "%") {
+    if (unitEquals(info.unit, TechnicalTextToken::Percent)) {
         auto t = trimmed;
-        if (t.endsWith("%"))
-            t = t.dropLastCharacters(1).trim();
+        const auto percent = technicalText(TechnicalTextToken::Percent);
+        if (t.endsWith(percent))
+            t = t.dropLastCharacters(percent.length()).trim();
         if (t.isEmpty())
             return std::nullopt;
         float parsed = static_cast<float>(t.getDoubleValue());
@@ -595,10 +616,11 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             parsed *= 0.01f;
         return clamp(parsed);
     }
-    if (info.unit == "st") {
+    if (unitEquals(info.unit, TechnicalTextToken::Semitones)) {
         auto t = trimmed.toLowerCase();
-        if (t.endsWith("st"))
-            t = t.dropLastCharacters(2).trim();
+        const auto semitones = technicalText(TechnicalTextToken::Semitones).toLowerCase();
+        if (t.endsWith(semitones))
+            t = t.dropLastCharacters(semitones.length()).trim();
         if (t.isEmpty())
             return std::nullopt;
         return clamp(static_cast<float>(t.getDoubleValue()));
@@ -608,8 +630,9 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
     if (info.unit.isEmpty() && info.scale == ParameterScale::Linear && info.minValue >= -1.0e-6f &&
         info.maxValue <= 1.0f + 1.0e-6f) {
         auto t = trimmed;
-        if (t.endsWith("%"))
-            t = t.dropLastCharacters(1).trim();
+        const auto percent = technicalText(TechnicalTextToken::Percent);
+        if (t.endsWith(percent))
+            t = t.dropLastCharacters(percent.length()).trim();
         if (t.isEmpty())
             return std::nullopt;
         if (!t.containsAnyOf("0123456789."))

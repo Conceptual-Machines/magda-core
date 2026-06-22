@@ -250,6 +250,17 @@ void MidiBridge::clearTrackMidiInput(TrackId trackId) {
     setTrackMidiInput(trackId, {});  // This will trigger the callback
 }
 
+void MidiBridge::resetTestState() {
+    juce::ScopedLock lock(routingLock_);
+    trackMidiInputs_.clear();
+    monitoredTracks_.clear();
+    globalEventQueue_.clear();
+    recordingQueue_ = nullptr;
+    transportPosition_ = nullptr;
+    onNoteEvent = nullptr;
+    onCCEvent = nullptr;
+}
+
 void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
                                            const juce::MidiMessage& message) {
     if (isShuttingDown_.load(std::memory_order_acquire))

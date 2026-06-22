@@ -11,7 +11,7 @@ TempoLaneSync::TempoLaneSync(tracktion::Edit& edit)
     tempoState_.addListener(this);
     resolveTempoLane();
     if (tempoLaneId_ != INVALID_AUTOMATION_LANE_ID)
-        syncSequenceToLane();  // seed the lane from the current tempo sequence
+        reconcileAppearingTempoLane();
 }
 
 TempoLaneSync::~TempoLaneSync() {
@@ -26,9 +26,23 @@ void TempoLaneSync::resolveTempoLane() {
 void TempoLaneSync::automationLanesChanged() {
     const auto prev = tempoLaneId_;
     resolveTempoLane();
-    // Lane just appeared (created via UI / project load): seed it from the
-    // sequence so it shows the real tempo rather than a default point.
+    // Lane just appeared (created via UI or restored from a saved project).
     if (tempoLaneId_ != INVALID_AUTOMATION_LANE_ID && prev == INVALID_AUTOMATION_LANE_ID)
+        reconcileAppearingTempoLane();
+}
+
+void TempoLaneSync::reconcileAppearingTempoLane() {
+    // The tempo automation is persisted ONLY as the lane's points (the
+    // tempoSequence is a runtime mirror that is never serialized). So a restored
+    // lane with a real curve is authoritative: push it into the sequence. A lane
+    // freshly created in the UI has just a single (possibly default) point, so
+    // seed it from the current sequence instead. Seeding a restored multi-point
+    // lane from the fresh default sequence is what silently dropped saved tempo
+    // automation on project reload.
+    auto* lane = AutomationManager::getInstance().getLane(tempoLaneId_);
+    if (lane != nullptr && lane->absolutePoints.size() > 1)
+        syncLaneToSequence();
+    else
         syncSequenceToLane();
 }
 

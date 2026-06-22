@@ -5,6 +5,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "ValueEditGesture.hpp"
 
 namespace magda {
 
@@ -258,6 +259,11 @@ void BarsBeatsTicksLabel::SegmentLabel::paint(juce::Graphics& g) {
 void BarsBeatsTicksLabel::SegmentLabel::mouseDown(const juce::MouseEvent& e) {
     if (isEditing_ || !owner_.isEnabled())
         return;
+
+    if (daw::ui::isDirectValueEditGesture(e)) {
+        startEditing();
+        return;
+    }
 
     isDragging_ = true;
     dragStartY_ = e.y;

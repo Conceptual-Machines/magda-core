@@ -31,6 +31,10 @@ Pick a global scale factor for the whole interface. Useful on HiDPI / 4K screens
 
 Changes apply live — no restart required. The shortcuts ++cmd+plus++ and ++cmd+minus++ also bump the scale up and down by one preset.
 
+### Font Size
+
+Use **Font Size** to scale MAGDA-owned UI text without changing component geometry. Use **Localized Font Size** as an extra multiplier on top of the global font setting for localized glyphs, so 150% global and 120% localized renders those glyphs at 180%. Chinese defaults to 115% and Japanese defaults to 110% until the user saves their own localized font size.
+
 ## Storage
 
 MAGDA keeps user data in three configurable folders. Each can be redirected to any path on disk — point them at an external drive, a synced folder, or a per-project staging area.

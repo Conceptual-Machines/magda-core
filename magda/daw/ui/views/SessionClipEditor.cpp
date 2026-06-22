@@ -217,9 +217,9 @@ void SessionClipEditor::setupFooter() {
     offsetSlider_->setColour(juce::Slider::backgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     offsetSlider_->setColour(juce::Slider::thumbColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                             DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
     offsetSlider_->setColour(juce::Slider::trackColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+                             DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     offsetSlider_->setColour(juce::Slider::textBoxTextColourId, DarkTheme::getTextColour());
     offsetSlider_->setColour(juce::Slider::textBoxBackgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));

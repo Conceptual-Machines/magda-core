@@ -24,6 +24,7 @@
 #include "core/Config.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/UIScale.hpp"
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,14 @@ void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider,
     owner.addAndMakeVisible(slider);
 }
 
+void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider, juce::Label& label,
+                     const juce::String& labelText, double min, double max, double interval,
+                     magda::TechnicalTextToken suffix, int decimals = 0,
+                     bool leadingSpace = false) {
+    setupTextSlider(owner, slider, label, labelText, min, max, interval, decimals,
+                    magda::technicalTextSuffix(suffix, leadingSpace));
+}
+
 void setupToggle(juce::Component& owner, juce::ToggleButton& toggle, const juce::String& text) {
     toggle.setButtonText(text);
     toggle.setColour(juce::ToggleButton::textColourId,
@@ -73,6 +82,11 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     header.setFont(magda::FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(header);
+}
+
+juce::String trOr(const juce::String& key, const juce::String& fallback) {
+    const auto translated = magda::tr(key);
+    return translated == key ? fallback : translated;
 }
 
 void setupPathRowLabel(juce::Component& owner, juce::Label& label, const juce::String& text,
@@ -131,12 +145,15 @@ class GeneralPage : public juce::Component {
         setupTextSlider(*this, zoomOutSensitivitySlider, zoomOutLabel,
                         tr("preferences.slider.zoom_out_sensitivity"), 5.0, 100.0, 1.0);
         setupTextSlider(*this, zoomShiftSensitivitySlider, zoomShiftLabel,
-                        tr("preferences.slider.zoom_shift_sensitivity"), 1.0, 50.0, 0.5, 1);
+                        tr("preferences.slider.zoom_shift_sensitivity")
+                            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Shift)),
+                        1.0, 50.0, 0.5, 1);
 
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
         // Total timeline length is per-project (File > Project Settings).
         setupTextSlider(*this, viewDurationSlider, viewDurationLabel,
-                        tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, 0, " bars");
+                        tr("preferences.slider.default_view"), 4.0, 128.0, 1.0,
+                        magda::TechnicalTextToken::Bars, 0, true);
 
         setupSectionHeader(*this, transportHeader, tr("preferences.section.transport"));
         setupToggle(*this, stopUpdatesPlayheadToggle,
@@ -146,7 +163,8 @@ class GeneralPage : public juce::Component {
         setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
         setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
         setupTextSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
-                        tr("preferences.slider.interval"), 10.0, 300.0, 10.0, 0, " sec");
+                        tr("preferences.slider.interval"), 10.0, 300.0, 10.0,
+                        magda::TechnicalTextToken::ShortSeconds, 0, true);
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
@@ -161,6 +179,8 @@ class GeneralPage : public juce::Component {
         setupToggle(*this, showTooltipsToggle, tr("preferences.toggle.show_tooltips"));
         setupToggle(*this, openPluginWindowOnDropToggle,
                     tr("preferences.toggle.open_plugin_window_on_drop"));
+        setupToggle(*this, chordPreviewDefaultToggle,
+                    tr("preferences.toggle.chord_preview_default"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
         setupComboLabel(languageLabel, tr("preferences.language.label"));
@@ -177,8 +197,15 @@ class GeneralPage : public juce::Component {
 
         languageCombo.onChange = [this] {
             int idx = languageCombo.getSelectedId() - 1;
-            if (idx >= 0 && idx < static_cast<int>(availableLanguages_.size()))
+            if (idx >= 0 && idx < static_cast<int>(availableLanguages_.size())) {
                 restartHint.setVisible(availableLanguages_[idx] != initialLanguage_);
+                if (!localizedFontScaleExplicit_) {
+                    localizedFontScaleSlider.setValue(
+                        Config::defaultLocalizedUIFontScaleForLanguage(availableLanguages_[idx]) *
+                            100.0,
+                        juce::dontSendNotification);
+                }
+            }
         };
 
         setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
@@ -193,7 +220,13 @@ class GeneralPage : public juce::Component {
         addAndMakeVisible(scaleCombo);
 
         setupTextSlider(*this, fontScaleSlider, fontScaleLabel, tr("preferences.font_scale.label"),
-                        80.0, 150.0, 5.0, 0, "%");
+                        80.0, 150.0, 5.0, magda::TechnicalTextToken::Percent);
+        setupTextSlider(*this, localizedFontScaleSlider, localizedFontScaleLabel,
+                        trOr("preferences.localized_font_scale.label", "Localized Font Size"),
+                        100.0, 300.0, 5.0, magda::TechnicalTextToken::Percent);
+        localizedFontScaleSlider.onValueChanged = [this](double) {
+            localizedFontScaleExplicit_ = true;
+        };
     }
 
     int getPreferredHeight(int width) const {
@@ -246,6 +279,8 @@ class GeneralPage : public juce::Component {
         showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
         openPluginWindowOnDropToggle.setToggleState(config.getOpenPluginWindowOnDrop(),
                                                     juce::dontSendNotification);
+        chordPreviewDefaultToggle.setToggleState(config.getChordPreviewOnByDefault(),
+                                                 juce::dontSendNotification);
 
         languageCombo.clear(juce::dontSendNotification);
         availableLanguages_.clear();
@@ -272,6 +307,9 @@ class GeneralPage : public juce::Component {
 
         scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
         fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
+        localizedFontScaleExplicit_ = config.hasExplicitLocalizedUIFontScale();
+        localizedFontScaleSlider.setValue(config.getLocalizedUIFontScale() * 100.0,
+                                          juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -291,6 +329,7 @@ class GeneralPage : public juce::Component {
         config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
+        config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
 
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
@@ -311,6 +350,7 @@ class GeneralPage : public juce::Component {
         }
 
         config.setUIFontScale(fontScaleSlider.getValue() / 100.0);
+        config.setLocalizedUIFontScale(localizedFontScaleSlider.getValue() / 100.0);
     }
 
   private:
@@ -328,8 +368,8 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 5) + 12 + secGap + headerH + 4 +
-               rowH + 18 + secGap + headerH + 4 + (rowH * 2) + 4 + padding;
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 6) + 16 + secGap + headerH + 4 +
+               rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -342,6 +382,7 @@ class GeneralPage : public juce::Component {
                + secGap + headerH + 4 + rowH             // Timeline
                + secGap + headerH + 4 + rowH + 4 + rowH  // Transport
                + secGap + headerH + 4 + rowH + 4 + rowH  // Auto-Save
+               + secGap + headerH + 4 + rowH + 18        // Language
                + padding;
     }
 
@@ -351,10 +392,9 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH   // Layout
-               + secGap + headerH + 4 + (rowH * 5) + 16  // Behaviour
-               + secGap + headerH + 4 + rowH + 18        // Language
-               + secGap + headerH + 4 + rowH + 4 + rowH  // Display Scale
+        return padding + headerH + 4 + rowH + 4 + rowH              // Layout
+               + secGap + headerH + 4 + (rowH * 6) + 20             // Behaviour
+               + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH  // Display Scale
                + padding;
     }
 
@@ -412,6 +452,8 @@ class GeneralPage : public juce::Component {
         showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         openPluginWindowOnDropToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        chordPreviewDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Language
@@ -427,6 +469,9 @@ class GeneralPage : public juce::Component {
         layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, fontScaleLabel, fontScaleSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
+                            sliderH);
     }
 
     void layoutTwoColumns(juce::Rectangle<int> bounds, int rowH, int sliderH, int headerH,
@@ -468,6 +513,13 @@ class GeneralPage : public juce::Component {
         autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
         left.removeFromTop(4);
         layoutTextSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, sliderH);
+        left.removeFromTop(secGap);
+
+        // Language
+        languageHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutComboRow(left, languageLabel, languageCombo, rowH);
+        restartHint.setBounds(left.removeFromTop(18));
 
         // Layout
         layoutHeader.setBounds(right.removeFromTop(headerH));
@@ -489,13 +541,8 @@ class GeneralPage : public juce::Component {
         showTooltipsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         openPluginWindowOnDropToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
-        right.removeFromTop(secGap);
-
-        // Language
-        languageHeader.setBounds(right.removeFromTop(headerH));
         right.removeFromTop(4);
-        layoutComboRow(right, languageLabel, languageCombo, rowH);
-        restartHint.setBounds(right.removeFromTop(18));
+        chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(secGap);
 
         // Display Scale
@@ -504,6 +551,9 @@ class GeneralPage : public juce::Component {
         layoutComboRow(right, scaleLabel, scaleCombo, rowH);
         right.removeFromTop(4);
         layoutTextSliderRow(right, fontScaleLabel, fontScaleSlider, rowH, sliderH);
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
+                            sliderH);
     }
 
     void setupComboLabel(juce::Label& label, const juce::String& text) {
@@ -594,6 +644,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
     juce::ToggleButton showTooltipsToggle;
     juce::ToggleButton openPluginWindowOnDropToggle;
+    juce::ToggleButton chordPreviewDefaultToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
     juce::Label restartHint;
@@ -603,6 +654,9 @@ class GeneralPage : public juce::Component {
     juce::ComboBox scaleCombo;
     juce::Label fontScaleLabel;
     magda::daw::ui::TextSlider fontScaleSlider;
+    juce::Label localizedFontScaleLabel;
+    magda::daw::ui::TextSlider localizedFontScaleSlider;
+    bool localizedFontScaleExplicit_ = false;
 };
 
 // ---- Colours tab: Track colour palette ------------------------------------
@@ -620,7 +674,11 @@ class ColoursPage : public juce::Component {
                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(colourHeaderLabel);
 
-        hexHeaderLabel.setText(tr("preferences.colours.hex_rgb"), juce::dontSendNotification);
+        // "Hex (RGB)" — both terms are fixed technical notation, identical in
+        // every locale, so they are tokens rather than a translatable string.
+        hexHeaderLabel.setText(magda::technicalText(magda::TechnicalTextToken::Hex) + " (" +
+                                   magda::technicalText(magda::TechnicalTextToken::Rgb) + ")",
+                               juce::dontSendNotification);
         hexHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         hexHeaderLabel.setColour(juce::Label::textColourId,
                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -898,7 +956,7 @@ class RenderingPage : public juce::Component {
         renderFolderValue.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(renderFolderValue);
 
-        renderFolderBrowseButton.setButtonText(tr("preferences.button.browse"));
+        renderFolderBrowseButton.setButtonText(trEllipsis("preferences.button.browse"));
         renderFolderBrowseButton.onClick = [this]() {
             fileChooser_ = std::make_unique<juce::FileChooser>(
                 tr("preferences.dialog.select_render_output_folder"));
@@ -1094,7 +1152,7 @@ class PathsPage : public juce::Component {
         dataValue_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(dataValue_);
 
-        dataBrowse_.setButtonText(tr("preferences.button.browse"));
+        dataBrowse_.setButtonText(trEllipsis("preferences.button.browse"));
         dataBrowse_.onClick = [this]() {
             pickFolder(Kind::Data, tr("preferences.paths.dialog.choose_data"));
         };
@@ -1143,7 +1201,7 @@ class PathsPage : public juce::Component {
         presetsValue_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(presetsValue_);
 
-        presetsBrowse_.setButtonText(tr("preferences.button.browse"));
+        presetsBrowse_.setButtonText(trEllipsis("preferences.button.browse"));
         presetsBrowse_.onClick = [this]() {
             pickFolder(Kind::Presets, tr("preferences.paths.dialog.choose_presets"));
         };
@@ -2387,7 +2445,8 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
         viewport.setViewedComponent(&page, false);
         viewport.setScrollBarsShown(true, false, true, false);
-        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::all);
+        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
+        page.setViewportIgnoreDragFlag(true);
     };
     setupPageViewport(generalPageViewport, *generalPage);
     setupPageViewport(coloursPageViewport, *coloursPage);

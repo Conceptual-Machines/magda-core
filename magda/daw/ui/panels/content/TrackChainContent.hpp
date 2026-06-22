@@ -1,5 +1,7 @@
 #pragma once
 
+#include <BinaryData.h>
+
 #include <map>
 #include <vector>
 
@@ -184,8 +186,13 @@ class TrackChainContent : public PanelContent,
     juce::Label trackNameLabel_;
     juce::TextButton muteButton_;  // Track mute
     // Master uses a speaker toggle (matching the inspector/mixer) instead of "M".
-    juce::DrawableButton masterMuteButton_{"masterMute", juce::DrawableButton::ImageFitted};
+    SvgButton masterMuteButton_{"masterMute", BinaryData::master_on_svg,
+                                BinaryData::master_on_svgSize, BinaryData::master_off_1_svg,
+                                BinaryData::master_off_1_svgSize};
     juce::TextButton soloButton_;  // Track solo
+    // Chord track mirrors its header: audition (mute) speaker + input monitor.
+    std::unique_ptr<magda::SvgButton> chordSpeakerButton_;
+    juce::TextButton monitorButton_;
     magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
     std::unique_ptr<magda::SvgButton> chainBypassButton_;  // On/off - bypasses entire track chain

@@ -667,6 +667,15 @@ MediaExplorerContent::MediaExplorerContent() {
     presetFilterButton_->onClick = [this]() { onTypeIconClicked(presetFilterButton_.get()); };
     addAndMakeVisible(*presetFilterButton_);
 
+    const auto progressionActiveTint = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+    setupFilter(progressionFilterButton_, "Progressions", BinaryData::iconchordtrackboldm_svg,
+                BinaryData::iconchordtrackboldm_svgSize, progressionActiveTint,
+                progressionFilterActive_, "Show chord progressions");
+    progressionFilterButton_->onClick = [this]() {
+        onTypeIconClicked(progressionFilterButton_.get());
+    };
+    addAndMakeVisible(*progressionFilterButton_);
+
     // View toggle buttons removed - not needed for now
     // View mode selector dropdown removed - not needed for now
 
@@ -741,9 +750,9 @@ MediaExplorerContent::MediaExplorerContent() {
     volumeSlider_.setColour(juce::Slider::backgroundColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     volumeSlider_.setColour(juce::Slider::thumbColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                            DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
     volumeSlider_.setColour(juce::Slider::trackColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+                            DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     volumeSlider_.onValueChange = [this]() {
         if (transportSource_) {
             transportSource_->setGain(static_cast<float>(volumeSlider_.getValue()));
@@ -1005,6 +1014,10 @@ void MediaExplorerContent::applyView(ViewState target) {
         if (presetFilterButton_) {
             presetFilterButton_->setToggleState(presetFilterActive_, juce::dontSendNotification);
         }
+        if (progressionFilterButton_) {
+            progressionFilterButton_->setToggleState(progressionFilterActive_,
+                                                     juce::dontSendNotification);
+        }
     } else {  // Library
         if (fileBrowser_) {
             fileBrowser_->setVisible(false);
@@ -1024,6 +1037,9 @@ void MediaExplorerContent::applyView(ViewState target) {
         }
         if (presetFilterButton_) {
             presetFilterButton_->setToggleState(false, juce::dontSendNotification);
+        }
+        if (progressionFilterButton_) {
+            progressionFilterButton_->setToggleState(false, juce::dontSendNotification);
         }
     }
 
@@ -1050,8 +1066,8 @@ void MediaExplorerContent::onTypeIconClicked(magda::SvgButton* clicked) {
         // Radio: when one activates, the others go off. All-off means
         // "any kind" (no filter).
         if (nowOn) {
-            for (auto* other :
-                 {audioFilterButton_.get(), midiFilterButton_.get(), presetFilterButton_.get()}) {
+            for (auto* other : {audioFilterButton_.get(), midiFilterButton_.get(),
+                                presetFilterButton_.get(), progressionFilterButton_.get()}) {
                 if (other != clicked) {
                     other->setToggleState(false, juce::dontSendNotification);
                 }
@@ -1064,6 +1080,8 @@ void MediaExplorerContent::onTypeIconClicked(magda::SvgButton* clicked) {
             kind = "clip";
         } else if (presetFilterButton_ && presetFilterButton_->getToggleState()) {
             kind = "preset";
+        } else if (progressionFilterButton_ && progressionFilterButton_->getToggleState()) {
+            kind = "progression";
         }
         if (dbBrowser_) {
             dbBrowser_->setKindFilter(kind);
@@ -1082,6 +1100,10 @@ void MediaExplorerContent::onTypeIconClicked(magda::SvgButton* clicked) {
     } else if (clicked == presetFilterButton_.get()) {
         presetFilterActive_ = nowOn;
         magda::Config::getInstance().setBrowserFilterPreset(presetFilterActive_);
+    } else if (clicked == progressionFilterButton_.get()) {
+        // File mode has no distinct progression extension (.mid covers both),
+        // so this is a session-only toggle that widens the pattern to MIDI.
+        progressionFilterActive_ = nowOn;
     }
     magda::Config::getInstance().save();
     updateMediaFilter();
@@ -1386,8 +1408,8 @@ juce::String MediaExplorerContent::getMediaFilterPattern() const {
         patterns.add("*.flac");
     }
 
-    if (midiFilterActive_) {
-        // MIDI file formats
+    if (midiFilterActive_ || progressionFilterActive_) {
+        // MIDI file formats (progressions are .mid files on disk too).
         patterns.add("*.mid");
         patterns.add("*.midi");
     }
@@ -1446,11 +1468,11 @@ void MediaExplorerContent::resized() {
     // Top bar with all controls
     auto topBar = bounds.removeFromTop(32);
 
-    // Right: Type filter icon buttons (audio / midi / preset), then search
-    // fills remaining space.
+    // Right: Type filter icon buttons (audio / midi / preset / progression),
+    // then search fills remaining space.
     const int iconButtonSize = 30;
     const int buttonSpacing = 4;
-    constexpr int kFilterIcons = 3;
+    constexpr int kFilterIcons = 4;
     const int rightSideWidth =
         iconButtonSize * kFilterIcons + buttonSpacing * (kFilterIcons - 1) + 8;
     auto searchWidth = juce::jmax(120, topBar.getWidth() - rightSideWidth);
@@ -1466,6 +1488,8 @@ void MediaExplorerContent::resized() {
     placeIcon(*audioFilterButton_);
     topBar.removeFromLeft(buttonSpacing);
     placeIcon(*midiFilterButton_);
+    topBar.removeFromLeft(buttonSpacing);
+    placeIcon(*progressionFilterButton_);
     topBar.removeFromLeft(buttonSpacing);
     placeIcon(*presetFilterButton_);
 

@@ -66,6 +66,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     AudioBridge(te::Engine& engine, te::Edit& edit);
     ~AudioBridge() override;
 
+    void resetTestState();
+
     // =========================================================================
     // TrackManagerListener implementation
     // =========================================================================

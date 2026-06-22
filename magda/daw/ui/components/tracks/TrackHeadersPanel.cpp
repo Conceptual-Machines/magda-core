@@ -16,6 +16,7 @@
 #include "../../../core/RackInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/StringTable.hpp"
+#include "../../../core/TechnicalText.hpp"
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
@@ -26,7 +27,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../automation/AutomationMenu.hpp"
-#include "../mixer/LevelMeterBallistics.hpp"
+#include "../mixer/LevelMeter.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
 
@@ -148,140 +149,6 @@ float dbToMeterPos(float db) {
     // Apply power curve: y = x^3
     return std::pow(normalized, 3.0f);
 }
-
-// Simple stereo level meter component for track headers
-// Uses smooth ballistics (fast attack, exponential decay) and peak hold.
-class TrackMeter : public juce::Component, private juce::Timer {
-  public:
-    TrackMeter() = default;
-    ~TrackMeter() override {
-        stopTimer();
-    }
-
-    void setLevels(float left, float right) {
-        targetL_ = juce::jlimit(0.0f, 2.0f, left);
-        targetR_ = juce::jlimit(0.0f, 2.0f, right);
-
-        // Update peak hold
-        float leftDb = gainToDb(targetL_);
-        float rightDb = gainToDb(targetR_);
-        if (leftDb > peakLeftDb_) {
-            peakLeftDb_ = leftDb;
-            peakLeftHold_ = level_meter_ballistics::peakHoldMs;
-        }
-        if (rightDb > peakRightDb_) {
-            peakRightDb_ = rightDb;
-            peakRightHold_ = level_meter_ballistics::peakHoldMs;
-        }
-
-        if (!isTimerRunning()) {
-            lastUpdateMs_ = level_meter_ballistics::restartClock();
-            startTimerHz(60);
-        }
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds().toFloat();
-        const float gap = 2.0f;
-
-        // Split into L/R bars with gap
-        float barWidth = (bounds.getWidth() - gap) / 2.0f;
-        auto leftBar = bounds.withWidth(barWidth);
-        auto rightBar = bounds.withWidth(barWidth).withX(bounds.getX() + barWidth + gap);
-
-        // Background for each bar (darker background)
-        g.setColour(juce::Colour(0xFF1A1A1A));
-        g.fillRoundedRectangle(leftBar, 2.0f);
-        g.fillRoundedRectangle(rightBar, 2.0f);
-
-        // Draw border so meters are always visible
-        g.setColour(juce::Colour(0xFF404040));
-        g.drawRoundedRectangle(leftBar, 2.0f, 1.0f);
-        g.drawRoundedRectangle(rightBar, 2.0f, 1.0f);
-
-        // Draw level fills
-        drawMeterBar(g, leftBar, displayL_, peakLeftDb_);
-        drawMeterBar(g, rightBar, displayR_, peakRightDb_);
-
-        // 0dB tick mark (aligned with header separator)
-        if (nameRowY_ >= 0) {
-            float localY = static_cast<float>(nameRowY_ - getY());
-            if (localY > 0 && localY < bounds.getBottom()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-                g.drawHorizontalLine(static_cast<int>(localY), bounds.getX(), bounds.getRight());
-            }
-        }
-    }
-
-    void setNameRowY(int y) {
-        nameRowY_ = y;
-    }
-
-  private:
-    float targetL_ = 0.0f, targetR_ = 0.0f;
-    float displayL_ = 0.0f, displayR_ = 0.0f;
-    float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
-    float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
-    int nameRowY_ = -1;
-    double lastUpdateMs_ = 0.0;
-
-    void timerCallback() override {
-        const float elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
-        bool changed = false;
-        changed |= level_meter_ballistics::updateLevel(displayL_, targetL_, elapsedMs);
-        changed |= level_meter_ballistics::updateLevel(displayR_, targetR_, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakLeftDb_, peakLeftHold_,
-                                                      gainToDb(targetL_), MIN_DB, elapsedMs);
-        changed |= level_meter_ballistics::updatePeak(peakRightDb_, peakRightHold_,
-                                                      gainToDb(targetR_), MIN_DB, elapsedMs);
-        if (changed)
-            repaint();
-        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= MIN_DB &&
-                 peakRightDb_ <= MIN_DB) {
-            stopTimer();
-            lastUpdateMs_ = 0.0;
-        }
-    }
-
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
-        if (level > 0.0f) {
-            float meterPos = dbToMeterPos(gainToDb(level));
-            float meterHeight = bounds.getHeight() * meterPos;
-            auto fillBounds = bounds;
-            auto fullBounds = bounds;
-            fillBounds = fillBounds.removeFromBottom(meterHeight);
-
-            const juce::Colour green(0xFF55AA55);
-            const juce::Colour yellow(0xFFAAAA55);
-            const juce::Colour red(0xFFAA5555);
-
-            float yellowPos = dbToMeterPos(-12.0f);
-            float redPos = dbToMeterPos(0.0f);
-            constexpr float fade = 0.03f;
-
-            juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f,
-                                      fullBounds.getY(), false);
-            grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-            grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
-            grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-            grad.addColour(std::min(1.0, (double)redPos + fade), red);
-
-            g.setGradientFill(grad);
-            g.fillRect(fillBounds);
-        }
-
-        // Peak hold indicator
-        float peakPos = dbToMeterPos(peakDb);
-        if (peakPos > 0.01f) {
-            float peakY = bounds.getBottom() - bounds.getHeight() * peakPos;
-            auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
-                              : peakDb >= -12.0f ? juce::Colour(0xFFAAAA55)
-                                                 : juce::Colour(0xFF55AA55);
-            g.setColour(peakColour.withAlpha(0.9f));
-            g.fillRect(bounds.getX(), peakY, bounds.getWidth(), 1.5f);
-        }
-    }
-};
 
 // MIDI activity indicator - small blinking dot
 class MidiActivityIndicator : public juce::Component {
@@ -410,20 +277,27 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Master-only speaker mute (shown instead of the "M" button for the master),
     // matching the inspector and mixer master strips.
     {
-        auto onIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
-                                                          BinaryData::speaker_on_svgSize);
-        auto offIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
-                                                           BinaryData::speaker_off_svgSize);
-        masterMuteButton =
-            std::make_unique<juce::DrawableButton>("masterMute", juce::DrawableButton::ImageFitted);
-        masterMuteButton->setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
-        masterMuteButton->setEdgeIndent(0);
+        // Dual-icon SvgButton matching the inspector/mixer: gray speaker
+        // (master_on) when audible, orange chip (master_off) when muted.
+        // SvgButton's iconPadding + cornerRadius give the padding and rounded
+        // box a raw DrawableButton can't.
+        masterMuteButton = std::make_unique<magda::SvgButton>(
+            "masterMute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+            BinaryData::master_off_svg, BinaryData::master_off_svgSize);
         masterMuteButton->setClickingTogglesState(true);
-        masterMuteButton->setColour(juce::DrawableButton::backgroundColourId,
-                                    juce::Colours::transparentBlack);
-        masterMuteButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                                    juce::Colours::transparentBlack);
+        masterMuteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        masterMuteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     }
+
+    // Chord-track audition toggle (speaker). Dual-icon with pre-baked colors:
+    // audible = blue chip with a dark speaker (chord_on), silent = gray speaker
+    // (chord_off). Matches the S / monitor chips beside it.
+    chordAuditionButton = std::make_unique<magda::SvgButton>(
+        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
+        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
+    chordAuditionButton->setTooltip("Preview chords on playback");
+    chordAuditionButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordAuditionButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
 
     soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -482,6 +356,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Volume label (shows dB, draggable)
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(MIN_DB, MAX_DB, 0.0);  // -60 to +6 dB, default 0 dB
+    // Curve the fill to match the level meter's power scale (consistent with the
+    // master volume and the meters elsewhere).
+    volumeLabel->setFillExponent(static_cast<double>(LevelMeter::METER_CURVE_EXPONENT));
     volumeLabel->setValue(gainToDb(volume), juce::dontSendNotification);
 
     // Pan label (shows L/C/R, draggable)
@@ -524,7 +401,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Send labels — created dynamically in setupTrackHeaderWithId based on actual sends
 
     // Meter component (stereo level display)
-    meterComponent = std::make_unique<TrackMeter>();
+    meterComponent = std::make_unique<LevelMeter>();
     // Levels will be set by timerCallback reading from AudioBridge
 
     // MIDI activity indicator
@@ -664,7 +541,7 @@ void TrackHeadersPanel::timerCallback() {
         MeterData data;
         if (meteringBuffer.popLevels(header->trackId, data)) {
             if (header->meterComponent) {
-                static_cast<TrackMeter*>(header->meterComponent.get())
+                static_cast<LevelMeter*>(header->meterComponent.get())
                     ->setLevels(data.peakL, data.peakR);
             }
         }
@@ -985,6 +862,7 @@ void TrackHeadersPanel::tracksChanged() {
         header->isGroup = track->isGroup() || track->hasChildren();
         header->isMultiOut = (track->type == TrackType::MultiOut);
         header->isMaster = (track->type == TrackType::Master);
+        header->isChordTrack = (track->type == TrackType::Chord);
         header->isCollapsed = track->isCollapsedIn(currentViewMode_);
         header->muted = track->muted;
         header->solo = track->soloed;
@@ -1017,6 +895,7 @@ void TrackHeadersPanel::tracksChanged() {
         addAndMakeVisible(*header->recordButton);
         addAndMakeVisible(*header->monitorButton);
         addAndMakeVisible(*header->automationButton);
+        addChildComponent(*header->chordAuditionButton);
         addAndMakeVisible(*header->volumeLabel);
         addAndMakeVisible(*header->panLabel);
         addAndMakeVisible(*header->audioInputSelector);
@@ -1146,7 +1025,7 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
 
         // MultiOut children: show where audio actually goes (parent's output destination)
         if (header.isMultiOut && track->hasParent()) {
-            juce::String outputName = "Master";
+            juce::String outputName = magda::technicalText(magda::TechnicalTextToken::Master);
             if (auto* parent = TrackManager::getInstance().getTrack(track->parentId)) {
                 if (parent->hasParent()) {
                     if (auto* group = TrackManager::getInstance().getTrack(parent->parentId)) {
@@ -1751,6 +1630,19 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Chord-track speaker: toggles whether the chord voicing is audible on
+    // playback (it's just the track mute, framed as "preview chords").
+    header.chordAuditionButton->onClick = [this, trackId]() {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
+            auto& header = *trackHeaders[index];
+            header.muted = !header.muted;  // speaker on = audible = not muted
+            header.chordAuditionButton->setActive(!header.muted);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackMuteCommand>(trackId, header.muted));
+        }
+    };
+
     // Solo button callback - updates TrackManager
     header.soloButton->onClick = [this, trackId, getEditTargets]() {
         int index = getVisibleHeaderIndex(trackId);
@@ -2122,10 +2014,10 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
     auto midiArea = outer.removeFrom(workArea, midiIndicatorWidth);
     outer.removeSpacing(workArea, meterPadding);
 
-    // Audio meter spans full track height
+    // Audio meter spans full track height. The chord track emits no audio yet,
+    // so hide its output meter for now (an oscilloscope may replace it later).
     header.meterComponent->setBounds(meterArea);
-    header.meterComponent->setVisible(true);
-    static_cast<TrackMeter*>(header.meterComponent.get())->setNameRowY(header.nameRowBottomY);
+    header.meterComponent->setVisible(!header.isChordTrack);
 
     // MIDI indicator in top portion, session mode button in bottom portion
     const int sessionBtnSize = 14;
@@ -2150,6 +2042,35 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     const int gap = 2;
     const int rh = 16;  // rowHeight
     const int areaWidth = area.getWidth();
+
+    // Chord track: volume + speaker (audition) + solo + monitor. The speaker
+    // toggle stands in for mute, framed as "preview chords on playback" (blue =
+    // audible, faint grey = silent). No pan / record / automation / routing.
+    if (header.isChordTrack) {
+        auto row = area.removeFromTop(24);
+        auto content = inner.removeFrom(row, areaWidth);
+        const int mixW = areaWidth * 52 / 100;
+        const int iconW = 24;
+        header.volumeLabel->setBounds(content.removeFromLeft(mixW));
+        header.volumeLabel->setVisible(true);
+        content.removeFromLeft(gap);
+        header.chordAuditionButton->setBounds(content.removeFromLeft(iconW));
+        header.chordAuditionButton->setVisible(true);
+        header.chordAuditionButton->setActive(!header.muted);
+        content.removeFromLeft(gap);
+        const int soloW = content.getWidth() - iconW - gap;
+        header.soloButton->setBounds(content.removeFromLeft(soloW));
+        header.soloButton->setVisible(true);
+        content.removeFromLeft(gap);
+        header.monitorButton->setBounds(content.removeFromLeft(iconW));
+        header.monitorButton->setVisible(true);
+        header.muteButton->setVisible(false);
+        header.masterMuteButton->setVisible(false);
+        header.panLabel->setVisible(false);
+        header.recordButton->setVisible(false);
+        header.automationButton->setVisible(false);
+        return;
+    }
 
     // Master track: volume + mute only (no solo, pan, record, monitor)
     if (header.isMaster) {
@@ -2258,6 +2179,23 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     // Master track: skip name row space (painted "Master" label), then volume + mute
     if (header.isMaster) {
         header.nameLabel->setVisible(false);
+        header.collapseButton->setVisible(false);
+        header.audioInputSelector->setVisible(false);
+        header.inputSelector->setVisible(false);
+        header.outputSelector->setVisible(false);
+        header.midiOutputSelector->setVisible(false);
+        header.audioColumnLabel->setVisible(false);
+        header.midiColumnLabel->setVisible(false);
+        header.inputIcon->setVisible(false);
+        header.outputIcon->setVisible(false);
+        for (auto& sendLabel : header.sendLabels)
+            sendLabel->setVisible(false);
+        layoutVolPanAndButtons(header, tcpArea, inner);
+        return;
+    }
+
+    // Chord track: keep the name, drop all routing/sends, show only Preview.
+    if (header.isChordTrack) {
         header.collapseButton->setVisible(false);
         header.audioInputSelector->setVisible(false);
         header.inputSelector->setVisible(false);
@@ -2949,31 +2887,38 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     menu.addSeparator();
 
-    // Duplicate track
-    menu.addItem(DuplicateWithContent, tr("tracks.duplicate"));
-    menu.addItem(DuplicateNoContent, tr("tracks.duplicate_no_content"));
-    menu.addItem(DuplicateContentOnly, tr("tracks.duplicate_content_only"));
+    // Duplicate track (not for the singleton chord track)
+    if (!header.isChordTrack) {
+        menu.addItem(DuplicateWithContent, tr("tracks.duplicate"));
+        menu.addItem(DuplicateNoContent, tr("tracks.duplicate_no_content"));
+        menu.addItem(DuplicateContentOnly, tr("tracks.duplicate_content_only"));
+    }
 
     // Delete track
     menu.addItem(DeleteTrack, tr("tracks.delete"));
 
-    menu.addSeparator();
+    // The chord track has no audio I/O routing or drum-grid instrument, so it
+    // omits Prefer Drum Grid and Show/Hide I/O.
+    if (!header.isChordTrack) {
+        menu.addSeparator();
 
-    // Prefer Drum Grid for the track's primary instrument plugin. The flag
-    // lives at the plugin-identifier level (user-global), so all tracks using
-    // the same instrument get the same default editor.
-    auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
-    if (primaryInstrument != nullptr) {
-        const auto identifier = magda::PluginPreferences::identifierForDevice(*primaryInstrument);
-        const bool prefersGrid =
-            magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
-        menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
-                     prefersGrid);
+        // Prefer Drum Grid for the track's primary instrument plugin. The flag
+        // lives at the plugin-identifier level (user-global), so all tracks
+        // using the same instrument get the same default editor.
+        auto* primaryInstrument = TrackManager::getInstance().getPrimaryInstrument(header.trackId);
+        if (primaryInstrument != nullptr) {
+            const auto identifier =
+                magda::PluginPreferences::identifierForDevice(*primaryInstrument);
+            const bool prefersGrid =
+                magda::PluginPreferences::getInstance().prefersDrumGrid(identifier);
+            menu.addItem(PreferDrumGrid, "Prefer Drum Grid for " + primaryInstrument->name, true,
+                         prefersGrid);
+        }
+
+        // Show/Hide I/O routing
+        menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
+                                                           : tr("tracks.show_io_routing"));
     }
-
-    // Show/Hide I/O routing
-    menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
-                                                       : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
     menu.showMenuAsync(

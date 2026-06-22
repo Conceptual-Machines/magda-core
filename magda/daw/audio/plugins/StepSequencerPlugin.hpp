@@ -125,6 +125,7 @@ class StepSequencerPlugin : public MidiDevicePlugin {
 
     // --- Step state (persisted in ValueTree) ---
     std::array<Step, MAX_STEPS> steps_{};
+    bool suppressStepStateReload_ = false;
 
     // --- Audio-thread state ---
     int lastPlayedNote_ = -1;

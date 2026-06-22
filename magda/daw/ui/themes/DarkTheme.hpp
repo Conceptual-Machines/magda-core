@@ -26,8 +26,10 @@ class DarkTheme {
     static constexpr auto BUTTON_NORMAL = 0xFF1A1A1A;         // Normal button (off state)
     static constexpr auto BUTTON_HOVER = 0xFF2A2A35;          // Hovered button
     static constexpr auto BUTTON_PRESSED = 0xFF333333;        // Pressed button
-    static constexpr auto BUTTON_ACTIVE = 0xFF5588AA;  // Active/selected button (SideFX blue)
-    static constexpr auto BUTTON_STROKE = 0xFF444444;  // Button border
+    static constexpr auto BUTTON_ACTIVE = 0xFF5588AA;       // Active/selected button (SideFX blue)
+    static constexpr auto BUTTON_STROKE = 0xFF444444;       // Button border
+    static constexpr auto CONTROL_VALUE_FILL = 0x12DDDDDD;  // Neutral value fill
+    static constexpr auto CONTROL_SLIDER_THUMB = 0xFF999999;  // Neutral slider thumb
 
     // ==========================================================================
     // Text colors

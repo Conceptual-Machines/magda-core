@@ -40,6 +40,13 @@ std::vector<magda::MidiNote> collectStepSequencerNotes(daw::audio::StepSequencer
     return notes;
 }
 
+double stepSequencerPatternLengthBeats(daw::audio::StepSequencerPlugin& plugin) {
+    const int count =
+        juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS, plugin.numSteps.get());
+    const auto rateEnum = static_cast<daw::audio::StepClock::Rate>(plugin.rate.get());
+    return static_cast<double>(count) * daw::audio::StepClock::rateToBeats(rateEnum);
+}
+
 std::vector<magda::MidiNote> collectPolyStepSequencerNotes(
     daw::audio::PolyStepSequencerPlugin& plugin) {
     const int count =
@@ -90,6 +97,13 @@ std::vector<magda::MidiNote> collectPolyStepSequencerNotes(
     return notes;
 }
 
+double polyStepSequencerPatternLengthBeats(daw::audio::PolyStepSequencerPlugin& plugin) {
+    const int count =
+        juce::jlimit(1, daw::audio::PolyStepSequencerPlugin::MAX_STEPS, plugin.numSteps.get());
+    const auto rateEnum = static_cast<daw::audio::StepClock::Rate>(plugin.rate.get());
+    return static_cast<double>(count) * daw::audio::StepClock::rateToBeats(rateEnum);
+}
+
 double currentProjectTempoOrDefault() {
     double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo <= 0.0)
@@ -101,8 +115,12 @@ double currentProjectTempoOrDefault() {
 
 void copyStepSequencerPatternToClipboard(daw::audio::StepSequencerPlugin& plugin) {
     auto notes = collectStepSequencerNotes(plugin);
-    if (!notes.empty())
-        ClipManager::getInstance().setNoteClipboard(std::move(notes));
+    if (!notes.empty()) {
+        auto& clipManager = ClipManager::getInstance();
+        clipManager.setNoteClipboard({});
+        clipManager.setMidiClipClipboard(std::move(notes), "Step Sequencer Pattern",
+                                         stepSequencerPatternLengthBeats(plugin));
+    }
 }
 
 juce::File writeStepSequencerPatternToTempMidiFile(daw::audio::StepSequencerPlugin& plugin) {
@@ -137,8 +155,12 @@ bool handleStepSequencerPatternExternalDrag(daw::audio::StepSequencerPlugin* plu
 
 void copyPolyStepSequencerPatternToClipboard(daw::audio::PolyStepSequencerPlugin& plugin) {
     auto notes = collectPolyStepSequencerNotes(plugin);
-    if (!notes.empty())
-        ClipManager::getInstance().setNoteClipboard(std::move(notes));
+    if (!notes.empty()) {
+        auto& clipManager = ClipManager::getInstance();
+        clipManager.setNoteClipboard({});
+        clipManager.setMidiClipClipboard(std::move(notes), "Poly Sequencer Pattern",
+                                         polyStepSequencerPatternLengthBeats(plugin));
+    }
 }
 
 juce::File writePolyStepSequencerPatternToTempMidiFile(

@@ -19,6 +19,7 @@
 #include "MenuManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -37,9 +38,9 @@ namespace {
 class CollectFilesProgressWindow : public juce::ThreadWithProgressWindow {
   public:
     explicit CollectFilesProgressWindow(MediaCollector::Plan plan)
-        : ThreadWithProgressWindow(tr("collect.progress.title"), true, true),
+        : ThreadWithProgressWindow(trEllipsis("collect.progress.title"), true, true),
           plan_(std::move(plan)),
-          strCopying_(tr("collect.progress.copying")) {
+          strCopying_(trEllipsis("collect.progress.copying")) {
         setStatusMessage(strCopying_);
     }
 
@@ -95,7 +96,7 @@ void MainWindow::openProjectFile(const juce::File& file) {
         return;
 
     if (mainComponent)
-        mainComponent->showLoadingMessage(tr("dialogs.loading_project"));
+        mainComponent->showLoadingMessage(trEllipsis("dialogs.loading_project"));
 
     SelectionManager::getInstance().clearSelection();
     if (mainComponent && mainComponent->mainView)
@@ -154,8 +155,11 @@ void MainWindow::importDawProjectFile(const juce::File& file) {
         // Empty lastError = user cancelled the unsaved-changes prompt; stay silent.
         const auto error = projectManager.getLastError();
         if (error.isNotEmpty())
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   tr("dialogs.import_dawproject"), error);
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon,
+                tr("action.import")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
+                error);
     }
 }
 
@@ -427,7 +431,8 @@ void MainWindow::setupMenuCallbacks() {
             return;
 
         fileChooser_ = std::make_unique<juce::FileChooser>(
-            tr("dialogs.import_dawproject"),
+            tr("action.import")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.dawproject",
             true);
 
@@ -455,8 +460,10 @@ void MainWindow::setupMenuCallbacks() {
                               ? currentFile.getParentDirectory()
                               : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
 
-        fileChooser_ = std::make_unique<juce::FileChooser>(tr("dialogs.export_dawproject"),
-                                                           initialDir, "*.dawproject", true);
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            tr("action.export")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
+            initialDir, "*.dawproject", true);
 
         auto flags = juce::FileBrowserComponent::saveMode |
                      juce::FileBrowserComponent::canSelectFiles |
@@ -475,7 +482,10 @@ void MainWindow::setupMenuCallbacks() {
             auto& projectManager = ProjectManager::getInstance();
             if (!projectManager.exportDawProject(file)) {
                 juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, tr("dialogs.export_dawproject"),
+                    juce::AlertWindow::WarningIcon,
+                    tr("action.export")
+                        .replace("{0}",
+                                 magda::technicalText(magda::TechnicalTextToken::DawProject)),
                     tr("dialogs.error.export_failed") + " " + projectManager.getLastError());
             }
         });
@@ -681,6 +691,10 @@ void MainWindow::setupMenuCallbacks() {
         MenuManager::getInstance().menuItemsChanged();
         if (mainComponent && mainComponent->mainView) {
             mainComponent->mainView->resized();
+            // The header column swaps sides, but MainView::paint() draws
+            // side-dependent backgrounds; without a repaint the old side keeps
+            // its painted pixels (the stale grid / song-map fragment).
+            mainComponent->mainView->repaint();
         }
     };
 
@@ -756,6 +770,14 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onAddAuxTrack = []() {
         auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Aux);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
+    callbacks.onAddChordTrack = []() {
+        // Chord track is a strict singleton; only create when none exists.
+        if (TrackManager::getInstance().hasChordTrack())
+            return;
+        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Chord);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 

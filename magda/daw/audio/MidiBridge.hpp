@@ -267,6 +267,8 @@ class MidiBridge : public juce::MidiInputCallback {
     void broadcastSynthesizedNote(const juce::String& sourceDeviceId, int noteNumber, int velocity,
                                   bool isNoteOn);
 
+    void resetTestState();
+
   private:
     // MidiInputCallback implementation
     void handleIncomingMidiMessage(juce::MidiInput* source,

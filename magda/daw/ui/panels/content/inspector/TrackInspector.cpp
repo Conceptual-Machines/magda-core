@@ -8,25 +8,50 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../components/mixer/LevelMeter.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda::daw::ui {
+namespace {
+void configureMasterSpeakerButton(SvgButton& button) {
+    // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
+    // orange chip (master_off). Toggle state drives which icon shows.
+    button.setClickingTogglesState(true);
+    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+}
+
+void syncMasterSpeakerButton(SvgButton& button, bool muted) {
+    button.setToggleState(muted, juce::dontSendNotification);
+    button.setTooltip(muted ? "Unmute master" : "Mute master");
+}
+
+void useLocalizedLabelPainter(juce::Label& label) {
+    label.setLookAndFeel(&DialogLookAndFeel::getInstance());
+}
+
+void clearLocalizedLabelPainter(juce::Label& label) {
+    label.setLookAndFeel(nullptr);
+}
+}  // namespace
 
 TrackInspector::TrackInspector() {
     // Track name
-    trackNameLabel_.setText("Name", juce::dontSendNotification);
+    trackNameLabel_.setText(tr("inspector.name"), juce::dontSendNotification);
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(trackNameLabel_);
@@ -171,24 +196,33 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(muteButton_);
 
     // Speaker icon button (used for master mute instead of "M" text)
-    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
-                                                             BinaryData::speaker_on_svgSize);
-    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
-                                                              BinaryData::speaker_off_svgSize);
-    speakerButton_ =
-        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
-    speakerButton_->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
-    speakerButton_->setClickingTogglesState(true);
-    speakerButton_->setColour(juce::DrawableButton::backgroundColourId,
-                              juce::Colours::transparentBlack);
-    speakerButton_->setColour(juce::DrawableButton::backgroundOnColourId,
-                              juce::Colours::transparentBlack);
-    speakerButton_->setEdgeIndent(0);
+    speakerButton_ = std::make_unique<SvgButton>(
+        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_1_svg, BinaryData::master_off_1_svgSize);
+    configureMasterSpeakerButton(*speakerButton_);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
     };
     addChildComponent(*speakerButton_);  // Hidden by default
+
+    // Chord audition (mute) toggle: same cyan speaker as the chord track header.
+    chordSpeakerButton_ = std::make_unique<SvgButton>(
+        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
+        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
+    chordSpeakerButton_->setTooltip("Preview chords on playback");
+    chordSpeakerButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordSpeakerButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    chordSpeakerButton_->onClick = [this]() {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        const bool nowMuted = track ? !track->muted : true;
+        chordSpeakerButton_->setActive(!nowMuted);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_, nowMuted));
+    };
+    addChildComponent(*chordSpeakerButton_);  // Hidden by default
 
     // Solo button (TCP style)
     soloButton_.setButtonText("S");
@@ -273,6 +307,9 @@ TrackInspector::TrackInspector() {
     gainLabel_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Decibels);
     gainLabel_->setRange(-60.0, 6.0, 0.0);  // -60 to +6 dB, default 0 dB
+    // Curve the fill to match the level meter's power scale (consistent with the
+    // other volume controls).
+    gainLabel_->setFillExponent(static_cast<double>(magda::LevelMeter::METER_CURVE_EXPONENT));
     gainLabel_->onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             double db = gainLabel_->getValue();
@@ -357,15 +394,19 @@ TrackInspector::TrackInspector() {
     midiOutputSelector_->setEnabled(false);  // Disabled by default
     addAndMakeVisible(*midiOutputSelector_);
 
-    // Column header labels for routing selectors
-    audioColumnLabel_.setText(tr("inspector.audio"), juce::dontSendNotification);
+    // Column header labels for routing selectors. "Audio" and "MIDI" are kept
+    // as fixed technical tokens so the paired headers render at the same base
+    // (Latin) size — a translated "Audio" would scale with the localized font
+    // and tower over the fixed "MIDI" next to it.
+    audioColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Audio),
+                              juce::dontSendNotification);
     audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     audioColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
 
-    // "MIDI" is a universal technical acronym — do not translate.
-    midiColumnLabel_.setText("MIDI", juce::dontSendNotification);
+    midiColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Midi),
+                             juce::dontSendNotification);
     midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     midiColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     midiColumnLabel_.setJustificationType(juce::Justification::centred);
@@ -399,37 +440,38 @@ TrackInspector::TrackInspector() {
                                        DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(sendReceiveSectionLabel_);
 
-    addSendButton_.setButtonText(tr("inspector.add_send"));
-    addSendButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    addSendButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getSecondaryTextColour());
-    addSendButton_.onClick = [this]() { showAddSendMenu(); };
-    addAndMakeVisible(addSendButton_);
+    addSendButton_ =
+        std::make_unique<SvgButton>("AddSend", BinaryData::add_svg, BinaryData::add_svgSize);
+    addSendButton_->setTooltip(tr("inspector.add_send"));
+    addSendButton_->setIconPadding(4.0f);
+    addSendButton_->setOriginalColor(DarkTheme::getSecondaryTextColour());
+    addSendButton_->onClick = [this]() { showAddSendMenu(); };
+    addAndMakeVisible(*addSendButton_);
 
     noSendsLabel_.setText(tr("inspector.no_sends"), juce::dontSendNotification);
     noSendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     noSendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(noSendsLabel_);
 
-    receivesLabel_.setText("No receives", juce::dontSendNotification);
+    receivesLabel_.setText(tr("inspector.no_receives"), juce::dontSendNotification);
     receivesLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     receivesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(receivesLabel_);
 
     // Clips section
-    clipsSectionLabel_.setText("Clips", juce::dontSendNotification);
+    clipsSectionLabel_.setText(tr("inspector.clips"), juce::dontSendNotification);
     clipsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipsSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(clipsSectionLabel_);
 
-    clipCountLabel_.setText("0 clips", juce::dontSendNotification);
+    clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
+                            juce::dontSendNotification);
     clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addAndMakeVisible(clipCountLabel_);
 
     // Latency display
-    latencyLabel_.setText("Latency", juce::dontSendNotification);
+    latencyLabel_.setText(tr("inspector.latency"), juce::dontSendNotification);
     latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     latencyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(latencyLabel_);
@@ -437,6 +479,13 @@ TrackInspector::TrackInspector() {
     latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
     latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addAndMakeVisible(latencyValue_);
+
+    for (auto* label :
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
+          &clipsSectionLabel_, &clipCountLabel_, &latencyLabel_, &latencyValue_}) {
+        useLocalizedLabelPainter(*label);
+    }
 }
 
 void TrackInspector::midiDeviceListChanged() {
@@ -444,6 +493,15 @@ void TrackInspector::midiDeviceListChanged() {
 }
 
 TrackInspector::~TrackInspector() {
+    for (auto* label :
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
+          &clipsSectionLabel_, &clipCountLabel_, &latencyLabel_, &latencyValue_}) {
+        clearLocalizedLabelPainter(*label);
+    }
+    for (auto& label : sendDestLabels_)
+        clearLocalizedLabelPainter(*label);
+
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
@@ -528,9 +586,10 @@ void TrackInspector::resized() {
 
     bool showPan = panLabel_->isVisible();
     bool showSpeaker = speakerButton_->isVisible();
+    bool showChordSpeaker = chordSpeakerButton_->isVisible();
     // Count visible buttons for layout
     int visibleButtons = 0;
-    if (muteButton_.isVisible() || showSpeaker)
+    if (muteButton_.isVisible() || showSpeaker || showChordSpeaker)
         visibleButtons++;
     if (soloButton_.isVisible())
         visibleButtons++;
@@ -538,30 +597,52 @@ void TrackInspector::resized() {
         visibleButtons++;
     if (monitorButton_.isVisible())
         visibleButtons++;
+    constexpr int speakerButtonSize = 24;
 
     // Helper lambda to lay out the button row
     auto layoutButtons = [&](juce::Rectangle<int>& row, int gap) {
         if (visibleButtons <= 0)
             return;
         if (showSpeaker) {
-            // Speaker icon: fixed square size
+            // Master: just the speaker icon (fixed square size).
             speakerButton_->setBounds(
-                row.removeFromLeft(controlRowHeight).withSizeKeepingCentre(22, 22));
-        } else {
-            const int btnWidth = (row.getWidth() - (visibleButtons - 1) * gap) / visibleButtons;
-            muteButton_.setBounds(row.removeFromLeft(btnWidth));
-            if (soloButton_.isVisible()) {
+                row.removeFromLeft(controlRowHeight)
+                    .withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
+            return;
+        }
+        if (showChordSpeaker) {
+            // Chord track: [speaker icon][solo][monitor].
+            chordSpeakerButton_->setBounds(
+                row.removeFromLeft(controlRowHeight)
+                    .withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
+            int textButtons =
+                (soloButton_.isVisible() ? 1 : 0) + (monitorButton_.isVisible() ? 1 : 0);
+            if (textButtons > 0) {
                 row.removeFromLeft(gap);
-                soloButton_.setBounds(row.removeFromLeft(btnWidth));
+                const int btnWidth = (row.getWidth() - (textButtons - 1) * gap) / textButtons;
+                if (soloButton_.isVisible()) {
+                    soloButton_.setBounds(row.removeFromLeft(btnWidth));
+                    if (monitorButton_.isVisible())
+                        row.removeFromLeft(gap);
+                }
+                if (monitorButton_.isVisible())
+                    monitorButton_.setBounds(row);
             }
-            if (recordButton_.isVisible()) {
-                row.removeFromLeft(gap);
-                recordButton_.setBounds(row.removeFromLeft(btnWidth));
-            }
-            if (monitorButton_.isVisible()) {
-                row.removeFromLeft(gap);
-                monitorButton_.setBounds(row);
-            }
+            return;
+        }
+        const int btnWidth = (row.getWidth() - (visibleButtons - 1) * gap) / visibleButtons;
+        muteButton_.setBounds(row.removeFromLeft(btnWidth));
+        if (soloButton_.isVisible()) {
+            row.removeFromLeft(gap);
+            soloButton_.setBounds(row.removeFromLeft(btnWidth));
+        }
+        if (recordButton_.isVisible()) {
+            row.removeFromLeft(gap);
+            recordButton_.setBounds(row.removeFromLeft(btnWidth));
+        }
+        if (monitorButton_.isVisible()) {
+            row.removeFromLeft(gap);
+            monitorButton_.setBounds(row);
         }
     };
 
@@ -574,7 +655,8 @@ void TrackInspector::resized() {
             auto speakerArea = row.removeFromRight(36);
             row.removeFromRight(gap);
             gainLabel_->setBounds(row);
-            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
+            speakerButton_->setBounds(
+                speakerArea.withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
         } else {
             const int mixPortion = row.getWidth() * 60 / 100;
             if (showPan) {
@@ -595,7 +677,8 @@ void TrackInspector::resized() {
             auto speakerArea = mixRow.removeFromRight(36);
             mixRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(mixRow);
-            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
+            speakerButton_->setBounds(
+                speakerArea.withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
         } else {
             if (showPan) {
                 const int mixGap = 4;
@@ -618,7 +701,8 @@ void TrackInspector::resized() {
             auto speakerArea = volRow.removeFromRight(36);
             volRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(volRow);
-            speakerButton_->setBounds(speakerArea.withSizeKeepingCentre(22, 22));
+            speakerButton_->setBounds(
+                speakerArea.withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
         } else {
             gainLabel_->setBounds(volRow);
             if (showPan) {
@@ -635,41 +719,62 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
-    // Routing section — only lay out if visible
-    if (outputSelector_->isVisible()) {
+    // Routing section — only lay out if visible (audio out or, for the chord
+    // track, MIDI out).
+    if (outputSelector_->isVisible() || midiOutputSelector_->isVisible()) {
         const int selectorHeight = 18;
         const int columnHeaderHeight = 14;
         const int iconSize = 16;
         const int dropdownGap = selectorGap;
         const int dropdownWidth = (bounds.getWidth() - dropdownGap - dropdownGap - iconSize) / 2;
 
-        // Column headers: [Audio] [MIDI]
-        if (audioInputSelector_->isVisible()) {
-            auto headerRow = bounds.removeFromTop(columnHeaderHeight);
-            audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-            headerRow.removeFromLeft(dropdownGap);
-            midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-            bounds.removeFromTop(2);
-        }
+        if (outputSelector_->isVisible()) {
+            // Column headers: [Audio] [MIDI]
+            if (audioInputSelector_->isVisible()) {
+                auto headerRow = bounds.removeFromTop(columnHeaderHeight);
+                audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+                headerRow.removeFromLeft(dropdownGap);
+                midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+                bounds.removeFromTop(2);
+            }
 
-        // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
-        if (audioInputSelector_->isVisible()) {
-            auto inputRow = bounds.removeFromTop(selectorHeight);
-            audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-            inputRow.removeFromLeft(dropdownGap);
-            inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-            inputRow.removeFromLeft(dropdownGap);
-            inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
-            bounds.removeFromTop(4);
-        }
+            // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
+            if (audioInputSelector_->isVisible()) {
+                auto inputRow = bounds.removeFromTop(selectorHeight);
+                audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                inputRow.removeFromLeft(dropdownGap);
+                inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                inputRow.removeFromLeft(dropdownGap);
+                inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
+                bounds.removeFromTop(4);
+            }
 
-        // Output row: [Audio Out] [MIDI Out] [outputIcon]
-        auto outputRow = bounds.removeFromTop(selectorHeight);
-        outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-        outputRow.removeFromLeft(dropdownGap);
-        midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-        outputRow.removeFromLeft(dropdownGap);
-        outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+            // Output row: [Audio Out] [MIDI Out] [outputIcon]
+            auto outputRow = bounds.removeFromTop(selectorHeight);
+            outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+            outputRow.removeFromLeft(dropdownGap);
+            midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+            outputRow.removeFromLeft(dropdownGap);
+            outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+        } else {
+            // Chord track: MIDI-only routing in a single column.
+            if (midiColumnLabel_.isVisible()) {
+                auto headerRow = bounds.removeFromTop(columnHeaderHeight);
+                midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+                bounds.removeFromTop(2);
+            }
+            if (inputSelector_->isVisible()) {
+                auto inputRow = bounds.removeFromTop(selectorHeight);
+                inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+                inputRow.removeFromLeft(dropdownGap);
+                inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
+                bounds.removeFromTop(4);
+            }
+            auto outputRow = bounds.removeFromTop(selectorHeight);
+            midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+            outputRow.removeFromLeft(dropdownGap);
+            outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+        }
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
         bounds.removeFromTop(separatorPadding);
@@ -677,9 +782,10 @@ void TrackInspector::resized() {
 
     // Send/Receive section — only lay out if visible
     if (sendReceiveSectionLabel_.isVisible()) {
-        auto sendHeaderRow = bounds.removeFromTop(16);
-        sendReceiveSectionLabel_.setBounds(sendHeaderRow.removeFromLeft(100));
-        addSendButton_.setBounds(sendHeaderRow.removeFromRight(50).withHeight(16));
+        auto sendHeaderRow = bounds.removeFromTop(22);
+        sendReceiveSectionLabel_.setBounds(
+            sendHeaderRow.removeFromLeft(100).withSizeKeepingCentre(100, 16));
+        addSendButton_->setBounds(sendHeaderRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
         bounds.removeFromTop(4);
 
         if (sendDestLabels_.empty()) {
@@ -893,8 +999,10 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
             double latency =
                 magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
             auto latencyMs = latency * 1000.0;
-            latencyValue_.setText((latency > 0.0) ? juce::String(latencyMs, 1) + " ms" : "0 ms",
-                                  juce::dontSendNotification);
+            latencyValue_.setText(
+                (latency > 0.0 ? juce::String(latencyMs, 1) : juce::String("0")) +
+                    magda::technicalTextSuffix(magda::TechnicalTextToken::Milliseconds),
+                juce::dontSendNotification);
             latencyValue_.repaint();
         }
     }
@@ -934,16 +1042,18 @@ void TrackInspector::updateFromSelectedTrack() {
     // Master track — show basic controls from MasterChannelState
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
         const auto& master = magda::TrackManager::getInstance().getMasterChannel();
-        trackNameValue_.setText(tr("common.master"), juce::dontSendNotification);
+        trackNameValue_.setText(magda::technicalText(magda::TechnicalTextToken::Master),
+                                juce::dontSendNotification);
         trackNameValue_.setEditable(false);  // master cannot be renamed
-        speakerButton_->setToggleState(master.muted, juce::dontSendNotification);
+        syncMasterSpeakerButton(*speakerButton_, master.muted);
         soloButton_.setToggleState(false, juce::dontSendNotification);
         recordButton_.setToggleState(false, juce::dontSendNotification);
 
         float gainDb = (master.volume <= 0.0f) ? -60.0f : 20.0f * std::log10(master.volume);
         gainLabel_->setValue(gainDb, juce::dontSendNotification);
 
-        clipCountLabel_.setText("0 clips", juce::dontSendNotification);
+        clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
+                                juce::dontSendNotification);
 
         showTrackControls(true);
         resized();
@@ -963,6 +1073,7 @@ void TrackInspector::updateFromSelectedTrack() {
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
         muteButton_.setToggleState(track->muted, juce::dontSendNotification);
+        chordSpeakerButton_->setActive(!track->muted);  // speaker on = audible
         soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
         recordButton_.setToggleState(track->recordArmed, juce::dontSendNotification);
 
@@ -989,17 +1100,22 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update clip count
         auto clips = magda::ClipManager::getInstance().getClipsOnTrack(selectedTrackId_);
         int clipCount = static_cast<int>(clips.size());
-        juce::String clipText = juce::String(clipCount) + (clipCount == 1 ? " clip" : " clips");
+        juce::String clipText =
+            tr(clipCount == 1 ? "inspector.clip_count.one" : "inspector.clip_count.other")
+                .replace("{0}", juce::String(clipCount));
         clipCountLabel_.setText(clipText, juce::dontSendNotification);
 
         // Update track latency
         double latency =
             magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
+        const juce::String msSuffix =
+            magda::technicalTextSuffix(magda::TechnicalTextToken::Milliseconds);
         if (latency > 0.0) {
             auto latencyMs = latency * 1000.0;
-            latencyValue_.setText(juce::String(latencyMs, 1) + " ms", juce::dontSendNotification);
+            latencyValue_.setText(juce::String(latencyMs, 1) + msSuffix,
+                                  juce::dontSendNotification);
         } else {
-            latencyValue_.setText("0 ms", juce::dontSendNotification);
+            latencyValue_.setText("0" + msSuffix, juce::dontSendNotification);
         }
 
         // Update routing selectors to match track state
@@ -1038,8 +1154,9 @@ void TrackInspector::updateFromMultiTrackSelection() {
 
     // Header: "N tracks selected"
     int count = static_cast<int>(selectedTrackIds_.size());
-    trackNameLabel_.setText("Selection", juce::dontSendNotification);
-    trackNameValue_.setText(juce::String(count) + " tracks selected", juce::dontSendNotification);
+    trackNameLabel_.setText(tr("inspector.selection"), juce::dontSendNotification);
+    trackNameValue_.setText(tr("inspector.tracks_selected").replace("{0}", juce::String(count)),
+                            juce::dontSendNotification);
     trackNameValue_.setEditable(false);
 
     // Check button states: "on" only if ALL selected tracks share that state
@@ -1215,7 +1332,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     midiOutputSelector_->setVisible(false);
 
     sendReceiveSectionLabel_.setVisible(false);
-    addSendButton_.setVisible(false);
+    addSendButton_->setVisible(false);
     noSendsLabel_.setVisible(false);
     receivesLabel_.setVisible(false);
     for (auto& l : sendDestLabels_)
@@ -1238,6 +1355,7 @@ void TrackInspector::showTrackControls(bool show) {
     bool isMaster = show && selectedTrackId_ == magda::MASTER_TRACK_ID;
     bool isAux = false;
     bool isMultiOut = false;
+    bool isChord = false;
     if (show && selectedTrackId_ != magda::INVALID_TRACK_ID &&
         selectedTrackId_ != magda::MASTER_TRACK_ID) {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
@@ -1245,36 +1363,45 @@ void TrackInspector::showTrackControls(bool show) {
             isAux = true;
         if (track && track->type == magda::TrackType::MultiOut)
             isMultiOut = true;
+        if (track && track->type == magda::TrackType::Chord)
+            isChord = true;
     }
+    isChordTrack_ = isChord;
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
     colourSwatch_->setVisible(show && !isMaster);
     masterGlyph_->setVisible(show && isMaster);
-    muteButton_.setVisible(show && !isMaster);
+    // Chord track: speaker audition toggle replaces "M"; no record. (volume +
+    // speaker + solo + monitor, matching the chord track header.)
+    muteButton_.setVisible(show && !isMaster && !isChord);
     speakerButton_->setVisible(isMaster);
+    chordSpeakerButton_->setVisible(isChord);
     soloButton_.setVisible(show && !isMaster);
-    recordButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
+    recordButton_.setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
     monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
     gainLabel_->setVisible(show);
-    panLabel_->setVisible(show && !isMaster);
+    panLabel_->setVisible(show && !isMaster && !isChord);
 
-    // Routing section — hidden for master and aux; input selectors hidden for multi-out
+    // Routing section — hidden for master and aux. The chord track shows MIDI
+    // I/O only (no audio in/out, since it drives its own instrument).
     bool showRouting = show && !isMaster && !isAux;
+    bool showAudio = showRouting && !isChord && !isMultiOut;
+    bool showMidi = showRouting && !isMultiOut;
     routingSectionLabel_.setVisible(false);
-    audioInputSelector_->setVisible(showRouting && !isMultiOut);
-    inputSelector_->setVisible(showRouting && !isMultiOut);
-    audioColumnLabel_.setVisible(showRouting && !isMultiOut);
-    midiColumnLabel_.setVisible(showRouting && !isMultiOut);
-    inputIcon_->setVisible(showRouting && !isMultiOut);
-    outputSelector_->setVisible(showRouting);
-    midiOutputSelector_->setVisible(showRouting && !isMultiOut);
+    audioInputSelector_->setVisible(showAudio);
+    audioColumnLabel_.setVisible(showAudio);
+    inputSelector_->setVisible(showMidi);
+    midiColumnLabel_.setVisible(showMidi);
+    inputIcon_->setVisible(showMidi);
+    outputSelector_->setVisible(showRouting && !isChord);
+    midiOutputSelector_->setVisible(showMidi);
     outputIcon_->setVisible(showRouting);
 
-    // Send/Receive section — hidden for master and aux tracks
-    bool showSends = show && !isMaster && !isAux;
+    // Send/Receive section — hidden for master, aux and chord tracks
+    bool showSends = show && !isMaster && !isAux && !isChord;
     sendReceiveSectionLabel_.setVisible(showSends);
-    addSendButton_.setVisible(showSends);
+    addSendButton_->setVisible(showSends);
     noSendsLabel_.setVisible(showSends);
     receivesLabel_.setVisible(showSends);
     for (auto& l : sendDestLabels_)
@@ -1295,8 +1422,10 @@ void TrackInspector::showTrackControls(bool show) {
 
 void TrackInspector::rebuildSendsUI() {
     // Remove existing send UI components
-    for (auto& l : sendDestLabels_)
+    for (auto& l : sendDestLabels_) {
+        clearLocalizedLabelPainter(*l);
         removeChildComponent(l.get());
+    }
     for (auto& l : sendLevelLabels_)
         removeChildComponent(l.get());
     for (auto& b : sendDeleteButtons_)
@@ -1323,6 +1452,7 @@ void TrackInspector::rebuildSendsUI() {
         destLabel->setText(destTrack ? destTrack->name : "?", juce::dontSendNotification);
         destLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
         destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        useLocalizedLabelPainter(*destLabel);
         addAndMakeVisible(*destLabel);
         sendDestLabels_.push_back(std::move(destLabel));
 
@@ -1470,7 +1600,7 @@ void TrackInspector::showAddSendMenu() {
     // Capture selectedTrackId_ by value to avoid stale reference if selection
     // changes while the async menu is open
     TrackId sourceTrackId = selectedTrackId_;
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addSendButton_),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(addSendButton_.get()),
                        [sourceTrackId, destTrackIds](int result) {
                            if (result > 0 && result <= static_cast<int>(destTrackIds.size())) {
                                magda::UndoManager::getInstance().executeCommand(

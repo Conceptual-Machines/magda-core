@@ -16,7 +16,8 @@ namespace magda {
  * A compact label that displays a value and allows:
  * - Mouse drag to adjust the value
  * - Double-click to reset to the default value
- * - Shift+double-click or Shift+right-click to enter edit mode for keyboard input
+ * - Alt/Option+click to enter edit mode for keyboard input
+ * - Shift+double-click or Shift+right-click to enter edit mode (legacy)
  *
  * Supports different value formats: dB, pan (L/C/R), percentage, etc.
  */
@@ -105,6 +106,12 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setShowFillIndicator(show);
     }
 
+    // Curve the fill (pow(linearNorm, exponent)) so it lines up with a
+    // non-linear scale such as a level meter's power curve. 1.0 = linear.
+    void setFillExponent(double exponent) {
+        valueControl_.setFillExponent(exponent);
+    }
+
     // Font size for display text
     void setFontSize(float size) {
         fontSize_ = size;
@@ -138,7 +145,7 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setDrawBorder(draw);
     }
 
-    // Custom fill indicator colour (defaults to ACCENT_BLUE if not set)
+    // Custom fill indicator colour (defaults to the theme value fill if not set)
     void setFillColour(juce::Colour colour) {
         customFillColour_ = colour;
         valueControl_.setFillColour(colour);
@@ -187,6 +194,12 @@ class DraggableValueLabel : public juce::Component,
     void clearTextOverride() {
         textOverride_.clear();
         valueControl_.clearTextOverride();
+    }
+
+    // Format a value exactly as this control would display it (units, decimals),
+    // for building read-outs such as a multi-selection range.
+    juce::String formatForDisplay(double val) const {
+        return formatValue(val);
     }
 
     // Callback when value changes (fires on every drag pixel, wheel tick, or edit commit)

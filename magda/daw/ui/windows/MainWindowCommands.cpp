@@ -64,6 +64,32 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
            timelineEndSeconds(clip, bpm) > startSeconds;
 }
 
+TrackId resolvePasteTargetTrack(ViewMode mode) {
+    auto& selectionManager = SelectionManager::getInstance();
+    auto& trackManager = TrackManager::getInstance();
+
+    const auto selectedTrack = selectionManager.getSelectedTrack();
+    const auto* selectedTrackInfo =
+        selectedTrack != INVALID_TRACK_ID ? trackManager.getTrack(selectedTrack) : nullptr;
+    if (selectedTrackInfo != nullptr) {
+        return selectedTrack;
+    }
+
+    auto visibleTracks = trackManager.getVisibleTracks(mode);
+    if (!visibleTracks.empty()) {
+        return visibleTracks.front();
+    }
+
+    if (mode != ViewMode::Arrange) {
+        visibleTracks = trackManager.getVisibleTracks(ViewMode::Arrange);
+        if (!visibleTracks.empty()) {
+            return visibleTracks.front();
+        }
+    }
+
+    return INVALID_TRACK_ID;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -82,6 +108,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
         play, stop, record, goToStart, goToEnd, addMarker, goToPreviousMarker, goToNextMarker,
+        goToLoopStart, goToLoopEnd, goToSelectionStart, goToSelectionEnd,
         // Track
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
@@ -246,6 +273,23 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress(juce::KeyPress::rightKey,
                                       juce::ModifierKeys::commandModifier |
                                           juce::ModifierKeys::altModifier);
+            break;
+        case goToLoopStart:
+            result.setInfo("Go to Loop Start", "Move playhead to loop start", "Transport", 0);
+            result.addDefaultKeypress('[', 0);
+            break;
+        case goToLoopEnd:
+            result.setInfo("Go to Loop End", "Move playhead to loop end", "Transport", 0);
+            result.addDefaultKeypress(']', 0);
+            break;
+        case goToSelectionStart:
+            result.setInfo("Go to Selection Start", "Move playhead to selection start", "Transport",
+                           0);
+            result.addDefaultKeypress('[', juce::ModifierKeys::shiftModifier);
+            break;
+        case goToSelectionEnd:
+            result.setInfo("Go to Selection End", "Move playhead to selection end", "Transport", 0);
+            result.addDefaultKeypress(']', juce::ModifierKeys::shiftModifier);
             break;
 
         // Track
@@ -549,11 +593,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                 if (viewMode == ViewMode::Live) {
                     // Session view: paste into first empty slot on selected track
-                    TrackId targetTrack = selectionManager.getSelectedTrack();
+                    TrackId targetTrack = resolvePasteTargetTrack(viewMode);
                     if (targetTrack == INVALID_TRACK_ID) {
-                        auto visibleTracks = TrackManager::getInstance().getVisibleTracks(viewMode);
-                        if (!visibleTracks.empty())
-                            targetTrack = visibleTracks.front();
+                        return true;
                     }
 
                     // Find first empty scene slot on the target track
@@ -592,9 +634,16 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                     const double bpm =
                         mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
-                    auto cmd =
-                        std::make_unique<PasteClipCommand>(BeatPosition{pasteTime * bpm / 60.0},
-                                                           INVALID_TRACK_ID, ClipView::Arrangement);
+                    const TrackId targetTrack = clipManager.clipboardRequiresTargetTrack()
+                                                    ? resolvePasteTargetTrack(viewMode)
+                                                    : INVALID_TRACK_ID;
+                    if (clipManager.clipboardRequiresTargetTrack() &&
+                        targetTrack == INVALID_TRACK_ID) {
+                        return true;
+                    }
+
+                    auto cmd = std::make_unique<PasteClipCommand>(
+                        BeatPosition{pasteTime * bpm / 60.0}, targetTrack, ClipView::Arrangement);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
 
@@ -772,6 +821,25 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
 
         case deleteCmd: {
+            // Automation-point selection takes priority — the user is editing a
+            // curve. Routing it through this command (rather than the curve
+            // editor's keyPressed) is robust: selecting a point publishes to the
+            // SelectionManager, but the editor loses keyboard focus when the
+            // inspector relayouts, so the key never reaches its keyPressed.
+            const auto& autoPtSel = selectionManager.getAutomationPointSelection();
+            if (autoPtSel.isValid()) {
+                auto& undo = UndoManager::getInstance();
+                const bool many = autoPtSel.pointIds.size() > 1;
+                if (many)
+                    undo.beginCompoundOperation("Delete Automation Points");
+                for (auto it = autoPtSel.pointIds.rbegin(); it != autoPtSel.pointIds.rend(); ++it)
+                    undo.executeCommand(std::make_unique<DeleteAutomationPointCommand>(
+                        autoPtSel.laneId, autoPtSel.clipId, *it));
+                if (many)
+                    undo.endCompoundOperation();
+                selectionManager.clearAutomationPointSelection();
+                return true;
+            }
             // Note selection takes priority — user is actively editing in the piano roll
             const auto& noteSel = selectionManager.getNoteSelection();
             if (noteSel.isValid()) {
@@ -1204,6 +1272,50 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (mainView)
                 mainView->getTimelineController().dispatch(GoToNextMarkerEvent{});
             return true;
+
+        case goToLoopStart:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& loop = timelineController.getState().loop;
+                if (!loop.isValid())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{loop.startBeats});
+                return true;
+            }
+            return false;
+
+        case goToLoopEnd:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& loop = timelineController.getState().loop;
+                if (!loop.isValid())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{loop.endBeats});
+                return true;
+            }
+            return false;
+
+        case goToSelectionStart:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& selection = timelineController.getState().selection;
+                if (!selection.isActive())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{selection.startBeats});
+                return true;
+            }
+            return false;
+
+        case goToSelectionEnd:
+            if (mainView) {
+                auto& timelineController = mainView->getTimelineController();
+                const auto& selection = timelineController.getState().selection;
+                if (!selection.isActive())
+                    return false;
+                timelineController.dispatch(SetEditPositionBeatsEvent{selection.endBeats});
+                return true;
+            }
+            return false;
 
         case escapeAction: {
             // Exit any active link mode and clear the edit cursor (#1351).

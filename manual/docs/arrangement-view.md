@@ -38,6 +38,8 @@ The corner toolbar provides quick access to:
 - Track size presets (small, medium, large)
 - Add track
 - I/O visibility toggle
+- **Show / hide marker lane** (see [Markers](#markers))
+- **Show / hide seconds ruler** (see [Timeline Ruler](#timeline-ruler))
 
 ## Working with Clips
 
@@ -61,12 +63,39 @@ You can drag several samples out of the [Media Explorer](panels/browsers.md) at 
 
 Ghost clips shown under the cursor during the drag reflect each sample's actual audio duration, so you can align the drop with the grid before releasing.
 
+## Markers
+
+Markers are named flags on the timeline that label sections of the song — *Intro*, *Chorus*, *Drop*. Toggle the marker lane with **Show marker lane** in the corner toolbar; it sits as a strip above the timeline ruler.
+
+- **Add** — right-click the marker lane and choose **Add Marker**. The marker lands at the playhead.
+- **Rename** — double-click a marker, or right-click it and choose **Rename...**
+- **Reposition** — right-click → **Edit Position...** to set an exact bar/beat.
+- **Colour** — right-click → **Colour** to pick from the palette.
+- **Delete** — right-click → **Delete Marker**.
+
+When a marker scrolls off the left edge, its name stays pinned at the edge of the lane so you always know which section you are in.
+
+## Song Navigator
+
+The song navigator is a minimap in the master content strip showing the whole arrangement at a glance: a compressed overview of the track clips, the timeline markers as vertical lines, the playhead, and a viewport rectangle marking the part of the song currently visible in the main view.
+
+![Song Navigator](assets/images/arrangement/song-navigator.png)
+
+- **Click** anywhere in the minimap to jump the view there.
+- **Drag the viewport rectangle** to pan the arrangement.
+- **Drag its left or right edge** to zoom the main view in or out.
+
 ## Timeline Navigation
 
 ### Scrolling
 
 - **Horizontal scroll** — Move along the timeline (mouse wheel or scroll gesture)
 - **Vertical scroll** — Navigate between tracks
+- **Follow playhead** — When enabled, the view scrolls automatically during playback to keep the playhead on screen. Turn it on in [Preferences](interface/preferences.md) under Transport ("Follow Playhead").
+
+### Timeline Ruler
+
+The ruler above the tracks shows bars and beats, with the loop region and playhead in their own rows below. Toggle **Show seconds ruler** in the corner toolbar to add a second row that reads the same positions in seconds — useful when lining up to picture or a fixed running time. The seconds row is display-only; it sits above the bars row and disappears again when toggled off, letting the bars row fill the height.
 
 ### Zooming
 
@@ -147,3 +176,16 @@ When a time selection is active (drag on the timeline ruler), operations apply t
 |--------|----------|
 | Undo | ++ctrl+z++ / ++cmd+z++ |
 | Redo | ++ctrl+shift+z++ / ++cmd+shift+z++ |
+
+## Project Settings
+
+Open **File → Project Settings** to set options that belong to the project itself rather than the application:
+
+| Setting | Options |
+|--------|---------|
+| **Total Length** | Song length in bars (16–4096, in steps of 16) |
+| **Sample Rate** | 44100, 48000, 88200, 96000, 192000 Hz |
+| **Render Bit Depth** | 16-bit, 24-bit, 32-bit float |
+| **Bounce Bit Depth** | 16-bit, 24-bit, 32-bit float |
+
+Tick **Save as default for new projects** to apply the same values to new projects from now on. These settings are stored per project, so different songs can carry different lengths and render formats.

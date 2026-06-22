@@ -422,6 +422,17 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     clip.setMidiContent();
     clip.view = view;
     clip.name = generateClipName(ClipType::MIDI);
+    // Chord-track clips are chord progressions, not generic MIDI clips.
+    if (const auto* nameTrack = TrackManager::getInstance().getTrack(trackId);
+        nameTrack && nameTrack->type == TrackType::Chord) {
+        int n = 1;
+        for (const auto& [id, c] : clips_) {
+            const auto* t = TrackManager::getInstance().getTrack(c.trackId);
+            if (t && t->type == TrackType::Chord)
+                n++;
+        }
+        clip.name = "Progression " + juce::String(n);
+    }
     if (Config::getInstance().getClipColourMode() == 0) {
         const auto* track = TrackManager::getInstance().getTrack(trackId);
         clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
@@ -1182,16 +1193,6 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
         rightClip.loopLengthBeats = rightClip.loopLength * srcBpm / 60.0;
     }
 
-    // Time-stretched clips (autoTempo/warp): add small anti-click fades at the
-    // split boundary.  The stretcher's overlapping analysis windows bleed audio
-    // from beyond the boundary, which sounds like a doubled transient.  A short
-    // fade masks this startup/shutdown artifact without being audible.
-    if (clip->isAudio()) {
-        constexpr double kSplitFadeSeconds = 0.005;  // 5 ms
-        clip->fadeOut = kSplitFadeSeconds;
-        rightClip.fadeIn = kSplitFadeSeconds;
-    }
-
     // Add right clip to the clip pool
     clips_[rightClip.id] = rightClip;
     addToSessionSlotIndex(clips_[rightClip.id]);
@@ -1619,8 +1620,10 @@ bool ClipManager::canSaveClipToLibrary(ClipId clipId) const {
         return false;
     }
     if (clip->isMidi()) {
+        // Chord-track progressions can be all-chords with their voicings
+        // implied, so annotations alone make a clip worth saving.
         return !clip->midiNotes.empty() || !clip->midiCCData.empty() ||
-               !clip->midiPitchBendData.empty();
+               !clip->midiPitchBendData.empty() || !clip->chordAnnotations.empty();
     }
     if (!clip->isAudio()) {
         return false;
@@ -1648,7 +1651,20 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
             return false;
         }
 
-        const juce::File midiDir(juce::String(ctx.midiClipsDir().string()));
+        // Chord-track clips are progressions: persist their chords as CHORD:
+        // markers and save under the progressions dir so the indexer models
+        // them as kind='progression'. A plain MIDI clip saves its notes only.
+        const bool isProgression = TrackManager::getInstance().getChordTrackId() == clip->trackId;
+
+        std::vector<magda::daw::ChordMarker> chordMarkers;
+        if (isProgression) {
+            for (const auto& ann : clip->chordAnnotations) {
+                chordMarkers.push_back({ann.beatPosition, ann.lengthBeats, ann.chordName});
+            }
+        }
+
+        const auto dir = isProgression ? ctx.progressionsDir() : ctx.midiClipsDir();
+        const juce::File midiDir(juce::String(dir.string()));
         if (!midiDir.createDirectory()) {
             return false;
         }
@@ -1656,7 +1672,8 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
         const auto outFile = midiLibraryFileForClip(*clip, midiDir);
         const double tempo = currentProjectTempoOrDefault();
         if (!magda::daw::MidiFileWriter::writeToFile(outFile, clip->midiNotes, clip->midiCCData,
-                                                     clip->midiPitchBendData, tempo, clip->name)) {
+                                                     clip->midiPitchBendData, tempo, clip->name,
+                                                     chordMarkers)) {
             return false;
         }
 
@@ -2675,6 +2692,17 @@ void ClipManager::endBatch() {
     }
 }
 
+ClipManager::ScopedListenerMuteForTests::ScopedListenerMuteForTests() {
+    auto& manager = ClipManager::getInstance();
+    savedListeners_ = std::move(manager.listeners_);
+    manager.listeners_.clear();
+}
+
+ClipManager::ScopedListenerMuteForTests::~ScopedListenerMuteForTests() {
+    auto& manager = ClipManager::getInstance();
+    manager.listeners_ = std::move(savedListeners_);
+}
+
 void ClipManager::notifyClipSelectionChanged(ClipId clipId) {
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
@@ -2895,6 +2923,9 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
         // Determine target track
         TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
+        if (newTrackId == INVALID_TRACK_ID) {
+            continue;
+        }
 
         // Create new clip based on type, using targetView instead of clipData.view
         ClipId newClipId = INVALID_CLIP_ID;
@@ -2915,7 +2946,12 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
             auto* newClip = getClip(newClipId);
             if (newClip) {
                 newClip->name = clipData.name + " (copy)";
-                newClip->colour = clipData.colour;
+                if (clipData.trackId != INVALID_TRACK_ID) {
+                    newClip->colour = clipData.colour;
+                } else if (const auto* targetTrack =
+                               TrackManager::getInstance().getTrack(newTrackId)) {
+                    newClip->colour = targetTrack->colour;
+                }
                 newClip->loopEnabled = clipData.loopEnabled;
 
                 // Copy MIDI data
@@ -3070,9 +3106,49 @@ bool ClipManager::hasClipsInClipboard() const {
     return !clipboard_.empty();
 }
 
+bool ClipManager::clipboardRequiresTargetTrack() const {
+    return std::any_of(clipboard_.begin(), clipboard_.end(),
+                       [](const auto& clip) { return clip.trackId == INVALID_TRACK_ID; });
+}
+
 void ClipManager::clearClipboard() {
     clipboard_.clear();
     clipboardReferenceTime_ = 0.0;
+}
+
+void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String name,
+                                       double lengthBeats) {
+    clipboard_.clear();
+    clipboardReferenceTime_ = 0.0;
+
+    if (notes.empty()) {
+        return;
+    }
+
+    double minBeat = notes.front().startBeat;
+    double maxEndBeat = notes.front().startBeat + notes.front().lengthBeats;
+    for (const auto& note : notes) {
+        minBeat = std::min(minBeat, note.startBeat);
+        maxEndBeat = std::max(maxEndBeat, note.startBeat + note.lengthBeats);
+    }
+
+    const double noteOffset = lengthBeats > 0.0 ? 0.0 : minBeat;
+    for (auto& note : notes)
+        note.startBeat -= noteOffset;
+
+    ClipInfo clip;
+    clip.setMidiContent();
+    clip.name = std::move(name);
+    clip.trackId = INVALID_TRACK_ID;
+    clip.view = ClipView::Arrangement;
+    clip.midiNotes = std::move(notes);
+    const double inferredLength = maxEndBeat - noteOffset;
+    const double clipboardLength =
+        lengthBeats > 0.0 ? juce::jmax(lengthBeats, inferredLength) : inferredLength;
+    clip.setPlacementBeats(0.0, juce::jmax(0.25, clipboardLength));
+    clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
+
+    clipboard_.push_back(std::move(clip));
 }
 
 // ============================================================================

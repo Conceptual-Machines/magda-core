@@ -10,11 +10,12 @@ namespace magda {
  * differences (routing, hierarchy, output).
  */
 enum class TrackType {
-    Audio = 0,    // Regular hybrid track
-    Group = 3,    // Contains child tracks, routing hub
-    Aux = 4,      // Receives from sends
-    Master = 5,   // Final output
-    MultiOut = 6  // Output track for multi-out instrument pair
+    Audio = 0,     // Regular hybrid track
+    Group = 3,     // Contains child tracks, routing hub
+    Aux = 4,       // Receives from sends
+    Master = 5,    // Final output
+    MultiOut = 6,  // Output track for multi-out instrument pair
+    Chord = 7      // Singleton chord-progression track (monitor-only, excluded from render)
 };
 
 /**
@@ -32,6 +33,8 @@ inline const char* getTrackTypeName(TrackType type) {
             return "Master";
         case TrackType::MultiOut:
             return "MultiOut";
+        case TrackType::Chord:
+            return "Chord";
     }
     return "Unknown";
 }
@@ -55,6 +58,8 @@ inline TrackType trackTypeFromInt(int v) {
             return TrackType::Master;
         case 6:
             return TrackType::MultiOut;
+        case 7:
+            return TrackType::Chord;
         default:
             return TrackType::Audio;
     }

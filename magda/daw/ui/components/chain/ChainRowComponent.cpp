@@ -50,7 +50,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     gainLabel_.setRange(-60.0, 6.0, 0.0);
     gainLabel_.setValue(chain.volume, juce::dontSendNotification);
     gainLabel_.setFontSize(9.0f);
-    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     // Capture each target chain's base gain at drag start so a multi-chain drag
     // shifts every selected chain by the same dB delta from its own value.
     gainLabel_.onDragStart = [this]() {
@@ -80,7 +80,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     panLabel_.setRange(-1.0, 1.0, 0.0);
     panLabel_.setValue(chain.pan, juce::dontSendNotification);
     panLabel_.setFontSize(9.0f);
-    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     panLabel_.onDragStart = [this]() {
         dragStartPan_ = panLabel_.getValue();
         dragBasePans_.clear();

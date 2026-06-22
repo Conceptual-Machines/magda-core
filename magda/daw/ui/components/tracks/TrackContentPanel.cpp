@@ -18,6 +18,7 @@
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/MidiChordMarkers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackCommands.hpp"
@@ -1720,10 +1721,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         double maxBeats = timelineLength * tempoBPM / 60.0;
         double clickBeats = juce::jlimit(0.0, maxBeats, pixelToBeats(event.x));
 
-        // Apply snap to grid if callback is set
-        if (snapBeatsToGrid) {
+        // Apply snap to grid unless Alt/Option is held for precise cursor placement.
+        if (!event.mods.isAltDown() && snapBeatsToGrid) {
             clickBeats = snapBeatsToGrid(clickBeats);
-        } else if (snapTimeToGrid) {
+        } else if (!event.mods.isAltDown() && snapTimeToGrid) {
             clickBeats = snapTimeToGrid(clickBeats * 60.0 / tempoBPM) * tempoBPM / 60.0;
         }
         clickBeats = juce::jlimit(0.0, maxBeats, clickBeats);
@@ -1762,10 +1763,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
                 double maxBeats = timelineLength * tempoBPM / 60.0;
                 double clickBeats = juce::jlimit(0.0, maxBeats, pixelToBeats(event.x));
 
-                // Apply snap to grid if callback is set
-                if (snapBeatsToGrid) {
+                // Apply snap to grid unless Alt/Option is held for precise cursor placement.
+                if (!event.mods.isAltDown() && snapBeatsToGrid) {
                     clickBeats = snapBeatsToGrid(clickBeats);
-                } else if (snapTimeToGrid) {
+                } else if (!event.mods.isAltDown() && snapTimeToGrid) {
                     clickBeats = snapTimeToGrid(clickBeats * 60.0 / tempoBPM) * tempoBPM / 60.0;
                 }
                 clickBeats = juce::jlimit(0.0, maxBeats, clickBeats);
@@ -2009,7 +2010,11 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             }
             case 2: {  // Paste
                 const double bpm = safeThis ? safeThis->getTempo() : 120.0;
-                auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{startTime * bpm / 60.0});
+                const TrackId targetTrackId =
+                    ClipManager::getInstance().clipboardRequiresTargetTrack() ? trackId
+                                                                              : INVALID_TRACK_ID;
+                auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{startTime * bpm / 60.0},
+                                                              targetTrackId);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
@@ -3377,6 +3382,11 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
             if (lists.isEmpty())
                 continue;
 
+            // A .mid carrying CHORD: markers is a chord progression. Dropped on
+            // empty area, it belongs on the (singleton) chord track rather than
+            // a fresh audio track — create the chord track on demand.
+            const bool isProgression = !magda::daw::readChordMarkers(midiFile).empty();
+
             // For single-track files dropped on an existing track, reuse that track
             // For multi-track files or drops on empty area, create new tracks
             bool createNewTracks = (lists.size() > 1) || (targetTrackId == INVALID_TRACK_ID);
@@ -3404,7 +3414,13 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
                 // Create track if needed
                 TrackId clipTrackId = targetTrackId;
-                if (createNewTracks) {
+                if (isProgression && targetTrackId == INVALID_TRACK_ID) {
+                    // Progression dropped on empty area: route to the chord
+                    // track, creating it if the project doesn't have one yet.
+                    clipTrackId = TrackManager::getInstance().ensureChordTrack();
+                    if (clipTrackId == INVALID_TRACK_ID)
+                        continue;
+                } else if (createNewTracks) {
                     juce::String trackName = list->getImportedFileName();
                     if (trackName.isEmpty())
                         trackName = midiFile.getFileNameWithoutExtension();
@@ -3472,44 +3488,28 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     clipName = midiFile.getFileNameWithoutExtension();
                 clip->name = clipName;
 
-                // Extract chord markers from MIDI marker meta events (type 6)
-                // Format: "CHORD:name:lengthBeats"
-                {
-                    juce::FileInputStream fis(midiFile);
-                    if (fis.openedOk()) {
-                        juce::MidiFile rawMidi;
-                        rawMidi.readFrom(fis);
-                        int ticksPerQN = rawMidi.getTimeFormat();
-                        if (ticksPerQN > 0) {
-                            for (int t = 0; t < rawMidi.getNumTracks(); ++t) {
-                                auto* track = rawMidi.getTrack(t);
-                                if (!track)
-                                    continue;
-                                for (int e = 0; e < track->getNumEvents(); ++e) {
-                                    auto& msg = track->getEventPointer(e)->message;
-                                    if (msg.isTextMetaEvent() && msg.getMetaEventType() == 6) {
-                                        auto text = msg.getTextFromTextMetaEvent();
-                                        if (text.startsWith("CHORD:")) {
-                                            auto parts = juce::StringArray::fromTokens(
-                                                text.substring(6), ":", "");
-                                            if (parts.size() >= 2) {
-                                                ClipInfo::ChordAnnotation ann;
-                                                ann.beatPosition = msg.getTimeStamp() / ticksPerQN;
-                                                // Last token is length; rest is chord name
-                                                ann.lengthBeats =
-                                                    parts[parts.size() - 1].getDoubleValue();
-                                                parts.remove(parts.size() - 1);
-                                                ann.chordName = parts.joinIntoString(":");
-                                                if (ann.lengthBeats <= 0.0)
-                                                    ann.lengthBeats = 4.0;
-                                                clip->chordAnnotations.push_back(ann);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                // Pre-populate chord annotations from any embedded CHORD:
+                // markers (the reverse of MidiFileWriter's marker writing) and
+                // relink each chord's voicing notes by beat range, so a loaded
+                // progression behaves like one created in-app (chordGroup ties
+                // notes to their chord for editing and re-detection).
+                for (const auto& marker : magda::daw::readChordMarkers(midiFile)) {
+                    ClipInfo::ChordAnnotation ann;
+                    ann.beatPosition = marker.beatPosition;
+                    ann.lengthBeats = marker.lengthBeats;
+                    ann.chordName = marker.chordName;
+
+                    const int groupId = clip->nextChordGroupId++;
+                    bool linkedAny = false;
+                    for (auto& note : clip->midiNotes) {
+                        if (note.startBeat >= ann.beatPosition &&
+                            note.startBeat < ann.beatPosition + ann.lengthBeats) {
+                            note.chordGroup = groupId;
+                            linkedAny = true;
                         }
                     }
+                    ann.chordGroup = linkedAny ? groupId : 0;
+                    clip->chordAnnotations.push_back(ann);
                 }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);

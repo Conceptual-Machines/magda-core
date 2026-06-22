@@ -16,7 +16,9 @@ target_sources(magda_daw PRIVATE
     TrackManagerDevices.cpp
     ModulatorEngine.cpp
     ClipManager.cpp
+    ChordProgressionConverter.cpp
     SessionLaunchService.cpp
+    MidiChordMarkers.cpp
     MidiFileWriter.cpp
     SelectionManager.cpp
     GestureRouter.cpp
@@ -98,12 +100,14 @@ target_sources(magda_daw PRIVATE
     AutomationCommands.hpp
     MidiNoteCommands.hpp
     ChordAnnotationCommands.hpp
+    ChordProgressionConverter.hpp
     MacroInfo.hpp
     ModInfo.hpp
     ParameterInfo.hpp
     ParameterDetector.hpp
     ParameterUtils.hpp
     TempoUtils.hpp
+    TechnicalText.hpp
     AutomationTypes.hpp
     AutomationInfo.hpp
     AutomationManager.hpp

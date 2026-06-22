@@ -6,6 +6,7 @@
 #include <thread>
 
 #include "../../../../agents/gain_staging_agent.hpp"
+#include "../../components/mixer/LevelMeter.hpp"
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
 #include "../../dialogs/GainStagingDialog.hpp"
@@ -35,6 +36,20 @@
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
+namespace {
+void configureMasterSpeakerButton(SvgButton& button) {
+    // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
+    // orange chip (master_off). Toggle state drives which icon shows.
+    button.setClickingTogglesState(true);
+    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+}
+
+void syncMasterSpeakerButton(SvgButton& button, bool muted) {
+    button.setToggleState(muted, juce::dontSendNotification);
+    button.setTooltip(muted ? "Unmute master" : "Mute master");
+}
+}  // namespace
 
 namespace {
 bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {
@@ -1021,24 +1036,67 @@ TrackChainContent::TrackChainContent()
     addChildComponent(muteButton_);
 
     // Master mute: speaker toggle shown in place of "M" when the master is selected.
-    {
-        auto onIcon = juce::Drawable::createFromImageData(BinaryData::speaker_on_svg,
-                                                          BinaryData::speaker_on_svgSize);
-        auto offIcon = juce::Drawable::createFromImageData(BinaryData::speaker_off_svg,
-                                                           BinaryData::speaker_off_svgSize);
-        masterMuteButton_.setImages(onIcon.get(), nullptr, nullptr, nullptr, offIcon.get());
-        masterMuteButton_.setEdgeIndent(0);
-        masterMuteButton_.setClickingTogglesState(true);
-        masterMuteButton_.setColour(juce::DrawableButton::backgroundColourId,
-                                    juce::Colours::transparentBlack);
-        masterMuteButton_.setColour(juce::DrawableButton::backgroundOnColourId,
-                                    juce::Colours::transparentBlack);
-        masterMuteButton_.onClick = [this]() {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
-        };
-        addChildComponent(masterMuteButton_);
-    }
+    configureMasterSpeakerButton(masterMuteButton_);
+    masterMuteButton_.onClick = [this]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
+    };
+    addChildComponent(masterMuteButton_);
+
+    // Chord-track audition (mute) toggle: cyan speaker, mirrors the chord header.
+    chordSpeakerButton_ = std::make_unique<magda::SvgButton>(
+        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
+        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
+    chordSpeakerButton_->setTooltip("Preview chords on playback");
+    chordSpeakerButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordSpeakerButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    chordSpeakerButton_->onClick = [this]() {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        const bool nowMuted = track ? !track->muted : true;
+        chordSpeakerButton_->setActive(!nowMuted);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_, nowMuted));
+    };
+    addChildComponent(*chordSpeakerButton_);
+
+    // Input monitor (Off/In/Auto), same 3-state control as the header.
+    monitorButton_.setButtonText("-");
+    monitorButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    monitorButton_.setColour(juce::TextButton::buttonColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    monitorButton_.setColour(juce::TextButton::buttonOnColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    monitorButton_.setColour(juce::TextButton::textColourOffId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    monitorButton_.setColour(juce::TextButton::textColourOnId,
+                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+    monitorButton_.setColour(juce::ComboBox::outlineColourId,
+                             DarkTheme::getColour(DarkTheme::BORDER));
+    monitorButton_.setTooltip("Input monitoring (Off/In/Auto)");
+    monitorButton_.onClick = [this]() {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        if (!track)
+            return;
+        magda::InputMonitorMode next;
+        switch (track->inputMonitor) {
+            case magda::InputMonitorMode::Off:
+                next = magda::InputMonitorMode::In;
+                break;
+            case magda::InputMonitorMode::In:
+                next = magda::InputMonitorMode::Auto;
+                break;
+            default:
+                next = magda::InputMonitorMode::Off;
+                break;
+        }
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetTrackInputMonitorCommand>(selectedTrackId_, next));
+    };
+    addChildComponent(monitorButton_);
 
     // Solo button
     soloButton_.setButtonText("S");
@@ -1063,9 +1121,12 @@ TrackChainContent::TrackChainContent()
 
     // Volume label (dB format, draggable)
     volumeLabel_.setRange(-60.0, 6.0, 0.0);
+    // Curve the fill to match the level meter's power scale (consistent with the
+    // other volume controls).
+    volumeLabel_.setFillExponent(static_cast<double>(magda::LevelMeter::METER_CURVE_EXPONENT));
     volumeLabel_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
     volumeLabel_.setFontSize(10.0f);
-    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     volumeLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             float gain = dbToGain(static_cast<float>(volumeLabel_.getValue()));
@@ -1079,7 +1140,7 @@ TrackChainContent::TrackChainContent()
     panLabel_.setRange(-1.0, 1.0, 0.0);
     panLabel_.setValue(0.0, juce::dontSendNotification);  // Center
     panLabel_.setFontSize(10.0f);
-    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
     panLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
@@ -1927,7 +1988,8 @@ void TrackChainContent::trackPropertyChanged(int trackId) {
         if (track) {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
-            masterMuteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            syncMasterSpeakerButton(masterMuteButton_, track->muted);
+            chordSpeakerButton_->setActive(!track->muted);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
             volumeLabel_.setValue(gainToDb(track->volume), juce::dontSendNotification);
             panLabel_.setValue(track->pan, juce::dontSendNotification);
@@ -2317,7 +2379,7 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             // Update mute/solo state
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
-            masterMuteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            syncMasterSpeakerButton(masterMuteButton_, track->muted);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
 
             // Convert linear gain to dB for volume slider
@@ -2355,35 +2417,52 @@ void TrackChainContent::updateFromSelectedTrack() {
             chainBypassButton_->setToggleState(anyActive, juce::dontSendNotification);
             chainBypassButton_->setActive(anyActive);
 
-            // Show header controls (they're in the header bar via populateHeader)
-            globalModsButton_->setVisible(true);
-            macroButton_->setVisible(true);
-            addRackButton_->setVisible(true);
-            treeViewButton_->setVisible(true);
-            presetButton_->setVisible(true);
-            gainStagingButton_->setVisible(true);
-            postFxPanelButton_->setVisible(true);
-            oscToggleButton_->setVisible(true);
-            specToggleButton_->setVisible(true);
-            levelsToggleButton_->setVisible(true);
-            refreshAnalysisToggles();
-            refreshGainStagingButton();
-            trackNameLabel_.setVisible(true);
-            soloButton_.setVisible(true);
-            volumeLabel_.setVisible(true);
-            panLabel_.setVisible(true);
-            chainBypassButton_->setVisible(true);
-
             const bool isMaster = track->type == magda::TrackType::Master;
-            muteButton_.setVisible(!isMaster);
-            masterMuteButton_.setVisible(isMaster);
+            const bool isChord = track->type == magda::TrackType::Chord;
 
-            // Hide solo, pan, and chain bypass for master track.
-            if (isMaster) {
-                soloButton_.setVisible(false);
-                panLabel_.setVisible(false);
-                chainBypassButton_->setVisible(false);
+            // Chord audition speaker + monitor mirror the chord track header.
+            chordSpeakerButton_->setActive(!track->muted);
+            switch (track->inputMonitor) {
+                case magda::InputMonitorMode::In:
+                    monitorButton_.setButtonText("I");
+                    break;
+                case magda::InputMonitorMode::Auto:
+                    monitorButton_.setButtonText("A");
+                    break;
+                default:
+                    monitorButton_.setButtonText("-");
+                    break;
             }
+            monitorButton_.setToggleState(track->inputMonitor != magda::InputMonitorMode::Off,
+                                          juce::dontSendNotification);
+
+            // Left chain action buttons + post-fx / analysis toggles are hidden
+            // for the chord track (no modulation / macros / racks / analysis).
+            const bool showChainTools = !isChord;
+            globalModsButton_->setVisible(showChainTools);
+            macroButton_->setVisible(showChainTools);
+            addRackButton_->setVisible(showChainTools);
+            treeViewButton_->setVisible(showChainTools);
+            presetButton_->setVisible(showChainTools);
+            gainStagingButton_->setVisible(showChainTools);
+            postFxPanelButton_->setVisible(showChainTools);
+            oscToggleButton_->setVisible(showChainTools);
+            specToggleButton_->setVisible(showChainTools);
+            levelsToggleButton_->setVisible(showChainTools);
+            if (showChainTools) {
+                refreshAnalysisToggles();
+                refreshGainStagingButton();
+            }
+            trackNameLabel_.setVisible(true);
+            soloButton_.setVisible(!isMaster);
+            volumeLabel_.setVisible(true);
+            panLabel_.setVisible(!isMaster && !isChord);
+            chainBypassButton_->setVisible(!isMaster && !isChord);
+
+            muteButton_.setVisible(!isMaster && !isChord);
+            masterMuteButton_.setVisible(isMaster);
+            chordSpeakerButton_->setVisible(isChord);
+            monitorButton_.setVisible(isChord);
 
             noSelectionLabel_.setVisible(false);
             rebuildNodeComponents();
@@ -2449,6 +2528,8 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
         headerBar.addChildComponent(masterMuteButton_);
     }
     headerBar.addAndMakeVisible(soloButton_);
+    headerBar.addChildComponent(*chordSpeakerButton_);
+    headerBar.addChildComponent(monitorButton_);
     headerBar.addAndMakeVisible(volumeLabel_);
     headerBar.addAndMakeVisible(panLabel_);
     headerBar.addAndMakeVisible(chainBypassButton_.get());
@@ -2476,6 +2557,8 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(&muteButton_);
     addChildComponent(&masterMuteButton_);
     addChildComponent(&soloButton_);
+    addChildComponent(*chordSpeakerButton_);
+    addChildComponent(&monitorButton_);
     addChildComponent(&volumeLabel_);
     addChildComponent(&panLabel_);
     addChildComponent(chainBypassButton_.get());
@@ -2486,6 +2569,29 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
 void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID)
         return;
+
+    // Chord track: no left chain tools; the right side mirrors the chord track
+    // header (volume + audition speaker + solo + monitor). Name fills the rest.
+    if (const auto* chordTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        chordTrack && chordTrack->type == magda::TrackType::Chord) {
+        auto a = headerBounds.reduced(8, 4);
+        const int gap = 4;
+        monitorButton_.setBounds(a.removeFromRight(18));
+        a.removeFromRight(gap);
+        soloButton_.setBounds(a.removeFromRight(18));
+        a.removeFromRight(gap);
+        chordSpeakerButton_->setBounds(a.removeFromRight(22).withSizeKeepingCentre(22, 22));
+        a.removeFromRight(gap);
+        volumeLabel_.setBounds(a.removeFromRight(60));
+        a.removeFromRight(8);
+        trackNameLabel_.setBounds(a);
+
+        if (linkModeLabel_.isVisible())
+            linkModeLabel_.setBounds(headerBounds);
+        if (gainStagingLabel_.isVisible())
+            gainStagingLabel_.setBounds(headerBounds);
+        return;
+    }
 
     auto headerArea = headerBounds.reduced(8, 4);
 
@@ -2523,10 +2629,7 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         headerArea.removeFromRight(2);
     }
     if (isMaster) {
-        // Square the speaker to the row height so its built-in border matches the
-        // volume box, instead of the narrow "M" footprint.
-        masterMuteButton_.setBounds(
-            headerArea.removeFromRight(headerArea.getHeight()).withSizeKeepingCentre(18, 18));
+        masterMuteButton_.setBounds(headerArea.removeFromRight(24).withSizeKeepingCentre(24, 24));
         masterMuteButton_.setVisible(true);
         muteButton_.setVisible(false);
     } else {
@@ -2593,6 +2696,8 @@ void TrackChainContent::hideHeaderControls() {
     trackNameLabel_.setVisible(false);
     muteButton_.setVisible(false);
     masterMuteButton_.setVisible(false);
+    chordSpeakerButton_->setVisible(false);
+    monitorButton_.setVisible(false);
     soloButton_.setVisible(false);
     volumeLabel_.setVisible(false);
     panLabel_.setVisible(false);

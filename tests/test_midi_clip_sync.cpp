@@ -482,8 +482,11 @@ TEST_CASE("BendNoteTimingCommand bends raw MIDI note starts and undoes exactly",
     BendNoteTimingCommand cmd(clipId, {0, 1, 2}, 0.25f, 0.0f, 1, 0.0f, 64, true);
     cmd.execute();
 
+    // Time bend parameterizes each note by its ordinal slot in the sequence
+    // (so stacked chord notes strum), not by absolute beat. The endpoints stay
+    // put (ordinal t=0 and t=1); the middle note bends to its ordinal position.
     REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(1.0));
-    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(2.0));
+    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(2.125));
     REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(3.0));
 
     cmd.undo();

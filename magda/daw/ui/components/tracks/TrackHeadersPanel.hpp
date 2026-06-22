@@ -142,11 +142,12 @@ class TrackHeadersPanel : public juce::Component,
     struct TrackHeader {
         juce::String name;
         TrackId trackId = INVALID_TRACK_ID;
-        int depth = 0;             // Hierarchy depth for indentation
-        bool isGroup = false;      // Is this a group track?
-        bool isMultiOut = false;   // Is this a multi-out child track?
-        bool isMaster = false;     // Is this the master track?
-        bool isCollapsed = false;  // Is group collapsed?
+        int depth = 0;              // Hierarchy depth for indentation
+        bool isGroup = false;       // Is this a group track?
+        bool isMultiOut = false;    // Is this a multi-out child track?
+        bool isMaster = false;      // Is this the master track?
+        bool isChordTrack = false;  // Is this the singleton chord track?
+        bool isCollapsed = false;   // Is group collapsed?
         bool selected = false;
         bool muted = false;
         bool solo = false;
@@ -168,7 +169,10 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::TextButton> muteButton;
         // Master-only mute: a speaker toggle matching the inspector/mixer, used
         // in place of the "M" muteButton when isMaster.
-        std::unique_ptr<juce::DrawableButton> masterMuteButton;
+        std::unique_ptr<magda::SvgButton> masterMuteButton;
+        // Chord-track-only: speaker toggle for "preview chords on playback"
+        // (blue = audible, faint grey = silent). Replaces the "M" button.
+        std::unique_ptr<SvgButton> chordAuditionButton;
         std::unique_ptr<juce::TextButton> soloButton;
         std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
         std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button

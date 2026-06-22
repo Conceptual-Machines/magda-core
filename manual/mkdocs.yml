@@ -57,6 +57,8 @@ nav:
   - Arrangement View: arrangement-view.md
   - Session View: session-view.md
   - Mixer View: mixer-view.md
+  - Recording & Comping: recording-comping.md
+  - Chord Track: chord-track.md
   - Panels:
       - Inspector: panels/inspector.md
       - Plugin & Media Browser: panels/browsers.md
@@ -75,6 +77,7 @@ nav:
           - Arpeggiator: devices/arpeggiator.md
           - Chord Engine: devices/chord-engine.md
           - Step Sequencer: devices/step-sequencer.md
+          - Poly Sequencer: devices/poly-sequencer.md
       - Instruments:
           - 4OSC Synth: devices/4osc.md
           - Drum Grid: devices/drum-grid.md

@@ -590,15 +590,25 @@ void LFOCurveEditor::onPointCurveTypeChanged(uint32_t pointId, CurveType newType
         DBG("[HardCorner] LFOCurveEditor::onPointCurveTypeChanged pointId="
             << static_cast<int>(pointId) << " oldType=" << getCurveTypeName(points_[i].curveType)
             << " newType=" << getCurveTypeName(newType));
-        points_[i].curveType = newType;
-        // A hard corner starts from a clean apex at the segment midpoint. Drop
-        // any stale bezier handle offsets (p1.outHandle / p2.inHandle drive the
-        // segment shaper) so the shaper handle doesn't render off-curve as a
-        // stray floating circle. The apex stays draggable from there.
-        if (newType == CurveType::HardCorner) {
-            points_[i].outHandle = CurveHandleData{};
-            if (i + 1 < points_.size())
-                points_[i + 1].inHandle = CurveHandleData{};
+        // Toggling to a hard corner keeps the segment's current bend: place the
+        // corner apex where the smooth curve already sits (its on-curve midpoint)
+        // instead of flattening the segment back to centre.
+        if (newType == CurveType::HardCorner && i + 1 < points_.size()) {
+            const auto [apexX, apexY] =
+                getSegmentHandlePosition(points_[i], points_[i + 1], points_[i].tension);
+            points_[i].curveType = newType;
+            CurveHandleData outH;
+            outH.x = apexX - points_[i].x;
+            outH.y = apexY - points_[i].y;
+            outH.linked = true;
+            points_[i].outHandle = outH;
+            CurveHandleData inH;
+            inH.x = apexX - points_[i + 1].x;
+            inH.y = apexY - points_[i + 1].y;
+            inH.linked = true;
+            points_[i + 1].inHandle = inH;
+        } else {
+            points_[i].curveType = newType;
         }
         break;
     }
@@ -757,14 +767,13 @@ void LFOCurveEditor::timerCallback() {
     float newValue = modInfo_->value;
 
     if (std::abs(newPhase - lastPhase_) > 0.001f || std::abs(newValue - lastValue_) > 0.001f) {
-        // Repaint old indicator region
-        repaint(getIndicatorBounds());
-
-        // Update and repaint new region
         lastPhase_ = newPhase;
         lastValue_ = newValue;
-        repaint(getIndicatorBounds());
-        needsRepaint = false;  // Already repainted
+        // Full repaint: a tight partial region clips the curve and handles the dot
+        // passes over, leaving ghost arcs. The editor is small, so 30fps full
+        // repaints are cheap.
+        repaint();
+        needsRepaint = false;
     }
 
     if (needsRepaint)

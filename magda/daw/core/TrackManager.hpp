@@ -201,6 +201,18 @@ class TrackManager {
     // Track operations
     TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
     TrackId createGroupTrack(const juce::String& name = "");
+
+    // Chord track is a strict singleton (TrackType::Chord). It lives in the
+    // normal track list so it gets clip hosting / arrangement rendering for
+    // free, but it is monitor-only: its instrument voices chord previews and it
+    // is excluded from the render/bounce graph. ensureChordTrack() creates it on
+    // first use (idempotent) and returns its id; getChordTrackId() returns the
+    // existing one or INVALID_TRACK_ID.
+    TrackId ensureChordTrack();
+    TrackId getChordTrackId() const;
+    bool hasChordTrack() const {
+        return getChordTrackId() != INVALID_TRACK_ID;
+    }
     TrackId groupTracks(const std::vector<TrackId>& trackIds, const juce::String& name = "Group");
     std::vector<TrackId> ungroupTrack(TrackId groupId);
     void deleteTrack(TrackId trackId);
@@ -274,6 +286,8 @@ class TrackManager {
     void setAllTracksPlaybackMode(TrackPlaybackMode mode);
     bool isAnyTrackInSessionMode() const;
     void setTrackType(TrackId trackId, TrackType type);
+    void setTrackMixerChannelWidth(TrackId trackId, int width);
+    void setTrackMixerFaderTopInset(TrackId trackId, int inset);
 
     // Track routing setters (notify listeners and forward to bridges)
     void setTrackMidiInput(TrackId trackId, const juce::String& deviceId);
@@ -796,6 +810,18 @@ class TrackManager {
         }
         BatchScope(const BatchScope&) = delete;
         BatchScope& operator=(const BatchScope&) = delete;
+    };
+
+    /// Test-only guard for model assertions that must not drive engine/UI listeners.
+    class ScopedListenerMuteForTests {
+      public:
+        ScopedListenerMuteForTests();
+        ~ScopedListenerMuteForTests();
+        ScopedListenerMuteForTests(const ScopedListenerMuteForTests&) = delete;
+        ScopedListenerMuteForTests& operator=(const ScopedListenerMuteForTests&) = delete;
+
+      private:
+        std::vector<TrackManagerListener*> savedListeners_;
     };
 
   private:

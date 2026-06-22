@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
+#include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -52,11 +53,14 @@ void styleReadoutLabel(juce::Label& label) {
 CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
 
-    const auto fillColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f);
+    const auto fillColour = DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL);
 
     gainFader_.setRange(-60.0, 12.0, 0.0);
     gainFader_.setValue(0.0, juce::dontSendNotification);
     gainFader_.setFillColour(fillColour);
+    // Curve the fill to match the level meter's power scale (consistent with the
+    // track and master volume fills).
+    gainFader_.setFillExponent(static_cast<double>(magda::LevelMeter::METER_CURVE_EXPONENT));
     gainFader_.setVertical(true);
     gainFader_.setShowText(false);
     gainFader_.onValueChange = [this]() {

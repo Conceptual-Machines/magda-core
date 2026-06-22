@@ -17,6 +17,52 @@ The lane appears below the track. Drag points to edit the curve; double-click to
 
 Multiple lanes can stack on the same track — one per automated parameter — and modulators, macros, and automation can all drive the same parameter at once. Their effects combine.
 
+A device parameter gets its lane from the same place you link modulation: right-click the parameter and choose **Show Automation Lane**. (Parameters on a post-FX device cannot be automated, so the item is disabled there.)
+
+## Curve Shapes
+
+A segment is the line between two points. Right-click a segment to change its shape:
+
+| Shape | Behaviour |
+|---|---|
+| **Linear** | Straight line between the two points |
+| **Bezier** | Smooth curve; drag the handles to shape it |
+| **Step** | Holds the first value, then jumps at the next point |
+| **Hard Corner** | Two straight segments meeting at a sharp, draggable apex |
+
+## Editing Points
+
+- **Add / remove a point** — double-click in the lane.
+- **Inline value** — right-click a point to type its value directly, in the lane's real units (dB, pan %, Hz, …). Press ++enter++ to commit.
+- **Point Inspector** — select one or more points to open the inspector, which shows the target name and point count, an editable **Value** field, and the **Position** (beat) of a single selected point. Editing the value across a multi-selection applies the change as a delta, preserving the relative shape.
+
+## Lane Header Controls
+
+Each lane header carries a row of toggles:
+
+| Control | Function |
+|---|---|
+| **Snap edits to beat grid** | Snap point positions to the bar/beat grid while editing |
+| **Snap values to parameter grid** | Snap point values to the parameter's natural steps |
+| **Automation on/off** | Bypass the lane without deleting it; the parameter ignores the curve while off |
+| **Delete automation lane** | Remove the lane and its curve |
+
+## Master Automation
+
+The master channel has its own automation band above the master strip. Click the **Automation** button in the master header (or right-click the header) to open the master automation menu, where you can show or hide existing master lanes, hide them all, or **Add New Lane** for:
+
+- **Track Volume** — the master output level
+- **Tempo** — see below
+- any parameter of a device on the master chain, plus master macros and modulators
+
+++alt++-click the Automation button to toggle every automation lane in the edit on or off at once.
+
+These master lanes include **edit-scoped targets** like tempo and master volume that aren't tied to a specific device.
+
+## Tempo Automation
+
+Tempo can be automated over time as a curve in the master automation band. Open the master automation menu, choose **Add New Lane → Tempo**, and the tempo lane appears in the master band. Edit it like any other lane — drag points, set curve shapes, type exact BPM values via the point inspector. The curve drives the project's tempo, so the song speeds up and slows down along the curve during playback.
+
 ## Automation Modes
 
 The transport bar shows the automation icon ![automation icon](assets/icons/automation.svg){ width="14" } next to the play/stop controls, with a single letter under it indicating the active mode:
