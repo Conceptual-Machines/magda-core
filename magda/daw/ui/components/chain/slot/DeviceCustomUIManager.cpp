@@ -44,6 +44,7 @@
 #include "custom_ui/PhaserUI.hpp"
 #include "custom_ui/PitchShiftUI.hpp"
 #include "custom_ui/PolyStepSequencerUI.hpp"
+#include "custom_ui/PolySynthUI.hpp"
 #include "custom_ui/ReverbUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
@@ -267,6 +268,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return fourOscUI_.get();
     if (faustInstrumentUI_)
         return faustInstrumentUI_.get();
+    if (polySynthUI_)
+        return polySynthUI_.get();
     if (eqUI_)
         return eqUI_.get();
     if (compressorUI_)
@@ -311,6 +314,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return fourOscUI_->getLinkableSliders();
     if (faustInstrumentUI_)
         return faustInstrumentUI_->getLinkableSliders();
+    if (polySynthUI_)
+        return polySynthUI_->getLinkableSliders();
     if (toneGeneratorUI_)
         return toneGeneratorUI_->getLinkableSliders();
     if (compressorUI_)
@@ -342,10 +347,10 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || faustInstrumentUI_ ||
-           eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
-           pitchShiftUI_ || impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
-           stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ ||
-           levelsUI_;
+           polySynthUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
+           phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ || faustUI_ ||
+           chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
+           oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -353,6 +358,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 500;
     if (faustInstrumentUI_)
         return 560;  // instruments render wider than effect slots
+    if (polySynthUI_)
+        return 600;  // four osc + filter + two envelopes on one page
     if (eqUI_)
         return 400;
     if (compressorUI_)
@@ -457,6 +464,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
     if (faustInstrumentUI_ &&
         device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName))
         faustInstrumentUI_->updateFromParameters(device.parameters);
+    if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth"))
+        polySynthUI_->updateFromParameters(device.parameters);
     if (eqUI_ && device.pluginId.equalsIgnoreCase("eq"))
         eqUI_->updateFromParameters(device.parameters);
     if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
@@ -1119,6 +1128,14 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
             faustInstrumentUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
             pendingCustomUITabIndex_ = NO_PENDING_TAB;
         }
+    } else if (device.pluginId.equalsIgnoreCase("magda_polysynth")) {
+        polySynthUI_ = std::make_unique<PolySynthUI>();
+        polySynthUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+            if (cb.onParameterChanged)
+                cb.onParameterChanged(paramIndex, value);
+        };
+        parent->addAndMakeVisible(*polySynthUI_);
+        polySynthUI_->updateFromParameters(device.parameters);
     } else if (device.pluginId.containsIgnoreCase("4osc")) {
         fourOscUI_ = std::make_unique<FourOscUI>();
         fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {

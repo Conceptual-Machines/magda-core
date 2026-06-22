@@ -337,15 +337,24 @@ void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
     // Fan each host macro out to every voice's zone (RT-safe pointer writes).
     for (int slot = 0; slot < kHostSlotCount; ++slot) {
         const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
-        magda::ParameterInfo info;
-        info.minValue = s.minValue;
-        info.maxValue = s.maxValue;
-        info.scale = s.scale;
-        if (std::isfinite(s.scaleAnchor))
-            info.scaleAnchor = s.scaleAnchor;
         const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
-        const auto real =
-            static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
+
+        FAUSTFLOAT real;
+        if (s.scale == magda::ParameterScale::Discrete) {
+            // Discrete index = round(norm * (count - 1)); maxValue already holds
+            // count - 1, so we avoid copying the choices vector (which would
+            // allocate) onto the audio thread just to call normalizedToReal.
+            real = static_cast<FAUSTFLOAT>(std::round(juce::jlimit(0.0f, 1.0f, norm) * s.maxValue));
+        } else {
+            magda::ParameterInfo info;
+            info.minValue = s.minValue;
+            info.maxValue = s.maxValue;
+            info.scale = s.scale;
+            if (std::isfinite(s.scaleAnchor))
+                info.scaleAnchor = s.scaleAnchor;
+            real = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
+        }
+
         for (FAUSTFLOAT* zone : voiceZonesBySlot_[static_cast<size_t>(slot)])
             if (zone)
                 *zone = real;

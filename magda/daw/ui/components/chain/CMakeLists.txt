@@ -74,6 +74,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FaustCustomUIRegistry.cpp
     custom_ui/FaustInstrumentTabbedUI.cpp
     custom_ui/FourOscUI.cpp
+    custom_ui/PolySynthUI.cpp
     custom_ui/ArpeggiatorUI.cpp
     custom_ui/StepSequencerUI.cpp
     custom_ui/PolyStepSequencerUI.cpp
