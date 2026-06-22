@@ -1,4 +1,8 @@
 {
+  "action": {
+    "import": "{0}をインポート",
+    "export": "{0}をエクスポート"
+  },
   "menu": {
     "file": "ファイル",
     "edit": "編集",
@@ -9,16 +13,16 @@
     "window": "ウインドウ",
     "help": "ヘルプ",
     "file.new_project": "新規プロジェクト",
-    "file.open_project": "プロジェクトを開く…",
+    "file.open_project": "プロジェクトを開く",
     "file.open_recent": "最近使ったファイル",
     "file.no_recent": "（最近使ったファイルはありません）",
     "file.clear_recent": "最近使ったプロジェクトをクリア",
     "file.close_project": "プロジェクトを閉じる",
     "file.save_project": "プロジェクトを保存",
-    "file.save_project_as": "名前を付けてプロジェクトを保存…",
-    "file.collect_files": "ファイルを収集…",
-    "file.export_audio": "オーディオをエクスポート…",
-    "file.export_midi": "MIDIをエクスポート…",
+    "file.save_project_as": "名前を付けてプロジェクトを保存",
+    "file.collect_files": "ファイルを収集",
+    "file.export_audio": "オーディオをエクスポート",
+    "file.export_midi": "MIDIをエクスポート",
     "file.quit": "終了",
     "edit.undo": "元に戻す",
     "edit.redo": "やり直す",
@@ -32,12 +36,12 @@
     "edit.render_clip": "選択したクリップをレンダリング",
     "edit.render_time_selection": "時間範囲を選択してレンダリング",
     "edit.select_all": "すべて選択",
-    "settings.preferences": "環境設定…",
-    "settings.ai": "AIの設定…",
-    "settings.audio_midi": "オーディオ／MIDIの設定…",
-    "settings.plugins": "プラグイン設定…",
-    "settings.controllers": "コントローラー…",
-    "view.track_manager": "トラックマネージャー…",
+    "settings.preferences": "環境設定",
+    "settings.ai": "AIの設定",
+    "settings.audio_midi": "オーディオ／MIDIの設定",
+    "settings.plugins": "プラグイン設定",
+    "settings.controllers": "コントローラー",
+    "view.track_manager": "トラックマネージャー",
     "view.headers_right": "ヘッダーを右側に",
     "view.zoom_in": "ズームイン",
     "view.zoom_out": "ズームアウト",
@@ -65,7 +69,7 @@
     "window.zoom": "ズーム",
     "window.bring_to_front": "全てを最前面に表示",
     "help.manual": "オンラインマニュアル",
-    "help.check_updates": "更新を確認…",
+    "help.check_updates": "更新を確認",
     "help.about": "MAGDAについて"
   },
   "transport": {
@@ -144,7 +148,7 @@
     "ok": "OK",
     "cancel": "キャンセル",
     "apply": "適用",
-    "loading_project": "読み込み中です…",
+    "loading_project": "読み込み中です",
     "error.new_project": "新規プロジェクトを作成できませんでした。",
     "error.file_not_found": "プロジェクトファイルが見つかりません:",
     "error.close_failed": "プロジェクトを終了できませんでした:",
@@ -159,10 +163,10 @@
     "updates.error_prefix": "更新を確認できませんでした："
   },
   "about": {
-    "version_prefix": "バージョン　"
+    "version_prefix": "バージョン"
   },
   "splash": {
-    "version_prefix": "バージョン　"
+    "version_prefix": "バージョン"
   },
   "chain_tree": {
     "label.click_hint": "チェーンビューでアイテムを選択するにはアイテムをクリックします"
@@ -214,7 +218,7 @@
     "section.system_directories": "システムプラグインのパス",
     "section.custom_directories": "カスタムプラグインのパス",
     "section.excluded": "除外するプラグイン",
-    "button.add": "追加…",
+    "button.add": "追加",
     "button.remove": "削除",
     "button.scan": "全てのプラグインをスキャン",
     "button.scan_new": "新しいプラグインをスキャン",
@@ -226,8 +230,8 @@
     "column.plugin": "プラグイン",
     "column.reason": "備考",
     "column.date": "日付",
-    "status.starting": "スキャン開始…",
-    "status.checking_new": "新しいプラグインを確認しています…",
+    "status.starting": "スキャン開始",
+    "status.checking_new": "新しいプラグインを確認しています",
     "status.up_to_date": "プラグインは最新の状態です",
     "status.added": "追加されました",
     "status.new_plugins": "新しいプラグイン",
@@ -248,15 +252,15 @@
     "tooltip.mix": "ミックス"
   },
   "main_window": {
-    "loading.initializing": "初期化しています…",
-    "loading.scanning_devices": "オーディオと MIDI デバイスをスキャン中…",
+    "loading.initializing": "初期化しています",
+    "loading.scanning_devices": "オーディオと MIDI デバイスをスキャン中",
     "undo.render_clips": "クリップのレンダリング"
   },
   "export": {
-    "progress.exporting_audio": "オーディオをエクスポート中…",
-    "progress.preparing": "エクスポートを準備中…",
+    "progress.exporting_audio": "オーディオをエクスポート中",
+    "progress.preparing": "エクスポートを準備中",
     "progress.rendering": "レンダリング中：",
-    "progress.trimming": "プレロールをトリミング中…",
+    "progress.trimming": "プレロールをトリミング中",
     "progress.complete": "エクスポートが完了しました！",
     "progress.failed": "エクスポートできませんでした",
     "alert.cancelled_title": "エクスポート中止",
@@ -278,8 +282,8 @@
   },
   "collect": {
     "title": "ファイルを収集",
-    "progress.title": "ファイルを収集中…",
-    "progress.copying": "参照されているオーディオをプロジェクトにコピーしています…",
+    "progress.title": "ファイルを収集中",
+    "progress.copying": "参照されているオーディオをプロジェクトにコピーしています",
     "alert.cancelled": "収集はキャンセルされました。一部のファイルがコピーされていない可能性があります。",
     "alert.no_edit": "先にプロジェクトを開くか作成してください。"
   },
@@ -328,7 +332,7 @@
     "toggle.open_plugin_window_on_drop": "プラグインをチェーンに追加したらウィンドウを開く",
     "toggle.show_tooltips": "ツールチップを表示",
     "button.add_colour": "+ 色を追加",
-    "button.browse": "参照…",
+    "button.browse": "参照",
     "button.clear": "消去",
     "button.reset": "リセット",
     "button.reveal_finder": "ファイルの保存場所を開く",
@@ -377,7 +381,7 @@
     "tab.profiles": "MIDI プロファイル",
     "tab.scripts": "Lua スクリプト",
     "add_profile": "+ プロファイルを追加",
-    "upload_profile": "プロファイルを登録...",
+    "upload_profile": "プロファイルを登録",
     "open_profiles_folder": "プロファイルフォルダを開く",
     "remove": "削除",
     "show_in_finder": "ファイルの保存場所を開く",
@@ -393,7 +397,7 @@
     "scripts.active": "有効",
     "scripts.reload": "再読み込み",
     "scripts.open_folder": "スクリプトフォルダを開く",
-    "scripts.import": "スクリプトをインポート…",
+    "scripts.import": "スクリプトをインポート",
     "scripts.import_invalid": "そのファイルは有効なLuaスクリプトではありません。",
     "scripts.import_copy_failed": "スクリプトフォルダにスクリプトをコピーできませんでした。",
     "scripts.import_overwrite": "\"{0}\" という名前のスクリプトは既に存在します。置き換えますか？",
