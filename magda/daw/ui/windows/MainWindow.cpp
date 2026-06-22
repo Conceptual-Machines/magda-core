@@ -106,7 +106,7 @@ class MainWindow::MainComponent::LoadingOverlay : public juce::Component, privat
     }
 
   private:
-    juce::String message_ = tr("main_window.loading.initializing");
+    juce::String message_ = trEllipsis("main_window.loading.initializing");
     float alpha_ = 1.0f;
     int spinnerFrame_ = 0;
 
@@ -1011,7 +1011,7 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
         // Show notification and disable transport if devices are still loading
         if (teWrapper->isDevicesLoading()) {
             loadingOverlay_->setMessage(
-                tr("main_window.loading.scanning_devices")
+                trEllipsis("main_window.loading.scanning_devices")
                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
             loadingOverlay_->showWithFade();
             loadingOverlay_->toFront(false);

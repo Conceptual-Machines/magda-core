@@ -38,9 +38,9 @@ namespace {
 class CollectFilesProgressWindow : public juce::ThreadWithProgressWindow {
   public:
     explicit CollectFilesProgressWindow(MediaCollector::Plan plan)
-        : ThreadWithProgressWindow(tr("collect.progress.title"), true, true),
+        : ThreadWithProgressWindow(trEllipsis("collect.progress.title"), true, true),
           plan_(std::move(plan)),
-          strCopying_(tr("collect.progress.copying")) {
+          strCopying_(trEllipsis("collect.progress.copying")) {
         setStatusMessage(strCopying_);
     }
 
@@ -96,7 +96,7 @@ void MainWindow::openProjectFile(const juce::File& file) {
         return;
 
     if (mainComponent)
-        mainComponent->showLoadingMessage(tr("dialogs.loading_project"));
+        mainComponent->showLoadingMessage(trEllipsis("dialogs.loading_project"));
 
     SelectionManager::getInstance().clearSelection();
     if (mainComponent && mainComponent->mainView)

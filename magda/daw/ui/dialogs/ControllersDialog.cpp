@@ -65,7 +65,7 @@ class ControllerProfilesPage : public juce::Component,
         openFolderButton_.onClick = [this]() { onOpenFolderClicked(); };
         addAndMakeVisible(openFolderButton_);
 
-        uploadButton_.setButtonText(tr("controllers.upload_profile"));
+        uploadButton_.setButtonText(trEllipsis("controllers.upload_profile"));
         uploadButton_.onClick = [this]() { onUploadClicked(); };
         addAndMakeVisible(uploadButton_);
 
@@ -292,7 +292,7 @@ void ControllerProfilesPage::onOpenFolderClicked() {
 }
 
 void ControllerProfilesPage::onUploadClicked() {
-    auto title = tr("controllers.upload_profile");
+    auto title = trEllipsis("controllers.upload_profile");
     uploadChooser_ = std::make_unique<juce::FileChooser>(
         title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.json");
     juce::Component::SafePointer<ControllerProfilesPage> safeThis(this);
@@ -576,7 +576,7 @@ class LuaScriptsPage : public juce::Component {
         openScriptsFolderButton_.onClick = [this]() { onOpenScriptsFolderClicked(); };
         addAndMakeVisible(openScriptsFolderButton_);
 
-        importButton_.setButtonText(tr("controllers.scripts.import"));
+        importButton_.setButtonText(trEllipsis("controllers.scripts.import"));
         importButton_.onClick = [this]() { onImportClicked(); };
         addAndMakeVisible(importButton_);
 
@@ -826,7 +826,7 @@ class LuaScriptsPage : public juce::Component {
     }
 
     void onImportClicked() {
-        auto title = tr("controllers.scripts.import");
+        auto title = trEllipsis("controllers.scripts.import");
         importChooser_ = std::make_unique<juce::FileChooser>(
             title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.lua");
         juce::Component::SafePointer<LuaScriptsPage> self(this);

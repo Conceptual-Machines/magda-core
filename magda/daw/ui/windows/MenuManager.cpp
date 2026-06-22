@@ -71,7 +71,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
         {
             menu.addItem(NewProject, tr("menu.file.new_project"), true, false);
             menu.addSeparator();
-            menu.addItem(OpenProject, tr("menu.file.open_project"), true, false);
+            menu.addItem(OpenProject, trEllipsis("menu.file.open_project"), true, false);
 
             // Open Recent submenu
             {
@@ -102,25 +102,25 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(CloseProject, tr("menu.file.close_project"), true, false);
             menu.addSeparator();
             menu.addItem(SaveProject, tr("menu.file.save_project"), true, false);
-            menu.addItem(SaveProjectAs, tr("menu.file.save_project_as"), true, false);
+            menu.addItem(SaveProjectAs, trEllipsis("menu.file.save_project_as"), true, false);
             menu.addSeparator();
-            menu.addItem(ProjectSettings, tr("menu.file.project_settings"), true, false);
-            menu.addItem(CollectFiles, tr("menu.file.collect_files"), true, false);
+            menu.addItem(ProjectSettings, trEllipsis("menu.file.project_settings"), true, false);
+            menu.addItem(CollectFiles, trEllipsis("menu.file.collect_files"), true, false);
             menu.addSeparator();
-            menu.addItem(ExportAudio, tr("menu.file.export_audio"), true, false);
+            menu.addItem(ExportAudio, trEllipsis("menu.file.export_audio"), true, false);
             menu.addItem(ExportMidi,
-                         tr("menu.file.export_midi")
+                         trEllipsis("menu.file.export_midi")
                              .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
                          true, false);
             menu.addSeparator();
             menu.addItem(
                 ImportDawProject,
-                tr("menu.file.import_dawproject")
+                trEllipsis("menu.file.import_dawproject")
                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
                 true, false);
             menu.addItem(
                 ExportDawProject,
-                tr("menu.file.export_dawproject")
+                trEllipsis("menu.file.export_dawproject")
                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
                 true, false);
 
@@ -190,14 +190,14 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          true, false);
 #if !JUCE_MAC
             menu.addSeparator();
-            menu.addItem(Preferences, tr("menu.settings.preferences"), true, false);
+            menu.addItem(Preferences, trEllipsis("menu.settings.preferences"), true, false);
 #endif
             break;
         }
 
         case 2:  // View
         {
-            menu.addItem(ShowTrackManager, tr("menu.view.track_manager"), true, false);
+            menu.addItem(ShowTrackManager, trEllipsis("menu.view.track_manager"), true, false);
             menu.addSeparator();
             bool headersOnRight = Config::getInstance().getScrollbarOnLeft();
             menu.addItem(ToggleScrollbarPosition, tr("menu.view.headers_right"), true,
@@ -269,19 +269,19 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
 
         case 5:  // Settings
         {
-            menu.addItem(Preferences, tr("menu.settings.preferences"), true, false);
+            menu.addItem(Preferences, trEllipsis("menu.settings.preferences"), true, false);
             menu.addSeparator();
-            menu.addItem(AISettings, tr("menu.settings.ai"), true, false);
+            menu.addItem(AISettings, trEllipsis("menu.settings.ai"), true, false);
             menu.addSeparator();
             menu.addItem(AudioSettings,
-                         tr("menu.settings.audio_midi")
+                         trEllipsis("menu.settings.audio_midi")
                              .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
                              .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)),
                          true, false);
             menu.addSeparator();
-            menu.addItem(ControllerSettings, tr("menu.settings.controllers"), true, false);
+            menu.addItem(ControllerSettings, trEllipsis("menu.settings.controllers"), true, false);
             menu.addSeparator();
-            menu.addItem(PluginSettings, tr("menu.settings.plugins"), true, false);
+            menu.addItem(PluginSettings, trEllipsis("menu.settings.plugins"), true, false);
             break;
         }
 
@@ -297,7 +297,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
         case 7:  // Help
         {
             menu.addItem(OpenManual, tr("menu.help.manual"), true, false);
-            menu.addItem(CheckForUpdates, tr("menu.help.check_updates"), true, false);
+            menu.addItem(CheckForUpdates, trEllipsis("menu.help.check_updates"), true, false);
             menu.addSeparator();
             menu.addItem(About, tr("menu.help.about"), true, false);
             break;

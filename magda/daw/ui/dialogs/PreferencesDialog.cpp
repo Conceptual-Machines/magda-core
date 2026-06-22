@@ -955,7 +955,7 @@ class RenderingPage : public juce::Component {
         renderFolderValue.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(renderFolderValue);
 
-        renderFolderBrowseButton.setButtonText(tr("preferences.button.browse"));
+        renderFolderBrowseButton.setButtonText(trEllipsis("preferences.button.browse"));
         renderFolderBrowseButton.onClick = [this]() {
             fileChooser_ = std::make_unique<juce::FileChooser>(
                 tr("preferences.dialog.select_render_output_folder"));
@@ -1151,7 +1151,7 @@ class PathsPage : public juce::Component {
         dataValue_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(dataValue_);
 
-        dataBrowse_.setButtonText(tr("preferences.button.browse"));
+        dataBrowse_.setButtonText(trEllipsis("preferences.button.browse"));
         dataBrowse_.onClick = [this]() {
             pickFolder(Kind::Data, tr("preferences.paths.dialog.choose_data"));
         };
@@ -1200,7 +1200,7 @@ class PathsPage : public juce::Component {
         presetsValue_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(presetsValue_);
 
-        presetsBrowse_.setButtonText(tr("preferences.button.browse"));
+        presetsBrowse_.setButtonText(trEllipsis("preferences.button.browse"));
         presetsBrowse_.onClick = [this]() {
             pickFolder(Kind::Presets, tr("preferences.paths.dialog.choose_presets"));
         };
