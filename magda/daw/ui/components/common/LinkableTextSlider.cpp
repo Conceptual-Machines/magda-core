@@ -243,8 +243,6 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
     paramIndex_ = paramIndex;
     devicePath_ = devicePath;
     linkOwnerPath_ = devicePath;
-    DBG("[LinkableSlider] set target deviceId=" << deviceId_ << " param=" << paramIndex_
-                                                << " target=" << linkPathString(devicePath_));
     refreshMidiBindingState();
 
     // Wire the underlying TextSlider's automation target so the purple

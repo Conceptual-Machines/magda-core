@@ -440,14 +440,13 @@ TrackInspector::TrackInspector() {
                                        DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(sendReceiveSectionLabel_);
 
-    addSendButton_.setButtonText("+");
-    addSendButton_.setTooltip(tr("inspector.add_send"));
-    addSendButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    addSendButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getSecondaryTextColour());
-    addSendButton_.onClick = [this]() { showAddSendMenu(); };
-    addAndMakeVisible(addSendButton_);
+    addSendButton_ =
+        std::make_unique<SvgButton>("AddSend", BinaryData::add_svg, BinaryData::add_svgSize);
+    addSendButton_->setTooltip(tr("inspector.add_send"));
+    addSendButton_->setIconPadding(4.0f);
+    addSendButton_->setOriginalColor(DarkTheme::getSecondaryTextColour());
+    addSendButton_->onClick = [this]() { showAddSendMenu(); };
+    addAndMakeVisible(*addSendButton_);
 
     noSendsLabel_.setText(tr("inspector.no_sends"), juce::dontSendNotification);
     noSendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -783,9 +782,10 @@ void TrackInspector::resized() {
 
     // Send/Receive section — only lay out if visible
     if (sendReceiveSectionLabel_.isVisible()) {
-        auto sendHeaderRow = bounds.removeFromTop(16);
-        sendReceiveSectionLabel_.setBounds(sendHeaderRow.removeFromLeft(100));
-        addSendButton_.setBounds(sendHeaderRow.removeFromRight(16).withHeight(16));
+        auto sendHeaderRow = bounds.removeFromTop(22);
+        sendReceiveSectionLabel_.setBounds(
+            sendHeaderRow.removeFromLeft(100).withSizeKeepingCentre(100, 16));
+        addSendButton_->setBounds(sendHeaderRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
         bounds.removeFromTop(4);
 
         if (sendDestLabels_.empty()) {
@@ -1332,7 +1332,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     midiOutputSelector_->setVisible(false);
 
     sendReceiveSectionLabel_.setVisible(false);
-    addSendButton_.setVisible(false);
+    addSendButton_->setVisible(false);
     noSendsLabel_.setVisible(false);
     receivesLabel_.setVisible(false);
     for (auto& l : sendDestLabels_)
@@ -1401,7 +1401,7 @@ void TrackInspector::showTrackControls(bool show) {
     // Send/Receive section — hidden for master, aux and chord tracks
     bool showSends = show && !isMaster && !isAux && !isChord;
     sendReceiveSectionLabel_.setVisible(showSends);
-    addSendButton_.setVisible(showSends);
+    addSendButton_->setVisible(showSends);
     noSendsLabel_.setVisible(showSends);
     receivesLabel_.setVisible(showSends);
     for (auto& l : sendDestLabels_)
@@ -1600,7 +1600,7 @@ void TrackInspector::showAddSendMenu() {
     // Capture selectedTrackId_ by value to avoid stale reference if selection
     // changes while the async menu is open
     TrackId sourceTrackId = selectedTrackId_;
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addSendButton_),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(addSendButton_.get()),
                        [sourceTrackId, destTrackIds](int result) {
                            if (result > 0 && result <= static_cast<int>(destTrackIds.size())) {
                                magda::UndoManager::getInstance().executeCommand(
