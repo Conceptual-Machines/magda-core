@@ -26,8 +26,11 @@ enum class TechnicalTextToken {
     PanCenter,
     PanLeft,
     PanRight,
+    // Modifier-key keycap symbols — universal, never translated
+    Shift,
     // Proper nouns / formats — never translated, kept at base (Latin) font size
     Magda,
+    Audio,
     DawProject,
     Vst3,
     Au,
@@ -81,8 +84,13 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "L";
         case TechnicalTextToken::PanRight:
             return "R";
+        case TechnicalTextToken::Shift:
+            // U+21E7 UPWARDS WHITE ARROW — the keycap shift symbol
+            return juce::String::fromUTF8("\xe2\x87\xa7");
         case TechnicalTextToken::Magda:
             return "MAGDA";
+        case TechnicalTextToken::Audio:
+            return "Audio";
         case TechnicalTextToken::DawProject:
             return "DAWproject";
         case TechnicalTextToken::Vst3:

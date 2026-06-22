@@ -1227,11 +1227,12 @@ void NodeComponent::mouseDown(const juce::MouseEvent& e) {
     }
 }
 
-void NodeComponent::mouseMove(const juce::MouseEvent& e) {
-    // Alt = copy-on-drag affordance (mirrors clips): show the copying cursor
-    // when hovering a device with Alt held.
-    setMouseCursor(e.mods.isAltDown() ? juce::MouseCursor::CopyingCursor
-                                      : juce::MouseCursor::NormalCursor);
+void NodeComponent::mouseMove(const juce::MouseEvent&) {
+    // Do NOT show the copy cursor on bare Alt-hover: Alt+wheel zooms the chain,
+    // so a "+" cursor while merely hovering with Alt held (about to scroll-zoom)
+    // is a false affordance. The copy cursor is shown once a drag actually
+    // begins (see mouseDrag) instead.
+    setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void NodeComponent::mouseDrag(const juce::MouseEvent& e) {
@@ -1395,8 +1396,11 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
 void NodeComponent::mouseWheelMove(const juce::MouseEvent& e,
                                    const juce::MouseWheelDetails& wheel) {
-    // Cmd/Ctrl + scroll wheel = zoom (forward to parent chain panel)
-    if (e.mods.isCommandDown() && onZoomDelta) {
+    // Alt/Option (or Cmd/Ctrl) + scroll wheel = zoom (forward to parent chain
+    // panel). Alt matches ChainPanel/RackComponent — Cmd+scroll is intercepted
+    // by macOS, so Alt is the live modifier there; we accept both so the gesture
+    // is consistent whether the pointer is over a device or empty chain space.
+    if ((e.mods.isAltDown() || e.mods.isCommandDown()) && onZoomDelta) {
         float delta = wheel.deltaY > 0 ? 0.1f : -0.1f;
         onZoomDelta(delta);
     } else {

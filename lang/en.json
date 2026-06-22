@@ -37,7 +37,7 @@
     "edit.select_all": "Select All",
     "settings.preferences": "Preferences...",
     "settings.ai": "AI Settings...",
-    "settings.audio_midi": "Audio/{0} Settings...",
+    "settings.audio_midi": "{0}/{1} Settings...",
     "settings.plugins": "Plugin Settings...",
     "settings.controllers": "Controllers...",
     "view.track_manager": "Track Manager...",
@@ -128,10 +128,17 @@
   },
   "inspector": {
     "routing": "Routing",
-    "audio": "Audio",
+    "name": "Name",
+    "selection": "Selection",
+    "tracks_selected": "{0} tracks selected",
     "sends": "Sends / Receives",
-    "add_send": "+ Add Send",
-    "no_sends": "No sends"
+    "add_send": "Add Send",
+    "no_sends": "No sends",
+    "no_receives": "No receives",
+    "clips": "Clips",
+    "clip_count.one": "{0} clip",
+    "clip_count.other": "{0} clips",
+    "latency": "Latency"
   },
   "dialogs": {
     "open_project": "Open Project",
@@ -329,7 +336,7 @@
     "section.keyboard_shortcuts": "Keyboard Shortcuts",
     "slider.zoom_in_sensitivity": "Zoom In Sensitivity",
     "slider.zoom_out_sensitivity": "Zoom Out Sensitivity",
-    "slider.zoom_shift_sensitivity": "Shift+Zoom Sensitivity",
+    "slider.zoom_shift_sensitivity": "{0}+Zoom Sensitivity",
     "slider.default_length": "Default Length",
     "slider.default_view": "Default View",
     "slider.interval": "Interval",

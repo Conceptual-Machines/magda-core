@@ -275,7 +275,8 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addSeparator();
             menu.addItem(AudioSettings,
                          tr("menu.settings.audio_midi")
-                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
+                             .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)),
                          true, false);
             menu.addSeparator();
             menu.addItem(ControllerSettings, tr("menu.settings.controllers"), true, false);

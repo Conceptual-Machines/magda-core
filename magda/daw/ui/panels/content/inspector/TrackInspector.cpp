@@ -51,7 +51,7 @@ void clearLocalizedLabelPainter(juce::Label& label) {
 
 TrackInspector::TrackInspector() {
     // Track name
-    trackNameLabel_.setText("Name", juce::dontSendNotification);
+    trackNameLabel_.setText(tr("inspector.name"), juce::dontSendNotification);
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(trackNameLabel_);
@@ -394,15 +394,19 @@ TrackInspector::TrackInspector() {
     midiOutputSelector_->setEnabled(false);  // Disabled by default
     addAndMakeVisible(*midiOutputSelector_);
 
-    // Column header labels for routing selectors
-    audioColumnLabel_.setText(tr("inspector.audio"), juce::dontSendNotification);
+    // Column header labels for routing selectors. "Audio" and "MIDI" are kept
+    // as fixed technical tokens so the paired headers render at the same base
+    // (Latin) size — a translated "Audio" would scale with the localized font
+    // and tower over the fixed "MIDI" next to it.
+    audioColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Audio),
+                              juce::dontSendNotification);
     audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     audioColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
 
-    // "MIDI" is a universal technical acronym — do not translate.
-    midiColumnLabel_.setText("MIDI", juce::dontSendNotification);
+    midiColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Midi),
+                             juce::dontSendNotification);
     midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     midiColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     midiColumnLabel_.setJustificationType(juce::Justification::centred);
@@ -436,7 +440,8 @@ TrackInspector::TrackInspector() {
                                        DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(sendReceiveSectionLabel_);
 
-    addSendButton_.setButtonText(tr("inspector.add_send"));
+    addSendButton_.setButtonText("+");
+    addSendButton_.setTooltip(tr("inspector.add_send"));
     addSendButton_.setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     addSendButton_.setColour(juce::TextButton::textColourOffId,
@@ -449,24 +454,25 @@ TrackInspector::TrackInspector() {
     noSendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(noSendsLabel_);
 
-    receivesLabel_.setText("No receives", juce::dontSendNotification);
+    receivesLabel_.setText(tr("inspector.no_receives"), juce::dontSendNotification);
     receivesLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     receivesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(receivesLabel_);
 
     // Clips section
-    clipsSectionLabel_.setText("Clips", juce::dontSendNotification);
+    clipsSectionLabel_.setText(tr("inspector.clips"), juce::dontSendNotification);
     clipsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipsSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(clipsSectionLabel_);
 
-    clipCountLabel_.setText("0 clips", juce::dontSendNotification);
+    clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
+                            juce::dontSendNotification);
     clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addAndMakeVisible(clipCountLabel_);
 
     // Latency display
-    latencyLabel_.setText("Latency", juce::dontSendNotification);
+    latencyLabel_.setText(tr("inspector.latency"), juce::dontSendNotification);
     latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     latencyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(latencyLabel_);
@@ -779,7 +785,7 @@ void TrackInspector::resized() {
     if (sendReceiveSectionLabel_.isVisible()) {
         auto sendHeaderRow = bounds.removeFromTop(16);
         sendReceiveSectionLabel_.setBounds(sendHeaderRow.removeFromLeft(100));
-        addSendButton_.setBounds(sendHeaderRow.removeFromRight(50).withHeight(16));
+        addSendButton_.setBounds(sendHeaderRow.removeFromRight(16).withHeight(16));
         bounds.removeFromTop(4);
 
         if (sendDestLabels_.empty()) {
@@ -993,8 +999,10 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
             double latency =
                 magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
             auto latencyMs = latency * 1000.0;
-            latencyValue_.setText((latency > 0.0) ? juce::String(latencyMs, 1) + " ms" : "0 ms",
-                                  juce::dontSendNotification);
+            latencyValue_.setText(
+                (latency > 0.0 ? juce::String(latencyMs, 1) : juce::String("0")) +
+                    magda::technicalTextSuffix(magda::TechnicalTextToken::Milliseconds),
+                juce::dontSendNotification);
             latencyValue_.repaint();
         }
     }
@@ -1044,7 +1052,8 @@ void TrackInspector::updateFromSelectedTrack() {
         float gainDb = (master.volume <= 0.0f) ? -60.0f : 20.0f * std::log10(master.volume);
         gainLabel_->setValue(gainDb, juce::dontSendNotification);
 
-        clipCountLabel_.setText("0 clips", juce::dontSendNotification);
+        clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
+                                juce::dontSendNotification);
 
         showTrackControls(true);
         resized();
@@ -1091,17 +1100,22 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update clip count
         auto clips = magda::ClipManager::getInstance().getClipsOnTrack(selectedTrackId_);
         int clipCount = static_cast<int>(clips.size());
-        juce::String clipText = juce::String(clipCount) + (clipCount == 1 ? " clip" : " clips");
+        juce::String clipText =
+            tr(clipCount == 1 ? "inspector.clip_count.one" : "inspector.clip_count.other")
+                .replace("{0}", juce::String(clipCount));
         clipCountLabel_.setText(clipText, juce::dontSendNotification);
 
         // Update track latency
         double latency =
             magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
+        const juce::String msSuffix =
+            magda::technicalTextSuffix(magda::TechnicalTextToken::Milliseconds);
         if (latency > 0.0) {
             auto latencyMs = latency * 1000.0;
-            latencyValue_.setText(juce::String(latencyMs, 1) + " ms", juce::dontSendNotification);
+            latencyValue_.setText(juce::String(latencyMs, 1) + msSuffix,
+                                  juce::dontSendNotification);
         } else {
-            latencyValue_.setText("0 ms", juce::dontSendNotification);
+            latencyValue_.setText("0" + msSuffix, juce::dontSendNotification);
         }
 
         // Update routing selectors to match track state
@@ -1140,8 +1154,9 @@ void TrackInspector::updateFromMultiTrackSelection() {
 
     // Header: "N tracks selected"
     int count = static_cast<int>(selectedTrackIds_.size());
-    trackNameLabel_.setText("Selection", juce::dontSendNotification);
-    trackNameValue_.setText(juce::String(count) + " tracks selected", juce::dontSendNotification);
+    trackNameLabel_.setText(tr("inspector.selection"), juce::dontSendNotification);
+    trackNameValue_.setText(tr("inspector.tracks_selected").replace("{0}", juce::String(count)),
+                            juce::dontSendNotification);
     trackNameValue_.setEditable(false);
 
     // Check button states: "on" only if ALL selected tracks share that state
