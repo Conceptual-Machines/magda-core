@@ -20,9 +20,9 @@
     "file.close_project": "プロジェクトを閉じる",
     "file.save_project": "プロジェクトを保存",
     "file.save_project_as": "名前を付けてプロジェクトを保存",
+    "file.project_settings": "プロジェクト設定",
     "file.collect_files": "ファイルを収集",
     "file.export_audio": "オーディオをエクスポート",
-    "file.export_midi": "MIDIをエクスポート",
     "file.quit": "終了",
     "edit.undo": "元に戻す",
     "edit.redo": "やり直す",
@@ -59,6 +59,7 @@
     "track.add_track": "トラックを追加",
     "track.add_group": "グループトラックを追加",
     "track.add_aux": "Auxトラックを追加",
+    "track.add_chord": "コードトラックを追加",
     "track.delete": "トラックを削除",
     "track.duplicate": "トラックを複製",
     "track.duplicate_no_content": "空のトラックを複製",
@@ -128,10 +129,17 @@
   },
   "inspector": {
     "routing": "ルーティング",
-    "audio": "オーディオ",
+    "name": "名前",
+    "selection": "選択範囲",
+    "tracks_selected": "{0} 個のトラックを選択中",
     "sends": "センド／レシーブ",
     "add_send": "センドを追加",
-    "no_sends": "センドがありません"
+    "no_sends": "センドがありません",
+    "no_receives": "レシーブなし",
+    "clips": "クリップ",
+    "clip_count.one": "{0} 個のクリップ",
+    "clip_count.other": "{0} 個のクリップ",
+    "latency": "レイテンシー"
   },
   "dialogs": {
     "open_project": "プロジェクトを開く",
@@ -153,6 +161,7 @@
     "error.file_not_found": "プロジェクトファイルが見つかりません:",
     "error.close_failed": "プロジェクトを終了できませんでした:",
     "error.save_failed": "プロジェクトを保存できませんでした:",
+    "error.export_failed": "プロジェクトをエクスポートできませんでした：",
     "error.export_no_edit": "エクスポートできません: プロジェクトが読み込まれていません",
     "updates.title": "更新の確認",
     "updates.up_to_date": "最新バージョンのMAGDAを使用しています。",
@@ -163,13 +172,21 @@
     "updates.error_prefix": "更新を確認できませんでした："
   },
   "about": {
-    "version_prefix": "バージョン"
+    "version_prefix": "バージョン　"
   },
   "splash": {
-    "version_prefix": "バージョン"
+    "version_prefix": "バージョン　"
   },
   "chain_tree": {
     "label.click_hint": "チェーンビューでアイテムを選択するにはアイテムをクリックします"
+  },
+  "project_settings": {
+    "total_length": "全体の長さ",
+    "bars": "小節",
+    "sample_rate": "サンプリングレート",
+    "render_bit_depth": "レンダリング時のビット深度",
+    "bounce_bit_depth": "バウンス時のビット深度",
+    "save_as_default": "新規プロジェクトの既定値として保存"
   },
   "track_manager": {
     "column.track": "トラック",
@@ -202,8 +219,7 @@
     "option.entire_song": "曲全体",
     "option.time_selection": "選択時間範囲",
     "option.loop_region": "ループ範囲",
-    "button.export": "エクスポート",
-    "dialog.title": "MIDIをエクスポート"
+    "button.export": "エクスポート"
   },
   "gain_staging": {
     "dialog.title": "ゲインステージング",
@@ -266,7 +282,6 @@
     "alert.cancelled_body": "エクスポートはキャンセルされました。",
     "alert.complete_title": "エクスポートが完了しました",
     "alert.failed_title": "エクスポートできませんでした",
-    "alert.midi_title": "MIDI のエクスポート",
     "alert.audio_success_prefix": "オーディオのエクスポートに成功しました：",
     "alert.midi_success_prefix": "{0}のエクスポートに成功しました：",
     "error.trim_failed": "レンダリングは成功しましたが、プレロールをトリムできませんでした。",
@@ -323,12 +338,14 @@
     "slider.interval": "間隔",
     "toggle.enable_autosave": "自動保存を有効にする",
     "toggle.stop_updates_playhead": "停止した位置から再生する",
+    "toggle.follow_playhead": "再生中は再生ヘッドをフォロー",
     "toggle.headers_on_right": "ヘッダーを右側に",
     "toggle.autohide_arrangement_scrollbars": "アレンジメントビューのスクロールバーを自動的に隠す",
     "toggle.confirm_track_delete": "トラックを削除する前に確認する",
     "toggle.auto_monitor": "選択したトラックを自動でモニターする",
     "toggle.open_macros_on_select": "デバイスまたはラック選択時にマクロを開く",
     "toggle.open_plugin_window_on_drop": "プラグインをチェーンに追加したらウィンドウを開く",
+    "toggle.chord_preview_default": "再生時にデフォルトでコードトラックのプレビューを有効にする",
     "toggle.show_tooltips": "ツールチップを表示",
     "button.add_colour": "+ 色を追加",
     "button.browse": "参照",

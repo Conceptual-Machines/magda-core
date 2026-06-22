@@ -20,9 +20,9 @@
     "file.close_project": "Закрыть проект",
     "file.save_project": "Сохранить",
     "file.save_project_as": "Сохранить как",
+    "file.project_settings": "Настройки проекта",
     "file.collect_files": "Собрать файлы",
     "file.export_audio": "Экспорт аудио",
-    "file.export_midi": "Экспорт MIDI",
     "file.quit": "Выход",
     "edit.undo": "Отменить",
     "edit.redo": "Восстановить",
@@ -59,6 +59,7 @@
     "track.add_track": "Новая дорожка",
     "track.add_group": "Новая шина",
     "track.add_aux": "Новый возврат (Aux)",
+    "track.add_chord": "Новая аккордовая дорожка",
     "track.delete": "Удалить дорожку",
     "track.duplicate": "Дублировать дорожку",
     "track.duplicate_no_content": "Дублировать дорожку без содержимого",
@@ -128,10 +129,17 @@
   },
   "inspector": {
     "routing": "Маршрутизация",
-    "audio": "Аудио",
+    "name": "Название",
+    "selection": "Выделение",
+    "tracks_selected": "Выбрано дорожек: {0}",
     "sends": "Посылы / возвраты",
     "add_send": "+ Добавить посыл",
-    "no_sends": "Нет посылов"
+    "no_sends": "Нет посылов",
+    "no_receives": "Нет возвратов",
+    "clips": "Клипы",
+    "clip_count.one": "{0} клип",
+    "clip_count.other": "{0} клипов",
+    "latency": "Задержка"
   },
   "dialogs": {
     "open_project": "Открыть проект",
@@ -153,6 +161,7 @@
     "error.file_not_found": "Файл проекта не найден:",
     "error.close_failed": "Не удалось закрыть проект:",
     "error.save_failed": "Не удалось сохранить проект:",
+    "error.export_failed": "Не удалось экспортировать проект:",
     "error.export_no_edit": "Невозможно экспортировать: проект не загружен",
     "updates.title": "Проверить наличие обновлений",
     "updates.up_to_date": "Вы используете последнюю версию MAGDA.",
@@ -170,6 +179,14 @@
   },
   "chain_tree": {
     "label.click_hint": "Щёлкните элемент, чтобы выбрать его в виде цепочки"
+  },
+  "project_settings": {
+    "total_length": "Общая длина",
+    "bars": "тактов",
+    "sample_rate": "Частота дискретизации",
+    "render_bit_depth": "Битовая глубина рендеринга",
+    "bounce_bit_depth": "Битовая глубина сведения",
+    "save_as_default": "Сохранить как настройки по умолчанию для новых проектов"
   },
   "track_manager": {
     "column.track": "Дорожка",
@@ -202,8 +219,7 @@
     "option.entire_song": "Вся песня",
     "option.time_selection": "Выбранный участок",
     "option.loop_region": "Цикл",
-    "button.export": "Экспортировать",
-    "dialog.title": "Экспорт MIDI"
+    "button.export": "Экспортировать"
   },
   "gain_staging": {
     "dialog.title": "Настройка усиления",
@@ -266,7 +282,6 @@
     "alert.cancelled_body": "Экспорт был отменён.",
     "alert.complete_title": "Экспорт завершён",
     "alert.failed_title": "Сбой экспорта",
-    "alert.midi_title": "Экспорт MIDI",
     "alert.audio_success_prefix": "Аудио успешно экспортировано в:",
     "alert.midi_success_prefix": "{0} успешно экспортирован в:",
     "error.trim_failed": "Рендер выполнен, но не удалось обрезать пре-ролл.",
@@ -323,12 +338,14 @@
     "slider.interval": "Интервал",
     "toggle.enable_autosave": "Автосохранение",
     "toggle.stop_updates_playhead": "Стоп обновляет позицию воспроизведения",
+    "toggle.follow_playhead": "Следовать за курсором во время воспроизведения",
     "toggle.headers_on_right": "Дорожки справа",
     "toggle.autohide_arrangement_scrollbars": "Автоскрытие полос прокрутки аранжировки",
     "toggle.confirm_track_delete": "Подтверждение перед удалением дорожки",
     "toggle.auto_monitor": "Автомониторинг выбранной дорожки",
     "toggle.open_macros_on_select": "Открывать макросы при выборе устройств или рэков",
     "toggle.open_plugin_window_on_drop": "Открывать окно плагина при добавлении в цепочку",
+    "toggle.chord_preview_default": "По умолчанию предпрослушивать аккордовую дорожку при воспроизведении",
     "toggle.show_tooltips": "Показывать подсказки",
     "button.add_colour": "+ Добавить цвет",
     "button.browse": "Обзор",
