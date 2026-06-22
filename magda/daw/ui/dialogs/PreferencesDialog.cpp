@@ -674,10 +674,11 @@ class ColoursPage : public juce::Component {
                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(colourHeaderLabel);
 
-        hexHeaderLabel.setText(
-            tr("preferences.colours.hex_rgb")
-                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Rgb)),
-            juce::dontSendNotification);
+        // "Hex (RGB)" — both terms are fixed technical notation, identical in
+        // every locale, so they are tokens rather than a translatable string.
+        hexHeaderLabel.setText(magda::technicalText(magda::TechnicalTextToken::Hex) + " (" +
+                                   magda::technicalText(magda::TechnicalTextToken::Rgb) + ")",
+                               juce::dontSendNotification);
         hexHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         hexHeaderLabel.setColour(juce::Label::textColourId,
                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
