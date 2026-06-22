@@ -157,7 +157,7 @@ void MainWindow::importDawProjectFile(const juce::File& file) {
         if (error.isNotEmpty())
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon,
-                tr("dialogs.import_dawproject")
+                tr("action.import")
                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
                 error);
     }
@@ -431,7 +431,7 @@ void MainWindow::setupMenuCallbacks() {
             return;
 
         fileChooser_ = std::make_unique<juce::FileChooser>(
-            tr("dialogs.import_dawproject")
+            tr("action.import")
                 .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.dawproject",
             true);
@@ -461,7 +461,7 @@ void MainWindow::setupMenuCallbacks() {
                               : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
 
         fileChooser_ = std::make_unique<juce::FileChooser>(
-            tr("dialogs.export_dawproject")
+            tr("action.export")
                 .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
             initialDir, "*.dawproject", true);
 
@@ -483,7 +483,7 @@ void MainWindow::setupMenuCallbacks() {
             if (!projectManager.exportDawProject(file)) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon,
-                    tr("dialogs.export_dawproject")
+                    tr("action.export")
                         .replace("{0}",
                                  magda::technicalText(magda::TechnicalTextToken::DawProject)),
                     tr("dialogs.error.export_failed") + " " + projectManager.getLastError());
