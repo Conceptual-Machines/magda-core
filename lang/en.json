@@ -209,8 +209,7 @@
     "button.export": "Export",
     "bit_depth.16": "16-bit",
     "bit_depth.24": "24-bit",
-    "bit_depth.32_float": "32-bit Float",
-    "bit_depth.24_flac": "24-bit ({0})"
+    "bit_depth.32_float": "32-bit Float"
   },
   "export_midi": {
     "label.midi_format": "{0} Format:",
@@ -356,7 +355,6 @@
     "button.reveal_explorer": "Show in Explorer",
     "button.reveal_files": "Open in file manager",
     "colours.colour": "Colour",
-    "colours.hex_rgb": "Hex ({0})",
     "colours.name": "Name",
     "colours.new_default_name": "New",
     "colours.default_name_prefix": "Colour",

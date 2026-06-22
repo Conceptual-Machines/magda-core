@@ -192,8 +192,7 @@
     "button.export": "エクスポート",
     "bit_depth.16": "16-bit",
     "bit_depth.24": "24-bit",
-    "bit_depth.32_float": "32-bit 浮動小数点数",
-    "bit_depth.24_flac": "24-bit ({0})"
+    "bit_depth.32_float": "32-bit 浮動小数点数"
   },
   "export_midi": {
     "label.midi_format": "{0} フォーマット：",
@@ -339,7 +338,6 @@
     "button.reveal_explorer": "エクスプローラーで表示",
     "button.reveal_files": "ファイルマネージャーで開く",
     "colours.colour": "色",
-    "colours.hex_rgb": "Hex ({0})",
     "colours.name": "名前",
     "colours.new_default_name": "新しい名前を入れてください",
     "colours.default_name_prefix": "色",

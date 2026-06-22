@@ -192,8 +192,7 @@
     "button.export": "Экспортировать",
     "bit_depth.16": "16 бит",
     "bit_depth.24": "24 бит",
-    "bit_depth.32_float": "32 бит с плавающей точкой",
-    "bit_depth.24_flac": "24 бит ({0})"
+    "bit_depth.32_float": "32 бит с плавающей точкой"
   },
   "export_midi": {
     "label.midi_format": "Формат {0}:",
@@ -339,7 +338,6 @@
     "button.reveal_explorer": "Показать в Проводнике",
     "button.reveal_files": "Открыть в файловом менеджере",
     "colours.colour": "Цвет",
-    "colours.hex_rgb": "Hex ({0})",
     "colours.name": "Название",
     "colours.new_default_name": "Новый",
     "colours.default_name_prefix": "Цвет",

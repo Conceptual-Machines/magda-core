@@ -307,10 +307,11 @@ void ExportAudioDialog::updateBitDepthOptions() {
         case 3:  // WAV 32-bit Float
             bitDepthText = tr("export_audio.bit_depth.32_float");
             break;
-        case 4:  // FLAC
-            bitDepthText =
-                tr("export_audio.bit_depth.24_flac")
-                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Flac));
+        case 4:  // FLAC — "24-bit (FLAC)"; the format suffix is a fixed technical
+                 // token, so compose from the translatable 24-bit label rather
+                 // than a separate (untranslatable) string.
+            bitDepthText = tr("export_audio.bit_depth.24") + " (" +
+                           magda::technicalText(magda::TechnicalTextToken::Flac) + ")";
             break;
         default:
             bitDepthText = tr("export_audio.bit_depth.24");

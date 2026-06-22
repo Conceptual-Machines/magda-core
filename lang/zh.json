@@ -192,8 +192,7 @@
     "button.export": "导出",
     "bit_depth.16": "16位",
     "bit_depth.24": "24位",
-    "bit_depth.32_float": "32位浮点",
-    "bit_depth.24_flac": "24位（{0}）"
+    "bit_depth.32_float": "32位浮点"
   },
   "export_midi": {
     "label.midi_format": "{0}格式：",
@@ -339,7 +338,6 @@
     "button.reveal_explorer": "在资源管理器中显示",
     "button.reveal_files": "在文件管理器中打开",
     "colours.colour": "颜色",
-    "colours.hex_rgb": "十六进制（{0}）",
     "colours.name": "名称",
     "colours.new_default_name": "新建",
     "colours.default_name_prefix": "颜色",
