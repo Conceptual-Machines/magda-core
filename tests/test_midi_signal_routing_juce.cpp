@@ -48,6 +48,23 @@ bool hasMidiOutputConnection(te::RackType& rackType) {
     return false;
 }
 
+struct ScopedSequencerClipboardTestState {
+    ScopedSequencerClipboardTestState() {
+        reset();
+    }
+
+    ~ScopedSequencerClipboardTestState() {
+        reset();
+    }
+
+    static void reset() {
+        magda::TrackManager::getInstance().clearAllTracks();
+        auto& clipManager = magda::ClipManager::getInstance();
+        clipManager.clearClipboard();
+        clipManager.setNoteClipboard({});
+    }
+};
+
 }  // namespace
 
 class MidiSignalRoutingTest final : public juce::UnitTest {
@@ -1016,6 +1033,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void testStepSequencerCopyPatternToClipboard() {
         beginTest("Step sequencer copy pattern writes MIDI notes to clipboard");
+        ScopedSequencerClipboardTestState cleanup;
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -1106,6 +1124,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void testPolyStepSequencerCopyPatternToClipboard() {
         beginTest("Poly step sequencer copy pattern writes chord notes to clipboard");
+        ScopedSequencerClipboardTestState cleanup;
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
