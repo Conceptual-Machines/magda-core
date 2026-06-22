@@ -6,6 +6,7 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 
 namespace magda {
 
@@ -307,7 +308,9 @@ void ExportAudioDialog::updateBitDepthOptions() {
             bitDepthText = tr("export_audio.bit_depth.32_float");
             break;
         case 4:  // FLAC
-            bitDepthText = tr("export_audio.bit_depth.24_flac");
+            bitDepthText =
+                tr("export_audio.bit_depth.24_flac")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Flac));
             break;
         default:
             bitDepthText = tr("export_audio.bit_depth.24");

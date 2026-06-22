@@ -103,7 +103,7 @@ class TrackInspector : public BaseInspector,
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;
-    juce::TextButton addSendButton_;
+    std::unique_ptr<SvgButton> addSendButton_;
     std::vector<std::unique_ptr<juce::Label>> sendDestLabels_;
     std::vector<std::unique_ptr<magda::DraggableValueLabel>> sendLevelLabels_;
     std::vector<std::unique_ptr<juce::TextButton>> sendDeleteButtons_;

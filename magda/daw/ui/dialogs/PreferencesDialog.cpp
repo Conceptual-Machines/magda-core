@@ -145,7 +145,9 @@ class GeneralPage : public juce::Component {
         setupTextSlider(*this, zoomOutSensitivitySlider, zoomOutLabel,
                         tr("preferences.slider.zoom_out_sensitivity"), 5.0, 100.0, 1.0);
         setupTextSlider(*this, zoomShiftSensitivitySlider, zoomShiftLabel,
-                        tr("preferences.slider.zoom_shift_sensitivity"), 1.0, 50.0, 0.5, 1);
+                        tr("preferences.slider.zoom_shift_sensitivity")
+                            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Shift)),
+                        1.0, 50.0, 0.5, 1);
 
         setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
         // Total timeline length is per-project (File > Project Settings).
@@ -672,7 +674,10 @@ class ColoursPage : public juce::Component {
                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(colourHeaderLabel);
 
-        hexHeaderLabel.setText(tr("preferences.colours.hex_rgb"), juce::dontSendNotification);
+        hexHeaderLabel.setText(
+            tr("preferences.colours.hex_rgb")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Rgb)),
+            juce::dontSendNotification);
         hexHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         hexHeaderLabel.setColour(juce::Label::textColourId,
                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));

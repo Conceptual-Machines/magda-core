@@ -33,6 +33,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -1009,7 +1010,9 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
     if (teWrapper) {
         // Show notification and disable transport if devices are still loading
         if (teWrapper->isDevicesLoading()) {
-            loadingOverlay_->setMessage(tr("main_window.loading.scanning_devices"));
+            loadingOverlay_->setMessage(
+                tr("main_window.loading.scanning_devices")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
             loadingOverlay_->showWithFade();
             loadingOverlay_->toFront(false);
             transportPanel->setTransportEnabled(false);
