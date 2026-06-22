@@ -1012,7 +1012,8 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
         if (teWrapper->isDevicesLoading()) {
             loadingOverlay_->setMessage(
                 trEllipsis("main_window.loading.scanning_devices")
-                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
+                    .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)));
             loadingOverlay_->showWithFade();
             loadingOverlay_->toFront(false);
             transportPanel->setTransportEnabled(false);
