@@ -112,6 +112,14 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setFillExponent(exponent);
     }
 
+    void setFillProportionMapper(std::function<double(double)> mapper) {
+        valueControl_.setFillProportionMapper(std::move(mapper));
+    }
+
+    void clearFillProportionMapper() {
+        valueControl_.clearFillProportionMapper();
+    }
+
     // Font size for display text
     void setFontSize(float size) {
         fontSize_ = size;

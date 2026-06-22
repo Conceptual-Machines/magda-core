@@ -10,6 +10,7 @@
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
 #include "../components/mixer/LevelMeter.hpp"
+#include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
@@ -2714,9 +2715,7 @@ void MainView::MasterHeaderPanel::setupControls() {
 
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(-60.0, 6.0, 0.0);
-    // Curve the fill to match the level meter's power scale so the volume fill
-    // edge lines up with the meter's 0 dB tick below it.
-    volumeLabel->setFillExponent(static_cast<double>(LevelMeter::METER_CURVE_EXPONENT));
+    volumeLabel->setFillProportionMapper(level_meter_scale::dbFillProportion);
     volumeLabel->setDoubleClickResetsValue(true);
     volumeLabel->onValueChange = [this]() {
         const float db = static_cast<float>(volumeLabel->getValue());

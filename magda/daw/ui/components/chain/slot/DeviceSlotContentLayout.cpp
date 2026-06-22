@@ -56,10 +56,13 @@ void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits&
     // only when the device has a DryGain+WetGain wrapper pair — that decision
     // lives on the host, which sets the knob's visibility before relayout.
     constexpr int kMixKnobHeight = 18;
+    constexpr int kMixKnobGap = 4;
     if (controls.mixKnob != nullptr && controls.mixKnob->isVisible() &&
-        stripBounds.getHeight() > kMixKnobHeight + 8) {
-        controls.mixKnob->setBounds(stripBounds.removeFromTop(kMixKnobHeight));
-        stripBounds.removeFromTop(2);
+        stripBounds.getHeight() > kMixKnobHeight + kMixKnobGap + 6) {
+        auto knobSlot = stripBounds.removeFromTop(kMixKnobHeight);
+        const int knobSize = juce::jmin(knobSlot.getWidth(), knobSlot.getHeight());
+        controls.mixKnob->setBounds(knobSlot.withSizeKeepingCentre(knobSize, knobSize));
+        stripBounds.removeFromTop(kMixKnobGap);
         controls.mixKnob->toFront(false);
     }
 

@@ -48,6 +48,7 @@
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
 #include "slot/StepSequencerClipExport.hpp"
+#include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -271,6 +272,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainLabel_.setValue(device_.gainDb, juce::dontSendNotification);
     gainLabel_.setFontSize(10.0f);
     gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    gainLabel_.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
     gainLabel_.onValueChange = [this]() {
         // Use TrackManager method to notify AudioBridge for audio sync
         magda::TrackManager::getInstance().setDeviceGainDb(

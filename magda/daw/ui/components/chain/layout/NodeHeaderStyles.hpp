@@ -4,6 +4,7 @@
 
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
+#include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui::node_header {
@@ -83,6 +84,15 @@ class GainSliderWithMeterTooltip : public juce::Slider {
                                juce::Slider::TextEntryBoxPosition textPos,
                                const magda::LevelMeter& meter)
         : juce::Slider(style, textPos), meter_(meter) {}
+
+    double valueToProportionOfLength(double value) override {
+        return magda::level_meter_scale::dbFillProportion(value);
+    }
+
+    double proportionOfLengthToValue(double proportion) override {
+        return magda::level_meter_scale::meterPosToDb(
+            static_cast<float>(juce::jlimit(0.0, 1.0, proportion)));
+    }
 
     juce::String getTooltip() override {
         const double gainDb = getValue();

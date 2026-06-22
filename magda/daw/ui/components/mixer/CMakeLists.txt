@@ -7,6 +7,7 @@ target_sources(magda_daw_app PRIVATE
     RoutingSelector.cpp
     MasterChannelStrip.hpp
     InputTypeSelector.hpp
+    LevelMeterScale.hpp
     MidiNoteStrip.hpp
     MiniChainRow.hpp
     MixAnalysisModal.hpp

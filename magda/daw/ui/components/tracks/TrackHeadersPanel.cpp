@@ -28,6 +28,7 @@
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../automation/AutomationMenu.hpp"
 #include "../mixer/LevelMeter.hpp"
+#include "../mixer/LevelMeterScale.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
 
@@ -120,13 +121,11 @@ void applyMonitorButtonState(juce::TextButton& btn, InputMonitorMode mode) {
     btn.repaint();
 }
 
-constexpr float MIN_DB = -60.0f;
-constexpr float MAX_DB = 6.0f;  // Allow +6 dB headroom
+constexpr float MIN_DB = level_meter_scale::minDb;
+constexpr float MAX_DB = level_meter_scale::maxDb;
 
 float gainToDb(float gain) {
-    if (gain <= 0.0f)
-        return MIN_DB;
-    return 20.0f * std::log10(gain);
+    return level_meter_scale::gainToDb(gain);
 }
 
 float dbToGain(float db) {
@@ -135,19 +134,8 @@ float dbToGain(float db) {
     return std::pow(10.0f, db / 20.0f);
 }
 
-// Meter-specific scaling: simple logarithmic curve
-// Single power curve compresses bottom, leaves room at top for headroom
 float dbToMeterPos(float db) {
-    if (db <= MIN_DB)
-        return 0.0f;
-    if (db >= MAX_DB)
-        return 1.0f;
-
-    // Normalize to 0-1 range
-    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
-
-    // Apply power curve: y = x^3
-    return std::pow(normalized, 3.0f);
+    return level_meter_scale::dbToMeterPos(db);
 }
 
 // MIDI activity indicator - small blinking dot
@@ -356,9 +344,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Volume label (shows dB, draggable)
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(MIN_DB, MAX_DB, 0.0);  // -60 to +6 dB, default 0 dB
-    // Curve the fill to match the level meter's power scale (consistent with the
-    // master volume and the meters elsewhere).
-    volumeLabel->setFillExponent(static_cast<double>(LevelMeter::METER_CURVE_EXPONENT));
+    volumeLabel->setFillProportionMapper(level_meter_scale::dbFillProportion);
     volumeLabel->setValue(gainToDb(volume), juce::dontSendNotification);
 
     // Pan label (shows L/C/R, draggable)
