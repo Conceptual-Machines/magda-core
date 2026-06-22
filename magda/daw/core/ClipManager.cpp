@@ -2912,6 +2912,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
         // Determine target track
         TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
+        if (newTrackId == INVALID_TRACK_ID)
+            continue;
 
         // Create new clip based on type, using targetView instead of clipData.view
         ClipId newClipId = INVALID_CLIP_ID;
@@ -3085,6 +3087,11 @@ void ClipManager::cutToClipboard(const std::unordered_set<ClipId>& clipIds) {
 
 bool ClipManager::hasClipsInClipboard() const {
     return !clipboard_.empty();
+}
+
+bool ClipManager::clipboardRequiresTargetTrack() const {
+    return std::any_of(clipboard_.begin(), clipboard_.end(),
+                       [](const auto& clip) { return clip.trackId == INVALID_TRACK_ID; });
 }
 
 void ClipManager::clearClipboard() {

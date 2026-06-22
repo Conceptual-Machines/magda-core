@@ -1053,8 +1053,12 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         const auto& clipboard = clipManager.getNoteClipboard();
         expectEquals(static_cast<int>(clipboard.size()), 2,
                      "Copying a mono step sequence should copy active gated steps only");
+        expect(clipManager.clipboardRequiresTargetTrack(),
+               "Copied mono pattern clips should require an explicit paste target track");
         expect(clipManager.hasClipsInClipboard(),
                "Copying a mono step sequence should also seed the clip clipboard");
+        expect(clipManager.pasteFromClipboard(0.0, magda::INVALID_TRACK_ID).empty(),
+               "Copied mono pattern must not paste a ghost clip without a target track");
         if (clipboard.size() < 2)
             return;
 
@@ -1113,8 +1117,12 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         const auto& clipboard = clipManager.getNoteClipboard();
         expectEquals(static_cast<int>(clipboard.size()), 3,
                      "Copying a poly sequence should copy each note in non-tied gated steps");
+        expect(clipManager.clipboardRequiresTargetTrack(),
+               "Copied poly pattern clips should require an explicit paste target track");
         expect(clipManager.hasClipsInClipboard(),
                "Copying a poly sequence should also seed the clip clipboard");
+        expect(clipManager.pasteFromClipboard(0.0, magda::INVALID_TRACK_ID).empty(),
+               "Copied poly pattern must not paste a ghost clip without a target track");
         if (clipboard.size() < 3)
             return;
 

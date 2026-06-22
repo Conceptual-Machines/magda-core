@@ -596,6 +596,11 @@ class ClipManager {
     bool hasClipsInClipboard() const;
 
     /**
+     * @brief True when clipboard clips have no source track and paste must supply one.
+     */
+    bool clipboardRequiresTargetTrack() const;
+
+    /**
      * @brief Clear clipboard
      */
     void clearClipboard();
