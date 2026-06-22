@@ -19,6 +19,7 @@
 #include "MenuManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -154,8 +155,11 @@ void MainWindow::importDawProjectFile(const juce::File& file) {
         // Empty lastError = user cancelled the unsaved-changes prompt; stay silent.
         const auto error = projectManager.getLastError();
         if (error.isNotEmpty())
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   tr("dialogs.import_dawproject"), error);
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon,
+                tr("dialogs.import_dawproject")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
+                error);
     }
 }
 
@@ -427,7 +431,8 @@ void MainWindow::setupMenuCallbacks() {
             return;
 
         fileChooser_ = std::make_unique<juce::FileChooser>(
-            tr("dialogs.import_dawproject"),
+            tr("dialogs.import_dawproject")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.dawproject",
             true);
 
@@ -455,8 +460,10 @@ void MainWindow::setupMenuCallbacks() {
                               ? currentFile.getParentDirectory()
                               : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
 
-        fileChooser_ = std::make_unique<juce::FileChooser>(tr("dialogs.export_dawproject"),
-                                                           initialDir, "*.dawproject", true);
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            tr("dialogs.export_dawproject")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
+            initialDir, "*.dawproject", true);
 
         auto flags = juce::FileBrowserComponent::saveMode |
                      juce::FileBrowserComponent::canSelectFiles |
@@ -475,7 +482,10 @@ void MainWindow::setupMenuCallbacks() {
             auto& projectManager = ProjectManager::getInstance();
             if (!projectManager.exportDawProject(file)) {
                 juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, tr("dialogs.export_dawproject"),
+                    juce::AlertWindow::WarningIcon,
+                    tr("dialogs.export_dawproject")
+                        .replace("{0}",
+                                 magda::technicalText(magda::TechnicalTextToken::DawProject)),
                     tr("dialogs.error.export_failed") + " " + projectManager.getLastError());
             }
         });

@@ -672,7 +672,10 @@ class ColoursPage : public juce::Component {
                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(colourHeaderLabel);
 
-        hexHeaderLabel.setText(tr("preferences.colours.hex_rgb"), juce::dontSendNotification);
+        hexHeaderLabel.setText(
+            tr("preferences.colours.hex_rgb")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Rgb)),
+            juce::dontSendNotification);
         hexHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         hexHeaderLabel.setColour(juce::Label::textColourId,
                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));

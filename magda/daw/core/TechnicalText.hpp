@@ -26,6 +26,15 @@ enum class TechnicalTextToken {
     PanCenter,
     PanLeft,
     PanRight,
+    // Proper nouns / formats — never translated, kept at base (Latin) font size
+    Magda,
+    DawProject,
+    Vst3,
+    Au,
+    Json,
+    Flac,
+    Rgb,
+    Lua,
 };
 
 inline juce::String technicalText(TechnicalTextToken token) {
@@ -72,6 +81,22 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "L";
         case TechnicalTextToken::PanRight:
             return "R";
+        case TechnicalTextToken::Magda:
+            return "MAGDA";
+        case TechnicalTextToken::DawProject:
+            return "DAWproject";
+        case TechnicalTextToken::Vst3:
+            return "VST3";
+        case TechnicalTextToken::Au:
+            return "AU";
+        case TechnicalTextToken::Json:
+            return "JSON";
+        case TechnicalTextToken::Flac:
+            return "FLAC";
+        case TechnicalTextToken::Rgb:
+            return "RGB";
+        case TechnicalTextToken::Lua:
+            return "Lua";
     }
 
     return {};

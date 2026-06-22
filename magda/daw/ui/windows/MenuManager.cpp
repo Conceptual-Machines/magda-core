@@ -3,6 +3,7 @@
 #include "CommandIDs.hpp"
 #include "Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
@@ -107,10 +108,21 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(CollectFiles, tr("menu.file.collect_files"), true, false);
             menu.addSeparator();
             menu.addItem(ExportAudio, tr("menu.file.export_audio"), true, false);
-            menu.addItem(ExportMidi, tr("menu.file.export_midi"), true, false);
+            menu.addItem(ExportMidi,
+                         tr("menu.file.export_midi")
+                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+                         true, false);
             menu.addSeparator();
-            menu.addItem(ImportDawProject, tr("menu.file.import_dawproject"), true, false);
-            menu.addItem(ExportDawProject, tr("menu.file.export_dawproject"), true, false);
+            menu.addItem(
+                ImportDawProject,
+                tr("menu.file.import_dawproject")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
+                true, false);
+            menu.addItem(
+                ExportDawProject,
+                tr("menu.file.export_dawproject")
+                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
+                true, false);
 
 #if !JUCE_MAC
             menu.addSeparator();
@@ -261,7 +273,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addSeparator();
             menu.addItem(AISettings, tr("menu.settings.ai"), true, false);
             menu.addSeparator();
-            menu.addItem(AudioSettings, tr("menu.settings.audio_midi"), true, false);
+            menu.addItem(AudioSettings,
+                         tr("menu.settings.audio_midi")
+                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+                         true, false);
             menu.addSeparator();
             menu.addItem(ControllerSettings, tr("menu.settings.controllers"), true, false);
             menu.addSeparator();
