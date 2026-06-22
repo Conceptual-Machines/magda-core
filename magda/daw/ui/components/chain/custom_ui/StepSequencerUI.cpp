@@ -167,52 +167,9 @@ StepSequencerUI::StepSequencerUI() {
             plugin_->quantizeSub = juce::roundToInt(value);
     };
 
-    // --- MIDI controls ---
-    midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
-                                                         BinaryData::compare_svgSize);
-    midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    midiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
-    midiThruButton_->setToggleable(true);
-    midiThruButton_->setActive(false);
-    midiThruButton_->onClick = [this] {
-        if (plugin_) {
-            bool newState = !midiThruButton_->isActive();
-            midiThruButton_->setActive(newState);
-            plugin_->midiThru = newState;
-        }
-    };
-    addAndMakeVisible(midiThruButton_.get());
-
-    stepRecordButton_ = std::make_unique<magda::SvgButton>(
-        "StepRecord", BinaryData::record_circle_svg, BinaryData::record_circle_svgSize);
-    stepRecordButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    stepRecordButton_->setNormalColor(juce::Colour(0xFFCC3333));
-    stepRecordButton_->setTooltip("Step record: play a note to record on the current step");
-    stepRecordButton_->setToggleable(true);
-    stepRecordButton_->onClick = [this] {
-        if (plugin_) {
-            bool newState = !stepRecordButton_->isActive();
-            stepRecordButton_->setActive(newState);
-            plugin_->setStepRecording(newState);
-            repaint();  // Redraw banner
-        }
-    };
-    addAndMakeVisible(stepRecordButton_.get());
-
-    // --- Pattern generation: [RND] ---
-    randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
-                                                       BinaryData::random_svgSize);
-    randomButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    randomButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    randomButton_->setTooltip("Randomize pattern");
-    randomButton_->onClick = [this] {
-        if (plugin_) {
-            plugin_->randomizePattern();
-            repaint();
-        }
-    };
-    addAndMakeVisible(randomButton_.get());
+    // MIDI thru, step record and pattern randomize live in the device-slot
+    // header (next to the AI button), owned by DeviceSlotComponent — not in
+    // this body.
 }
 
 StepSequencerUI::~StepSequencerUI() {
@@ -264,7 +221,6 @@ void StepSequencerUI::syncFromPlugin() {
                                 juce::dontSendNotification);
     cyclesSlider_.setValue(static_cast<double>(juce::jlimit(1, steps, plugin_->rampCycles.get())),
                            juce::dontSendNotification);
-    midiThruButton_->setActive(plugin_->midiThru.get());
     repaint();
 }
 
@@ -340,12 +296,7 @@ void StepSequencerUI::resized() {
 
     // Controls row 2: SWING, GATE, Q, SUB, THRU, REC
     auto controlRow2 = bounds.removeFromTop(CONTROL_ROW_HEIGHT);
-    // Right side: THRU + REC icons
-    stepRecordButton_->setBounds(controlRow2.removeFromRight(CONTROL_ROW_HEIGHT));
-    controlRow2.removeFromRight(2);
-    midiThruButton_->setBounds(controlRow2.removeFromRight(CONTROL_ROW_HEIGHT));
-    controlRow2.removeFromRight(4);
-    // Left side: 4 controls evenly spaced
+    // THRU / REC moved to the device-slot header. The whole row is controls.
     int quarterWidth = controlRow2.getWidth() / 4;
     {
         auto cell = controlRow2.removeFromLeft(quarterWidth);
@@ -368,6 +319,10 @@ void StepSequencerUI::resized() {
     }
 
     bounds.removeFromTop(ROW_GAP + 2);
+
+    // Mini timeline / step ruler (aligned to the step-box columns)
+    timelineArea_ = bounds.removeFromTop(TIMELINE_HEIGHT).withTrimmedLeft(24);
+    bounds.removeFromTop(ROW_GAP);
 
     // Step boxes (24px left margin to align with ACC/G/T label columns)
     stepBoxArea_ = bounds.removeFromTop(STEP_BOX_SIZE).withTrimmedLeft(24);
@@ -414,12 +369,6 @@ void StepSequencerUI::resized() {
         rampRow.removeFromRight(4);
         rampCurveDisplay_.setBounds(rampRow);
     }
-
-    bounds.removeFromTop(ROW_GAP);
-
-    // Pattern generation row: [RND]
-    auto buttonRow = bounds.removeFromTop(CONTROL_ROW_HEIGHT);
-    randomButton_->setBounds(buttonRow.removeFromLeft(CONTROL_ROW_HEIGHT));
 }
 
 // =============================================================================
@@ -427,12 +376,54 @@ void StepSequencerUI::resized() {
 // =============================================================================
 
 void StepSequencerUI::paint(juce::Graphics& g) {
+    drawTimeline(g, timelineArea_);
     drawStepBoxes(g, stepBoxArea_);
     drawAccentRow(g, accentArea_);
     drawGlideTieRow(g, glideTieArea_);
     drawOctaveArrow(g, octaveDownArea_, true);
     drawKeyboard(g, keyboardArea_);
     drawOctaveArrow(g, octaveUpArea_, false);
+}
+
+// Step ruler above the grid: a tick per step, heavier + numbered every 4, with
+// the playing step highlighted. Columns align with the step boxes below.
+void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area) {
+    if (!plugin_ || area.isEmpty())
+        return;
+
+    const int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    const float colW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
+    const float top = static_cast<float>(area.getY());
+    const float bottom = static_cast<float>(area.getBottom());
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
+    g.fillRect(area);
+
+    // Highlight the playing step.
+    if (currentPlayStep_ >= 0 && currentPlayStep_ < count) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.45f));
+        g.fillRect(
+            juce::Rectangle<float>(area.getX() + currentPlayStep_ * colW, top, colW, bottom - top));
+    }
+
+    g.setFont(FontManager::getInstance().getUIFont(8.0f));
+    for (int i = 0; i < count; ++i) {
+        const float x = area.getX() + i * colW;
+        const bool group = (i % 4 == 0);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
+        g.drawVerticalLine(juce::roundToInt(x), group ? top : top + 4.0f, bottom);
+        if (group) {
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.drawText(
+                juce::String(i + 1),
+                juce::Rectangle<float>(x + 2.0f, top, colW - 2.0f, bottom - top).toNearestInt(),
+                juce::Justification::centredLeft);
+        }
+    }
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.drawHorizontalLine(area.getBottom() - 1, static_cast<float>(area.getX()),
+                         static_cast<float>(area.getRight()));
 }
 
 void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area) {

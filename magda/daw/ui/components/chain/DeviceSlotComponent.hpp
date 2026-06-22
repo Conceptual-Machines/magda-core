@@ -229,6 +229,9 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> learnButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
+    std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize
+    std::unique_ptr<magda::SvgButton> midiThruButton_;    // Step-sequencer MIDI thru toggle
+    std::unique_ptr<magda::SvgButton> stepRecordButton_;  // Step-sequencer step record toggle
 
     // Parameter host (owns slots + pagination, delegates layout to a
     // DeviceParamLayout strategy chosen at construction).
