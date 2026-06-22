@@ -5,6 +5,7 @@
 #include <map>
 
 #include "core/ParameterUtils.hpp"
+#include "core/TechnicalText.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/dsp/poly-dsp.h"
 #include "faust/gui/UI.h"
@@ -166,6 +167,46 @@ void MagdaPolySynthCompiledPlugin::rebuildEngineState(int sampleRate) {
 }
 
 void MagdaPolySynthCompiledPlugin::buildHostParameters() {
+    const std::vector<juce::String> waveChoices{"Sine", "Saw", "Square", "Triangle"};
+
+    // Four contiguous slots per oscillator (wave / level / coarse / fine).
+    // Osc 1 is audible by default; the rest start silent.
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        const int base = kOscBaseSlot + osc * kOscSlotCount;
+        const juce::String prefix = "Osc " + juce::String(osc + 1) + " ";
+
+        hostSlotInfo_[base + 0] = {.name = prefix + "Wave",
+                                   .scale = magda::ParameterScale::Discrete,
+                                   .minValue = 0.0f,
+                                   .maxValue = static_cast<float>(waveChoices.size() - 1),
+                                   .defaultValue = 1.0f,  // Saw
+                                   .choices = waveChoices};
+        hostSlotInfo_[base + 1] = {.name = prefix + "Level",
+                                   .scale = magda::ParameterScale::Linear,
+                                   .minValue = 0.0f,
+                                   .maxValue = 1.0f,
+                                   .defaultValue = (osc == 0) ? 0.8f : 0.0f};
+        hostSlotInfo_[base + 2] = {.name = prefix + "Coarse",
+                                   .unit =
+                                       magda::technicalText(magda::TechnicalTextToken::Semitones),
+                                   .scale = magda::ParameterScale::Linear,
+                                   .minValue = -24.0f,
+                                   .maxValue = 24.0f,
+                                   .defaultValue = 0.0f};
+        hostSlotInfo_[base + 3] = {.name = prefix + "Fine",
+                                   .unit = magda::technicalText(magda::TechnicalTextToken::Cents),
+                                   .scale = magda::ParameterScale::Linear,
+                                   .minValue = -100.0f,
+                                   .maxValue = 100.0f,
+                                   .defaultValue = 0.0f};
+    }
+
+    hostSlotInfo_[kFilterTypeSlot] = {.name = "Filter Type",
+                                      .scale = magda::ParameterScale::Discrete,
+                                      .minValue = 0.0f,
+                                      .maxValue = 3.0f,
+                                      .defaultValue = 0.0f,
+                                      .choices = {"Lowpass", "Highpass", "Bandpass", "Notch"}};
     hostSlotInfo_[kCutoffSlot] = {.name = "Cutoff",
                                   .unit = "Hz",
                                   .scale = magda::ParameterScale::Logarithmic,
@@ -177,18 +218,59 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                      .minValue = 0.0f,
                                      .maxValue = 0.95f,
                                      .defaultValue = 0.3f};
-    hostSlotInfo_[kAttackSlot] = {.name = "Attack",
-                                  .unit = "s",
-                                  .scale = magda::ParameterScale::Linear,
-                                  .minValue = 0.001f,
-                                  .maxValue = 2.0f,
-                                  .defaultValue = 0.005f};
-    hostSlotInfo_[kReleaseSlot] = {.name = "Release",
-                                   .unit = "s",
-                                   .scale = magda::ParameterScale::Linear,
-                                   .minValue = 0.001f,
-                                   .maxValue = 4.0f,
-                                   .defaultValue = 0.4f};
+    hostSlotInfo_[kFilterEnvAmtSlot] = {.name = "Filter Env",
+                                        .unit = "oct",
+                                        .scale = magda::ParameterScale::Linear,
+                                        .minValue = -4.0f,
+                                        .maxValue = 4.0f,
+                                        .defaultValue = 0.0f};
+    hostSlotInfo_[kFilterAttackSlot] = {.name = "Filter Attack",
+                                        .unit = "s",
+                                        .scale = magda::ParameterScale::Linear,
+                                        .minValue = 0.001f,
+                                        .maxValue = 2.0f,
+                                        .defaultValue = 0.005f};
+    hostSlotInfo_[kFilterDecaySlot] = {.name = "Filter Decay",
+                                       .unit = "s",
+                                       .scale = magda::ParameterScale::Linear,
+                                       .minValue = 0.001f,
+                                       .maxValue = 2.0f,
+                                       .defaultValue = 0.2f};
+    hostSlotInfo_[kFilterSustainSlot] = {.name = "Filter Sustain",
+                                         .scale = magda::ParameterScale::Linear,
+                                         .minValue = 0.0f,
+                                         .maxValue = 1.0f,
+                                         .defaultValue = 0.7f};
+    hostSlotInfo_[kFilterReleaseSlot] = {.name = "Filter Release",
+                                         .unit = "s",
+                                         .scale = magda::ParameterScale::Linear,
+                                         .minValue = 0.001f,
+                                         .maxValue = 4.0f,
+                                         .defaultValue = 0.4f};
+
+    hostSlotInfo_[kAmpAttackSlot] = {.name = "Amp Attack",
+                                     .unit = "s",
+                                     .scale = magda::ParameterScale::Linear,
+                                     .minValue = 0.001f,
+                                     .maxValue = 2.0f,
+                                     .defaultValue = 0.005f};
+    hostSlotInfo_[kAmpDecaySlot] = {.name = "Amp Decay",
+                                    .unit = "s",
+                                    .scale = magda::ParameterScale::Linear,
+                                    .minValue = 0.001f,
+                                    .maxValue = 2.0f,
+                                    .defaultValue = 0.2f};
+    hostSlotInfo_[kAmpSustainSlot] = {.name = "Amp Sustain",
+                                      .scale = magda::ParameterScale::Linear,
+                                      .minValue = 0.0f,
+                                      .maxValue = 1.0f,
+                                      .defaultValue = 0.7f};
+    hostSlotInfo_[kAmpReleaseSlot] = {.name = "Amp Release",
+                                      .unit = "s",
+                                      .scale = magda::ParameterScale::Linear,
+                                      .minValue = 0.001f,
+                                      .maxValue = 4.0f,
+                                      .defaultValue = 0.4f};
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
@@ -361,8 +443,9 @@ const CompiledPluginSpec& getMagdaPolySynthSpec() {
         .pluginId = MagdaPolySynthCompiledPlugin::xmlTypeName,
         .displayName = "Poly Synth",
         .browserCategory = "Synth",
-        .description = "Compiled Faust polyphonic synth: sawtooth oscillator into a resonant "
-                       "lowpass with an ADSR amp envelope. 16-voice, MIDI-driven.",
+        .description = "Compiled Faust polyphonic synth: four detunable oscillators "
+                       "(sine/saw/square/triangle) into a multimode filter with its own "
+                       "envelope, plus an ADSR amp envelope. 16-voice, MIDI-driven.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaPolySynthCompiledPlugin(info);
         },

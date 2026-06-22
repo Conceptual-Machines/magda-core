@@ -17,15 +17,17 @@ class dsp_poly;
 namespace magda::daw::audio::compiled {
 
 /**
- * @brief Compiled-Faust polyphonic instrument: sawtooth → resonant LPF → ADSR.
+ * @brief Compiled-Faust polyphonic instrument: 4 oscillators -> multimode SVF
+ *        (with its own envelope) -> ADSR amp.
  *
  * The build-time-compiled single-voice MagdaPolySynthDsp is wrapped at runtime
  * in mydsp_poly (group=false), which allocates voices and drives the reserved
  * freq/gain/gate controls from MIDI note/velocity/gate via keyOn/keyOff. The
- * `[idx:N]` host macros (Cutoff/Resonance/Attack/Release) are shared controls:
- * each block their value is fanned out to every voice's own zone (RT-safe
- * pointer writes — group=false gives each voice independent zones, avoiding the
- * global GUI::updateAllGuis() the grouped path would otherwise require).
+ * `[idx:N]` host macros (per-osc wave/level/coarse/fine, the filter section and
+ * the amp envelope) are shared controls: each block their value is fanned out to
+ * every voice's own zone (RT-safe pointer writes — group=false gives each voice
+ * independent zones, avoiding the global GUI::updateAllGuis() the grouped path
+ * would otherwise require).
  *
  * First compiled instrument in MAGDA (all other compiled devices are effects).
  */
@@ -62,12 +64,28 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
         return 0.0;
     }
 
-    // Slot ordering matches the [idx:N] pins inside magda_polysynth.dsp.
-    static constexpr int kCutoffSlot = 0;
-    static constexpr int kResonanceSlot = 1;
-    static constexpr int kAttackSlot = 2;
-    static constexpr int kReleaseSlot = 3;
-    static constexpr int kHostSlotCount = 4;
+    // Slot ordering matches the [idx:N] pins inside magda_polysynth.dsp:
+    // four contiguous slots per oscillator (wave / level / coarse / fine),
+    // then the filter section, then the amp envelope.
+    static constexpr int kOscSlotCount = 4;  // slots per oscillator
+    static constexpr int kNumOscillators = 4;
+    static constexpr int kOscBaseSlot = 0;  // osc n -> kOscBaseSlot + 4*(n-1)
+
+    static constexpr int kFilterTypeSlot = 16;
+    static constexpr int kCutoffSlot = 17;
+    static constexpr int kResonanceSlot = 18;
+    static constexpr int kFilterEnvAmtSlot = 19;
+    static constexpr int kFilterAttackSlot = 20;
+    static constexpr int kFilterDecaySlot = 21;
+    static constexpr int kFilterSustainSlot = 22;
+    static constexpr int kFilterReleaseSlot = 23;
+
+    static constexpr int kAmpAttackSlot = 24;
+    static constexpr int kAmpDecaySlot = 25;
+    static constexpr int kAmpSustainSlot = 26;
+    static constexpr int kAmpReleaseSlot = 27;
+
+    static constexpr int kHostSlotCount = 28;
 
     static constexpr int kNumVoices = 16;
 
