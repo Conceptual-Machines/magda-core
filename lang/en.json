@@ -1,4 +1,8 @@
 {
+  "action": {
+    "import": "Import {0}",
+    "export": "Export {0}"
+  },
   "menu": {
     "file": "File",
     "edit": "Edit",
@@ -19,9 +23,6 @@
     "file.project_settings": "Project Settings",
     "file.collect_files": "Collect Files",
     "file.export_audio": "Export Audio",
-    "file.export_midi": "Export {0}",
-    "file.import_dawproject": "Import {0}",
-    "file.export_dawproject": "Export {0}",
     "file.quit": "Quit",
     "edit.undo": "Undo",
     "edit.redo": "Redo",
@@ -147,8 +148,6 @@
     "save_project_as": "Save Project As",
     "close_project": "Close Project",
     "export_audio": "Export Audio",
-    "import_dawproject": "Import {0}",
-    "export_dawproject": "Export {0}",
     "plugin_settings": "Plugin Settings",
     "preferences": "Preferences",
     "about": "About MAGDA",
@@ -221,8 +220,7 @@
     "option.entire_song": "Entire Song",
     "option.time_selection": "Time Selection",
     "option.loop_region": "Loop Region",
-    "button.export": "Export",
-    "dialog.title": "Export {0}"
+    "button.export": "Export"
   },
   "gain_staging": {
     "dialog.title": "Gain Staging",
@@ -285,7 +283,6 @@
     "alert.cancelled_body": "Export was cancelled.",
     "alert.complete_title": "Export Complete",
     "alert.failed_title": "Export Failed",
-    "alert.midi_title": "Export {0}",
     "alert.audio_success_prefix": "Audio exported successfully to:",
     "alert.midi_success_prefix": "{0} exported successfully to:",
     "error.trim_failed": "Render succeeded but failed to trim preroll.",

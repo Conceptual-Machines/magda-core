@@ -138,8 +138,7 @@ void ExportMidiDialog::showDialog(juce::Component* parent,
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle =
-        tr("export_midi.dialog.title")
-            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi));
+        tr("action.export").replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi));
     options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;

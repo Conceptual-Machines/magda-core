@@ -109,18 +109,18 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addSeparator();
             menu.addItem(ExportAudio, trEllipsis("menu.file.export_audio"), true, false);
             menu.addItem(ExportMidi,
-                         trEllipsis("menu.file.export_midi")
+                         trEllipsis("action.export")
                              .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
                          true, false);
             menu.addSeparator();
             menu.addItem(
                 ImportDawProject,
-                trEllipsis("menu.file.import_dawproject")
+                trEllipsis("action.import")
                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
                 true, false);
             menu.addItem(
                 ExportDawProject,
-                trEllipsis("menu.file.export_dawproject")
+                trEllipsis("action.export")
                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
                 true, false);
 

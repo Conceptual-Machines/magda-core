@@ -490,7 +490,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         DBG("No MIDI clips found - rangeEndBeats <= rangeStartBeats");
         juce::AlertWindow::showMessageBoxAsync(
             juce::AlertWindow::WarningIcon,
-            tr("export.alert.midi_title")
+            tr("action.export")
                 .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
             tr("export.error.no_midi_clips")
                 .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
@@ -537,7 +537,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         DBG("No MIDI clips with notes found");
         juce::AlertWindow::showMessageBoxAsync(
             juce::AlertWindow::WarningIcon,
-            tr("export.alert.midi_title")
+            tr("action.export")
                 .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
             tr("export.error.no_midi_notes")
                 .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)));
@@ -555,8 +555,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
     // Launch file chooser
     fileChooser_ = std::make_unique<juce::FileChooser>(
-        tr("export.alert.midi_title")
-            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+        tr("action.export").replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
         defaultFile, "*.mid", true);
 
     auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
