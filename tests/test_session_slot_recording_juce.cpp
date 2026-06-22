@@ -3,6 +3,7 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -62,9 +63,12 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         : juce::UnitTest("Session Slot Recording Integration Tests", "magda") {}
 
     void runTest() override {
-        testTeSlotRecordingFinalizesToMagdaSessionClip();
-        testTeSlotAudioRecordingFinalizesToMagdaSessionClip();
-        testSessionSlotPreviewClearedOnStopWithoutFinalize();
+        magda::test::runWithCleanJuceState(
+            [this] { testTeSlotRecordingFinalizesToMagdaSessionClip(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testTeSlotAudioRecordingFinalizesToMagdaSessionClip(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testSessionSlotPreviewClearedOnStopWithoutFinalize(); });
     }
 
     // Looks up the transient recording preview for a track, or nullptr.
@@ -100,8 +104,6 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
 
             if (bridge != nullptr) {
                 bridge->createAudioTrack(trackId, "Session Record Target");
-                bridge->getQwertyMidiDevice();
-                bridge->enableAllMidiInputDevices();
                 bridge->setTrackMidiInput(trackId, "all");
                 bridge->syncAllArmedTracksToTE();
             }

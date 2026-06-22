@@ -2,6 +2,7 @@
 #include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/engine/TracktionTempoMap.hpp"
 
@@ -18,6 +19,8 @@ class TempoMapTest final : public juce::UnitTest {
     TempoMapTest() : juce::UnitTest("Tempo Map Tests", "magda") {}
 
     void runTest() override {
+        magda::test::ScopedJuceTestState state;
+
         auto& wrapper = magda::test::getSharedEngine();
 
         // A throwaway Edit with a 120 -> 60 BPM change at beat 16. Separate from

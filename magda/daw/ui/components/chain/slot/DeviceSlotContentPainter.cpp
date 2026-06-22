@@ -79,14 +79,17 @@ void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
                                            : DarkTheme::getSecondaryTextColour();
     g.setColour(textColour);
 
-    if (state.traits.isStepSequencer && state.stepRecording.active) {
+    if ((state.traits.isStepSequencer || state.traits.isPolyStepSequencer) &&
+        state.stepRecording.active) {
+        const int maxSteps = juce::jmax(1, state.stepRecording.maxSteps);
+        const int displayPosition = juce::jlimit(0, maxSteps - 1, state.stepRecording.position);
         g.saveState();
         g.setColour(juce::Colour(0xFFCC3333).withAlpha(0.9f));
         g.fillRect(headerArea);
         g.setColour(juce::Colours::white);
         g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-        g.drawText("STEP RECORDING  " + juce::String(state.stepRecording.position + 1) + "/" +
-                       juce::String(state.stepRecording.maxSteps),
+        g.drawText("STEP RECORDING  " + juce::String(displayPosition + 1) + "/" +
+                       juce::String(maxSteps),
                    textArea, juce::Justification::centredLeft);
         g.restoreState();
         return;

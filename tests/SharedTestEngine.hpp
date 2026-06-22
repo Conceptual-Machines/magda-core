@@ -4,6 +4,16 @@
 
 namespace magda::test {
 
+inline bool& sharedEngineInitializedFlag() {
+    static bool initialized = false;
+    return initialized;
+}
+
+inline TracktionEngineWrapper& sharedEngineInstance() {
+    static TracktionEngineWrapper engine;
+    return engine;
+}
+
 /**
  * Provides a single shared TracktionEngineWrapper for all tests.
  *
@@ -13,13 +23,19 @@ namespace magda::test {
  * caused by corrupted global state.
  */
 inline TracktionEngineWrapper& getSharedEngine() {
-    static TracktionEngineWrapper engine;
-    static bool initialized = false;
+    auto& engine = sharedEngineInstance();
+    auto& initialized = sharedEngineInitializedFlag();
     if (!initialized) {
         engine.initialize();
         initialized = true;
     }
     return engine;
+}
+
+inline TracktionEngineWrapper* getSharedEngineIfInitialized() {
+    if (!sharedEngineInitializedFlag())
+        return nullptr;
+    return &sharedEngineInstance();
 }
 
 /**

@@ -2010,7 +2010,11 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             }
             case 2: {  // Paste
                 const double bpm = safeThis ? safeThis->getTempo() : 120.0;
-                auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{startTime * bpm / 60.0});
+                const TrackId targetTrackId =
+                    ClipManager::getInstance().clipboardRequiresTargetTrack() ? trackId
+                                                                              : INVALID_TRACK_ID;
+                auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{startTime * bpm / 60.0},
+                                                              targetTrackId);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 

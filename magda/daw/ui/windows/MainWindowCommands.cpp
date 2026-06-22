@@ -64,6 +64,32 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
            timelineEndSeconds(clip, bpm) > startSeconds;
 }
 
+TrackId resolvePasteTargetTrack(ViewMode mode) {
+    auto& selectionManager = SelectionManager::getInstance();
+    auto& trackManager = TrackManager::getInstance();
+
+    const auto selectedTrack = selectionManager.getSelectedTrack();
+    const auto* selectedTrackInfo =
+        selectedTrack != INVALID_TRACK_ID ? trackManager.getTrack(selectedTrack) : nullptr;
+    if (selectedTrackInfo != nullptr) {
+        return selectedTrack;
+    }
+
+    auto visibleTracks = trackManager.getVisibleTracks(mode);
+    if (!visibleTracks.empty()) {
+        return visibleTracks.front();
+    }
+
+    if (mode != ViewMode::Arrange) {
+        visibleTracks = trackManager.getVisibleTracks(ViewMode::Arrange);
+        if (!visibleTracks.empty()) {
+            return visibleTracks.front();
+        }
+    }
+
+    return INVALID_TRACK_ID;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -567,11 +593,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                 if (viewMode == ViewMode::Live) {
                     // Session view: paste into first empty slot on selected track
-                    TrackId targetTrack = selectionManager.getSelectedTrack();
+                    TrackId targetTrack = resolvePasteTargetTrack(viewMode);
                     if (targetTrack == INVALID_TRACK_ID) {
-                        auto visibleTracks = TrackManager::getInstance().getVisibleTracks(viewMode);
-                        if (!visibleTracks.empty())
-                            targetTrack = visibleTracks.front();
+                        return true;
                     }
 
                     // Find first empty scene slot on the target track
@@ -610,9 +634,16 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                     const double bpm =
                         mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
-                    auto cmd =
-                        std::make_unique<PasteClipCommand>(BeatPosition{pasteTime * bpm / 60.0},
-                                                           INVALID_TRACK_ID, ClipView::Arrangement);
+                    const TrackId targetTrack = clipManager.clipboardRequiresTargetTrack()
+                                                    ? resolvePasteTargetTrack(viewMode)
+                                                    : INVALID_TRACK_ID;
+                    if (clipManager.clipboardRequiresTargetTrack() &&
+                        targetTrack == INVALID_TRACK_ID) {
+                        return true;
+                    }
+
+                    auto cmd = std::make_unique<PasteClipCommand>(
+                        BeatPosition{pasteTime * bpm / 60.0}, targetTrack, ClipView::Arrangement);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
 

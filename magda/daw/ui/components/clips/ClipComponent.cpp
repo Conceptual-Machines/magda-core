@@ -3404,8 +3404,13 @@ void ClipComponent::showContextMenu() {
                         }
                     }
                     const double bpm = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                    auto cmd =
-                        std::make_unique<PasteClipCommand>(BeatPosition{pasteTime * bpm / 60.0});
+                    TrackId targetTrackId = INVALID_TRACK_ID;
+                    if (clipManager.clipboardRequiresTargetTrack()) {
+                        if (const auto* contextClip = clipManager.getClip(clipId_))
+                            targetTrackId = contextClip->trackId;
+                    }
+                    auto cmd = std::make_unique<PasteClipCommand>(
+                        BeatPosition{pasteTime * bpm / 60.0}, targetTrackId);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     const auto& pastedIds = cmdPtr->getPastedClipIds();

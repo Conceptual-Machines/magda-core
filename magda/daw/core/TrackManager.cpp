@@ -2750,6 +2750,17 @@ void TrackManager::endBatch() {
     }
 }
 
+TrackManager::ScopedListenerMuteForTests::ScopedListenerMuteForTests() {
+    auto& manager = TrackManager::getInstance();
+    savedListeners_ = std::move(manager.listeners_);
+    manager.listeners_.clear();
+}
+
+TrackManager::ScopedListenerMuteForTests::~ScopedListenerMuteForTests() {
+    auto& manager = TrackManager::getInstance();
+    manager.listeners_ = std::move(savedListeners_);
+}
+
 void TrackManager::notifyTrackPropertyChanged(int trackId) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {

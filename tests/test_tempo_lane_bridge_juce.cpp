@@ -4,6 +4,7 @@
 
 #include <cmath>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/core/AutomationInfo.hpp"
 #include "magda/daw/engine/TempoLaneBridge.hpp"
@@ -29,6 +30,8 @@ class TempoLaneBridgeTest final : public juce::UnitTest {
     }
 
     void runTest() override {
+        magda::test::ScopedJuceTestState state;
+
         auto& wrapper = magda::test::getSharedEngine();
         auto edit =
             te::Edit::createSingleTrackEdit(*wrapper.getEngine(), te::Edit::EditRole::forEditing);
@@ -89,10 +92,7 @@ class TempoLaneBridgeTest final : public juce::UnitTest {
         expectEquals(ts.getNumTempos(), 1);
         expectWithinAbsoluteError(ts.getTempo(0)->getBpm(), 140.0, 1.0e-3);
 
-        // Flush async updaters the throwaway Edit scheduled before it dies.
         edit.reset();
-        if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
-            mm->runDispatchLoopUntil(50);
     }
 };
 

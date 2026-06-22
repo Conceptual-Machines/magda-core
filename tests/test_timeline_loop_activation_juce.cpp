@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/api/transport_api_live.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -73,6 +74,8 @@ class TimelineLoopActivationJuceTest final : public juce::UnitTest {
         : juce::UnitTest("Timeline Loop Activation Integration Tests", "magda") {}
 
     void runTest() override {
+        magda::test::ScopedJuceTestState state;
+
         testApiLoopTogglePreservesExistingRegionWithActiveSelection();
         testApiLoopToggleSeedsDefaultRegionWhenNoneExists();
         testApiLoopToggleUpdatesTracktionTransportWithoutMovingLoopRange();

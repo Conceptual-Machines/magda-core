@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "JuceTestStateGuard.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 
@@ -20,7 +21,7 @@ constexpr double sourceDuration = sourceBeats * 60.0 / sourceBPM;
 ClipInfo makeInspectorAudioClip(ClipId id = 9001) {
     ClipInfo clip;
     clip.id = id;
-    clip.trackId = 1;
+    clip.trackId = INVALID_TRACK_ID;
     clip.setAudioContent();
     clip.view = ClipView::Session;
     clip.name = "InspectorTest";
@@ -77,16 +78,16 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
     ClipInspectorJuceTest() : juce::UnitTest("ClipInspector JUCE Tests", "magda") {}
 
     void runTest() override {
-        testFullRefreshTracksSourceBeatEdits();
-        testMidDragPropertyChangeRefreshesLoopEnd();
-        testBpmAndBeatsDisplaysRefreshTogether();
-        testLoopEndUsesLoopLengthNotPlacementLength();
+        magda::test::runWithCleanJuceState([this] { testFullRefreshTracksSourceBeatEdits(); });
+        magda::test::runWithCleanJuceState([this] { testMidDragPropertyChangeRefreshesLoopEnd(); });
+        magda::test::runWithCleanJuceState([this] { testBpmAndBeatsDisplaysRefreshTogether(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testLoopEndUsesLoopLengthNotPlacementLength(); });
     }
 
   private:
     void testFullRefreshTracksSourceBeatEdits() {
         beginTest("Loop end follows source Beats after full inspector refresh");
-        ClipManager::getInstance().clearAllClips();
 
         auto seed = makeInspectorAudioClip();
         ClipManager::getInstance().restoreClip(seed);
@@ -106,13 +107,10 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         inspector.clipPropertyChanged(seed.id);
         expectLoopEnd(*this, inspector, 8.0);
         expectSourceBeatsDisplay(*this, inspector, 8.0);
-
-        ClipManager::getInstance().clearAllClips();
     }
 
     void testMidDragPropertyChangeRefreshesLoopEnd() {
         beginTest("Loop end follows source Beats during Beats drag");
-        ClipManager::getInstance().clearAllClips();
 
         auto seed = makeInspectorAudioClip();
         ClipManager::getInstance().restoreClip(seed);
@@ -133,12 +131,10 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         expectLoopEnd(*this, inspector, 8.0);
 
         inspector.clipBeatsLengthValue_->isDragging_ = false;
-        ClipManager::getInstance().clearAllClips();
     }
 
     void testBpmAndBeatsDisplaysRefreshTogether() {
         beginTest("BPM and Beats displays refresh from source interpretation");
-        ClipManager::getInstance().clearAllClips();
 
         auto seed = makeInspectorAudioClip();
         ClipManager::getInstance().restoreClip(seed);
@@ -158,13 +154,10 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         inspector.clipPropertyChanged(seed.id);
         expectBpmDisplay(*this, inspector, 86.0);
         expectSourceBeatsDisplay(*this, inspector, 8.0);
-
-        ClipManager::getInstance().clearAllClips();
     }
 
     void testLoopEndUsesLoopLengthNotPlacementLength() {
         beginTest("Inspector loop end follows source loop length, not placement length");
-        ClipManager::getInstance().clearAllClips();
 
         auto seed = makeInspectorAudioClip();
         seed.setPlacementBeats(0.0, 96.0);
@@ -178,8 +171,6 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         inspector.setSelectedClip(seed.id);
         expectSourceBeatsDisplay(*this, inspector, 16.0);
         expectLoopEnd(*this, inspector, 12.0);
-
-        ClipManager::getInstance().clearAllClips();
     }
 };
 

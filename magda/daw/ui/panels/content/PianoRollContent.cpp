@@ -1419,6 +1419,7 @@ void PianoRollContent::onActivated() {
             updateGridSize();
             updateTimeRuler();
             updateVelocityLane();
+            centerOnNotes();
         }
     }
     repaint();
@@ -1621,6 +1622,7 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             updateVelocityLane();
 
             scrollToClipStartForTimeMode();
+            centerOnNotes();
 
             repaint();
         }
@@ -1707,6 +1709,7 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     updateTimeRuler();
     updateVelocityLane();
     scrollToClipStartForTimeMode();
+    centerOnNotes();
     repaint();
 }
 
