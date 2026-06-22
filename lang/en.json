@@ -269,7 +269,7 @@
   },
   "main_window": {
     "loading.initializing": "Initializing",
-    "loading.scanning_devices": "Scanning audio & {0} devices",
+    "loading.scanning_devices": "Scanning {0} & {1} devices",
     "undo.render_clips": "Render Clips"
   },
   "export": {
