@@ -1050,31 +1050,57 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         clipManager.clearClipboard();
         magda::daw::ui::copyStepSequencerPatternToClipboard(*seq);
 
-        const auto& clipboard = clipManager.getNoteClipboard();
-        expectEquals(static_cast<int>(clipboard.size()), 2,
-                     "Copying a mono step sequence should copy active gated steps only");
+        expect(!clipManager.hasNotesInClipboard(),
+               "Copying a mono step sequence should not seed note-paste clipboard");
         expect(clipManager.clipboardRequiresTargetTrack(),
                "Copied mono pattern clips should require an explicit paste target track");
         expect(clipManager.hasClipsInClipboard(),
-               "Copying a mono step sequence should also seed the clip clipboard");
+               "Copying a mono step sequence should seed the clip clipboard");
         expect(clipManager.pasteFromClipboard(0.0, magda::INVALID_TRACK_ID).empty(),
                "Copied mono pattern must not paste a ghost clip without a target track");
-        if (clipboard.size() < 2)
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto targetTrackId = trackManager.createTrack("Step Sequencer Pattern Paste Target",
+                                                            magda::TrackType::Audio);
+        const auto targetColour = juce::Colour(0xff3366aa);
+        trackManager.setTrackColour(targetTrackId, targetColour);
+
+        const auto pastedIds = clipManager.pasteFromClipboard(0.0, targetTrackId);
+        expectEquals(static_cast<int>(pastedIds.size()), 1,
+                     "Copied mono pattern should paste as one MIDI clip with a target track");
+        if (pastedIds.empty())
             return;
 
-        expectEquals(clipboard[0].noteNumber, 60, "First copied note should keep its pitch");
-        expectEquals(clipboard[0].velocity, 70, "First copied note should use normal velocity");
-        expectWithinAbsoluteError(clipboard[0].startBeat, 0.0, 0.0001,
+        const auto* pastedClip = clipManager.getClip(pastedIds.front());
+        expect(pastedClip != nullptr && pastedClip->isMidi(), "Pasted pattern clip should be MIDI");
+        if (pastedClip == nullptr || !pastedClip->isMidi())
+            return;
+
+        expectWithinAbsoluteError(pastedClip->placement.lengthBeats, 4.0, 0.0001,
+                                  "Copied mono pattern clip should keep the full step-sequencer "
+                                  "pattern length");
+        expect(pastedClip->colour == targetColour,
+               "Copied mono pattern clip should inherit the destination track colour");
+
+        const auto& notes = pastedClip->midiNotes;
+        expectEquals(static_cast<int>(notes.size()), 2,
+                     "Copying a mono step sequence should copy active gated steps only");
+        if (notes.size() < 2)
+            return;
+
+        expectEquals(notes[0].noteNumber, 60, "First copied note should keep its pitch");
+        expectEquals(notes[0].velocity, 70, "First copied note should use normal velocity");
+        expectWithinAbsoluteError(notes[0].startBeat, 0.0, 0.0001,
                                   "First copied note should start at beat 0");
-        expectWithinAbsoluteError(clipboard[0].lengthBeats, 0.5, 0.0001,
+        expectWithinAbsoluteError(notes[0].lengthBeats, 0.5, 0.0001,
                                   "Copied note length should apply gate length");
 
-        expectEquals(clipboard[1].noteNumber, 71,
+        expectEquals(notes[1].noteNumber, 71,
                      "Second copied note should apply octave shift and clamp pitch");
-        expectEquals(clipboard[1].velocity, 110, "Accented copied note should use accent velocity");
-        expectWithinAbsoluteError(clipboard[1].startBeat, 2.0, 0.0001,
+        expectEquals(notes[1].velocity, 110, "Accented copied note should use accent velocity");
+        expectWithinAbsoluteError(notes[1].startBeat, 2.0, 0.0001,
                                   "Second copied note should start at its step beat");
-        expectWithinAbsoluteError(clipboard[1].lengthBeats, 0.5, 0.0001,
+        expectWithinAbsoluteError(notes[1].lengthBeats, 0.5, 0.0001,
                                   "Second copied note should apply gate length");
     }
 
@@ -1114,37 +1140,63 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         clipManager.clearClipboard();
         magda::daw::ui::copyPolyStepSequencerPatternToClipboard(*seq);
 
-        const auto& clipboard = clipManager.getNoteClipboard();
-        expectEquals(static_cast<int>(clipboard.size()), 3,
-                     "Copying a poly sequence should copy each note in non-tied gated steps");
+        expect(!clipManager.hasNotesInClipboard(),
+               "Copying a poly sequence should not seed note-paste clipboard");
         expect(clipManager.clipboardRequiresTargetTrack(),
                "Copied poly pattern clips should require an explicit paste target track");
         expect(clipManager.hasClipsInClipboard(),
-               "Copying a poly sequence should also seed the clip clipboard");
+               "Copying a poly sequence should seed the clip clipboard");
         expect(clipManager.pasteFromClipboard(0.0, magda::INVALID_TRACK_ID).empty(),
                "Copied poly pattern must not paste a ghost clip without a target track");
-        if (clipboard.size() < 3)
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto targetTrackId = trackManager.createTrack("Poly Sequencer Pattern Paste Target",
+                                                            magda::TrackType::Audio);
+        const auto targetColour = juce::Colour(0xff8844aa);
+        trackManager.setTrackColour(targetTrackId, targetColour);
+
+        const auto pastedIds = clipManager.pasteFromClipboard(0.0, targetTrackId);
+        expectEquals(static_cast<int>(pastedIds.size()), 1,
+                     "Copied poly pattern should paste as one MIDI clip with a target track");
+        if (pastedIds.empty())
             return;
 
-        expectEquals(clipboard[0].noteNumber, 60, "First chord note should keep its pitch");
-        expectEquals(clipboard[0].velocity, 90, "First chord note should use the step velocity");
-        expectWithinAbsoluteError(clipboard[0].startBeat, 0.0, 0.0001,
+        const auto* pastedClip = clipManager.getClip(pastedIds.front());
+        expect(pastedClip != nullptr && pastedClip->isMidi(), "Pasted pattern clip should be MIDI");
+        if (pastedClip == nullptr || !pastedClip->isMidi())
+            return;
+
+        expectWithinAbsoluteError(pastedClip->placement.lengthBeats, 3.0, 0.0001,
+                                  "Copied poly pattern clip should keep the full step-sequencer "
+                                  "pattern length");
+        expect(pastedClip->colour == targetColour,
+               "Copied poly pattern clip should inherit the destination track colour");
+
+        const auto& notes = pastedClip->midiNotes;
+        expectEquals(static_cast<int>(notes.size()), 3,
+                     "Copying a poly sequence should copy each note in non-tied gated steps");
+        if (notes.size() < 3)
+            return;
+
+        expectEquals(notes[0].noteNumber, 60, "First chord note should keep its pitch");
+        expectEquals(notes[0].velocity, 90, "First chord note should use the step velocity");
+        expectWithinAbsoluteError(notes[0].startBeat, 0.0, 0.0001,
                                   "First chord should start at beat 0");
-        expectWithinAbsoluteError(clipboard[0].lengthBeats, 1.5, 0.0001,
+        expectWithinAbsoluteError(notes[0].lengthBeats, 1.5, 0.0001,
                                   "Tied following step should extend chord note length");
 
-        expectEquals(clipboard[1].noteNumber, 64, "Second chord note should keep its pitch");
-        expectEquals(clipboard[1].velocity, 80, "Per-note velocity override should be copied");
-        expectWithinAbsoluteError(clipboard[1].startBeat, 0.0, 0.0001,
+        expectEquals(notes[1].noteNumber, 64, "Second chord note should keep its pitch");
+        expectEquals(notes[1].velocity, 80, "Per-note velocity override should be copied");
+        expectWithinAbsoluteError(notes[1].startBeat, 0.0, 0.0001,
                                   "Second chord note should share the chord start");
-        expectWithinAbsoluteError(clipboard[1].lengthBeats, 1.5, 0.0001,
+        expectWithinAbsoluteError(notes[1].lengthBeats, 1.5, 0.0001,
                                   "Second chord note should share the tied length");
 
-        expectEquals(clipboard[2].noteNumber, 67, "Later step note should keep its pitch");
-        expectEquals(clipboard[2].velocity, 75, "Later note should use its step velocity");
-        expectWithinAbsoluteError(clipboard[2].startBeat, 2.0, 0.0001,
+        expectEquals(notes[2].noteNumber, 67, "Later step note should keep its pitch");
+        expectEquals(notes[2].velocity, 75, "Later note should use its step velocity");
+        expectWithinAbsoluteError(notes[2].startBeat, 2.0, 0.0001,
                                   "Later note should start at its step beat");
-        expectWithinAbsoluteError(clipboard[2].lengthBeats, 0.5, 0.0001,
+        expectWithinAbsoluteError(notes[2].lengthBeats, 0.5, 0.0001,
                                   "Later note should use gate length without tie extension");
     }
 };

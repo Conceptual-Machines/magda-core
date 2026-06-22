@@ -2912,8 +2912,9 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
         // Determine target track
         TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
-        if (newTrackId == INVALID_TRACK_ID)
+        if (newTrackId == INVALID_TRACK_ID) {
             continue;
+        }
 
         // Create new clip based on type, using targetView instead of clipData.view
         ClipId newClipId = INVALID_CLIP_ID;
@@ -2934,7 +2935,12 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
             auto* newClip = getClip(newClipId);
             if (newClip) {
                 newClip->name = clipData.name + " (copy)";
-                newClip->colour = clipData.colour;
+                if (clipData.trackId != INVALID_TRACK_ID) {
+                    newClip->colour = clipData.colour;
+                } else if (const auto* targetTrack =
+                               TrackManager::getInstance().getTrack(newTrackId)) {
+                    newClip->colour = targetTrack->colour;
+                }
                 newClip->loopEnabled = clipData.loopEnabled;
 
                 // Copy MIDI data
@@ -3099,12 +3105,14 @@ void ClipManager::clearClipboard() {
     clipboardReferenceTime_ = 0.0;
 }
 
-void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String name) {
+void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String name,
+                                       double lengthBeats) {
     clipboard_.clear();
     clipboardReferenceTime_ = 0.0;
 
-    if (notes.empty())
+    if (notes.empty()) {
         return;
+    }
 
     double minBeat = notes.front().startBeat;
     double maxEndBeat = notes.front().startBeat + notes.front().lengthBeats;
@@ -3113,8 +3121,9 @@ void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String
         maxEndBeat = std::max(maxEndBeat, note.startBeat + note.lengthBeats);
     }
 
+    const double noteOffset = lengthBeats > 0.0 ? 0.0 : minBeat;
     for (auto& note : notes)
-        note.startBeat -= minBeat;
+        note.startBeat -= noteOffset;
 
     ClipInfo clip;
     clip.setMidiContent();
@@ -3122,7 +3131,10 @@ void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String
     clip.trackId = INVALID_TRACK_ID;
     clip.view = ClipView::Arrangement;
     clip.midiNotes = std::move(notes);
-    clip.setPlacementBeats(0.0, juce::jmax(0.25, maxEndBeat - minBeat));
+    const double inferredLength = maxEndBeat - noteOffset;
+    const double clipboardLength =
+        lengthBeats > 0.0 ? juce::jmax(lengthBeats, inferredLength) : inferredLength;
+    clip.setPlacementBeats(0.0, juce::jmax(0.25, clipboardLength));
     clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
 
     clipboard_.push_back(std::move(clip));
