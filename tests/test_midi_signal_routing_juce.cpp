@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/DeviceMeteringManager.hpp"
@@ -48,23 +49,6 @@ bool hasMidiOutputConnection(te::RackType& rackType) {
     return false;
 }
 
-struct ScopedSequencerClipboardTestState {
-    ScopedSequencerClipboardTestState() {
-        reset();
-    }
-
-    ~ScopedSequencerClipboardTestState() {
-        reset();
-    }
-
-    static void reset() {
-        magda::TrackManager::getInstance().clearAllTracks();
-        auto& clipManager = magda::ClipManager::getInstance();
-        clipManager.clearClipboard();
-        clipManager.setNoteClipboard({});
-    }
-};
-
 }  // namespace
 
 class MidiSignalRoutingTest final : public juce::UnitTest {
@@ -72,24 +56,34 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
     MidiSignalRoutingTest() : juce::UnitTest("MIDI Signal Routing Tests", "magda") {}
 
     void runTest() override {
-        testInstrumentRackPassesMidiThrough();
-        testStepSequencerDefaultsToReplacingMidi();
-        testStepSequencerMidiThruPassesWhileStopped();
-        testStepSequencerStepRecordingStopsAtEnd();
-        testPolyStepSequencerStepRecordingStopsAtEnd();
-        testStepSequencerStepEditsSurviveStateSave();
-        testStepSequencerCopyPatternToClipboard();
-        testPolyStepSequencerCopyPatternToClipboard();
-        testRackSyncWiresNestedRackAsGraphNode();
-        testRackTypeRejectsRecursiveRackInstances();
-        testRackSyncBypassedChainPreservesMidi();
-        testRackSyncMutedChainSuppressesMidiOutput();
-        testRackSyncRoutesChainOutputIndexToRackPins();
-        testRackSyncInstrumentInjectsAudioAndPassesMidiToFx();
-        testRackSyncMidiSidechainFxDoesNotReceiveChainMidi();
-        testTopLevelMidiSidechainFxGetsExclusiveSourceMidiAndRestoresChainMidi();
-        testMoveDeviceIntoRackRemovesTrackRuntimePlugin();
-        testPostFxRoutesAfterFxBeforeFader();
+        magda::test::runWithCleanJuceState([this] { testInstrumentRackPassesMidiThrough(); });
+        magda::test::runWithCleanJuceState([this] { testStepSequencerDefaultsToReplacingMidi(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testStepSequencerMidiThruPassesWhileStopped(); });
+        magda::test::runWithCleanJuceState([this] { testStepSequencerStepRecordingStopsAtEnd(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testPolyStepSequencerStepRecordingStopsAtEnd(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testStepSequencerStepEditsSurviveStateSave(); });
+        magda::test::runWithCleanJuceState([this] { testStepSequencerCopyPatternToClipboard(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testPolyStepSequencerCopyPatternToClipboard(); });
+        magda::test::runWithCleanJuceState([this] { testRackSyncWiresNestedRackAsGraphNode(); });
+        magda::test::runWithCleanJuceState([this] { testRackTypeRejectsRecursiveRackInstances(); });
+        magda::test::runWithCleanJuceState([this] { testRackSyncBypassedChainPreservesMidi(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testRackSyncMutedChainSuppressesMidiOutput(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testRackSyncRoutesChainOutputIndexToRackPins(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testRackSyncInstrumentInjectsAudioAndPassesMidiToFx(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testRackSyncMidiSidechainFxDoesNotReceiveChainMidi(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testTopLevelMidiSidechainFxGetsExclusiveSourceMidiAndRestoresChainMidi(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testMoveDeviceIntoRackRemovesTrackRuntimePlugin(); });
+        magda::test::runWithCleanJuceState([this] { testPostFxRoutesAfterFxBeforeFader(); });
     }
 
   private:
@@ -1033,7 +1027,6 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void testStepSequencerCopyPatternToClipboard() {
         beginTest("Step sequencer copy pattern writes MIDI notes to clipboard");
-        ScopedSequencerClipboardTestState cleanup;
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -1062,6 +1055,9 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         seq->setStepGate(2, true);
         seq->setStepAccent(2, true);
         seq->setStepGate(3, false);
+
+        magda::TrackManager::ScopedListenerMuteForTests muteTrackListeners;
+        magda::ClipManager::ScopedListenerMuteForTests muteClipListeners;
 
         auto& clipManager = magda::ClipManager::getInstance();
         clipManager.setNoteClipboard({});
@@ -1124,7 +1120,6 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void testPolyStepSequencerCopyPatternToClipboard() {
         beginTest("Poly step sequencer copy pattern writes chord notes to clipboard");
-        ScopedSequencerClipboardTestState cleanup;
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -1153,6 +1148,9 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         seq->setStepTie(2, false);
         seq->setStepVelocity(2, 75);
         seq->addStepNote(2, 67);
+
+        magda::TrackManager::ScopedListenerMuteForTests muteTrackListeners;
+        magda::ClipManager::ScopedListenerMuteForTests muteClipListeners;
 
         auto& clipManager = magda::ClipManager::getInstance();
         clipManager.setNoteClipboard({});

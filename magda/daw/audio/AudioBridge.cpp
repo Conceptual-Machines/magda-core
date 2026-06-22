@@ -170,6 +170,32 @@ AudioBridge::~AudioBridge() {
     DBG("AudioBridge destroyed");
 }
 
+void AudioBridge::resetTestState() {
+    juce::ScopedLock lock(mappingLock_);
+
+    DeviceMeteringManager::unregisterForEdit(edit_);
+    deviceMetering_.clear();
+    DeviceMeteringManager::registerForEdit(edit_, &deviceMetering_);
+
+    trackController_.withTrackMapping([this](const auto& trackMapping) {
+        for (auto& [trackId, track] : trackMapping) {
+            juce::ignoreUnused(track);
+            trackController_.removeMeterClient(trackId);
+        }
+    });
+
+    for (auto& [trackId, entry] : inputMeterClients_) {
+        juce::ignoreUnused(trackId);
+        if (entry.measurer)
+            entry.measurer->removeClient(entry.client);
+    }
+    inputMeterClients_.clear();
+
+    automationPlayback_.clearAllLanes();
+    trackController_.clearAllMappings();
+    pluginManager_.clearAllMappings();
+}
+
 // =============================================================================
 // TrackManagerListener implementation
 // =============================================================================

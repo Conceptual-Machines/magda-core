@@ -2692,6 +2692,17 @@ void ClipManager::endBatch() {
     }
 }
 
+ClipManager::ScopedListenerMuteForTests::ScopedListenerMuteForTests() {
+    auto& manager = ClipManager::getInstance();
+    savedListeners_ = std::move(manager.listeners_);
+    manager.listeners_.clear();
+}
+
+ClipManager::ScopedListenerMuteForTests::~ScopedListenerMuteForTests() {
+    auto& manager = ClipManager::getInstance();
+    manager.listeners_ = std::move(savedListeners_);
+}
+
 void ClipManager::notifyClipSelectionChanged(ClipId clipId) {
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {

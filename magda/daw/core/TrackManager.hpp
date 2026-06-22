@@ -812,6 +812,18 @@ class TrackManager {
         BatchScope& operator=(const BatchScope&) = delete;
     };
 
+    /// Test-only guard for model assertions that must not drive engine/UI listeners.
+    class ScopedListenerMuteForTests {
+      public:
+        ScopedListenerMuteForTests();
+        ~ScopedListenerMuteForTests();
+        ScopedListenerMuteForTests(const ScopedListenerMuteForTests&) = delete;
+        ScopedListenerMuteForTests& operator=(const ScopedListenerMuteForTests&) = delete;
+
+      private:
+        std::vector<TrackManagerListener*> savedListeners_;
+    };
+
   private:
     TrackManager();
     ~TrackManager() = default;

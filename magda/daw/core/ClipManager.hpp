@@ -701,6 +701,18 @@ class ClipManager {
         BatchScope& operator=(const BatchScope&) = delete;
     };
 
+    /// Test-only guard for model assertions that must not drive engine/UI listeners.
+    class ScopedListenerMuteForTests {
+      public:
+        ScopedListenerMuteForTests();
+        ~ScopedListenerMuteForTests();
+        ScopedListenerMuteForTests(const ScopedListenerMuteForTests&) = delete;
+        ScopedListenerMuteForTests& operator=(const ScopedListenerMuteForTests&) = delete;
+
+      private:
+        std::vector<ClipManagerListener*> savedListeners_;
+    };
+
     /**
      * @brief Broadcast drag preview event (called during clip drag for real-time updates)
      */

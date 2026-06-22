@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
 // Pulls in ExternalAutomatableParameter (used directly below) in the correct
@@ -201,9 +202,9 @@ class ExternalPluginStateRestoreTest final : public juce::UnitTest {
     }
 
     void runTest() override {
-        testProjectReloadKeepsChunkVoice();
-        testRackInstrumentKeepsChunkVoice();
-        testDevicePresetKeepsChunkVoice();
+        magda::test::runWithCleanJuceState([this] { testProjectReloadKeepsChunkVoice(); });
+        magda::test::runWithCleanJuceState([this] { testRackInstrumentKeepsChunkVoice(); });
+        magda::test::runWithCleanJuceState([this] { testDevicePresetKeepsChunkVoice(); });
     }
 
     // Load a fresh instance of `desc` on a throwaway track, capture its default
