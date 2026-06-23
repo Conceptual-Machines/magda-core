@@ -54,6 +54,17 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
   (CJK font, etc.). Install with `brew install git-lfs` (macOS),
   `apt install git-lfs` (Debian/Ubuntu), or `choco install git-lfs` (Windows),
   then run `git lfs install` once per machine.
+- **Windows only:** [vcpkg](https://github.com/microsoft/vcpkg) supplies libxml2
+  (there is no system copy on Windows). Clone and bootstrap it once, then set a
+  `VCPKG_ROOT` environment variable pointing at the checkout — the build
+  auto-detects it and installs libxml2 from the `vcpkg.json` manifest on first
+  configure. On macOS/Linux libxml2 comes from the system, so no vcpkg is needed.
+
+  ```powershell
+  git clone https://github.com/microsoft/vcpkg C:\vcpkg
+  C:\vcpkg\bootstrap-vcpkg.bat
+  setx VCPKG_ROOT C:\vcpkg   # reopen the shell so it takes effect
+  ```
 
 ### Quick Start
 

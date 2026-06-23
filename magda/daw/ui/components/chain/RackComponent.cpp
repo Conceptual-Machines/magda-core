@@ -126,12 +126,6 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     gainSlider_ = std::make_unique<node_header::GainSliderWithMeterTooltip>(
         juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
     gainSlider_->setRange(-60.0, 6.0, 0.1);
-    // Match LevelMeter's dbToMeterPos curve (METER_CURVE_EXPONENT = 3). JUCE
-    // applies the skew as value = min + (max-min) * pow(prop, 1/skew), so the
-    // skew that inverts the meter's exponent is the exponent itself, not its
-    // reciprocal — skew = 3.0 puts 0 dB at the same position as the
-    // meter's 0 dB tick, instead of the ~91% a linear slider would land on.
-    gainSlider_->setSkewFactor(3.0);
     gainSlider_->setValue(rack.volume, juce::dontSendNotification);
     gainSlider_->setTooltip("Rack Gain (dB)");
     gainSlider_->setLookAndFeel(&node_header::FlatGainSliderLookAndFeel::getInstance());

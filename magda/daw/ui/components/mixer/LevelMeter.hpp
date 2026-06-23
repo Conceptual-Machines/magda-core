@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "LevelMeterBallistics.hpp"
+#include "LevelMeterScale.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda {
@@ -117,33 +118,20 @@ class LevelMeter : public juce::Component, private juce::Timer {
                              effectiveBounds.getRight());
     }
 
-    static constexpr float MIN_DB = -60.0f;
-    static constexpr float MAX_DB = 6.0f;
-    static constexpr float METER_CURVE_EXPONENT = 3.0f;
+    static constexpr float MIN_DB = level_meter_scale::minDb;
+    static constexpr float MAX_DB = level_meter_scale::maxDb;
+    static constexpr float METER_CURVE_EXPONENT = level_meter_scale::meterCurveExponent;
 
     static float gainToDb(float gain) {
-        if (gain <= 0.0f)
-            return MIN_DB;
-        return 20.0f * std::log10(gain);
+        return level_meter_scale::gainToDb(gain);
     }
 
     static float dbToMeterPos(float db) {
-        if (db <= MIN_DB)
-            return 0.0f;
-        if (db >= MAX_DB)
-            return 1.0f;
-        float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
-        return std::pow(normalized, METER_CURVE_EXPONENT);
+        return level_meter_scale::dbToMeterPos(db);
     }
 
     static float meterPosToDb(float pos) {
-        if (pos <= 0.0f)
-            return MIN_DB;
-        if (pos >= 1.0f)
-            return MAX_DB;
-
-        float normalized = std::pow(pos, 1.0f / METER_CURVE_EXPONENT);
-        return MIN_DB + normalized * (MAX_DB - MIN_DB);
+        return level_meter_scale::meterPosToDb(pos);
     }
 
   private:

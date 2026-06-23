@@ -34,12 +34,13 @@ Section "Install"
     File "${__FILEDIR__}\mgd_doc_icon.ico"
     File /nonfatal "${__FILEDIR__}\magda_plugin_scanner.exe"
 
-    ; ONNX Runtime DLLs - delay-loaded by the media DB sample tagger.
-    ; Windows only searches the exe's directory, so these must sit next to
-    ; MAGDA.exe or the first inference call faults. Required (not /nonfatal):
-    ; a missing DLL here means a broken release, so fail the build loudly.
-    File "${__FILEDIR__}\onnxruntime.dll"
-    File "${__FILEDIR__}\onnxruntime_providers_shared.dll"
+    ; All runtime DLLs staged next to MAGDA.exe: ONNX Runtime (delay-loaded by
+    ; the media DB sample tagger) and libxml2 + its transitive deps (DAWproject
+    ; XSD validation). Windows only searches the exe's directory, so these must
+    ; sit next to MAGDA.exe or the dependent call faults. The release staging
+    ; step asserts the critical DLLs are present, so this fails loudly upstream
+    ; if one goes missing.
+    File "${__FILEDIR__}\*.dll"
 
     ; Localization JSON files - StringTable looks for them next to MAGDA.exe
     SetOutPath "$INSTDIR\lang"
@@ -102,8 +103,7 @@ Section "Uninstall"
     Delete "$INSTDIR\MAGDA.exe"
     Delete "$INSTDIR\mgd_doc_icon.ico"
     Delete "$INSTDIR\magda_plugin_scanner.exe"
-    Delete "$INSTDIR\onnxruntime.dll"
-    Delete "$INSTDIR\onnxruntime_providers_shared.dll"
+    Delete "$INSTDIR\*.dll"
     Delete "$INSTDIR\Uninstall.exe"
     RMDir /r "$INSTDIR\lang"
     RMDir /r "$INSTDIR\controllers"

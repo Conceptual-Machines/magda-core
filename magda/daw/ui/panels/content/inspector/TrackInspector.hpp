@@ -3,7 +3,9 @@
 #include <map>
 #include <unordered_set>
 
+#include "../../common/ChordAuditionControl.hpp"
 #include "../../common/DraggableValueLabel.hpp"
+#include "../../common/MonitorControl.hpp"
 #include "../../common/SvgButton.hpp"
 #include "../../mixer/InputTypeSelector.hpp"
 #include "../../mixer/RoutingSelector.hpp"
@@ -79,13 +81,13 @@ class TrackInspector : public BaseInspector,
     juce::Label trackNameValue_;
     std::unique_ptr<juce::Component> colourSwatch_;
     std::unique_ptr<juce::DrawableButton> masterGlyph_;  // MAGDA glyph in master colour-swatch slot
-    juce::TextButton muteButton_;
-    std::unique_ptr<SvgButton> speakerButton_;       // Speaker icon for master mute
-    std::unique_ptr<SvgButton> chordSpeakerButton_;  // Chord audition (mute) toggle
-    bool isChordTrack_ = false;                      // selected track is the chord track
-    juce::TextButton soloButton_;
-    juce::TextButton recordButton_;
-    juce::TextButton monitorButton_;
+    std::unique_ptr<SvgButton> muteButton_;
+    std::unique_ptr<SvgButton> speakerButton_;                  // Speaker icon for master mute
+    std::unique_ptr<ChordAuditionControl> chordSpeakerButton_;  // 3-state chord audition control
+    bool isChordTrack_ = false;                                 // selected track is the chord track
+    std::unique_ptr<SvgButton> soloButton_;
+    std::unique_ptr<SvgButton> recordButton_;
+    MonitorControl monitorButton_;
     std::unique_ptr<magda::DraggableValueLabel> gainLabel_;
     std::unique_ptr<magda::DraggableValueLabel> panLabel_;
 

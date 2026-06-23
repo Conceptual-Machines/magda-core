@@ -1,5 +1,7 @@
 #include "MCPClient.hpp"
 
+#include "version.hpp"
+
 #if JUCE_WINDOWS
 #include <windows.h>
 #else
@@ -91,7 +93,7 @@ bool MCPClient::start() {
 
     auto* clientInfo = new juce::DynamicObject();
     clientInfo->setProperty("name", "MAGDA");
-    clientInfo->setProperty("version", "0.8.0");
+    clientInfo->setProperty("version", MAGDA_VERSION);
     initParams->setProperty("clientInfo", juce::var(clientInfo));
 
     auto response = sendRpc("initialize", juce::var(initParams));

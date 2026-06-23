@@ -33,6 +33,11 @@ class ValueLabelControl : public juce::Component {
     // default) is the usual linear fill. Lets the master volume fill line up
     // with the level meter's 0 dB tick.
     void setFillExponent(double exponent);
+    // Optional value-to-fill mapping. When set, it receives the current value
+    // and returns the fill proportion in [0, 1], independent of this control's
+    // editable range.
+    void setFillProportionMapper(std::function<double(double)> mapper);
+    void clearFillProportionMapper();
     void setDrawBackground(bool draw);
     void setDrawBorder(bool draw);
     void setFont(const juce::Font& font);
@@ -75,6 +80,7 @@ class ValueLabelControl : public juce::Component {
   private:
     void finishEditing();
     juce::Rectangle<int> editorBounds() const;
+    double fillProportion() const;
 
     double value_ = 0.0;
     double minValue_ = 0.0;
@@ -83,6 +89,7 @@ class ValueLabelControl : public juce::Component {
     juce::String textOverride_;
     FillMode fillMode_ = FillMode::LeftToRight;
     double fillExponent_ = 1.0;
+    std::function<double(double)> fillProportionMapper_;
     TintState tintState_ = TintState::None;
     bool showFillIndicator_ = true;
     bool drawBackground_ = true;
