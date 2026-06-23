@@ -59,6 +59,7 @@ nav:
   - Mixer View: mixer-view.md
   - Recording & Comping: recording-comping.md
   - Chord Track: chord-track.md
+  - Working with AI: working-with-ai.md
   - Panels:
       - Inspector: panels/inspector.md
       - Plugin & Media Browser: panels/browsers.md
