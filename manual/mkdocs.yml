@@ -38,6 +38,7 @@ repo_name: magda-core
 
 nav:
   - Home: index.md
+  - Is MAGDA Right for You?: is-magda-right-for-you.md
   - Getting Started:
       - Installation: getting-started/installation.md
       - First Session: getting-started/first-session.md
