@@ -2686,7 +2686,7 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setIconPadding(6.0f);  // a touch smaller than the speaker glyph
+    automationButton->setIconPadding(4.5f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2817,13 +2817,15 @@ void MainView::MasterHeaderPanel::resized() {
     constexpr int peakReadoutHeight = 10;
     auto peakReadout = meterMain.removeFromBottom(peakReadoutHeight);
     auto peakMeterBounds = meterMain;
+    auto meterIconAligned =
+        meterIcon.withY(peakMeterBounds.getY()).withHeight(peakMeterBounds.getHeight());
 
     volumeLabel->setBounds(topMain);
     speakerButton->setBounds(topIcon.withSizeKeepingCentre(iconSize, iconSize));
 
     peakMeter->setBounds(peakMeterBounds);
     peakValueLabel->setBounds(peakReadout);
-    automationButton->setBounds(meterIcon.withSizeKeepingCentre(iconSize, iconSize));
+    automationButton->setBounds(meterIconAligned.withSizeKeepingCentre(iconSize, iconSize));
 }
 
 void MainView::MasterHeaderPanel::masterChannelChanged() {

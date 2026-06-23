@@ -340,6 +340,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationButton->setIconPadding(2.5f);
 
     // Volume label (shows dB, draggable)
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
