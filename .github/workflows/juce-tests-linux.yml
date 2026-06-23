@@ -10,6 +10,9 @@ on:
     tags-ignore: [ '**' ]
     paths-ignore:
       - 'lang/**'
+      - 'manual/**'
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 concurrency:
