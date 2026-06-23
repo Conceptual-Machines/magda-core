@@ -83,6 +83,12 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/chord_on.svg
     ../../assets/icons/general/chord_off.svg
     ../../assets/icons/general/chord_on_1.svg
+    ../../assets/icons/general/solo_off.svg
+    ../../assets/icons/general/solo_on.svg
+    ../../assets/icons/general/track_record_off.svg
+    ../../assets/icons/general/track_record_on.svg
+    ../../assets/icons/general/monitor_off.svg
+    ../../assets/icons/general/monitor_on.svg
     ../../assets/BoldMGlyph.svg
     ../../assets/icons/general/headphones.svg
     ../../assets/icons/general/record-monitor.svg
