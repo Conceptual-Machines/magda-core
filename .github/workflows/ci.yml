@@ -42,7 +42,7 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: recursive
         lfs: true
@@ -151,7 +151,7 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: recursive
         lfs: true
@@ -201,7 +201,7 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: false  # Not needed for security checks
 
@@ -311,7 +311,7 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         lfs: true
 
@@ -431,7 +431,7 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         submodules: recursive
         lfs: true
