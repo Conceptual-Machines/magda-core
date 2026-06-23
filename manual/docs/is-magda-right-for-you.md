@@ -32,7 +32,7 @@ Open source works best when it is collaborative. Users contribute by:
 
 Constructive feedback is always welcome, and many features in MAGDA exist because of community suggestions.
 
-Because MAGDA is developed by a small team (currently one person and a bunch of agents), time and attention are limited resources.
+Because MAGDA is developed by one person, time and attention are limited resources.
 
 If you encounter a problem, please provide as much information as possible. Feedback that includes details, reproduction steps, screenshots, logs, examples, or concrete suggestions helps move the project forward and has a direct impact on future releases. By contrast, reports that provide little information are often difficult or impossible to act upon, regardless of whether the underlying problem is real.
 
