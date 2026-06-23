@@ -108,11 +108,14 @@ Local results vary with the model you choose and the hardware you run it on. Sma
 
 ### Hardware
 
-Local inference is most responsive with GPU acceleration: Metal on Apple Silicon, or CUDA on supported builds. It also runs CPU-only, just more slowly. As a rough guide:
+Running a language model locally is demanding, and your hardware sets a hard ceiling on what is realistic. Be honest with yourself about your machine before expecting cloud-level results from it.
 
-- The bundled fine-tuned model is 4-bit quantised and built to run on typical consumer hardware. A modern multi-core CPU with a few gigabytes of free RAM can run it; an Apple Silicon Mac or a dedicated GPU makes it noticeably faster.
-- Larger general-purpose models need correspondingly more RAM (when running on CPU) or VRAM (when offloaded to a GPU).
+- **Memory.** Treat **16 GB of RAM as the practical minimum** for local inference. **32 GB or 64 GB** is what you want to run larger, more capable models comfortably and to keep the rest of your DAW session responsive while a model is loaded. Below 16 GB you may only be able to run the smallest, most heavily quantised models, with correspondingly limited results.
+- **GPU.** Local inference is far more responsive with GPU acceleration: Metal on Apple Silicon, or CUDA on supported builds. An Apple Silicon Mac or a dedicated GPU with plenty of VRAM makes a large difference. On CPU alone it still works, just slowly.
+- Larger general-purpose models need correspondingly more RAM (when running on CPU) or VRAM (when offloaded to a GPU). A bigger model on an underpowered machine will be slow, or simply fail to load.
 - If responses are slow or a model fails to load, choose a smaller or more heavily quantised model, lower the **GPU Layers**, or reduce the **Context** size on the [AI Settings](interface/ai-settings.md) Local tab.
+
+If your machine does not meet these specs, do not expect usable local AI from it. Use a cloud provider instead: it will give far better results than a local model struggling on limited hardware.
 
 ### Local inference is improving
 
