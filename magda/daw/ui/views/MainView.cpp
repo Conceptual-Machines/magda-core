@@ -10,6 +10,7 @@
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
 #include "../components/mixer/LevelMeter.hpp"
+#include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
@@ -2667,7 +2668,8 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setClickingTogglesState(true);
     speakerButton->setTooltip("Mute master");
     speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    speakerButton->setIconPadding(3.5f);  // larger speaker glyph
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2685,7 +2687,7 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setIconPadding(6.0f);  // a touch smaller than the speaker glyph
+    automationButton->setIconPadding(4.5f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2714,9 +2716,7 @@ void MainView::MasterHeaderPanel::setupControls() {
 
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeLabel->setRange(-60.0, 6.0, 0.0);
-    // Curve the fill to match the level meter's power scale so the volume fill
-    // edge lines up with the meter's 0 dB tick below it.
-    volumeLabel->setFillExponent(static_cast<double>(LevelMeter::METER_CURVE_EXPONENT));
+    volumeLabel->setFillProportionMapper(level_meter_scale::dbFillProportion);
     volumeLabel->setDoubleClickResetsValue(true);
     volumeLabel->onValueChange = [this]() {
         const float db = static_cast<float>(volumeLabel->getValue());
@@ -2818,13 +2818,15 @@ void MainView::MasterHeaderPanel::resized() {
     constexpr int peakReadoutHeight = 10;
     auto peakReadout = meterMain.removeFromBottom(peakReadoutHeight);
     auto peakMeterBounds = meterMain;
+    auto meterIconAligned =
+        meterIcon.withY(peakMeterBounds.getY()).withHeight(peakMeterBounds.getHeight());
 
     volumeLabel->setBounds(topMain);
     speakerButton->setBounds(topIcon.withSizeKeepingCentre(iconSize, iconSize));
 
     peakMeter->setBounds(peakMeterBounds);
     peakValueLabel->setBounds(peakReadout);
-    automationButton->setBounds(meterIcon.withSizeKeepingCentre(iconSize, iconSize));
+    automationButton->setBounds(meterIconAligned.withSizeKeepingCentre(iconSize, iconSize));
 }
 
 void MainView::MasterHeaderPanel::masterChannelChanged() {

@@ -1,4 +1,4 @@
-# Clang-Tidy Configuration for Magica DAW
+# Clang-Tidy Configuration for MAGDA DAW
 # Static analysis and linting rules for C++ audio development
 
 # Enable checks - comprehensive but practical set
