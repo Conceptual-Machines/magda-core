@@ -5,14 +5,31 @@ if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
-project(Magda VERSION 0.1.0 LANGUAGES C CXX)
+# Windows has no system libxml2 (see vcpkg.json); it comes from vcpkg, which CI
+# wires in via -DCMAKE_TOOLCHAIN_FILE. For local dev (CLion, plain cmake, the
+# Makefile) auto-detect a vcpkg install from the VCPKG_ROOT environment variable
+# so find_package(LibXml2) resolves without anyone passing the toolchain by hand.
+# Must run before project(); an explicit -DCMAKE_TOOLCHAIN_FILE still wins, and
+# on macOS/Linux (system libxml2, no VCPKG_ROOT) this is a no-op.
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(_magda_vcpkg_toolchain "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+    if(EXISTS "${_magda_vcpkg_toolchain}")
+        set(CMAKE_TOOLCHAIN_FILE "${_magda_vcpkg_toolchain}"
+            CACHE STRING "Vcpkg toolchain file")
+    endif()
+    unset(_magda_vcpkg_toolchain)
+endif()
 
-# Display version: prefer explicit -DMAGDA_FULL_VERSION (set by release CI), else
-# derive from git tags (e.g. "0.1.0-rc2" or "0.1.0-rc2-15-g1391223").
+# Derive the version dynamically instead of hardcoding it. Prefer an explicit
+# -DMAGDA_FULL_VERSION (set by release CI); otherwise read it from git tags
+# (e.g. "0.12.0-rc2" or "0.12.0-rc2-15-g1391223"). This runs before project() so
+# the numeric component can feed project(VERSION ...). MAGDA_FALLBACK_VERSION
+# covers builds with no git history or tags (e.g. a source tarball).
+set(MAGDA_FALLBACK_VERSION "0.1.0")
 if(NOT DEFINED MAGDA_FULL_VERSION OR MAGDA_FULL_VERSION STREQUAL "")
     execute_process(
         COMMAND git describe --tags --always
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         OUTPUT_VARIABLE MAGDA_GIT_VERSION
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
@@ -21,20 +38,22 @@ if(NOT DEFINED MAGDA_FULL_VERSION OR MAGDA_FULL_VERSION STREQUAL "")
     if(GIT_DESCRIBE_RESULT EQUAL 0 AND MAGDA_GIT_VERSION MATCHES "^v?(.+)$")
         set(MAGDA_FULL_VERSION "${CMAKE_MATCH_1}")
     else()
-        set(MAGDA_FULL_VERSION "${PROJECT_VERSION}")
+        set(MAGDA_FULL_VERSION "${MAGDA_FALLBACK_VERSION}")
     endif()
 endif()
 
-# Bundle version for the executable metadata (macOS CFBundleShortVersionString /
-# CFBundleVersion, Windows VERSIONINFO). These fields require a numeric dotted
-# version, so strip any pre-release / git-describe suffix from MAGDA_FULL_VERSION
-# (e.g. "0.9.0-rc2-15-g1391223" -> "0.9.0"). Falls back to PROJECT_VERSION when
-# there is no leading numeric component (e.g. a bare commit hash).
-if(MAGDA_FULL_VERSION MATCHES "^([0-9]+(\\.[0-9]+)+)")
+# Numeric dotted version for project() and the executable metadata (macOS
+# CFBundleShortVersionString / CFBundleVersion, Windows VERSIONINFO). These
+# require a plain X.Y.Z, so strip any pre-release / git-describe suffix from
+# MAGDA_FULL_VERSION (e.g. "0.12.0-rc2-15-g1391223" -> "0.12.0"). Falls back when
+# there is no leading numeric component (e.g. a bare commit hash from --always).
+if(MAGDA_FULL_VERSION MATCHES "^v?([0-9]+(\\.[0-9]+)+)")
     set(MAGDA_BUNDLE_VERSION "${CMAKE_MATCH_1}")
 else()
-    set(MAGDA_BUNDLE_VERSION "${PROJECT_VERSION}")
+    set(MAGDA_BUNDLE_VERSION "${MAGDA_FALLBACK_VERSION}")
 endif()
+
+project(Magda VERSION ${MAGDA_BUNDLE_VERSION} LANGUAGES C CXX)
 
 # ccache disabled - causes unnecessary rebuilds with Ninja
 # The interaction between ccache, Ninja, and JUCE's glob verification

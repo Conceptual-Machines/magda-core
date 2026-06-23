@@ -1,4 +1,4 @@
-# Pre-commit configuration for Magica DAW
+# Pre-commit configuration for MAGDA DAW
 # Automatic code formatting and quality checks on commit
 
 repos:

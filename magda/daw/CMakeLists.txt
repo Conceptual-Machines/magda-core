@@ -290,8 +290,14 @@ add_library(magda_daw STATIC
 # JUCE GUI app — sources contributed below via add_subdirectory().
 juce_add_gui_app(magda_daw_app
     VERSION "${MAGDA_BUNDLE_VERSION}"
-    COMPANY_NAME "MAGDA"
+    COMPANY_NAME "Conceptual Machines"
     PRODUCT_NAME "MAGDA"
+    # Pin the bundle identifier so renaming COMPANY_NAME does not change it.
+    # JUCE derives BUNDLE_ID from COMPANY_NAME + PRODUCT_NAME by default; without
+    # this pin it would become com.ConceptualMachines.MAGDA, relocating user
+    # settings (the OS keys prefs/permissions off the bundle ID) and changing the
+    # macOS signing identity. Keep the original com.MAGDA.MAGDA.
+    BUNDLE_ID "com.MAGDA.MAGDA"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
     ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
     MICROPHONE_PERMISSION_ENABLED TRUE
@@ -343,8 +349,11 @@ endif()
 # Out-of-process plugin scanner.
 juce_add_console_app(magda_plugin_scanner
     VERSION "${MAGDA_BUNDLE_VERSION}"
-    COMPANY_NAME "MAGDA"
+    COMPANY_NAME "Conceptual Machines"
     PRODUCT_NAME "MAGDA Plugin Scanner"
+    # Pin the bundle identifier so the COMPANY_NAME rename does not change it
+    # (see magda_daw_app above). Keep the original com.MAGDA.MAGDAPluginScanner.
+    BUNDLE_ID "com.MAGDA.MAGDAPluginScanner"
 )
 
 target_sources(magda_plugin_scanner PRIVATE
@@ -723,4 +732,20 @@ if(MAGDA_HAVE_CLAP)
             COMMENT "Copying ONNX Runtime DLLs alongside app executable"
         )
     endif()
+endif()
+
+# libxml2 (DAWproject XSD validation) comes from vcpkg on Windows and links as a
+# DLL. Windows only searches the exe's own directory, so copy libxml2.dll plus
+# its transitive runtime deps next to the executable. TARGET_RUNTIME_DLLS
+# resolves the full closure from the imported vcpkg targets, so we don't have to
+# track the exact dep set (iconv/lzma/zlib/...) by hand. Unconditional on
+# Windows: libxml2 is always linked (unlike ONNX, which is gated on CLAP).
+if(WIN32)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_RUNTIME_DLLS:magda_daw_app>"
+            "$<TARGET_FILE_DIR:magda_daw_app>"
+        COMMAND_EXPAND_LISTS
+        COMMENT "Copying runtime DLLs (libxml2 + deps) alongside app executable"
+    )
 endif()
