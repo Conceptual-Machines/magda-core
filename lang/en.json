@@ -97,7 +97,7 @@
     "chord_audition.silent": "Silent",
     "chord_audition.audible": "Audible",
     "chord_audition.solo": "Solo",
-    "automation": "A",
+    "automation": "Automation",
     "input_monitoring": "Input monitoring",
     "input_monitoring.off": "Off",
     "input_monitoring.in": "In",
