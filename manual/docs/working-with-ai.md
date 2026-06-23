@@ -102,7 +102,7 @@ MAGDA supports both cloud AI providers and local AI models. They sit at differen
 
 **Cloud providers** generally offer the highest-quality results today, but require an account and API credentials, send your prompts to a third party, and bill per use.
 
-**Local models** run entirely on your machine. There are no API keys, nothing leaves your computer, and there is no per-request cost. MAGDA ships a small model fine-tuned specifically for its DSL (`magda-v0.3.0`), so it knows MAGDA's commands out of the box, and you can also point MAGDA at any GGUF model or a local OpenAI-compatible server such as LM Studio, Ollama, GPUStack or a `llama.cpp` server. See [AI Settings](interface/ai-settings.md) for configuration.
+**Local models** run entirely on your machine. There are no API keys, nothing leaves your computer, and there is no per-request cost. MAGDA provides a small default GGUF model fine-tuned specifically for its DSL (downloadable via the **AI Settings** dialog), and you can also point MAGDA at any GGUF model or a local OpenAI-compatible server such as LM Studio, Ollama, GPUStack or a `llama.cpp` server. See [AI Settings](interface/ai-settings.md) for configuration.
 
 Local results vary with the model you choose and the hardware you run it on. Smaller quantised models are fast and light but less capable; larger models close the gap with cloud at the cost of more memory and slower responses.
 
