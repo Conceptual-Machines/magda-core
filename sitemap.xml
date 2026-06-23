@@ -2,214 +2,222 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/arrangement-view/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/automation/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/chord-track/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/clips/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/fx-chain/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
+    </url>
+    <url>
+         <loc>https://Conceptual-Machines.github.io/magda-core/is-magda-right-for-you/</loc>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/localization/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/mixer-view/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/plugin-parameters/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/recording-comping/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/session-view/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/time-bend/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/tracks/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/transport/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
+    </url>
+    <url>
+         <loc>https://Conceptual-Machines.github.io/magda-core/working-with-ai/</loc>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/4osc/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/analysis/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/arpeggiator/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/built-in/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/chord-engine/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/drum-grid/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/effects/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/poly-sequencer/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/sampler/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/devices/step-sequencer/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/getting-started/first-session/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/getting-started/installation/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/interface/ai-settings/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/interface/audio-settings/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/interface/controllers/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/interface/menus/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/interface/overview/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/interface/plugin-settings/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/interface/preferences/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/modulation/linking/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/modulation/macros/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/modulation/modulators/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/modulation/overview/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/ai-assistant/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/browsers/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/chord-panel/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/drum-grid-editor/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/editors/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/inspector/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/media-library/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/piano-roll/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/track-chain/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/panels/waveform-editor/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/reference/controller-profile-format/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/reference/dsl/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/reference/file-formats/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/reference/keyboard-shortcuts/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/reference/lua-scripting/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
     <url>
          <loc>https://Conceptual-Machines.github.io/magda-core/reference/troubleshooting/</loc>
-         <lastmod>2026-06-22</lastmod>
+         <lastmod>2026-06-23</lastmod>
     </url>
 </urlset>
