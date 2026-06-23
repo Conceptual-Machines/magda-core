@@ -250,16 +250,16 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     nameLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
 
-    muteButton = std::make_unique<juce::TextButton>(tr("tracks.mute"));
-    muteButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    muteButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    muteButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+    // Track mute: speaker toggle (matching the master/inspector speaker instead
+    // of the "M" text button). audible = gray speaker (master_on), muted =
+    // yellow chip (master_off).
+    muteButton = std::make_unique<magda::SvgButton>(
+        "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+    muteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    muteButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    muteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    muteButton->setIconPadding(3.5f);
     muteButton->setClickingTogglesState(true);
 
     // Master-only speaker mute (shown instead of the "M" button for the master),
@@ -274,7 +274,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
             BinaryData::master_off_svg, BinaryData::master_off_svgSize);
         masterMuteButton->setClickingTogglesState(true);
         masterMuteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        masterMuteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        masterMuteButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+        masterMuteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+        masterMuteButton->setIconPadding(3.5f);  // larger speaker glyph
     }
 
     // Chord-track audition toggle (speaker). Dual-icon with pre-baked colors:
@@ -285,30 +287,31 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
     chordAuditionButton->setTooltip("Preview chords on playback");
     chordAuditionButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordAuditionButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     chordAuditionButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
 
-    soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
-    soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    soloButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    soloButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+    // Track solo: target toggle (concentric ring) pairing with the mute speaker.
+    // inactive = gray target (solo_off), active = dark target (solo_on) on an
+    // amber chip.
+    soloButton = std::make_unique<magda::SvgButton>(
+        "solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize, BinaryData::solo_on_svg,
+        BinaryData::solo_on_svgSize);
+    soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton->setIconPadding(5.0f);
     soloButton->setClickingTogglesState(true);
 
-    recordButton = std::make_unique<juce::TextButton>(tr("tracks.record"));
-    recordButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    recordButton->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    recordButton->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));  // Red when armed
-    recordButton->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    recordButton->setColour(juce::TextButton::textColourOnId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    // Track record-arm: filled-dot toggle pairing with the mute speaker / solo
+    // ring. idle = gray dot (track_record_off), armed = dark dot
+    // (track_record_on) on a red chip.
+    recordButton = std::make_unique<magda::SvgButton>(
+        "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
+        BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+    recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    recordButton->setIconPadding(5.0f);
     recordButton->setClickingTogglesState(true);
 
     // Monitor button (3-state: Off → In → Auto → Off). Matches the inspector
@@ -347,6 +350,13 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     volumeLabel->setRange(MIN_DB, MAX_DB, 0.0);  // -60 to +6 dB, default 0 dB
     volumeLabel->setFillProportionMapper(level_meter_scale::dbFillProportion);
     volumeLabel->setValue(gainToDb(volume), juce::dontSendNotification);
+
+    masterPeakLabel = std::make_unique<juce::Label>("masterPeak", "-inf");
+    masterPeakLabel->setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    masterPeakLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    masterPeakLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
+    masterPeakLabel->setJustificationType(juce::Justification::centredLeft);
 
     // Pan label (shows L/C/R, draggable)
     panLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Pan);
@@ -530,6 +540,12 @@ void TrackHeadersPanel::timerCallback() {
             if (header->meterComponent) {
                 static_cast<LevelMeter*>(header->meterComponent.get())
                     ->setLevels(data.peakL, data.peakR);
+            }
+            if (header->isMaster && header->masterPeakLabel) {
+                const float peakDb = gainToDb(std::max(data.peakL, data.peakR));
+                header->masterPeakLabel->setText(peakDb <= MIN_DB ? "-inf"
+                                                                  : juce::String(peakDb, 1),
+                                                 juce::dontSendNotification);
             }
         }
 
@@ -818,6 +834,7 @@ void TrackHeadersPanel::tracksChanged() {
         removeChildComponent(header->soloButton.get());
         removeChildComponent(header->volumeLabel.get());
         removeChildComponent(header->panLabel.get());
+        removeChildComponent(header->masterPeakLabel.get());
         removeChildComponent(header->collapseButton.get());
         removeChildComponent(header->audioInputSelector.get());
         removeChildComponent(header->inputSelector.get());
@@ -885,6 +902,7 @@ void TrackHeadersPanel::tracksChanged() {
         addChildComponent(*header->chordAuditionButton);
         addAndMakeVisible(*header->volumeLabel);
         addAndMakeVisible(*header->panLabel);
+        addChildComponent(*header->masterPeakLabel);
         addAndMakeVisible(*header->audioInputSelector);
         addAndMakeVisible(*header->inputSelector);
         addAndMakeVisible(*header->outputSelector);
@@ -1990,6 +2008,11 @@ bool TrackHeadersPanel::isResizeHandleArea(const juce::Point<int>& point, int& t
 
 void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
                                           const SideColumn& outer) {
+    if (header.isMaster) {
+        header.midiIndicator->setVisible(false);
+        return;
+    }
+
     const int meterWidth = 20;
     const int midiIndicatorWidth = 12;
     const int meterPadding = 4;
@@ -2003,6 +2026,8 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
 
     // Audio meter spans full track height. The chord track emits no audio yet,
     // so hide its output meter for now (an oscilloscope may replace it later).
+    if (auto* meter = dynamic_cast<LevelMeter*>(header.meterComponent.get()))
+        meter->setOrientation(LevelMeter::Orientation::Vertical);
     header.meterComponent->setBounds(meterArea);
     header.meterComponent->setVisible(!header.isChordTrack);
 
@@ -2053,25 +2078,50 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
         header.monitorButton->setVisible(true);
         header.muteButton->setVisible(false);
         header.masterMuteButton->setVisible(false);
+        header.masterPeakLabel->setVisible(false);
         header.panLabel->setVisible(false);
         header.recordButton->setVisible(false);
         header.automationButton->setVisible(false);
         return;
     }
 
-    // Master track: volume + mute only (no solo, pan, record, monitor)
+    // Master track: volume row, horizontal peak meter row, compact peak readout row.
     if (header.isMaster) {
-        auto row = area.removeFromTop(rh);
         const int rowWidth = std::min(areaWidth, areaWidth >= 260 ? areaWidth : 120);
-        auto content = inner.removeFrom(row, rowWidth);
-        const int btnW = 20;
-        header.volumeLabel->setBounds(content.removeFromLeft(content.getWidth() - btnW - gap));
+        const int iconSize = 20;
+        const int colGap = 8;
+        const int volumeH = 20;
+        const int meterH = 20;
+        const int readoutH = 12;
+        const int rowGap = 4;
+        const int readoutGap = 1;
+        const int neededH = volumeH + rowGap + meterH + readoutGap + readoutH;
+
+        auto grid = area.removeFromTop(std::min(neededH, area.getHeight()));
+        auto content = inner.removeFrom(grid, rowWidth);
+        const int leftW = std::max(1, content.getWidth() - iconSize - colGap);
+        const int leftX = content.getX();
+        const int iconX = content.getRight() - iconSize;
+        int y = content.getY();
+
+        header.volumeLabel->setBounds(leftX, y, leftW, volumeH);
         header.volumeLabel->setVisible(true);
-        content.removeFromLeft(gap);
-        // Master uses the speaker toggle in place of the "M" button.
         header.muteButton->setVisible(false);
-        header.masterMuteButton->setBounds(content.withSizeKeepingCentre(18, 18));
+        header.masterMuteButton->setBounds(iconX, y, iconSize, iconSize);
         header.masterMuteButton->setVisible(true);
+
+        y += volumeH + rowGap;
+        if (auto* meter = dynamic_cast<LevelMeter*>(header.meterComponent.get()))
+            meter->setOrientation(LevelMeter::Orientation::Horizontal);
+        header.meterComponent->setBounds(leftX, y, leftW, meterH);
+        header.meterComponent->setVisible(true);
+        header.sessionModeButton->setBounds(iconX, y + (meterH - iconSize) / 2, iconSize, iconSize);
+        header.sessionModeButton->setVisible(true);
+
+        y += meterH + readoutGap;
+        header.masterPeakLabel->setBounds(leftX + 6, y, std::max(1, leftW - 6), readoutH);
+        header.masterPeakLabel->setVisible(true);
+
         header.soloButton->setVisible(false);
         header.panLabel->setVisible(false);
         header.recordButton->setVisible(false);
@@ -2081,6 +2131,7 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     }
 
     const int numBtns = header.isMultiOut ? 3 : 5;
+    header.masterPeakLabel->setVisible(false);
 
     if (areaWidth >= 260) {
         // Single row: Vol Pan | M S R Mon A — fills full width

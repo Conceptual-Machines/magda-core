@@ -2669,6 +2669,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setTooltip("Mute master");
     speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    speakerButton->setIconPadding(3.5f);  // larger speaker glyph
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));

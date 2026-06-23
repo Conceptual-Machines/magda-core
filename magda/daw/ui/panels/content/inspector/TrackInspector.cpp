@@ -29,10 +29,12 @@ namespace magda::daw::ui {
 namespace {
 void configureMasterSpeakerButton(SvgButton& button) {
     // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
-    // orange chip (master_off). Toggle state drives which icon shows.
+    // yellow chip (master_off). Toggle state drives which icon shows.
     button.setClickingTogglesState(true);
     button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    button.setIconPadding(3.5f);  // larger speaker glyph
 }
 
 void syncMasterSpeakerButton(SvgButton& button, bool muted) {
@@ -170,30 +172,27 @@ TrackInspector::TrackInspector() {
                             juce::Colours::transparentBlack);
     addChildComponent(*masterGlyph_);
 
-    // Mute button (TCP style)
-    muteButton_.setButtonText("M");
-    muteButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    muteButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_.setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    muteButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
-    muteButton_.setClickingTogglesState(true);
-    muteButton_.onClick = [this]() {
+    // Mute button (arrange track-header style)
+    muteButton_ = std::make_unique<SvgButton>(
+        "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+    muteButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    muteButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    muteButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    muteButton_->setIconPadding(3.5f);
+    muteButton_->setClickingTogglesState(true);
+    muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                 magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetMasterMuteCommand>(muteButton_.getToggleState()));
+                    std::make_unique<magda::SetMasterMuteCommand>(muteButton_->getToggleState()));
             else
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_,
-                                                                 muteButton_.getToggleState()));
+                                                                 muteButton_->getToggleState()));
         }
     };
-    addAndMakeVisible(muteButton_);
+    addAndMakeVisible(*muteButton_);
 
     // Speaker icon button (used for master mute instead of "M" text)
     speakerButton_ = std::make_unique<SvgButton>(
@@ -212,6 +211,7 @@ TrackInspector::TrackInspector() {
         BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
     chordSpeakerButton_->setTooltip("Preview chords on playback");
     chordSpeakerButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordSpeakerButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     chordSpeakerButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
     chordSpeakerButton_->onClick = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -224,48 +224,42 @@ TrackInspector::TrackInspector() {
     };
     addChildComponent(*chordSpeakerButton_);  // Hidden by default
 
-    // Solo button (TCP style)
-    soloButton_.setButtonText("S");
-    soloButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    soloButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_.setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    soloButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
-    soloButton_.setClickingTogglesState(true);
-    soloButton_.onClick = [this]() {
+    // Solo button (arrange track-header style)
+    soloButton_ =
+        std::make_unique<SvgButton>("solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize,
+                                    BinaryData::solo_on_svg, BinaryData::solo_on_svgSize);
+    soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton_->setIconPadding(5.0f);
+    soloButton_->setClickingTogglesState(true);
+    soloButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackSoloCommand>(selectedTrackId_,
-                                                             soloButton_.getToggleState()));
+                                                             soloButton_->getToggleState()));
         }
     };
-    addAndMakeVisible(soloButton_);
+    addAndMakeVisible(*soloButton_);
 
-    // Record button (TCP style)
-    recordButton_.setButtonText("R");
-    recordButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    recordButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    recordButton_.setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));  // Red when armed
-    recordButton_.setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    recordButton_.setColour(juce::TextButton::textColourOnId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    recordButton_.setClickingTogglesState(true);
-    recordButton_.onClick = [this]() {
+    // Record button (arrange track-header style)
+    recordButton_ = std::make_unique<SvgButton>(
+        "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
+        BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+    recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    recordButton_->setIconPadding(5.0f);
+    recordButton_->setClickingTogglesState(true);
+    recordButton_->onClick = [this]() {
         DBG("TrackInspector::recordButton clicked - trackId="
-            << selectedTrackId_ << " toggleState=" << (int)recordButton_.getToggleState());
+            << selectedTrackId_ << " toggleState=" << (int)recordButton_->getToggleState());
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().setTrackRecordArmed(selectedTrackId_,
-                                                                   recordButton_.getToggleState());
+                                                                   recordButton_->getToggleState());
         }
     };
-    addAndMakeVisible(recordButton_);
+    addAndMakeVisible(*recordButton_);
 
     // Monitor button (3-state: Off → In → Auto → Off)
     monitorButton_.setButtonText("-");
@@ -587,11 +581,11 @@ void TrackInspector::resized() {
     bool showChordSpeaker = chordSpeakerButton_->isVisible();
     // Count visible buttons for layout
     int visibleButtons = 0;
-    if (muteButton_.isVisible() || showSpeaker || showChordSpeaker)
+    if (muteButton_->isVisible() || showSpeaker || showChordSpeaker)
         visibleButtons++;
-    if (soloButton_.isVisible())
+    if (soloButton_->isVisible())
         visibleButtons++;
-    if (recordButton_.isVisible())
+    if (recordButton_->isVisible())
         visibleButtons++;
     if (monitorButton_.isVisible())
         visibleButtons++;
@@ -614,12 +608,12 @@ void TrackInspector::resized() {
                 row.removeFromLeft(controlRowHeight)
                     .withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
             int textButtons =
-                (soloButton_.isVisible() ? 1 : 0) + (monitorButton_.isVisible() ? 1 : 0);
+                (soloButton_->isVisible() ? 1 : 0) + (monitorButton_.isVisible() ? 1 : 0);
             if (textButtons > 0) {
                 row.removeFromLeft(gap);
                 const int btnWidth = (row.getWidth() - (textButtons - 1) * gap) / textButtons;
-                if (soloButton_.isVisible()) {
-                    soloButton_.setBounds(row.removeFromLeft(btnWidth));
+                if (soloButton_->isVisible()) {
+                    soloButton_->setBounds(row.removeFromLeft(btnWidth));
                     if (monitorButton_.isVisible())
                         row.removeFromLeft(gap);
                 }
@@ -629,14 +623,14 @@ void TrackInspector::resized() {
             return;
         }
         const int btnWidth = (row.getWidth() - (visibleButtons - 1) * gap) / visibleButtons;
-        muteButton_.setBounds(row.removeFromLeft(btnWidth));
-        if (soloButton_.isVisible()) {
+        muteButton_->setBounds(row.removeFromLeft(btnWidth));
+        if (soloButton_->isVisible()) {
             row.removeFromLeft(gap);
-            soloButton_.setBounds(row.removeFromLeft(btnWidth));
+            soloButton_->setBounds(row.removeFromLeft(btnWidth));
         }
-        if (recordButton_.isVisible()) {
+        if (recordButton_->isVisible()) {
             row.removeFromLeft(gap);
-            recordButton_.setBounds(row.removeFromLeft(btnWidth));
+            recordButton_->setBounds(row.removeFromLeft(btnWidth));
         }
         if (monitorButton_.isVisible()) {
             row.removeFromLeft(gap);
@@ -851,23 +845,23 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
 
     // Restore single-track callbacks if switching from multi-track mode
     if (wasMulti) {
-        muteButton_.onClick = [this]() {
+        muteButton_->onClick = [this]() {
             if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
                 if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                     magda::UndoManager::getInstance().executeCommand(
                         std::make_unique<magda::SetMasterMuteCommand>(
-                            muteButton_.getToggleState()));
+                            muteButton_->getToggleState()));
                 else
                     magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_,
-                                                                     muteButton_.getToggleState()));
+                        std::make_unique<magda::SetTrackMuteCommand>(
+                            selectedTrackId_, muteButton_->getToggleState()));
             }
         };
-        soloButton_.onClick = [this]() {
+        soloButton_->onClick = [this]() {
             if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetTrackSoloCommand>(selectedTrackId_,
-                                                                 soloButton_.getToggleState()));
+                                                                 soloButton_->getToggleState()));
             }
         };
         trackNameValue_.setEditable(true);
@@ -919,10 +913,10 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
                     std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, oldPan, newPan));
         };
 
-        recordButton_.onClick = [this]() {
+        recordButton_->onClick = [this]() {
             if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
                 magda::TrackManager::getInstance().setTrackRecordArmed(
-                    selectedTrackId_, recordButton_.getToggleState());
+                    selectedTrackId_, recordButton_->getToggleState());
             }
         };
         monitorButton_.onClick = [this]() {
@@ -1044,8 +1038,8 @@ void TrackInspector::updateFromSelectedTrack() {
                                 juce::dontSendNotification);
         trackNameValue_.setEditable(false);  // master cannot be renamed
         syncMasterSpeakerButton(*speakerButton_, master.muted);
-        soloButton_.setToggleState(false, juce::dontSendNotification);
-        recordButton_.setToggleState(false, juce::dontSendNotification);
+        soloButton_->setToggleState(false, juce::dontSendNotification);
+        recordButton_->setToggleState(false, juce::dontSendNotification);
 
         float gainDb = (master.volume <= 0.0f) ? -60.0f : 20.0f * std::log10(master.volume);
         gainLabel_->setValue(gainDb, juce::dontSendNotification);
@@ -1070,10 +1064,10 @@ void TrackInspector::updateFromSelectedTrack() {
 
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
-        muteButton_.setToggleState(track->muted, juce::dontSendNotification);
+        muteButton_->setToggleState(track->muted, juce::dontSendNotification);
         chordSpeakerButton_->setActive(!track->muted);  // speaker on = audible
-        soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
-        recordButton_.setToggleState(track->recordArmed, juce::dontSendNotification);
+        soloButton_->setToggleState(track->soloed, juce::dontSendNotification);
+        recordButton_->setToggleState(track->recordArmed, juce::dontSendNotification);
 
         // Update monitor button
         switch (track->inputMonitor) {
@@ -1176,28 +1170,28 @@ void TrackInspector::updateFromMultiTrackSelection() {
             allMonitorOn = false;
     }
 
-    muteButton_.setToggleState(allMuted, juce::dontSendNotification);
-    soloButton_.setToggleState(allSoloed, juce::dontSendNotification);
-    recordButton_.setToggleState(allRecordArmed, juce::dontSendNotification);
+    muteButton_->setToggleState(allMuted, juce::dontSendNotification);
+    soloButton_->setToggleState(allSoloed, juce::dontSendNotification);
+    recordButton_->setToggleState(allRecordArmed, juce::dontSendNotification);
     monitorButton_.setToggleState(allMonitorOn, juce::dontSendNotification);
 
     // Rewire button callbacks for multi-track mode
-    muteButton_.onClick = [this]() {
-        bool newState = muteButton_.getToggleState();
+    muteButton_->onClick = [this]() {
+        bool newState = muteButton_->getToggleState();
         for (auto tid : selectedTrackIds_) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackMuteCommand>(tid, newState));
         }
     };
-    soloButton_.onClick = [this]() {
-        bool newState = soloButton_.getToggleState();
+    soloButton_->onClick = [this]() {
+        bool newState = soloButton_->getToggleState();
         for (auto tid : selectedTrackIds_) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackSoloCommand>(tid, newState));
         }
     };
-    recordButton_.onClick = [this]() {
-        bool newState = recordButton_.getToggleState();
+    recordButton_->onClick = [this]() {
+        bool newState = recordButton_->getToggleState();
         for (auto tid : selectedTrackIds_) {
             magda::TrackManager::getInstance().setTrackRecordArmed(tid, newState);
         }
@@ -1311,10 +1305,10 @@ void TrackInspector::updateFromMultiTrackSelection() {
     trackNameValue_.setVisible(true);
     colourSwatch_->setVisible(true);
     masterGlyph_->setVisible(false);
-    muteButton_.setVisible(true);
+    muteButton_->setVisible(true);
     speakerButton_->setVisible(false);
-    soloButton_.setVisible(true);
-    recordButton_.setVisible(true);
+    soloButton_->setVisible(true);
+    recordButton_->setVisible(true);
     monitorButton_.setVisible(true);
     gainLabel_->setVisible(true);
     panLabel_->setVisible(true);
@@ -1372,11 +1366,11 @@ void TrackInspector::showTrackControls(bool show) {
     masterGlyph_->setVisible(show && isMaster);
     // Chord track: speaker audition toggle replaces "M"; no record. (volume +
     // speaker + solo + monitor, matching the chord track header.)
-    muteButton_.setVisible(show && !isMaster && !isChord);
+    muteButton_->setVisible(show && !isMaster && !isChord);
     speakerButton_->setVisible(isMaster);
     chordSpeakerButton_->setVisible(isChord);
-    soloButton_.setVisible(show && !isMaster);
-    recordButton_.setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
+    soloButton_->setVisible(show && !isMaster);
+    recordButton_->setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
     monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
     gainLabel_->setVisible(show);
     panLabel_->setVisible(show && !isMaster && !isChord);

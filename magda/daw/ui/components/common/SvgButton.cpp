@@ -82,6 +82,9 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
                 if (drawOn && hasActiveBackgroundColor) {
                     g.setColour(activeBackgroundColor);
                     g.fillRoundedRectangle(getLocalBounds().toFloat(), radius);
+                } else if (hasNormalBackgroundColor) {
+                    g.setColour(normalBackgroundColor);
+                    g.fillRoundedRectangle(getLocalBounds().toFloat(), radius);
                 }
                 iconToDraw->drawWithin(g, getLocalBounds().toFloat().reduced(iconPadding),
                                        juce::RectanglePlacement::centred, opacity);

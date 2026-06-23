@@ -184,12 +184,13 @@ class TrackChainContent : public PanelContent,
 
     // Header bar controls - RIGHT side (track info)
     juce::Label trackNameLabel_;
-    juce::TextButton muteButton_;  // Track mute
+    SvgButton muteButton_{"mute", BinaryData::master_on_svg,
+                          BinaryData::master_on_svgSize};  // Track mute
     // Master uses a speaker toggle (matching the inspector/mixer) instead of "M".
     SvgButton masterMuteButton_{"masterMute", BinaryData::master_on_svg,
-                                BinaryData::master_on_svgSize, BinaryData::master_off_1_svg,
-                                BinaryData::master_off_1_svgSize};
-    juce::TextButton soloButton_;  // Track solo
+                                BinaryData::master_on_svgSize};
+    SvgButton soloButton_{"solo", BinaryData::solo_off_svg,
+                          BinaryData::solo_off_svgSize};  // Track solo
     // Chord track mirrors its header: audition (mute) speaker + input monitor.
     std::unique_ptr<magda::SvgButton> chordSpeakerButton_;
     juce::TextButton monitorButton_;

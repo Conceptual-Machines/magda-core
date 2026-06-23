@@ -39,10 +39,12 @@ namespace magda::daw::ui {
 namespace {
 void configureMasterSpeakerButton(SvgButton& button) {
     // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
-    // orange chip (master_off). Toggle state drives which icon shows.
+    // yellow chip (master_off). Toggle state drives which icon shows.
     button.setClickingTogglesState(true);
     button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    button.setIconPadding(3.5f);  // larger speaker glyph
 }
 
 void syncMasterSpeakerButton(SvgButton& button, bool muted) {
@@ -1014,15 +1016,15 @@ TrackChainContent::TrackChainContent()
     trackNameLabel_.setInterceptsMouseClicks(false, false);
     addChildComponent(trackNameLabel_);
 
-    // Mute button
-    muteButton_.setButtonText("M");
-    muteButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    muteButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+    // Mute button (arrange track-header style)
+    muteButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    muteButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
+    muteButton_.setHoverColor(DarkTheme::getTextColour());
+    muteButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    muteButton_.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    muteButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    muteButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    muteButton_.setIconPadding(3.5f);
     muteButton_.setClickingTogglesState(true);
     muteButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -1031,12 +1033,14 @@ TrackChainContent::TrackChainContent()
                                                              muteButton_.getToggleState()));
         }
     };
-    muteButton_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-    muteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addChildComponent(muteButton_);
 
     // Master mute: speaker toggle shown in place of "M" when the master is selected.
     configureMasterSpeakerButton(masterMuteButton_);
+    masterMuteButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    masterMuteButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
+    masterMuteButton_.setHoverColor(DarkTheme::getTextColour());
+    masterMuteButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
     masterMuteButton_.onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
@@ -1049,6 +1053,7 @@ TrackChainContent::TrackChainContent()
         BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
     chordSpeakerButton_->setTooltip("Preview chords on playback");
     chordSpeakerButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    chordSpeakerButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     chordSpeakerButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
     chordSpeakerButton_->onClick = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -1098,15 +1103,15 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(monitorButton_);
 
-    // Solo button
-    soloButton_.setButtonText("S");
-    soloButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    soloButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+    // Solo button (arrange track-header style)
+    soloButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    soloButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
+    soloButton_.setHoverColor(DarkTheme::getTextColour());
+    soloButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    soloButton_.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    soloButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    soloButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton_.setIconPadding(5.0f);
     soloButton_.setClickingTogglesState(true);
     soloButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -1115,8 +1120,6 @@ TrackChainContent::TrackChainContent()
                                                              soloButton_.getToggleState()));
         }
     };
-    soloButton_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addChildComponent(soloButton_);
 
     // Volume label (dB format, draggable)
@@ -2627,7 +2630,7 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         headerArea.removeFromRight(2);
     }
     if (isMaster) {
-        masterMuteButton_.setBounds(headerArea.removeFromRight(24).withSizeKeepingCentre(24, 24));
+        masterMuteButton_.setBounds(headerArea.removeFromRight(20).withSizeKeepingCentre(20, 20));
         masterMuteButton_.setVisible(true);
         muteButton_.setVisible(false);
     } else {
