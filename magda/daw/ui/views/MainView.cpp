@@ -2668,7 +2668,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setClickingTogglesState(true);
     speakerButton->setTooltip("Mute master");
     speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
     speakerButton->setIconPadding(3.5f);  // larger speaker glyph
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(

@@ -1039,10 +1039,6 @@ TrackChainContent::TrackChainContent()
 
     // Master mute: speaker toggle shown in place of "M" when the master is selected.
     configureMasterSpeakerButton(masterMuteButton_);
-    masterMuteButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    masterMuteButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
-    masterMuteButton_.setHoverColor(DarkTheme::getTextColour());
-    masterMuteButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
     masterMuteButton_.onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));

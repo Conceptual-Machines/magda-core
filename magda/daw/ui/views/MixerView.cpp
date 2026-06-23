@@ -545,7 +545,7 @@ void MixerView::ChannelStrip::setupControls() {
     muteButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     muteButton->setColour(juce::TextButton::buttonOnColourId,
-                          juce::Colour(0xFFAA8855));  // Orange when active
+                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));  // amber when muted
     muteButton->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     muteButton->setColour(juce::TextButton::textColourOnId,
