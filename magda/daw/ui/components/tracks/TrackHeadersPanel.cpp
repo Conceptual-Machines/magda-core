@@ -118,12 +118,12 @@ constexpr float MAX_DB = level_meter_scale::maxDb;
 // equal and fill up to the right-pinned icon.
 constexpr int TH_PAD = 2;         // left padding inside the control area (matches the right)
 constexpr int TH_PAD_R = 2;       // right margin (small, so pan/monitor/icons reach the end)
-constexpr int TH_ICON_SIZE = 22;  // I/O routing icon (pinned right)
+constexpr int TH_ICON_SIZE = 26;  // I/O routing icon cell width, matching pan/automation
 constexpr int TH_GAP = 6;         // gap between the left content and the right element
 constexpr int TH_DD_GAP = 6;      // gap between the two routing dropdowns
 constexpr int TH_BTN_MAX = 26;    // M/S/R button width
 constexpr int TH_PAN_W = 26;      // pan + automation width (right-aligned pair)
-constexpr int TH_MONITOR_W = 34;  // monitor selector width (speaker icon + dropdown arrow)
+constexpr int TH_MONITOR_W = 26;  // monitor button width, matching M/S/R
 
 float gainToDb(float gain) {
     return level_meter_scale::gainToDb(gain);
@@ -223,6 +223,7 @@ class SessionModeButton : public juce::Component {
     std::unique_ptr<juce::Drawable> resumeOffDrawable_;
     std::unique_ptr<juce::Drawable> resumeOnDrawable_;
 };
+
 }  // namespace
 
 namespace {
@@ -415,6 +416,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         inputDrawable->setImages(svg.get());
     }
     inputDrawable->setInterceptsMouseClicks(false, false);
+    inputDrawable->setAlpha(0.38f);
     inputIcon = std::move(inputDrawable);
 
     auto outputDrawable =
@@ -425,6 +427,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         outputDrawable->setImages(svg.get());
     }
     outputDrawable->setInterceptsMouseClicks(false, false);
+    outputDrawable->setAlpha(0.38f);
     outputIcon = std::move(outputDrawable);
 }
 
@@ -2095,7 +2098,7 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
 
 // Volume (fills left) + pan (right-aligned) within the given inner row rect.
 void TrackHeadersPanel::layoutVolPanRow(TrackHeader& header, juce::Rectangle<int> r) {
-    const int gap = 2;
+    const int gap = header.isMultiOut ? 2 : 4;
     r.removeFromLeft(TH_PAD);
     r.removeFromRight(TH_PAD_R);
     // Pan right-aligned (same width as automation below it).
@@ -2111,7 +2114,7 @@ void TrackHeadersPanel::layoutVolPanRow(TrackHeader& header, juce::Rectangle<int
 
 // M S R [monitor] left-anchored; automation pinned right (same width as pan).
 void TrackHeadersPanel::layoutButtonRow(TrackHeader& header, juce::Rectangle<int> r) {
-    const int gap = 2;
+    const int gap = header.isMultiOut ? 2 : 4;
     r.removeFromLeft(TH_PAD);
     r.removeFromRight(TH_PAD_R);
     // Automation: right-aligned, same width as the pan field above it.
@@ -2145,9 +2148,8 @@ void TrackHeadersPanel::layoutRoutingRow(TrackHeader& header, juce::Rectangle<in
     juce::ignoreUnused(header);
     row.removeFromLeft(TH_PAD);
     row.removeFromRight(TH_PAD_R);
-    const int isz = std::min(TH_ICON_SIZE, row.getHeight());
-    auto iconCell = row.removeFromRight(isz);
-    icon.setBounds(iconCell.withSizeKeepingCentre(isz, isz));
+    auto iconCell = row.removeFromRight(TH_ICON_SIZE);
+    icon.setBounds(iconCell);
     icon.setVisible(true);
     row.removeFromRight(TH_GAP);
     const int ddW = (row.getWidth() - TH_DD_GAP) / 2;
@@ -2266,9 +2268,8 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
             auto row = inner.removeFrom(outputRow, outputRow.getWidth());
             row.removeFromLeft(TH_PAD);
             row.removeFromRight(TH_PAD_R);
-            const int isz = std::min(TH_ICON_SIZE, row.getHeight());
-            auto iconCell = row.removeFromRight(isz);
-            header.outputIcon->setBounds(iconCell.withSizeKeepingCentre(isz, isz));
+            auto iconCell = row.removeFromRight(TH_ICON_SIZE);
+            header.outputIcon->setBounds(iconCell);
             header.outputIcon->setVisible(true);
             row.removeFromRight(TH_GAP);
             header.outputSelector->setBounds(row);
