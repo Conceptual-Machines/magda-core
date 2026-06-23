@@ -13,6 +13,7 @@
 #include "../common/SideColumn.hpp"
 #include "../common/SvgButton.hpp"
 #include "../mixer/InputTypeSelector.hpp"
+#include "../mixer/MonitorSelector.hpp"
 #include "../mixer/RoutingSelector.hpp"
 #include "audio/MidiBridge.hpp"
 #include "core/AutomationManager.hpp"
@@ -174,10 +175,10 @@ class TrackHeadersPanel : public juce::Component,
         // (blue = audible, faint grey = silent). Replaces the "M" button.
         std::unique_ptr<SvgButton> chordAuditionButton;
         std::unique_ptr<juce::TextButton> soloButton;
-        std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
-        std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button
-        std::unique_ptr<DraggableValueLabel> volumeLabel;      // Volume as draggable dB label
-        std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
+        std::unique_ptr<SvgButton> recordButton;           // Record arm button (record-circle icon)
+        std::unique_ptr<MonitorSelector> monitorSelector;  // Input monitor (icon + dropdown)
+        std::unique_ptr<DraggableValueLabel> volumeLabel;  // Volume as draggable dB label
+        std::unique_ptr<DraggableValueLabel> panLabel;     // Pan as draggable L/C/R label
         std::unique_ptr<juce::DrawableButton> collapseButton;  // For groups
         std::unique_ptr<SvgButton> automationButton;           // Show automation lanes
         std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Hidden, kept for internal state
@@ -323,6 +324,13 @@ class TrackHeadersPanel : public juce::Component,
                            const SideColumn& inner, int trackHeight);
     void layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
                                 const SideColumn& inner, int gapOverride = -1);
+    // Single-row content layout helpers (the passed rect is the already-positioned
+    // inner row). Used both for the top-packed compact layouts and the distributed
+    // fully-expanded layout.
+    void layoutVolPanRow(TrackHeader& header, juce::Rectangle<int> row);
+    void layoutButtonRow(TrackHeader& header, juce::Rectangle<int> row);
+    void layoutRoutingRow(TrackHeader& header, juce::Rectangle<int> row, RoutingSelector& audioDd,
+                          RoutingSelector& midiDd, juce::Component& icon);
 
     // Automation lane height helpers
     int getTrackTotalHeight(int trackIndex) const;

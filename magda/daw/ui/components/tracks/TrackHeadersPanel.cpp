@@ -95,33 +95,30 @@ std::pair<juce::String, juce::String> buildNewTrackGhostText(const juce::Dynamic
     return {"Create New Track", "Add " + name};
 }
 
-// Monitor button: matches the TrackInspector's monitor button exactly so the
-// two places the button appears (mixer track header + inspector) read the
-// same way. Glyph changes per mode — "-" / "I" / "A" — and the background
-// turns green when monitoring is active (In or Auto), driven by toggleState.
-// Glyphs are intentionally untranslated: the button is sized for a single
-// character; longer labels would clip. Accessibility/tooltip text is localized.
-void applyMonitorButtonState(juce::TextButton& btn, InputMonitorMode mode) {
-    switch (mode) {
-        case InputMonitorMode::Off:
-            btn.setButtonText("-");
-            btn.setTooltip(tr("tracks.input_monitoring.tooltip_off"));
-            break;
-        case InputMonitorMode::In:
-            btn.setButtonText("I");
-            btn.setTooltip(tr("tracks.input_monitoring.tooltip_in"));
-            break;
-        case InputMonitorMode::Auto:
-            btn.setButtonText("A");
-            btn.setTooltip(tr("tracks.input_monitoring.tooltip_auto"));
-            break;
-    }
-    btn.setToggleState(mode != InputMonitorMode::Off, juce::dontSendNotification);
-    btn.repaint();
-}
-
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;  // Allow +6 dB headroom
+
+// Track-header control rows. Each row is laid out INDEPENDENTLY (no cross-row
+// column alignment) — content inset by TH_PAD on both sides, the right-hand
+// element right-aligned, the left content filling up to it:
+//
+//   [ ───── volume ───── ]      [ pan ]
+//   [ M S R A ]                 [ monitor ]
+//   [ audio in │ midi in ───── ] →|
+//   [ audio out│ midi out ──── ] |→
+//
+// The right element (pan / monitor) is a fraction of the row so it shrinks on a
+// narrow header; the M/S/R/A buttons are capped (never stretch) but shrink to
+// fit so the automation button is never clipped. The routing dropdowns are
+// equal and fill up to the right-pinned icon.
+constexpr int TH_PAD = 2;         // left padding inside the control area (matches the right)
+constexpr int TH_PAD_R = 2;       // right margin (small, so pan/monitor/icons reach the end)
+constexpr int TH_ICON_SIZE = 22;  // I/O routing icon (pinned right)
+constexpr int TH_GAP = 6;         // gap between the left content and the right element
+constexpr int TH_DD_GAP = 6;      // gap between the two routing dropdowns
+constexpr int TH_BTN_MAX = 26;    // M/S/R button width
+constexpr int TH_PAN_W = 26;      // pan + automation width (right-aligned pair)
+constexpr int TH_MONITOR_W = 34;  // monitor selector width (speaker icon + dropdown arrow)
 
 float gainToDb(float gain) {
     if (gain <= 0.0f)
@@ -212,21 +209,20 @@ class SessionModeButton : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
+        if (!inSession_)
+            return;  // show nothing when not in session mode
+
         auto bounds = getLocalBounds().toFloat();
         float iconSize = std::min(bounds.getWidth(), std::min(bounds.getHeight(), 12.0f));
         auto iconArea = bounds.withSizeKeepingCentre(iconSize, iconSize);
-
-        auto& drawable = inSession_ ? resumeOnDrawable_ : resumeOffDrawable_;
-        if (drawable) {
-            drawable->drawWithin(g, iconArea, juce::RectanglePlacement::centred,
-                                 inSession_ ? 1.0f : 0.25f);
-        }
+        if (resumeOnDrawable_)
+            resumeOnDrawable_->drawWithin(g, iconArea, juce::RectanglePlacement::centred, 1.0f);
     }
 
     std::function<void()> onClick;
 
     void mouseDown(const juce::MouseEvent&) override {
-        if (onClick)
+        if (inSession_ && onClick)
             onClick();
     }
 
@@ -272,6 +268,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     muteButton->setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+    // Visible border so M/S/R match the automation button and monitor selector
+    // beside them (otherwise SmallButtonLookAndFeel draws only a faint border).
+    muteButton->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     muteButton->setClickingTogglesState(true);
 
     // Master-only speaker mute (shown instead of the "M" button for the master),
@@ -309,37 +308,29 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     soloButton->setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+    soloButton->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     soloButton->setClickingTogglesState(true);
 
-    recordButton = std::make_unique<juce::TextButton>(tr("tracks.record"));
-    recordButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    recordButton->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    recordButton->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::STATUS_ERROR));  // Red when armed
-    recordButton->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    recordButton->setColour(juce::TextButton::textColourOnId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    // Record-arm: a record-circle icon. Idle = white dot on a SURFACE chip (like
+    // M / S); armed = white dot on a solid red background.
+    recordButton = std::make_unique<SvgButton>("Record", BinaryData::record_circle_svg,
+                                               BinaryData::record_circle_svgSize);
+    recordButton->setTooltip(tr("tracks.record"));
     recordButton->setClickingTogglesState(true);
+    recordButton->setOriginalColor(juce::Colour(0xFFB3B3B3));  // recolour the circle's source fill
+    recordButton->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    recordButton->setActiveColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));  // dot stays white
+    recordButton->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::STATUS_ERROR));  // solid red when armed
+    recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    recordButton->setIconPadding(3.0f);
 
-    // Monitor button (3-state: Off → In → Auto → Off). Matches the inspector
-    // monitor button: SURFACE bg off, ACCENT_GREEN bg on, dark-on-green text
-    // when active so it reads the same in both places.
-    monitorButton = std::make_unique<juce::TextButton>("-");
-    monitorButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    monitorButton->setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    monitorButton->setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    monitorButton->setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    monitorButton->setColour(juce::TextButton::textColourOnId,
-                             DarkTheme::getColour(DarkTheme::BACKGROUND));
-    monitorButton->setTooltip(
-        tr("tracks.input_monitoring") + " (" + tr("tracks.input_monitoring.off") + "/" +
-        tr("tracks.input_monitoring.in") + "/" + tr("tracks.input_monitoring.auto") + ")");
-    applyMonitorButtonState(*monitorButton, InputMonitorMode::Off);
+    // Monitor selector (3-state: Off → In → Auto). The speaker icon cycles the
+    // mode on click; the dropdown picks one directly. Tinted green when active,
+    // matching the routing selectors it sits beside.
+    monitorSelector = std::make_unique<MonitorSelector>();
+    monitorSelector->setMode(InputMonitorMode::Off);
 
     // Automation button
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
@@ -352,6 +343,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    // Recolour the glyph (#B3B3B3 in the SVG) so it matches the other icons.
+    automationButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    automationButton->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
 
     // Volume label (shows dB, draggable)
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
@@ -429,6 +423,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
     if (auto svg =
             juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
+        svg->replaceColour(juce::Colour(0xFFB3B3B3), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         inputDrawable->setImages(svg.get());
     }
     inputDrawable->setInterceptsMouseClicks(false, false);
@@ -438,6 +433,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
     if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
                                                        BinaryData::Output_svgSize)) {
+        svg->replaceColour(juce::Colour(0xFFB3B3B3), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         outputDrawable->setImages(svg.get());
     }
     outputDrawable->setInterceptsMouseClicks(false, false);
@@ -893,7 +889,7 @@ void TrackHeadersPanel::tracksChanged() {
         }
         addAndMakeVisible(*header->soloButton);
         addAndMakeVisible(*header->recordButton);
-        addAndMakeVisible(*header->monitorButton);
+        addAndMakeVisible(*header->monitorSelector);
         addAndMakeVisible(*header->automationButton);
         addChildComponent(*header->chordAuditionButton);
         addAndMakeVisible(*header->volumeLabel);
@@ -916,9 +912,10 @@ void TrackHeadersPanel::tracksChanged() {
         // Wire session mode button
         auto* smBtn = static_cast<SessionModeButton*>(header->sessionModeButton.get());
         smBtn->setSessionMode(track->playbackMode == TrackPlaybackMode::Session);
-        smBtn->onClick = [this, trackId]() {
+        smBtn->onClick = [this, trackId, smBtn]() {
             if (audioEngine_)
                 audioEngine_->stopSessionTrack(trackId);
+            smBtn->setSessionMode(false);  // hide immediately; the timer resyncs state
         };
 
         // Add collapse button for groups and tracks with multi-out children
@@ -936,8 +933,8 @@ void TrackHeadersPanel::tracksChanged() {
         header->volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header->panLabel->setValue(track->pan, juce::dontSendNotification);
 
-        // Sync monitor button state
-        applyMonitorButtonState(*header->monitorButton, track->inputMonitor);
+        // Sync monitor selector state
+        header->monitorSelector->setMode(track->inputMonitor);
 
         trackHeaders.push_back(std::move(header));
 
@@ -1006,9 +1003,9 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header.panLabel->setValue(track->pan, juce::dontSendNotification);
 
-        // Update monitor button
-        if (header.monitorButton) {
-            applyMonitorButtonState(*header.monitorButton, track->inputMonitor);
+        // Update monitor selector
+        if (header.monitorSelector) {
+            header.monitorSelector->setMode(track->inputMonitor);
         }
 
         // Update track colour
@@ -1797,28 +1794,14 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
-    // Monitor button callback - cycles Off → In → Auto → Off. In multi mode
-    // every selected track is forced to the next mode of the clicked track,
-    // so the group ends up homogeneous regardless of where each track started.
-    header.monitorButton->onClick = [trackId, getEditTargets]() {
-        auto* track = TrackManager::getInstance().getTrack(trackId);
-        if (!track)
-            return;
-        InputMonitorMode nextMode;
-        switch (track->inputMonitor) {
-            case InputMonitorMode::Off:
-                nextMode = InputMonitorMode::In;
-                break;
-            case InputMonitorMode::In:
-                nextMode = InputMonitorMode::Auto;
-                break;
-            case InputMonitorMode::Auto:
-                nextMode = InputMonitorMode::Off;
-                break;
-        }
+    // Monitor selector callback - the selector resolves the target mode (icon
+    // click cycles Off → In → Auto → Off; the dropdown picks one directly). In
+    // multi mode every selected track is forced to that same mode, so the group
+    // ends up homogeneous regardless of where each track started.
+    header.monitorSelector->onModeChanged = [trackId, getEditTargets](InputMonitorMode mode) {
         for (auto tid : getEditTargets(trackId))
             UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
+                std::make_unique<SetTrackInputMonitorCommand>(tid, mode));
     };
 
     // Automation button - show automation lane menu. Alt/Option-click is a
@@ -2004,43 +1987,24 @@ bool TrackHeadersPanel::isResizeHandleArea(const juce::Point<int>& point, int& t
 void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
                                           const SideColumn& outer) {
     const int meterWidth = 20;
-    const int midiIndicatorWidth = 12;
-    const int meterPadding = 4;
+    const int meterPadding = 6;
 
+    // Only the level meter lives in this right-hand strip now; the MIDI indicator
+    // moved up to the header bar (see name-row layout), so the controls can reach
+    // right up to the meter instead of leaving a dead MIDI column.
     auto meterArea = outer.removeFrom(workArea, meterWidth);
-    outer.removeSpacing(workArea, 2);
-
-    // MIDI indicator adjacent to audio meters (toward center)
-    auto midiArea = outer.removeFrom(workArea, midiIndicatorWidth);
     outer.removeSpacing(workArea, meterPadding);
 
     // Audio meter spans full track height. The chord track emits no audio yet,
     // so hide its output meter for now (an oscilloscope may replace it later).
     header.meterComponent->setBounds(meterArea);
     header.meterComponent->setVisible(!header.isChordTrack);
-
-    // MIDI indicator in top portion, session mode button in bottom portion
-    const int sessionBtnSize = 14;
-    auto midiTopArea = midiArea;
-    auto sessionBtnArea = midiArea;
-
-    if (midiArea.getHeight() > sessionBtnSize + 4) {
-        sessionBtnArea = midiArea.removeFromBottom(sessionBtnSize + 2);
-        midiTopArea = midiArea;
-    }
-
-    header.midiIndicator->setBounds(midiTopArea);
-    header.midiIndicator->setVisible(header.inputSelector && header.inputSelector->isEnabled());
-    header.midiIndicator->toFront(false);
-
-    header.sessionModeButton->setBounds(sessionBtnArea);
-    header.sessionModeButton->setVisible(true);
 }
 
 void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
                                                const SideColumn& inner, int gapOverride) {
     const int gap = 2;
-    const int rh = 16;  // rowHeight
+    const int rh = 18;  // row height — volume/pan and button rows share it
     const int areaWidth = area.getWidth();
 
     // Chord track: volume + speaker (audition) + solo + monitor. The speaker
@@ -2062,114 +2026,112 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
         header.soloButton->setBounds(content.removeFromLeft(soloW));
         header.soloButton->setVisible(true);
         content.removeFromLeft(gap);
-        header.monitorButton->setBounds(content.removeFromLeft(iconW));
-        header.monitorButton->setVisible(true);
+        header.monitorSelector->setBounds(content.removeFromLeft(iconW));
+        header.monitorSelector->setVisible(true);
         header.muteButton->setVisible(false);
         header.masterMuteButton->setVisible(false);
         header.panLabel->setVisible(false);
         header.recordButton->setVisible(false);
+        header.sessionModeButton->setVisible(false);
         header.automationButton->setVisible(false);
         return;
     }
 
-    // Master track: volume + mute only (no solo, pan, record, monitor)
+    // Master track: volume + mute only (no solo, pan, record, monitor). Volume
+    // stretches across the full control width; the mute speaker sits flush right.
     if (header.isMaster) {
         auto row = area.removeFromTop(rh);
-        const int rowWidth = std::min(areaWidth, areaWidth >= 260 ? areaWidth : 120);
-        auto content = inner.removeFrom(row, rowWidth);
-        const int btnW = 20;
-        header.volumeLabel->setBounds(content.removeFromLeft(content.getWidth() - btnW - gap));
-        header.volumeLabel->setVisible(true);
-        content.removeFromLeft(gap);
+        auto content = inner.removeFrom(row, areaWidth);
+        const int btnW = 18;
+        auto muteArea = content.removeFromRight(btnW);
+        content.removeFromRight(gap);
         // Master uses the speaker toggle in place of the "M" button.
         header.muteButton->setVisible(false);
-        header.masterMuteButton->setBounds(content.withSizeKeepingCentre(18, 18));
+        header.masterMuteButton->setBounds(muteArea.withSizeKeepingCentre(18, 18));
         header.masterMuteButton->setVisible(true);
+        header.volumeLabel->setBounds(content);  // fills the rest — long master fader readout
+        header.volumeLabel->setVisible(true);
         header.soloButton->setVisible(false);
         header.panLabel->setVisible(false);
         header.recordButton->setVisible(false);
-        header.monitorButton->setVisible(false);
+        header.monitorSelector->setVisible(false);
+        header.sessionModeButton->setVisible(false);
         header.automationButton->setVisible(false);
         return;
     }
 
-    const int numBtns = header.isMultiOut ? 3 : 5;
+    // Compact top-packed layout: volume/pan row, then the button row.
+    const int rowPadding = gapOverride >= 0 ? gapOverride : 5;  // 5px between rows
+    auto volPanRow = area.removeFromTop(rh);
+    layoutVolPanRow(header, inner.removeFrom(volPanRow, areaWidth));
+    area.removeFromTop(rowPadding);
+    auto btnRow = area.removeFromTop(rh);
+    layoutButtonRow(header, inner.removeFrom(btnRow, areaWidth));
+}
 
-    if (areaWidth >= 260) {
-        // Single row: Vol Pan | M S R Mon A — fills full width
-        auto row = area.removeFromTop(rh);
-        const int rowWidth = areaWidth;
-        const int mixW = rowWidth * 60 / 100;
-        const int btnsW = rowWidth - mixW - gap;
-        const int mixGap = 2;
-        const int volW = (mixW - mixGap) * 80 / 100;
-        // Anchor content block to inner side, fill left-to-right
-        auto content = inner.removeFrom(row, rowWidth);
-        header.volumeLabel->setBounds(content.removeFromLeft(volW));
-        header.volumeLabel->setVisible(true);
-        content.removeFromLeft(mixGap);
-        header.panLabel->setBounds(content.removeFromLeft(mixW - volW - mixGap));
-        header.panLabel->setVisible(true);
-        content.removeFromLeft(gap);
-        const int btnGapTotal = (numBtns - 1) * gap;
-        const int btnW = (btnsW - btnGapTotal) / numBtns;
-        header.muteButton->setBounds(content.removeFromLeft(btnW));
-        content.removeFromLeft(gap);
-        header.soloButton->setBounds(content.removeFromLeft(btnW));
-        content.removeFromLeft(gap);
-        if (!header.isMultiOut) {
-            header.recordButton->setBounds(content.removeFromLeft(btnW));
-            header.recordButton->setVisible(true);
-            content.removeFromLeft(gap);
-            header.monitorButton->setBounds(content.removeFromLeft(btnW));
-            header.monitorButton->setVisible(true);
-            content.removeFromLeft(gap);
-        } else {
-            header.recordButton->setVisible(false);
-            header.monitorButton->setVisible(false);
-        }
-        header.automationButton->setBounds(
-            content.removeFromLeft(btnsW - (numBtns - 1) * (btnW + gap)));
-        header.automationButton->setVisible(true);
+// Volume (fills left) + pan (right-aligned) within the given inner row rect.
+void TrackHeadersPanel::layoutVolPanRow(TrackHeader& header, juce::Rectangle<int> r) {
+    const int gap = 2;
+    r.removeFromLeft(TH_PAD);
+    r.removeFromRight(TH_PAD_R);
+    // Pan right-aligned (same width as automation below it).
+    header.panLabel->setBounds(r.removeFromRight(TH_PAN_W));
+    header.panLabel->setVisible(true);
+    // Volume: fixed width equal to the M S R + monitor group below it, so the two
+    // line up. (Multi-out children only have M S in that group.)
+    const int volW =
+        header.isMultiOut ? 2 * TH_BTN_MAX + gap : 3 * TH_BTN_MAX + 3 * gap + TH_MONITOR_W;
+    header.volumeLabel->setBounds(r.removeFromLeft(volW));
+    header.volumeLabel->setVisible(true);
+}
+
+// M S R [monitor] left-anchored; automation pinned right (same width as pan).
+void TrackHeadersPanel::layoutButtonRow(TrackHeader& header, juce::Rectangle<int> r) {
+    const int gap = 2;
+    r.removeFromLeft(TH_PAD);
+    r.removeFromRight(TH_PAD_R);
+    // Automation: right-aligned, same width as the pan field above it.
+    header.automationButton->setBounds(r.removeFromRight(TH_PAN_W));
+    header.automationButton->setVisible(true);
+    r.removeFromRight(TH_GAP);
+    // M S R [monitor], left-anchored.
+    const int btnW = TH_BTN_MAX;
+    header.muteButton->setBounds(r.removeFromLeft(btnW));
+    r.removeFromLeft(gap);
+    header.soloButton->setBounds(r.removeFromLeft(btnW));
+    r.removeFromLeft(gap);
+    if (!header.isMultiOut) {
+        header.recordButton->setBounds(r.removeFromLeft(btnW));
+        header.recordButton->setVisible(true);
+        r.removeFromLeft(gap);
+        header.monitorSelector->setBounds(r.removeFromLeft(TH_MONITOR_W));
+        header.monitorSelector->setVisible(true);
     } else {
-        // Two rows: Vol Pan, then M S R Mon A
-        const int rowWidth = std::min(areaWidth, 120);
-        const int rowPadding =
-            gapOverride >= 0 ? gapOverride : std::max(2, (area.getHeight() - 2 * rh) / 3);
-
-        auto volPanRow = area.removeFromTop(rh);
-        auto vpContent = inner.removeFrom(volPanRow, rowWidth);
-        const int mixGap = 4;
-        const int volW = (rowWidth - mixGap) * 80 / 100;
-        header.volumeLabel->setBounds(vpContent.removeFromLeft(volW));
-        header.volumeLabel->setVisible(true);
-        vpContent.removeFromLeft(mixGap);
-        header.panLabel->setBounds(vpContent.removeFromLeft(rowWidth - volW - mixGap));
-        header.panLabel->setVisible(true);
-        area.removeFromTop(rowPadding);
-
-        auto btnRow = area.removeFromTop(rh);
-        auto btnContent = inner.removeFrom(btnRow, rowWidth);
-        const int btnW = (rowWidth - (numBtns - 1) * gap) / numBtns;
-        header.muteButton->setBounds(btnContent.removeFromLeft(btnW));
-        btnContent.removeFromLeft(gap);
-        header.soloButton->setBounds(btnContent.removeFromLeft(btnW));
-        btnContent.removeFromLeft(gap);
-        if (!header.isMultiOut) {
-            header.recordButton->setBounds(btnContent.removeFromLeft(btnW));
-            header.recordButton->setVisible(true);
-            btnContent.removeFromLeft(gap);
-            header.monitorButton->setBounds(btnContent.removeFromLeft(btnW));
-            header.monitorButton->setVisible(true);
-            btnContent.removeFromLeft(gap);
-        } else {
-            header.recordButton->setVisible(false);
-            header.monitorButton->setVisible(false);
-        }
-        header.automationButton->setBounds(
-            btnContent.removeFromLeft(rowWidth - (numBtns - 1) * (btnW + gap) - gap));
-        header.automationButton->setVisible(true);
+        header.recordButton->setVisible(false);
+        header.monitorSelector->setVisible(false);
     }
+    header.muteButton->setVisible(true);
+    header.soloButton->setVisible(true);
+}
+
+// [ audio dd | midi dd ] filling the left, I/O icon pinned right.
+void TrackHeadersPanel::layoutRoutingRow(TrackHeader& header, juce::Rectangle<int> row,
+                                         RoutingSelector& audioDd, RoutingSelector& midiDd,
+                                         juce::Component& icon) {
+    juce::ignoreUnused(header);
+    row.removeFromLeft(TH_PAD);
+    row.removeFromRight(TH_PAD_R);
+    const int isz = std::min(TH_ICON_SIZE, row.getHeight());
+    auto iconCell = row.removeFromRight(isz);
+    icon.setBounds(iconCell.withSizeKeepingCentre(isz, isz));
+    icon.setVisible(true);
+    row.removeFromRight(TH_GAP);
+    const int ddW = (row.getWidth() - TH_DD_GAP) / 2;
+    audioDd.setBounds(row.removeFromLeft(ddW));
+    audioDd.setVisible(true);
+    row.removeFromLeft(TH_DD_GAP);
+    midiDd.setBounds(row);
+    midiDd.setVisible(true);
 }
 
 void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
@@ -2229,29 +2191,27 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     };
 
     if (trackHeight >= 100) {
-        // LARGE LAYOUT
+        // LARGE LAYOUT — distribute the rows vertically:
+        //   I/O off : volume top, buttons bottom.
+        //   I/O on  : volume top, buttons centred, the I/O rows pinned to the bottom.
         const int contentRowHeight = 18;
-        const bool hasSends = !header.sendLabels.empty();
-
+        const int rh = 18;  // volume/pan and button row height (matches compact layout)
+        const int rowGap = 5;
         const int sendLabelWidth = 28;
-        const bool wideEnough = tcpArea.getWidth() >= 260;
-        const int ioRows = header.showIORouting ? 2 : 0;
-        const int numRows = (wideEnough ? 1 : 2) + ioRows;
+        const bool hasSends = !header.sendLabels.empty();
+        const bool ioShown = header.showIORouting;
 
-        int totalContentHeight = numRows * contentRowHeight;
-        if (hasSends)
-            totalContentHeight += contentRowHeight;
-        int availableSpace = tcpArea.getHeight() - totalContentHeight;
-        int divider = numRows - 1 + (hasSends ? 1 : 0);
-        int rowGap = divider > 0 ? std::clamp(availableSpace / divider, 2, 8) : 2;
+        header.audioColumnLabel->setVisible(false);
+        header.midiColumnLabel->setVisible(false);
 
-        layoutVolPanAndButtons(header, tcpArea, inner, rowGap);
+        // Volume/pan row — always pinned to the top.
+        auto volRow = tcpArea.removeFromTop(rh);
+        layoutVolPanRow(header, inner.removeFrom(volRow, volRow.getWidth()));
 
-        // Sends row
+        // Optional sends row, just below the volume row.
         if (hasSends) {
             tcpArea.removeFromTop(rowGap);
             auto sendRow = tcpArea.removeFromTop(contentRowHeight);
-
             for (auto& sendLabel : header.sendLabels) {
                 if (sendRow.getWidth() >= sendLabelWidth) {
                     sendLabel->setBounds(sendRow.removeFromLeft(sendLabelWidth));
@@ -2262,56 +2222,57 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
                 }
             }
         } else {
-            for (auto& sendLabel : header.sendLabels) {
+            for (auto& sendLabel : header.sendLabels)
                 sendLabel->setVisible(false);
-            }
         }
 
-        tcpArea.removeFromTop(rowGap);
-
-        header.audioColumnLabel->setVisible(false);
-        header.midiColumnLabel->setVisible(false);
-
-        if (header.showIORouting) {
-            const int iconSize = 16;
-            const int ddGap = spacing;
-            const int ioWidth = std::min(tcpArea.getWidth(), 120);
-            const int ddWidth = (ioWidth - ddGap - ddGap - iconSize) / 2;
-
-            auto inputRow = tcpArea.removeFromTop(contentRowHeight);
-            auto inputContent = inner.removeFrom(inputRow, ioWidth);
-            if (!header.isMultiOut) {
-                header.audioInputSelector->setBounds(inputContent.removeFromLeft(ddWidth));
-                header.audioInputSelector->setVisible(true);
-                inputContent.removeFromLeft(ddGap);
-                header.inputSelector->setBounds(inputContent.removeFromLeft(ddWidth));
-                header.inputSelector->setVisible(true);
-                inputContent.removeFromLeft(ddGap);
-                header.inputIcon->setBounds(inputContent.removeFromLeft(iconSize));
-                header.inputIcon->setVisible(true);
-            } else {
-                header.audioInputSelector->setVisible(false);
-                header.inputSelector->setVisible(false);
-                header.inputIcon->setVisible(false);
-            }
-            tcpArea.removeFromTop(rowGap);
-
-            auto outputRow = tcpArea.removeFromTop(contentRowHeight);
-            auto outputContent = inner.removeFrom(outputRow, ioWidth);
-            header.outputSelector->setBounds(outputContent.removeFromLeft(ddWidth));
-            header.outputSelector->setVisible(true);
-            outputContent.removeFromLeft(ddGap);
-            if (!header.isMultiOut) {
-                header.midiOutputSelector->setBounds(outputContent.removeFromLeft(ddWidth));
-                header.midiOutputSelector->setVisible(true);
-            } else {
-                header.midiOutputSelector->setVisible(false);
-            }
-            outputContent.removeFromLeft(ddGap);
-            header.outputIcon->setBounds(outputContent.removeFromLeft(iconSize));
+        // I/O routing rows — pinned to the bottom (output lowest, input above it).
+        if (ioShown && !header.isMultiOut) {
+            auto outputRow = tcpArea.removeFromBottom(contentRowHeight);
+            tcpArea.removeFromBottom(rowGap);
+            auto inputRow = tcpArea.removeFromBottom(contentRowHeight);
+            layoutRoutingRow(header, inner.removeFrom(inputRow, inputRow.getWidth()),
+                             *header.audioInputSelector, *header.inputSelector, *header.inputIcon);
+            layoutRoutingRow(header, inner.removeFrom(outputRow, outputRow.getWidth()),
+                             *header.outputSelector, *header.midiOutputSelector,
+                             *header.outputIcon);
+        } else if (ioShown && header.isMultiOut) {
+            // Multi-out child: only audio-out at the bottom, no inputs / MIDI out.
+            auto outputRow = tcpArea.removeFromBottom(contentRowHeight);
+            auto row = inner.removeFrom(outputRow, outputRow.getWidth());
+            row.removeFromLeft(TH_PAD);
+            row.removeFromRight(TH_PAD_R);
+            const int isz = std::min(TH_ICON_SIZE, row.getHeight());
+            auto iconCell = row.removeFromRight(isz);
+            header.outputIcon->setBounds(iconCell.withSizeKeepingCentre(isz, isz));
             header.outputIcon->setVisible(true);
+            row.removeFromRight(TH_GAP);
+            header.outputSelector->setBounds(row);
+            header.outputSelector->setVisible(true);
+            header.audioInputSelector->setVisible(false);
+            header.inputSelector->setVisible(false);
+            header.inputIcon->setVisible(false);
+            header.midiOutputSelector->setVisible(false);
         } else {
-            hideAllRouting();
+            // I/O off — hide the routing controls (but keep any sends shown above).
+            header.audioInputSelector->setVisible(false);
+            header.inputSelector->setVisible(false);
+            header.outputSelector->setVisible(false);
+            header.midiOutputSelector->setVisible(false);
+            header.inputIcon->setVisible(false);
+            header.outputIcon->setVisible(false);
+        }
+
+        // Button row — centred in the space that's left when the I/O rows are
+        // shown (volume top / buttons centre / I/O bottom); otherwise pinned to
+        // the bottom (volume top / buttons bottom).
+        if (ioShown) {
+            tcpArea.removeFromTop(std::max(0, (tcpArea.getHeight() - rh) / 2));
+            auto btnRow = tcpArea.removeFromTop(rh);
+            layoutButtonRow(header, inner.removeFrom(btnRow, btnRow.getWidth()));
+        } else {
+            auto btnRow = tcpArea.removeFromBottom(rh);
+            layoutButtonRow(header, inner.removeFrom(btnRow, btnRow.getWidth()));
         }
 
     } else if (trackHeight >= 60) {
@@ -2355,6 +2316,23 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             {
                 const int nameRowH = 18;
                 auto nameRow = topArea.removeFromTop(nameRowH);
+                // Header bar (right side): MIDI activity dot, with the back-to-
+                // arrangement button just to its left. The session button is always
+                // positioned but only paints when the track is in session mode.
+                {
+                    auto midiDotArea = nameRow.removeFromRight(14);
+                    header.midiIndicator->setBounds(midiDotArea.withSizeKeepingCentre(10, 10));
+                    header.midiIndicator->setVisible(header.inputSelector &&
+                                                     header.inputSelector->isEnabled());
+                    header.midiIndicator->toFront(false);
+
+                    const int backSize = 14;
+                    auto backArea = nameRow.removeFromRight(backSize + 2);
+                    header.sessionModeButton->setBounds(
+                        backArea.withSizeKeepingCentre(backSize, backSize));
+                    header.sessionModeButton->setVisible(true);
+                    header.sessionModeButton->toFront(false);
+                }
                 if (header.isGroup) {
                     auto btnArea = nameRow.removeFromLeft(COLLAPSE_BUTTON_SIZE);
                     int btnY = btnArea.getCentreY() - COLLAPSE_BUTTON_SIZE / 2;
@@ -2372,7 +2350,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             }
 
             // Controls in the bottom area (below 0dB line)
-            tcpArea.removeFromTop(3);
+            tcpArea.removeFromTop(6);
             layoutControlArea(header, tcpArea, inner, trackHeight);
         }
     }
