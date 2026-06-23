@@ -100,27 +100,6 @@ std::pair<juce::String, juce::String> buildNewTrackGhostText(const juce::Dynamic
 // two places the button appears (mixer track header + inspector) read the
 // same way. Glyph changes per mode — "-" / "I" / "A" — and the background
 // turns green when monitoring is active (In or Auto), driven by toggleState.
-// Glyphs are intentionally untranslated: the button is sized for a single
-// character; longer labels would clip. Accessibility/tooltip text is localized.
-void applyMonitorButtonState(juce::TextButton& btn, InputMonitorMode mode) {
-    switch (mode) {
-        case InputMonitorMode::Off:
-            btn.setButtonText("-");
-            btn.setTooltip(tr("tracks.input_monitoring.tooltip_off"));
-            break;
-        case InputMonitorMode::In:
-            btn.setButtonText("I");
-            btn.setTooltip(tr("tracks.input_monitoring.tooltip_in"));
-            break;
-        case InputMonitorMode::Auto:
-            btn.setButtonText("A");
-            btn.setTooltip(tr("tracks.input_monitoring.tooltip_auto"));
-            break;
-    }
-    btn.setToggleState(mode != InputMonitorMode::Off, juce::dontSendNotification);
-    btn.repaint();
-}
-
 constexpr float MIN_DB = level_meter_scale::minDb;
 constexpr float MAX_DB = level_meter_scale::maxDb;
 
@@ -260,6 +239,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     muteButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     muteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
     muteButton->setIconPadding(3.5f);
+    muteButton->setTooltip(tr("tracks.mute.tooltip"));
     muteButton->setClickingTogglesState(true);
 
     // Master-only speaker mute (shown instead of the "M" button for the master),
@@ -279,16 +259,10 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         masterMuteButton->setIconPadding(3.5f);  // larger speaker glyph
     }
 
-    // Chord-track audition toggle (speaker). Dual-icon with pre-baked colors:
-    // audible = blue chip with a dark speaker (chord_on), silent = gray speaker
-    // (chord_off). Matches the S / monitor chips beside it.
-    chordAuditionButton = std::make_unique<magda::SvgButton>(
-        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
-        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
-    chordAuditionButton->setTooltip("Preview chords on playback");
-    chordAuditionButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    chordAuditionButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    chordAuditionButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    // Chord-track audition: one control folding mute / solo / monitor into a
+    // 3-state axis (Silent / Audible / Solo). Left-click cycles, right-click opens
+    // a dropdown. Self-styling; getTrackId is wired in the per-track setup below.
+    chordAuditionButton = std::make_unique<magda::ChordAuditionControl>();
 
     // Track solo: target toggle (concentric ring) pairing with the mute speaker.
     // inactive = gray target (solo_off), active = dark target (solo_on) on an
@@ -300,6 +274,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     soloButton->setIconPadding(5.0f);
+    soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
 
     // Track record-arm: filled-dot toggle pairing with the mute speaker / solo
@@ -312,25 +287,14 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     recordButton->setIconPadding(5.0f);
+    recordButton->setTooltip(tr("tracks.record.tooltip"));
     recordButton->setClickingTogglesState(true);
 
     // Monitor button (3-state: Off → In → Auto → Off). Matches the inspector
-    // monitor button: SURFACE bg off, ACCENT_GREEN bg on, dark-on-green text
-    // when active so it reads the same in both places.
-    monitorButton = std::make_unique<juce::TextButton>("-");
-    monitorButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    monitorButton->setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    monitorButton->setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    monitorButton->setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    monitorButton->setColour(juce::TextButton::textColourOnId,
-                             DarkTheme::getColour(DarkTheme::BACKGROUND));
-    monitorButton->setTooltip(
-        tr("tracks.input_monitoring") + " (" + tr("tracks.input_monitoring.off") + "/" +
-        tr("tracks.input_monitoring.in") + "/" + tr("tracks.input_monitoring.auto") + ")");
-    applyMonitorButtonState(*monitorButton, InputMonitorMode::Off);
+    // Input-monitor: 3-state control (Off / In / Auto). Off = grey glyph, In =
+    // green chip, Auto = blue chip. Left-click cycles, right-click opens a menu.
+    // getTrackId / getTargets are wired in the per-track setup below.
+    monitorButton = std::make_unique<MonitorControl>();
 
     // Automation button
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
@@ -938,11 +902,13 @@ void TrackHeadersPanel::tracksChanged() {
         header->masterMuteButton->setToggleState(track->muted, juce::dontSendNotification);
         header->soloButton->setToggleState(track->soloed, juce::dontSendNotification);
         header->recordButton->setToggleState(track->recordArmed, juce::dontSendNotification);
+        if (header->isChordTrack)
+            header->chordAuditionButton->refresh();
         header->volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header->panLabel->setValue(track->pan, juce::dontSendNotification);
 
         // Sync monitor button state
-        applyMonitorButtonState(*header->monitorButton, track->inputMonitor);
+        header->monitorButton->refresh();
 
         trackHeaders.push_back(std::move(header));
 
@@ -1007,13 +973,15 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.masterMuteButton->setToggleState(track->muted, juce::dontSendNotification);
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
         header.recordButton->setToggleState(track->recordArmed, juce::dontSendNotification);
+        if (header.isChordTrack)
+            header.chordAuditionButton->refresh();
 
         header.volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header.panLabel->setValue(track->pan, juce::dontSendNotification);
 
         // Update monitor button
         if (header.monitorButton) {
-            applyMonitorButtonState(*header.monitorButton, track->inputMonitor);
+            header.monitorButton->refresh();
         }
 
         // Update track colour
@@ -1635,18 +1603,9 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
-    // Chord-track speaker: toggles whether the chord voicing is audible on
-    // playback (it's just the track mute, framed as "preview chords").
-    header.chordAuditionButton->onClick = [this, trackId]() {
-        int index = getVisibleHeaderIndex(trackId);
-        if (index >= 0) {
-            auto& header = *trackHeaders[index];
-            header.muted = !header.muted;  // speaker on = audible = not muted
-            header.chordAuditionButton->setActive(!header.muted);
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackMuteCommand>(trackId, header.muted));
-        }
-    };
+    // Chord-track audition control drives the track by id; it reads/writes the
+    // flags itself (mute / solo / monitor) and groups them into one undo step.
+    header.chordAuditionButton->getTrackId = [trackId]() { return trackId; };
 
     // Solo button callback - updates TrackManager
     header.soloButton->onClick = [this, trackId, getEditTargets]() {
@@ -1805,25 +1764,11 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     // Monitor button callback - cycles Off → In → Auto → Off. In multi mode
     // every selected track is forced to the next mode of the clicked track,
     // so the group ends up homogeneous regardless of where each track started.
-    header.monitorButton->onClick = [trackId, getEditTargets]() {
-        auto* track = TrackManager::getInstance().getTrack(trackId);
-        if (!track)
-            return;
-        InputMonitorMode nextMode;
-        switch (track->inputMonitor) {
-            case InputMonitorMode::Off:
-                nextMode = InputMonitorMode::In;
-                break;
-            case InputMonitorMode::In:
-                nextMode = InputMonitorMode::Auto;
-                break;
-            case InputMonitorMode::Auto:
-                nextMode = InputMonitorMode::Off;
-                break;
-        }
-        for (auto tid : getEditTargets(trackId))
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
+    // Monitor control drives the track by id; a change applies to the whole
+    // multi-track edit set. It reads/writes the mode itself.
+    header.monitorButton->getTrackId = [trackId]() { return trackId; };
+    header.monitorButton->getTargets = [trackId, getEditTargets]() {
+        return getEditTargets(trackId);
     };
 
     // Automation button - show automation lane menu. Alt/Option-click is a
@@ -2055,31 +2000,28 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     const int rh = 16;  // rowHeight
     const int areaWidth = area.getWidth();
 
-    // Chord track: volume + speaker (audition) + solo + monitor. The speaker
-    // toggle stands in for mute, framed as "preview chords on playback" (blue =
-    // audible, faint grey = silent). No pan / record / automation / routing.
+    // Chord track: volume + one chord audition control. That single 3-state
+    // control (Silent / Audible / Solo) folds in what used to be a separate
+    // audible-toggle, solo and monitor button - a chord track never records, so
+    // monitoring just rides along with audibility. No pan / record / automation /
+    // routing.
     if (header.isChordTrack) {
         auto row = area.removeFromTop(24);
         auto content = inner.removeFrom(row, areaWidth);
-        const int mixW = areaWidth * 52 / 100;
         const int iconW = 24;
-        header.volumeLabel->setBounds(content.removeFromLeft(mixW));
+        const int volW = std::max(1, content.getWidth() - iconW - gap);
+        header.volumeLabel->setBounds(content.removeFromLeft(volW));
         header.volumeLabel->setVisible(true);
         content.removeFromLeft(gap);
         header.chordAuditionButton->setBounds(content.removeFromLeft(iconW));
         header.chordAuditionButton->setVisible(true);
-        header.chordAuditionButton->setActive(!header.muted);
-        content.removeFromLeft(gap);
-        const int soloW = content.getWidth() - iconW - gap;
-        header.soloButton->setBounds(content.removeFromLeft(soloW));
-        header.soloButton->setVisible(true);
-        content.removeFromLeft(gap);
-        header.monitorButton->setBounds(content.removeFromLeft(iconW));
-        header.monitorButton->setVisible(true);
+        header.chordAuditionButton->refresh();
+        header.monitorButton->setVisible(false);
         header.muteButton->setVisible(false);
         header.masterMuteButton->setVisible(false);
         header.masterPeakLabel->setVisible(false);
         header.panLabel->setVisible(false);
+        header.soloButton->setVisible(false);
         header.recordButton->setVisible(false);
         header.automationButton->setVisible(false);
         return;
@@ -2701,15 +2643,21 @@ void TrackHeadersPanel::setTrackName(int trackIndex, const juce::String& name) {
 
 void TrackHeadersPanel::setTrackMuted(int trackIndex, bool muted) {
     if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
-        trackHeaders[trackIndex]->muted = muted;
-        trackHeaders[trackIndex]->muteButton->setToggleState(muted, juce::dontSendNotification);
+        auto& header = *trackHeaders[trackIndex];
+        header.muted = muted;
+        header.muteButton->setToggleState(muted, juce::dontSendNotification);
+        if (header.isChordTrack)
+            header.chordAuditionButton->refresh();
     }
 }
 
 void TrackHeadersPanel::setTrackSolo(int trackIndex, bool solo) {
     if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
-        trackHeaders[trackIndex]->solo = solo;
-        trackHeaders[trackIndex]->soloButton->setToggleState(solo, juce::dontSendNotification);
+        auto& header = *trackHeaders[trackIndex];
+        header.solo = solo;
+        header.soloButton->setToggleState(solo, juce::dontSendNotification);
+        if (header.isChordTrack)
+            header.chordAuditionButton->refresh();
     }
 }
 

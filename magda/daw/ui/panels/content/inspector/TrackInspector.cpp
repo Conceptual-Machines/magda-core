@@ -205,23 +205,10 @@ TrackInspector::TrackInspector() {
     };
     addChildComponent(*speakerButton_);  // Hidden by default
 
-    // Chord audition (mute) toggle: same cyan speaker as the chord track header.
-    chordSpeakerButton_ = std::make_unique<SvgButton>(
-        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
-        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
-    chordSpeakerButton_->setTooltip("Preview chords on playback");
-    chordSpeakerButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    chordSpeakerButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    chordSpeakerButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
-    chordSpeakerButton_->onClick = [this]() {
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
-            return;
-        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        const bool nowMuted = track ? !track->muted : true;
-        chordSpeakerButton_->setActive(!nowMuted);
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_, nowMuted));
-    };
+    // Chord audition: the same 3-state control (Silent / Audible / Solo) as the
+    // chord track header, folding mute / solo / monitor into one chord glyph.
+    chordSpeakerButton_ = std::make_unique<ChordAuditionControl>();
+    chordSpeakerButton_->getTrackId = [this]() { return selectedTrackId_; };
     addChildComponent(*chordSpeakerButton_);  // Hidden by default
 
     // Solo button (arrange track-header style)
@@ -261,39 +248,18 @@ TrackInspector::TrackInspector() {
     };
     addAndMakeVisible(*recordButton_);
 
-    // Monitor button (3-state: Off → In → Auto → Off)
-    monitorButton_.setButtonText("-");
-    monitorButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
-    monitorButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    monitorButton_.setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    monitorButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    monitorButton_.setColour(juce::TextButton::textColourOnId,
-                             DarkTheme::getColour(DarkTheme::BACKGROUND));
-    monitorButton_.setTooltip("Input monitoring (Off/In/Auto)");
-    monitorButton_.onClick = [this]() {
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID ||
-            selectedTrackId_ == magda::MASTER_TRACK_ID)
-            return;
-        auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        if (!track)
-            return;
-        magda::InputMonitorMode nextMode;
-        switch (track->inputMonitor) {
-            case magda::InputMonitorMode::Off:
-                nextMode = magda::InputMonitorMode::In;
-                break;
-            case magda::InputMonitorMode::In:
-                nextMode = magda::InputMonitorMode::Auto;
-                break;
-            case magda::InputMonitorMode::Auto:
-                nextMode = magda::InputMonitorMode::Off;
-                break;
-        }
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetTrackInputMonitorCommand>(selectedTrackId_, nextMode));
+    // Input-monitor: 3-state control (Off / In / Auto). It reads/writes the mode
+    // itself; the lambdas resolve single- vs multi-track selection dynamically so
+    // they don't need rewiring when the selection changes.
+    monitorButton_.getTrackId = [this]() {
+        if (isMultiTrackMode_ && !selectedTrackIds_.empty())
+            return *selectedTrackIds_.begin();
+        return selectedTrackId_;
+    };
+    monitorButton_.getTargets = [this]() {
+        if (isMultiTrackMode_)
+            return std::vector<magda::TrackId>(selectedTrackIds_.begin(), selectedTrackIds_.end());
+        return std::vector<magda::TrackId>{selectedTrackId_};
     };
     addAndMakeVisible(monitorButton_);
 
@@ -919,28 +885,8 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
                     selectedTrackId_, recordButton_->getToggleState());
             }
         };
-        monitorButton_.onClick = [this]() {
-            if (selectedTrackId_ == magda::INVALID_TRACK_ID ||
-                selectedTrackId_ == magda::MASTER_TRACK_ID)
-                return;
-            auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-            if (!track)
-                return;
-            magda::InputMonitorMode nextMode;
-            switch (track->inputMonitor) {
-                case magda::InputMonitorMode::Off:
-                    nextMode = magda::InputMonitorMode::In;
-                    break;
-                case magda::InputMonitorMode::In:
-                    nextMode = magda::InputMonitorMode::Auto;
-                    break;
-                case magda::InputMonitorMode::Auto:
-                    nextMode = magda::InputMonitorMode::Off;
-                    break;
-            }
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetTrackInputMonitorCommand>(selectedTrackId_, nextMode));
-        };
+        // monitorButton_ handles its own clicks via the control (getTrackId /
+        // getTargets wired in the constructor); no per-mode rewiring needed.
     }
 
     updateFromSelectedTrack();
@@ -1065,24 +1011,12 @@ void TrackInspector::updateFromSelectedTrack() {
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
         muteButton_->setToggleState(track->muted, juce::dontSendNotification);
-        chordSpeakerButton_->setActive(!track->muted);  // speaker on = audible
+        chordSpeakerButton_->refresh();
         soloButton_->setToggleState(track->soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track->recordArmed, juce::dontSendNotification);
 
         // Update monitor button
-        switch (track->inputMonitor) {
-            case magda::InputMonitorMode::Off:
-                monitorButton_.setButtonText("-");
-                break;
-            case magda::InputMonitorMode::In:
-                monitorButton_.setButtonText("I");
-                break;
-            case magda::InputMonitorMode::Auto:
-                monitorButton_.setButtonText("A");
-                break;
-        }
-        monitorButton_.setToggleState(track->inputMonitor != magda::InputMonitorMode::Off,
-                                      juce::dontSendNotification);
+        monitorButton_.refresh();
 
         // Convert linear gain to dB for display
         float gainDb = (track->volume <= 0.0f) ? -60.0f : 20.0f * std::log10(track->volume);
@@ -1155,7 +1089,6 @@ void TrackInspector::updateFromMultiTrackSelection() {
     bool allMuted = true;
     bool allSoloed = true;
     bool allRecordArmed = true;
-    bool allMonitorOn = true;
     for (auto tid : selectedTrackIds_) {
         const auto* track = tm.getTrack(tid);
         if (!track)
@@ -1166,14 +1099,12 @@ void TrackInspector::updateFromMultiTrackSelection() {
             allSoloed = false;
         if (!track->recordArmed)
             allRecordArmed = false;
-        if (track->inputMonitor == magda::InputMonitorMode::Off)
-            allMonitorOn = false;
     }
 
     muteButton_->setToggleState(allMuted, juce::dontSendNotification);
     soloButton_->setToggleState(allSoloed, juce::dontSendNotification);
     recordButton_->setToggleState(allRecordArmed, juce::dontSendNotification);
-    monitorButton_.setToggleState(allMonitorOn, juce::dontSendNotification);
+    monitorButton_.refresh();
 
     // Rewire button callbacks for multi-track mode
     muteButton_->onClick = [this]() {
@@ -1196,15 +1127,8 @@ void TrackInspector::updateFromMultiTrackSelection() {
             magda::TrackManager::getInstance().setTrackRecordArmed(tid, newState);
         }
     };
-    monitorButton_.onClick = [this]() {
-        // Cycle all selected tracks to the same next mode based on current button state
-        auto nextMode = monitorButton_.getToggleState() ? magda::InputMonitorMode::In
-                                                        : magda::InputMonitorMode::Off;
-        for (auto tid : selectedTrackIds_) {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetTrackInputMonitorCommand>(tid, nextMode));
-        }
-    };
+    // monitorButton_ cycles/menus itself; getTargets returns the multi-track
+    // selection, so a change applies to all selected tracks at once.
 
     // Volume/Pan: check if all values are the same or mixed
     float firstVolDb = 0.0f;
@@ -1364,14 +1288,15 @@ void TrackInspector::showTrackControls(bool show) {
     trackNameValue_.setVisible(show);
     colourSwatch_->setVisible(show && !isMaster);
     masterGlyph_->setVisible(show && isMaster);
-    // Chord track: speaker audition toggle replaces "M"; no record. (volume +
-    // speaker + solo + monitor, matching the chord track header.)
+    // Chord track: a single 3-state audition control replaces "M" + solo +
+    // monitor (it folds all three in); no record either. (volume + chord control,
+    // matching the chord track header.)
     muteButton_->setVisible(show && !isMaster && !isChord);
     speakerButton_->setVisible(isMaster);
     chordSpeakerButton_->setVisible(isChord);
-    soloButton_->setVisible(show && !isMaster);
+    soloButton_->setVisible(show && !isMaster && !isChord);
     recordButton_->setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
-    monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
+    monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
     gainLabel_->setVisible(show);
     panLabel_->setVisible(show && !isMaster && !isChord);
 

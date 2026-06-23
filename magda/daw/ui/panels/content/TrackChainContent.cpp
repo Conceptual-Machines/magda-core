@@ -21,6 +21,7 @@
 #include "core/ModInfo.hpp"
 #include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -38,8 +39,8 @@
 namespace magda::daw::ui {
 namespace {
 void configureMasterSpeakerButton(SvgButton& button) {
-    // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
-    // yellow chip (master_off). Toggle state drives which icon shows.
+    // Single speaker glyph (master_on) recoloured by the chip: audible = gray
+    // speaker on the surface chip, muted = speaker on a yellow chip.
     button.setClickingTogglesState(true);
     button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
@@ -1025,6 +1026,7 @@ TrackChainContent::TrackChainContent()
     muteButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     muteButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
     muteButton_.setIconPadding(3.5f);
+    muteButton_.setTooltip(tr("tracks.mute.tooltip"));
     muteButton_.setClickingTogglesState(true);
     muteButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -1047,23 +1049,10 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(masterMuteButton_);
 
-    // Chord-track audition (mute) toggle: cyan speaker, mirrors the chord header.
-    chordSpeakerButton_ = std::make_unique<magda::SvgButton>(
-        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
-        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
-    chordSpeakerButton_->setTooltip("Preview chords on playback");
-    chordSpeakerButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    chordSpeakerButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    chordSpeakerButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
-    chordSpeakerButton_->onClick = [this]() {
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
-            return;
-        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        const bool nowMuted = track ? !track->muted : true;
-        chordSpeakerButton_->setActive(!nowMuted);
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_, nowMuted));
-    };
+    // Chord-track audition: the same 3-state control (Silent / Audible / Solo) as
+    // the chord track header, folding mute / solo / monitor into one chord glyph.
+    chordSpeakerButton_ = std::make_unique<magda::ChordAuditionControl>();
+    chordSpeakerButton_->getTrackId = [this]() { return selectedTrackId_; };
     addChildComponent(*chordSpeakerButton_);
 
     // Input monitor (Off/In/Auto), same 3-state control as the header.
@@ -1112,6 +1101,7 @@ TrackChainContent::TrackChainContent()
     soloButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     soloButton_.setIconPadding(5.0f);
+    soloButton_.setTooltip(tr("tracks.solo.tooltip"));
     soloButton_.setClickingTogglesState(true);
     soloButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -1990,7 +1980,7 @@ void TrackChainContent::trackPropertyChanged(int trackId) {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
             syncMasterSpeakerButton(masterMuteButton_, track->muted);
-            chordSpeakerButton_->setActive(!track->muted);
+            chordSpeakerButton_->refresh();
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
             volumeLabel_.setValue(gainToDb(track->volume), juce::dontSendNotification);
             panLabel_.setValue(track->pan, juce::dontSendNotification);
@@ -2421,21 +2411,9 @@ void TrackChainContent::updateFromSelectedTrack() {
             const bool isMaster = track->type == magda::TrackType::Master;
             const bool isChord = track->type == magda::TrackType::Chord;
 
-            // Chord audition speaker + monitor mirror the chord track header.
-            chordSpeakerButton_->setActive(!track->muted);
-            switch (track->inputMonitor) {
-                case magda::InputMonitorMode::In:
-                    monitorButton_.setButtonText("I");
-                    break;
-                case magda::InputMonitorMode::Auto:
-                    monitorButton_.setButtonText("A");
-                    break;
-                default:
-                    monitorButton_.setButtonText("-");
-                    break;
-            }
-            monitorButton_.setToggleState(track->inputMonitor != magda::InputMonitorMode::Off,
-                                          juce::dontSendNotification);
+            // Chord audition control mirrors the chord track header; it folds in
+            // monitoring, so there's no separate monitor button to sync here.
+            chordSpeakerButton_->refresh();
 
             // Left chain action buttons + post-fx / analysis toggles are hidden
             // for the chord track (no modulation / macros / racks / analysis).
@@ -2455,7 +2433,7 @@ void TrackChainContent::updateFromSelectedTrack() {
                 refreshGainStagingButton();
             }
             trackNameLabel_.setVisible(true);
-            soloButton_.setVisible(!isMaster);
+            soloButton_.setVisible(!isMaster && !isChord);
             volumeLabel_.setVisible(true);
             panLabel_.setVisible(!isMaster && !isChord);
             chainBypassButton_->setVisible(!isMaster && !isChord);
@@ -2463,7 +2441,9 @@ void TrackChainContent::updateFromSelectedTrack() {
             muteButton_.setVisible(!isMaster && !isChord);
             masterMuteButton_.setVisible(isMaster);
             chordSpeakerButton_->setVisible(isChord);
-            monitorButton_.setVisible(isChord);
+            // Monitor is folded into the chord audition control now, so the chord
+            // track no longer shows a standalone monitor button.
+            monitorButton_.setVisible(false);
 
             noSelectionLabel_.setVisible(false);
             rebuildNodeComponents();
@@ -2572,17 +2552,13 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
         return;
 
     // Chord track: no left chain tools; the right side mirrors the chord track
-    // header (volume + audition speaker + solo + monitor). Name fills the rest.
+    // header (volume + one chord audition control that folds in mute / solo /
+    // monitor). Name fills the rest.
     if (const auto* chordTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         chordTrack && chordTrack->type == magda::TrackType::Chord) {
         auto a = headerBounds.reduced(8, 4);
-        const int gap = 4;
-        monitorButton_.setBounds(a.removeFromRight(18));
-        a.removeFromRight(gap);
-        soloButton_.setBounds(a.removeFromRight(18));
-        a.removeFromRight(gap);
         chordSpeakerButton_->setBounds(a.removeFromRight(22).withSizeKeepingCentre(22, 22));
-        a.removeFromRight(gap);
+        a.removeFromRight(4);
         volumeLabel_.setBounds(a.removeFromRight(60));
         a.removeFromRight(8);
         trackNameLabel_.setBounds(a);
