@@ -159,6 +159,15 @@ struct DeviceInfo {
     bool canSidechain = false;    // true if TE plugin supports audio sidechain input
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
 
+    // "MIDI in thru": for a wrapped instrument, pass the rack's raw MIDI input
+    // past the plugin to the rack output so a MIDI-triggered FX placed after the
+    // instrument still receives the note stream. On by default (matches the
+    // historic always-on passthrough, so old projects without the field keep
+    // working). The plugin's own MIDI output always flows downstream regardless
+    // (so a wrapped sequencer triggers later instruments); this flag only
+    // controls the raw-input bypass.
+    bool midiInThru = true;
+
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;
 

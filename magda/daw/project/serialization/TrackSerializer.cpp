@@ -481,6 +481,9 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     if (device.canReceiveMidi) {
         obj->setProperty("canReceiveMidi", true);
     }
+    // Always persisted: default is true, so a missing field must read back as
+    // true (old projects) and an explicit user-disabled false must survive.
+    obj->setProperty("midiInThru", device.midiInThru);
 
     // Per-instance drum kit rows
     if (!device.kitRows.empty()) {
@@ -637,6 +640,10 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     auto canReceiveMidiVar = obj->getProperty("canReceiveMidi");
     if (!canReceiveMidiVar.isVoid()) {
         outDevice.canReceiveMidi = static_cast<bool>(canReceiveMidiVar);
+    }
+    auto midiInThruVar = obj->getProperty("midiInThru");
+    if (!midiInThruVar.isVoid()) {
+        outDevice.midiInThru = static_cast<bool>(midiInThruVar);
     }
 
     // Plugin native state

@@ -29,7 +29,7 @@ te::Plugin::Ptr findMeterTapPlugin(te::RackType::Ptr rackType) {
 
 InstrumentRackManager::InstrumentRackManager(te::Edit& edit) : edit_(edit) {}
 
-te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument) {
+te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument, bool midiInThru) {
     if (!instrument) {
         return nullptr;
     }
@@ -76,10 +76,19 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // Keep MIDI flowing to later track-chain devices. MIDI-triggered FX such
-    // as ShaperBox need the original note stream even when an instrument sits
-    // before them in the chain.
-    rackType->addConnection(rackIOId, 0, rackIOId, 0);
+    // A wrapped plugin's OWN MIDI output always flows to the rack output, so a
+    // MIDI-producing plugin (sequencer, arpeggiator -- e.g. Stochas) triggers
+    // instruments downstream of it in the chain. This is unconditional: a plain
+    // synth emits no MIDI, so the connection simply carries nothing.
+    rackType->addConnection(synthId, 0, rackIOId, 0);
+
+    // The rack's raw MIDI INPUT passing straight through (bypassing the plugin)
+    // is the user-controlled "MIDI in thru" toggle. Off by default: an arp then
+    // forwards only its transformed stream rather than that plus the dry notes.
+    // Enable it to feed a MIDI-triggered FX (e.g. ShaperBox) sitting after the
+    // instrument. See setMidiInThru().
+    if (midiInThru)
+        rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
@@ -112,9 +121,10 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
 }
 
 te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr instrument,
-                                                              int numOutputChannels) {
+                                                              int numOutputChannels,
+                                                              bool midiInThru) {
     if (!instrument || numOutputChannels <= 2) {
-        return wrapInstrument(instrument);  // Fallback to normal wrapping
+        return wrapInstrument(instrument, midiInThru);  // Fallback to normal wrapping
     }
 
     // 1. Create a new RackType in the edit
@@ -160,8 +170,12 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // Keep MIDI flowing to later track-chain devices (see wrapInstrument).
-    rackType->addConnection(rackIOId, 0, rackIOId, 0);
+    // Plugin's own MIDI output always flows downstream (see wrapInstrument).
+    rackType->addConnection(synthId, 0, rackIOId, 0);
+
+    // "MIDI in thru" toggle: raw input bypassing the plugin (see wrapInstrument).
+    if (midiInThru)
+        rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
@@ -376,6 +390,21 @@ te::RackType::Ptr InstrumentRackManager::getRackType(DeviceId deviceId) const {
         return it->second.rackType;
     }
     return nullptr;
+}
+
+void InstrumentRackManager::setMidiInThru(DeviceId deviceId, bool enabled) {
+    auto it = wrapped_.find(deviceId);
+    if (it == wrapped_.end() || !it->second.rackType)
+        return;
+
+    // Toggle the raw-input-passthrough connection (rack MIDI in --> rack MIDI
+    // out) live. The plugin's own MIDI output (synth pin 0 --> rack out) is
+    // wired unconditionally at wrap time and is untouched here.
+    auto rackIOId = te::EditItemID();  // rack I/O
+    auto& rackType = *it->second.rackType;
+    rackType.removeConnection(rackIOId, 0, rackIOId, 0);
+    if (enabled)
+        rackType.addConnection(rackIOId, 0, rackIOId, 0);
 }
 
 void InstrumentRackManager::clear() {

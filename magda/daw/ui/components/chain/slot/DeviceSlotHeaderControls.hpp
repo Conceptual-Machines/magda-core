@@ -19,9 +19,10 @@ struct DeviceSlotHeaderControls {
     juce::Component* powerButton = nullptr;
     juce::Component* presetButton = nullptr;
     juce::Component* exportClipButton = nullptr;
-    juce::Component* randomButton = nullptr;      // step-sequencer pattern randomize
-    juce::Component* stepRecordButton = nullptr;  // step-sequencer step record toggle
-    juce::Component* midiThruButton = nullptr;    // step-sequencer MIDI thru toggle
+    juce::Component* randomButton = nullptr;        // step-sequencer pattern randomize
+    juce::Component* stepRecordButton = nullptr;    // step-sequencer step record toggle
+    juce::Component* midiThruButton = nullptr;      // step-sequencer MIDI thru toggle
+    juce::Component* instMidiThruButton = nullptr;  // wrapped-instrument MIDI in thru toggle
 };
 
 struct DeviceSlotCollapsedControls {

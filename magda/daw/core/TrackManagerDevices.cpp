@@ -1106,6 +1106,13 @@ void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePat
     }
 }
 
+void TrackManager::setDeviceInChainMidiInThruByPath(const ChainNodePath& devicePath, bool thru) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        device->midiInThru = thru;
+        notifyDevicePropertyChanged(devicePath);
+    }
+}
+
 // ============================================================================
 // Device Parameters
 // ============================================================================
