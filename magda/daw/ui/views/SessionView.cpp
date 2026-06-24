@@ -116,17 +116,18 @@ class SessionView::SessionToggleRail : public juce::Component {
         auto& cfg = Config::getInstance();
 
         setupButton(sendsButton_, "SessionShowSends", BinaryData::iconsendsboldm_svg,
-                    BinaryData::iconsendsboldm_svgSize, "Show sends", cfg.getMixerShowSends(),
-                    [](bool v) { Config::getInstance().setMixerShowSends(v); });
+                    BinaryData::iconsendsboldm_svgSize, "Show sends", cfg.getSessionShowSends(),
+                    [](bool v) { Config::getInstance().setSessionShowSends(v); });
 
         setupButton(routingButton_, "SessionShowRouting", BinaryData::inputoutput_svg,
-                    BinaryData::inputoutput_svgSize, "Show I/O routing", cfg.getMixerShowRouting(),
-                    [](bool v) { Config::getInstance().setMixerShowRouting(v); });
+                    BinaryData::inputoutput_svgSize, "Show I/O routing",
+                    cfg.getSessionShowRouting(),
+                    [](bool v) { Config::getInstance().setSessionShowRouting(v); });
 
         setupButton(monitorButton_, "SessionShowMonitor", BinaryData::recordmonitor_svg,
                     BinaryData::recordmonitor_svgSize, "Show record/monitor row",
-                    cfg.getMixerShowMonitor(),
-                    [](bool v) { Config::getInstance().setMixerShowMonitor(v); });
+                    cfg.getSessionShowMonitor(),
+                    [](bool v) { Config::getInstance().setSessionShowMonitor(v); });
     }
 
     void paint(juce::Graphics& g) override {
@@ -160,9 +161,9 @@ class SessionView::SessionToggleRail : public juce::Component {
 
     void refreshFromConfig() {
         auto& cfg = Config::getInstance();
-        applyToggleState(sendsButton_.get(), cfg.getMixerShowSends());
-        applyToggleState(routingButton_.get(), cfg.getMixerShowRouting());
-        applyToggleState(monitorButton_.get(), cfg.getMixerShowMonitor());
+        applyToggleState(sendsButton_.get(), cfg.getSessionShowSends());
+        applyToggleState(routingButton_.get(), cfg.getSessionShowRouting());
+        applyToggleState(monitorButton_.get(), cfg.getSessionShowMonitor());
     }
 
     static constexpr int RAIL_WIDTH = 36;
@@ -2387,9 +2388,9 @@ void SessionView::setupSceneButtons() {
 
 void SessionView::syncMixerVisibilityFromConfig() {
     auto& cfg = Config::getInstance();
-    ioRowVisible_ = cfg.getMixerShowRouting();
-    sendRowVisible_ = cfg.getMixerShowSends();
-    recordMonitorVisible_ = cfg.getMixerShowMonitor();
+    ioRowVisible_ = cfg.getSessionShowRouting();
+    sendRowVisible_ = cfg.getSessionShowSends();
+    recordMonitorVisible_ = cfg.getSessionShowMonitor();
 
     for (auto& strip : trackMiniStrips_)
         strip->setShowRecordMonitor(recordMonitorVisible_);
@@ -3110,11 +3111,11 @@ void SessionView::showMixerContextMenu() {
             return;
         auto& cfg = Config::getInstance();
         if (result == 1) {
-            cfg.setMixerShowRouting(!cfg.getMixerShowRouting());
+            cfg.setSessionShowRouting(!cfg.getSessionShowRouting());
         } else if (result == 2) {
-            cfg.setMixerShowSends(!cfg.getMixerShowSends());
+            cfg.setSessionShowSends(!cfg.getSessionShowSends());
         } else if (result == 3) {
-            cfg.setMixerShowMonitor(!cfg.getMixerShowMonitor());
+            cfg.setSessionShowMonitor(!cfg.getSessionShowMonitor());
         } else {
             return;
         }
