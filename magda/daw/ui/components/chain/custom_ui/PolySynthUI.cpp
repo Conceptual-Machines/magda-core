@@ -300,13 +300,16 @@ void PolySynthUI::layoutAdsrSection(juce::Rectangle<int> area, AdsrGraph* graph,
 void PolySynthUI::resized() {
     auto b = getLocalBounds().reduced(2);
     const int halfW = b.getWidth() / 2;
-    const int halfH = b.getHeight() / 2;
+    // Bias the split toward the top row so the filter response curve (top-right)
+    // gets more height; the ADSR sections beneath stay compact. The bottom row
+    // still needs room for the title, envelope graph and value-box row.
+    const int topH = b.getHeight() * 5 / 8;
+    const int botH = b.getHeight() - topH;
 
-    oscArea_ = {b.getX(), b.getY(), halfW, halfH};
-    filterArea_ = {b.getX() + halfW, b.getY(), b.getWidth() - halfW, halfH};
-    ampArea_ = {b.getX(), b.getY() + halfH, halfW, b.getHeight() - halfH};
-    filterEnvArea_ = {b.getX() + halfW, b.getY() + halfH, b.getWidth() - halfW,
-                      b.getHeight() - halfH};
+    oscArea_ = {b.getX(), b.getY(), halfW, topH};
+    filterArea_ = {b.getX() + halfW, b.getY(), b.getWidth() - halfW, topH};
+    ampArea_ = {b.getX(), b.getY() + topH, halfW, botH};
+    filterEnvArea_ = {b.getX() + halfW, b.getY() + topH, b.getWidth() - halfW, botH};
 
     std::vector<int> oscParams;
     oscParams.reserve(kNumOscillators * kOscSlotCount);
