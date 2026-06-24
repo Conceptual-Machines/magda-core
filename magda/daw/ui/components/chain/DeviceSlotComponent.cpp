@@ -77,57 +77,6 @@ magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& de
     return rackPath;
 }
 
-// LookAndFeel for the plugin-presets header button. Visually a flat label
-// with a chevron on the right, so it reads as a menu trigger rather than a
-// "select one of these values" combo.
-class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
-  public:
-    void drawButtonBackground(juce::Graphics& g, juce::Button& button,
-                              const juce::Colour& /*bgColour*/, bool isHighlighted,
-                              bool isDown) override {
-        auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
-        auto bg = DarkTheme::getColour(DarkTheme::SURFACE);
-        if (isDown)
-            bg = bg.darker(0.2f);
-        else if (isHighlighted)
-            bg = bg.brighter(0.1f);
-        g.setColour(bg);
-        g.fillRoundedRectangle(bounds, 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
-    }
-
-    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool /*highlighted*/,
-                        bool /*down*/) override {
-        auto bounds = button.getLocalBounds().reduced(6, 0);
-        constexpr float chevronW = 10.0f;
-        auto chevronArea = bounds.removeFromRight((int)chevronW).toFloat();
-
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.setColour(
-            DarkTheme::getTextColour().withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
-        g.drawText(button.getButtonText(), bounds.toFloat(), juce::Justification::centredLeft,
-                   /*useEllipses*/ true);
-
-        // Down-pointing chevron, two strokes from the centre.
-        const float cx = chevronArea.getCentreX();
-        const float cy = chevronArea.getCentreY() + 1.0f;
-        constexpr float halfSize = 2.5f;
-        juce::Path chevron;
-        chevron.startNewSubPath(cx - halfSize, cy - 1.0f);
-        chevron.lineTo(cx, cy + 1.5f);
-        chevron.lineTo(cx + halfSize, cy - 1.0f);
-        g.setColour(DarkTheme::getSecondaryTextColour());
-        g.strokePath(chevron, juce::PathStrokeType(1.0f, juce::PathStrokeType::curved,
-                                                   juce::PathStrokeType::rounded));
-    }
-
-    static PluginPresetsButtonLookAndFeel& getInstance() {
-        static PluginPresetsButtonLookAndFeel instance;
-        return instance;
-    }
-};
-
 }  // namespace
 
 DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : device_(device) {
@@ -307,7 +256,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // built-in programs are available so plugins with proprietary preset
     // systems (Vital, Serum 2, etc.) don't show a dead control.
     presetsButton_ = std::make_unique<juce::TextButton>("Presets");
-    presetsButton_->setLookAndFeel(&PluginPresetsButtonLookAndFeel::getInstance());
+    presetsButton_->setLookAndFeel(&getPluginPresetsButtonLookAndFeel());
     presetsButton_->setTooltip("Plugin Presets");
     presetsButton_->onClick = [this]() { showPluginPresetMenu(); };
     addChildComponent(*presetsButton_);  // hidden by default; shown by refreshPresetsButton

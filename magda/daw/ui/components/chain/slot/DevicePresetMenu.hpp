@@ -40,6 +40,8 @@ void loadMagdaPreset(
 
 bool hasPluginPresetsAvailable(const magda::DeviceInfo& device, bool isInternalDevice);
 
+juce::LookAndFeel& getPluginPresetsButtonLookAndFeel();
+
 struct PluginPresetMenuActions {
     std::function<void()> saveAs;
     std::function<void(const juce::File& file)> loadFile;
