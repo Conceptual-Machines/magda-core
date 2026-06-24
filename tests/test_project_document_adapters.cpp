@@ -124,6 +124,7 @@ TEST_CASE("DawProjectXmlAdapter roundtrips transport tracks and arrangement clip
     REQUIRE(imported.info.timeSignatureDenominator == 8);
     REQUIRE(imported.tracks.size() == 1);
     REQUIRE(imported.tracks[0].name == "Bass");
+    REQUIRE(imported.tracks[0].colour == juce::Colour(0xffa2eabf));
     REQUIRE(imported.clips.size() == 1);
     REQUIRE(imported.clips[0].name == "Hook");
     REQUIRE(imported.clips[0].placement.startBeat == 1.0);
@@ -441,11 +442,20 @@ TEST_CASE("ProjectSerializer exports and stages dawproject archives",
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
     clip->name = "Pattern";
+    clip->colour = juce::Colour(0xff44c7ff);
     clip->midiNotes.push_back(MidiNote{60, 100, 0.0, 0.5});
+
+    if (auto* track = TrackManager::getInstance().getTrack(trackId))
+        track->colour = juce::Colour(0xffff5a36);
 
     auto file = createTempDawProjectFile();
     REQUIRE(ProjectSerializer::exportToDawProject(file, info));
     REQUIRE(file.existsAsFile());
+
+    juce::ZipFile zip(file);
+    auto projectXml = readZipTextEntry(zip, "project.xml");
+    REQUIRE(projectXml.contains("color=\"#ff5a36\""));
+    REQUIRE(projectXml.contains("color=\"#44c7ff\""));
 
     StagedProjectData staged;
     REQUIRE(ProjectSerializer::loadDawProjectAndStage(file, staged));
@@ -453,8 +463,10 @@ TEST_CASE("ProjectSerializer exports and stages dawproject archives",
     REQUIRE(staged.info.tempo == 126.0);
     REQUIRE(staged.tracks.size() == 1);
     REQUIRE(staged.tracks[0].name == "Arp");
+    REQUIRE(staged.tracks[0].colour == juce::Colour(0xffff5a36));
     REQUIRE(staged.clips.size() == 1);
     REQUIRE(staged.clips[0].name == "Pattern");
+    REQUIRE(staged.clips[0].colour == juce::Colour(0xff44c7ff));
     REQUIRE(staged.clips[0].midiNotes.size() == 1);
     REQUIRE(staged.clips[0].midiNotes[0].noteNumber == 60);
 
@@ -469,8 +481,8 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     constexpr int kSampleRate = 48000;
     constexpr int kChannels = 1;
     constexpr int kFrames = kSampleRate / 2;  // 0.5 s
-    auto source = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                      .getNonexistentChildFile("magda-dawproject-sample", ".wav");
+    auto source = juce::File::getCurrentWorkingDirectory().getNonexistentChildFile(
+        "magda-dawproject-sample", ".wav");
     {
         juce::WavAudioFormat wav;
         std::unique_ptr<juce::FileOutputStream> out(source.createOutputStream());
@@ -534,7 +546,9 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
 
     // Import re-points the clip at an extracted, byte-identical copy of the WAV.
     ProjectDocument imported;
-    REQUIRE(DawProjectArchive::readFromFile(archive, imported, error));
+    auto extractionDir = juce::File::getCurrentWorkingDirectory().getNonexistentChildFile(
+        "magda-dawproject-import", "");
+    REQUIRE(DawProjectArchive::readFromFile(archive, imported, error, extractionDir));
     REQUIRE(imported.clips.size() == 1);
     REQUIRE(imported.clips[0].isAudio());
     const juce::File extracted(imported.clips[0].audio().source.filePath);

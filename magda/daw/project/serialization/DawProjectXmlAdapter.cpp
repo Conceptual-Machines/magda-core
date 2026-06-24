@@ -23,7 +23,7 @@ juce::String idFor(const char* prefix, int value) {
 }
 
 juce::String colourToDawProject(const juce::Colour colour) {
-    return "#" + colour.toDisplayString(false).substring(2).toLowerCase();
+    return "#" + colour.toDisplayString(false).toLowerCase();
 }
 
 juce::Colour colourFromDawProject(const juce::String& value) {
