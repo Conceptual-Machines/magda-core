@@ -44,6 +44,7 @@
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotMidiUiBinding.hpp"
+#include "slot/DeviceSlotModulationContext.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
@@ -1315,59 +1316,14 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 }
 
 void DeviceSlotComponent::updateParamModulation() {
-    // Get mods and macros data from the device
-    const auto* mods = getModsData();
-    const auto* macros = getMacrosData();
-
-    // Get rack-level mods and macros from nearest parent rack
-    const magda::ModArray* rackMods = nullptr;
-    const magda::MacroArray* rackMacros = nullptr;
-    if (auto rackPath = nearestRackPathForDevicePath(nodePath_); rackPath.isValid()) {
-        if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath)) {
-            rackMods = &rack->mods;
-            rackMacros = &rack->macros;
-        }
-    }
-
-    // Get track-level mods and macros
-    const magda::ModArray* trackMods = nullptr;
-    const magda::MacroArray* trackMacros = nullptr;
-    if (nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        const auto* trackInfo = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
-        if (trackInfo) {
-            trackMods = &trackInfo->mods;
-            trackMacros = &trackInfo->macros;
-        }
-    }
-
-    // Check if a mod is selected in SelectionManager for contextual display
-    auto& selMgr = magda::SelectionManager::getInstance();
-    int selectedModIndex = -1;
-    int selectedMacroIndex = -1;
-
-    if (selMgr.hasModSelection()) {
-        const auto& modSel = selMgr.getModSelection();
-        // Only apply contextual filtering if the mod belongs to this device
-        if (modSel.parentPath == nodePath_) {
-            selectedModIndex = modSel.modIndex;
-        }
-    }
-    if (selectedModIndex_ >= 0)
-        selectedModIndex = selectedModIndex_;
-
-    if (selMgr.hasMacroSelection()) {
-        const auto& macroSel = selMgr.getMacroSelection();
-        // Only apply contextual filtering if the macro belongs to this device
-        if (macroSel.parentPath == nodePath_) {
-            selectedMacroIndex = macroSel.macroIndex;
-        }
-    }
-    if (selectedMacroIndex_ >= 0)
-        selectedMacroIndex = selectedMacroIndex_;
+    const auto context = resolveDeviceSlotModulationContext(
+        nodePath_, getModsData(), getMacrosData(), selectedModIndex_, selectedMacroIndex_);
 
     // Update each param slot with current mod/macro data
-    paramGrid_->updateParamModulation(mods, macros, rackMods, rackMacros, trackMods, trackMacros,
-                                      device_.id, nodePath_, selectedModIndex, selectedMacroIndex);
+    paramGrid_->updateParamModulation(context.deviceMods, context.deviceMacros, context.rackMods,
+                                      context.rackMacros, context.trackMods, context.trackMacros,
+                                      device_.id, nodePath_, context.selectedModIndex,
+                                      context.selectedMacroIndex);
 
     if (compiledPanel_) {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
@@ -1376,21 +1332,27 @@ void DeviceSlotComponent::updateParamModulation() {
                 compiledPanel_->bindPlugin(plugin.get());
             }
         }
-        ParamLinkContext curveLinkContext{device_.id,        -1,
-                                          nodePath_,         mods,
-                                          rackMods,          macros,
-                                          rackMacros,        trackMods,
-                                          trackMacros,       selectedModIndex,
-                                          selectedMacroIndex};
+        ParamLinkContext curveLinkContext{device_.id,
+                                          -1,
+                                          nodePath_,
+                                          context.deviceMods,
+                                          context.rackMods,
+                                          context.deviceMacros,
+                                          context.rackMacros,
+                                          context.trackMods,
+                                          context.trackMacros,
+                                          context.selectedModIndex,
+                                          context.selectedMacroIndex};
         compiledPanel_->updateFromDevice(device_, &curveLinkContext);
     }
 
     // Also update custom UI linkable sliders
     setupCustomUILinking();
 
-    drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_, macros, mods,
-                                           trackMacros, trackMods, selectedModIndex,
-                                           selectedMacroIndex);
+    drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_,
+                                           context.deviceMacros, context.deviceMods,
+                                           context.trackMacros, context.trackMods,
+                                           context.selectedModIndex, context.selectedMacroIndex);
 }
 
 void DeviceSlotComponent::paint(juce::Graphics& g) {
