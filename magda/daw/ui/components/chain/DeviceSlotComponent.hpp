@@ -271,6 +271,9 @@ class DeviceSlotComponent : public NodeComponent,
     // when the device exposes that wrapper pair (external plugins via TE).
     // The meter and gain slider shrink to leave room above when present.
     std::unique_ptr<juce::Slider> mixKnob_;
+    void setupGainMeterControls();
+    void syncGainControlsFromDevice();
+    void refreshMixKnobFromDevice(bool relayoutOnVisibilityChange);
     bool hasWrapperMixPair() const;
     double currentMixPosition() const;
     void syncMixKnobFromDevice();
