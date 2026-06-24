@@ -57,8 +57,8 @@ struct LayoutConfig {
 
     // Track headers
     int defaultTrackHeaderWidth = 200;
-    int minTrackHeaderWidth = 150;
-    int maxTrackHeaderWidth = 350;
+    int minTrackHeaderWidth = 200;
+    int maxTrackHeaderWidth = 300;
 
     // Spacing and padding
     int headerContentPadding = 8;

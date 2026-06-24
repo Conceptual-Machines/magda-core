@@ -74,6 +74,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/faust-text-logo.svg
     ../../assets/icons/general/script.svg
     ../../assets/icons/general/speaker.svg
+    ../../assets/icons/general/speaker_simple.svg
     ../../assets/icons/general/speaker_muted.svg
     ../../assets/icons/general/speaker_on.svg
     ../../assets/icons/general/speaker_off.svg
@@ -167,6 +168,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/automation/horizontal_snap.svg
     ../../assets/icons/automation/vertical_snap.svg
     ../../assets/icons/automation/automation.svg
+    ../../assets/icons/automation/automation_master_header.svg
     # Waveform icons
     ../../assets/icons/waveform/sine-wave.svg
     ../../assets/icons/waveform/time_bend_off.svg

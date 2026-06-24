@@ -12,6 +12,7 @@
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
+#include "../components/common/MonitorControl.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/LevelMeter.hpp"
@@ -115,17 +116,18 @@ class SessionView::SessionToggleRail : public juce::Component {
         auto& cfg = Config::getInstance();
 
         setupButton(sendsButton_, "SessionShowSends", BinaryData::iconsendsboldm_svg,
-                    BinaryData::iconsendsboldm_svgSize, "Show sends", cfg.getMixerShowSends(),
-                    [](bool v) { Config::getInstance().setMixerShowSends(v); });
+                    BinaryData::iconsendsboldm_svgSize, "Show sends", cfg.getSessionShowSends(),
+                    [](bool v) { Config::getInstance().setSessionShowSends(v); });
 
         setupButton(routingButton_, "SessionShowRouting", BinaryData::inputoutput_svg,
-                    BinaryData::inputoutput_svgSize, "Show I/O routing", cfg.getMixerShowRouting(),
-                    [](bool v) { Config::getInstance().setMixerShowRouting(v); });
+                    BinaryData::inputoutput_svgSize, "Show I/O routing",
+                    cfg.getSessionShowRouting(),
+                    [](bool v) { Config::getInstance().setSessionShowRouting(v); });
 
         setupButton(monitorButton_, "SessionShowMonitor", BinaryData::recordmonitor_svg,
                     BinaryData::recordmonitor_svgSize, "Show record/monitor row",
-                    cfg.getMixerShowMonitor(),
-                    [](bool v) { Config::getInstance().setMixerShowMonitor(v); });
+                    cfg.getSessionShowMonitor(),
+                    [](bool v) { Config::getInstance().setSessionShowMonitor(v); });
     }
 
     void paint(juce::Graphics& g) override {
@@ -159,9 +161,9 @@ class SessionView::SessionToggleRail : public juce::Component {
 
     void refreshFromConfig() {
         auto& cfg = Config::getInstance();
-        applyToggleState(sendsButton_.get(), cfg.getMixerShowSends());
-        applyToggleState(routingButton_.get(), cfg.getMixerShowRouting());
-        applyToggleState(monitorButton_.get(), cfg.getMixerShowMonitor());
+        applyToggleState(sendsButton_.get(), cfg.getSessionShowSends());
+        applyToggleState(routingButton_.get(), cfg.getSessionShowRouting());
+        applyToggleState(monitorButton_.get(), cfg.getSessionShowMonitor());
     }
 
     static constexpr int RAIL_WIDTH = 36;
@@ -1176,18 +1178,15 @@ class SessionView::MiniChannelStrip : public juce::Component {
         levelMeter_ = std::make_unique<LevelMeter>();
         addAndMakeVisible(*levelMeter_);
 
-        // Mute button (square corners, toggle)
-        muteButton_ = std::make_unique<juce::TextButton>("M");
-        muteButton_->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        muteButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        muteButton_->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAA8855));
-        muteButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        muteButton_->setColour(juce::TextButton::textColourOnId,
-                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        // Mute speaker toggle, matching track headers and mixer strips.
+        muteButton_ = std::make_unique<SvgButton>(
+            "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+            BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+        muteButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        muteButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+        muteButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+        muteButton_->setIconPadding(3.0f);
+        muteButton_->setTooltip("Mute");
         muteButton_->setClickingTogglesState(true);
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         muteButton_->onClick = [this]() {
@@ -1198,18 +1197,15 @@ class SessionView::MiniChannelStrip : public juce::Component {
         };
         addAndMakeVisible(*muteButton_);
 
-        // Solo button (square corners, toggle)
-        soloButton_ = std::make_unique<juce::TextButton>("S");
-        soloButton_->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        soloButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        soloButton_->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAAAA55));
-        soloButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        soloButton_->setColour(juce::TextButton::textColourOnId,
-                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        // Solo target toggle.
+        soloButton_ = std::make_unique<SvgButton>(
+            "solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize, BinaryData::solo_on_svg,
+            BinaryData::solo_on_svgSize);
+        soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+        soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        soloButton_->setIconPadding(5.0f);
+        soloButton_->setTooltip("Solo");
         soloButton_->setClickingTogglesState(true);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         soloButton_->onClick = [this]() {
@@ -1220,19 +1216,15 @@ class SessionView::MiniChannelStrip : public juce::Component {
         };
         addAndMakeVisible(*soloButton_);
 
-        // Record arm button (square corners, toggle)
-        recordButton_ = std::make_unique<juce::TextButton>("R");
-        recordButton_->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        recordButton_->setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        recordButton_->setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-        recordButton_->setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        recordButton_->setColour(juce::TextButton::textColourOnId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        // Record arm dot toggle.
+        recordButton_ = std::make_unique<SvgButton>(
+            "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
+            BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+        recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+        recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        recordButton_->setIconPadding(5.0f);
+        recordButton_->setTooltip("Record arm");
         recordButton_->setClickingTogglesState(true);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
         recordButton_->onClick = [this]() {
@@ -1242,42 +1234,11 @@ class SessionView::MiniChannelStrip : public juce::Component {
         };
         addAndMakeVisible(*recordButton_);
 
-        // Monitor button (3-state: Off → In → Auto → Off)
-        monitorButton_ = std::make_unique<juce::TextButton>("-");
-        monitorButton_->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        monitorButton_->setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        monitorButton_->setColour(juce::TextButton::buttonOnColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-        monitorButton_->setColour(juce::TextButton::textColourOffId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        monitorButton_->setColour(juce::TextButton::textColourOnId,
-                                  DarkTheme::getColour(DarkTheme::BACKGROUND));
-        monitorButton_->setTooltip("Input monitoring (Off/In/Auto)");
-        monitorButton_->onClick = [this]() {
-            auto* t = TrackManager::getInstance().getTrack(trackId_);
-            if (!t)
-                return;
-            InputMonitorMode nextMode;
-            switch (t->inputMonitor) {
-                case InputMonitorMode::Off:
-                    nextMode = InputMonitorMode::In;
-                    break;
-                case InputMonitorMode::In:
-                    nextMode = InputMonitorMode::Auto;
-                    break;
-                case InputMonitorMode::Auto:
-                    nextMode = InputMonitorMode::Off;
-                    break;
-            }
-            for (auto tid : getMultiEditTargets(trackId_))
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
-        };
+        monitorButton_ = std::make_unique<MonitorControl>();
+        monitorButton_->getTrackId = [this]() { return trackId_; };
+        monitorButton_->getTargets = [this]() { return getMultiEditTargets(trackId_); };
         addAndMakeVisible(*monitorButton_);
-        updateMonitorVisual(track.inputMonitor);
+        monitorButton_->refresh();
 
         // Pan slider (horizontal, compact)
         panSlider_ = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Pan);
@@ -1398,7 +1359,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
-        updateMonitorVisual(track.inputMonitor);
+        monitorButton_->refresh();
         trackColour_ = track.colour;
         repaint();
     }
@@ -1414,31 +1375,16 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::unique_ptr<daw::ui::TextSlider> panSlider_;
     std::unique_ptr<MiniDbScale> dbScale_;
     std::unique_ptr<LevelMeter> levelMeter_;
-    std::unique_ptr<juce::TextButton> muteButton_;
-    std::unique_ptr<juce::TextButton> soloButton_;
-    std::unique_ptr<juce::TextButton> recordButton_;
-    std::unique_ptr<juce::TextButton> monitorButton_;
+    std::unique_ptr<SvgButton> muteButton_;
+    std::unique_ptr<SvgButton> soloButton_;
+    std::unique_ptr<SvgButton> recordButton_;
+    std::unique_ptr<MonitorControl> monitorButton_;
 
     // Multi-track relative drag state for volume/pan (see ChannelStrip).
     std::unordered_map<TrackId, float> multiTrackBaseVolumes_;
     std::unordered_map<TrackId, float> multiTrackBasePans_;
     double multiTrackDragStartDb_ = 0.0;
     double multiTrackDragStartPan_ = 0.0;
-
-    void updateMonitorVisual(InputMonitorMode mode) {
-        switch (mode) {
-            case InputMonitorMode::Off:
-                monitorButton_->setButtonText("-");
-                break;
-            case InputMonitorMode::In:
-                monitorButton_->setButtonText("I");
-                break;
-            case InputMonitorMode::Auto:
-                monitorButton_->setButtonText("A");
-                break;
-        }
-        monitorButton_->setToggleState(mode != InputMonitorMode::Off, juce::dontSendNotification);
-    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniChannelStrip)
 };
@@ -2442,9 +2388,9 @@ void SessionView::setupSceneButtons() {
 
 void SessionView::syncMixerVisibilityFromConfig() {
     auto& cfg = Config::getInstance();
-    ioRowVisible_ = cfg.getMixerShowRouting();
-    sendRowVisible_ = cfg.getMixerShowSends();
-    recordMonitorVisible_ = cfg.getMixerShowMonitor();
+    ioRowVisible_ = cfg.getSessionShowRouting();
+    sendRowVisible_ = cfg.getSessionShowSends();
+    recordMonitorVisible_ = cfg.getSessionShowMonitor();
 
     for (auto& strip : trackMiniStrips_)
         strip->setShowRecordMonitor(recordMonitorVisible_);
@@ -3165,11 +3111,11 @@ void SessionView::showMixerContextMenu() {
             return;
         auto& cfg = Config::getInstance();
         if (result == 1) {
-            cfg.setMixerShowRouting(!cfg.getMixerShowRouting());
+            cfg.setSessionShowRouting(!cfg.getSessionShowRouting());
         } else if (result == 2) {
-            cfg.setMixerShowSends(!cfg.getMixerShowSends());
+            cfg.setSessionShowSends(!cfg.getSessionShowSends());
         } else if (result == 3) {
-            cfg.setMixerShowMonitor(!cfg.getMixerShowMonitor());
+            cfg.setSessionShowMonitor(!cfg.getSessionShowMonitor());
         } else {
             return;
         }

@@ -14,6 +14,7 @@
 #include "../components/tracks/TrackHeadersPanel.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../state/TimelineController.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -162,7 +163,7 @@ class MainView : public juce::Component,
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
     // Song navigator / minimap occupying the master content strip (issue #1474).
     std::unique_ptr<SongNavigatorPanel> masterContentPanel;
-    int masterStripHeight = 76;
+    int masterStripHeight = 84;
 
     // Master automation band: a pinned strip directly above the master strip
     // hosting the master channel's automation lanes (issue #1482). Fixed-width
@@ -182,7 +183,7 @@ class MainView : public juce::Component,
     int auxSectionHeight = 0;
     bool auxVisible_ = false;
     static constexpr int AUX_ROW_HEIGHT = 30;
-    static constexpr int MIN_MASTER_STRIP_HEIGHT = 76;
+    static constexpr int MIN_MASTER_STRIP_HEIGHT = 84;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
 
     // Cached state from controller for quick access
@@ -433,7 +434,9 @@ class MainView::SelectionOverlayComponent : public juce::Component {
 };
 
 // Master header panel - matches track header style with controls
-class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerListener {
+class MainView::MasterHeaderPanel : public juce::Component,
+                                    public TrackManagerListener,
+                                    public AutomationManagerListener {
   public:
     MasterHeaderPanel();
     ~MasterHeaderPanel() override;
@@ -445,6 +448,10 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     // TrackManagerListener
     void tracksChanged() override {}
     void masterChannelChanged() override;
+
+    // AutomationManagerListener
+    void automationLanesChanged() override;
+    void automationLanePropertyChanged(AutomationLaneId laneId) override;
 
     // Meter level updates (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
@@ -464,6 +471,7 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     std::unique_ptr<LevelMeter> peakMeter;  // Horizontal stereo peak meter
 
     void setupControls();
+    void updateAutomationButtonState();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterHeaderPanel)
 };
