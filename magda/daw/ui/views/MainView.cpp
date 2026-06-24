@@ -2648,14 +2648,17 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
 MainView::MasterHeaderPanel::MasterHeaderPanel() {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
+    AutomationManager::getInstance().addListener(this);
 
     setupControls();
 
     // Sync initial state from master channel
     masterChannelChanged();
+    updateAutomationButtonState();
 }
 
 MainView::MasterHeaderPanel::~MasterHeaderPanel() {
+    AutomationManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
 }
 
@@ -2669,7 +2672,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setTooltip("Mute master");
     speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    speakerButton->setIconPadding(3.5f);  // larger speaker glyph
+    speakerButton->setIconPadding(7.0f);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2687,7 +2690,8 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setIconPadding(4.5f);
+    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationButton->setIconPadding(2.5f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2792,7 +2796,7 @@ void MainView::MasterHeaderPanel::resized() {
     const int rowH = 20;
     const int rowGap = 2;
     const int colGap = 6;
-    const int iconSize = 20;
+    const int iconSize = 26;
     const int rowLeftInset = 6;
     const int iconRightInset = 8;
 
@@ -2839,6 +2843,21 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
     volumeLabel->setValue(gainToDb(master.volume), juce::dontSendNotification);
 
     repaint();
+}
+
+void MainView::MasterHeaderPanel::automationLanesChanged() {
+    updateAutomationButtonState();
+}
+
+void MainView::MasterHeaderPanel::automationLanePropertyChanged(AutomationLaneId laneId) {
+    juce::ignoreUnused(laneId);
+    updateAutomationButtonState();
+}
+
+void MainView::MasterHeaderPanel::updateAutomationButtonState() {
+    if (automationButton)
+        automationButton->setActive(
+            !AutomationManager::getInstance().getLanesForTrack(MASTER_TRACK_ID).empty());
 }
 
 void MainView::MasterHeaderPanel::setPeakLevels(float leftPeak, float rightPeak) {

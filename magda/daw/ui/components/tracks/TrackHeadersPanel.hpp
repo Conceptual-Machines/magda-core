@@ -337,6 +337,7 @@ class TrackHeadersPanel : public juce::Component,
     int getTrackTotalHeight(int trackIndex) const;
     int getVisibleAutomationLanesHeight(TrackId trackId) const;
     void syncAutomationLaneVisibility();
+    void updateAutomationButtonStates();
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& event) override;

@@ -329,6 +329,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     automationButton->setIconPadding(2.5f);
 
     // Volume label (shows dB, draggable)
@@ -1381,8 +1382,10 @@ void TrackHeadersPanel::syncAutomationLaneVisibility() {
     visibleAutomationLanes_.clear();
 
     auto& manager = AutomationManager::getInstance();
-    if (!manager.isGlobalLaneVisibilityEnabled())
+    if (!manager.isGlobalLaneVisibilityEnabled()) {
+        updateAutomationButtonStates();
         return;  // Global override: treat all lanes as hidden
+    }
 
     for (auto trackId : visibleTrackIds_) {
         auto laneIds = manager.getLanesForTrack(trackId);
@@ -1397,6 +1400,16 @@ void TrackHeadersPanel::syncAutomationLaneVisibility() {
     // Labels refresh their own automation visual state via the observer
     // pattern (DraggableValueLabel subscribes to AutomationManager when
     // bound to a target), so no manual push is needed here.
+    updateAutomationButtonStates();
+}
+
+void TrackHeadersPanel::updateAutomationButtonStates() {
+    auto& manager = AutomationManager::getInstance();
+    for (auto& header : trackHeaders) {
+        const bool hasLanes = !manager.getLanesForTrack(header->trackId).empty();
+        if (header->automationButton)
+            header->automationButton->setActive(hasLanes);
+    }
 }
 
 void TrackHeadersPanel::automationLanesChanged() {

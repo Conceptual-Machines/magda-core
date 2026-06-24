@@ -14,6 +14,7 @@
 #include "../components/tracks/TrackHeadersPanel.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../state/TimelineController.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -433,7 +434,9 @@ class MainView::SelectionOverlayComponent : public juce::Component {
 };
 
 // Master header panel - matches track header style with controls
-class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerListener {
+class MainView::MasterHeaderPanel : public juce::Component,
+                                    public TrackManagerListener,
+                                    public AutomationManagerListener {
   public:
     MasterHeaderPanel();
     ~MasterHeaderPanel() override;
@@ -445,6 +448,10 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     // TrackManagerListener
     void tracksChanged() override {}
     void masterChannelChanged() override;
+
+    // AutomationManagerListener
+    void automationLanesChanged() override;
+    void automationLanePropertyChanged(AutomationLaneId laneId) override;
 
     // Meter level updates (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
@@ -464,6 +471,7 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     std::unique_ptr<LevelMeter> peakMeter;  // Horizontal stereo peak meter
 
     void setupControls();
+    void updateAutomationButtonState();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterHeaderPanel)
 };
