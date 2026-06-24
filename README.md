@@ -17,8 +17,8 @@
 <p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Tracktion Engine" width="250" height="80"></p>
 
 ---
-
 MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++20, JUCE, and Tracktion Engine.
+ - **English** | [简体中文](README_CN.md)
 
 ### Features
 
