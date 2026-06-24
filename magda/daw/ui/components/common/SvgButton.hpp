@@ -56,6 +56,10 @@ class SvgButton : public juce::Button {
         iconPadding = padding;
     }
 
+    void setInactiveIconOpacity(float opacity) {
+        inactiveIconOpacity = juce::jlimit(0.0f, 1.0f, opacity);
+    }
+
     void setBorderColor(juce::Colour color) {
         borderColor = color;
         hasBorder = true;
@@ -109,6 +113,7 @@ class SvgButton : public juce::Button {
     float cornerRadius = 2.0f;
     bool hasBorder = false;
     float iconPadding = 4.0f;
+    float inactiveIconOpacity = 1.0f;
 
     bool active = false;
 

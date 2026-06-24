@@ -20,7 +20,7 @@ MonitorControl::MonitorControl()
     setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-    setIconPadding(3.5f);
+    setIconPadding(5.0f);
     setTooltip(tr("tracks.input_monitoring"));
 
     // Left-click cycles Off -> In -> Auto -> Off.

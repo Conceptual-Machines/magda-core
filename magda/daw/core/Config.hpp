@@ -799,6 +799,27 @@ class Config {
         mixerShowFxChain_ = v;
     }
 
+    // Session view-toggle rail: independent from the mixer rail even where the
+    // controls reveal similarly named rows.
+    bool getSessionShowSends() const {
+        return sessionShowSends_;
+    }
+    void setSessionShowSends(bool v) {
+        sessionShowSends_ = v;
+    }
+    bool getSessionShowRouting() const {
+        return sessionShowRouting_;
+    }
+    void setSessionShowRouting(bool v) {
+        sessionShowRouting_ = v;
+    }
+    bool getSessionShowMonitor() const {
+        return sessionShowMonitor_;
+    }
+    void setSessionShowMonitor(bool v) {
+        sessionShowMonitor_ = v;
+    }
+
     // Legacy config value retained for compatibility with existing config.json
     // files. Mixer-analysis devices are now serialized whenever they exist so
     // per-device mini-visualizer settings survive project save/load.
@@ -1033,6 +1054,9 @@ class Config {
     bool mixerShowOscilloscope_ = false;
     bool mixerShowSpectrum_ = false;
     bool mixerShowFxChain_ = false;
+    bool sessionShowSends_ = false;
+    bool sessionShowRouting_ = false;
+    bool sessionShowMonitor_ = false;
     bool persistMixerAnalysis_ = false;
 
     // Analysis device last-used defaults (see getters above).
