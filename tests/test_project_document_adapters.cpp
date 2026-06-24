@@ -481,8 +481,8 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     constexpr int kSampleRate = 48000;
     constexpr int kChannels = 1;
     constexpr int kFrames = kSampleRate / 2;  // 0.5 s
-    auto source = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                      .getNonexistentChildFile("magda-dawproject-sample", ".wav");
+    auto source = juce::File::getCurrentWorkingDirectory().getNonexistentChildFile(
+        "magda-dawproject-sample", ".wav");
     {
         juce::WavAudioFormat wav;
         std::unique_ptr<juce::FileOutputStream> out(source.createOutputStream());
@@ -546,7 +546,9 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
 
     // Import re-points the clip at an extracted, byte-identical copy of the WAV.
     ProjectDocument imported;
-    REQUIRE(DawProjectArchive::readFromFile(archive, imported, error));
+    auto extractionDir = juce::File::getCurrentWorkingDirectory().getNonexistentChildFile(
+        "magda-dawproject-import", "");
+    REQUIRE(DawProjectArchive::readFromFile(archive, imported, error, extractionDir));
     REQUIRE(imported.clips.size() == 1);
     REQUIRE(imported.clips[0].isAudio());
     const juce::File extracted(imported.clips[0].audio().source.filePath);
