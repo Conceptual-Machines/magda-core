@@ -91,6 +91,7 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
         setVisibleIfPresent(controls.learnButton, false);
         setVisibleIfPresent(controls.sidechainButton, false);
         setVisibleIfPresent(controls.multiOutButton, false);
+        setVisibleIfPresent(controls.instMidiThruButton, false);
         setVisibleIfPresent(controls.powerButton, true);
         setVisibleIfPresent(controls.presetButton, !traits.isChordEngine);
         setVisibleIfPresent(controls.exportClipButton, true);
@@ -98,6 +99,12 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
         placeRight(headerArea, controls.exportClipButton, buttonSize);
         return;
     }
+
+    // "MIDI in thru" toggle shown on wrapped instruments, on the left like the
+    // step-sequencer MIDI thru button.
+    setVisibleIfPresent(controls.instMidiThruButton, device.isInstrument);
+    if (device.isInstrument)
+        placeLeft(headerArea, controls.instMidiThruButton, buttonSize);
 
     setVisibleIfPresent(controls.exportClipButton, false);
     setVisibleIfPresent(controls.sidechainButton,
