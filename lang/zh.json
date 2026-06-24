@@ -146,6 +146,8 @@
     "clips": "片段",
     "clip_count.one": "{0} 个片段",
     "clip_count.other": "{0} 个片段",
+    "automated": "",
+    "automated_empty": "",
     "latency": "延迟"
   },
   "dialogs": {

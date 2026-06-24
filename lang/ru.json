@@ -146,6 +146,8 @@
     "clips": "Клипы",
     "clip_count.one": "{0} клип",
     "clip_count.other": "{0} клипов",
+    "automated": "",
+    "automated_empty": "",
     "latency": "Задержка"
   },
   "dialogs": {
