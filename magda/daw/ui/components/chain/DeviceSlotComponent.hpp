@@ -343,6 +343,8 @@ class DeviceSlotComponent : public NodeComponent,
     void readAndPushModMatrix();  // Read FourOsc mod matrix and push to UI
     void setupCustomUILinking();
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
+    template <typename LinkTarget>
+    void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 
     void showAutomationLaneForParam(int paramIndex);
     void openMacroPanelForSelectionIfNeeded();
