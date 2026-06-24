@@ -1270,9 +1270,10 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
                     te::Plugin::Ptr rackPlugin;
                     if (numOutputChannels > 2) {
                         rackPlugin = self.instrumentRackManager_.wrapMultiOutInstrument(
-                            plugin, numOutputChannels);
+                            plugin, numOutputChannels, devInfo->midiInThru);
                     } else {
-                        rackPlugin = self.instrumentRackManager_.wrapInstrument(plugin);
+                        rackPlugin =
+                            self.instrumentRackManager_.wrapInstrument(plugin, devInfo->midiInThru);
                     }
 
                     if (rackPlugin) {
@@ -2236,10 +2237,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
             te::Plugin::Ptr rackPlugin;
             if (numOutputChannels > 2) {
-                rackPlugin =
-                    instrumentRackManager_.wrapMultiOutInstrument(plugin, numOutputChannels);
+                rackPlugin = instrumentRackManager_.wrapMultiOutInstrument(
+                    plugin, numOutputChannels, device.midiInThru);
             } else {
-                rackPlugin = instrumentRackManager_.wrapInstrument(plugin);
+                rackPlugin = instrumentRackManager_.wrapInstrument(plugin, device.midiInThru);
             }
 
             if (rackPlugin) {

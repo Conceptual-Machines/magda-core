@@ -129,8 +129,25 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         expect(hasConnection(rackType, rackIO, 0, synthId, 0),
                "Rack MIDI input must feed the instrument");
+        expect(hasConnection(rackType, synthId, 0, rackIO, 0),
+               "Instrument's own MIDI output must always reach the rack output so a "
+               "wrapped sequencer/arp triggers downstream instruments");
         expect(hasConnection(rackType, rackIO, 0, rackIO, 0),
-               "Instrument wrapper must pass MIDI to later track-chain devices");
+               "Raw MIDI in thru is on by default (preserves historic passthrough)");
+
+        // Toggling MIDI in thru adds/removes only the raw-input passthrough.
+        rackManager.recordWrapping(magda::ChainNodePath::topLevelDevice(0, 1), rackInstance->type,
+                                   instrument, rackPlugin);
+        rackManager.setMidiInThru(1, true);
+        expect(hasConnection(rackType, rackIO, 0, rackIO, 0),
+               "Enabling MIDI in thru wires the raw-input passthrough");
+        expect(hasConnection(rackType, synthId, 0, rackIO, 0),
+               "Plugin MIDI output stays wired when in-thru is enabled");
+        rackManager.setMidiInThru(1, false);
+        expect(!hasConnection(rackType, rackIO, 0, rackIO, 0),
+               "Disabling MIDI in thru removes the raw-input passthrough");
+        expect(hasConnection(rackType, synthId, 0, rackIO, 0),
+               "Plugin MIDI output stays wired when in-thru is disabled");
 
         expect(hasConnection(rackType, rackIO, 1, rackIO, 1),
                "Rack must preserve left audio passthrough");

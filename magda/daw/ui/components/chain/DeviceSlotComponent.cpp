@@ -509,6 +509,25 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         addAndMakeVisible(*stepRecordButton_);
     }
 
+    // "MIDI in thru" toggle for wrapped instruments. The plugin's own MIDI
+    // output always flows downstream; this only passes the raw input past the
+    // instrument so a MIDI-triggered FX placed after it still receives notes.
+    if (device.isInstrument) {
+        instMidiThruButton_ = std::make_unique<magda::SvgButton>(
+            "MidiInThru", BinaryData::compare_svg, BinaryData::compare_svgSize);
+        instMidiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        instMidiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        instMidiThruButton_->setTooltip("MIDI in thru: pass input to a MIDI FX after this device");
+        instMidiThruButton_->setToggleable(true);
+        instMidiThruButton_->setActive(device.midiInThru);
+        instMidiThruButton_->onClick = [this]() {
+            const bool enabled = !instMidiThruButton_->isActive();
+            instMidiThruButton_->setActive(enabled);
+            magda::TrackManager::getInstance().setDeviceInChainMidiInThruByPath(nodePath_, enabled);
+        };
+        addAndMakeVisible(*instMidiThruButton_);
+    }
+
     // Create parameter grid (owns slots + pagination).
     paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
@@ -1661,7 +1680,8 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .exportClipButton = exportClipButton_.get(),
          .randomButton = randomButton_.get(),
          .stepRecordButton = stepRecordButton_.get(),
-         .midiThruButton = midiThruButton_.get()},
+         .midiThruButton = midiThruButton_.get(),
+         .instMidiThruButton = instMidiThruButton_.get()},
         BUTTON_SIZE);
 }
 

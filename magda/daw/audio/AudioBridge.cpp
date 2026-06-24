@@ -472,10 +472,12 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // instrument wrapper racks; post-fx/mixer-analysis ids are section-local and
     // can overlap with a top-level instrument id.
     if (devicePath.getType() == ChainNodeType::TopLevelDevice) {
-        if (auto* rackInstance =
-                pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
+        auto& rackManager = pluginManager_.getInstrumentRackManager();
+        if (auto* rackInstance = rackManager.getRackInstance(deviceId)) {
             rackInstance->setEnabled(!device->bypassed);
         }
+        // Keep the wrapper's "MIDI in thru" passthrough in sync with the model.
+        rackManager.setMidiInThru(deviceId, device->midiInThru);
     }
 
     // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
