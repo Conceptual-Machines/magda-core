@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "custom_ui/AdsrGraph.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -64,9 +65,21 @@ class PolySynthUI : public juce::Component {
     // Lay `indices` out as a label-on-top grid inside `area` (after reserving
     // the section title strip), `cols` columns wide.
     void layoutSection(juce::Rectangle<int> area, const std::vector<int>& indices, int cols);
+    // Like layoutSection but reserves the upper portion for `graph` (a draggable
+    // envelope) and lays the value boxes in a single row beneath it.
+    void layoutAdsrSection(juce::Rectangle<int> area, AdsrGraph* graph,
+                           const std::vector<int>& indices);
+    // Label-on-top grid of `indices` filling `area` exactly (no title/gap).
+    void layoutCells(juce::Rectangle<int> area, const std::vector<int>& indices, int cols);
+
+    // Push a value-box edit into the envelope graph that owns that slot.
+    void syncGraphFromParam(int paramIndex, float value);
 
     std::array<Control, kNumParams> controls_;
     std::array<juce::String, kNumParams> labels_;
+
+    std::unique_ptr<AdsrGraph> ampGraph_;
+    std::unique_ptr<AdsrGraph> filterGraph_;
 
     // Cached section rectangles for the painted titles.
     juce::Rectangle<int> oscArea_, filterArea_, ampArea_, filterEnvArea_;

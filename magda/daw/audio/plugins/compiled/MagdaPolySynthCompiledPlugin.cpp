@@ -182,10 +182,11 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                    .defaultValue = 1.0f,  // Saw
                                    .choices = waveChoices};
         hostSlotInfo_[base + 1] = {.name = prefix + "Level",
-                                   .scale = magda::ParameterScale::Linear,
-                                   .minValue = 0.0f,
-                                   .maxValue = 1.0f,
-                                   .defaultValue = (osc == 0) ? 0.8f : 0.0f};
+                                   .unit = "dB",
+                                   .scale = magda::ParameterScale::FaderDB,
+                                   .minValue = -60.0f,
+                                   .maxValue = 6.0f,
+                                   .defaultValue = (osc == 0) ? 0.0f : -60.0f};
         hostSlotInfo_[base + 2] = {.name = prefix + "Coarse",
                                    .unit =
                                        magda::technicalText(magda::TechnicalTextToken::Semitones),
@@ -224,53 +225,55 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                         .minValue = -4.0f,
                                         .maxValue = 4.0f,
                                         .defaultValue = 0.0f};
+    // Envelope times are in milliseconds (the formatter shows ms below 1 s, s
+    // above). The DSP divides them back to seconds.
     hostSlotInfo_[kFilterAttackSlot] = {.name = "Filter Attack",
-                                        .unit = "s",
+                                        .unit = "ms",
                                         .scale = magda::ParameterScale::Linear,
-                                        .minValue = 0.001f,
-                                        .maxValue = 2.0f,
-                                        .defaultValue = 0.005f};
+                                        .minValue = 1.0f,
+                                        .maxValue = 2000.0f,
+                                        .defaultValue = 5.0f};
     hostSlotInfo_[kFilterDecaySlot] = {.name = "Filter Decay",
-                                       .unit = "s",
+                                       .unit = "ms",
                                        .scale = magda::ParameterScale::Linear,
-                                       .minValue = 0.001f,
-                                       .maxValue = 2.0f,
-                                       .defaultValue = 0.2f};
+                                       .minValue = 1.0f,
+                                       .maxValue = 2000.0f,
+                                       .defaultValue = 200.0f};
     hostSlotInfo_[kFilterSustainSlot] = {.name = "Filter Sustain",
                                          .scale = magda::ParameterScale::Linear,
                                          .minValue = 0.0f,
                                          .maxValue = 1.0f,
                                          .defaultValue = 0.7f};
     hostSlotInfo_[kFilterReleaseSlot] = {.name = "Filter Release",
-                                         .unit = "s",
+                                         .unit = "ms",
                                          .scale = magda::ParameterScale::Linear,
-                                         .minValue = 0.001f,
-                                         .maxValue = 4.0f,
-                                         .defaultValue = 0.4f};
+                                         .minValue = 1.0f,
+                                         .maxValue = 4000.0f,
+                                         .defaultValue = 400.0f};
 
     hostSlotInfo_[kAmpAttackSlot] = {.name = "Amp Attack",
-                                     .unit = "s",
+                                     .unit = "ms",
                                      .scale = magda::ParameterScale::Linear,
-                                     .minValue = 0.001f,
-                                     .maxValue = 2.0f,
-                                     .defaultValue = 0.005f};
+                                     .minValue = 1.0f,
+                                     .maxValue = 2000.0f,
+                                     .defaultValue = 5.0f};
     hostSlotInfo_[kAmpDecaySlot] = {.name = "Amp Decay",
-                                    .unit = "s",
+                                    .unit = "ms",
                                     .scale = magda::ParameterScale::Linear,
-                                    .minValue = 0.001f,
-                                    .maxValue = 2.0f,
-                                    .defaultValue = 0.2f};
+                                    .minValue = 1.0f,
+                                    .maxValue = 2000.0f,
+                                    .defaultValue = 200.0f};
     hostSlotInfo_[kAmpSustainSlot] = {.name = "Amp Sustain",
                                       .scale = magda::ParameterScale::Linear,
                                       .minValue = 0.0f,
                                       .maxValue = 1.0f,
                                       .defaultValue = 0.7f};
     hostSlotInfo_[kAmpReleaseSlot] = {.name = "Amp Release",
-                                      .unit = "s",
+                                      .unit = "ms",
                                       .scale = magda::ParameterScale::Linear,
-                                      .minValue = 0.001f,
-                                      .maxValue = 4.0f,
-                                      .defaultValue = 0.4f};
+                                      .minValue = 1.0f,
+                                      .maxValue = 4000.0f,
+                                      .defaultValue = 400.0f};
 
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();

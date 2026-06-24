@@ -27,35 +27,36 @@ smoo = si.smooth(ba.tau2pole(0.01));
 
 // One oscillator. `wave` selects the shape (Sine/Saw/Square/Triangle),
 // `coarse` shifts pitch in semitones and `fine` in cents; `level` is the
-// pre-mix gain. selectn evaluates every branch, so all four shapes always run.
+// pre-mix gain in dB (converted to a linear multiplier). selectn evaluates
+// every branch, so all four shapes always run.
 oscBank(wave, level, coarse, fine) =
     ba.selectn(4, int(wave), os.osc(f), os.sawtooth(f), os.square(f), os.triangle(f))
-    * (level : smoo)
+    * (level : ba.db2linear : smoo)
 with {
     f = freq * pow(2.0, (coarse + fine / 100.0) / 12.0);
 };
 
 // Oscillator 1 (idx 0..3)
 osc1Wave   = nentry("Osc 1 Wave [idx:0] [style:menu{'Sine':0;'Saw':1;'Square':2;'Triangle':3}]", 1, 0, 3, 1);
-osc1Level  = hslider("Osc 1 Level [idx:1]", 0.8, 0.0, 1.0, 0.001);
+osc1Level  = hslider("Osc 1 Level [unit:dB] [idx:1]", 0, -60, 6, 0.1);
 osc1Coarse = hslider("Osc 1 Coarse [unit:st] [idx:2]", 0, -24, 24, 1);
 osc1Fine   = hslider("Osc 1 Fine [unit:cent] [idx:3]", 0, -100, 100, 1);
 
 // Oscillator 2 (idx 4..7)
 osc2Wave   = nentry("Osc 2 Wave [idx:4] [style:menu{'Sine':0;'Saw':1;'Square':2;'Triangle':3}]", 1, 0, 3, 1);
-osc2Level  = hslider("Osc 2 Level [idx:5]", 0.0, 0.0, 1.0, 0.001);
+osc2Level  = hslider("Osc 2 Level [unit:dB] [idx:5]", -60, -60, 6, 0.1);
 osc2Coarse = hslider("Osc 2 Coarse [unit:st] [idx:6]", 0, -24, 24, 1);
 osc2Fine   = hslider("Osc 2 Fine [unit:cent] [idx:7]", 0, -100, 100, 1);
 
 // Oscillator 3 (idx 8..11)
 osc3Wave   = nentry("Osc 3 Wave [idx:8] [style:menu{'Sine':0;'Saw':1;'Square':2;'Triangle':3}]", 1, 0, 3, 1);
-osc3Level  = hslider("Osc 3 Level [idx:9]", 0.0, 0.0, 1.0, 0.001);
+osc3Level  = hslider("Osc 3 Level [unit:dB] [idx:9]", -60, -60, 6, 0.1);
 osc3Coarse = hslider("Osc 3 Coarse [unit:st] [idx:10]", 0, -24, 24, 1);
 osc3Fine   = hslider("Osc 3 Fine [unit:cent] [idx:11]", 0, -100, 100, 1);
 
 // Oscillator 4 (idx 12..15)
 osc4Wave   = nentry("Osc 4 Wave [idx:12] [style:menu{'Sine':0;'Saw':1;'Square':2;'Triangle':3}]", 1, 0, 3, 1);
-osc4Level  = hslider("Osc 4 Level [idx:13]", 0.0, 0.0, 1.0, 0.001);
+osc4Level  = hslider("Osc 4 Level [unit:dB] [idx:13]", -60, -60, 6, 0.1);
 osc4Coarse = hslider("Osc 4 Coarse [unit:st] [idx:14]", 0, -24, 24, 1);
 osc4Fine   = hslider("Osc 4 Fine [unit:cent] [idx:15]", 0, -100, 100, 1);
 
@@ -65,16 +66,19 @@ filterType = nentry("Filter Type [idx:16] [style:menu{'Lowpass':0;'Highpass':1;'
 cutoff  = hslider("Cutoff [unit:Hz] [idx:17] [scale:log]", 3000, 50, 18000, 1);
 res     = hslider("Resonance [idx:18]", 0.3, 0.0, 0.95, 0.001);
 fEnvAmt = hslider("Filter Env [unit:oct] [idx:19]", 0, -4, 4, 0.01);
-fAtt    = hslider("Filter Attack [unit:s] [idx:20]", 0.005, 0.001, 2.0, 0.001);
-fDec    = hslider("Filter Decay [unit:s] [idx:21]", 0.2, 0.001, 2.0, 0.001);
+// Envelope times are exposed in milliseconds for finer control; the host
+// formatter shows ms below 1 s and switches to seconds above. The DSP converts
+// back to seconds at the envelope.
+fAtt    = hslider("Filter Attack [unit:ms] [idx:20]", 5, 1, 2000, 1) / 1000.0;
+fDec    = hslider("Filter Decay [unit:ms] [idx:21]", 200, 1, 2000, 1) / 1000.0;
 fSus    = hslider("Filter Sustain [idx:22]", 0.7, 0.0, 1.0, 0.001);
-fRel    = hslider("Filter Release [unit:s] [idx:23]", 0.4, 0.001, 4.0, 0.001);
+fRel    = hslider("Filter Release [unit:ms] [idx:23]", 400, 1, 4000, 1) / 1000.0;
 
 // Amp envelope (idx 24..27)
-aAtt = hslider("Amp Attack [unit:s] [idx:24]", 0.005, 0.001, 2.0, 0.001);
-aDec = hslider("Amp Decay [unit:s] [idx:25]", 0.2, 0.001, 2.0, 0.001);
+aAtt = hslider("Amp Attack [unit:ms] [idx:24]", 5, 1, 2000, 1) / 1000.0;
+aDec = hslider("Amp Decay [unit:ms] [idx:25]", 200, 1, 2000, 1) / 1000.0;
 aSus = hslider("Amp Sustain [idx:26]", 0.7, 0.0, 1.0, 0.001);
-aRel = hslider("Amp Release [unit:s] [idx:27]", 0.4, 0.001, 4.0, 0.001);
+aRel = hslider("Amp Release [unit:ms] [idx:27]", 400, 1, 4000, 1) / 1000.0;
 
 // ============================================================================
 // DSP
@@ -96,8 +100,14 @@ filterMux(x) = ba.selectn(4, int(filterType),
     x : fi.svf.bp(fc, Q),
     x : fi.svf.notch(fc, Q));
 
-ampEnv = en.adsr(aAtt, aDec, aSus, aRel, gate);
-voice  = oscMix : filterMux * ampEnv * gain;
+// Gain staging. The SVF's resonant peak adds up to ~Q of gain near the cutoff,
+// so trim the filter input as resonance rises to keep the level roughly
+// constant (resComp). The per-voice tanh then soft-clips peaks so a hot voice
+// (high velocity / resonance) overdrives gracefully instead of hard-clipping
+// downstream - tanh is ~linear for small signals, so clean patches stay clean.
+resComp = 1.0 - 0.5 * res;
+ampEnv  = en.adsr(aAtt, aDec, aSus, aRel, gate);
+voice   = (oscMix * resComp : filterMux) * ampEnv * gain : ma.tanh;
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

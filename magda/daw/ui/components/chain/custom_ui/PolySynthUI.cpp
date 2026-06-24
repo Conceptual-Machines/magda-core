@@ -52,18 +52,55 @@ PolySynthUI::PolySynthUI() {
         c.slider->onValueChanged = [this, idx](double v) {
             if (onParameterChanged)
                 onParameterChanged(idx, static_cast<float>(v));
+            syncGraphFromParam(idx, static_cast<float>(v));
         };
         addAndMakeVisible(*c.slider);
     }
+
+    // Dragging an envelope handle writes the plugin value AND keeps the matching
+    // value box in sync, so the boxes stay authoritative for linking/automation.
+    auto wireGraph = [this](AdsrGraph& graph) {
+        graph.onStageChanged = [this](int paramIndex, float value) {
+            if (onParameterChanged)
+                onParameterChanged(paramIndex, value);
+            if (paramIndex >= 0 && paramIndex < kNumParams)
+                controls_[static_cast<size_t>(paramIndex)].slider->setValue(
+                    value, juce::dontSendNotification);
+        };
+    };
+    ampGraph_ = std::make_unique<AdsrGraph>();
+    filterGraph_ = std::make_unique<AdsrGraph>();
+    wireGraph(*ampGraph_);
+    wireGraph(*filterGraph_);
+    addAndMakeVisible(*ampGraph_);
+    addAndMakeVisible(*filterGraph_);
+}
+
+void PolySynthUI::syncGraphFromParam(int paramIndex, float value) {
+    if (paramIndex >= kAmpAttackSlot && paramIndex < kAmpAttackSlot + AdsrGraph::kNumStages)
+        ampGraph_->setStageValue(static_cast<AdsrGraph::Stage>(paramIndex - kAmpAttackSlot), value);
+    else if (paramIndex >= kFilterAttackSlot &&
+             paramIndex < kFilterAttackSlot + AdsrGraph::kNumStages)
+        filterGraph_->setStageValue(static_cast<AdsrGraph::Stage>(paramIndex - kFilterAttackSlot),
+                                    value);
 }
 
 void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     for (const auto& info : params) {
         if (info.paramIndex < 0 || info.paramIndex >= kNumParams)
             continue;
-        auto& c = controls_[static_cast<size_t>(info.paramIndex)];
+        const int idx = info.paramIndex;
+        auto& c = controls_[static_cast<size_t>(idx)];
         c.slider->setParameterInfo(info);
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
+
+        // Mirror the ADSR slots into their envelope graphs (carries the range too).
+        if (idx >= kAmpAttackSlot && idx < kAmpAttackSlot + AdsrGraph::kNumStages)
+            ampGraph_->setStage(static_cast<AdsrGraph::Stage>(idx - kAmpAttackSlot), idx, info,
+                                info.currentValue);
+        else if (idx >= kFilterAttackSlot && idx < kFilterAttackSlot + AdsrGraph::kNumStages)
+            filterGraph_->setStage(static_cast<AdsrGraph::Stage>(idx - kFilterAttackSlot), idx,
+                                   info, info.currentValue);
     }
 }
 
@@ -75,11 +112,7 @@ std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
     return sliders;
 }
 
-void PolySynthUI::layoutSection(juce::Rectangle<int> area, const std::vector<int>& indices,
-                                int cols) {
-    auto a = area.reduced(kSectionGap);
-    a.removeFromTop(kSectionTitleH);  // painted title strip
-
+void PolySynthUI::layoutCells(juce::Rectangle<int> a, const std::vector<int>& indices, int cols) {
     const int n = static_cast<int>(indices.size());
     if (n == 0 || cols <= 0)
         return;
@@ -97,6 +130,25 @@ void PolySynthUI::layoutSection(juce::Rectangle<int> area, const std::vector<int
         c.label->setBounds(cell.removeFromTop(kCellLabelH));
         c.slider->setBounds(cell);
     }
+}
+
+void PolySynthUI::layoutSection(juce::Rectangle<int> area, const std::vector<int>& indices,
+                                int cols) {
+    auto a = area.reduced(kSectionGap);
+    a.removeFromTop(kSectionTitleH);  // painted title strip
+    layoutCells(a, indices, cols);
+}
+
+void PolySynthUI::layoutAdsrSection(juce::Rectangle<int> area, AdsrGraph* graph,
+                                    const std::vector<int>& indices) {
+    auto a = area.reduced(kSectionGap);
+    a.removeFromTop(kSectionTitleH);  // painted title strip
+
+    // Envelope graph on top, value boxes (one row) beneath.
+    const int boxRowH = kCellLabelH + 22;
+    auto boxes = a.removeFromBottom(std::min(boxRowH, a.getHeight() / 2));
+    graph->setBounds(a.reduced(2));
+    layoutCells(boxes, indices, static_cast<int>(indices.size()));
 }
 
 void PolySynthUI::resized() {
@@ -118,12 +170,11 @@ void PolySynthUI::resized() {
     layoutSection(oscArea_, oscParams, kOscSlotCount);  // 4 osc rows x 4 controls
     layoutSection(filterArea_, {kFilterTypeSlot, kCutoffSlot, kResonanceSlot, kFilterEnvAmtSlot},
                   1);
-    layoutSection(ampArea_,
-                  {kAmpAttackSlot, kAmpAttackSlot + 1, kAmpAttackSlot + 2, kAmpAttackSlot + 3}, 4);
-    layoutSection(
-        filterEnvArea_,
-        {kFilterAttackSlot, kFilterAttackSlot + 1, kFilterAttackSlot + 2, kFilterAttackSlot + 3},
-        4);
+    layoutAdsrSection(ampArea_, ampGraph_.get(),
+                      {kAmpAttackSlot, kAmpAttackSlot + 1, kAmpAttackSlot + 2, kAmpAttackSlot + 3});
+    layoutAdsrSection(
+        filterEnvArea_, filterGraph_.get(),
+        {kFilterAttackSlot, kFilterAttackSlot + 1, kFilterAttackSlot + 2, kFilterAttackSlot + 3});
 }
 
 void PolySynthUI::paint(juce::Graphics& g) {
