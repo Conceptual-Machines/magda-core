@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "compiled/CompiledFilterCurveView.hpp"
 #include "core/ParameterInfo.hpp"
 #include "custom_ui/AdsrGraph.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
@@ -30,7 +31,7 @@ namespace magda::daw::ui {
 class PolySynthUI : public juce::Component {
   public:
     PolySynthUI();
-    ~PolySynthUI() override = default;
+    ~PolySynthUI() override;
 
     /// Push current parameter values (and ranges) into the matching sliders.
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
@@ -48,7 +49,7 @@ class PolySynthUI : public juce::Component {
     // Host slot layout — must match magda_polysynth.dsp / the C++ wrapper.
     static constexpr int kNumOscillators = 4;
     static constexpr int kOscSlotCount = 4;  // wave / level / coarse / fine
-    static constexpr int kNumParams = 28;
+    static constexpr int kNumParams = 30;
 
     static constexpr int kFilterTypeSlot = 16;
     static constexpr int kCutoffSlot = 17;
@@ -56,6 +57,10 @@ class PolySynthUI : public juce::Component {
     static constexpr int kFilterEnvAmtSlot = 19;
     static constexpr int kFilterAttackSlot = 20;  // .. 23 (D/S/R)
     static constexpr int kAmpAttackSlot = 24;     // .. 27 (D/S/R)
+    static constexpr int kFilterDriveSlot = 28;
+    static constexpr int kFilterSlopeSlot = 29;
+    static constexpr int kNumFilterTypes = 4;  // Lowpass / Highpass / Bandpass / Notch
+    static constexpr int kNumSlopes = 2;       // 12 dB / 24 dB
 
     struct Control {
         std::unique_ptr<juce::Label> label;
@@ -74,12 +79,38 @@ class PolySynthUI : public juce::Component {
 
     // Push a value-box edit into the envelope graph that owns that slot.
     void syncGraphFromParam(int paramIndex, float value);
+    // Update the cached filter value for `paramIndex` (if it is a filter slot)
+    // and refresh the response curve.
+    void syncFilterCurveFromParam(int paramIndex, float value);
+    // Push the cached filter values into the shared response curve.
+    void pushFilterCurve();
+    // Filter Type segmented buttons.
+    void setFilterType(int type);  // user click: writes param + refreshes
+    void updateTypeButtons();      // reflect filterType_ in the button states
+    // Filter Slope (12/24 dB) segmented buttons.
+    void setFilterSlope(int slope);
+    void updateSlopeButtons();
 
     std::array<Control, kNumParams> controls_;
     std::array<juce::String, kNumParams> labels_;
 
     std::unique_ptr<AdsrGraph> ampGraph_;
     std::unique_ptr<AdsrGraph> filterGraph_;
+
+    // Shared filter response graph (the exact component the compiled Faust
+    // filter device uses), driven from the synth's SVF filter params.
+    std::unique_ptr<CompiledFilterCurveView> filterCurve_;
+
+    // Cached filter values (dsp defaults) used to drive the response curve.
+    int filterType_ = 0;
+    float filterCutoffHz_ = 3000.0f;
+    float filterRes_ = 0.3f;
+    float filterDrive_ = 0.0f;
+    int filterSlope_ = 0;  // 0 = 12 dB, 1 = 24 dB
+
+    // Segmented Filter Type + Slope buttons (replace their value boxes).
+    std::array<std::unique_ptr<juce::TextButton>, kNumFilterTypes> typeButtons_;
+    std::array<std::unique_ptr<juce::TextButton>, kNumSlopes> slopeButtons_;
 
     // Cached section rectangles for the painted titles.
     juce::Rectangle<int> oscArea_, filterArea_, ampArea_, filterEnvArea_;

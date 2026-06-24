@@ -66,6 +66,11 @@ filterType = nentry("Filter Type [idx:16] [style:menu{'Lowpass':0;'Highpass':1;'
 cutoff  = hslider("Cutoff [unit:Hz] [idx:17] [scale:log]", 3000, 50, 18000, 1);
 res     = hslider("Resonance [idx:18]", 0.3, 0.0, 0.95, 0.001);
 fEnvAmt = hslider("Filter Env [unit:oct] [idx:19]", 0, -4, 4, 0.01);
+// Pre-filter drive saturation, ported verbatim from magda_filter_svf.dsp.
+// idx:28 (after the amp envelope) so the existing slot indices stay stable.
+fDrive  = hslider("Filter Drive [idx:28]", 0.0, 0.0, 1.0, 0.001) : smoo;
+// Slope: 12 dB/oct (single 2-pole) or 24 dB/oct (two cascaded stages).
+fSlope  = nentry("Filter Slope [idx:29] [style:menu{'12 dB':0;'24 dB':1}]", 0, 0, 1, 1);
 // Envelope times are exposed in milliseconds for finer control; the host
 // formatter shows ms below 1 s and switches to seconds above. The DSP converts
 // back to seconds at the envelope.
@@ -100,6 +105,10 @@ filterMux(x) = ba.selectn(4, int(filterType),
     x : fi.svf.bp(fc, Q),
     x : fi.svf.notch(fc, Q));
 
+// Slope: 12 dB = one 2-pole stage, 24 dB = two cascaded stages. Both branches
+// run (selectn is strict); the menu picks one.
+filterSlope(x) = (filterMux(x), filterMux(filterMux(x))) : ba.selectn(2, int(fSlope));
+
 // Gain staging. The SVF's resonant peak adds up to ~Q of gain near the cutoff,
 // so trim the filter input as resonance rises to keep the level roughly
 // constant (resComp). The per-voice tanh then soft-clips peaks so a hot voice
@@ -107,7 +116,11 @@ filterMux(x) = ba.selectn(4, int(filterType),
 // downstream - tanh is ~linear for small signals, so clean patches stay clean.
 resComp = 1.0 - 0.5 * res;
 ampEnv  = en.adsr(aAtt, aDec, aSus, aRel, gate);
-voice   = (oscMix * resComp : filterMux) * ampEnv * gain : ma.tanh;
+// Drive: dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude
+// signals at unity at full drive (matches magda_filter_svf.dsp).
+drivenIn(x) = (1.0 - fDrive) * x
+            + fDrive * (ma.tanh(4.0 * x) / ma.tanh(4.0));
+voice   = (oscMix * resComp : drivenIn : filterSlope) * ampEnv * gain : ma.tanh;
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

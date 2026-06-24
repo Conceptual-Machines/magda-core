@@ -275,6 +275,19 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                       .maxValue = 4000.0f,
                                       .defaultValue = 400.0f};
 
+    hostSlotInfo_[kFilterDriveSlot] = {.name = "Filter Drive",
+                                       .scale = magda::ParameterScale::Linear,
+                                       .minValue = 0.0f,
+                                       .maxValue = 1.0f,
+                                       .defaultValue = 0.0f};
+
+    hostSlotInfo_[kFilterSlopeSlot] = {.name = "Filter Slope",
+                                       .scale = magda::ParameterScale::Discrete,
+                                       .minValue = 0.0f,
+                                       .maxValue = 1.0f,
+                                       .defaultValue = 0.0f,
+                                       .choices = {"12 dB", "24 dB"}};
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 

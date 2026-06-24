@@ -85,7 +85,12 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kAmpSustainSlot = 26;
     static constexpr int kAmpReleaseSlot = 27;
 
-    static constexpr int kHostSlotCount = 28;
+    // Filter drive + slope (idx:28/29 in the dsp; appended after the amp
+    // envelope so the existing slot indices stay stable).
+    static constexpr int kFilterDriveSlot = 28;
+    static constexpr int kFilterSlopeSlot = 29;
+
+    static constexpr int kHostSlotCount = 30;
 
     static constexpr int kNumVoices = 16;
 
