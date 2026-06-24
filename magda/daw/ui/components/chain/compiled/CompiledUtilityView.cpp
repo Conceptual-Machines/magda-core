@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
-#include "ui/components/mixer/LevelMeter.hpp"
+#include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -58,9 +58,7 @@ CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     gainFader_.setRange(-60.0, 12.0, 0.0);
     gainFader_.setValue(0.0, juce::dontSendNotification);
     gainFader_.setFillColour(fillColour);
-    // Curve the fill to match the level meter's power scale (consistent with the
-    // track and master volume fills).
-    gainFader_.setFillExponent(static_cast<double>(magda::LevelMeter::METER_CURVE_EXPONENT));
+    gainFader_.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
     gainFader_.setVertical(true);
     gainFader_.setShowText(false);
     gainFader_.onValueChange = [this]() {

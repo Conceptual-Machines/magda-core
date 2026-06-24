@@ -729,19 +729,23 @@ jobs:
           Write-Warning "magda_plugin_scanner.exe not found at $scanner"
         }
 
-        # ONNX Runtime DLLs. The build's POST_BUILD step copies these next to
-        # MAGDA.exe; they are delay-loaded by the media DB sample tagger and
-        # Windows only resolves DLLs from the exe's own directory, so they must
-        # ship in the install dir. Required: a missing DLL is a broken release.
-        $onnxDlls = @("onnxruntime.dll", "onnxruntime_providers_shared.dll")
-        foreach ($dll in $onnxDlls) {
-          $src = Join-Path $exeDir $dll
-          if (-not (Test-Path $src)) {
-            Write-Error "$dll missing next to MAGDA.exe at $src"
+        # Runtime DLLs sitting next to MAGDA.exe: the ONNX Runtime DLLs (media DB
+        # sample tagger) and libxml2.dll + its transitive deps (DAWproject XSD
+        # validation), all placed there by the build's POST_BUILD steps. Windows
+        # only resolves DLLs from the exe's own directory, so every one must ship
+        # in the install dir. Stage them all rather than hardcoding names, so a
+        # new vcpkg dep can't silently go missing - then assert the critical ones
+        # are present, because a missing DLL is a broken release.
+        $dlls = Get-ChildItem -Path $exeDir -Filter *.dll -File
+        foreach ($required in @("onnxruntime.dll", "onnxruntime_providers_shared.dll", "libxml2.dll")) {
+          if (-not ($dlls | Where-Object { $_.Name -ieq $required })) {
+            Write-Error "$required missing next to MAGDA.exe at $exeDir"
             exit 1
           }
-          Copy-Item $src "$stage\$dll"
-          Write-Output "Staged $dll for installer"
+        }
+        foreach ($dll in $dlls) {
+          Copy-Item $dll.FullName "$stage\$($dll.Name)"
+          Write-Output "Staged $($dll.Name) for installer"
         }
 
         Copy-Item -Recurse "lang" "$stage\lang"

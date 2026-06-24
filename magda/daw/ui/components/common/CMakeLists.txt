@@ -3,6 +3,8 @@ target_sources(magda_daw_app PRIVATE
     NoteSlicePopup.cpp
     TimeBendPopup.cpp
     SvgButton.cpp
+    ChordAuditionControl.cpp
+    MonitorControl.cpp
     QwertyKeyboardPopup.cpp
     IconSelector.cpp
     ZoomControls.cpp

@@ -13,6 +13,7 @@
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../components/mixer/LevelMeter.hpp"
+#include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
@@ -73,17 +74,15 @@ class AddSendButton : public juce::Button {
 
 // dB conversion helpers
 namespace {
-constexpr float MIN_DB = -60.0f;
-constexpr float MAX_DB = 6.0f;
+constexpr float MIN_DB = level_meter_scale::minDb;
+constexpr float MAX_DB = level_meter_scale::maxDb;
 constexpr int DEFAULT_CHANNEL_WIDTH = 100;
 constexpr int MIN_CHANNEL_WIDTH = 80;
 constexpr int MAX_CHANNEL_WIDTH = 180;
 
 // Convert linear gain (0-1) to dB
 float gainToDb(float gain) {
-    if (gain <= 0.0f)
-        return MIN_DB;
-    return 20.0f * std::log10(gain);
+    return level_meter_scale::gainToDb(gain);
 }
 
 // Convert dB to linear gain
@@ -93,30 +92,15 @@ float dbToGain(float db) {
     return std::pow(10.0f, db / 20.0f);
 }
 
-// Exponent for power curve scaling - lower values spread out the bottom labels more
-constexpr float METER_CURVE_EXPONENT = 3.0f;
-
 // Convert dB to normalized meter position (0-1) with power curve
 // Used consistently for meters, labels, and faders across the app
 float dbToMeterPos(float db) {
-    if (db <= MIN_DB)
-        return 0.0f;
-    if (db >= MAX_DB)
-        return 1.0f;
-
-    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
-    return std::pow(normalized, METER_CURVE_EXPONENT);
+    return level_meter_scale::dbToMeterPos(db);
 }
 
 // Convert meter position back to dB (inverse of dbToMeterPos)
 float meterPosToDb(float pos) {
-    if (pos <= 0.0f)
-        return MIN_DB;
-    if (pos >= 1.0f)
-        return MAX_DB;
-
-    float normalized = std::pow(pos, 1.0f / METER_CURVE_EXPONENT);
-    return MIN_DB + normalized * (MAX_DB - MIN_DB);
+    return level_meter_scale::meterPosToDb(pos);
 }
 
 // Multi-track edit fan-out: when a non-master strip is part of a
@@ -356,7 +340,7 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
         muteButton->setToggleState(track.muted, juce::dontSendNotification);
     }
     if (chordSpeakerButton) {
-        chordSpeakerButton->setActive(!track.muted);  // speaker on = audible
+        chordSpeakerButton->refresh();
     }
     if (soloButton) {
         soloButton->setToggleState(track.soloed, juce::dontSendNotification);
@@ -365,19 +349,7 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
         recordButton->setToggleState(track.recordArmed, juce::dontSendNotification);
     }
     if (monitorButton) {
-        switch (track.inputMonitor) {
-            case InputMonitorMode::Off:
-                monitorButton->setButtonText("-");
-                break;
-            case InputMonitorMode::In:
-                monitorButton->setButtonText("I");
-                break;
-            case InputMonitorMode::Auto:
-                monitorButton->setButtonText("A");
-                break;
-        }
-        monitorButton->setToggleState(track.inputMonitor != InputMonitorMode::Off,
-                                      juce::dontSendNotification);
+        monitorButton->refresh();
     }
 
     // Sync mini FX chain rows only when the device list may have changed. Mixer
@@ -573,7 +545,7 @@ void MixerView::ChannelStrip::setupControls() {
     muteButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     muteButton->setColour(juce::TextButton::buttonOnColourId,
-                          juce::Colour(0xFFAA8855));  // Orange when active
+                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));  // amber when muted
     muteButton->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     muteButton->setColour(juce::TextButton::textColourOnId,
@@ -587,20 +559,10 @@ void MixerView::ChannelStrip::setupControls() {
     };
     addAndMakeVisible(*muteButton);
 
-    // Chord-track audition (mute) toggle: cyan speaker, mirrors the chord header.
-    chordSpeakerButton = std::make_unique<magda::SvgButton>(
-        "ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
-        BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize);
-    chordSpeakerButton->setTooltip("Preview chords on playback");
-    chordSpeakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    chordSpeakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
-    chordSpeakerButton->onClick = [this]() {
-        const auto* track = TrackManager::getInstance().getTrack(trackId_);
-        const bool nowMuted = track ? !track->muted : true;
-        chordSpeakerButton->setActive(!nowMuted);
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<SetTrackMuteCommand>(trackId_, nowMuted));
-    };
+    // Chord-track audition: the same 3-state control (Silent / Audible / Solo) as
+    // the chord track header, folding mute / solo / monitor into one chord glyph.
+    chordSpeakerButton = std::make_unique<magda::ChordAuditionControl>();
+    chordSpeakerButton->getTrackId = [this]() { return trackId_; };
     addChildComponent(*chordSpeakerButton);
 
     // Solo button (square corners, compact)
@@ -646,40 +608,12 @@ void MixerView::ChannelStrip::setupControls() {
         };
         addAndMakeVisible(*recordButton);
 
-        // Monitor button (3-state: Off → In → Auto → Off)
-        monitorButton = std::make_unique<juce::TextButton>("-");
-        monitorButton->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        monitorButton->setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        monitorButton->setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-        monitorButton->setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        monitorButton->setColour(juce::TextButton::textColourOnId,
-                                 DarkTheme::getColour(DarkTheme::BACKGROUND));
-        monitorButton->setTooltip("Input monitoring (Off/In/Auto)");
-        monitorButton->onClick = [this]() {
-            auto* track = TrackManager::getInstance().getTrack(trackId_);
-            if (!track)
-                return;
-            InputMonitorMode nextMode;
-            switch (track->inputMonitor) {
-                case InputMonitorMode::Off:
-                    nextMode = InputMonitorMode::In;
-                    break;
-                case InputMonitorMode::In:
-                    nextMode = InputMonitorMode::Auto;
-                    break;
-                case InputMonitorMode::Auto:
-                    nextMode = InputMonitorMode::Off;
-                    break;
-            }
-            for (auto tid : getMultiEditTargets(trackId_, isMaster_))
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
-        };
+        // Input-monitor: 3-state control (Off / In / Auto). Off = grey glyph, In =
+        // green chip, Auto = blue chip. Left-click cycles, right-click opens a menu.
+        // A change applies to the whole multi-track edit set.
+        monitorButton = std::make_unique<magda::MonitorControl>();
+        monitorButton->getTrackId = [this]() { return trackId_; };
+        monitorButton->getTargets = [this]() { return getMultiEditTargets(trackId_, isMaster_); };
         addAndMakeVisible(*monitorButton);
 
         // Send viewport (scrollable container for send slots)
@@ -1566,27 +1500,17 @@ void MixerView::ChannelStrip::resized() {
             chordSpeakerButton->setVisible(isChord);
 
         if (isChord) {
-            // Chord track: [speaker | solo], with monitor below. No mute "M" /
-            // record (mirrors the chord track header).
+            // Chord track: a single 3-state audition control folds in mute / solo
+            // / monitor. No mute "M" / record / standalone solo or monitor button.
             muteButton->setVisible(false);
             if (recordButton)
                 recordButton->setVisible(false);
-
-            if (Config::getInstance().getMixerShowMonitor() && monitorButton) {
-                auto row2 = bounds.removeFromBottom(metrics.buttonSize);
-                monitorButton->setBounds(row2);
-                monitorButton->setVisible(true);
-                bounds.removeFromBottom(2);
-            } else if (monitorButton) {
+            if (monitorButton)
                 monitorButton->setVisible(false);
-            }
+            soloButton->setVisible(false);
 
             auto row = bounds.removeFromBottom(metrics.buttonSize);
-            int halfWidth = (row.getWidth() - 2) / 2;
-            chordSpeakerButton->setBounds(row.removeFromLeft(halfWidth));
-            row.removeFromLeft(2);
-            soloButton->setBounds(row);
-            soloButton->setVisible(true);
+            chordSpeakerButton->setBounds(row);
         } else if (isMaster_) {
             muteButton->setVisible(false);
             soloButton->setVisible(false);

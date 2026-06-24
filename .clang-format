@@ -1,4 +1,4 @@
-# Clang-Format Configuration for Magica DAW
+# Clang-Format Configuration for MAGDA DAW
 # Based on LLVM style with customizations for C++ audio development
 
 BasedOnStyle: LLVM

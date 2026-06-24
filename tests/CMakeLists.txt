@@ -190,9 +190,12 @@ endif()
 
 # JUCE Unit Test Console Application
 juce_add_console_app(magda_juce_tests
-    VERSION "0.1.0"
-    COMPANY_NAME "MAGDA"
-    PRODUCT_NAME "Magica JUCE Tests"
+    VERSION "${MAGDA_BUNDLE_VERSION}"
+    COMPANY_NAME "Conceptual Machines"
+    PRODUCT_NAME "Magda JUCE Tests"
+    # Pin a space-free bundle ID; the company name alone would derive
+    # 'com.Conceptual Machines.magda_juce_tests', which JUCE rejects.
+    BUNDLE_ID "com.MAGDA.MagdaJuceTests"
 )
 
 # Add JUCE test sources
@@ -325,5 +328,20 @@ if(MAGDA_HAVE_CLAP AND WIN32)
                 "${ONNXRUNTIME_LIB_DIR}/onnxruntime_providers_shared.dll"
                 "$<TARGET_FILE_DIR:${test_target}>"
             COMMENT "Copying ONNX Runtime DLLs alongside ${test_target}")
+    endforeach()
+endif()
+
+# magda_daw also links libxml2 (DAWproject validation), a DLL on Windows. Mirror
+# the app's runtime-DLL copy so DawProjectValidator tests find libxml2.dll (+ its
+# transitive deps) next to each test exe instead of faulting at load. Unlike the
+# ONNX copy this is not gated on CLAP, since libxml2 is always linked.
+if(WIN32)
+    foreach(test_target magda_tests magda_juce_tests)
+        add_custom_command(TARGET ${test_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_RUNTIME_DLLS:${test_target}>"
+                "$<TARGET_FILE_DIR:${test_target}>"
+            COMMAND_EXPAND_LISTS
+            COMMENT "Copying runtime DLLs (libxml2 + deps) alongside ${test_target}")
     endforeach()
 endif()

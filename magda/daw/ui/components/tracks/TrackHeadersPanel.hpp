@@ -9,7 +9,9 @@
 
 #include "../../themes/MixerLookAndFeel.hpp"
 #include "../automation/AutomationLaneHeader.hpp"
+#include "../common/ChordAuditionControl.hpp"
 #include "../common/DraggableValueLabel.hpp"
+#include "../common/MonitorControl.hpp"
 #include "../common/SideColumn.hpp"
 #include "../common/SvgButton.hpp"
 #include "../mixer/InputTypeSelector.hpp"
@@ -166,18 +168,19 @@ class TrackHeadersPanel : public juce::Component,
 
         // UI components
         std::unique_ptr<juce::Label> nameLabel;
-        std::unique_ptr<juce::TextButton> muteButton;
+        std::unique_ptr<magda::SvgButton> muteButton;
         // Master-only mute: a speaker toggle matching the inspector/mixer, used
         // in place of the "M" muteButton when isMaster.
         std::unique_ptr<magda::SvgButton> masterMuteButton;
         // Chord-track-only: speaker toggle for "preview chords on playback"
         // (blue = audible, faint grey = silent). Replaces the "M" button.
-        std::unique_ptr<SvgButton> chordAuditionButton;
-        std::unique_ptr<juce::TextButton> soloButton;
-        std::unique_ptr<juce::TextButton> recordButton;        // Record arm button
-        std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button
+        std::unique_ptr<ChordAuditionControl> chordAuditionButton;
+        std::unique_ptr<magda::SvgButton> soloButton;
+        std::unique_ptr<magda::SvgButton> recordButton;        // Record arm button
+        std::unique_ptr<MonitorControl> monitorButton;         // Input monitor (3-state) control
         std::unique_ptr<DraggableValueLabel> volumeLabel;      // Volume as draggable dB label
         std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
+        std::unique_ptr<juce::Label> masterPeakLabel;          // Master-only compact peak readout
         std::unique_ptr<juce::DrawableButton> collapseButton;  // For groups
         std::unique_ptr<SvgButton> automationButton;           // Show automation lanes
         std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Hidden, kept for internal state

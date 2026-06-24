@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Magica DAW Setup Script
+# MAGDA DAW Setup Script
 # This script handles all the initial setup including git submodules
 
 set -e  # Exit on any error
 
-echo "🔮 Magica DAW Setup Script"
+echo "🔮 MAGDA DAW Setup Script"
 echo "=========================="
 
 # Colors for output
@@ -34,7 +34,7 @@ print_error() {
 
 # Check if we're in a git repository
 if [ ! -d ".git" ]; then
-    print_error "This script must be run from the root of the Magica repository"
+    print_error "This script must be run from the root of the MAGDA repository"
     exit 1
 fi
 
