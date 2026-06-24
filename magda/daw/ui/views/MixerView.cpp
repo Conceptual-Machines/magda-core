@@ -538,18 +538,15 @@ void MixerView::ChannelStrip::setupControls() {
     }
     addAndMakeVisible(*volumeSlider);
 
-    // Mute button (square corners, compact)
-    muteButton = std::make_unique<juce::TextButton>("M");
-    muteButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    muteButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    muteButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));  // amber when muted
-    muteButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    muteButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    // Mute speaker toggle, matching the track header and inspector controls.
+    muteButton = std::make_unique<magda::SvgButton>(
+        "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+    muteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    muteButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    muteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    muteButton->setIconPadding(3.5f);
+    muteButton->setTooltip(tr("tracks.mute.tooltip"));
     muteButton->setClickingTogglesState(true);
     muteButton->onClick = [this]() {
         const bool newState = muteButton->getToggleState();
@@ -565,18 +562,15 @@ void MixerView::ChannelStrip::setupControls() {
     chordSpeakerButton->getTrackId = [this]() { return trackId_; };
     addChildComponent(*chordSpeakerButton);
 
-    // Solo button (square corners, compact)
-    soloButton = std::make_unique<juce::TextButton>("S");
-    soloButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    soloButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    soloButton->setColour(juce::TextButton::buttonOnColourId,
-                          juce::Colour(0xFFAAAA55));  // Yellow when active
-    soloButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    soloButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    // Solo target toggle, matching the track header.
+    soloButton = std::make_unique<magda::SvgButton>(
+        "solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize, BinaryData::solo_on_svg,
+        BinaryData::solo_on_svgSize);
+    soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton->setIconPadding(5.0f);
+    soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
     soloButton->onClick = [this]() {
         const bool newState = soloButton->getToggleState();
@@ -588,18 +582,14 @@ void MixerView::ChannelStrip::setupControls() {
 
     // Record arm button (not on master)
     if (!isMaster_) {
-        recordButton = std::make_unique<juce::TextButton>("R");
-        recordButton->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        recordButton->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        recordButton->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::STATUS_ERROR));  // Red when armed
-        recordButton->setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        recordButton->setColour(juce::TextButton::textColourOnId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        recordButton = std::make_unique<magda::SvgButton>(
+            "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
+            BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+        recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+        recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        recordButton->setIconPadding(5.0f);
+        recordButton->setTooltip(tr("tracks.record.tooltip"));
         recordButton->setClickingTogglesState(true);
         recordButton->onClick = [this]() {
             const bool armed = recordButton->getToggleState();

@@ -57,7 +57,8 @@ HeaderControlComponents getHeaderControlComponents(DeviceSlotHeaderControls cont
             .exportClipButton = controls.exportClipButton,
             .randomButton = controls.randomButton,
             .stepRecordButton = controls.stepRecordButton,
-            .midiThruButton = controls.midiThruButton};
+            .midiThruButton = controls.midiThruButton,
+            .instMidiThruButton = controls.instMidiThruButton};
 }
 
 }  // namespace

@@ -38,6 +38,7 @@ repo_name: magda-core
 
 nav:
   - Home: index.md
+  - Is MAGDA Right for You?: is-magda-right-for-you.md
   - Getting Started:
       - Installation: getting-started/installation.md
       - First Session: getting-started/first-session.md
@@ -59,6 +60,7 @@ nav:
   - Mixer View: mixer-view.md
   - Recording & Comping: recording-comping.md
   - Chord Track: chord-track.md
+  - Working with AI: working-with-ai.md
   - Panels:
       - Inspector: panels/inspector.md
       - Plugin & Media Browser: panels/browsers.md

@@ -11,6 +11,7 @@
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
 #include "audio/MidiBridge.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda::daw::ui {
@@ -28,6 +29,7 @@ namespace magda::daw::ui {
  */
 class TrackInspector : public BaseInspector,
                        public magda::TrackManagerListener,
+                       public magda::AutomationManagerListener,
                        public magda::MidiBridge::Listener,
                        public juce::Timer {
   public:
@@ -60,6 +62,8 @@ class TrackInspector : public BaseInspector,
     void masterChannelChanged() override;
     void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
                                 float newValue) override;
+    void automationLanesChanged() override;
+    void automationLanePropertyChanged(magda::AutomationLaneId laneId) override;
 
     // Timer for polling MIDI device changes
     void timerCallback() override;
@@ -90,6 +94,10 @@ class TrackInspector : public BaseInspector,
     MonitorControl monitorButton_;
     std::unique_ptr<magda::DraggableValueLabel> gainLabel_;
     std::unique_ptr<magda::DraggableValueLabel> panLabel_;
+
+    // Automation summary
+    juce::Label automatedSectionLabel_;
+    juce::Label automatedParamsLabel_;
 
     // Routing section (unified input type toggle + selectors)
     juce::Label routingSectionLabel_;
@@ -126,6 +134,7 @@ class TrackInspector : public BaseInspector,
     // Update methods
     void updateFromSelectedTrack();
     void updateFromMultiTrackSelection();
+    void updateAutomatedParametersSummary();
     void showTrackControls(bool show);
     void rebuildSendsUI();
     void showAddSendMenu();

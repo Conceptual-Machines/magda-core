@@ -19,6 +19,8 @@ bool getExpandedVisibility(HeaderControlId id, const HeaderControlVisibility& vi
             return visibility.stepRecord;
         case HeaderControlId::MidiThru:
             return visibility.midiThru;
+        case HeaderControlId::InstMidiThru:
+            return visibility.instMidiThru;
         case HeaderControlId::Learn:
             return visibility.learn;
         case HeaderControlId::UI:
@@ -52,6 +54,8 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
             return visibility.stepRecord;
         case HeaderControlId::MidiThru:
             return visibility.midiThru;
+        case HeaderControlId::InstMidiThru:
+            return false;
         case HeaderControlId::UI:
             return drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid,
                                                                isInternalDevice) ||
@@ -100,6 +104,7 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     }
 
     visibility.learn = !isInternalDevice;
+    visibility.instMidiThru = device.isInstrument;
     visibility.sidechain = drum_grid_slot::shouldShowSidechainButton(
         traits.isDrumGrid, device.canSidechain, device.canReceiveMidi);
     visibility.multiOut = device.multiOut.isMultiOut;
@@ -122,11 +127,13 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
         {HeaderControlId::Random, HeaderControlSide::Left, controls.randomButton, 40, 50},
         {HeaderControlId::StepRecord, HeaderControlSide::Left, controls.stepRecordButton, 50, 60},
         {HeaderControlId::MidiThru, HeaderControlSide::Left, controls.midiThruButton, 60, 70},
-        {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton, 70, 0},
-        {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton, 80, 10},
-        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 90, 90},
-        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 100, 0},
-        {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 110, 80},
+        {HeaderControlId::InstMidiThru, HeaderControlSide::Left, controls.instMidiThruButton, 70,
+         0},
+        {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton, 80, 0},
+        {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton, 90, 10},
+        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 100, 90},
+        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 110, 0},
+        {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 120, 80},
     };
 
     for (auto& spec : specs) {
