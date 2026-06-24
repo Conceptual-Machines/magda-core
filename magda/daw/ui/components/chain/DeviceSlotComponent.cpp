@@ -2531,52 +2531,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
     if (sliders.empty())
         return;
 
-    // Get mods and macros data
-    const auto* mods = getModsData();
-    const auto* macros = getMacrosData();
-
-    // Get rack-level mods and macros
-    const magda::ModArray* rackMods = nullptr;
-    const magda::MacroArray* rackMacros = nullptr;
-    if (!nodePath_.steps.empty() && nodePath_.steps[0].type == magda::ChainStepType::Rack) {
-        magda::ChainNodePath rackPath;
-        rackPath.trackId = nodePath_.trackId;
-        rackPath.steps.push_back(nodePath_.steps[0]);
-        if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath)) {
-            rackMods = &rack->mods;
-            rackMacros = &rack->macros;
-        }
-    }
-
-    // Get track-level mods and macros
-    const magda::ModArray* trackMods = nullptr;
-    const magda::MacroArray* trackMacros = nullptr;
-    if (nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        const auto* trackInfo = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
-        if (trackInfo) {
-            trackMods = &trackInfo->mods;
-            trackMacros = &trackInfo->macros;
-        }
-    }
-
-    // Check selection state
-    auto& selMgr = magda::SelectionManager::getInstance();
-    int selectedModIndex = -1;
-    int selectedMacroIndex = -1;
-    if (selMgr.hasModSelection()) {
-        const auto& modSel = selMgr.getModSelection();
-        if (modSel.parentPath == nodePath_)
-            selectedModIndex = modSel.modIndex;
-    }
-    if (selectedModIndex_ >= 0)
-        selectedModIndex = selectedModIndex_;
-    if (selMgr.hasMacroSelection()) {
-        const auto& macroSel = selMgr.getMacroSelection();
-        if (macroSel.parentPath == nodePath_)
-            selectedMacroIndex = macroSel.macroIndex;
-    }
-    if (selectedMacroIndex_ >= 0)
-        selectedMacroIndex = selectedMacroIndex_;
+    const auto context = resolveDeviceSlotModulationContext(
+        nodePath_, getModsData(), getMacrosData(), selectedModIndex_, selectedMacroIndex_);
 
     for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
         auto* slider = sliders[static_cast<size_t>(i)];
@@ -2590,14 +2546,14 @@ void DeviceSlotComponent::setupCustomUILinking() {
         // custom UI hardcoded at construction.
         if (const auto* info = device_.findParameterByIndex(paramIdx))
             slider->setParameterInfo(*info);
-        slider->setAvailableMods(mods);
-        slider->setAvailableRackMods(rackMods);
-        slider->setAvailableMacros(macros);
-        slider->setAvailableRackMacros(rackMacros);
-        slider->setAvailableTrackMods(trackMods);
-        slider->setAvailableTrackMacros(trackMacros);
-        slider->setSelectedModIndex(selectedModIndex);
-        slider->setSelectedMacroIndex(selectedMacroIndex);
+        slider->setAvailableMods(context.deviceMods);
+        slider->setAvailableRackMods(context.rackMods);
+        slider->setAvailableMacros(context.deviceMacros);
+        slider->setAvailableRackMacros(context.rackMacros);
+        slider->setAvailableTrackMods(context.trackMods);
+        slider->setAvailableTrackMacros(context.trackMacros);
+        slider->setSelectedModIndex(context.selectedModIndex);
+        slider->setSelectedMacroIndex(context.selectedMacroIndex);
 
         wireSharedModMacroLinkCallbacks(*slider, false);
 
