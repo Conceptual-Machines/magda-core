@@ -1,5 +1,6 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 
+#include <algorithm>
 #include <vector>
 
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
@@ -87,8 +88,24 @@ struct HeaderControlSpec {
     HeaderControlId id;
     HeaderControlSide side;
     juce::Component* component = nullptr;
+    int expandedOrder = 0;
+    int collapsedOrder = 0;
     bool expandedVisible = false;
     bool collapsedVisible = false;
+};
+
+struct HeaderControlComponents {
+    juce::Component* macroButton = nullptr;
+    juce::Component* modButton = nullptr;
+    juce::Component* aiButton = nullptr;
+    juce::Component* learnButton = nullptr;
+    juce::Component* sidechainButton = nullptr;
+    juce::Component* multiOutButton = nullptr;
+    juce::Component* uiButton = nullptr;
+    juce::Component* exportClipButton = nullptr;
+    juce::Component* randomButton = nullptr;
+    juce::Component* stepRecordButton = nullptr;
+    juce::Component* midiThruButton = nullptr;
 };
 
 HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& traits,
@@ -191,52 +208,56 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
 std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& traits,
                                                        const magda::DeviceInfo& device,
                                                        bool isInternalDevice,
-                                                       DeviceSlotHeaderControls controls) {
+                                                       HeaderControlComponents controls) {
     const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
 
     std::vector<HeaderControlSpec> specs = {
-        {HeaderControlId::Macro, HeaderControlSide::Left, controls.macroButton},
-        {HeaderControlId::Mod, HeaderControlSide::Left, controls.modButton},
-        {HeaderControlId::AI, HeaderControlSide::Left, controls.aiButton},
-        {HeaderControlId::Random, HeaderControlSide::Left, controls.randomButton},
-        {HeaderControlId::StepRecord, HeaderControlSide::Left, controls.stepRecordButton},
-        {HeaderControlId::MidiThru, HeaderControlSide::Left, controls.midiThruButton},
-        {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton},
-        {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton},
-        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton},
-        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton},
-        {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton},
+        {HeaderControlId::Macro, HeaderControlSide::Left, controls.macroButton, 10, 20},
+        {HeaderControlId::Mod, HeaderControlSide::Left, controls.modButton, 20, 30},
+        {HeaderControlId::AI, HeaderControlSide::Left, controls.aiButton, 30, 40},
+        {HeaderControlId::Random, HeaderControlSide::Left, controls.randomButton, 40, 50},
+        {HeaderControlId::StepRecord, HeaderControlSide::Left, controls.stepRecordButton, 50, 60},
+        {HeaderControlId::MidiThru, HeaderControlSide::Left, controls.midiThruButton, 60, 70},
+        {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton, 70, 0},
+        {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton, 80, 10},
+        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 90, 90},
+        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 100, 0},
+        {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 110, 80},
     };
 
-    for (auto& spec : specs)
+    for (auto& spec : specs) {
         spec.expandedVisible = getExpandedVisibility(spec.id, visibility);
+        spec.collapsedVisible =
+            getCollapsedVisibility(spec.id, visibility, traits, device, isInternalDevice);
+    }
 
     return specs;
 }
 
-std::vector<HeaderControlSpec> buildCollapsedControlSpecs(const DeviceSlotTraits& traits,
-                                                          const magda::DeviceInfo& device,
-                                                          bool isInternalDevice,
-                                                          DeviceSlotCollapsedControls controls) {
-    const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
+HeaderControlComponents getHeaderControlComponents(DeviceSlotHeaderControls controls) {
+    return {.macroButton = controls.macroButton,
+            .modButton = controls.modButton,
+            .aiButton = controls.aiButton,
+            .learnButton = controls.learnButton,
+            .sidechainButton = controls.sidechainButton,
+            .multiOutButton = controls.multiOutButton,
+            .uiButton = controls.uiButton,
+            .exportClipButton = controls.exportClipButton,
+            .randomButton = controls.randomButton,
+            .stepRecordButton = controls.stepRecordButton,
+            .midiThruButton = controls.midiThruButton};
+}
 
-    std::vector<HeaderControlSpec> specs = {
-        {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton},
-        {HeaderControlId::Macro, HeaderControlSide::Left, controls.macroButton},
-        {HeaderControlId::Mod, HeaderControlSide::Left, controls.modButton},
-        {HeaderControlId::AI, HeaderControlSide::Left, controls.aiButton},
-        {HeaderControlId::Random, HeaderControlSide::Left, controls.randomButton},
-        {HeaderControlId::StepRecord, HeaderControlSide::Left, controls.stepRecordButton},
-        {HeaderControlId::MidiThru, HeaderControlSide::Left, controls.midiThruButton},
-        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton},
-        {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton},
-    };
-
-    for (auto& spec : specs)
-        spec.collapsedVisible =
-            getCollapsedVisibility(spec.id, visibility, traits, device, isInternalDevice);
-
-    return specs;
+HeaderControlComponents getHeaderControlComponents(DeviceSlotCollapsedControls controls) {
+    return {.macroButton = controls.macroButton,
+            .modButton = controls.modButton,
+            .aiButton = controls.aiButton,
+            .multiOutButton = controls.multiOutButton,
+            .uiButton = controls.uiButton,
+            .exportClipButton = controls.exportClipButton,
+            .randomButton = controls.randomButton,
+            .stepRecordButton = controls.stepRecordButton,
+            .midiThruButton = controls.midiThruButton};
 }
 
 }  // namespace
@@ -247,7 +268,11 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
                                     int buttonSize) {
     setVisibleIfPresent(controls.gainLabel, false);
     const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
-    auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice, controls);
+    auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
+                                         getHeaderControlComponents(controls));
+    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.expandedOrder < rhs.expandedOrder;
+    });
 
     setVisibleIfPresent(controls.powerButton, visibility.power);
     setVisibleIfPresent(controls.presetButton, visibility.preset);
@@ -284,7 +309,13 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     placeCollapsedButtonIfVisible(area, controls.powerButton, true, buttonSize);
 
-    for (auto& spec : buildCollapsedControlSpecs(traits, device, isInternalDevice, controls)) {
+    auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
+                                         getHeaderControlComponents(controls));
+    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.collapsedOrder < rhs.collapsedOrder;
+    });
+
+    for (auto& spec : specs) {
         placeCollapsedButtonIfVisible(area, spec.component, spec.collapsedVisible, buttonSize);
     }
 }
