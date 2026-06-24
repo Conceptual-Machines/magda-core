@@ -10,8 +10,10 @@
 #include "CompiledFaustInterface.hpp"
 #include "core/ParameterInfo.hpp"
 
-// mydsp_poly (Faust's polyphonic voice allocator) is forward-declared via its
-// base so the header doesn't pull in the Faust SDK; the .cpp owns it.
+// mydsp_poly (Faust's polyphonic voice allocator) and the single-voice dsp are
+// forward-declared via their Faust base so the header doesn't pull in the Faust
+// SDK; the .cpp owns them.
+class dsp;
 class dsp_poly;
 
 namespace magda::daw::audio::compiled {
@@ -90,7 +92,16 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kFilterDriveSlot = 28;
     static constexpr int kFilterSlopeSlot = 29;
 
-    static constexpr int kHostSlotCount = 30;
+    // Performance controls (appended). Bend Range has a dsp [idx:30] zone (it
+    // scales the MIDI-driven `bend` input); Voice Mode is wrapper-only (it
+    // selects which engine renders, so it has no dsp zone - a decorative dsp
+    // control would be dead-code-eliminated by Faust).
+    static constexpr int kBendRangeSlot = 30;
+    static constexpr int kVoiceModeSlot = 31;
+
+    static constexpr int kHostSlotCount = 32;
+
+    enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 
     static constexpr int kNumVoices = 16;
 
@@ -122,12 +133,45 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     void buildHostParameters();
     void rebuildEngineState(int sampleRate);
 
-    std::unique_ptr<::dsp_poly> poly_;
-    int numOutputs_ = 0;
+    int readVoiceModeIndex() const;
+    // Reset both engines and the held-note stack (used on a Poly/Mono switch).
+    void resetAllVoices();
+    // Mono/Legato note handling on the dedicated single voice. handleMonoNoteOn
+    // returns true when a one-sample gate edge is needed to retrigger (Mono only).
+    bool handleMonoNoteOn(int note, int velocity, int mode);
+    void handleMonoNoteOff(int note);
 
-    // Per host slot: that control's zone in EVERY voice (group=false gives each
-    // voice its own zones). Harvested by [idx:N], skipping the shared proxy box.
+    std::unique_ptr<::dsp_poly> poly_;
+    // Dedicated single voice for Mono/Legato: the wrapper owns its freq/gate/gain
+    // zones directly (the poly engine skips idle voices, so it cannot be driven
+    // zone-only). Always allocated; only rendered when Voice Mode != Poly.
+    std::unique_ptr<::dsp> monoVoice_;
+    int numOutputs_ = 0;
+    double sampleRate_ = 44100.0;
+
+    // Per host slot: that control's zone in EVERY poly voice (group=false gives
+    // each voice its own zones). Harvested by [idx:N], skipping the proxy box.
     std::array<std::vector<FAUSTFLOAT*>, kHostSlotCount> voiceZonesBySlot_;
+    // Same control's single zone in the mono voice (nullptr if it has none, e.g.
+    // the wrapper-only Voice Mode slot).
+    std::array<FAUSTFLOAT*, kHostSlotCount> monoZonesBySlot_{};
+
+    // MIDI-driven pitch-bend zones (no [idx]): per poly voice, and the mono voice.
+    std::vector<FAUSTFLOAT*> voiceBendZones_;
+    FAUSTFLOAT* monoBendZone_ = nullptr;
+    // Mono voice's reserved freq/gain/gate zones, driven directly from MIDI.
+    FAUSTFLOAT* monoFreqZone_ = nullptr;
+    FAUSTFLOAT* monoGainZone_ = nullptr;
+    FAUSTFLOAT* monoGateZone_ = nullptr;
+
+    // Mono/Legato held-note stack (most-recent at the back) and live bend.
+    struct HeldNote {
+        int note = 0;
+        float gain = 0.0f;
+    };
+    std::vector<HeldNote> heldNotes_;
+    float currentBend_ = 0.0f;  // normalised [-1, 1]
+    int lastVoiceMode_ = 0;
 
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;

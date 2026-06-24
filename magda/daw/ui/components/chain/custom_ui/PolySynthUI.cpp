@@ -41,6 +41,8 @@ PolySynthUI::PolySynthUI() {
     labels_[kAmpAttackSlot + 1] = "Decay";
     labels_[kAmpAttackSlot + 2] = "Sustain";
     labels_[kAmpAttackSlot + 3] = "Release";
+    labels_[kBendRangeSlot] = "Bend Range";
+    labels_[kVoiceModeSlot] = "Mode";
 
     for (int i = 0; i < kNumParams; ++i) {
         auto& c = controls_[static_cast<size_t>(i)];
@@ -128,14 +130,36 @@ PolySynthUI::PolySynthUI() {
         slopeButtons_[static_cast<size_t>(s)] = std::move(btn);
     }
 
-    // The Type/Slope value boxes are replaced by the buttons; keep the objects
-    // (for linking/value) but hide them.
+    // Voice Mode (Poly / Mono / Legato) segmented toggle in the global strip.
+    static const char* kVoiceModeNames[kNumVoiceModes] = {"Poly", "Mono", "Legato"};
+    for (int v = 0; v < kNumVoiceModes; ++v) {
+        auto btn = std::make_unique<juce::TextButton>(kVoiceModeNames[v]);
+        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        btn->setClickingTogglesState(false);
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        btn->setConnectedEdges((v > 0 ? juce::Button::ConnectedOnLeft : 0) |
+                               (v < kNumVoiceModes - 1 ? juce::Button::ConnectedOnRight : 0));
+        btn->onClick = [this, v]() { setVoiceMode(v); };
+        addAndMakeVisible(*btn);
+        voiceModeButtons_[static_cast<size_t>(v)] = std::move(btn);
+    }
+
+    // The Type/Slope/Mode value boxes are replaced by the buttons; keep the
+    // objects (for linking/value) but hide them.
     controls_[kFilterTypeSlot].slider->setVisible(false);
     controls_[kFilterTypeSlot].label->setVisible(false);
     controls_[kFilterSlopeSlot].slider->setVisible(false);
     controls_[kFilterSlopeSlot].label->setVisible(false);
+    controls_[kVoiceModeSlot].slider->setVisible(false);
+    controls_[kVoiceModeSlot].label->setVisible(false);
     updateTypeButtons();
     updateSlopeButtons();
+    updateVoiceModeButtons();
 }
 
 PolySynthUI::~PolySynthUI() {
@@ -143,6 +167,9 @@ PolySynthUI::~PolySynthUI() {
         if (btn)
             btn->setLookAndFeel(nullptr);
     for (auto& btn : slopeButtons_)
+        if (btn)
+            btn->setLookAndFeel(nullptr);
+    for (auto& btn : voiceModeButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
 }
@@ -181,6 +208,23 @@ void PolySynthUI::updateSlopeButtons() {
         if (slopeButtons_[static_cast<size_t>(i)])
             slopeButtons_[static_cast<size_t>(i)]->setToggleState(i == s,
                                                                   juce::dontSendNotification);
+}
+
+void PolySynthUI::setVoiceMode(int mode) {
+    mode = juce::jlimit(0, kNumVoiceModes - 1, mode);
+    voiceMode_ = mode;
+    controls_[kVoiceModeSlot].slider->setValue(mode, juce::dontSendNotification);
+    if (onParameterChanged)
+        onParameterChanged(kVoiceModeSlot, static_cast<float>(mode));
+    updateVoiceModeButtons();
+}
+
+void PolySynthUI::updateVoiceModeButtons() {
+    const int m = juce::jlimit(0, kNumVoiceModes - 1, voiceMode_);
+    for (int i = 0; i < kNumVoiceModes; ++i)
+        if (voiceModeButtons_[static_cast<size_t>(i)])
+            voiceModeButtons_[static_cast<size_t>(i)]->setToggleState(i == m,
+                                                                      juce::dontSendNotification);
 }
 
 void PolySynthUI::pushFilterCurve() {
@@ -240,6 +284,12 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
 
         syncFilterCurveFromParam(idx, info.currentValue);
 
+        if (idx == kVoiceModeSlot) {
+            voiceMode_ = juce::jlimit(0, kNumVoiceModes - 1,
+                                      static_cast<int>(std::round(info.currentValue)));
+            updateVoiceModeButtons();
+        }
+
         // Mirror the ADSR slots into their envelope graphs (carries the range too).
         if (idx >= kAmpAttackSlot && idx < kAmpAttackSlot + AdsrGraph::kNumStages)
             ampGraph_->setStage(static_cast<AdsrGraph::Stage>(idx - kAmpAttackSlot), idx, info,
@@ -286,30 +336,53 @@ void PolySynthUI::layoutSection(juce::Rectangle<int> area, const std::vector<int
 }
 
 void PolySynthUI::layoutAdsrSection(juce::Rectangle<int> area, AdsrGraph* graph,
-                                    const std::vector<int>& indices) {
+                                    const std::vector<int>& indices, int cols) {
     auto a = area.reduced(kSectionGap);
     a.removeFromTop(kSectionTitleH);  // painted title strip
 
-    // Envelope graph on top, value boxes (one row) beneath.
-    const int boxRowH = kCellLabelH + 22;
+    // Envelope graph on top, value boxes (cols-wide grid) beneath.
+    const int rows = (static_cast<int>(indices.size()) + cols - 1) / cols;
+    const int boxRowH = rows * (kCellLabelH + 20);
     auto boxes = a.removeFromBottom(std::min(boxRowH, a.getHeight() / 2));
     graph->setBounds(a.reduced(2));
-    layoutCells(boxes, indices, static_cast<int>(indices.size()));
+    layoutCells(boxes, indices, cols);
 }
 
 void PolySynthUI::resized() {
     auto b = getLocalBounds().reduced(2);
-    const int halfW = b.getWidth() / 2;
-    // Bias the split toward the top row so the filter response curve (top-right)
-    // gets more height; the ADSR sections beneath stay compact. The bottom row
-    // still needs room for the title, envelope graph and value-box row.
-    const int topH = b.getHeight() * 5 / 8;
-    const int botH = b.getHeight() - topH;
 
-    oscArea_ = {b.getX(), b.getY(), halfW, topH};
-    filterArea_ = {b.getX() + halfW, b.getY(), b.getWidth() - halfW, topH};
-    ampArea_ = {b.getX(), b.getY() + topH, halfW, botH};
-    filterEnvArea_ = {b.getX() + halfW, b.getY() + topH, b.getWidth() - halfW, botH};
+    // Global performance strip along the bottom: Voice Mode segmented buttons on
+    // the left, Bend Range box on the right.
+    {
+        auto strip = b.removeFromBottom(kCellLabelH + 22).reduced(kSectionGap, 2);
+        auto bendCell = strip.removeFromRight(96);
+        layoutCells(bendCell, {kBendRangeSlot}, 1);
+        strip.removeFromRight(kSectionGap * 2);
+
+        auto modeArea = strip.removeFromLeft(juce::jmin(210, strip.getWidth()));
+        const int segW = modeArea.getWidth() / kNumVoiceModes;
+        for (int v = 0; v < kNumVoiceModes; ++v) {
+            if (!voiceModeButtons_[static_cast<size_t>(v)])
+                continue;
+            auto seg = (v == kNumVoiceModes - 1)
+                           ? modeArea
+                           : juce::Rectangle<int>(modeArea.removeFromLeft(segW));
+            voiceModeButtons_[static_cast<size_t>(v)]->setBounds(seg);
+        }
+    }
+
+    // Three columns: OSC and FILTER (with the response curve) full-height on the
+    // left, the two envelopes stacked in a narrower column on the right.
+    const int adsrW = b.getWidth() * 2 / 7;
+    const int mainW = b.getWidth() - adsrW;
+    const int colW = mainW / 2;
+    const int adsrX = b.getX() + mainW;
+    const int halfH = b.getHeight() / 2;
+
+    oscArea_ = {b.getX(), b.getY(), colW, b.getHeight()};
+    filterArea_ = {b.getX() + colW, b.getY(), mainW - colW, b.getHeight()};
+    ampArea_ = {adsrX, b.getY(), adsrW, halfH};
+    filterEnvArea_ = {adsrX, b.getY() + halfH, adsrW, b.getHeight() - halfH};
 
     std::vector<int> oscParams;
     oscParams.reserve(kNumOscillators * kOscSlotCount);

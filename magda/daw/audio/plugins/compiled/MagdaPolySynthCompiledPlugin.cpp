@@ -31,9 +31,12 @@ namespace {
 // a single host slot can fan a write out to every voice.
 class PolyVoiceHarvester : public ::UI {
   public:
-    // idx -> per-voice zones (encounter order). Reserved freq/gain/gate carry no
-    // [idx] (slotIndex == -1) and are skipped automatically.
+    // idx -> per-voice zones (encounter order).
     std::map<int, std::vector<FAUSTFLOAT*>> zonesByIdx;
+    // Reserved controls carry no [idx]: freq/gain/gate (Faust-reserved) plus our
+    // MIDI-driven `bend`. Captured per voice (encounter order) so the wrapper can
+    // drive a single voice (mono) or fan bend across all voices.
+    std::map<juce::String, std::vector<FAUSTFLOAT*>> reservedByName;
 
     void openTabBox(const char* label) override {
         pushGroup(label);
@@ -108,14 +111,24 @@ class PolyVoiceHarvester : public ::UI {
                 pendingByZone_.erase(it);
             }
         }
-        if (inProxyGroup() || merged.slotIndex < 0 || zone == nullptr)
+        if (zone == nullptr || inProxyGroup())
             return;
-        zonesByIdx[merged.slotIndex].push_back(zone);
+        if (merged.slotIndex >= 0) {
+            zonesByIdx[merged.slotIndex].push_back(zone);
+        } else {
+            const auto name = parsed.cleanLabel.toLowerCase();
+            if (name == "freq" || name == "gain" || name == "gate" || name == "bend")
+                reservedByName[name].push_back(zone);
+        }
     }
 
     std::vector<juce::String> groupLabels_;
     std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
 };
+
+inline float midiNoteToHz(int note) {
+    return 440.0f * std::pow(2.0f, (static_cast<float>(note) - 69.0f) / 12.0f);
+}
 
 }  // namespace
 
@@ -147,6 +160,8 @@ juce::String MagdaPolySynthCompiledPlugin::getSelectableDescription() {
 }
 
 void MagdaPolySynthCompiledPlugin::rebuildEngineState(int sampleRate) {
+    sampleRate_ = sampleRate;
+
     // Wrap a fresh single-voice MagdaPolySynthDsp in the poly allocator.
     // control=true: voices are MIDI-allocated. group=false: each voice keeps its
     // own writable zones (we fan host-macro writes out to all of them).
@@ -155,15 +170,41 @@ void MagdaPolySynthCompiledPlugin::rebuildEngineState(int sampleRate) {
     poly_->init(sampleRate);
     numOutputs_ = poly_->getNumOutputs();
 
-    PolyVoiceHarvester harvester;
-    poly_->buildUserInterface(&harvester);
+    // Dedicated single voice for Mono/Legato (driven directly, bypassing the
+    // poly allocator which skips idle voices).
+    monoVoice_.reset(new MagdaPolySynthDsp());
+    monoVoice_->init(sampleRate);
+
+    PolyVoiceHarvester polyH;
+    poly_->buildUserInterface(&polyH);
+    PolyVoiceHarvester monoH;
+    monoVoice_->buildUserInterface(&monoH);
 
     for (auto& slot : voiceZonesBySlot_)
         slot.clear();
+    monoZonesBySlot_.fill(nullptr);
     for (int i = 0; i < kHostSlotCount; ++i) {
-        if (auto it = harvester.zonesByIdx.find(i); it != harvester.zonesByIdx.end())
+        if (auto it = polyH.zonesByIdx.find(i); it != polyH.zonesByIdx.end())
             voiceZonesBySlot_[static_cast<size_t>(i)] = it->second;
+        if (auto it = monoH.zonesByIdx.find(i); it != monoH.zonesByIdx.end() && !it->second.empty())
+            monoZonesBySlot_[static_cast<size_t>(i)] = it->second.front();
     }
+
+    auto first = [](const std::map<juce::String, std::vector<FAUSTFLOAT*>>& m,
+                    const char* key) -> FAUSTFLOAT* {
+        auto it = m.find(key);
+        return (it != m.end() && !it->second.empty()) ? it->second.front() : nullptr;
+    };
+    voiceBendZones_.clear();
+    if (auto it = polyH.reservedByName.find("bend"); it != polyH.reservedByName.end())
+        voiceBendZones_ = it->second;
+    monoBendZone_ = first(monoH.reservedByName, "bend");
+    monoFreqZone_ = first(monoH.reservedByName, "freq");
+    monoGainZone_ = first(monoH.reservedByName, "gain");
+    monoGateZone_ = first(monoH.reservedByName, "gate");
+
+    heldNotes_.clear();
+    currentBend_ = 0.0f;
 }
 
 void MagdaPolySynthCompiledPlugin::buildHostParameters() {
@@ -288,6 +329,21 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                        .defaultValue = 0.0f,
                                        .choices = {"12 dB", "24 dB"}};
 
+    hostSlotInfo_[kBendRangeSlot] = {.name = "Bend Range",
+                                     .unit =
+                                         magda::technicalText(magda::TechnicalTextToken::Semitones),
+                                     .scale = magda::ParameterScale::Linear,
+                                     .minValue = 0.0f,
+                                     .maxValue = 24.0f,
+                                     .defaultValue = 2.0f};
+
+    hostSlotInfo_[kVoiceModeSlot] = {.name = "Voice Mode",
+                                     .scale = magda::ParameterScale::Discrete,
+                                     .minValue = 0.0f,
+                                     .maxValue = 2.0f,
+                                     .defaultValue = 0.0f,
+                                     .choices = {"Poly", "Mono", "Legato"}};
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 
@@ -334,6 +390,7 @@ void MagdaPolySynthCompiledPlugin::initialise(const te::PluginInitialisationInfo
     rebuildEngineState(static_cast<int>(info.sampleRate));
     scratchOut_.setSize(std::max(numOutputs_, 2), info.blockSizeSamples, false, true, true);
     outPtrs_.assign(static_cast<size_t>(std::max(numOutputs_, 2)), nullptr);
+    heldNotes_.reserve(128);  // avoid RT allocation as notes are pressed
 }
 
 void MagdaPolySynthCompiledPlugin::deinitialise() {
@@ -342,15 +399,68 @@ void MagdaPolySynthCompiledPlugin::deinitialise() {
 }
 
 void MagdaPolySynthCompiledPlugin::reset() {
+    resetAllVoices();
+}
+
+int MagdaPolySynthCompiledPlugin::readVoiceModeIndex() const {
+    if (!hostParams_[kVoiceModeSlot])
+        return Poly;
+    const float norm = hostParams_[kVoiceModeSlot]->getCurrentValue();
+    return juce::jlimit(0, 2, static_cast<int>(std::lround(juce::jlimit(0.0f, 1.0f, norm) * 2.0f)));
+}
+
+void MagdaPolySynthCompiledPlugin::resetAllVoices() {
     if (poly_)
-        poly_->instanceClear();
+        poly_->ctrlChange(0, 123, 0);  // All Notes Off: release every poly voice
+    if (monoVoice_)
+        monoVoice_->instanceClear();
+    heldNotes_.clear();
+    if (monoGateZone_)
+        *monoGateZone_ = 0.0f;
+}
+
+bool MagdaPolySynthCompiledPlugin::handleMonoNoteOn(int note, int velocity, int mode) {
+    const float g = static_cast<float>(velocity) / 127.0f;
+    const bool wasEmpty = heldNotes_.empty();
+    heldNotes_.push_back({note, g});
+    if (monoFreqZone_)
+        *monoFreqZone_ = midiNoteToHz(note);
+    if (monoGainZone_)
+        *monoGainZone_ = g;
+    if (wasEmpty) {
+        if (monoGateZone_)
+            *monoGateZone_ = 1.0f;  // gate 0 -> 1: clean attack from silence
+        return false;
+    }
+    if (mode == Mono) {
+        if (monoGateZone_)
+            *monoGateZone_ = 0.0f;  // drop; caller raises after one sample to retrigger
+        return true;
+    }
+    return false;  // Legato: change pitch only, envelope keeps running
+}
+
+void MagdaPolySynthCompiledPlugin::handleMonoNoteOff(int note) {
+    for (auto it = heldNotes_.rbegin(); it != heldNotes_.rend(); ++it) {
+        if (it->note == note) {
+            heldNotes_.erase(std::next(it).base());
+            break;
+        }
+    }
+    if (heldNotes_.empty()) {
+        if (monoGateZone_)
+            *monoGateZone_ = 0.0f;  // last note released -> envelope release
+    } else if (monoFreqZone_) {
+        *monoFreqZone_ = midiNoteToHz(heldNotes_.back().note);  // legato return to held note
+    }
 }
 
 void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!poly_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
+    if (!poly_ || !monoVoice_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
 
-    // Fan each host macro out to every voice's zone (RT-safe pointer writes).
+    // Fan each host macro out to every poly voice's zone AND the mono voice's
+    // zone (RT-safe pointer writes), so both engines track the controls.
     for (int slot = 0; slot < kHostSlotCount; ++slot) {
         const auto& s = hostSlotInfo_[static_cast<size_t>(slot)];
         const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
@@ -374,24 +484,23 @@ void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
         for (FAUSTFLOAT* zone : voiceZonesBySlot_[static_cast<size_t>(slot)])
             if (zone)
                 *zone = real;
+        if (monoZonesBySlot_[static_cast<size_t>(slot)])
+            *monoZonesBySlot_[static_cast<size_t>(slot)] = real;
     }
 
-    // Drive voice allocation from this block's MIDI. Sub-block timing offsets are
-    // ignored for now (all events applied before compute).
-    if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {
-        auto* polyMidi = poly_.get();
-        for (auto& m : *fc.bufferForMidiMessages) {
-            if (m.isNoteOn())
-                polyMidi->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-            else if (m.isNoteOff())
-                polyMidi->keyOff(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-            else if (m.isPitchWheel())
-                polyMidi->pitchWheel(m.getChannel(), m.getPitchWheelValue());
-            else if (m.isController())
-                polyMidi->ctrlChange(m.getChannel(), m.getControllerNumber(),
-                                     m.getControllerValue());
-        }
+    const int mode = readVoiceModeIndex();
+    if (mode != lastVoiceMode_) {
+        resetAllVoices();  // flush hung notes when switching Poly <-> Mono/Legato
+        lastVoiceMode_ = mode;
     }
+
+    // Refresh live pitch-bend into every target zone (persisted across blocks; a
+    // fresh engine state or mode switch picks up the current wheel position).
+    for (FAUSTFLOAT* z : voiceBendZones_)
+        if (z)
+            *z = currentBend_;
+    if (monoBendZone_)
+        *monoBendZone_ = currentBend_;
 
     const int n = fc.bufferNumSamples;
     const int start = fc.bufferStartSample;
@@ -399,24 +508,78 @@ void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
     if (hostChannels <= 0 || numOutputs_ <= 0 || scratchOut_.getNumSamples() <= 0)
         return;
 
-    // Render into scratch (compute() overwrites its outputs), then ADD into
-    // destBuffer. Chunk to MIX_BUFFER_SIZE — mydsp_poly's mix buffers cap there.
+    ::dsp* active =
+        (mode == Poly) ? static_cast<::dsp*>(poly_.get()) : static_cast<::dsp*>(monoVoice_.get());
+
     outPtrs_.resize(static_cast<size_t>(numOutputs_));
+    const int scratchCh = scratchOut_.getNumChannels();
     const int maxChunk = std::min(MIX_BUFFER_SIZE, scratchOut_.getNumSamples());
 
-    for (int offset = 0; offset < n; offset += maxChunk) {
-        const int chunk = std::min(maxChunk, n - offset);
-        for (int ch = 0; ch < numOutputs_; ++ch)
-            outPtrs_[static_cast<size_t>(ch)] =
-                scratchOut_.getWritePointer(ch % scratchOut_.getNumChannels());
+    // Render [segStart, segStart+segLen) of this block from the active engine,
+    // ADDing into destBuffer. Chunked to MIX_BUFFER_SIZE (the poly mix-buffer cap).
+    auto renderSegment = [&](int segStart, int segLen) {
+        int done = 0;
+        while (done < segLen) {
+            const int chunk = std::min(segLen - done, maxChunk);
+            for (int ch = 0; ch < numOutputs_; ++ch)
+                outPtrs_[static_cast<size_t>(ch)] = scratchOut_.getWritePointer(ch % scratchCh);
+            active->compute(chunk, nullptr, outPtrs_.data());
+            for (int ch = 0; ch < hostChannels; ++ch) {
+                const int srcCh = (numOutputs_ == 1) ? 0 : (ch % numOutputs_);
+                fc.destBuffer->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
+            }
+            done += chunk;
+        }
+    };
 
-        poly_->compute(chunk, nullptr, outPtrs_.data());
+    // Walk MIDI in time order, rendering the audio between events so note timing
+    // (and the mono retrigger gate edge) is sample-accurate within the block.
+    int cursor = 0;
+    if (fc.bufferForMidiMessages != nullptr) {
+        for (auto& m : *fc.bufferForMidiMessages) {
+            int evSample = juce::roundToInt(m.getTimeStamp() * sampleRate_);
+            evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
+            renderSegment(cursor, evSample - cursor);
+            cursor = evSample;
 
-        for (int ch = 0; ch < hostChannels; ++ch) {
-            const int srcCh = (numOutputs_ == 1) ? 0 : (ch % numOutputs_);
-            fc.destBuffer->addFrom(ch, start + offset, scratchOut_, srcCh, 0, chunk);
+            if (m.isPitchWheel()) {
+                currentBend_ = (m.getPitchWheelValue() - 8192) / 8192.0f;
+                for (FAUSTFLOAT* z : voiceBendZones_)
+                    if (z)
+                        *z = currentBend_;
+                if (monoBendZone_)
+                    *monoBendZone_ = currentBend_;
+            } else if (mode == Poly) {
+                if (m.isNoteOn())
+                    poly_->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
+                else if (m.isNoteOff())
+                    poly_->keyOff(m.getChannel(), m.getNoteNumber(), m.getVelocity());
+                else if (m.isController())
+                    poly_->ctrlChange(m.getChannel(), m.getControllerNumber(),
+                                      m.getControllerValue());
+            } else {
+                if (m.isNoteOn()) {
+                    if (handleMonoNoteOn(m.getNoteNumber(), m.getVelocity(), mode)) {
+                        // One-sample gate-low renders the falling edge; raising the
+                        // gate after it gives the rising edge that retriggers.
+                        const int low = std::min(1, n - cursor);
+                        renderSegment(cursor, low);
+                        cursor += low;
+                        if (monoGateZone_)
+                            *monoGateZone_ = 1.0f;
+                    }
+                } else if (m.isNoteOff()) {
+                    handleMonoNoteOff(m.getNoteNumber());
+                } else if (m.isController() &&
+                           (m.getControllerNumber() == 120 || m.getControllerNumber() == 123)) {
+                    heldNotes_.clear();  // all-sound/all-notes-off
+                    if (monoGateZone_)
+                        *monoGateZone_ = 0.0f;
+                }
+            }
         }
     }
+    renderSegment(cursor, n - cursor);
 }
 
 te::AutomatableParameter* MagdaPolySynthCompiledPlugin::getSlotParameter(int slotIndex) const {

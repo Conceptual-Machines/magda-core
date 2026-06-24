@@ -49,7 +49,7 @@ class PolySynthUI : public juce::Component {
     // Host slot layout — must match magda_polysynth.dsp / the C++ wrapper.
     static constexpr int kNumOscillators = 4;
     static constexpr int kOscSlotCount = 4;  // wave / level / coarse / fine
-    static constexpr int kNumParams = 30;
+    static constexpr int kNumParams = 32;
 
     static constexpr int kFilterTypeSlot = 16;
     static constexpr int kCutoffSlot = 17;
@@ -59,8 +59,11 @@ class PolySynthUI : public juce::Component {
     static constexpr int kAmpAttackSlot = 24;     // .. 27 (D/S/R)
     static constexpr int kFilterDriveSlot = 28;
     static constexpr int kFilterSlopeSlot = 29;
+    static constexpr int kBendRangeSlot = 30;
+    static constexpr int kVoiceModeSlot = 31;
     static constexpr int kNumFilterTypes = 4;  // Lowpass / Highpass / Bandpass / Notch
     static constexpr int kNumSlopes = 2;       // 12 dB / 24 dB
+    static constexpr int kNumVoiceModes = 3;   // Poly / Mono / Legato
 
     struct Control {
         std::unique_ptr<juce::Label> label;
@@ -73,7 +76,7 @@ class PolySynthUI : public juce::Component {
     // Like layoutSection but reserves the upper portion for `graph` (a draggable
     // envelope) and lays the value boxes in a single row beneath it.
     void layoutAdsrSection(juce::Rectangle<int> area, AdsrGraph* graph,
-                           const std::vector<int>& indices);
+                           const std::vector<int>& indices, int cols = 2);
     // Label-on-top grid of `indices` filling `area` exactly (no title/gap).
     void layoutCells(juce::Rectangle<int> area, const std::vector<int>& indices, int cols);
 
@@ -90,6 +93,9 @@ class PolySynthUI : public juce::Component {
     // Filter Slope (12/24 dB) segmented buttons.
     void setFilterSlope(int slope);
     void updateSlopeButtons();
+    // Voice Mode (Poly / Mono / Legato) segmented buttons.
+    void setVoiceMode(int mode);
+    void updateVoiceModeButtons();
 
     std::array<Control, kNumParams> controls_;
     std::array<juce::String, kNumParams> labels_;
@@ -107,10 +113,12 @@ class PolySynthUI : public juce::Component {
     float filterRes_ = 0.3f;
     float filterDrive_ = 0.0f;
     int filterSlope_ = 0;  // 0 = 12 dB, 1 = 24 dB
+    int voiceMode_ = 0;    // 0 = Poly, 1 = Mono, 2 = Legato
 
-    // Segmented Filter Type + Slope buttons (replace their value boxes).
+    // Segmented Filter Type + Slope + Voice Mode buttons (replace value boxes).
     std::array<std::unique_ptr<juce::TextButton>, kNumFilterTypes> typeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumSlopes> slopeButtons_;
+    std::array<std::unique_ptr<juce::TextButton>, kNumVoiceModes> voiceModeButtons_;
 
     // Cached section rectangles for the painted titles.
     juce::Rectangle<int> oscArea_, filterArea_, ampArea_, filterEnvArea_;

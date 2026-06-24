@@ -13,6 +13,11 @@ import("stdfaust.lib");
 freq = hslider("freq", 440, 20, 20000, 0.01);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
 gate = button("gate");
+// Pitch-bend wheel, normalised to [-1, 1]. Like freq/gain/gate this carries no
+// [idx] (the wrapper drives it from MIDI pitch-wheel, per voice), but unlike
+// those it is not a Faust-reserved name, so the engine never touches it - we own
+// it entirely. Scaled by the user's Bend Range (semitones) below.
+bend = hslider("bend", 0, -1, 1, 0.001);
 
 // ============================================================================
 // Host macro controls
@@ -25,15 +30,21 @@ gate = button("gate");
 // envelope at idx 24+.
 smoo = si.smooth(ba.tau2pole(0.01));
 
+// Pitch-bend offset in semitones: the normalised wheel scaled by the user's
+// Bend Range, smoothed to avoid zipper noise from the 14-bit wheel steps.
+bendRange = hslider("Bend Range [unit:st] [idx:30]", 2, 0, 24, 1);
+bendSemis = (bend * bendRange) : smoo;
+
 // One oscillator. `wave` selects the shape (Sine/Saw/Square/Triangle),
 // `coarse` shifts pitch in semitones and `fine` in cents; `level` is the
 // pre-mix gain in dB (converted to a linear multiplier). selectn evaluates
-// every branch, so all four shapes always run.
+// every branch, so all four shapes always run. `bendSemis` shifts every osc
+// together by the live pitch-bend amount.
 oscBank(wave, level, coarse, fine) =
     ba.selectn(4, int(wave), os.osc(f), os.sawtooth(f), os.square(f), os.triangle(f))
     * (level : ba.db2linear : smoo)
 with {
-    f = freq * pow(2.0, (coarse + fine / 100.0) / 12.0);
+    f = freq * pow(2.0, (coarse + fine / 100.0 + bendSemis) / 12.0);
 };
 
 // Oscillator 1 (idx 0..3)
