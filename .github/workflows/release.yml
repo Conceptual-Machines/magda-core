@@ -781,10 +781,13 @@ jobs:
           exit 1
         }
 
-        # Faust standard libraries + stock drumkits. POST_BUILD places both
-        # next to MAGDA.exe; the app loads them from the exe's own directory
-        # (libfaust -I path, DrumkitManager seed), so mirror them into staging.
-        foreach ($dir in @("faustlibraries", "drumkits")) {
+        # Faust standard libraries, stock drumkits, and DAWproject XSD schemas.
+        # POST_BUILD places all three next to MAGDA.exe; the app loads them from
+        # the exe's own directory (libfaust -I path, DrumkitManager seed,
+        # DawProjectValidator <exe>/dawproject/*.xsd), so mirror them into
+        # staging. Without dawproject/ the validator falls back to the baked-in
+        # build-tree source path, which does not exist on an end-user machine.
+        foreach ($dir in @("faustlibraries", "drumkits", "dawproject")) {
           $src = Join-Path $exeDir $dir
           if (-not (Test-Path $src)) {
             Write-Error "$dir/ missing next to MAGDA.exe at $src"
@@ -1000,10 +1003,13 @@ jobs:
         test -d "$APPDIR/usr/bin/controllers/scripts" \
           || { echo "controllers/scripts missing from AppDir staging"; exit 1; }
 
-        # Faust standard libraries + stock drumkits. POST_BUILD places both
-        # next to the binary; the app loads them from the exe's own directory
-        # (libfaust -I path, DrumkitManager seed), so mirror them into the AppDir.
-        for dir in faustlibraries drumkits; do
+        # Faust standard libraries, stock drumkits, and DAWproject XSD schemas.
+        # POST_BUILD places all three next to the binary; the app loads them from
+        # the exe's own directory (libfaust -I path, DrumkitManager seed,
+        # DawProjectValidator <exe>/dawproject/*.xsd), so mirror them into the
+        # AppDir. Without dawproject/ the validator falls back to the baked-in
+        # build-tree source path, which does not exist on an end-user machine.
+        for dir in faustlibraries drumkits dawproject; do
           src="$(dirname "$BINARY")/$dir"
           if [ ! -d "$src" ]; then
             echo "$dir/ missing next to MAGDA binary at $src"

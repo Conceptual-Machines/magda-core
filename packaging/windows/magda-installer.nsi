@@ -67,6 +67,14 @@ Section "Install"
     File /r "${__FILEDIR__}\drumkits\*"
     SetOutPath $INSTDIR
 
+    ; DAWproject XSD schemas - DawProjectValidator validates import/export
+    ; against <exe>/dawproject/Project.xsd and MetaData.xsd. Without these the
+    ; validator falls back to the baked-in build-tree source path, which does
+    ; not exist on an end-user machine, and every DAWproject import fails.
+    SetOutPath "$INSTDIR\dawproject"
+    File /r "${__FILEDIR__}\dawproject\*"
+    SetOutPath $INSTDIR
+
     ; Create uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -109,6 +117,7 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\controllers"
     RMDir /r "$INSTDIR\faustlibraries"
     RMDir /r "$INSTDIR\drumkits"
+    RMDir /r "$INSTDIR\dawproject"
     RMDir "$INSTDIR"
 
     Delete "$SMPROGRAMS\MAGDA\*.*"
