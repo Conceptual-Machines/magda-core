@@ -2681,8 +2681,9 @@ void MainView::MasterHeaderPanel::setupControls() {
 
     // Automation button: same icon as the per-track headers, opens the master
     // automation menu.
-    automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
-                                                   BinaryData::automation_svgSize);
+    automationButton =
+        std::make_unique<SvgButton>("Automation", BinaryData::automation_master_header_svg,
+                                    BinaryData::automation_master_header_svgSize);
     automationButton->setTooltip(tr("tracks.automation"));
     automationButton->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
@@ -2793,10 +2794,10 @@ void MainView::MasterHeaderPanel::resized() {
     // Two rows sharing a fixed icon column. The value/meter column takes the
     // remaining width; the peak readout sits below the meter instead of
     // occupying a separate empty-left column.
-    const int rowH = 20;
-    const int rowGap = 2;
+    const int controlH = 22;
+    const int rowGap = 6;
     const int colGap = 6;
-    const int iconSize = 26;
+    const int iconSize = controlH;
     const int rowLeftInset = 6;
     const int iconRightInset = 8;
 
@@ -2804,9 +2805,9 @@ void MainView::MasterHeaderPanel::resized() {
     const int mainColumnWidth =
         juce::jmax(0, contentArea.getWidth() - iconColumnWidth - colGap - iconRightInset);
 
-    auto row1 = contentArea.removeFromTop(rowH);
+    auto row1 = contentArea.removeFromTop(controlH);
     contentArea.removeFromTop(rowGap);
-    auto meterRow = contentArea;
+    auto meterRow = contentArea.removeFromTop(controlH);
 
     auto topMain = row1.removeFromLeft(mainColumnWidth);
     row1.removeFromLeft(colGap);
@@ -2820,10 +2821,10 @@ void MainView::MasterHeaderPanel::resized() {
     meterMain.removeFromLeft(rowLeftInset);
 
     constexpr int peakReadoutHeight = 10;
-    auto peakReadout = meterMain.removeFromBottom(peakReadoutHeight);
     auto peakMeterBounds = meterMain;
-    auto meterIconAligned =
-        meterIcon.withY(peakMeterBounds.getY()).withHeight(peakMeterBounds.getHeight());
+    auto readoutArea = contentArea.withX(meterMain.getX()).withWidth(meterMain.getWidth());
+    auto peakReadout = readoutArea.removeFromTop(peakReadoutHeight);
+    auto meterIconAligned = meterIcon;
 
     volumeLabel->setBounds(topMain);
     speakerButton->setBounds(topIcon.withSizeKeepingCentre(iconSize, iconSize));

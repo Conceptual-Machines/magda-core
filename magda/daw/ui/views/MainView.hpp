@@ -163,7 +163,7 @@ class MainView : public juce::Component,
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
     // Song navigator / minimap occupying the master content strip (issue #1474).
     std::unique_ptr<SongNavigatorPanel> masterContentPanel;
-    int masterStripHeight = 76;
+    int masterStripHeight = 84;
 
     // Master automation band: a pinned strip directly above the master strip
     // hosting the master channel's automation lanes (issue #1482). Fixed-width
@@ -183,7 +183,7 @@ class MainView : public juce::Component,
     int auxSectionHeight = 0;
     bool auxVisible_ = false;
     static constexpr int AUX_ROW_HEIGHT = 30;
-    static constexpr int MIN_MASTER_STRIP_HEIGHT = 76;
+    static constexpr int MIN_MASTER_STRIP_HEIGHT = 84;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
 
     // Cached state from controller for quick access
