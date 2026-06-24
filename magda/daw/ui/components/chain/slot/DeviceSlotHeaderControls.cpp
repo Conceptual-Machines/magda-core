@@ -248,18 +248,6 @@ HeaderControlComponents getHeaderControlComponents(DeviceSlotHeaderControls cont
             .midiThruButton = controls.midiThruButton};
 }
 
-HeaderControlComponents getHeaderControlComponents(DeviceSlotCollapsedControls controls) {
-    return {.macroButton = controls.macroButton,
-            .modButton = controls.modButton,
-            .aiButton = controls.aiButton,
-            .multiOutButton = controls.multiOutButton,
-            .uiButton = controls.uiButton,
-            .exportClipButton = controls.exportClipButton,
-            .randomButton = controls.randomButton,
-            .stepRecordButton = controls.stepRecordButton,
-            .midiThruButton = controls.midiThruButton};
-}
-
 }  // namespace
 
 void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
@@ -307,10 +295,10 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     const int buttonSize = juce::jmin(maxButtonSize, area.getWidth() - 4);
 
-    placeCollapsedButtonIfVisible(area, controls.powerButton, true, buttonSize);
+    placeCollapsedButtonIfVisible(area, controls.headerControls.powerButton, true, buttonSize);
 
     auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
-                                         getHeaderControlComponents(controls));
+                                         getHeaderControlComponents(controls.headerControls));
     std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
         return lhs.collapsedOrder < rhs.collapsedOrder;
     });
