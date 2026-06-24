@@ -1688,7 +1688,11 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
          .macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
          .modButton = exposesDeviceModulation() ? modButton_.get() : nullptr,
          .aiButton = aiButton_.get(),
-         .multiOutButton = multiOutButton_.get()},
+         .multiOutButton = multiOutButton_.get(),
+         .exportClipButton = exportClipButton_.get(),
+         .randomButton = randomButton_.get(),
+         .stepRecordButton = stepRecordButton_.get(),
+         .midiThruButton = midiThruButton_.get()},
         BUTTON_SIZE);
 }
 

@@ -36,6 +36,14 @@ void placeCollapsedButton(juce::Rectangle<int>& area, juce::Component* component
     area.removeFromTop(4);
 }
 
+void placeCollapsedButtonIfVisible(juce::Rectangle<int>& area, juce::Component* component,
+                                   bool shouldBeVisible, int buttonSize) {
+    setVisibleIfPresent(component, shouldBeVisible);
+
+    if (shouldBeVisible)
+        placeCollapsedButton(area, component, buttonSize);
+}
+
 bool isMidiUtility(const DeviceSlotTraits& traits) {
     return traits.isChordEngine || traits.isArpeggiator || traits.isStepSequencer ||
            traits.isPolyStepSequencer;
@@ -135,30 +143,19 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     const int buttonSize = juce::jmin(maxButtonSize, area.getWidth() - 4);
 
-    placeCollapsedButton(area, controls.powerButton, buttonSize);
-    setVisibleIfPresent(controls.powerButton, true);
+    placeCollapsedButtonIfVisible(area, controls.powerButton, true, buttonSize);
 
     const bool showUI =
         drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid, isInternalDevice) ||
         traits.hasAnalyzerPopout;
-    if (showUI) {
-        placeCollapsedButton(area, controls.uiButton, buttonSize);
-        setVisibleIfPresent(controls.uiButton, true);
-    } else {
-        setVisibleIfPresent(controls.uiButton, false);
-    }
+    placeCollapsedButtonIfVisible(area, controls.uiButton, showUI, buttonSize);
 
     const bool showMod = drum_grid_slot::shouldShowModButton(traits.isDrumGrid, device.deviceType);
     const bool showMacro = drum_grid_slot::shouldShowMacroButton(
         traits.isDrumGrid, device.deviceType, traits.isArpeggiator,
         traits.isStepSequencer || traits.isPolyStepSequencer);
-    placeCollapsedButton(area, controls.macroButton, buttonSize);
-    setVisibleIfPresent(controls.macroButton, showMacro);
-
-    if (controls.modButton != nullptr)
-        controls.modButton->setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    setVisibleIfPresent(controls.modButton, showMod);
+    placeCollapsedButtonIfVisible(area, controls.macroButton, showMacro, buttonSize);
+    placeCollapsedButtonIfVisible(area, controls.modButton, showMod, buttonSize);
 
     if (traits.isSoundDesignSupported) {
         area.removeFromTop(4);
@@ -169,6 +166,20 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
     } else {
         setVisibleIfPresent(controls.aiButton, false);
     }
+
+    const bool showSequencerActions = traits.isStepSequencer || traits.isPolyStepSequencer;
+    if (showSequencerActions) {
+        placeCollapsedButtonIfVisible(area, controls.randomButton, true, buttonSize);
+        placeCollapsedButtonIfVisible(area, controls.stepRecordButton, true, buttonSize);
+        placeCollapsedButtonIfVisible(area, controls.midiThruButton, true, buttonSize);
+    } else {
+        setVisibleIfPresent(controls.randomButton, false);
+        setVisibleIfPresent(controls.stepRecordButton, false);
+        setVisibleIfPresent(controls.midiThruButton, false);
+    }
+
+    placeCollapsedButtonIfVisible(area, controls.exportClipButton, isMidiUtility(traits),
+                                  buttonSize);
 
     if (device.multiOut.isMultiOut && controls.multiOutButton != nullptr) {
         area.removeFromTop(4);
