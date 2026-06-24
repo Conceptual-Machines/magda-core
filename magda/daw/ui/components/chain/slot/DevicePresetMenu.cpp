@@ -320,6 +320,48 @@ void loadMagdaPreset(
     }
 }
 
+struct MagdaDevicePresetPresenter::State {
+    juce::String currentPresetName;
+};
+
+MagdaDevicePresetPresenter::MagdaDevicePresetPresenter() : state_(std::make_shared<State>()) {}
+
+void MagdaDevicePresetPresenter::clearCurrentPreset() {
+    state_->currentPresetName.clear();
+}
+
+void MagdaDevicePresetPresenter::showMenu(
+    juce::Component* targetComponent, const magda::DeviceInfo& device,
+    const magda::ChainNodePath& devicePath,
+    std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded) {
+    auto state = state_;
+    const auto snapshotProvider = [device, devicePath]() -> std::optional<magda::DeviceInfo> {
+        return snapshotDeviceForPreset(device, devicePath);
+    };
+
+    MagdaPresetMenuActions actions;
+    actions.saveAs = [state, device, snapshotProvider]() {
+        showSaveMagdaPresetDialog(
+            device, state->currentPresetName, snapshotProvider,
+            [state](const juce::String& presetName) { state->currentPresetName = presetName; });
+    };
+    actions.saveCurrent = [state, snapshotProvider]() {
+        saveCurrentMagdaPreset(state->currentPresetName, snapshotProvider);
+    };
+    actions.loadPreset = [state, device, devicePath,
+                          onLoaded = std::move(onLoaded)](const juce::String& presetRelativePath) {
+        loadMagdaPreset(
+            device.name, devicePath, presetRelativePath,
+            [state, onLoaded](const magda::DeviceInfo& liveDevice, const juce::String& presetName) {
+                state->currentPresetName = presetName;
+                if (onLoaded)
+                    onLoaded(liveDevice);
+            });
+    };
+
+    showMagdaPresetMenu(targetComponent, device.name, state->currentPresetName, std::move(actions));
+}
+
 bool hasPluginPresetsAvailable(const magda::DeviceInfo& device, bool isInternalDevice) {
     if (isInternalDevice || device.loadState != magda::DeviceLoadState::Loaded)
         return false;
