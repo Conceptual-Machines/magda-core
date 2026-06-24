@@ -35,16 +35,22 @@ smoo = si.smooth(ba.tau2pole(0.01));
 bendRange = hslider("Bend Range [unit:st] [idx:30]", 2, 0, 24, 1);
 bendSemis = (bend * bendRange) : smoo;
 
+// Portamento: glide the base pitch toward the played note over `glide` seconds.
+// 0 = instant. The wrapper forces this zone to 0 on the poly voices, so only the
+// Mono/Legato voice glides; poly patches are unaffected.
+glide = hslider("Glide [unit:ms] [idx:32]", 0, 0, 2000, 1) / 1000.0;
+freqG = freq : si.smooth(ba.tau2pole(glide));
+
 // One oscillator. `wave` selects the shape (Sine/Saw/Square/Triangle),
 // `coarse` shifts pitch in semitones and `fine` in cents; `level` is the
 // pre-mix gain in dB (converted to a linear multiplier). selectn evaluates
 // every branch, so all four shapes always run. `bendSemis` shifts every osc
-// together by the live pitch-bend amount.
+// together by the live pitch-bend amount; `freqG` carries the glide.
 oscBank(wave, level, coarse, fine) =
     ba.selectn(4, int(wave), os.osc(f), os.sawtooth(f), os.square(f), os.triangle(f))
     * (level : ba.db2linear : smoo)
 with {
-    f = freq * pow(2.0, (coarse + fine / 100.0 + bendSemis) / 12.0);
+    f = freqG * pow(2.0, (coarse + fine / 100.0 + bendSemis) / 12.0);
 };
 
 // Oscillator 1 (idx 0..3)

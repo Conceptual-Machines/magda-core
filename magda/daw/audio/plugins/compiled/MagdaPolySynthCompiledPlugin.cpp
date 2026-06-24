@@ -344,6 +344,13 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                      .defaultValue = 0.0f,
                                      .choices = {"Poly", "Mono", "Legato"}};
 
+    hostSlotInfo_[kGlideSlot] = {.name = "Glide",
+                                 .unit = "ms",
+                                 .scale = magda::ParameterScale::Linear,
+                                 .minValue = 0.0f,
+                                 .maxValue = 2000.0f,
+                                 .defaultValue = 0.0f};
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 
@@ -481,9 +488,12 @@ void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
             real = static_cast<FAUSTFLOAT>(magda::ParameterUtils::normalizedToReal(norm, info));
         }
 
+        // Glide is a Mono/Legato-only control: the poly voices always get 0 so
+        // reused voices never portamento from their previous note.
+        const FAUSTFLOAT polyReal = (slot == kGlideSlot) ? FAUSTFLOAT(0) : real;
         for (FAUSTFLOAT* zone : voiceZonesBySlot_[static_cast<size_t>(slot)])
             if (zone)
-                *zone = real;
+                *zone = polyReal;
         if (monoZonesBySlot_[static_cast<size_t>(slot)])
             *monoZonesBySlot_[static_cast<size_t>(slot)] = real;
     }

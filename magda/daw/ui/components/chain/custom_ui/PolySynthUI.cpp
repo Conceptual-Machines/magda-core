@@ -43,6 +43,7 @@ PolySynthUI::PolySynthUI() {
     labels_[kAmpAttackSlot + 3] = "Release";
     labels_[kBendRangeSlot] = "Bend Range";
     labels_[kVoiceModeSlot] = "Mode";
+    labels_[kGlideSlot] = "Glide";
 
     for (int i = 0; i < kNumParams; ++i) {
         auto& c = controls_[static_cast<size_t>(i)];
@@ -355,8 +356,9 @@ void PolySynthUI::resized() {
     // the left, Bend Range box on the right.
     {
         auto strip = b.removeFromBottom(kCellLabelH + 22).reduced(kSectionGap, 2);
-        auto bendCell = strip.removeFromRight(96);
-        layoutCells(bendCell, {kBendRangeSlot}, 1);
+        layoutCells(strip.removeFromRight(96), {kBendRangeSlot}, 1);
+        strip.removeFromRight(kSectionGap);
+        layoutCells(strip.removeFromRight(80), {kGlideSlot}, 1);
         strip.removeFromRight(kSectionGap * 2);
 
         auto modeArea = strip.removeFromLeft(juce::jmin(210, strip.getWidth()));

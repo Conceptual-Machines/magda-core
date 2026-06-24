@@ -98,8 +98,11 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     // control would be dead-code-eliminated by Faust).
     static constexpr int kBendRangeSlot = 30;
     static constexpr int kVoiceModeSlot = 31;
+    // Glide (portamento) has a dsp [idx:32] zone; the wrapper zeroes it on the
+    // poly voices so only the Mono/Legato voice glides.
+    static constexpr int kGlideSlot = 32;
 
-    static constexpr int kHostSlotCount = 32;
+    static constexpr int kHostSlotCount = 33;
 
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 
