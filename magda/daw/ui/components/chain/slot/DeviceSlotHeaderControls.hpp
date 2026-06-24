@@ -33,6 +33,10 @@ struct DeviceSlotCollapsedControls {
     juce::Component* modButton = nullptr;
     juce::Component* aiButton = nullptr;
     juce::Component* multiOutButton = nullptr;
+    juce::Component* exportClipButton = nullptr;
+    juce::Component* randomButton = nullptr;      // step-sequencer pattern randomize
+    juce::Component* stepRecordButton = nullptr;  // step-sequencer step record toggle
+    juce::Component* midiThruButton = nullptr;    // step-sequencer MIDI thru toggle
 };
 
 void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
