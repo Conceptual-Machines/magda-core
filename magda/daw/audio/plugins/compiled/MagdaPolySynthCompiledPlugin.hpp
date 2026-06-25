@@ -101,10 +101,11 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     // Glide (portamento) has a dsp [idx:32] zone; the wrapper zeroes it on the
     // poly voices so only the Mono/Legato voice glides.
     static constexpr int kGlideSlot = 32;
-    // Phase reset (restart oscillator phase on note-on), discrete Off/On.
-    static constexpr int kPhaseResetSlot = 33;
+    // Per-oscillator phase reset (restart that oscillator's phase on note-on),
+    // discrete Off/On. osc n -> kOscResetBaseSlot + (n - 1), idx 33..36.
+    static constexpr int kOscResetBaseSlot = 33;
 
-    static constexpr int kHostSlotCount = 34;
+    static constexpr int kHostSlotCount = 37;
 
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 

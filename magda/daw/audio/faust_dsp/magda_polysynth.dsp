@@ -41,32 +41,49 @@ bendSemis = (bend * bendRange) : smoo;
 glide = hslider("Glide [unit:ms] [idx:32]", 0, 0, 2000, 1) / 1000.0;
 freqG = freq : si.smooth(ba.tau2pole(glide));
 
-// Phase reset: restart every oscillator at phase 0 on note-on so attacks are
-// consistent and punchy. Fires for one sample on the gate's rising edge (also on
-// the Mono retrigger edge) when enabled. The differentiator glitch from the
-// reset lands at note-on, where the amp envelope is ~0, so it is inaudible.
-phaseReset = nentry("Phase Reset [idx:33] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
-oscReset = (phaseReset > 0) * (gate > gate');
+// Per-oscillator phase reset: each oscillator can independently restart at phase
+// 0 on note-on, for consistent/punchy attacks. The reset fires for one sample on
+// the gate's rising edge (also the Mono retrigger edge) when that oscillator's
+// toggle is on.
+gateRise = gate > gate';
+osc1Reset = nentry("Osc 1 Reset [idx:33] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+osc2Reset = nentry("Osc 2 Reset [idx:34] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+osc3Reset = nentry("Osc 3 Reset [idx:35] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+osc4Reset = nentry("Osc 4 Reset [idx:36] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
 
-// Resettable, alias-suppressed oscillators (DPW order 2) built on Faust's
-// reset-capable phasor, replacing the free-running os.* shapes so the phase can
-// be restarted. With reset held at 0 they free-run exactly like the stock saws.
-sawNaiveR(f, ph, rst) = 2.0 * os.lf_sawpos_phase_reset(f, ph, rst) - 1.0;
-sawDpwR(f, ph, rst) = sawNaiveR(f, ph, rst) <: * <: -(mem) : *(0.25 * ma.SR / max(ma.EPSILON, f));
-sqrR(f, rst) = sawDpwR(f, 0.0, rst) - sawDpwR(f, 0.5, rst);     // band-limited square
-triR(f, rst) = sqrR(f, rst) : fi.pole(0.999) : *(4.0 * f / ma.SR);  // integrated square
-sinR(f, rst) = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, rst));
+// Resettable, alias-suppressed oscillators using PolyBLEP. PolyBLEP is stateless,
+// so resetting the phase is click-free (unlike DPW, whose differentiator spikes
+// when the phase jumps). Built on Faust's reset-capable phasor.
+polyblep(dt, t) = select2(t < dt, select2(t > 1.0 - dt, 0.0, near1), near0)
+with {
+    x0 = t / dt;
+    near0 = 2.0 * x0 - x0 * x0 - 1.0;
+    x1 = (t - 1.0) / dt;
+    near1 = x1 * x1 + 2.0 * x1 + 1.0;
+};
+sawBlep(f, ph, rst) = (2.0 * p - 1.0) - polyblep(dt, p)
+with {
+    p = os.lf_sawpos_phase_reset(f, ph, rst);
+    dt = max(ma.EPSILON, f / ma.SR);
+};
+sqrBlep(f, rst) = (2.0 * float(p < 0.5) - 1.0) + polyblep(dt, p) - polyblep(dt, ma.frac(p + 0.5))
+with {
+    p = os.lf_sawpos_reset(f, rst);
+    dt = max(ma.EPSILON, f / ma.SR);
+};
+triBlep(f, rst) = sqrBlep(f, rst) : fi.pole(0.999) : *(4.0 * f / ma.SR);  // integrated square
+sinBlep(f, rst) = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, rst));
 oscShape(wave, f, rst) =
-    ba.selectn(4, int(wave), sinR(f, rst), sawDpwR(f, 0.0, rst), sqrR(f, rst), triR(f, rst));
+    ba.selectn(4, int(wave), sinBlep(f, rst), sawBlep(f, 0.0, rst), sqrBlep(f, rst), triBlep(f, rst));
 
 // One oscillator. `wave` selects the shape (Sine/Saw/Square/Triangle),
 // `coarse` shifts pitch in semitones and `fine` in cents; `level` is the
-// pre-mix gain in dB (converted to a linear multiplier). selectn evaluates
-// every branch, so all four shapes always run. `bendSemis` shifts every osc
-// together by the live pitch-bend amount; `freqG` carries the glide; `oscReset`
-// restarts the phase on note-on.
-oscBank(wave, level, coarse, fine) =
-    oscShape(wave, f, oscReset)
+// pre-mix gain in dB (converted to a linear multiplier). selectn evaluates every
+// branch, so all four shapes always run. `bendSemis` shifts every osc together by
+// the live pitch-bend amount; `freqG` carries the glide; `rstOn` restarts this
+// oscillator's phase on note-on.
+oscBank(wave, level, coarse, fine, rstOn) =
+    oscShape(wave, f, (rstOn > 0) * gateRise)
     * (level : ba.db2linear : smoo)
 with {
     f = freqG * pow(2.0, (coarse + fine / 100.0 + bendSemis) / 12.0);
@@ -124,10 +141,10 @@ aRel = hslider("Amp Release [unit:ms] [idx:27]", 400, 1, 4000, 1) / 1000.0;
 // ============================================================================
 // DSP
 // ============================================================================
-oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine)
-       + oscBank(osc2Wave, osc2Level, osc2Coarse, osc2Fine)
-       + oscBank(osc3Wave, osc3Level, osc3Coarse, osc3Fine)
-       + oscBank(osc4Wave, osc4Level, osc4Coarse, osc4Fine);
+oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset)
+       + oscBank(osc2Wave, osc2Level, osc2Coarse, osc2Fine, osc2Reset)
+       + oscBank(osc3Wave, osc3Level, osc3Coarse, osc3Fine, osc3Reset)
+       + oscBank(osc4Wave, osc4Level, osc4Coarse, osc4Fine, osc4Reset);
 
 // Resonance 0..0.95 -> Q 0.5..~9.5. Filter-envelope output scales the cutoff
 // exponentially (in octaves) and the result is clamped to the audio band.

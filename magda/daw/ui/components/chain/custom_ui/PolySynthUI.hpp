@@ -49,7 +49,7 @@ class PolySynthUI : public juce::Component {
     // Host slot layout — must match magda_polysynth.dsp / the C++ wrapper.
     static constexpr int kNumOscillators = 4;
     static constexpr int kOscSlotCount = 4;  // wave / level / coarse / fine
-    static constexpr int kNumParams = 34;
+    static constexpr int kNumParams = 37;
 
     static constexpr int kFilterTypeSlot = 16;
     static constexpr int kCutoffSlot = 17;
@@ -62,10 +62,10 @@ class PolySynthUI : public juce::Component {
     static constexpr int kBendRangeSlot = 30;
     static constexpr int kVoiceModeSlot = 31;
     static constexpr int kGlideSlot = 32;
-    static constexpr int kPhaseResetSlot = 33;
-    static constexpr int kNumFilterTypes = 4;  // Lowpass / Highpass / Bandpass / Notch
-    static constexpr int kNumSlopes = 2;       // 12 dB / 24 dB
-    static constexpr int kNumVoiceModes = 3;   // Poly / Mono / Legato
+    static constexpr int kOscResetBaseSlot = 33;  // osc n -> + (n - 1), idx 33..36
+    static constexpr int kNumFilterTypes = 4;     // Lowpass / Highpass / Bandpass / Notch
+    static constexpr int kNumSlopes = 2;          // 12 dB / 24 dB
+    static constexpr int kNumVoiceModes = 3;      // Poly / Mono / Legato
 
     struct Control {
         std::unique_ptr<juce::Label> label;
@@ -98,9 +98,9 @@ class PolySynthUI : public juce::Component {
     // Voice Mode (Poly / Mono / Legato) segmented buttons.
     void setVoiceMode(int mode);
     void updateVoiceModeButtons();
-    // Phase Reset on/off toggle.
-    void setPhaseReset(bool on);
-    void updatePhaseResetButton();
+    // Per-oscillator phase-reset on/off toggles.
+    void setOscReset(int osc, bool on);
+    void updateOscResetButtons();
 
     std::array<Control, kNumParams> controls_;
     std::array<juce::String, kNumParams> labels_;
@@ -119,13 +119,14 @@ class PolySynthUI : public juce::Component {
     float filterDrive_ = 0.0f;
     int filterSlope_ = 0;  // 0 = 12 dB, 1 = 24 dB
     int voiceMode_ = 0;    // 0 = Poly, 1 = Mono, 2 = Legato
-    bool phaseReset_ = false;
+    std::array<bool, kNumOscillators> oscReset_{};
 
     // Segmented Filter Type + Slope + Voice Mode buttons (replace value boxes).
     std::array<std::unique_ptr<juce::TextButton>, kNumFilterTypes> typeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumSlopes> slopeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumVoiceModes> voiceModeButtons_;
-    std::unique_ptr<juce::TextButton> phaseResetButton_;  // single on/off toggle
+    // Per-oscillator phase-reset toggles, one per osc row.
+    std::array<std::unique_ptr<juce::TextButton>, kNumOscillators> oscResetButtons_;
 
     // Cached section rectangles for the painted titles.
     juce::Rectangle<int> oscArea_, filterArea_, ampArea_, filterEnvArea_;

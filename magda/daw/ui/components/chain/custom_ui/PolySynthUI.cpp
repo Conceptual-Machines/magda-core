@@ -44,7 +44,8 @@ PolySynthUI::PolySynthUI() {
     labels_[kBendRangeSlot] = "Bend Range";
     labels_[kVoiceModeSlot] = "Mode";
     labels_[kGlideSlot] = "Glide";
-    labels_[kPhaseResetSlot] = "Reset";
+    for (int osc = 0; osc < kNumOscillators; ++osc)
+        labels_[kOscResetBaseSlot + osc] = "Rst";
 
     for (int i = 0; i < kNumParams; ++i) {
         auto& c = controls_[static_cast<size_t>(i)];
@@ -151,19 +152,21 @@ PolySynthUI::PolySynthUI() {
         voiceModeButtons_[static_cast<size_t>(v)] = std::move(btn);
     }
 
-    // Phase Reset: single on/off toggle button in the global strip.
-    phaseResetButton_ = std::make_unique<juce::TextButton>("Phase Reset");
-    phaseResetButton_->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-    phaseResetButton_->setClickingTogglesState(false);
-    phaseResetButton_->setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
-    phaseResetButton_->setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    phaseResetButton_->setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getSecondaryTextColour());
-    phaseResetButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    phaseResetButton_->onClick = [this]() { setPhaseReset(!phaseReset_); };
-    addAndMakeVisible(*phaseResetButton_);
+    // Per-oscillator phase-reset: one small toggle per osc row in the OSC section.
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        auto btn = std::make_unique<juce::TextButton>("Rst");
+        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        btn->setClickingTogglesState(false);
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        btn->onClick = [this, osc]() { setOscReset(osc, !oscReset_[static_cast<size_t>(osc)]); };
+        addAndMakeVisible(*btn);
+        oscResetButtons_[static_cast<size_t>(osc)] = std::move(btn);
+    }
 
     // The Type/Slope/Mode/Reset value boxes are replaced by the buttons; keep the
     // objects (for linking/value) but hide them.
@@ -173,12 +176,14 @@ PolySynthUI::PolySynthUI() {
     controls_[kFilterSlopeSlot].label->setVisible(false);
     controls_[kVoiceModeSlot].slider->setVisible(false);
     controls_[kVoiceModeSlot].label->setVisible(false);
-    controls_[kPhaseResetSlot].slider->setVisible(false);
-    controls_[kPhaseResetSlot].label->setVisible(false);
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        controls_[kOscResetBaseSlot + osc].slider->setVisible(false);
+        controls_[kOscResetBaseSlot + osc].label->setVisible(false);
+    }
     updateTypeButtons();
     updateSlopeButtons();
     updateVoiceModeButtons();
-    updatePhaseResetButton();
+    updateOscResetButtons();
 }
 
 PolySynthUI::~PolySynthUI() {
@@ -191,8 +196,9 @@ PolySynthUI::~PolySynthUI() {
     for (auto& btn : voiceModeButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
-    if (phaseResetButton_)
-        phaseResetButton_->setLookAndFeel(nullptr);
+    for (auto& btn : oscResetButtons_)
+        if (btn)
+            btn->setLookAndFeel(nullptr);
 }
 
 void PolySynthUI::setFilterType(int type) {
@@ -248,17 +254,22 @@ void PolySynthUI::updateVoiceModeButtons() {
                                                                       juce::dontSendNotification);
 }
 
-void PolySynthUI::setPhaseReset(bool on) {
-    phaseReset_ = on;
-    controls_[kPhaseResetSlot].slider->setValue(on ? 1.0 : 0.0, juce::dontSendNotification);
+void PolySynthUI::setOscReset(int osc, bool on) {
+    if (osc < 0 || osc >= kNumOscillators)
+        return;
+    oscReset_[static_cast<size_t>(osc)] = on;
+    const int slot = kOscResetBaseSlot + osc;
+    controls_[slot].slider->setValue(on ? 1.0 : 0.0, juce::dontSendNotification);
     if (onParameterChanged)
-        onParameterChanged(kPhaseResetSlot, on ? 1.0f : 0.0f);
-    updatePhaseResetButton();
+        onParameterChanged(slot, on ? 1.0f : 0.0f);
+    updateOscResetButtons();
 }
 
-void PolySynthUI::updatePhaseResetButton() {
-    if (phaseResetButton_)
-        phaseResetButton_->setToggleState(phaseReset_, juce::dontSendNotification);
+void PolySynthUI::updateOscResetButtons() {
+    for (int osc = 0; osc < kNumOscillators; ++osc)
+        if (oscResetButtons_[static_cast<size_t>(osc)])
+            oscResetButtons_[static_cast<size_t>(osc)]->setToggleState(
+                oscReset_[static_cast<size_t>(osc)], juce::dontSendNotification);
 }
 
 void PolySynthUI::pushFilterCurve() {
@@ -323,9 +334,9 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
                                       static_cast<int>(std::round(info.currentValue)));
             updateVoiceModeButtons();
         }
-        if (idx == kPhaseResetSlot) {
-            phaseReset_ = info.currentValue >= 0.5f;
-            updatePhaseResetButton();
+        if (idx >= kOscResetBaseSlot && idx < kOscResetBaseSlot + kNumOscillators) {
+            oscReset_[static_cast<size_t>(idx - kOscResetBaseSlot)] = info.currentValue >= 0.5f;
+            updateOscResetButtons();
         }
 
         // Mirror the ADSR slots into their envelope graphs (carries the range too).
@@ -408,9 +419,6 @@ void PolySynthUI::resized() {
                            : juce::Rectangle<int>(modeArea.removeFromLeft(segW));
             voiceModeButtons_[static_cast<size_t>(v)]->setBounds(seg);
         }
-        strip.removeFromLeft(kSectionGap * 2);
-        if (phaseResetButton_)
-            phaseResetButton_->setBounds(strip.removeFromLeft(juce::jmin(96, strip.getWidth())));
     }
 
     // Three columns: OSC and FILTER (with the response curve) full-height on the
@@ -431,7 +439,21 @@ void PolySynthUI::resized() {
     for (int i = 0; i < kNumOscillators * kOscSlotCount; ++i)
         oscParams.push_back(i);
 
-    layoutSection(oscArea_, oscParams, kOscSlotCount);  // 4 osc rows x 4 controls
+    // OSC section: 4 osc rows x 4 value cells, plus a per-osc Reset toggle column
+    // on the right (one toggle aligned to each oscillator's row).
+    {
+        auto a = oscArea_.reduced(kSectionGap);
+        a.removeFromTop(kSectionTitleH);
+        auto rstCol = a.removeFromRight(34);
+        layoutCells(a, oscParams, kOscSlotCount);
+        const int rowH = rstCol.getHeight() / kNumOscillators;
+        for (int osc = 0; osc < kNumOscillators; ++osc) {
+            auto row = rstCol.removeFromTop(rowH);
+            if (oscResetButtons_[static_cast<size_t>(osc)])
+                oscResetButtons_[static_cast<size_t>(osc)]->setBounds(
+                    row.reduced(2, kCellLabelH / 2));
+        }
+    }
     // Filter section: Type segmented buttons on top, response curve in the
     // middle, the remaining control rows beneath.
     {
