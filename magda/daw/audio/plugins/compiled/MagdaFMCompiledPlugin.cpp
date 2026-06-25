@@ -17,16 +17,16 @@ MagdaFMCompiledPlugin::MagdaFMCompiledPlugin(const te::PluginCreationInfo& info)
 }
 
 juce::String MagdaFMCompiledPlugin::getName() const {
-    return "FM";
+    return "FM0";
 }
 juce::String MagdaFMCompiledPlugin::getPluginType() {
     return xmlTypeName;
 }
 juce::String MagdaFMCompiledPlugin::getShortName(int) {
-    return "FM";
+    return "FM0";
 }
 juce::String MagdaFMCompiledPlugin::getSelectableDescription() {
-    return "FM";
+    return "FM0";
 }
 
 ::dsp* MagdaFMCompiledPlugin::createVoiceDsp() const {
@@ -129,7 +129,7 @@ std::vector<MagdaFMCompiledPlugin::HostSlotInfo> MagdaFMCompiledPlugin::voiceSlo
 const CompiledPluginSpec& getMagdaFMSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaFMCompiledPlugin::xmlTypeName,
-        .displayName = "FM",
+        .displayName = "FM0",
         .browserCategory = "Synth",
         .description = "Four-operator FM synth with a full 4x4 modulation matrix: every operator "
                        "(Sine/Tri/Saw/Square/Noise) can phase-modulate any operator, the diagonal "
