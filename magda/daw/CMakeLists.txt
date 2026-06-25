@@ -427,6 +427,7 @@ target_link_libraries(magda_daw
     PRIVATE
     LibXml2::LibXml2
     faust::libfaust
+    magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
 )
 
 target_compile_definitions(magda_daw
