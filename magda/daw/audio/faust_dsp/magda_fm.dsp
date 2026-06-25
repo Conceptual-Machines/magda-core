@@ -41,10 +41,12 @@ ratio(2) = hslider("Op3 Ratio [idx:18]", 1.0, 0.25, 16.0, 0.001);
 ratio(3) = hslider("Op4 Ratio [idx:19]", 1.0, 0.25, 16.0, 0.001);
 
 // Per-operator output level (carrier mix). Default: only op1 reaches the output.
-outLvl(0) = hslider("Op1 Level [idx:20]", 1.0, 0.0, 1.0, 0.001);
-outLvl(1) = hslider("Op2 Level [idx:21]", 0.0, 0.0, 1.0, 0.001);
-outLvl(2) = hslider("Op3 Level [idx:22]", 0.0, 0.0, 1.0, 0.001);
-outLvl(3) = hslider("Op4 Level [idx:23]", 0.0, 0.0, 1.0, 0.001);
+// Output level in dB (carrier mix). -60 dB is the silent floor; the dsp converts
+// to a linear gain in `mix`.
+outLvl(0) = hslider("Op1 Level [unit:dB] [idx:20]",   0.0, -60.0, 6.0, 0.1);
+outLvl(1) = hslider("Op2 Level [unit:dB] [idx:21]", -60.0, -60.0, 6.0, 0.1);
+outLvl(2) = hslider("Op3 Level [unit:dB] [idx:22]", -60.0, -60.0, 6.0, 0.1);
+outLvl(3) = hslider("Op4 Level [unit:dB] [idx:23]", -60.0, -60.0, 6.0, 0.1);
 
 // Amp envelope (ms; the dsp converts to seconds). Sustain is a level [0,1].
 ampA = hslider("Amp Attack [idx:24]",  5.0,   1.0, 2000.0, 0.1) * 0.001;
@@ -107,8 +109,9 @@ with {
     op(i) = ba.selectn(5, int(wave(i)), sine(p(i)), tri(p(i)), saw(p(i)), sqr(p(i)), no.noise);
 };
 
-mix(y0, y1, y2, y3) =
-    y0 * sm(outLvl(0)) + y1 * sm(outLvl(1)) + y2 * sm(outLvl(2)) + y3 * sm(outLvl(3));
+// dB -> linear gain (floored to silence at -60 dB), smoothed to avoid steps.
+lvl(i) = sm(outLvl(i) > -59.5) * ba.db2linear(sm(outLvl(i)));
+mix(y0, y1, y2, y3) = y0 * lvl(0) + y1 * lvl(1) + y2 * lvl(2) + y3 * lvl(3);
 
 env = en.adsr(ampA, ampD, ampS, ampR, gate);
 

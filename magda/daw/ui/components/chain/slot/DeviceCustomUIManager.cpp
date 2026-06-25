@@ -366,7 +366,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (polySynthUI_)
         return 720;  // osc + filter columns + stacked envelope column on one page
     if (fmUI_)
-        return 680;  // 4x4 matrix + 4 operator columns + stacked amp/gain column
+        return 740;  // 4x4 matrix + 4 operator columns + wider amp/right column
     if (eqUI_)
         return 400;
     if (compressorUI_)

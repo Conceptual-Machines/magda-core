@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "custom_ui/AdsrGraph.hpp"
 #include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
@@ -63,12 +64,20 @@ class FMUI : public juce::Component {
 
     void setOpWave(int op, int wave);
     void updateWaveSelectors();
+    void setOpReset(int op, bool on);
+    void updateResetButtons();
     void layoutCells(juce::Rectangle<int> area, const std::vector<int>& indices, int cols);
 
     std::array<Control, kNumParams> controls_;
 
     // Per-operator waveform icon selectors (overlay the hidden wave sliders).
     std::array<IconSelector, kNumOps> waveSelectors_;
+    // Per-operator phase-reset toggles (overlay the hidden reset sliders).
+    std::array<std::unique_ptr<juce::TextButton>, kNumOps> resetButtons_;
+    std::array<bool, kNumOps> opReset_{};
+
+    // Draggable amp ADSR envelope (replaces the A/D/S/R value boxes as the editor).
+    std::unique_ptr<AdsrGraph> ampGraph_;
 
     // Cached section rectangles for painted titles / matrix headers.
     juce::Rectangle<int> matrixArea_, opsArea_, ampArea_;

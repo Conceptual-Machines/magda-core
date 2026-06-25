@@ -57,13 +57,15 @@ std::vector<MagdaFMCompiledPlugin::HostSlotInfo> MagdaFMCompiledPlugin::voiceSlo
                      .maxValue = 16.0f,
                      .defaultValue = ratioDef[i]});
 
-    // 20..23: per-op output level (only op1 reaches the output by default).
+    // 20..23: per-op output level in dB (only op1 reaches the output by default;
+    // the rest sit at the -60 dB silent floor).
     for (int i = 0; i < 4; ++i)
         v.push_back({.name = "Op" + juce::String(i + 1) + " Level",
-                     .scale = ParameterScale::Linear,
-                     .minValue = 0.0f,
-                     .maxValue = 1.0f,
-                     .defaultValue = (i == 0) ? 1.0f : 0.0f});
+                     .unit = "dB",
+                     .scale = ParameterScale::FaderDB,
+                     .minValue = -60.0f,
+                     .maxValue = 6.0f,
+                     .defaultValue = (i == 0) ? 0.0f : -60.0f});
 
     // 24..27: amp ADSR (ms, except Sustain).
     v.push_back({.name = "Amp Attack",

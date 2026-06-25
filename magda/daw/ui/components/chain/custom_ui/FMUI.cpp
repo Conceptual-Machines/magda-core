@@ -6,6 +6,7 @@
 #include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -76,9 +77,64 @@ FMUI::FMUI() {
         addAndMakeVisible(sel);
         controls_[static_cast<size_t>(kWaveBase + op)].slider->setVisible(false);
     }
+
+    // Draggable amp ADSR. A handle drag writes the plugin value and keeps the
+    // matching value box in sync, so the boxes stay authoritative for linking.
+    ampGraph_ = std::make_unique<AdsrGraph>();
+    ampGraph_->onStageChanged = [this](int paramIndex, float value) {
+        if (onParameterChanged)
+            onParameterChanged(paramIndex, value);
+        if (paramIndex >= 0 && paramIndex < kNumParams)
+            controls_[static_cast<size_t>(paramIndex)].slider->setValue(value,
+                                                                        juce::dontSendNotification);
+    };
+    addAndMakeVisible(*ampGraph_);
+
+    // Per-op phase-reset toggle buttons overlay the hidden reset sliders.
+    for (int op = 0; op < kNumOps; ++op) {
+        auto btn = std::make_unique<juce::TextButton>("R");
+        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        btn->setClickingTogglesState(false);
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        btn->setTooltip("Reset this operator's phase on note-on");
+        btn->onClick = [this, op]() { setOpReset(op, !opReset_[static_cast<size_t>(op)]); };
+        addAndMakeVisible(*btn);
+        resetButtons_[static_cast<size_t>(op)] = std::move(btn);
+        controls_[static_cast<size_t>(kResetBase + op)].slider->setVisible(false);
+        if (controls_[static_cast<size_t>(kResetBase + op)].label)
+            controls_[static_cast<size_t>(kResetBase + op)].label->setVisible(false);
+    }
 }
 
-FMUI::~FMUI() = default;
+FMUI::~FMUI() {
+    for (auto& b : resetButtons_)
+        if (b)
+            b->setLookAndFeel(nullptr);
+}
+
+void FMUI::setOpReset(int op, bool on) {
+    if (op < 0 || op >= kNumOps)
+        return;
+    opReset_[static_cast<size_t>(op)] = on;
+    const int slot = kResetBase + op;
+    controls_[static_cast<size_t>(slot)].slider->setValue(on ? 1.0 : 0.0,
+                                                          juce::dontSendNotification);
+    if (onParameterChanged)
+        onParameterChanged(slot, on ? 1.0f : 0.0f);
+    updateResetButtons();
+}
+
+void FMUI::updateResetButtons() {
+    for (int op = 0; op < kNumOps; ++op)
+        if (resetButtons_[static_cast<size_t>(op)])
+            resetButtons_[static_cast<size_t>(op)]->setToggleState(
+                opReset_[static_cast<size_t>(op)], juce::dontSendNotification);
+}
 
 void FMUI::setOpWave(int op, int wave) {
     if (op < 0 || op >= kNumOps)
@@ -114,6 +170,13 @@ void FMUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params)
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
         if (idx >= kWaveBase && idx < kWaveBase + kNumOps)
             updateWaveSelectors();
+        if (idx >= kAmpAdsrBase && idx < kAmpAdsrBase + AdsrGraph::kNumStages)
+            ampGraph_->setStage(static_cast<AdsrGraph::Stage>(idx - kAmpAdsrBase), idx, info,
+                                info.currentValue);
+        if (idx >= kResetBase && idx < kResetBase + kNumOps) {
+            opReset_[static_cast<size_t>(idx - kResetBase)] = info.currentValue >= 0.5f;
+            updateResetButtons();
+        }
     }
 }
 
@@ -150,12 +213,12 @@ void FMUI::resized() {
     // Amp ADSR + Gain live in a column on the right (like PolySynth), so the
     // matrix and operators get the full left side instead of being squeezed
     // above a bottom strip.
-    const int ampW = juce::jlimit(86, 150, r.getWidth() / 4);
+    const int ampW = juce::jlimit(150, 210, r.getWidth() / 3);
     ampArea_ = r.removeFromRight(ampW);
     r.removeFromRight(6);  // gap between the left block and the amp column
 
     // Left block: matrix on top, operators beneath.
-    matrixArea_ = r.removeFromTop(r.getHeight() * 60 / 100);
+    matrixArea_ = r.removeFromTop(r.getHeight() * 52 / 100);
     opsArea_ = r;
 
     // --- Matrix 4x4 ---
@@ -174,7 +237,7 @@ void FMUI::resized() {
             }
     }
 
-    // --- Operator columns: Wave / Ratio / Level ---
+    // --- Operator columns: Wave row, then Ratio | Level | Reset on one row ---
     // Reserve the same left strip the matrix uses for its row headers so the
     // operator columns line up directly under the matrix columns.
     {
@@ -182,34 +245,41 @@ void FMUI::resized() {
         a.removeFromTop(kSectionTitleH);
         a.removeFromLeft(kMatrixHeaderW);
         const int colW = a.getWidth() / kNumOps;
+        auto place = [&](int idx, juce::Rectangle<int> cell) {
+            auto& c = controls_[static_cast<size_t>(idx)];
+            if (c.label)
+                c.label->setBounds(cell.removeFromTop(kCellLabelH));
+            c.slider->setBounds(cell);
+        };
         for (int op = 0; op < kNumOps; ++op) {
             auto col = juce::Rectangle<int>(a.getX() + op * colW, a.getY(), colW, a.getHeight())
                            .reduced(kCellPad);
-            const int rowH = col.getHeight() / 4;  // Wave / Ratio / Level / Reset
             // Wave icon selector (hidden slider tracks beneath it).
-            auto waveRow = col.removeFromTop(rowH);
+            auto waveRow = col.removeFromTop(col.getHeight() * 48 / 100);
             controls_[static_cast<size_t>(kWaveBase + op)].slider->setBounds(waveRow);
             waveSelectors_[static_cast<size_t>(op)].setBounds(waveRow.reduced(0, kCellLabelH / 2));
-            auto place = [&](int idx, juce::Rectangle<int> cell) {
-                auto& c = controls_[static_cast<size_t>(idx)];
-                if (c.label)
-                    c.label->setBounds(cell.removeFromTop(kCellLabelH));
-                c.slider->setBounds(cell);
-            };
-            place(kRatioBase + op, col.removeFromTop(rowH));
-            place(kLevelBase + op, col.removeFromTop(rowH));
-            place(kResetBase + op, col.removeFromTop(rowH));
+
+            // One row: Ratio | Level | Reset (a small toggle on the right).
+            auto row = col;
+            const int resetW = juce::jmin(24, row.getWidth() / 4);
+            auto resetCell = row.removeFromRight(resetW);
+            auto ratioCell = row.removeFromLeft(row.getWidth() / 2);
+            place(kRatioBase + op, ratioCell);
+            place(kLevelBase + op, row);
+            controls_[static_cast<size_t>(kResetBase + op)].slider->setBounds(resetCell);
+            resetCell.removeFromTop(kCellLabelH);  // align the toggle with the value boxes
+            resetButtons_[static_cast<size_t>(op)]->setBounds(resetCell.reduced(1, 0));
         }
     }
 
-    // --- Right column, stacked: amp ADSR, Glide, Vel, Gain, Voice Mode ---
+    // --- Right column: ADSR graph, then A/D/S/R + Glide/Vel/Gain/Mode ---
     {
         auto a = ampArea_;
         a.removeFromTop(kSectionTitleH);
-        layoutCells(a,
-                    {kAmpAdsrBase + 0, kAmpAdsrBase + 1, kAmpAdsrBase + 2, kAmpAdsrBase + 3,
-                     kGlideSlot, kVelAmtSlot, kGainSlot, kVoiceModeSlot},
-                    1);
+        ampGraph_->setBounds(a.removeFromTop(a.getHeight() * 40 / 100).reduced(kCellPad));
+        layoutCells(a.removeFromTop(a.getHeight() * 30 / 100),
+                    {kAmpAdsrBase + 0, kAmpAdsrBase + 1, kAmpAdsrBase + 2, kAmpAdsrBase + 3}, 4);
+        layoutCells(a, {kGlideSlot, kVelAmtSlot, kGainSlot, kVoiceModeSlot}, 2);
     }
 }
 
