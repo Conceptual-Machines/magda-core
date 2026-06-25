@@ -20,6 +20,7 @@
 #include "../audio/plugins/StepSequencerPlugin.hpp"
 #include "../audio/plugins/TrackMeasurementPlugin.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../audio/plugins/mutable/MutableElementsPlugin.hpp"
 #include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
@@ -90,6 +91,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         auto type = info.state[tracktion::IDs::type].toString();
         if (type == daw::audio::MagdaSamplerPlugin::xmlTypeName) {
             return new daw::audio::MagdaSamplerPlugin(info);
+        }
+        if (type == daw::audio::MutableElementsPlugin::xmlTypeName) {
+            return new daw::audio::MutableElementsPlugin(info);
         }
         if (type == daw::audio::DrumGridPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating DrumGridPlugin");

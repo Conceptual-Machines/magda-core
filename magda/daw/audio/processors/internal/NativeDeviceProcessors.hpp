@@ -17,6 +17,16 @@ class MagdaSamplerProcessor : public AutomatablePluginProcessor {
 };
 
 /**
+ * @brief Processor for the native Mutable Instruments Elements synth.
+ *
+ * Parameters are addressed by index off the plugin's automatable parameters.
+ */
+class MutableElementsProcessor : public AutomatablePluginProcessor {
+  public:
+    MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+};
+
+/**
  * @brief Processor for the built-in 4OSC synthesizer
  *
  * Enumerates parameters generically from plugin->getAutomatableParameters().

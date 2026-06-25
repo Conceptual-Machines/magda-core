@@ -422,12 +422,12 @@ target_link_libraries(magda_daw
     tracktion::tracktion_engine
     juce_llm
     MagdaAssets
+    magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
     PRIVATE
     LibXml2::LibXml2
     faust::libfaust
-    magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
 )
 
 target_compile_definitions(magda_daw
