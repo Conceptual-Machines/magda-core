@@ -41,6 +41,7 @@ enum class InternalDeviceKind {
     // --- MAGDA native instrument / MIDI plugins ------------------------
     MagdaSampler,
     MutableElements,
+    MutableRings,
     DrumGrid,
     MidiReceive,
     MidiChordEngine,

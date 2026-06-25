@@ -20,6 +20,9 @@ MagdaSamplerProcessor::MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr 
 MutableElementsProcessor::MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
+MutableRingsProcessor::MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+
 // =============================================================================
 // FourOscProcessor
 // =============================================================================

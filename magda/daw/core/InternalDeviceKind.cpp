@@ -23,6 +23,7 @@
 #include "audio/plugins/TrackMeasurementPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "audio/plugins/mutable/MutableElementsPlugin.hpp"
+#include "audio/plugins/mutable/MutableRingsPlugin.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -79,6 +80,9 @@ const InternalDeviceMetadata kMetadata[] = {
     {InternalDeviceKind::MutableElements, "Elements", "", "Synth",
      "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike exciter "
      "into a modal + string resonator and stereo space)."},
+    {InternalDeviceKind::MutableRings, "Rings", "", "Synth",
+     "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic-string / "
+     "inharmonic / FM models) excited by MIDI."},
     {InternalDeviceKind::DrumGrid, "Drum Grid", "", "Drums",
      "Pad-based drum instrument with per-pad sample and effect chains."},
     {InternalDeviceKind::MidiReceive, "MIDI Receive", "", "MIDI",
@@ -159,6 +163,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::MidiChordEnginePlugin;
     using daw::audio::MidiStrumPlugin;
     using daw::audio::MutableElementsPlugin;
+    using daw::audio::MutableRingsPlugin;
     using daw::audio::OscilloscopePlugin;
     using daw::audio::PolyStepSequencerPlugin;
     using daw::audio::SpectrumAnalyzerPlugin;
@@ -187,6 +192,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         // MAGDA daw::audio:: plugins
         {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::DrumGrid, DrumGridPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, nullptr},

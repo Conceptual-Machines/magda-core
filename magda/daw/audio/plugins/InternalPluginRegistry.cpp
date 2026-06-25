@@ -20,6 +20,7 @@
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/TrackMeasurementPlugin.hpp"
 #include "plugins/mutable/MutableElementsPlugin.hpp"
+#include "plugins/mutable/MutableRingsPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
@@ -188,6 +189,11 @@ const InternalPluginSpec kSpecs[] = {
      "modal + string resonator and stereo space).",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0,
      matches<MutableElementsPlugin>, makeProcessor<MutableElementsProcessor>, true, true},
+    {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, "Rings", "Synth",
+     "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic / inharmonic / "
+     "FM models) excited by MIDI.",
+     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableRingsPlugin>,
+     makeProcessor<MutableRingsProcessor>, true, true},
 };
 
 // Pointer view over kSpecs, derived from the table so it can never desync.
