@@ -49,7 +49,7 @@ class PolySynthUI : public juce::Component {
     // Host slot layout — must match magda_polysynth.dsp / the C++ wrapper.
     static constexpr int kNumOscillators = 4;
     static constexpr int kOscSlotCount = 4;  // wave / level / coarse / fine
-    static constexpr int kNumParams = 37;
+    static constexpr int kNumParams = 39;
 
     static constexpr int kFilterTypeSlot = 16;
     static constexpr int kCutoffSlot = 17;
@@ -63,9 +63,11 @@ class PolySynthUI : public juce::Component {
     static constexpr int kVoiceModeSlot = 31;
     static constexpr int kGlideSlot = 32;
     static constexpr int kOscResetBaseSlot = 33;  // osc n -> + (n - 1), idx 33..36
-    static constexpr int kNumFilterTypes = 4;     // Lowpass / Highpass / Bandpass / Notch
-    static constexpr int kNumSlopes = 2;          // 12 dB / 24 dB
-    static constexpr int kNumVoiceModes = 3;      // Poly / Mono / Legato
+    static constexpr int kVelAmpSlot = 37;
+    static constexpr int kVelFilterSlot = 38;
+    static constexpr int kNumFilterTypes = 4;  // Lowpass / Highpass / Bandpass / Notch
+    static constexpr int kNumSlopes = 2;       // 12 dB / 24 dB
+    static constexpr int kNumVoiceModes = 3;   // Poly / Mono / Legato
 
     struct Control {
         std::unique_ptr<juce::Label> label;

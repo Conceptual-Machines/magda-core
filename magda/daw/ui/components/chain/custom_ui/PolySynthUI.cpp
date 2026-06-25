@@ -46,6 +46,8 @@ PolySynthUI::PolySynthUI() {
     labels_[kGlideSlot] = "Glide";
     for (int osc = 0; osc < kNumOscillators; ++osc)
         labels_[kOscResetBaseSlot + osc] = "Rst";
+    labels_[kVelAmpSlot] = "Vel>Amp";
+    labels_[kVelFilterSlot] = "Vel>Cut";
 
     for (int i = 0; i < kNumParams; ++i) {
         auto& c = controls_[static_cast<size_t>(i)];
@@ -404,9 +406,13 @@ void PolySynthUI::resized() {
     // the left, Bend Range box on the right.
     {
         auto strip = b.removeFromBottom(kCellLabelH + 22).reduced(kSectionGap, 2);
-        layoutCells(strip.removeFromRight(96), {kBendRangeSlot}, 1);
+        layoutCells(strip.removeFromRight(80), {kBendRangeSlot}, 1);
         strip.removeFromRight(kSectionGap);
-        layoutCells(strip.removeFromRight(80), {kGlideSlot}, 1);
+        layoutCells(strip.removeFromRight(72), {kGlideSlot}, 1);
+        strip.removeFromRight(kSectionGap);
+        layoutCells(strip.removeFromRight(72), {kVelFilterSlot}, 1);
+        strip.removeFromRight(kSectionGap);
+        layoutCells(strip.removeFromRight(72), {kVelAmpSlot}, 1);
         strip.removeFromRight(kSectionGap * 2);
 
         auto modeArea = strip.removeFromLeft(juce::jmin(195, strip.getWidth()));

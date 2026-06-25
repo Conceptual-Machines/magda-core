@@ -138,6 +138,15 @@ aDec = hslider("Amp Decay [unit:ms] [idx:25]", 200, 1, 2000, 1) / 1000.0;
 aSus = hslider("Amp Sustain [idx:26]", 0.7, 0.0, 1.0, 0.001);
 aRel = hslider("Amp Release [unit:ms] [idx:27]", 400, 1, 4000, 1) / 1000.0;
 
+// Velocity routing. The per-voice `gain` zone carries note velocity (0..1).
+// `Vel Amp` sets how much velocity scales loudness (0 = ignore velocity, all
+// notes full; 1 = full velocity range). `Vel Filter` opens the cutoff by up to
+// that many octaves at full velocity. Smoothed so the per-note velocity step
+// does not click.
+velAmp  = hslider("Vel Amp [idx:37]", 1.0, 0.0, 1.0, 0.001) : smoo;
+velFilt = hslider("Vel Filter [unit:oct] [idx:38]", 0.0, 0.0, 6.0, 0.01) : smoo;
+ampVel  = ((1.0 - velAmp) + velAmp * gain) : smoo;
+
 // ============================================================================
 // DSP
 // ============================================================================
@@ -150,7 +159,7 @@ oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset)
 // exponentially (in octaves) and the result is clamped to the audio band.
 Q         = 0.5 + res * 9.5;
 filterEnv = en.adsr(fAtt, fDec, fSus, fRel, gate);
-fc        = (cutoff * pow(2.0, fEnvAmt * filterEnv)) : max(20.0) : min(20000.0) : smoo;
+fc        = (cutoff * pow(2.0, fEnvAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
 
 filterMux(x) = ba.selectn(4, int(filterType),
     x : fi.svf.lp(fc, Q),
@@ -173,7 +182,7 @@ ampEnv  = en.adsr(aAtt, aDec, aSus, aRel, gate);
 // signals at unity at full drive (matches magda_filter_svf.dsp).
 drivenIn(x) = (1.0 - fDrive) * x
             + fDrive * (ma.tanh(4.0 * x) / ma.tanh(4.0));
-voice   = (oscMix * resComp : drivenIn : filterSlope) * ampEnv * gain : ma.tanh;
+voice   = (oscMix * resComp : drivenIn : filterSlope) * ampEnv * ampVel : ma.tanh;
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

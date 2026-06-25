@@ -104,8 +104,11 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     // Per-oscillator phase reset (restart that oscillator's phase on note-on),
     // discrete Off/On. osc n -> kOscResetBaseSlot + (n - 1), idx 33..36.
     static constexpr int kOscResetBaseSlot = 33;
+    // Velocity routing: depth into amplitude, and octaves into the filter cutoff.
+    static constexpr int kVelAmpSlot = 37;
+    static constexpr int kVelFilterSlot = 38;
 
-    static constexpr int kHostSlotCount = 37;
+    static constexpr int kHostSlotCount = 39;
 
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 

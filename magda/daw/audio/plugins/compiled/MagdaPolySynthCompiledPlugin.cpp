@@ -360,6 +360,18 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                                   .choices = {"Off", "On"}};
     }
 
+    hostSlotInfo_[kVelAmpSlot] = {.name = "Vel Amp",
+                                  .scale = magda::ParameterScale::Linear,
+                                  .minValue = 0.0f,
+                                  .maxValue = 1.0f,
+                                  .defaultValue = 1.0f};
+    hostSlotInfo_[kVelFilterSlot] = {.name = "Vel Filter",
+                                     .unit = "oct",
+                                     .scale = magda::ParameterScale::Linear,
+                                     .minValue = 0.0f,
+                                     .maxValue = 6.0f,
+                                     .defaultValue = 0.0f};
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 
