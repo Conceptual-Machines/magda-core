@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "core/ChainNodePath.hpp"
 #include "core/DeviceInfo.hpp"
@@ -15,6 +16,8 @@ namespace magda::daw::ui {
 class CompiledDevicePanel;
 class FaustCustomView;
 class FaustUI;
+class LinkableTextSlider;
+struct DeviceSlotModulationContext;
 
 enum class DeviceSlotInlineUiKind {
     Compiled,
@@ -67,5 +70,10 @@ void bindDeviceSlotFaustInlineUi(const magda::ChainNodePath& nodePath, FaustUI* 
 void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,
                                              CompiledDevicePanel* compiledPanel,
                                              DeviceCustomUIManager& customUI);
+
+void configureDeviceSlotLinkableSliders(
+    const std::vector<LinkableTextSlider*>& sliders, const magda::DeviceInfo& device,
+    const magda::ChainNodePath& nodePath, const DeviceSlotModulationContext& context,
+    std::function<void(LinkableTextSlider&)> configureCallbacks);
 
 }  // namespace magda::daw::ui

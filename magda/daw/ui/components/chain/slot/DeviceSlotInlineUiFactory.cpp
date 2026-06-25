@@ -9,6 +9,8 @@
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "engine/AudioEngine.hpp"
+#include "slot/DeviceSlotModulationContext.hpp"
+#include "ui/components/common/LinkableTextSlider.hpp"
 
 namespace magda::daw::ui {
 
@@ -203,6 +205,35 @@ void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePat
     }
 
     customUI.refreshLivePluginBindings();
+}
+
+void configureDeviceSlotLinkableSliders(
+    const std::vector<LinkableTextSlider*>& sliders, const magda::DeviceInfo& device,
+    const magda::ChainNodePath& nodePath, const DeviceSlotModulationContext& context,
+    std::function<void(LinkableTextSlider&)> configureCallbacks) {
+    for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
+        auto* slider = sliders[static_cast<size_t>(i)];
+        if (slider == nullptr)
+            continue;
+
+        const int paramIndex = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
+        slider->setLinkContext(device.id, paramIndex, nodePath);
+
+        if (const auto* info = device.findParameterByIndex(paramIndex))
+            slider->setParameterInfo(*info);
+
+        slider->setAvailableMods(context.deviceMods);
+        slider->setAvailableRackMods(context.rackMods);
+        slider->setAvailableMacros(context.deviceMacros);
+        slider->setAvailableRackMacros(context.rackMacros);
+        slider->setAvailableTrackMods(context.trackMods);
+        slider->setAvailableTrackMacros(context.trackMacros);
+        slider->setSelectedModIndex(context.selectedModIndex);
+        slider->setSelectedMacroIndex(context.selectedMacroIndex);
+
+        if (configureCallbacks)
+            configureCallbacks(*slider);
+    }
 }
 
 }  // namespace magda::daw::ui

@@ -2377,45 +2377,29 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
 }
 
 void DeviceSlotComponent::setupCustomUILinking() {
-    // Collect linkable sliders from whichever custom UI is active
     auto sliders = customUI_.getLinkableSliders();
-
     if (sliders.empty())
         return;
 
     const auto context = resolveDeviceSlotModulationContext(
         nodePath_, getModsData(), getMacrosData(), selectedModIndex_, selectedMacroIndex_);
 
-    for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
-        auto* slider = sliders[static_cast<size_t>(i)];
-
-        // Use pre-set param index if available, otherwise use vector position
-        int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
-        // Set link context
-        slider->setLinkContext(device_.id, paramIdx, nodePath_);
-        // Single source of truth: the processor-published ParameterInfo drives
-        // range/skew/formatter/parser on the slider. Overrides whatever the
-        // custom UI hardcoded at construction.
-        if (const auto* info = device_.findParameterByIndex(paramIdx))
-            slider->setParameterInfo(*info);
-        slider->setAvailableMods(context.deviceMods);
-        slider->setAvailableRackMods(context.rackMods);
-        slider->setAvailableMacros(context.deviceMacros);
-        slider->setAvailableRackMacros(context.rackMacros);
-        slider->setAvailableTrackMods(context.trackMods);
-        slider->setAvailableTrackMacros(context.trackMacros);
-        slider->setSelectedModIndex(context.selectedModIndex);
-        slider->setSelectedMacroIndex(context.selectedMacroIndex);
-
-        wireSharedModMacroLinkCallbacks(*slider, false);
-
-        slider->onShowAutomationLane = [safeThis = juce::Component::SafePointer(this), slider]() {
+    configureDeviceSlotLinkableSliders(
+        sliders, device_, nodePath_, context,
+        [safeThis = juce::Component::SafePointer(this)](LinkableTextSlider& slider) {
             auto self = safeThis;
-            if (!self || !slider)
+            if (!self)
                 return;
-            self->showAutomationLaneForParam(slider->getParamIndex());
-        };
-    }
+
+            self->wireSharedModMacroLinkCallbacks(slider, false);
+            auto* sliderPtr = &slider;
+            slider.onShowAutomationLane = [safeThis, sliderPtr]() {
+                auto self = safeThis;
+                if (!self || sliderPtr == nullptr)
+                    return;
+                self->showAutomationLaneForParam(sliderPtr->getParamIndex());
+            };
+        });
 }
 
 // =============================================================================
