@@ -365,6 +365,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 560;  // instruments render wider than effect slots
     if (polySynthUI_)
         return 720;  // osc + filter columns + stacked envelope column on one page
+    if (fmUI_)
+        return 680;  // 4x4 matrix + 4 operator columns + stacked amp/gain column
     if (eqUI_)
         return 400;
     if (compressorUI_)

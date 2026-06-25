@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -15,7 +15,16 @@ constexpr int kCellLabelH = 12;
 constexpr int kCellPad = 3;
 constexpr int kMatrixHeaderH = 14;
 constexpr int kMatrixHeaderW = 22;
-const char* kWaveNames[5] = {"Sine", "Triangle", "Saw", "Square", "Noise"};
+
+// Waveform icons, in the dsp's wave order: 0 Sine / 1 Triangle / 2 Saw / 3
+// Square / 4 Noise.
+void populateWaveSelector(IconSelector& sel) {
+    sel.addOption(BinaryData::fadmodsine_svg, BinaryData::fadmodsine_svgSize, "Sine");
+    sel.addOption(BinaryData::fadmodtri_svg, BinaryData::fadmodtri_svgSize, "Triangle");
+    sel.addOption(BinaryData::fadmodsawup_svg, BinaryData::fadmodsawup_svgSize, "Saw");
+    sel.addOption(BinaryData::fadmodsquare_svg, BinaryData::fadmodsquare_svgSize, "Square");
+    sel.addOption(BinaryData::fadmodrandom_svg, BinaryData::fadmodrandom_svgSize, "Noise");
+}
 }  // namespace
 
 FMUI::FMUI() {
@@ -54,30 +63,17 @@ FMUI::FMUI() {
     makeLabel(kAmpAdsrBase + 3, "R");
     makeLabel(kGainSlot, "Gain");
 
-    // Per-operator wave dropdowns overlay the hidden wave sliders.
+    // Per-operator waveform icon selectors overlay the hidden wave sliders.
     for (int op = 0; op < kNumOps; ++op) {
-        auto combo = std::make_unique<juce::ComboBox>();
-        combo->setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
-        combo->setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-        for (int w = 0; w < kNumWaves; ++w)
-            combo->addItem(kWaveNames[w], w + 1);  // id = wave + 1
-        combo->onChange = [this, op]() {
-            if (auto* c = waveSelectors_[static_cast<size_t>(op)].get())
-                setOpWave(op, c->getSelectedId() - 1);
-        };
-        addAndMakeVisible(*combo);
-        waveSelectors_[static_cast<size_t>(op)] = std::move(combo);
+        auto& sel = waveSelectors_[static_cast<size_t>(op)];
+        populateWaveSelector(sel);
+        sel.onChange = [this, op](int wave) { setOpWave(op, wave); };
+        addAndMakeVisible(sel);
         controls_[static_cast<size_t>(kWaveBase + op)].slider->setVisible(false);
     }
 }
 
-FMUI::~FMUI() {
-    for (auto& combo : waveSelectors_)
-        if (combo)
-            combo->setLookAndFeel(nullptr);
-}
+FMUI::~FMUI() = default;
 
 void FMUI::setOpWave(int op, int wave) {
     if (op < 0 || op >= kNumOps)
@@ -92,14 +88,11 @@ void FMUI::setOpWave(int op, int wave) {
 
 void FMUI::updateWaveSelectors() {
     for (int op = 0; op < kNumOps; ++op) {
-        if (!waveSelectors_[static_cast<size_t>(op)])
-            continue;
         const int wave =
             juce::jlimit(0, kNumWaves - 1,
                          static_cast<int>(std::round(
                              controls_[static_cast<size_t>(kWaveBase + op)].slider->getValue())));
-        waveSelectors_[static_cast<size_t>(op)]->setSelectedId(wave + 1,
-                                                               juce::dontSendNotification);
+        waveSelectors_[static_cast<size_t>(op)].setSelectedIndex(wave, juce::dontSendNotification);
     }
 }
 
@@ -149,10 +142,16 @@ void FMUI::layoutCells(juce::Rectangle<int> area, const std::vector<int>& indice
 void FMUI::resized() {
     auto r = getLocalBounds().reduced(6);
 
-    // Matrix grid gets the top ~half; ops the next chunk; amp/gain the rest.
-    matrixArea_ = r.removeFromTop(r.getHeight() * 52 / 100);
-    opsArea_ = r.removeFromTop(r.getHeight() * 62 / 100);
-    ampArea_ = r;
+    // Amp ADSR + Gain live in a column on the right (like PolySynth), so the
+    // matrix and operators get the full left side instead of being squeezed
+    // above a bottom strip.
+    const int ampW = juce::jlimit(86, 150, r.getWidth() / 4);
+    ampArea_ = r.removeFromRight(ampW);
+    r.removeFromRight(6);  // gap between the left block and the amp column
+
+    // Left block: matrix on top, operators beneath.
+    matrixArea_ = r.removeFromTop(r.getHeight() * 60 / 100);
+    opsArea_ = r;
 
     // --- Matrix 4x4 ---
     {
@@ -171,20 +170,21 @@ void FMUI::resized() {
     }
 
     // --- Operator columns: Wave / Ratio / Level ---
+    // Reserve the same left strip the matrix uses for its row headers so the
+    // operator columns line up directly under the matrix columns.
     {
         auto a = opsArea_;
         a.removeFromTop(kSectionTitleH);
+        a.removeFromLeft(kMatrixHeaderW);
         const int colW = a.getWidth() / kNumOps;
         for (int op = 0; op < kNumOps; ++op) {
             auto col = juce::Rectangle<int>(a.getX() + op * colW, a.getY(), colW, a.getHeight())
                            .reduced(kCellPad);
             const int rowH = col.getHeight() / 3;
-            // Wave dropdown (hidden slider tracks beneath it).
+            // Wave icon selector (hidden slider tracks beneath it).
             auto waveRow = col.removeFromTop(rowH);
             controls_[static_cast<size_t>(kWaveBase + op)].slider->setBounds(waveRow);
-            if (waveSelectors_[static_cast<size_t>(op)])
-                waveSelectors_[static_cast<size_t>(op)]->setBounds(
-                    waveRow.reduced(0, kCellLabelH / 2));
+            waveSelectors_[static_cast<size_t>(op)].setBounds(waveRow.reduced(0, kCellLabelH / 2));
             auto place = [&](int idx, juce::Rectangle<int> cell) {
                 auto& c = controls_[static_cast<size_t>(idx)];
                 if (c.label)
@@ -196,13 +196,13 @@ void FMUI::resized() {
         }
     }
 
-    // --- Amp ADSR + Gain ---
+    // --- Amp ADSR + Gain (right column, stacked) ---
     {
         auto a = ampArea_;
         a.removeFromTop(kSectionTitleH);
         layoutCells(
             a, {kAmpAdsrBase + 0, kAmpAdsrBase + 1, kAmpAdsrBase + 2, kAmpAdsrBase + 3, kGainSlot},
-            5);
+            1);
     }
 }
 

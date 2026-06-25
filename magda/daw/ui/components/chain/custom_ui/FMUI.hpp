@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -62,8 +63,8 @@ class FMUI : public juce::Component {
 
     std::array<Control, kNumParams> controls_;
 
-    // Per-operator wave dropdowns (overlay the hidden wave sliders).
-    std::array<std::unique_ptr<juce::ComboBox>, kNumOps> waveSelectors_;
+    // Per-operator waveform icon selectors (overlay the hidden wave sliders).
+    std::array<IconSelector, kNumOps> waveSelectors_;
 
     // Cached section rectangles for painted titles / matrix headers.
     juce::Rectangle<int> matrixArea_, opsArea_, ampArea_;
