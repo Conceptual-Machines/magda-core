@@ -11,6 +11,7 @@
 #include "core/ParameterInfo.hpp"
 #include "custom_ui/AdsrGraph.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -103,6 +104,11 @@ class PolySynthUI : public juce::Component {
     // Per-oscillator phase-reset on/off toggles.
     void setOscReset(int osc, bool on);
     void updateOscResetButtons();
+    // Per-oscillator wave dropdowns.
+    void setOscWave(int osc, int wave);
+    void updateWaveSelectors();
+    // OSC section layout (wave dropdowns + value boxes + reset icons).
+    void layoutOscSection();
 
     std::array<Control, kNumParams> controls_;
     std::array<juce::String, kNumParams> labels_;
@@ -127,8 +133,10 @@ class PolySynthUI : public juce::Component {
     std::array<std::unique_ptr<juce::TextButton>, kNumFilterTypes> typeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumSlopes> slopeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumVoiceModes> voiceModeButtons_;
-    // Per-oscillator phase-reset toggles, one per osc row.
-    std::array<std::unique_ptr<juce::TextButton>, kNumOscillators> oscResetButtons_;
+    // Per-oscillator wave dropdowns (replace the wave value boxes).
+    std::array<std::unique_ptr<juce::ComboBox>, kNumOscillators> waveSelectors_;
+    // Per-oscillator phase-reset icon toggles, one per osc row.
+    std::array<std::unique_ptr<magda::SvgButton>, kNumOscillators> oscResetButtons_;
 
     // Cached section rectangles for the painted titles.
     juce::Rectangle<int> oscArea_, filterArea_, ampArea_, filterEnvArea_;

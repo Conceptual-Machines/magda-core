@@ -1,10 +1,13 @@
 #include "custom_ui/PolySynthUI.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
 #include <cmath>
 
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -154,24 +157,32 @@ PolySynthUI::PolySynthUI() {
         voiceModeButtons_[static_cast<size_t>(v)] = std::move(btn);
     }
 
-    // Per-oscillator phase-reset: one small toggle per osc row in the OSC section.
+    // Per-oscillator wave dropdown (replaces the wave value box) + phase-reset
+    // icon toggle, both per osc row in the OSC section.
+    static const char* kWaveNames[4] = {"Sine", "Saw", "Square", "Triangle"};
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto btn = std::make_unique<juce::TextButton>("Rst");
-        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-        btn->setClickingTogglesState(false);
-        btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        btn->onClick = [this, osc]() { setOscReset(osc, !oscReset_[static_cast<size_t>(osc)]); };
-        addAndMakeVisible(*btn);
-        oscResetButtons_[static_cast<size_t>(osc)] = std::move(btn);
+        auto combo = std::make_unique<juce::ComboBox>();
+        combo->setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+        for (int w = 0; w < 4; ++w)
+            combo->addItem(kWaveNames[w], w + 1);  // id = wave + 1
+        combo->onChange = [this, osc]() {
+            if (auto* c = waveSelectors_[static_cast<size_t>(osc)].get())
+                setOscWave(osc, c->getSelectedId() - 1);
+        };
+        addAndMakeVisible(*combo);
+        waveSelectors_[static_cast<size_t>(osc)] = std::move(combo);
+
+        auto rst = std::make_unique<magda::SvgButton>("OscReset", BinaryData::phase_reset_svg,
+                                                      BinaryData::phase_reset_svgSize);
+        rst->setTooltip("Reset oscillator phase on note-on");
+        rst->onClick = [this, osc]() { setOscReset(osc, !oscReset_[static_cast<size_t>(osc)]); };
+        addAndMakeVisible(*rst);
+        oscResetButtons_[static_cast<size_t>(osc)] = std::move(rst);
     }
 
-    // The Type/Slope/Mode/Reset value boxes are replaced by the buttons; keep the
-    // objects (for linking/value) but hide them.
+    // The Type/Slope/Mode value boxes and the per-osc Wave/Reset boxes are
+    // replaced by the buttons/dropdowns; keep the objects (for linking/value) but
+    // hide them.
     controls_[kFilterTypeSlot].slider->setVisible(false);
     controls_[kFilterTypeSlot].label->setVisible(false);
     controls_[kFilterSlopeSlot].slider->setVisible(false);
@@ -179,13 +190,23 @@ PolySynthUI::PolySynthUI() {
     controls_[kVoiceModeSlot].slider->setVisible(false);
     controls_[kVoiceModeSlot].label->setVisible(false);
     for (int osc = 0; osc < kNumOscillators; ++osc) {
+        // Wave dropdown replaces the wave slider; keep the label as the column
+        // header. Reset box is fully hidden (icon drives it).
+        controls_[osc * kOscSlotCount].slider->setVisible(false);
         controls_[kOscResetBaseSlot + osc].slider->setVisible(false);
         controls_[kOscResetBaseSlot + osc].label->setVisible(false);
     }
+    // Slightly smaller font on the osc value boxes so the unit suffix is not
+    // cramped and the boxes read lighter.
+    for (int osc = 0; osc < kNumOscillators; ++osc)
+        for (int p = 1; p < kOscSlotCount; ++p)  // Level / Coarse / Fine
+            controls_[osc * kOscSlotCount + p].slider->setFont(
+                FontManager::getInstance().getUIFont(10.0f));
     updateTypeButtons();
     updateSlopeButtons();
     updateVoiceModeButtons();
     updateOscResetButtons();
+    updateWaveSelectors();
 }
 
 PolySynthUI::~PolySynthUI() {
@@ -198,9 +219,10 @@ PolySynthUI::~PolySynthUI() {
     for (auto& btn : voiceModeButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
-    for (auto& btn : oscResetButtons_)
-        if (btn)
-            btn->setLookAndFeel(nullptr);
+    for (auto& combo : waveSelectors_)
+        if (combo)
+            combo->setLookAndFeel(nullptr);
+    // oscResetButtons_ are SvgButtons (own paint, no LookAndFeel to clear).
 }
 
 void PolySynthUI::setFilterType(int type) {
@@ -270,8 +292,30 @@ void PolySynthUI::setOscReset(int osc, bool on) {
 void PolySynthUI::updateOscResetButtons() {
     for (int osc = 0; osc < kNumOscillators; ++osc)
         if (oscResetButtons_[static_cast<size_t>(osc)])
-            oscResetButtons_[static_cast<size_t>(osc)]->setToggleState(
-                oscReset_[static_cast<size_t>(osc)], juce::dontSendNotification);
+            oscResetButtons_[static_cast<size_t>(osc)]->setActive(
+                oscReset_[static_cast<size_t>(osc)]);
+}
+
+void PolySynthUI::setOscWave(int osc, int wave) {
+    if (osc < 0 || osc >= kNumOscillators)
+        return;
+    wave = juce::jlimit(0, 3, wave);
+    const int slot = osc * kOscSlotCount;
+    controls_[slot].slider->setValue(wave, juce::dontSendNotification);
+    if (onParameterChanged)
+        onParameterChanged(slot, static_cast<float>(wave));
+    updateWaveSelectors();
+}
+
+void PolySynthUI::updateWaveSelectors() {
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        if (!waveSelectors_[static_cast<size_t>(osc)])
+            continue;
+        const int wave = juce::jlimit(
+            0, 3, static_cast<int>(std::round(controls_[osc * kOscSlotCount].slider->getValue())));
+        waveSelectors_[static_cast<size_t>(osc)]->setSelectedId(wave + 1,
+                                                                juce::dontSendNotification);
+    }
 }
 
 void PolySynthUI::pushFilterCurve() {
@@ -327,9 +371,19 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         const int idx = info.paramIndex;
         auto& c = controls_[static_cast<size_t>(idx)];
         c.slider->setParameterInfo(info);
+        // Drop the unit suffix on the osc coarse (st) / fine (cents) boxes so it
+        // does not clip in the narrow cells; the column label already names them.
+        if (idx < kNumOscillators * kOscSlotCount) {
+            const int col = idx % kOscSlotCount;
+            if (col == 2 || col == 3)
+                c.slider->setValueFormatter(
+                    [](double v) { return juce::String(juce::roundToInt(v)); });
+        }
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
 
         syncFilterCurveFromParam(idx, info.currentValue);
+        if (idx < kNumOscillators * kOscSlotCount && (idx % kOscSlotCount) == 0)
+            updateWaveSelectors();  // wave slot -> dropdown
 
         if (idx == kVoiceModeSlot) {
             voiceMode_ = juce::jlimit(0, kNumVoiceModes - 1,
@@ -357,6 +411,36 @@ std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
     for (auto& c : controls_)
         sliders.push_back(c.slider.get());
     return sliders;
+}
+
+void PolySynthUI::layoutOscSection() {
+    auto a = oscArea_.reduced(kSectionGap);
+    a.removeFromTop(kSectionTitleH);
+    // Narrow column on the right for the per-osc phase-reset icons.
+    auto rstCol = a.removeFromRight(22);
+
+    std::vector<int> oscParams;
+    oscParams.reserve(kNumOscillators * kOscSlotCount);
+    for (int i = 0; i < kNumOscillators * kOscSlotCount; ++i)
+        oscParams.push_back(i);
+    layoutCells(a, oscParams, kOscSlotCount);
+
+    // Overlay each wave dropdown on its (hidden) wave slider's bounds, so it sits
+    // under the column label exactly where the value box would be.
+    for (int osc = 0; osc < kNumOscillators; ++osc)
+        if (waveSelectors_[static_cast<size_t>(osc)])
+            waveSelectors_[static_cast<size_t>(osc)]->setBounds(
+                controls_[static_cast<size_t>(osc * kOscSlotCount)].slider->getBounds());
+
+    // Reset icons, one per row, aligned with the value box (below the label).
+    const int rowH = rstCol.getHeight() / kNumOscillators;
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        auto row = rstCol.removeFromTop(rowH);
+        row.removeFromTop(kCellLabelH);  // align with the box, not the column label
+        if (oscResetButtons_[static_cast<size_t>(osc)])
+            oscResetButtons_[static_cast<size_t>(osc)]->setBounds(
+                row.withSizeKeepingCentre(16, 16));
+    }
 }
 
 void PolySynthUI::layoutCells(juce::Rectangle<int> a, const std::vector<int>& indices, int cols) {
@@ -440,26 +524,7 @@ void PolySynthUI::resized() {
     ampArea_ = {adsrX, b.getY(), adsrW, halfH};
     filterEnvArea_ = {adsrX, b.getY() + halfH, adsrW, b.getHeight() - halfH};
 
-    std::vector<int> oscParams;
-    oscParams.reserve(kNumOscillators * kOscSlotCount);
-    for (int i = 0; i < kNumOscillators * kOscSlotCount; ++i)
-        oscParams.push_back(i);
-
-    // OSC section: 4 osc rows x 4 value cells, plus a per-osc Reset toggle column
-    // on the right (one toggle aligned to each oscillator's row).
-    {
-        auto a = oscArea_.reduced(kSectionGap);
-        a.removeFromTop(kSectionTitleH);
-        auto rstCol = a.removeFromRight(34);
-        layoutCells(a, oscParams, kOscSlotCount);
-        const int rowH = rstCol.getHeight() / kNumOscillators;
-        for (int osc = 0; osc < kNumOscillators; ++osc) {
-            auto row = rstCol.removeFromTop(rowH);
-            if (oscResetButtons_[static_cast<size_t>(osc)])
-                oscResetButtons_[static_cast<size_t>(osc)]->setBounds(
-                    row.reduced(2, kCellLabelH / 2));
-        }
-    }
+    layoutOscSection();
     // Filter section: Type segmented buttons on top, response curve in the
     // middle, the remaining control rows beneath.
     {
