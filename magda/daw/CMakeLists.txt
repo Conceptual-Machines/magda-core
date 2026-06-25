@@ -464,6 +464,11 @@ target_compile_definitions(magda_daw_app
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
+if(APPLE)
+    # Do not let hosted plugins bind to MAGDA's statically linked JUCE symbols.
+    target_link_options(magda_daw_app PRIVATE "-Wl,-exported_symbol,_main")
+endif()
+
 if(JUCE_ASIO_ENABLED)
     target_include_directories(magda_daw PUBLIC
         "${ASIO_SDK_DIR}/common"
@@ -535,6 +540,8 @@ target_compile_definitions(magda_plugin_scanner
 )
 
 if(APPLE)
+    # Keep scanner exports aligned with the host app.
+    target_link_options(magda_plugin_scanner PRIVATE "-Wl,-exported_symbol,_main")
     target_link_libraries(magda_plugin_scanner
         PRIVATE
         "-framework AudioUnit"
