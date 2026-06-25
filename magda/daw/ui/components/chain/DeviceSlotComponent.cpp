@@ -2292,21 +2292,15 @@ void DeviceSlotComponent::createCustomUI() {
 }
 
 void DeviceSlotComponent::readAndPushModMatrix() {
-    customUI_.readAndPushModMatrix(device_.id);
+    readAndPushDeviceSlotInlineUiModMatrix(device_.id, customUI_);
 }
 
 void DeviceSlotComponent::refreshCustomUIParameterValues() {
-    if (compiledPanel_)
-        compiledPanel_->updateFromDevice(device_);
-
-    customUI_.refreshParameterValues(device_);
+    refreshDeviceSlotInlineUiParameterValues(device_, compiledPanel_.get(), customUI_);
 }
 
 void DeviceSlotComponent::updateCustomUI() {
-    if (compiledPanel_)
-        compiledPanel_->updateFromDevice(device_);
-
-    customUI_.update(device_);
+    updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {
