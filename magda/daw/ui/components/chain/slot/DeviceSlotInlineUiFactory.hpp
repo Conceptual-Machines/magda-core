@@ -41,6 +41,20 @@ struct DeviceSlotInlineUiCallbacks {
     std::function<magda::ChainNodePath()> getNodePath;
 };
 
+struct DeviceSlotInlineUiCallbackContext {
+    std::function<magda::ChainNodePath()> getNodePath;
+    std::function<void()> onLayoutChanged;
+    std::function<void()> onParamModulationChanged;
+    std::function<void()> onUpdateModsPanel;
+    std::function<void()> onUpdateMacroPanel;
+    std::function<void()> onShowDeviceModPanel;
+    std::function<void()> onShowDeviceMacroPanel;
+    std::function<void(int)> onShowAutomationLane;
+};
+
+DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(
+    DeviceSlotInlineUiCallbackContext context);
+
 DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
                                                 const DeviceSlotTraits& traits,
                                                 const magda::ChainNodePath& nodePath,

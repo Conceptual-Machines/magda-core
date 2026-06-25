@@ -2255,118 +2255,40 @@ void DeviceSlotComponent::showContextMenu() {
 // =============================================================================
 
 void DeviceSlotComponent::createCustomUI() {
-    DeviceSlotInlineUiCallbacks callbacks;
-    callbacks.onParameterChanged = [this](int paramIndex, float value) {
-        if (!nodePath_.isValid())
-            return;
-        magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex, value);
-    };
-    callbacks.onLayoutChanged = [this]() {
-        // Force this slot to re-lay out its internal body even when the
-        // parent chain doesn't change the slot's outer bounds. The EQ's
-        // "collapse knobs" toggle, in particular, swaps between curve-only
-        // and curve-plus-grid without resizing the slot itself, so JUCE's
-        // bounds-based resized() would otherwise stay silent.
-        resized();
-        if (onDeviceLayoutChanged)
-            onDeviceLayoutChanged();
-    };
-    callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
-    callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
-    callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
-    callbacks.onCompiledParamLinkRequested = [this](int paramIndex, float amount) {
-        if (!nodePath_.isValid())
-            return;
-
-        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
-        amount = juce::jlimit(-1.0f, 1.0f, amount);
-        auto& linkMode = magda::LinkModeManager::getInstance();
-
-        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
-            const auto selection = linkMode.getModInLinkMode();
-            if (!selection.isValid())
-                return;
-
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setModTarget(ownerPath, selection.modIndex, target);
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
-                                                                target, amount);
-            if (selection.parentPath == nodePath_) {
-                updateModsPanel();
+    auto callbacks = makeDeviceSlotInlineUiCallbacks({
+        .getNodePath = [this]() { return nodePath_; },
+        .onLayoutChanged =
+            [this]() {
+                // Force this slot to re-lay out its internal body even when the
+                // parent chain doesn't change the slot's outer bounds. The EQ's
+                // "collapse knobs" toggle, in particular, swaps between curve-only
+                // and curve-plus-grid without resizing the slot itself, so JUCE's
+                // bounds-based resized() would otherwise stay silent.
+                resized();
+                if (onDeviceLayoutChanged)
+                    onDeviceLayoutChanged();
+            },
+        .onParamModulationChanged = [this]() { updateParamModulation(); },
+        .onUpdateModsPanel = [this]() { updateModsPanel(); },
+        .onUpdateMacroPanel = [this]() { updateMacroPanel(); },
+        .onShowDeviceModPanel =
+            [this]() {
                 if (!modPanelVisible_) {
                     modButton_->setToggleState(true, juce::dontSendNotification);
                     modButton_->setActive(true);
                     setModPanelVisible(true);
                 }
-                magda::SelectionManager::getInstance().selectMod(nodePath_, selection.modIndex);
-            }
-            updateParamModulation();
-            return;
-        }
-
-        if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
-            const auto selection = linkMode.getMacroInLinkMode();
-            if (!selection.isValid())
-                return;
-
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setMacroTarget(ownerPath, selection.macroIndex,
-                                                              target);
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
-                                                                  target, amount);
-            if (selection.parentPath == nodePath_) {
-                updateMacroPanel();
+            },
+        .onShowDeviceMacroPanel =
+            [this]() {
                 if (!paramPanelVisible_) {
                     macroButton_->setToggleState(true, juce::dontSendNotification);
                     macroButton_->setActive(true);
                     setParamPanelVisible(true);
                 }
-            }
-            updateParamModulation();
-        }
-    };
-    callbacks.onCompiledParamLinkAmountChanged = [this](int paramIndex, float amount) {
-        if (!nodePath_.isValid())
-            return;
-
-        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
-        amount = juce::jlimit(-1.0f, 1.0f, amount);
-        auto& linkMode = magda::LinkModeManager::getInstance();
-
-        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
-            const auto selection = linkMode.getModInLinkMode();
-            if (!selection.isValid())
-                return;
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
-                                                                target, amount);
-            updateParamModulation();
-        } else if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
-            const auto selection = linkMode.getMacroInLinkMode();
-            if (!selection.isValid())
-                return;
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
-                                                                  target, amount);
-            updateParamModulation();
-        }
-    };
-    callbacks.onShowAutomationLane = [this](int paramIndex) {
-        showAutomationLaneForParam(paramIndex);
-    };
-    callbacks.getNodePath = [this]() { return nodePath_; };
+            },
+        .onShowAutomationLane = [this](int paramIndex) { showAutomationLaneForParam(paramIndex); },
+    });
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,
                                                       {.compiledPanel = compiledPanel_,

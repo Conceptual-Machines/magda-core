@@ -2,6 +2,8 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
+#include "core/ControlTarget.hpp"
+#include "core/LinkModeManager.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
@@ -31,7 +33,103 @@ DeviceCustomUIManager::Callbacks makeCustomUiCallbacks(DeviceSlotInlineUiCallbac
     return customCallbacks;
 }
 
+magda::ChainNodePath getModulationOwnerPath(const magda::ChainNodePath& selectionPath) {
+    return selectionPath.getType() == magda::ChainNodeType::Track
+               ? magda::ChainNodePath::trackLevel(selectionPath.trackId)
+               : selectionPath;
+}
+
+void linkCompiledParameter(int paramIndex, float amount,
+                           const DeviceSlotInlineUiCallbackContext& context,
+                           bool updateAmountOnly) {
+    if (!context.getNodePath)
+        return;
+
+    const auto nodePath = context.getNodePath();
+    if (!nodePath.isValid())
+        return;
+
+    const auto target = magda::ControlTarget::pluginParam(nodePath, paramIndex);
+    amount = juce::jlimit(-1.0f, 1.0f, amount);
+    auto& linkMode = magda::LinkModeManager::getInstance();
+
+    if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
+        const auto selection = linkMode.getModInLinkMode();
+        if (!selection.isValid())
+            return;
+
+        const auto ownerPath = getModulationOwnerPath(selection.parentPath);
+        if (!updateAmountOnly)
+            magda::TrackManager::getInstance().setModTarget(ownerPath, selection.modIndex, target);
+        magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex, target,
+                                                            amount);
+
+        if (!updateAmountOnly && selection.parentPath == nodePath) {
+            if (context.onUpdateModsPanel)
+                context.onUpdateModsPanel();
+            if (context.onShowDeviceModPanel)
+                context.onShowDeviceModPanel();
+            magda::SelectionManager::getInstance().selectMod(nodePath, selection.modIndex);
+        }
+
+        if (context.onParamModulationChanged)
+            context.onParamModulationChanged();
+        return;
+    }
+
+    if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
+        const auto selection = linkMode.getMacroInLinkMode();
+        if (!selection.isValid())
+            return;
+
+        const auto ownerPath = getModulationOwnerPath(selection.parentPath);
+        if (!updateAmountOnly)
+            magda::TrackManager::getInstance().setMacroTarget(ownerPath, selection.macroIndex,
+                                                              target);
+        magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
+                                                              target, amount);
+
+        if (!updateAmountOnly && selection.parentPath == nodePath) {
+            if (context.onUpdateMacroPanel)
+                context.onUpdateMacroPanel();
+            if (context.onShowDeviceMacroPanel)
+                context.onShowDeviceMacroPanel();
+        }
+
+        if (context.onParamModulationChanged)
+            context.onParamModulationChanged();
+    }
+}
+
 }  // namespace
+
+DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(
+    DeviceSlotInlineUiCallbackContext context) {
+    DeviceSlotInlineUiCallbacks callbacks;
+    callbacks.onParameterChanged = [context](int paramIndex, float value) {
+        if (!context.getNodePath)
+            return;
+
+        const auto nodePath = context.getNodePath();
+        if (!nodePath.isValid())
+            return;
+
+        magda::TrackManager::getInstance().setDeviceParameterValue(nodePath, paramIndex, value);
+    };
+    callbacks.onLayoutChanged = context.onLayoutChanged;
+    callbacks.onParamModulationChanged = context.onParamModulationChanged;
+    callbacks.onUpdateModsPanel = context.onUpdateModsPanel;
+    callbacks.onUpdateMacroPanel = context.onUpdateMacroPanel;
+    callbacks.onCompiledParamLinkRequested = [context](int paramIndex, float amount) {
+        linkCompiledParameter(paramIndex, amount, context, false);
+    };
+    callbacks.onCompiledParamLinkAmountChanged = [context](int paramIndex, float amount) {
+        linkCompiledParameter(paramIndex, amount, context, true);
+    };
+    callbacks.onShowAutomationLane = context.onShowAutomationLane;
+    callbacks.getNodePath = context.getNodePath;
+    return callbacks;
+}
 
 DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
                                                 const DeviceSlotTraits& traits,
