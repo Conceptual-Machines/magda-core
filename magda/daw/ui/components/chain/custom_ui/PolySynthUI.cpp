@@ -161,6 +161,10 @@ PolySynthUI::PolySynthUI() {
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         auto combo = std::make_unique<juce::ComboBox>();
         combo->setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+        // Match the value boxes' fill/border so the dropdown blends with the grid.
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
         for (int w = 0; w < 4; ++w)
             combo->addItem(kWaveNames[w], w + 1);  // id = wave + 1
         combo->onChange = [this, osc]() {
