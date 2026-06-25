@@ -14,6 +14,7 @@
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
+#include "slot/DevicePresetMenu.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -271,6 +272,9 @@ class DeviceSlotComponent : public NodeComponent,
     // when the device exposes that wrapper pair (external plugins via TE).
     // The meter and gain slider shrink to leave room above when present.
     std::unique_ptr<juce::Slider> mixKnob_;
+    void setupGainMeterControls();
+    void syncGainControlsFromDevice();
+    void refreshMixKnobFromDevice(bool relayoutOnVisibilityChange);
     bool hasWrapperMixPair() const;
     double currentMixPosition() const;
     void syncMixKnobFromDevice();
@@ -294,19 +298,9 @@ class DeviceSlotComponent : public NodeComponent,
     juce::File currentPluginPresetFile_;
     juce::String pluginPresetName_;
 
-    // MAGDA preset dialogs / actions
+    // MAGDA preset menu state/actions.
+    MagdaDevicePresetPresenter magdaPresetPresenter_;
     void showPresetMenu();
-    void showSaveMagdaPresetDialog();
-    void saveCurrentMagdaPreset();  // overwrite currentPresetName_
-    void loadMagdaPreset(const juce::String& presetRelativePath);
-    // Trigger PluginManager::capturePluginState and return a fresh DeviceInfo
-    // copy from TrackManager — used as the source-of-truth for a save.
-    magda::DeviceInfo snapshotForPreset();
-
-    // Name of the .mps file last loaded (or saved-as) on this device.
-    // Empty until the user touches the preset surface; cleared when the
-    // device's pluginId changes (different plugin loaded into the slot).
-    juce::String currentPresetName_;
 
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
@@ -343,6 +337,8 @@ class DeviceSlotComponent : public NodeComponent,
     void readAndPushModMatrix();  // Read FourOsc mod matrix and push to UI
     void setupCustomUILinking();
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
+    template <typename LinkTarget>
+    void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 
     void showAutomationLaneForParam(int paramIndex);
     void openMacroPanelForSelectionIfNeeded();
