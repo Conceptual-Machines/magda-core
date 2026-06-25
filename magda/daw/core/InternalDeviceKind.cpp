@@ -14,6 +14,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/MidiReceivePlugin.hpp"
+#include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
@@ -152,6 +153,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::LevelsPlugin;
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
+    using daw::audio::MidiStrumPlugin;
     using daw::audio::OscilloscopePlugin;
     using daw::audio::PolyStepSequencerPlugin;
     using daw::audio::SpectrumAnalyzerPlugin;
@@ -182,6 +184,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::DrumGrid, DrumGridPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::Strum, MidiStrumPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::PolyStepSequencer, PolyStepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},

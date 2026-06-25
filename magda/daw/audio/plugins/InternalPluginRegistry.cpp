@@ -10,6 +10,7 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
+#include "plugins/MidiStrumPlugin.hpp"
 #include "plugins/OscilloscopePlugin.hpp"
 #include "plugins/PolyStepSequencerPlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
@@ -123,6 +124,10 @@ const InternalPluginSpec kSpecs[] = {
      "MIDI arpeggiator for rhythmic note patterns and held-note motion.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
      matches<ArpeggiatorPlugin>, makeProcessor<ArpeggiatorProcessor>, true},
+    {InternalDeviceKind::Strum, MidiStrumPlugin::xmlTypeName, "Strum", "MIDI",
+     "Curve-shaped strum: turns a held chord into a strum / roll / arpeggio for any instrument.",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0, matches<MidiStrumPlugin>,
+     makeProcessor<StrumProcessor>, true},
     {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, "Step Sequencer", "MIDI",
      "MIDI step sequencer for pattern-driven notes and rhythmic control.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,

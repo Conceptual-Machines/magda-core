@@ -12,6 +12,7 @@
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/plugins/MidiChordEnginePlugin.hpp"
 #include "../audio/plugins/MidiReceivePlugin.hpp"
+#include "../audio/plugins/MidiStrumPlugin.hpp"
 #include "../audio/plugins/OscilloscopePlugin.hpp"
 #include "../audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
@@ -132,6 +133,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::ArpeggiatorPlugin::xmlTypeName) {
             return new daw::audio::ArpeggiatorPlugin(info);
+        }
+        if (type == daw::audio::MidiStrumPlugin::xmlTypeName) {
+            return new daw::audio::MidiStrumPlugin(info);
         }
         if (type == daw::audio::StepSequencerPlugin::xmlTypeName) {
             return new daw::audio::StepSequencerPlugin(info);

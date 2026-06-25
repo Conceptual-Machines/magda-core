@@ -360,6 +360,7 @@ target_sources(magda_daw PRIVATE
     plugins/DrumGridPlugin.cpp
     plugins/MidiChordEnginePlugin.cpp
     plugins/ArpeggiatorPlugin.cpp
+    plugins/MidiStrumPlugin.cpp
     plugins/InstrumentMeterTapPlugin.cpp
     plugins/OscilloscopePlugin.cpp
     plugins/SpectrumAnalyzerPlugin.cpp

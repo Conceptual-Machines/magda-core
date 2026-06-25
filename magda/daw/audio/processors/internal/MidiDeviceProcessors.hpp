@@ -8,9 +8,30 @@ namespace te = tracktion;
 
 namespace daw::audio {
 class ArpeggiatorPlugin;
+class MidiStrumPlugin;
 class PolyStepSequencerPlugin;
 class StepSequencerPlugin;
 }  // namespace daw::audio
+
+/**
+ * @brief Processor for the Strum MIDI plugin.
+ *
+ * Exposes the strum scheduler's parameters so macros can target them, and
+ * labels the discrete ones for the generic device UI.
+ * - 0: Trigger (Chord / Sync)
+ * - 1: Order (Up / Down / Up-Down / As Played)
+ * - 2: Shape (8 curve presets)
+ * - 3: Cycles (1-8)
+ * - 4: Strum Length (ms)
+ * - 5: Sync Interval (ms)
+ */
+class StrumProcessor : public AutomatablePluginProcessor {
+  public:
+    StrumProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+  protected:
+    void customiseParameterInfo(int index, ParameterInfo& info) const override;
+};
 
 /**
  * @brief Processor for the Arpeggiator plugin

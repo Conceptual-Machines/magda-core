@@ -44,6 +44,7 @@ enum class InternalDeviceKind {
     MidiReceive,
     MidiChordEngine,
     Arpeggiator,
+    Strum,
     StepSequencer,
     PolyStepSequencer,
     SidechainMonitor,
