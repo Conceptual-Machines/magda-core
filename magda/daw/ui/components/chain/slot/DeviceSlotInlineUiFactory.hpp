@@ -62,4 +62,10 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
                                                 DeviceSlotInlineUiStorage storage,
                                                 DeviceSlotInlineUiCallbacks callbacks);
 
+void bindDeviceSlotFaustInlineUi(const magda::ChainNodePath& nodePath, FaustUI* faustUI);
+
+void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,
+                                             CompiledDevicePanel* compiledPanel,
+                                             DeviceCustomUIManager& customUI);
+
 }  // namespace magda::daw::ui

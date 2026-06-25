@@ -2,6 +2,7 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
+#include "compiled/CompiledPluginPresentation.hpp"
 #include "core/ControlTarget.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/TrackManager.hpp"
@@ -177,6 +178,31 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
     storage.customUI.setDevicePath(nodePath);
     storage.customUI.create(device, &parent, makeCustomUiCallbacks(std::move(callbacks)));
     return DeviceSlotInlineUiKind::Custom;
+}
+
+void bindDeviceSlotFaustInlineUi(const magda::ChainNodePath& nodePath, FaustUI* faustUI) {
+    if (faustUI == nullptr)
+        return;
+
+    faustUI->setDevicePath(nodePath);
+
+    if (auto plugin = getLivePlugin(nodePath))
+        if (auto* faustPlugin = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get()))
+            faustUI->setPlugin(faustPlugin);
+}
+
+void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,
+                                             CompiledDevicePanel* compiledPanel,
+                                             DeviceCustomUIManager& customUI) {
+    if (!nodePath.isValid())
+        return;
+
+    if (compiledPanel != nullptr) {
+        auto plugin = getLivePlugin(nodePath);
+        compiledPanel->bindPlugin(plugin.get());
+    }
+
+    customUI.refreshLivePluginBindings();
 }
 
 }  // namespace magda::daw::ui

@@ -7,7 +7,6 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
-#include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
@@ -1094,22 +1093,8 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         aiPanel_->setDevicePluginId(device_.pluginId);
     }
     // Same story for FaustUI: createCustomUI ran before nodePath_ was
-    // valid, so the load flow couldn't fire notifyTrackDevicesChanged.
-    if (faustUI_) {
-        faustUI_->setDevicePath(nodePath_);
-
-        // createCustomUI() also runs in the constructor, before setNodePath(),
-        // so the inline-UI factory's getLivePlugin() resolved against an empty
-        // path, returned null, and never called setPlugin(). That left the
-        // Faust UI's plugin pointer null, so Load / Edit / "From file..." all
-        // silently early-return. Now that the path is valid, resolve the live
-        // plugin and bind it (mirrors the aiPanel_ fixup above).
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
-            if (auto* bridge = audioEngine->getAudioBridge())
-                if (auto plugin = bridge->getPlugin(nodePath_))
-                    if (auto* faustPlugin = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get()))
-                        faustUI_->setPlugin(faustPlugin);
-    }
+    // valid, so resolve the live plugin again once the path is known.
+    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get());
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
@@ -2325,19 +2310,7 @@ void DeviceSlotComponent::updateCustomUI() {
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {
-    if (!nodePath_.isValid())
-        return;
-
-    if (compiledPanel_ != nullptr) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(nodePath_);
-                compiledPanel_->bindPlugin(plugin.get());
-            }
-        }
-    }
-
-    customUI_.refreshLivePluginBindings();
+    refreshDeviceSlotInlineUiPluginBindings(nodePath_, compiledPanel_.get(), customUI_);
 }
 
 void DeviceSlotComponent::wirePadChainLinkCallbacks() {
