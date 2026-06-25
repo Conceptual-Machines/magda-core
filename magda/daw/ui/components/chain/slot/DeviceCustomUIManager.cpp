@@ -244,6 +244,14 @@ void addCompiledInternalFxEntry(std::vector<InternalFxEntry>& entries,
     }
 }
 
+template <typename Ui>
+void forwardParameterChanges(Ui& ui, const DeviceCustomUIManager::Callbacks& callbacks) {
+    ui.onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+        if (cb.onParameterChanged)
+            cb.onParameterChanged(paramIndex, value);
+    };
+}
+
 }  // namespace
 
 DeviceCustomUIManager::DeviceCustomUIManager() = default;
@@ -467,17 +475,19 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
 // create
 // =============================================================================
 
+void DeviceCustomUIManager::createToneGeneratorUI(const magda::DeviceInfo& device,
+                                                  juce::Component& parent,
+                                                  const Callbacks& callbacks) {
+    toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
+    forwardParameterChanges(*toneGeneratorUI_, callbacks);
+    parent.addAndMakeVisible(*toneGeneratorUI_);
+    update(device);
+}
+
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase("tone")) {
-        toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
-        toneGeneratorUI_->onParameterChanged = [cb = callbacks](int paramIndex,
-                                                                float normalizedValue) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, normalizedValue);
-        };
-        parent->addAndMakeVisible(*toneGeneratorUI_);
-        update(device);
+        createToneGeneratorUI(device, *parent, callbacks);
     } else if (device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
         samplerUI_ = std::make_unique<SamplerUI>();
         samplerUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
@@ -1151,10 +1161,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         }
     } else if (device.pluginId.equalsIgnoreCase("eq")) {
         eqUI_ = std::make_unique<EqualiserUI>();
-        eqUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*eqUI_, callbacks);
         eqUI_->getDBGainAtFrequency = [this](float freq) -> float {
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
             if (!audioEngine)
@@ -1171,62 +1178,41 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         update(device);
     } else if (isLegacyTeCompressorPluginId(device.pluginId)) {
         compressorUI_ = std::make_unique<CompressorUI>();
-        compressorUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*compressorUI_, callbacks);
         parent->addAndMakeVisible(*compressorUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("reverb") &&
                !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
         reverbUI_ = std::make_unique<ReverbUI>();
-        reverbUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*reverbUI_, callbacks);
         parent->addAndMakeVisible(*reverbUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("delay") &&
                !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Delay)) {
         delayUI_ = std::make_unique<DelayUI>();
-        delayUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*delayUI_, callbacks);
         parent->addAndMakeVisible(*delayUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("chorus") &&
                !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Chorus)) {
         chorusUI_ = std::make_unique<ChorusUI>();
-        chorusUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*chorusUI_, callbacks);
         parent->addAndMakeVisible(*chorusUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("phaser") &&
                !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Phaser)) {
         phaserUI_ = std::make_unique<PhaserUI>();
-        phaserUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*phaserUI_, callbacks);
         parent->addAndMakeVisible(*phaserUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("lowpass")) {
         filterUI_ = std::make_unique<FilterUI>();
-        filterUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*filterUI_, callbacks);
         parent->addAndMakeVisible(*filterUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
         pitchShiftUI_ = std::make_unique<PitchShiftUI>();
-        pitchShiftUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
+        forwardParameterChanges(*pitchShiftUI_, callbacks);
         parent->addAndMakeVisible(*pitchShiftUI_);
         update(device);
     } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
