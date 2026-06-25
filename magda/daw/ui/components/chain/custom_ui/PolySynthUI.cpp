@@ -170,7 +170,7 @@ PolySynthUI::PolySynthUI() {
         addAndMakeVisible(*combo);
         waveSelectors_[static_cast<size_t>(osc)] = std::move(combo);
 
-        auto rst = std::make_unique<juce::TextButton>("Rst");
+        auto rst = std::make_unique<juce::TextButton>("");  // "Rst" label sits above it
         rst->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         rst->setClickingTogglesState(false);
         rst->setColour(juce::TextButton::buttonColourId,
@@ -195,11 +195,10 @@ PolySynthUI::PolySynthUI() {
     controls_[kVoiceModeSlot].slider->setVisible(false);
     controls_[kVoiceModeSlot].label->setVisible(false);
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        // Wave dropdown replaces the wave slider; keep the label as the column
-        // header. Reset box is fully hidden (icon drives it).
+        // Wave dropdown / reset button replace the value boxes; keep the labels as
+        // column headers and hide the underlying sliders.
         controls_[osc * kOscSlotCount].slider->setVisible(false);
         controls_[kOscResetBaseSlot + osc].slider->setVisible(false);
-        controls_[kOscResetBaseSlot + osc].label->setVisible(false);
     }
     // Slightly smaller font on the osc value boxes so the unit suffix is not
     // cramped and the boxes read lighter.
@@ -444,13 +443,16 @@ void PolySynthUI::layoutOscSection() {
             waveSelectors_[static_cast<size_t>(osc)]->setBounds(
                 controls_[static_cast<size_t>(osc * kOscSlotCount)].slider->getBounds());
 
-    // Reset buttons, one per row, aligned with the value box (below the label).
+    // Reset cells: "Rst" label on top (like the other columns), a small toggle
+    // button centered beneath it.
     const int rowH = rstGrid.getHeight() / kNumOscillators;
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto row = rstGrid.removeFromTop(rowH);
-        row.removeFromTop(kCellLabelH);  // align with the box, not the column label
+        auto cell = rstGrid.removeFromTop(rowH).reduced(kCellPad, 1);
+        controls_[static_cast<size_t>(kOscResetBaseSlot + osc)].label->setBounds(
+            cell.removeFromTop(kCellLabelH));
         if (oscResetButtons_[static_cast<size_t>(osc)])
-            oscResetButtons_[static_cast<size_t>(osc)]->setBounds(row.reduced(2, 2));
+            oscResetButtons_[static_cast<size_t>(osc)]->setBounds(cell.withSizeKeepingCentre(
+                juce::jmin(26, cell.getWidth()), juce::jmin(14, cell.getHeight())));
     }
 
     // Performance controls in the spare space below the oscillator rows.
