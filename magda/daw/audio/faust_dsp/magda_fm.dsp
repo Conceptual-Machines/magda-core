@@ -66,10 +66,16 @@ wave(3) = nentry("Op4 Wave [idx:31]", 0, 0, 4, 1);
 // 4-wide feedback loop, giving the single-sample delay every FM feedback path
 // needs. Phase modulation is applied as cycles (pm radians / 2pi) added to the
 // phasor, so it works uniformly for every waveshape; Noise ignores phase.
+// Smooth the continuous controls so dragging a matrix amount / ratio / level
+// glides instead of stepping per block (the stepped values were the zipper noise
+// on tweak). Wave is discrete and the envelope times are per-note, so they are
+// left unsmoothed.
+sm(x) = x : si.smoo;
+
 operators(y0, y1, y2, y3) = op(0), op(1), op(2), op(3)
 with {
-    pm(i) = m(0, i) * y0 + m(1, i) * y1 + m(2, i) * y2 + m(3, i) * y3;
-    mphase(i) = os.phasor(1.0, freq * ratio(i)) + pm(i) / (2.0 * ma.PI);
+    pm(i) = sm(m(0, i)) * y0 + sm(m(1, i)) * y1 + sm(m(2, i)) * y2 + sm(m(3, i)) * y3;
+    mphase(i) = os.phasor(1.0, freq * sm(ratio(i))) + pm(i) / (2.0 * ma.PI);
     p(i) = mphase(i) - floor(mphase(i));  // wrap to [0,1)
     sine(x) = sin(2.0 * ma.PI * x);
     tri(x) = 4.0 * abs(x - 0.5) - 1.0;
@@ -78,7 +84,8 @@ with {
     op(i) = ba.selectn(5, int(wave(i)), sine(p(i)), tri(p(i)), saw(p(i)), sqr(p(i)), no.noise);
 };
 
-mix(y0, y1, y2, y3) = y0 * outLvl(0) + y1 * outLvl(1) + y2 * outLvl(2) + y3 * outLvl(3);
+mix(y0, y1, y2, y3) =
+    y0 * sm(outLvl(0)) + y1 * sm(outLvl(1)) + y2 * sm(outLvl(2)) + y3 * sm(outLvl(3));
 
 env = en.adsr(ampA, ampD, ampS, ampR, gate);
 
