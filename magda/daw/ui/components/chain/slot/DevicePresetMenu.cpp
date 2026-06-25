@@ -5,6 +5,8 @@
 #include "core/PresetManager.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -84,6 +86,48 @@ juce::String cleanCategory(juce::String category) {
         category = category.dropLastCharacters(1);
     return category;
 }
+
+class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    void drawButtonBackground(juce::Graphics& g, juce::Button& button,
+                              const juce::Colour& /*bgColour*/, bool isHighlighted,
+                              bool isDown) override {
+        auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+        auto bg = DarkTheme::getColour(DarkTheme::SURFACE);
+        if (isDown)
+            bg = bg.darker(0.2f);
+        else if (isHighlighted)
+            bg = bg.brighter(0.1f);
+        g.setColour(bg);
+        g.fillRoundedRectangle(bounds, 3.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+    }
+
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool /*highlighted*/,
+                        bool /*down*/) override {
+        auto bounds = button.getLocalBounds().reduced(6, 0);
+        constexpr float chevronW = 10.0f;
+        auto chevronArea = bounds.removeFromRight((int)chevronW).toFloat();
+
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setColour(
+            DarkTheme::getTextColour().withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+        g.drawText(button.getButtonText(), bounds.toFloat(), juce::Justification::centredLeft,
+                   /*useEllipses*/ true);
+
+        const float cx = chevronArea.getCentreX();
+        const float cy = chevronArea.getCentreY() + 1.0f;
+        constexpr float halfSize = 2.5f;
+        juce::Path chevron;
+        chevron.startNewSubPath(cx - halfSize, cy - 1.0f);
+        chevron.lineTo(cx, cy + 1.5f);
+        chevron.lineTo(cx + halfSize, cy - 1.0f);
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.strokePath(chevron, juce::PathStrokeType(1.0f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+    }
+};
 
 }  // namespace
 
@@ -276,11 +320,58 @@ void loadMagdaPreset(
     }
 }
 
+struct MagdaDevicePresetPresenter::State {
+    juce::String currentPresetName;
+};
+
+MagdaDevicePresetPresenter::MagdaDevicePresetPresenter() : state_(std::make_shared<State>()) {}
+
+void MagdaDevicePresetPresenter::clearCurrentPreset() {
+    state_->currentPresetName.clear();
+}
+
+void MagdaDevicePresetPresenter::showMenu(
+    juce::Component* targetComponent, const magda::DeviceInfo& device,
+    const magda::ChainNodePath& devicePath,
+    std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded) {
+    auto state = state_;
+    const auto snapshotProvider = [device, devicePath]() -> std::optional<magda::DeviceInfo> {
+        return snapshotDeviceForPreset(device, devicePath);
+    };
+
+    MagdaPresetMenuActions actions;
+    actions.saveAs = [state, device, snapshotProvider]() {
+        showSaveMagdaPresetDialog(
+            device, state->currentPresetName, snapshotProvider,
+            [state](const juce::String& presetName) { state->currentPresetName = presetName; });
+    };
+    actions.saveCurrent = [state, snapshotProvider]() {
+        saveCurrentMagdaPreset(state->currentPresetName, snapshotProvider);
+    };
+    actions.loadPreset = [state, device, devicePath,
+                          onLoaded = std::move(onLoaded)](const juce::String& presetRelativePath) {
+        loadMagdaPreset(
+            device.name, devicePath, presetRelativePath,
+            [state, onLoaded](const magda::DeviceInfo& liveDevice, const juce::String& presetName) {
+                state->currentPresetName = presetName;
+                if (onLoaded)
+                    onLoaded(liveDevice);
+            });
+    };
+
+    showMagdaPresetMenu(targetComponent, device.name, state->currentPresetName, std::move(actions));
+}
+
 bool hasPluginPresetsAvailable(const magda::DeviceInfo& device, bool isInternalDevice) {
     if (isInternalDevice || device.loadState != magda::DeviceLoadState::Loaded)
         return false;
 
     return !magda::PluginPresetScanner::getInstance().getPresets(device).empty();
+}
+
+juce::LookAndFeel& getPluginPresetsButtonLookAndFeel() {
+    static PluginPresetsButtonLookAndFeel instance;
+    return instance;
 }
 
 void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
