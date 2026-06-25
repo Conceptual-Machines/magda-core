@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "MagdaStrumInstrument.hpp"
+#include "MagdaCompiledPolyInstrument.hpp"
 
 // The single-voice dsp is forward-declared via its Faust base; the .cpp owns it.
 class dsp;
@@ -12,14 +12,14 @@ namespace magda::daw::audio::compiled {
 /**
  * @brief Compiled-Faust struck-percussion instrument (the "Percussion" device).
  *
- * A pm.lib modal voice (magda_mallet.dsp) - selectable Marimba / Djembe - driven
- * by the shared MagdaStrumInstrument scheduler, so a held chord can be struck /
- * rolled / arpeggiated by a curve exactly like Pluck. This subclass only
- * supplies the voice dsp and its macros (Strike Pos / Strike Cutoff /
- * Strike Sharpness / Model); the modal decay is intrinsic to the model, so there
- * is no damping control.
+ * A pm.lib modal voice (magda_mallet.dsp) - selectable Marimba / Djembe. Voice
+ * allocation and the output stage live in MagdaCompiledPolyInstrument; this
+ * subclass only supplies the voice dsp and its macros (Strike Pos / Strike
+ * Cutoff / Strike Sharpness / Model / Decay). The modal decay is intrinsic to
+ * the model, so there is no damping control. For struck / rolled chords, put the
+ * Strum MIDI effect (MidiStrumPlugin) in front of it.
  */
-class MagdaMalletCompiledPlugin : public MagdaStrumInstrument {
+class MagdaMalletCompiledPlugin : public MagdaCompiledPolyInstrument {
   public:
     static const char* xmlTypeName;
 

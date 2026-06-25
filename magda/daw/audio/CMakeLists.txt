@@ -228,8 +228,8 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaSaturatorCompiledPlugin.hpp
     plugins/compiled/MagdaPolySynthCompiledPlugin.cpp
     plugins/compiled/MagdaPolySynthCompiledPlugin.hpp
-    plugins/compiled/MagdaStrumInstrument.cpp
-    plugins/compiled/MagdaStrumInstrument.hpp
+    plugins/compiled/MagdaCompiledPolyInstrument.cpp
+    plugins/compiled/MagdaCompiledPolyInstrument.hpp
     plugins/compiled/MagdaPluckCompiledPlugin.cpp
     plugins/compiled/MagdaPluckCompiledPlugin.hpp
     plugins/compiled/MagdaMalletCompiledPlugin.cpp

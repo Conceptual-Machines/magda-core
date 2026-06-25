@@ -2,8 +2,6 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include <array>
-#include <cstdint>
 #include <deque>
 #include <memory>
 #include <vector>
@@ -21,30 +19,31 @@ class dsp_poly;
 namespace magda::daw::audio::compiled {
 
 /**
- * @brief Shared base for the curve-strummed compiled-Faust instruments (Pluck,
- *        Mallet, ...).
+ * @brief Shared base for the compiled-Faust polyphonic instruments (Pluck,
+ *        Percussion, ...).
  *
- * Everything that is identical across these devices lives here: the mydsp_poly
- * voice engine, the per-voice [idx:N] macro fan-out, the chord-latch + curve
- * strum scheduler (a held chord is strummed / arpeggiated in time by a curve),
- * the output gain + peak limiter, and all the host-parameter plumbing.
+ * Holds everything identical across these devices: the mydsp_poly voice engine,
+ * the per-voice [idx:N] macro fan-out, MIDI-driven voice allocation, and the
+ * output gain + safety limiter.
  *
- * Host slots are laid out as [voice macros ...][control slots ...]:
+ * Host slots are laid out as [voice macros ...][Gain]:
  *  - Voice macros (0 .. voiceSlotCount-1) map 1:1 to the dsp's [idx:N] zones and
  *    are fanned out to every voice each block. A concrete device defines them in
  *    voiceSlotInfos().
- *  - Control slots (Trigger / Order / Shape / Cycles / Strum Length /
- *    Sync Interval / Gain) have NO dsp zone; their values are read in C++ to
- *    drive the scheduler and output stage. They are identical for every device.
+ *  - Gain (the single control slot) has no dsp zone; it is applied in C++.
  *
  * A concrete device is a thin subclass: it supplies the voice dsp factory, the
  * voice-macro table, the id prefix and the name strings, then calls
  * initInstrument() from its constructor.
+ *
+ * Note: this is a plain instrument - chord strumming / arpeggiation lives in the
+ * standalone Strum MIDI effect (MidiStrumPlugin), which can drive this or any
+ * other instrument.
  */
-class MagdaStrumInstrument : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlugin {
   public:
-    explicit MagdaStrumInstrument(const te::PluginCreationInfo& info);
-    ~MagdaStrumInstrument() override;
+    explicit MagdaCompiledPolyInstrument(const te::PluginCreationInfo& info);
+    ~MagdaCompiledPolyInstrument() override;
 
     // te::Plugin (shared across the family).
     void initialise(const te::PluginInitialisationInfo& info) override;
@@ -70,26 +69,17 @@ class MagdaStrumInstrument : public te::Plugin, public ICompiledFaustPlugin {
 
     using HostSlotInfo = CompiledHostSlotInfo;
 
-    // Control slots are appended after the voice macros, in this order.
+    // The single control slot, appended after the voice macros.
     enum ControlSlot {
-        kTrigger = 0,       // Chord / Sync
-        kOrder,             // Up / Down / Up-Down / As Played
-        kShape,             // 8 curve presets
-        kCycles,            // 1..8 (tiled curve)
-        kStrumLen,          // strum window, ms
-        kSyncInterval,      // re-strum interval (Sync), ms
-        kGain,              // output gain, dB
+        kGain = 0,          // output gain, dB
         kControlSlotCount,  // == number of control slots
     };
 
     int voiceSlotCount() const {
         return static_cast<int>(voiceSlotInfos_.size());
     }
-    int controlBaseSlot() const {
-        return voiceSlotCount();
-    }
     int controlSlot(ControlSlot c) const {
-        return controlBaseSlot() + static_cast<int>(c);
+        return voiceSlotCount() + static_cast<int>(c);
     }
     int hostSlotCountValue() const {
         return voiceSlotCount() + kControlSlotCount;
@@ -123,11 +113,11 @@ class MagdaStrumInstrument : public te::Plugin, public ICompiledFaustPlugin {
     // base wraps it in mydsp_poly.
     virtual ::dsp* createVoiceDsp() const = 0;
     // The voice-macro slots, in [idx:0..N-1] order. Their count defines where
-    // the control slots begin.
+    // the Gain control slot begins.
     virtual std::vector<HostSlotInfo> voiceSlotInfos() const = 0;
     // Parameter-id prefix, e.g. "magda_pluck_". Must be stable (it keys state).
     virtual const char* slotIdPrefix() const = 0;
-    // Voice-allocator size. Percussion can run leaner than 32.
+    // Voice-allocator size.
     virtual int numVoices() const {
         return 32;
     }
@@ -141,54 +131,28 @@ class MagdaStrumInstrument : public te::Plugin, public ICompiledFaustPlugin {
     magda::ParameterInfo infoForSlot(int slotIndex) const;
     float slotRealValue(int slotIndex) const;
 
-    // ---- Scheduler (ported from the Pluck device) -------------------------
-    struct Held {
-        int note = 0;
-        float vel = 0.0f;
-        std::int64_t order = 0;
-    };
-    struct Pending {
-        std::int64_t fireAt = 0;  // absolute sample clock
-        int note = 0;
-        int velocity = 0;    // 0..127
-        bool gateOn = true;  // true = keyOn, false = keyOff
-    };
-
-    void handleMidi(const te::MidiMessageArray& midi);
-    void scheduleStrum();
-    void fireDuePlucks();
-    void panic();
-
     std::unique_ptr<::dsp_poly> poly_;
     int numOutputs_ = 0;
-    int currentSampleRate_ = 44100;
+    double sampleRate_ = 44100.0;
 
     // Voice macros only (0 .. voiceSlotCount-1): that control's zone in EVERY
     // voice (group=false), so a single host value fans out to all voices.
     std::vector<std::vector<FAUSTFLOAT*>> voiceZonesBySlot_;
 
     std::vector<HostSlotInfo> voiceSlotInfos_;  // cached from the hook
-    std::vector<HostSlotInfo> hostSlotInfo_;    // voice macros + control slots
+    std::vector<HostSlotInfo> hostSlotInfo_;    // voice macros + Gain
     std::vector<te::AutomatableParameter::Ptr> hostParams_;
     // juce::CachedValue is non-movable, so a vector (which moves on growth) can't
     // hold it. deque is node-based: resize default-constructs in place without
     // ever moving existing elements, and it stays indexable.
     std::deque<juce::CachedValue<float>> hostCached_;
 
-    std::vector<Held> held_;
-    std::vector<Pending> pending_;
-    std::int64_t clock_ = 0;         // absolute sample counter
-    std::int64_t noteOrder_ = 0;     // play-order stamp for As-Played ordering
-    int collectLeft_ = -1;           // Chord-mode collect debounce (samples)
-    int syncLeft_ = 0;               // Sync-mode interval countdown (samples)
-    int lutShape_ = -1;              // shape index the LUT was built for
-    std::array<float, 1024> lut_{};  // current strum curve, sampled
-    float limEnv_ = 0.0f;            // output limiter peak envelope
+    float limEnv_ = 0.0f;  // output limiter peak envelope
 
     juce::AudioBuffer<float> scratchOut_;
     std::vector<float*> outPtrs_;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaStrumInstrument)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaCompiledPolyInstrument)
 };
 
 }  // namespace magda::daw::audio::compiled

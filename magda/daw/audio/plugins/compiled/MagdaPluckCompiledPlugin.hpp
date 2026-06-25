@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "MagdaStrumInstrument.hpp"
+#include "MagdaCompiledPolyInstrument.hpp"
 
 // The single-voice dsp is forward-declared via its Faust base; the .cpp owns it.
 class dsp;
@@ -12,14 +12,13 @@ namespace magda::daw::audio::compiled {
 /**
  * @brief Compiled-Faust plucked-string instrument (the "Pluck" device).
  *
- * A pm.lib Karplus-Strong string (magda_pluck.dsp) strummed by the shared
- * MagdaStrumInstrument scheduler: a held chord is plucked in time by a curve to
- * become an expressive strum / roll / arpeggio. All scheduling, voice
- * management and the output stage live in the base; this subclass only supplies
- * the voice dsp and its four timbre macros (Damping / Pluck Pos / Brightness /
- * Drive).
+ * A pm.lib Karplus-Strong plucked-string voice (magda_pluck.dsp). Voice
+ * allocation and the output stage live in MagdaCompiledPolyInstrument; this
+ * subclass only supplies the voice dsp and its four timbre macros (Damping /
+ * Pluck Pos / Brightness / Drive). For strummed / rolled / arpeggiated chords,
+ * put the Strum MIDI effect (MidiStrumPlugin) in front of it.
  */
-class MagdaPluckCompiledPlugin : public MagdaStrumInstrument {
+class MagdaPluckCompiledPlugin : public MagdaCompiledPolyInstrument {
   public:
     static const char* xmlTypeName;
 

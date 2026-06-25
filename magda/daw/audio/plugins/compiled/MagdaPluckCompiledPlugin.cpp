@@ -12,7 +12,7 @@ namespace magda::daw::audio::compiled {
 const char* MagdaPluckCompiledPlugin::xmlTypeName = "magda_pluck";
 
 MagdaPluckCompiledPlugin::MagdaPluckCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaStrumInstrument(info) {
+    : MagdaCompiledPolyInstrument(info) {
     initInstrument();
 }
 

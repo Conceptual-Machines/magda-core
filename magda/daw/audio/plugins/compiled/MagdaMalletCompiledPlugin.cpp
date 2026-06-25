@@ -12,7 +12,7 @@ namespace magda::daw::audio::compiled {
 const char* MagdaMalletCompiledPlugin::xmlTypeName = "magda_mallet";
 
 MagdaMalletCompiledPlugin::MagdaMalletCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaStrumInstrument(info) {
+    : MagdaCompiledPolyInstrument(info) {
     initInstrument();
 }
 
