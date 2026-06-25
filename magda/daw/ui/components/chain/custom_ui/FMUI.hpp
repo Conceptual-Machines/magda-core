@@ -48,8 +48,12 @@ class FMUI : public juce::Component {
     static constexpr int kLevelBase = 20;    // 20..23
     static constexpr int kAmpAdsrBase = 24;  // 24..27 (A/D/S/R)
     static constexpr int kWaveBase = 28;     // 28..31
-    static constexpr int kGainSlot = 32;
-    static constexpr int kNumParams = 33;
+    static constexpr int kGlideSlot = 32;
+    static constexpr int kVelAmtSlot = 33;
+    static constexpr int kResetBase = 34;  // 34..37 (per-op phase reset)
+    static constexpr int kGainSlot = 38;
+    static constexpr int kVoiceModeSlot = 39;
+    static constexpr int kNumParams = 40;
     static constexpr int kNumWaves = 5;  // Sine / Triangle / Saw / Square / Noise
 
     struct Control {

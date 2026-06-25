@@ -47,6 +47,12 @@ class MagdaFMCompiledPlugin : public MagdaCompiledPolyInstrument {
     int numVoices() const override {
         return 16;
     }
+    bool hasVoiceModes() const override {
+        return true;
+    }
+    int glideVoiceSlot() const override {
+        return 32;  // magda_fm.dsp Glide [idx:32]
+    }
 
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaFMCompiledPlugin)

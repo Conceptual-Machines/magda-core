@@ -58,6 +58,26 @@ wave(1) = nentry("Op2 Wave [idx:29]", 0, 0, 4, 1);
 wave(2) = nentry("Op3 Wave [idx:30]", 0, 0, 4, 1);
 wave(3) = nentry("Op4 Wave [idx:31]", 0, 0, 4, 1);
 
+// Portamento glide (ms -> seconds): smooth the played pitch toward the target.
+// The host forces this to 0 on the poly voices, so only the Mono/Legato voice
+// glides; poly patches are unaffected.
+glide = hslider("Glide [unit:ms] [idx:32]", 0, 0, 2000, 1) / 1000.0;
+freqG = freq : si.smooth(ba.tau2pole(glide));
+
+// Velocity -> amplitude depth. 0 = ignore velocity (every note full level); 1 =
+// full velocity range. The per-voice `gain` zone carries the note velocity.
+velAmt  = hslider("Vel Amount [idx:33]", 1.0, 0.0, 1.0, 0.001);
+velGain = (1.0 - velAmt) + velAmt * gain;
+
+// Per-operator phase reset: restart that operator's phasor at 0 on note-on (a
+// punchy, repeatable attack) when enabled. Fires for one sample on the gate's
+// rising edge.
+gateRise = gate > gate';
+reset(0) = nentry("Op1 Reset [idx:34] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+reset(1) = nentry("Op2 Reset [idx:35] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+reset(2) = nentry("Op3 Reset [idx:36] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+reset(3) = nentry("Op4 Reset [idx:37] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+
 // ============================================================================
 // FM matrix
 // ============================================================================
@@ -75,7 +95,10 @@ sm(x) = x : si.smoo;
 operators(y0, y1, y2, y3) = op(0), op(1), op(2), op(3)
 with {
     pm(i) = sm(m(0, i)) * y0 + sm(m(1, i)) * y1 + sm(m(2, i)) * y2 + sm(m(3, i)) * y3;
-    mphase(i) = os.phasor(1.0, freq * sm(ratio(i))) + pm(i) / (2.0 * ma.PI);
+    // Resettable phasor (os.hs_phasor) so Phase Reset restarts the op at 0 on
+    // note-on; glide-smoothed pitch (freqG) carries portamento.
+    mphase(i) = os.hs_phasor(1.0, freqG * sm(ratio(i)), (reset(i) > 0) * gateRise) +
+                pm(i) / (2.0 * ma.PI);
     p(i) = mphase(i) - floor(mphase(i));  // wrap to [0,1)
     sine(x) = sin(2.0 * ma.PI * x);
     tri(x) = 4.0 * abs(x - 0.5) - 1.0;
@@ -89,7 +112,7 @@ mix(y0, y1, y2, y3) =
 
 env = en.adsr(ampA, ampD, ampS, ampR, gate);
 
-voice = (operators ~ si.bus(4)) : mix : *(env) : *(gain);
+voice = (operators ~ si.bus(4)) : mix : *(env) : *(velGain);
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

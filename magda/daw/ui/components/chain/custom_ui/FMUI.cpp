@@ -61,7 +61,12 @@ FMUI::FMUI() {
     makeLabel(kAmpAdsrBase + 1, "D");
     makeLabel(kAmpAdsrBase + 2, "S");
     makeLabel(kAmpAdsrBase + 3, "R");
+    makeLabel(kGlideSlot, "Glide");
+    makeLabel(kVelAmtSlot, "Vel");
+    makeLabel(kVoiceModeSlot, "Mode");
     makeLabel(kGainSlot, "Gain");
+    for (int op = 0; op < kNumOps; ++op)
+        makeLabel(kResetBase + op, "Rst");
 
     // Per-operator waveform icon selectors overlay the hidden wave sliders.
     for (int op = 0; op < kNumOps; ++op) {
@@ -180,7 +185,7 @@ void FMUI::resized() {
         for (int op = 0; op < kNumOps; ++op) {
             auto col = juce::Rectangle<int>(a.getX() + op * colW, a.getY(), colW, a.getHeight())
                            .reduced(kCellPad);
-            const int rowH = col.getHeight() / 3;
+            const int rowH = col.getHeight() / 4;  // Wave / Ratio / Level / Reset
             // Wave icon selector (hidden slider tracks beneath it).
             auto waveRow = col.removeFromTop(rowH);
             controls_[static_cast<size_t>(kWaveBase + op)].slider->setBounds(waveRow);
@@ -193,16 +198,18 @@ void FMUI::resized() {
             };
             place(kRatioBase + op, col.removeFromTop(rowH));
             place(kLevelBase + op, col.removeFromTop(rowH));
+            place(kResetBase + op, col.removeFromTop(rowH));
         }
     }
 
-    // --- Amp ADSR + Gain (right column, stacked) ---
+    // --- Right column, stacked: amp ADSR, Glide, Vel, Gain, Voice Mode ---
     {
         auto a = ampArea_;
         a.removeFromTop(kSectionTitleH);
-        layoutCells(
-            a, {kAmpAdsrBase + 0, kAmpAdsrBase + 1, kAmpAdsrBase + 2, kAmpAdsrBase + 3, kGainSlot},
-            1);
+        layoutCells(a,
+                    {kAmpAdsrBase + 0, kAmpAdsrBase + 1, kAmpAdsrBase + 2, kAmpAdsrBase + 3,
+                     kGlideSlot, kVelAmtSlot, kGainSlot, kVoiceModeSlot},
+                    1);
     }
 }
 

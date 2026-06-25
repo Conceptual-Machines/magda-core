@@ -69,20 +69,24 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
 
     using HostSlotInfo = CompiledHostSlotInfo;
 
-    // The single control slot, appended after the voice macros.
-    enum ControlSlot {
-        kGain = 0,          // output gain, dB
-        kControlSlotCount,  // == number of control slots
-    };
+    enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 
     int voiceSlotCount() const {
         return static_cast<int>(voiceSlotInfos_.size());
     }
-    int controlSlot(ControlSlot c) const {
-        return voiceSlotCount() + static_cast<int>(c);
+    // Control slots follow the voice macros: Gain always, then Voice Mode when
+    // the device supports mono/legato.
+    int gainSlot() const {
+        return voiceSlotCount();
+    }
+    int voiceModeSlot() const {
+        return hasVoiceModes() ? voiceSlotCount() + 1 : -1;
+    }
+    int controlSlotCount() const {
+        return hasVoiceModes() ? 2 : 1;
     }
     int hostSlotCountValue() const {
-        return voiceSlotCount() + kControlSlotCount;
+        return voiceSlotCount() + controlSlotCount();
     }
 
     te::AutomatableParameter* getSlotParameter(int slotIndex) const;
@@ -121,6 +125,16 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     virtual int numVoices() const {
         return 32;
     }
+    // Override to add a Voice Mode (Poly/Mono/Legato) control slot, a dedicated
+    // mono voice and glide. Default off (plain poly instrument).
+    virtual bool hasVoiceModes() const {
+        return false;
+    }
+    // The voice-macro slot carrying portamento Glide - forced to 0 on the poly
+    // voices, driven on the mono voice. -1 if the dsp has no glide zone.
+    virtual int glideVoiceSlot() const {
+        return -1;
+    }
 
     // Concrete constructors call this once, after their config hooks are valid.
     void initInstrument();
@@ -131,9 +145,34 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     magda::ParameterInfo infoForSlot(int slotIndex) const;
     float slotRealValue(int slotIndex) const;
 
+    // ---- Voice-mode (Mono/Legato/glide) handling, active only when
+    //      hasVoiceModes() is true ----------------------------------------
+    int readVoiceModeIndex() const;
+    void resetAllVoices();
+    // Mono/Legato note handling on the dedicated single voice. Returns true when
+    // a one-sample gate edge is needed to retrigger (Mono only).
+    bool handleMonoNoteOn(int note, int velocity, int mode);
+    void handleMonoNoteOff(int note);
+
     std::unique_ptr<::dsp_poly> poly_;
+    // Dedicated single voice for Mono/Legato (the poly allocator skips idle
+    // voices, so it cannot be driven zone-only). Allocated only with voice modes.
+    std::unique_ptr<::dsp> monoVoice_;
     int numOutputs_ = 0;
     double sampleRate_ = 44100.0;
+
+    // Mono voice's reserved freq/gain/gate zones + its copy of each voice-macro
+    // zone (so glide etc. can be driven on it independently of the poly voices).
+    FAUSTFLOAT* monoFreqZone_ = nullptr;
+    FAUSTFLOAT* monoGainZone_ = nullptr;
+    FAUSTFLOAT* monoGateZone_ = nullptr;
+    std::vector<FAUSTFLOAT*> monoZonesBySlot_;
+    struct HeldNote {
+        int note = 0;
+        float gain = 0.0f;
+    };
+    std::vector<HeldNote> heldNotes_;
+    int lastVoiceMode_ = 0;
 
     // Voice macros only (0 .. voiceSlotCount-1): that control's zone in EVERY
     // voice (group=false), so a single host value fans out to all voices.

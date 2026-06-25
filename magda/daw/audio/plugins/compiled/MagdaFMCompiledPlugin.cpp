@@ -99,6 +99,28 @@ std::vector<MagdaFMCompiledPlugin::HostSlotInfo> MagdaFMCompiledPlugin::voiceSlo
                      .defaultValue = 0.0f,
                      .choices = {"Sine", "Triangle", "Saw", "Square", "Noise"}});
 
+    // 32: Glide (ms). The base forces it to 0 on the poly voices (glideVoiceSlot).
+    v.push_back({.name = "Glide",
+                 .unit = "ms",
+                 .scale = ParameterScale::Linear,
+                 .minValue = 0.0f,
+                 .maxValue = 2000.0f,
+                 .defaultValue = 0.0f});
+    // 33: Velocity -> amplitude depth.
+    v.push_back({.name = "Vel Amount",
+                 .scale = ParameterScale::Linear,
+                 .minValue = 0.0f,
+                 .maxValue = 1.0f,
+                 .defaultValue = 1.0f});
+    // 34..37: per-op phase reset on note-on.
+    for (int i = 0; i < 4; ++i)
+        v.push_back({.name = "Op" + juce::String(i + 1) + " Reset",
+                     .scale = ParameterScale::Discrete,
+                     .minValue = 0.0f,
+                     .maxValue = 1.0f,
+                     .defaultValue = 0.0f,
+                     .choices = {"Off", "On"}});
+
     return v;
 }
 
