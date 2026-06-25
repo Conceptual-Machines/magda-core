@@ -351,6 +351,13 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                  .maxValue = 2000.0f,
                                  .defaultValue = 0.0f};
 
+    hostSlotInfo_[kPhaseResetSlot] = {.name = "Phase Reset",
+                                      .scale = magda::ParameterScale::Discrete,
+                                      .minValue = 0.0f,
+                                      .maxValue = 1.0f,
+                                      .defaultValue = 0.0f,
+                                      .choices = {"Off", "On"}};
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 

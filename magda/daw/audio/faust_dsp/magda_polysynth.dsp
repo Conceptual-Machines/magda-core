@@ -41,13 +41,32 @@ bendSemis = (bend * bendRange) : smoo;
 glide = hslider("Glide [unit:ms] [idx:32]", 0, 0, 2000, 1) / 1000.0;
 freqG = freq : si.smooth(ba.tau2pole(glide));
 
+// Phase reset: restart every oscillator at phase 0 on note-on so attacks are
+// consistent and punchy. Fires for one sample on the gate's rising edge (also on
+// the Mono retrigger edge) when enabled. The differentiator glitch from the
+// reset lands at note-on, where the amp envelope is ~0, so it is inaudible.
+phaseReset = nentry("Phase Reset [idx:33] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+oscReset = (phaseReset > 0) * (gate > gate');
+
+// Resettable, alias-suppressed oscillators (DPW order 2) built on Faust's
+// reset-capable phasor, replacing the free-running os.* shapes so the phase can
+// be restarted. With reset held at 0 they free-run exactly like the stock saws.
+sawNaiveR(f, ph, rst) = 2.0 * os.lf_sawpos_phase_reset(f, ph, rst) - 1.0;
+sawDpwR(f, ph, rst) = sawNaiveR(f, ph, rst) <: * <: -(mem) : *(0.25 * ma.SR / max(ma.EPSILON, f));
+sqrR(f, rst) = sawDpwR(f, 0.0, rst) - sawDpwR(f, 0.5, rst);     // band-limited square
+triR(f, rst) = sqrR(f, rst) : fi.pole(0.999) : *(4.0 * f / ma.SR);  // integrated square
+sinR(f, rst) = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, rst));
+oscShape(wave, f, rst) =
+    ba.selectn(4, int(wave), sinR(f, rst), sawDpwR(f, 0.0, rst), sqrR(f, rst), triR(f, rst));
+
 // One oscillator. `wave` selects the shape (Sine/Saw/Square/Triangle),
 // `coarse` shifts pitch in semitones and `fine` in cents; `level` is the
 // pre-mix gain in dB (converted to a linear multiplier). selectn evaluates
 // every branch, so all four shapes always run. `bendSemis` shifts every osc
-// together by the live pitch-bend amount; `freqG` carries the glide.
+// together by the live pitch-bend amount; `freqG` carries the glide; `oscReset`
+// restarts the phase on note-on.
 oscBank(wave, level, coarse, fine) =
-    ba.selectn(4, int(wave), os.osc(f), os.sawtooth(f), os.square(f), os.triangle(f))
+    oscShape(wave, f, oscReset)
     * (level : ba.db2linear : smoo)
 with {
     f = freqG * pow(2.0, (coarse + fine / 100.0 + bendSemis) / 12.0);
