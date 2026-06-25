@@ -37,6 +37,7 @@ class OscilloscopeUI;
 class PhaserUI;
 class PolyStepSequencerUI;
 class PolySynthUI;
+class FMUI;
 class SpectrumAnalyzerUI;
 class PitchShiftUI;
 class ReverbUI;
@@ -230,6 +231,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<FourOscUI> fourOscUI_;
     std::unique_ptr<FaustInstrumentTabbedUI> faustInstrumentUI_;
     std::unique_ptr<PolySynthUI> polySynthUI_;
+    std::unique_ptr<FMUI> fmUI_;
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;

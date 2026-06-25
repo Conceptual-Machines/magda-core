@@ -59,6 +59,11 @@ magda_compile_faust_dsp(
     MAGDA_MALLET_GENERATED_CPP
 )
 magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_fm.dsp"
+    MagdaFMDsp
+    MAGDA_FM_GENERATED_CPP
+)
+magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_delay.dsp"
     MagdaDelayDsp
     MAGDA_DELAY_GENERATED_CPP
@@ -193,6 +198,7 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_POLYSYNTH_GENERATED_CPP}"
         "${MAGDA_PLUCK_GENERATED_CPP}"
         "${MAGDA_MALLET_GENERATED_CPP}"
+        "${MAGDA_FM_GENERATED_CPP}"
         "${MAGDA_DELAY_GENERATED_CPP}"
         "${MAGDA_GRAIN_DELAY_GENERATED_CPP}"
         "${MAGDA_GRIT_GENERATED_CPP}"
@@ -234,6 +240,8 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaPluckCompiledPlugin.hpp
     plugins/compiled/MagdaMalletCompiledPlugin.cpp
     plugins/compiled/MagdaMalletCompiledPlugin.hpp
+    plugins/compiled/MagdaFMCompiledPlugin.cpp
+    plugins/compiled/MagdaFMCompiledPlugin.hpp
     plugins/compiled/MagdaDelayCompiledPlugin.cpp
     plugins/compiled/MagdaDelayCompiledPlugin.hpp
     plugins/compiled/MagdaGrainDelayCompiledPlugin.cpp

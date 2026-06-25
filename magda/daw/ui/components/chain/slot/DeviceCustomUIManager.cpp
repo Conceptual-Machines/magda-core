@@ -34,6 +34,7 @@
 #include "custom_ui/CompressorUI.hpp"
 #include "custom_ui/DelayUI.hpp"
 #include "custom_ui/EqualiserUI.hpp"
+#include "custom_ui/FMUI.hpp"
 #include "custom_ui/FaustInstrumentTabbedUI.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "custom_ui/FilterUI.hpp"
@@ -270,6 +271,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return faustInstrumentUI_.get();
     if (polySynthUI_)
         return polySynthUI_.get();
+    if (fmUI_)
+        return fmUI_.get();
     if (eqUI_)
         return eqUI_.get();
     if (compressorUI_)
@@ -316,6 +319,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return faustInstrumentUI_->getLinkableSliders();
     if (polySynthUI_)
         return polySynthUI_->getLinkableSliders();
+    if (fmUI_)
+        return fmUI_->getLinkableSliders();
     if (toneGeneratorUI_)
         return toneGeneratorUI_->getLinkableSliders();
     if (compressorUI_)
@@ -347,7 +352,7 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || faustInstrumentUI_ ||
-           polySynthUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
+           polySynthUI_ || fmUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
            phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ || faustUI_ ||
            chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
            oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
@@ -466,6 +471,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         faustInstrumentUI_->updateFromParameters(device.parameters);
     if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth"))
         polySynthUI_->updateFromParameters(device.parameters);
+    if (fmUI_ && device.pluginId.equalsIgnoreCase("magda_fm"))
+        fmUI_->updateFromParameters(device.parameters);
     if (eqUI_ && device.pluginId.equalsIgnoreCase("eq"))
         eqUI_->updateFromParameters(device.parameters);
     if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
@@ -1136,6 +1143,14 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*polySynthUI_);
         polySynthUI_->updateFromParameters(device.parameters);
+    } else if (device.pluginId.equalsIgnoreCase("magda_fm")) {
+        fmUI_ = std::make_unique<FMUI>();
+        fmUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+            if (cb.onParameterChanged)
+                cb.onParameterChanged(paramIndex, value);
+        };
+        parent->addAndMakeVisible(*fmUI_);
+        fmUI_->updateFromParameters(device.parameters);
     } else if (device.pluginId.containsIgnoreCase("4osc")) {
         fourOscUI_ = std::make_unique<FourOscUI>();
         fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {

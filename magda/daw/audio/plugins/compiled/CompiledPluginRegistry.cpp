@@ -60,6 +60,7 @@ const CompiledPluginSpec& getMagdaUtilitySpec();
 const CompiledPluginSpec& getMagdaPolySynthSpec();
 const CompiledPluginSpec& getMagdaPluckSpec();
 const CompiledPluginSpec& getMagdaMalletSpec();
+const CompiledPluginSpec& getMagdaFMSpec();
 
 namespace {
 
@@ -72,7 +73,7 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaClipperSpec(),    &getMagdaReverbSpec(),     &getMagdaEqSpec(),
     &getMagdaDimensionSpec(),  &getMagdaPitchSpec(),      &getMagdaBitcrusherSpec(),
     &getMagdaUtilitySpec(),    &getMagdaPolySynthSpec(),  &getMagdaPluckSpec(),
-    &getMagdaMalletSpec(),
+    &getMagdaMalletSpec(),     &getMagdaFMSpec(),
 };
 
 }  // namespace
