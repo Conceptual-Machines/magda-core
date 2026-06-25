@@ -1,7 +1,5 @@
 #include "custom_ui/PolySynthUI.hpp"
 
-#include <BinaryData.h>
-
 #include <algorithm>
 #include <cmath>
 
@@ -172,10 +170,16 @@ PolySynthUI::PolySynthUI() {
         addAndMakeVisible(*combo);
         waveSelectors_[static_cast<size_t>(osc)] = std::move(combo);
 
-        auto rst = std::make_unique<magda::SvgButton>("OscReset", BinaryData::phase_reset_svg,
-                                                      BinaryData::phase_reset_svgSize);
+        auto rst = std::make_unique<juce::TextButton>("Rst");
+        rst->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        rst->setClickingTogglesState(false);
+        rst->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        rst->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        rst->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        rst->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         rst->setTooltip("Reset oscillator phase on note-on");
-        rst->setIconPadding(1.0f);  // default 4px leaves the glyph tiny
         rst->onClick = [this, osc]() { setOscReset(osc, !oscReset_[static_cast<size_t>(osc)]); };
         addAndMakeVisible(*rst);
         oscResetButtons_[static_cast<size_t>(osc)] = std::move(rst);
@@ -223,7 +227,9 @@ PolySynthUI::~PolySynthUI() {
     for (auto& combo : waveSelectors_)
         if (combo)
             combo->setLookAndFeel(nullptr);
-    // oscResetButtons_ are SvgButtons (own paint, no LookAndFeel to clear).
+    for (auto& btn : oscResetButtons_)
+        if (btn)
+            btn->setLookAndFeel(nullptr);
 }
 
 void PolySynthUI::setFilterType(int type) {
@@ -293,8 +299,8 @@ void PolySynthUI::setOscReset(int osc, bool on) {
 void PolySynthUI::updateOscResetButtons() {
     for (int osc = 0; osc < kNumOscillators; ++osc)
         if (oscResetButtons_[static_cast<size_t>(osc)])
-            oscResetButtons_[static_cast<size_t>(osc)]->setActive(
-                oscReset_[static_cast<size_t>(osc)]);
+            oscResetButtons_[static_cast<size_t>(osc)]->setToggleState(
+                oscReset_[static_cast<size_t>(osc)], juce::dontSendNotification);
 }
 
 void PolySynthUI::setOscWave(int osc, int wave) {
@@ -417,8 +423,8 @@ std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
 void PolySynthUI::layoutOscSection() {
     auto a = oscArea_.reduced(kSectionGap);
     a.removeFromTop(kSectionTitleH);
-    // Narrow column on the right for the per-osc phase-reset icons.
-    auto rstCol = a.removeFromRight(26);
+    // Column on the right for the per-osc phase-reset toggle buttons.
+    auto rstCol = a.removeFromRight(36);
 
     // Cap the row height so the value boxes / dropdowns aren't stretched to fill
     // the full-height column; the 4 osc rows sit at the top, gap below.
@@ -440,15 +446,13 @@ void PolySynthUI::layoutOscSection() {
             waveSelectors_[static_cast<size_t>(osc)]->setBounds(
                 controls_[static_cast<size_t>(osc * kOscSlotCount)].slider->getBounds());
 
-    // Reset icons, one per row, aligned with the value box (below the label).
+    // Reset buttons, one per row, aligned with the value box (below the label).
     const int rowH = rstGrid.getHeight() / kNumOscillators;
-    const int sz = std::min(20, rowH - kCellLabelH - 2);
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         auto row = rstGrid.removeFromTop(rowH);
         row.removeFromTop(kCellLabelH);  // align with the box, not the column label
         if (oscResetButtons_[static_cast<size_t>(osc)])
-            oscResetButtons_[static_cast<size_t>(osc)]->setBounds(
-                row.withSizeKeepingCentre(sz, sz));
+            oscResetButtons_[static_cast<size_t>(osc)]->setBounds(row.reduced(2, 2));
     }
 }
 

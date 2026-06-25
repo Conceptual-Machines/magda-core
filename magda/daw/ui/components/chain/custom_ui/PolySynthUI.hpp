@@ -11,7 +11,6 @@
 #include "core/ParameterInfo.hpp"
 #include "custom_ui/AdsrGraph.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
-#include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -135,8 +134,8 @@ class PolySynthUI : public juce::Component {
     std::array<std::unique_ptr<juce::TextButton>, kNumVoiceModes> voiceModeButtons_;
     // Per-oscillator wave dropdowns (replace the wave value boxes).
     std::array<std::unique_ptr<juce::ComboBox>, kNumOscillators> waveSelectors_;
-    // Per-oscillator phase-reset icon toggles, one per osc row.
-    std::array<std::unique_ptr<magda::SvgButton>, kNumOscillators> oscResetButtons_;
+    // Per-oscillator phase-reset toggles, one per osc row.
+    std::array<std::unique_ptr<juce::TextButton>, kNumOscillators> oscResetButtons_;
 
     // Cached section rectangles for the painted titles.
     juce::Rectangle<int> oscArea_, filterArea_, ampArea_, filterEnvArea_;
