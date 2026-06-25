@@ -928,7 +928,7 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
         updateParamModulation();
     }
 
-    refreshCustomUIParameterValues();
+    refreshDeviceSlotInlineUiParameterValues(device_, compiledPanel_.get(), customUI_);
 
     applyLearnModeParameterHighlight(device_, *paramGrid_, paramIndex, newValue, learnHighlight_,
                                      [this]() {
@@ -1028,7 +1028,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
         }
     }
 
-    refreshCustomUIParameterValues();
+    refreshDeviceSlotInlineUiParameterValues(device_, compiledPanel_.get(), customUI_);
 }
 
 bool DeviceSlotComponent::stripsAnalysisChrome() const {
@@ -1064,7 +1064,7 @@ void DeviceSlotComponent::syncModMacroControlsAvailability() {
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
     customUI_.setDevicePath(path);
-    updateCustomUI();
+    updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
 
     if (applySavedParameterConfig()) {
         updateParameterPagination();
@@ -1278,7 +1278,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update custom UI if available
     if (customUI_.hasAnyUI() || faustUI_ || compiledPanel_) {
-        updateCustomUI();
+        updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
     }
 
     // Update parameter slots with current parameter data for current page
@@ -2283,24 +2283,12 @@ void DeviceSlotComponent::createCustomUI() {
                                                       std::move(callbacks));
 
     if (createdKind == DeviceSlotInlineUiKind::Custom) {
-        updateCustomUI();
-        readAndPushModMatrix();
+        updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
+        readAndPushDeviceSlotInlineUiModMatrix(device_.id, customUI_);
         wirePadChainLinkCallbacks();
     }
 
     applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
-}
-
-void DeviceSlotComponent::readAndPushModMatrix() {
-    readAndPushDeviceSlotInlineUiModMatrix(device_.id, customUI_);
-}
-
-void DeviceSlotComponent::refreshCustomUIParameterValues() {
-    refreshDeviceSlotInlineUiParameterValues(device_, compiledPanel_.get(), customUI_);
-}
-
-void DeviceSlotComponent::updateCustomUI() {
-    updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {
