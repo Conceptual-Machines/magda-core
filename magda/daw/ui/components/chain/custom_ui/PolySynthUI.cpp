@@ -175,6 +175,7 @@ PolySynthUI::PolySynthUI() {
         auto rst = std::make_unique<magda::SvgButton>("OscReset", BinaryData::phase_reset_svg,
                                                       BinaryData::phase_reset_svgSize);
         rst->setTooltip("Reset oscillator phase on note-on");
+        rst->setIconPadding(1.0f);  // default 4px leaves the glyph tiny
         rst->onClick = [this, osc]() { setOscReset(osc, !oscReset_[static_cast<size_t>(osc)]); };
         addAndMakeVisible(*rst);
         oscResetButtons_[static_cast<size_t>(osc)] = std::move(rst);
@@ -417,13 +418,20 @@ void PolySynthUI::layoutOscSection() {
     auto a = oscArea_.reduced(kSectionGap);
     a.removeFromTop(kSectionTitleH);
     // Narrow column on the right for the per-osc phase-reset icons.
-    auto rstCol = a.removeFromRight(22);
+    auto rstCol = a.removeFromRight(26);
+
+    // Cap the row height so the value boxes / dropdowns aren't stretched to fill
+    // the full-height column; the 4 osc rows sit at the top, gap below.
+    constexpr int kMaxRowH = 38;
+    const int contentH = std::min(a.getHeight(), kNumOscillators * kMaxRowH);
+    auto grid = a.removeFromTop(contentH);
+    auto rstGrid = rstCol.removeFromTop(contentH);
 
     std::vector<int> oscParams;
     oscParams.reserve(kNumOscillators * kOscSlotCount);
     for (int i = 0; i < kNumOscillators * kOscSlotCount; ++i)
         oscParams.push_back(i);
-    layoutCells(a, oscParams, kOscSlotCount);
+    layoutCells(grid, oscParams, kOscSlotCount);
 
     // Overlay each wave dropdown on its (hidden) wave slider's bounds, so it sits
     // under the column label exactly where the value box would be.
@@ -433,13 +441,14 @@ void PolySynthUI::layoutOscSection() {
                 controls_[static_cast<size_t>(osc * kOscSlotCount)].slider->getBounds());
 
     // Reset icons, one per row, aligned with the value box (below the label).
-    const int rowH = rstCol.getHeight() / kNumOscillators;
+    const int rowH = rstGrid.getHeight() / kNumOscillators;
+    const int sz = std::min(20, rowH - kCellLabelH - 2);
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto row = rstCol.removeFromTop(rowH);
+        auto row = rstGrid.removeFromTop(rowH);
         row.removeFromTop(kCellLabelH);  // align with the box, not the column label
         if (oscResetButtons_[static_cast<size_t>(osc)])
             oscResetButtons_[static_cast<size_t>(osc)]->setBounds(
-                row.withSizeKeepingCentre(16, 16));
+                row.withSizeKeepingCentre(sz, sz));
     }
 }
 
