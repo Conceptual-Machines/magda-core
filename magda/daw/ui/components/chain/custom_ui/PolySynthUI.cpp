@@ -423,21 +423,19 @@ std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
 void PolySynthUI::layoutOscSection() {
     auto a = oscArea_.reduced(kSectionGap);
     a.removeFromTop(kSectionTitleH);
-    // Column on the right for the per-osc phase-reset toggle buttons.
-    auto rstCol = a.removeFromRight(36);
 
-    // Cap the row height so the value boxes / dropdowns aren't stretched to fill
-    // the full-height column; the 4 osc rows sit at the top, gap below.
+    // Oscillator rows at a fixed height (full width), with a reset-button column
+    // on the right; the spare space below holds the performance controls.
     constexpr int kMaxRowH = 38;
     const int contentH = std::min(a.getHeight(), kNumOscillators * kMaxRowH);
-    auto grid = a.removeFromTop(contentH);
-    auto rstGrid = rstCol.removeFromTop(contentH);
+    auto oscRegion = a.removeFromTop(contentH);
+    auto rstGrid = oscRegion.removeFromRight(36);
 
     std::vector<int> oscParams;
     oscParams.reserve(kNumOscillators * kOscSlotCount);
     for (int i = 0; i < kNumOscillators * kOscSlotCount; ++i)
         oscParams.push_back(i);
-    layoutCells(grid, oscParams, kOscSlotCount);
+    layoutCells(oscRegion, oscParams, kOscSlotCount);
 
     // Overlay each wave dropdown on its (hidden) wave slider's bounds, so it sits
     // under the column label exactly where the value box would be.
@@ -454,6 +452,24 @@ void PolySynthUI::layoutOscSection() {
         if (oscResetButtons_[static_cast<size_t>(osc)])
             oscResetButtons_[static_cast<size_t>(osc)]->setBounds(row.reduced(2, 2));
     }
+
+    // Performance controls in the spare space below the oscillator rows.
+    a.removeFromTop(kSectionGap * 2);
+    // Voice Mode segmented buttons.
+    auto modeRow = a.removeFromTop(kCellLabelH + 18);
+    modeRow = modeRow.removeFromLeft(juce::jmin(260, modeRow.getWidth()));
+    const int segW = modeRow.getWidth() / kNumVoiceModes;
+    for (int v = 0; v < kNumVoiceModes; ++v) {
+        if (!voiceModeButtons_[static_cast<size_t>(v)])
+            continue;
+        auto seg = (v == kNumVoiceModes - 1) ? modeRow
+                                             : juce::Rectangle<int>(modeRow.removeFromLeft(segW));
+        voiceModeButtons_[static_cast<size_t>(v)]->setBounds(seg);
+    }
+    a.removeFromTop(kSectionGap * 2);
+    // Glide / Bend Range / Vel>Amp / Vel>Cut in one labelled row.
+    auto perfRow = a.removeFromTop(kCellLabelH + 24);
+    layoutCells(perfRow, {kGlideSlot, kBendRangeSlot, kVelAmpSlot, kVelFilterSlot}, 4);
 }
 
 void PolySynthUI::layoutCells(juce::Rectangle<int> a, const std::vector<int>& indices, int cols) {
@@ -499,33 +515,10 @@ void PolySynthUI::layoutAdsrSection(juce::Rectangle<int> area, AdsrGraph* graph,
 void PolySynthUI::resized() {
     auto b = getLocalBounds().reduced(2);
 
-    // Global performance strip along the bottom: Voice Mode segmented buttons on
-    // the left, Bend Range box on the right.
-    {
-        auto strip = b.removeFromBottom(kCellLabelH + 22).reduced(kSectionGap, 2);
-        layoutCells(strip.removeFromRight(80), {kBendRangeSlot}, 1);
-        strip.removeFromRight(kSectionGap);
-        layoutCells(strip.removeFromRight(72), {kGlideSlot}, 1);
-        strip.removeFromRight(kSectionGap);
-        layoutCells(strip.removeFromRight(72), {kVelFilterSlot}, 1);
-        strip.removeFromRight(kSectionGap);
-        layoutCells(strip.removeFromRight(72), {kVelAmpSlot}, 1);
-        strip.removeFromRight(kSectionGap * 2);
-
-        auto modeArea = strip.removeFromLeft(juce::jmin(195, strip.getWidth()));
-        const int segW = modeArea.getWidth() / kNumVoiceModes;
-        for (int v = 0; v < kNumVoiceModes; ++v) {
-            if (!voiceModeButtons_[static_cast<size_t>(v)])
-                continue;
-            auto seg = (v == kNumVoiceModes - 1)
-                           ? modeArea
-                           : juce::Rectangle<int>(modeArea.removeFromLeft(segW));
-            voiceModeButtons_[static_cast<size_t>(v)]->setBounds(seg);
-        }
-    }
-
     // Three columns: OSC and FILTER (with the response curve) full-height on the
-    // left, the two envelopes stacked in a narrower column on the right.
+    // left, the two envelopes stacked in a narrower column on the right. The
+    // performance controls (Voice Mode + Glide/Bend/Velocity) live in the OSC
+    // column's spare space below the oscillator rows.
     const int adsrW = b.getWidth() * 2 / 7;
     const int mainW = b.getWidth() - adsrW;
     const int colW = mainW / 2;
