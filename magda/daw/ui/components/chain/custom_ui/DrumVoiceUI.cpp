@@ -34,6 +34,13 @@ juce::String DrumVoiceUI::titleFor(const juce::String& pluginId) {
 
 std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& pluginId) {
     // Slot indices match the [idx:N] pins in each voice's .dsp.
+    if (pluginId.equalsIgnoreCase("magda_hat"))
+        return {
+            // Ring: level, pitch, spread, decay.
+            {"Ring", {0, 1, 2, 3}},
+            // Noise: level, tone, decay.
+            {"Noise", {4, 5, 6}},
+        };
     if (pluginId.equalsIgnoreCase("magda_kick"))
         return {
             // Transient: amount, pitch, sweep, decay.

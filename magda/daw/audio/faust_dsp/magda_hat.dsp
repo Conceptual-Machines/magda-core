@@ -1,5 +1,5 @@
 declare name "MagdaHat";
-declare description "Old-school drum-machine hi-hat: phase-modulated metallic tone through a resonant lowpass (Faust synths.lib sy.hat). One device covers closed and open: a short Decay is a closed hat, a long Decay is an open hat. Knob-tuned; the played MIDI note only gates the voice. Pitch/Tone/Attack/Decay are host macros.";
+declare description "Synthetic hi-hat in two layers with independent controls: a metallic Ring (inharmonic additive partials, with a Spread/dissonance control) and a high-passed Noise sizzle, each with its own level and decay. Short decays = closed hat, long = open. Knob-tuned; the played MIDI note only gates the voice.";
 
 import("stdfaust.lib");
 
@@ -11,17 +11,32 @@ gain = hslider("gain", 1, 0, 1, 0.01);
 gate = button("gate");
 
 // ============================================================================
-// Host macro controls ([idx:N])
+// Host macro controls ([idx:N]) - grouped Ring / Noise.
+// Time controls are in milliseconds (* 0.001 -> the seconds en.ar expects).
 // ============================================================================
-// Time controls are in milliseconds (* 0.001 converts to the seconds sy.hat
-// expects, same convention as magda_fm.dsp).
-pitch  = hslider("Pitch [idx:0]",  800,  317, 3170,  1);
-tone   = hslider("Tone [idx:1]",   8000, 800, 18000, 1);
-attack = hslider("Attack [idx:2]", 0,    0,   200,   0.1) * 0.001;
-decay  = hslider("Decay [idx:3]",  100,  1,   4000,  1) * 0.001;
+// Ring (inharmonic additive partials)
+ringLvl   = hslider("Ring [idx:0]",       0.6,  0.0, 1.0,  0.001);
+ringPitch = hslider("Pitch [idx:1]",      540,  200, 2000, 1);
+spread    = hslider("Spread [idx:2]",     1.0,  0.5, 2.0,  0.001);
+ringDec   = hslider("Ring Decay [idx:3]", 300,  10,  2000, 1) * 0.001;
+// Noise
+noiseLvl  = hslider("Noise [idx:4]",       0.5,  0.0, 1.0,   0.001);
+tone      = hslider("Tone [idx:5]",        8000, 800, 18000, 1);
+noiseDec  = hslider("Noise Decay [idx:6]", 100,  5,   2000,  1) * 0.001;
 
 // ============================================================================
-// Voice
+// Voice: metallic Ring + Noise sizzle.
 // ============================================================================
-voice   = sy.hat(pitch, tone, attack, decay, gate) * gain;
+// Inharmonic additive ring (sy.additiveDrum, sine partials). Spread scales each
+// partial's deviation from the fundamental: 1 = nominal metallic, >1 more
+// dissonant, <1 toward harmonic/bell. The fundamental (ratio 1) stays fixed.
+sr(b)  = 1.0 + (b - 1.0) * spread;
+ratios = (sr(1.0), sr(1.34), sr(1.81), sr(2.27), sr(2.67), sr(3.08));
+gains  = (1.0, 0.8, 0.7, 0.6, 0.5, 0.45);
+ring   = sy.additiveDrum(ringPitch, ratios, gains, 0.5, 0.001, ringDec, gate) * ringLvl;
+
+// High-passed noise sizzle with its own decay.
+noise  = (no.noise : fi.highpass(3, tone)) * en.ar(0.001, noiseDec, gate) * noiseLvl;
+
+voice   = ma.tanh(ring + noise) * gain;
 process = voice <: _, _;
