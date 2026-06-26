@@ -36,10 +36,12 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
     // Slot indices match the [idx:N] pins in each voice's .dsp.
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
-            // Body: Tune, Attack, Snap, Snap Time, Body Decay.
-            {"Body", {0, 3, 6, 7, 4}},
-            // Rattle: Snappy (snare amount), Tone, HP Freq, HP Reso, Rattle Decay, Drive.
-            {"Rattle", {2, 1, 8, 9, 5, 10}},
+            // Transient: amount, tone.
+            {"Transient", {0, 1}},
+            // Body: Tune, Snap, Snap Time, Attack, Body Decay.
+            {"Body", {2, 3, 4, 5, 6}},
+            // Rattle/tail: Snappy, Tone, HP Freq, HP Reso, Rattle Decay, Drive.
+            {"Rattle", {7, 8, 9, 10, 11, 12}},
         };
     return {};  // other voices: single flat row
 }
