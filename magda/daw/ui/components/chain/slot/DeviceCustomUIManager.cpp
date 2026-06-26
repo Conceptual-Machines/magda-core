@@ -24,6 +24,7 @@
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MidiFileWriter.hpp"
@@ -39,8 +40,11 @@
 #include "custom_ui/FaustUI.hpp"
 #include "custom_ui/FilterUI.hpp"
 #include "custom_ui/FourOscUI.hpp"
+#include "custom_ui/HaloUI.hpp"
 #include "custom_ui/ImpulseResponseUI.hpp"
 #include "custom_ui/LevelsUI.hpp"
+#include "custom_ui/MateriaUI.hpp"
+#include "custom_ui/NimbusUI.hpp"
 #include "custom_ui/OscilloscopeUI.hpp"
 #include "custom_ui/PhaserUI.hpp"
 #include "custom_ui/PitchShiftUI.hpp"
@@ -273,6 +277,12 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return polySynthUI_.get();
     if (fmUI_)
         return fmUI_.get();
+    if (materiaUI_)
+        return materiaUI_.get();
+    if (haloUI_)
+        return haloUI_.get();
+    if (nimbusUI_)
+        return nimbusUI_.get();
     if (eqUI_)
         return eqUI_.get();
     if (compressorUI_)
@@ -321,6 +331,12 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return polySynthUI_->getLinkableSliders();
     if (fmUI_)
         return fmUI_->getLinkableSliders();
+    if (materiaUI_)
+        return materiaUI_->getLinkableSliders();
+    if (haloUI_)
+        return haloUI_->getLinkableSliders();
+    if (nimbusUI_)
+        return nimbusUI_->getLinkableSliders();
     if (toneGeneratorUI_)
         return toneGeneratorUI_->getLinkableSliders();
     if (compressorUI_)
@@ -352,10 +368,10 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || faustInstrumentUI_ ||
-           polySynthUI_ || fmUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
-           phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ || faustUI_ ||
-           chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
-           oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+           polySynthUI_ || fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || eqUI_ || compressorUI_ ||
+           reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
+           impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
+           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -367,6 +383,12 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 720;  // osc + filter columns + stacked envelope column on one page
     if (fmUI_)
         return 740;  // 4x4 matrix + 4 operator columns + wider amp/right column
+    if (materiaUI_)
+        return 720;  // VOICE row + EXCITER | RESONATOR two-column faceplate
+    if (haloUI_)
+        return 760;  // modal-response spectrum + PARAMETERS | RESONATOR MODEL
+    if (nimbusUI_)
+        return 720;  // grain cloud + PARAMETERS | mode controls
     if (eqUI_)
         return 400;
     if (compressorUI_)
@@ -475,6 +497,12 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         polySynthUI_->updateFromParameters(device.parameters);
     if (fmUI_ && device.pluginId.equalsIgnoreCase("magda_fm"))
         fmUI_->updateFromParameters(device.parameters);
+    if (materiaUI_ && device.pluginId.equalsIgnoreCase("magda_elements"))
+        materiaUI_->updateFromParameters(device.parameters);
+    if (haloUI_ && device.pluginId.equalsIgnoreCase("magda_rings"))
+        haloUI_->updateFromParameters(device.parameters);
+    if (nimbusUI_ && device.pluginId.equalsIgnoreCase("magda_clouds"))
+        nimbusUI_->updateFromParameters(device.parameters);
     if (eqUI_ && device.pluginId.equalsIgnoreCase("eq"))
         eqUI_->updateFromParameters(device.parameters);
     if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
@@ -1153,6 +1181,33 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*fmUI_);
         fmUI_->updateFromParameters(device.parameters);
+    } else if (device.pluginId.equalsIgnoreCase("magda_elements")) {
+        materiaUI_ = std::make_unique<MateriaUI>();
+        materiaUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+            if (cb.onParameterChanged)
+                cb.onParameterChanged(paramIndex, value);
+        };
+        parent->addAndMakeVisible(*materiaUI_);
+        materiaUI_->updateFromParameters(device.parameters);
+    } else if (device.pluginId.equalsIgnoreCase("magda_rings")) {
+        haloUI_ = std::make_unique<HaloUI>();
+        haloUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+            if (cb.onParameterChanged)
+                cb.onParameterChanged(paramIndex, value);
+        };
+        parent->addAndMakeVisible(*haloUI_);
+        haloUI_->updateFromParameters(device.parameters);
+    } else if (device.pluginId.equalsIgnoreCase("magda_clouds")) {
+        nimbusUI_ = std::make_unique<NimbusUI>();
+        nimbusUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+            if (cb.onParameterChanged)
+                cb.onParameterChanged(paramIndex, value);
+        };
+        parent->addAndMakeVisible(*nimbusUI_);
+        nimbusUI_->updateFromParameters(device.parameters);
+        // Bind the live plugin for the grain-buffer input view; re-run from
+        // setDevicePath() since create() runs before the path is valid.
+        bindAnalyzerPlugins();
     } else if (device.pluginId.containsIgnoreCase("4osc")) {
         fourOscUI_ = std::make_unique<FourOscUI>();
         fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
@@ -1462,7 +1517,8 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
 }
 
 void DeviceCustomUIManager::bindAnalyzerPlugins() {
-    if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr && levelsUI_ == nullptr)
+    if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr && levelsUI_ == nullptr &&
+        nimbusUI_ == nullptr)
         return;
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (audioEngine == nullptr)
@@ -1482,6 +1538,9 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     if (levelsUI_ != nullptr)
         if (auto* lv = dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()))
             levelsUI_->setPlugin(lv);
+    if (nimbusUI_ != nullptr)
+        if (auto* cl = dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin.get()))
+            nimbusUI_->setPlugin(cl);
 }
 
 // =============================================================================

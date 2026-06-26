@@ -40,6 +40,9 @@ enum class InternalDeviceKind {
     TeLevelMeter,
     // --- MAGDA native instrument / MIDI plugins ------------------------
     MagdaSampler,
+    MutableElements,
+    MutableRings,
+    MutableClouds,
     DrumGrid,
     MidiReceive,
     MidiChordEngine,

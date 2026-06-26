@@ -1,5 +1,7 @@
 #include "plugins/InternalPluginRegistry.hpp"
 
+#include <array>
+
 #include "TracktionHelpers.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/DrumGridPlugin.hpp"
@@ -17,6 +19,9 @@
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/TrackMeasurementPlugin.hpp"
+#include "plugins/mutable/MutableCloudsPlugin.hpp"
+#include "plugins/mutable/MutableElementsPlugin.hpp"
+#include "plugins/mutable/MutableRingsPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/internal/MidiDeviceProcessors.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
@@ -180,15 +185,32 @@ const InternalPluginSpec kSpecs[] = {
      "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics).",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kLevelsAliases,
      std::size(kLevelsAliases), matches<LevelsPlugin>, nullptr, true},
+    {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, "Materia", "Synth",
+     "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike exciter into a "
+     "modal + string resonator and stereo space).",
+     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0,
+     matches<MutableElementsPlugin>, makeProcessor<MutableElementsProcessor>, true, true},
+    {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, "Halo", "Synth",
+     "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic / inharmonic / "
+     "FM models) excited by MIDI.",
+     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableRingsPlugin>,
+     makeProcessor<MutableRingsProcessor>, true, true},
+    {InternalDeviceKind::MutableClouds, MutableCloudsPlugin::xmlTypeName, "Nimbus", "Texture",
+     "Mutable Instruments Clouds port: granular texture processor (granular / stretch / "
+     "looping-delay / spectral) with freeze.",
+     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableCloudsPlugin>,
+     makeProcessor<MutableCloudsProcessor>, true, false},
 };
 
-const InternalPluginSpec* const kSpecPtrs[] = {
-    &kSpecs[0],  &kSpecs[1],  &kSpecs[2],  &kSpecs[3],  &kSpecs[4],  &kSpecs[5],
-    &kSpecs[6],  &kSpecs[7],  &kSpecs[8],  &kSpecs[9],  &kSpecs[10], &kSpecs[11],
-    &kSpecs[12], &kSpecs[13], &kSpecs[14], &kSpecs[15], &kSpecs[16], &kSpecs[17],
-    &kSpecs[18], &kSpecs[19], &kSpecs[20], &kSpecs[21], &kSpecs[22], &kSpecs[23],
-    &kSpecs[24], &kSpecs[25], &kSpecs[26], &kSpecs[27], &kSpecs[28],
-};
+// Pointer view over kSpecs, derived from the table so it can never desync.
+// (A hand-maintained index list previously fell behind and silently hid the
+// last few devices from the browser and from classification.)
+const auto kSpecPtrs = [] {
+    std::array<const InternalPluginSpec*, std::size(kSpecs)> ptrs{};
+    for (size_t i = 0; i < std::size(kSpecs); ++i)
+        ptrs[i] = &kSpecs[i];
+    return ptrs;
+}();
 
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {
     if (spec.pluginId != nullptr && type.equalsIgnoreCase(spec.pluginId))
@@ -231,7 +253,7 @@ bool shouldUseTracktionStringFactory(InternalDeviceKind kind) {
 }  // namespace
 
 std::span<const InternalPluginSpec* const> getAllInternalPluginSpecs() {
-    return {kSpecPtrs, std::size(kSpecPtrs)};
+    return {kSpecPtrs.data(), kSpecPtrs.size()};
 }
 
 const InternalPluginSpec* findInternalPluginSpec(InternalDeviceKind kind) {

@@ -7,8 +7,6 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
-#include "audio/plugins/FaustPlugin.hpp"
-#include "audio/plugins/IFaustEditorModel.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
@@ -1095,23 +1093,8 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         aiPanel_->setDevicePluginId(device_.pluginId);
     }
     // Same story for FaustUI: createCustomUI ran before nodePath_ was
-    // valid, so the load flow couldn't fire notifyTrackDevicesChanged.
-    if (faustUI_) {
-        faustUI_->setDevicePath(nodePath_);
-
-        // createCustomUI() also runs in the constructor, before setNodePath(),
-        // so the inline-UI factory's getLivePlugin() resolved against an empty
-        // path, returned null, and never called setPlugin(). That left the
-        // Faust UI's plugin pointer null, so Load / Edit / "From file..." all
-        // silently early-return. Now that the path is valid, resolve the live
-        // plugin and bind it (mirrors the aiPanel_ fixup above).
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
-            if (auto* bridge = audioEngine->getAudioBridge())
-                if (auto plugin = bridge->getPlugin(nodePath_))
-                    if (auto* faustModel =
-                            dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get()))
-                        faustUI_->setPlugin(faustModel);
-    }
+    // valid, so resolve the live plugin again once the path is known.
+    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get());
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
@@ -2257,118 +2240,40 @@ void DeviceSlotComponent::showContextMenu() {
 // =============================================================================
 
 void DeviceSlotComponent::createCustomUI() {
-    DeviceSlotInlineUiCallbacks callbacks;
-    callbacks.onParameterChanged = [this](int paramIndex, float value) {
-        if (!nodePath_.isValid())
-            return;
-        magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, paramIndex, value);
-    };
-    callbacks.onLayoutChanged = [this]() {
-        // Force this slot to re-lay out its internal body even when the
-        // parent chain doesn't change the slot's outer bounds. The EQ's
-        // "collapse knobs" toggle, in particular, swaps between curve-only
-        // and curve-plus-grid without resizing the slot itself, so JUCE's
-        // bounds-based resized() would otherwise stay silent.
-        resized();
-        if (onDeviceLayoutChanged)
-            onDeviceLayoutChanged();
-    };
-    callbacks.onParamModulationChanged = [this]() { updateParamModulation(); };
-    callbacks.onUpdateModsPanel = [this]() { updateModsPanel(); };
-    callbacks.onUpdateMacroPanel = [this]() { updateMacroPanel(); };
-    callbacks.onCompiledParamLinkRequested = [this](int paramIndex, float amount) {
-        if (!nodePath_.isValid())
-            return;
-
-        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
-        amount = juce::jlimit(-1.0f, 1.0f, amount);
-        auto& linkMode = magda::LinkModeManager::getInstance();
-
-        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
-            const auto selection = linkMode.getModInLinkMode();
-            if (!selection.isValid())
-                return;
-
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setModTarget(ownerPath, selection.modIndex, target);
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
-                                                                target, amount);
-            if (selection.parentPath == nodePath_) {
-                updateModsPanel();
+    auto callbacks = makeDeviceSlotInlineUiCallbacks({
+        .getNodePath = [this]() { return nodePath_; },
+        .onLayoutChanged =
+            [this]() {
+                // Force this slot to re-lay out its internal body even when the
+                // parent chain doesn't change the slot's outer bounds. The EQ's
+                // "collapse knobs" toggle, in particular, swaps between curve-only
+                // and curve-plus-grid without resizing the slot itself, so JUCE's
+                // bounds-based resized() would otherwise stay silent.
+                resized();
+                if (onDeviceLayoutChanged)
+                    onDeviceLayoutChanged();
+            },
+        .onParamModulationChanged = [this]() { updateParamModulation(); },
+        .onUpdateModsPanel = [this]() { updateModsPanel(); },
+        .onUpdateMacroPanel = [this]() { updateMacroPanel(); },
+        .onShowDeviceModPanel =
+            [this]() {
                 if (!modPanelVisible_) {
                     modButton_->setToggleState(true, juce::dontSendNotification);
                     modButton_->setActive(true);
                     setModPanelVisible(true);
                 }
-                magda::SelectionManager::getInstance().selectMod(nodePath_, selection.modIndex);
-            }
-            updateParamModulation();
-            return;
-        }
-
-        if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
-            const auto selection = linkMode.getMacroInLinkMode();
-            if (!selection.isValid())
-                return;
-
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setMacroTarget(ownerPath, selection.macroIndex,
-                                                              target);
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
-                                                                  target, amount);
-            if (selection.parentPath == nodePath_) {
-                updateMacroPanel();
+            },
+        .onShowDeviceMacroPanel =
+            [this]() {
                 if (!paramPanelVisible_) {
                     macroButton_->setToggleState(true, juce::dontSendNotification);
                     macroButton_->setActive(true);
                     setParamPanelVisible(true);
                 }
-            }
-            updateParamModulation();
-        }
-    };
-    callbacks.onCompiledParamLinkAmountChanged = [this](int paramIndex, float amount) {
-        if (!nodePath_.isValid())
-            return;
-
-        const auto target = magda::ControlTarget::pluginParam(nodePath_, paramIndex);
-        amount = juce::jlimit(-1.0f, 1.0f, amount);
-        auto& linkMode = magda::LinkModeManager::getInstance();
-
-        if (linkMode.getLinkModeType() == magda::LinkModeType::Mod) {
-            const auto selection = linkMode.getModInLinkMode();
-            if (!selection.isValid())
-                return;
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex,
-                                                                target, amount);
-            updateParamModulation();
-        } else if (linkMode.getLinkModeType() == magda::LinkModeType::Macro) {
-            const auto selection = linkMode.getMacroInLinkMode();
-            if (!selection.isValid())
-                return;
-            const auto ownerPath =
-                selection.parentPath.getType() == magda::ChainNodeType::Track
-                    ? magda::ChainNodePath::trackLevel(selection.parentPath.trackId)
-                    : selection.parentPath;
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, selection.macroIndex,
-                                                                  target, amount);
-            updateParamModulation();
-        }
-    };
-    callbacks.onShowAutomationLane = [this](int paramIndex) {
-        showAutomationLaneForParam(paramIndex);
-    };
-    callbacks.getNodePath = [this]() { return nodePath_; };
+            },
+        .onShowAutomationLane = [this](int paramIndex) { showAutomationLaneForParam(paramIndex); },
+    });
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,
                                                       {.compiledPanel = compiledPanel_,
@@ -2405,19 +2310,7 @@ void DeviceSlotComponent::updateCustomUI() {
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {
-    if (!nodePath_.isValid())
-        return;
-
-    if (compiledPanel_ != nullptr) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(nodePath_);
-                compiledPanel_->bindPlugin(plugin.get());
-            }
-        }
-    }
-
-    customUI_.refreshLivePluginBindings();
+    refreshDeviceSlotInlineUiPluginBindings(nodePath_, compiledPanel_.get(), customUI_);
 }
 
 void DeviceSlotComponent::wirePadChainLinkCallbacks() {
@@ -2484,45 +2377,29 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
 }
 
 void DeviceSlotComponent::setupCustomUILinking() {
-    // Collect linkable sliders from whichever custom UI is active
     auto sliders = customUI_.getLinkableSliders();
-
     if (sliders.empty())
         return;
 
     const auto context = resolveDeviceSlotModulationContext(
         nodePath_, getModsData(), getMacrosData(), selectedModIndex_, selectedMacroIndex_);
 
-    for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
-        auto* slider = sliders[static_cast<size_t>(i)];
-
-        // Use pre-set param index if available, otherwise use vector position
-        int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
-        // Set link context
-        slider->setLinkContext(device_.id, paramIdx, nodePath_);
-        // Single source of truth: the processor-published ParameterInfo drives
-        // range/skew/formatter/parser on the slider. Overrides whatever the
-        // custom UI hardcoded at construction.
-        if (const auto* info = device_.findParameterByIndex(paramIdx))
-            slider->setParameterInfo(*info);
-        slider->setAvailableMods(context.deviceMods);
-        slider->setAvailableRackMods(context.rackMods);
-        slider->setAvailableMacros(context.deviceMacros);
-        slider->setAvailableRackMacros(context.rackMacros);
-        slider->setAvailableTrackMods(context.trackMods);
-        slider->setAvailableTrackMacros(context.trackMacros);
-        slider->setSelectedModIndex(context.selectedModIndex);
-        slider->setSelectedMacroIndex(context.selectedMacroIndex);
-
-        wireSharedModMacroLinkCallbacks(*slider, false);
-
-        slider->onShowAutomationLane = [safeThis = juce::Component::SafePointer(this), slider]() {
+    configureDeviceSlotLinkableSliders(
+        sliders, device_, nodePath_, context,
+        [safeThis = juce::Component::SafePointer(this)](LinkableTextSlider& slider) {
             auto self = safeThis;
-            if (!self || !slider)
+            if (!self)
                 return;
-            self->showAutomationLaneForParam(slider->getParamIndex());
-        };
-    }
+
+            self->wireSharedModMacroLinkCallbacks(slider, false);
+            auto* sliderPtr = &slider;
+            slider.onShowAutomationLane = [safeThis, sliderPtr]() {
+                auto self = safeThis;
+                if (!self || sliderPtr == nullptr)
+                    return;
+                self->showAutomationLaneForParam(sliderPtr->getParamIndex());
+            };
+        });
 }
 
 // =============================================================================
