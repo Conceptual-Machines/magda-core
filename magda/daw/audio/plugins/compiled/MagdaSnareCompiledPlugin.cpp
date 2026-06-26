@@ -53,15 +53,34 @@ std::vector<MagdaSnareCompiledPlugin::HostSlotInfo> MagdaSnareCompiledPlugin::vo
          .maxValue = 1.0f,
          .defaultValue = 0.6f},
         {.name = "Attack",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 0.001f,
-         .maxValue = 0.1f,
-         .defaultValue = 0.002f},
-        {.name = "Decay",
+         .minValue = 1.0f,
+         .maxValue = 100.0f,
+         .defaultValue = 2.0f},
+        {.name = "Body Decay",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 0.02f,
-         .maxValue = 1.5f,
-         .defaultValue = 0.2f},
+         .minValue = 20.0f,
+         .maxValue = 1500.0f,
+         .defaultValue = 180.0f},
+        {.name = "Rattle Decay",
+         .unit = "ms",
+         .scale = ParameterScale::Linear,
+         .minValue = 20.0f,
+         .maxValue = 1500.0f,
+         .defaultValue = 200.0f},
+        {.name = "Snap",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.3f},
+        {.name = "Snap Time",
+         .unit = "ms",
+         .scale = ParameterScale::Linear,
+         .minValue = 2.0f,
+         .maxValue = 80.0f,
+         .defaultValue = 12.0f},
     };
 }
 
@@ -70,9 +89,9 @@ const CompiledPluginSpec& getMagdaSnareSpec() {
         .pluginId = MagdaSnareCompiledPlugin::xmlTypeName,
         .displayName = "Snare",
         .browserCategory = "Drums",
-        .description = "Old-school drum-machine snare: a tuned additive body blended with a "
-                       "band-passed noise burst (Faust synths.lib). Knob-tuned, MIDI-gated - drop "
-                       "it on a DrumGrid pad or play it standalone.",
+        .description = "Old-school drum-machine snare: two tuned partials with a pitch-snap body "
+                       "blended with a band-passed noise rattle, each with its own decay. "
+                       "Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or play it standalone.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaSnareCompiledPlugin(info);
         },

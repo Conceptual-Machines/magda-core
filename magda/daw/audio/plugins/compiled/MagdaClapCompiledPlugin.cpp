@@ -42,14 +42,16 @@ std::vector<MagdaClapCompiledPlugin::HostSlotInfo> MagdaClapCompiledPlugin::voic
          .maxValue = 3500.0f,
          .defaultValue = 1500.0f},
         {.name = "Attack",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
          .minValue = 0.0f,
-         .maxValue = 0.2f,
+         .maxValue = 200.0f,
          .defaultValue = 0.0f},
         {.name = "Decay",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
          .minValue = 0.0f,
-         .maxValue = 2.0f,
+         .maxValue = 2000.0f,
          .defaultValue = 0.0f},
     };
 }

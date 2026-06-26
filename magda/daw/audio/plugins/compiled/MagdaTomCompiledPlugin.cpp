@@ -47,15 +47,17 @@ std::vector<MagdaTomCompiledPlugin::HostSlotInfo> MagdaTomCompiledPlugin::voiceS
          .maxValue = 1.0f,
          .defaultValue = 0.4f},
         {.name = "Attack",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 0.001f,
-         .maxValue = 0.1f,
-         .defaultValue = 0.003f},
+         .minValue = 1.0f,
+         .maxValue = 100.0f,
+         .defaultValue = 3.0f},
         {.name = "Decay",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 0.05f,
-         .maxValue = 2.0f,
-         .defaultValue = 0.4f},
+         .minValue = 50.0f,
+         .maxValue = 2000.0f,
+         .defaultValue = 400.0f},
     };
 }
 

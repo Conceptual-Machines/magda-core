@@ -1,5 +1,5 @@
 declare name "MagdaSnare";
-declare description "Old-school drum-machine snare: a tuned additive body (Faust synths.lib sy.additiveDrum) blended with a band-passed noise burst for the snares. Knob-tuned; the played MIDI note only gates the voice. Tune/Tone/Snappy/Attack/Decay are host macros.";
+declare description "Old-school drum-machine snare: two tuned partials with a fast downward pitch sweep (Snap) for the body, blended with a band-passed noise burst for the rattle. Body and rattle have independent decays. Knob-tuned; the played MIDI note only gates the voice. Tune/Tone/Snappy/Attack/Body Decay/Rattle Decay/Snap are host macros.";
 
 import("stdfaust.lib");
 
@@ -13,18 +13,34 @@ gate = button("gate");
 // ============================================================================
 // Host macro controls ([idx:N])
 // ============================================================================
-tune   = hslider("Tune [idx:0]",   180,   100,   400,   0.1);
-tone   = hslider("Tone [idx:1]",   3000,  800,   12000, 1);
-snappy = hslider("Snappy [idx:2]", 0.6,   0.0,   1.0,   0.001);
-attack = hslider("Attack [idx:3]", 0.002, 0.001, 0.1,   0.001);
-decay  = hslider("Decay [idx:4]",  0.2,   0.02,  1.5,   0.001);
+// Time controls are in milliseconds (range + box); the * 0.001 converts to the
+// seconds en.ar expects (same convention as magda_fm.dsp).
+tune      = hslider("Tune [idx:0]",         180,  100, 400,   0.1);
+tone      = hslider("Tone [idx:1]",         3000, 800, 12000, 1);
+snappy    = hslider("Snappy [idx:2]",       0.6,  0.0, 1.0,   0.001);
+attack    = hslider("Attack [idx:3]",       2,    1,   100,   0.1) * 0.001;
+bodyDec   = hslider("Body Decay [idx:4]",   180,  20,  1500,  1) * 0.001;
+rattleDec = hslider("Rattle Decay [idx:5]", 200,  20,  1500,  1) * 0.001;
+snap      = hslider("Snap [idx:6]",         0.3,  0.0, 1.0,   0.001);
+snapTime  = hslider("Snap Time [idx:7]",    12,   2,   80,    0.1) * 0.001;
 
 // ============================================================================
-// Voice: tuned two-mode body + band-passed noise snares, blended by Snappy.
+// Voice
 // ============================================================================
-body     = sy.additiveDrum(tune, (1, 1.58), (1, 0.7), 0.5, attack, decay, gate);
-noiseEnv = en.ar(0.001 + attack, decay * 0.7, gate);
-snares   = (no.noise : fi.resonbp(tone, 0.8, 1.0)) * noiseEnv;
+// Body: two tuned partials (fundamental + ~1.59x) with a fast downward pitch
+// sweep (Snap sets the depth - the membrane "snap") under its own amp AR.
+bodyEnv  = en.ar(attack, bodyDec, gate);
+// Fast pitch snap, independent of Body Decay so the drop stays snappy however
+// long the body rings. Snap sets the depth, Snap Time the speed (~2-80 ms).
+pitchEnv = en.ar(0.0005, snapTime, gate);
+f0       = tune * (1 + pitchEnv * snap);
+partials = os.osc(f0) * 0.8 + os.osc(f0 * 1.59) * 0.5;
+body     = partials * bodyEnv;
 
-voice   = ma.tanh(body * (1.0 - 0.5 * snappy) + snares * snappy * 1.5) * gain;
+// Rattle: band-passed noise burst with its own independent decay.
+rattleEnv = en.ar(0.001 + attack, rattleDec, gate);
+rattle    = (no.noise : fi.resonbp(tone, 0.8, 1.0)) * rattleEnv;
+
+// Snappy crossfades body <-> rattle; tanh keeps the sum bounded.
+voice   = ma.tanh(body * (1.0 - 0.5 * snappy) + rattle * snappy * 1.5) * gain;
 process = voice <: _, _;

@@ -13,10 +13,12 @@ gate = button("gate");
 // ============================================================================
 // Host macro controls ([idx:N])
 // ============================================================================
-tune   = hslider("Tune [idx:0]",   120,   50,    400, 0.1);
-bend   = hslider("Bend [idx:1]",   0.4,   0.0,   1.0, 0.001);
-attack = hslider("Attack [idx:2]", 0.003, 0.001, 0.1, 0.001);
-decay  = hslider("Decay [idx:3]",  0.4,   0.05,  2.0, 0.001);
+// Time controls are in milliseconds (* 0.001 converts to the seconds en.adsr
+// expects, same convention as magda_fm.dsp).
+tune   = hslider("Tune [idx:0]",   120, 50,  400,  0.1);
+bend   = hslider("Bend [idx:1]",   0.4, 0.0, 1.0,  0.001);
+attack = hslider("Attack [idx:2]", 3,   1,   100,  0.1) * 0.001;
+decay  = hslider("Decay [idx:3]",  400, 50,  2000, 1) * 0.001;
 
 // ============================================================================
 // Voice: pitch-swept sine (Bend sets the sweep depth) under a percussive AR.

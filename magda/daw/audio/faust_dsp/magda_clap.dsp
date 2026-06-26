@@ -13,9 +13,11 @@ gate = button("gate");
 // ============================================================================
 // Host macro controls ([idx:N])
 // ============================================================================
+// Time controls are in milliseconds (* 0.001 converts to the seconds sy.clap
+// expects, same convention as magda_fm.dsp).
 tone   = hslider("Tone [idx:0]",   1500, 400, 3500, 1);
-attack = hslider("Attack [idx:1]", 0.0,  0.0, 0.2,  0.001);
-decay  = hslider("Decay [idx:2]",  0.0,  0.0, 2.0,  0.001);
+attack = hslider("Attack [idx:1]", 0,    0,   200,  0.1) * 0.001;
+decay  = hslider("Decay [idx:2]",  0,    0,   2000, 1) * 0.001;
 
 // ============================================================================
 // Voice
