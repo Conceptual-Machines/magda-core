@@ -23,6 +23,9 @@ MutableElementsProcessor::MutableElementsProcessor(DeviceId deviceId, te::Plugin
 MutableRingsProcessor::MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
+MutableCloudsProcessor::MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+
 // =============================================================================
 // FourOscProcessor
 // =============================================================================

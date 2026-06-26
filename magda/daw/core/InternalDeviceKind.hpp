@@ -42,6 +42,7 @@ enum class InternalDeviceKind {
     MagdaSampler,
     MutableElements,
     MutableRings,
+    MutableClouds,
     DrumGrid,
     MidiReceive,
     MidiChordEngine,

@@ -367,6 +367,7 @@ target_sources(magda_daw PRIVATE
     plugins/MagdaSamplerPlugin.cpp
     plugins/mutable/MutableElementsPlugin.cpp
     plugins/mutable/MutableRingsPlugin.cpp
+    plugins/mutable/MutableCloudsPlugin.cpp
     plugins/DrumGridPlugin.cpp
     plugins/MidiChordEnginePlugin.cpp
     plugins/ArpeggiatorPlugin.cpp

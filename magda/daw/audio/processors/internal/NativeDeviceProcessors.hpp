@@ -35,6 +35,14 @@ class MutableRingsProcessor : public AutomatablePluginProcessor {
 };
 
 /**
+ * @brief Processor for the native Mutable Instruments Clouds granular FX.
+ */
+class MutableCloudsProcessor : public AutomatablePluginProcessor {
+  public:
+    MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+};
+
+/**
  * @brief Processor for the built-in 4OSC synthesizer
  *
  * Enumerates parameters generically from plugin->getAutomatableParameters().

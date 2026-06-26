@@ -19,6 +19,7 @@
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/TrackMeasurementPlugin.hpp"
+#include "plugins/mutable/MutableCloudsPlugin.hpp"
 #include "plugins/mutable/MutableElementsPlugin.hpp"
 #include "plugins/mutable/MutableRingsPlugin.hpp"
 #include "processors/DeviceProcessor.hpp"
@@ -194,6 +195,11 @@ const InternalPluginSpec kSpecs[] = {
      "FM models) excited by MIDI.",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableRingsPlugin>,
      makeProcessor<MutableRingsProcessor>, true, true},
+    {InternalDeviceKind::MutableClouds, MutableCloudsPlugin::xmlTypeName, "Clouds", "Texture",
+     "Mutable Instruments Clouds port: granular texture processor (granular / stretch / "
+     "looping-delay / spectral) with freeze.",
+     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableCloudsPlugin>,
+     makeProcessor<MutableCloudsProcessor>, true, false},
 };
 
 // Pointer view over kSpecs, derived from the table so it can never desync.

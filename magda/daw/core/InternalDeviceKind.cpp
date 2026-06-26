@@ -22,6 +22,7 @@
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/TrackMeasurementPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "audio/plugins/mutable/MutableElementsPlugin.hpp"
 #include "audio/plugins/mutable/MutableRingsPlugin.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
@@ -83,6 +84,9 @@ const InternalDeviceMetadata kMetadata[] = {
     {InternalDeviceKind::MutableRings, "Rings", "", "Synth",
      "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic-string / "
      "inharmonic / FM models) excited by MIDI."},
+    {InternalDeviceKind::MutableClouds, "Clouds", "", "Texture",
+     "Mutable Instruments Clouds port: granular texture processor (granular / stretch / "
+     "looping-delay / spectral) with freeze, processing the track audio."},
     {InternalDeviceKind::DrumGrid, "Drum Grid", "", "Drums",
      "Pad-based drum instrument with per-pad sample and effect chains."},
     {InternalDeviceKind::MidiReceive, "MIDI Receive", "", "MIDI",
@@ -162,6 +166,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
     using daw::audio::MidiStrumPlugin;
+    using daw::audio::MutableCloudsPlugin;
     using daw::audio::MutableElementsPlugin;
     using daw::audio::MutableRingsPlugin;
     using daw::audio::OscilloscopePlugin;
@@ -193,6 +198,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::MutableClouds, MutableCloudsPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::DrumGrid, DrumGridPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, nullptr},
