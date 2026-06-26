@@ -36,6 +36,29 @@ juce::String MagdaKickCompiledPlugin::getSelectableDescription() {
 std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voiceSlotInfos() const {
     using magda::ParameterScale;
     return {
+        // Transient (pitched sine sweep)
+        {.name = "Transient",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
+        {.name = "Trans Pitch",
+         .scale = ParameterScale::Linear,
+         .minValue = 60.0f,
+         .maxValue = 1000.0f,
+         .defaultValue = 220.0f},
+        {.name = "Trans Sweep",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
+        {.name = "Trans Decay",
+         .unit = "ms",
+         .scale = ParameterScale::Linear,
+         .minValue = 1.0f,
+         .maxValue = 100.0f,
+         .defaultValue = 8.0f},
+        // Body
         {.name = "Pitch",
          .scale = ParameterScale::Linear,
          .minValue = 30.0f,
@@ -69,11 +92,17 @@ std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voic
          .minValue = 1.0f,
          .maxValue = 10.0f,
          .defaultValue = 2.0f},
+        // Click
         {.name = "Click",
          .scale = ParameterScale::Linear,
          .minValue = 0.0f,
          .maxValue = 1.0f,
          .defaultValue = 0.3f},
+        {.name = "Click Tone",
+         .scale = ParameterScale::Linear,
+         .minValue = 500.0f,
+         .maxValue = 12000.0f,
+         .defaultValue = 2000.0f},
     };
 }
 
@@ -82,9 +111,11 @@ const CompiledPluginSpec& getMagdaKickSpec() {
         .pluginId = MagdaKickCompiledPlugin::xmlTypeName,
         .displayName = "Kick",
         .browserCategory = "Drums",
-        .description = "Old-school drum-machine kick (808/909 lineage): a pitched sine sweep into "
-                       "a saturator, plus a noise click transient. Knob-tuned, MIDI-gated - drop "
-                       "it on a DrumGrid pad or play it standalone.",
+        .description =
+            "Synthetic kick in three layers: a Transient (pitched sine sweep), a Body "
+            "(low pitch-snap sine into a saturator) that auto-ducks under the transient, "
+            "and a noise Click. Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or "
+            "play it standalone.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaKickCompiledPlugin(info);
         },
