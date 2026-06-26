@@ -81,6 +81,21 @@ std::vector<MagdaSnareCompiledPlugin::HostSlotInfo> MagdaSnareCompiledPlugin::vo
          .minValue = 2.0f,
          .maxValue = 80.0f,
          .defaultValue = 12.0f},
+        {.name = "HP Freq",
+         .scale = ParameterScale::Linear,
+         .minValue = 20.0f,
+         .maxValue = 6000.0f,
+         .defaultValue = 300.0f},
+        {.name = "HP Reso",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.5f,
+         .maxValue = 10.0f,
+         .defaultValue = 0.7f},
+        {.name = "Drive",
+         .scale = ParameterScale::Linear,
+         .minValue = 1.0f,
+         .maxValue = 20.0f,
+         .defaultValue = 1.0f},
     };
 }
 
