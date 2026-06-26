@@ -193,20 +193,18 @@ void HaloUI::paint(juce::Graphics& g) {
                juce::Justification::centredRight);
     for (int i = 0; i < kNumPoly; ++i) {
         const bool sel = i == curPoly_;
-        const auto r = polyBtn_[static_cast<size_t>(i)].toFloat();
+        auto btn = polyBtn_[static_cast<size_t>(i)];  // local copy; removeFromBottom mutates
         g.setColour(sel ? kAccentFill : kPanel.brighter(0.06f));
-        g.fillRoundedRectangle(r, 4.0f);
+        g.fillRoundedRectangle(btn.toFloat(), 4.0f);
         g.setColour(sel ? kAccent : kBorder);
-        g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.0f);
+        g.drawRoundedRectangle(btn.toFloat().reduced(0.5f), 4.0f, 1.0f);
+        auto voicesRow = btn.removeFromBottom(13);  // btn is now just the number area
         g.setColour(sel ? juce::Colours::white : kDim);
         g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-        g.drawText(kPolyLabels[i], polyBtn_[static_cast<size_t>(i)].withTrimmedBottom(11),
-                   juce::Justification::centred);
+        g.drawText(kPolyLabels[i], btn, juce::Justification::centred);
         g.setColour(sel ? juce::Colours::white.withAlpha(0.7f) : kDim);
         g.setFont(FontManager::getInstance().getUIFont(8.0f));
-        g.drawText(i == 0 ? "VOICE" : "VOICES",
-                   polyBtn_[static_cast<size_t>(i)].removeFromBottom(12),
-                   juce::Justification::centred);
+        g.drawText(i == 0 ? "VOICE" : "VOICES", voicesRow, juce::Justification::centred);
     }
 }
 
