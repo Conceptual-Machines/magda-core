@@ -580,6 +580,92 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
     return false;
 }
 
+bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device,
+                                                 juce::Component& parent,
+                                                 const Callbacks& callbacks) {
+    if (device.pluginId.equalsIgnoreCase("eq")) {
+        eqUI_ = std::make_unique<EqualiserUI>();
+        forwardParameterChanges(*eqUI_, callbacks);
+        eqUI_->getDBGainAtFrequency = [this](float freq) -> float {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return 0.0f;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return 0.0f;
+            auto plugin = bridge->getPlugin(devicePath_);
+            if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin.get()))
+                return eq->getDBGainAtFrequency(freq);
+            return 0.0f;
+        };
+        parent.addAndMakeVisible(*eqUI_);
+        update(device);
+        return true;
+    }
+
+    if (isLegacyTeCompressorPluginId(device.pluginId)) {
+        compressorUI_ = std::make_unique<CompressorUI>();
+        forwardParameterChanges(*compressorUI_, callbacks);
+        parent.addAndMakeVisible(*compressorUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("reverb") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
+        reverbUI_ = std::make_unique<ReverbUI>();
+        forwardParameterChanges(*reverbUI_, callbacks);
+        parent.addAndMakeVisible(*reverbUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("delay") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Delay)) {
+        delayUI_ = std::make_unique<DelayUI>();
+        forwardParameterChanges(*delayUI_, callbacks);
+        parent.addAndMakeVisible(*delayUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("chorus") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Chorus)) {
+        chorusUI_ = std::make_unique<ChorusUI>();
+        forwardParameterChanges(*chorusUI_, callbacks);
+        parent.addAndMakeVisible(*chorusUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("phaser") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Phaser)) {
+        phaserUI_ = std::make_unique<PhaserUI>();
+        forwardParameterChanges(*phaserUI_, callbacks);
+        parent.addAndMakeVisible(*phaserUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("lowpass")) {
+        filterUI_ = std::make_unique<FilterUI>();
+        forwardParameterChanges(*filterUI_, callbacks);
+        parent.addAndMakeVisible(*filterUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("pitchshift")) {
+        pitchShiftUI_ = std::make_unique<PitchShiftUI>();
+        forwardParameterChanges(*pitchShiftUI_, callbacks);
+        parent.addAndMakeVisible(*pitchShiftUI_);
+        update(device);
+        return true;
+    }
+
+    return false;
+}
+
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase("tone")) {
@@ -1255,62 +1341,8 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
             fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
             pendingCustomUITabIndex_ = NO_PENDING_TAB;
         }
-    } else if (device.pluginId.equalsIgnoreCase("eq")) {
-        eqUI_ = std::make_unique<EqualiserUI>();
-        forwardParameterChanges(*eqUI_, callbacks);
-        eqUI_->getDBGainAtFrequency = [this](float freq) -> float {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return 0.0f;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return 0.0f;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin.get()))
-                return eq->getDBGainAtFrequency(freq);
-            return 0.0f;
-        };
-        parent->addAndMakeVisible(*eqUI_);
-        update(device);
-    } else if (isLegacyTeCompressorPluginId(device.pluginId)) {
-        compressorUI_ = std::make_unique<CompressorUI>();
-        forwardParameterChanges(*compressorUI_, callbacks);
-        parent->addAndMakeVisible(*compressorUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("reverb") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
-        reverbUI_ = std::make_unique<ReverbUI>();
-        forwardParameterChanges(*reverbUI_, callbacks);
-        parent->addAndMakeVisible(*reverbUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("delay") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Delay)) {
-        delayUI_ = std::make_unique<DelayUI>();
-        forwardParameterChanges(*delayUI_, callbacks);
-        parent->addAndMakeVisible(*delayUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("chorus") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Chorus)) {
-        chorusUI_ = std::make_unique<ChorusUI>();
-        forwardParameterChanges(*chorusUI_, callbacks);
-        parent->addAndMakeVisible(*chorusUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("phaser") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Phaser)) {
-        phaserUI_ = std::make_unique<PhaserUI>();
-        forwardParameterChanges(*phaserUI_, callbacks);
-        parent->addAndMakeVisible(*phaserUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("lowpass")) {
-        filterUI_ = std::make_unique<FilterUI>();
-        forwardParameterChanges(*filterUI_, callbacks);
-        parent->addAndMakeVisible(*filterUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
-        pitchShiftUI_ = std::make_unique<PitchShiftUI>();
-        forwardParameterChanges(*pitchShiftUI_, callbacks);
-        parent->addAndMakeVisible(*pitchShiftUI_);
-        update(device);
+    } else if (createSimpleEffectUI(device, *parent, callbacks)) {
+        // handled by helper
     } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
         impulseResponseUI_ = std::make_unique<ImpulseResponseUI>();
         impulseResponseUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
