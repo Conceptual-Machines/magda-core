@@ -25,13 +25,21 @@ namespace magda::daw::ui {
  */
 class DrumVoiceUI : public juce::Component {
   public:
-    explicit DrumVoiceUI(juce::String title);
+    explicit DrumVoiceUI(const juce::String& pluginId);
     ~DrumVoiceUI() override;
+
+    /// A named group of host slots, laid out as one titled column.
+    struct Section {
+        juce::String title;
+        std::vector<int> slots;
+    };
 
     /// True if `pluginId` is one of the drum-machine voice devices.
     static bool handles(const juce::String& pluginId);
     /// Faceplate title for a drum-voice `pluginId` (empty if not a drum voice).
     static juce::String titleFor(const juce::String& pluginId);
+    /// Section grouping for a voice; empty = single flat row of all slots.
+    static std::vector<Section> sectionsFor(const juce::String& pluginId);
 
     /// Push current parameter values (and ranges) into the matching boxes,
     /// building the boxes on first call once the slot count is known.
@@ -57,9 +65,14 @@ class DrumVoiceUI : public juce::Component {
 
     // Build one labelled box per host slot (idempotent: only grows to `count`).
     void ensureControls(int count);
+    // Lay the given slots out as a label-on-top row filling `area`.
+    void layoutRow(juce::Rectangle<int> area, const std::vector<int>& slots);
 
     juce::String title_;
+    std::vector<Section> sections_;
     std::vector<Control> controls_;
+    // Title strips per section, cached in resized() for paint().
+    std::vector<juce::Rectangle<int>> sectionTitleAreas_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumVoiceUI)
 };

@@ -1544,7 +1544,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         parent->addAndMakeVisible(*fmUI_);
         fmUI_->updateFromParameters(device.parameters);
     } else if (DrumVoiceUI::handles(device.pluginId)) {
-        drumVoiceUI_ = std::make_unique<DrumVoiceUI>(DrumVoiceUI::titleFor(device.pluginId));
+        drumVoiceUI_ = std::make_unique<DrumVoiceUI>(device.pluginId);
         drumVoiceUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
             if (cb.onParameterChanged)
                 cb.onParameterChanged(paramIndex, value);

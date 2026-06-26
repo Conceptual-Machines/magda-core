@@ -32,7 +32,20 @@ juce::String DrumVoiceUI::titleFor(const juce::String& pluginId) {
     return {};
 }
 
-DrumVoiceUI::DrumVoiceUI(juce::String title) : title_(std::move(title)) {}
+std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& pluginId) {
+    // Slot indices match the [idx:N] pins in each voice's .dsp.
+    if (pluginId.equalsIgnoreCase("magda_snare"))
+        return {
+            // Body: Tune, Attack, Snap, Snap Time, Body Decay.
+            {"Body", {0, 3, 6, 7, 4}},
+            // Rattle: Snappy (snare amount), Tone, HP Freq, HP Reso, Rattle Decay, Drive.
+            {"Rattle", {2, 1, 8, 9, 5, 10}},
+        };
+    return {};  // other voices: single flat row
+}
+
+DrumVoiceUI::DrumVoiceUI(const juce::String& pluginId)
+    : title_(titleFor(pluginId)), sections_(sectionsFor(pluginId)) {}
 DrumVoiceUI::~DrumVoiceUI() = default;
 
 void DrumVoiceUI::ensureControls(int count) {
@@ -81,31 +94,84 @@ std::vector<LinkableTextSlider*> DrumVoiceUI::getLinkableSliders() {
 }
 
 int DrumVoiceUI::preferredContentWidth() const {
-    const int n = juce::jmax(1, static_cast<int>(controls_.size()));
-    return n * kCellW + 2 * kCellPad;
+    int knobs = static_cast<int>(controls_.size());
+    if (!sections_.empty()) {
+        knobs = 0;
+        for (const auto& s : sections_)
+            knobs += static_cast<int>(s.slots.size());
+    }
+    return juce::jmax(1, knobs) * kCellW + 2 * kCellPad;
+}
+
+void DrumVoiceUI::layoutRow(juce::Rectangle<int> area, const std::vector<int>& slots) {
+    if (slots.empty())
+        return;
+    const int cellW = area.getWidth() / static_cast<int>(slots.size());
+    for (int idx : slots) {
+        if (idx < 0 || idx >= static_cast<int>(controls_.size()))
+            continue;
+        auto& c = controls_[static_cast<size_t>(idx)];
+        auto cell = area.removeFromLeft(cellW).reduced(2, 0);
+        c.label->setBounds(cell.removeFromTop(kCellLabelH));
+        c.slider->setBounds(cell.removeFromTop(juce::jmin(22, cell.getHeight())));
+    }
 }
 
 void DrumVoiceUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds());
 
-    auto titleArea = getLocalBounds().removeFromTop(kSectionTitleH).reduced(kCellPad, 0);
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
+
+    auto titleArea = getLocalBounds().removeFromTop(kSectionTitleH).reduced(kCellPad, 0);
     g.drawText(title_, titleArea, juce::Justification::centredLeft, false);
+
+    // Section titles + a divider down the left edge of each section after the
+    // first. sectionTitleAreas_ is filled by resized(), 1:1 with sections_.
+    for (size_t i = 0; i < sectionTitleAreas_.size() && i < sections_.size(); ++i) {
+        g.drawText(sections_[i].title, sectionTitleAreas_[i].reduced(2, 0),
+                   juce::Justification::centredLeft, false);
+        if (i > 0) {
+            const int x = sectionTitleAreas_[i].getX() - kCellPad / 2;
+            g.drawVerticalLine(x, static_cast<float>(sectionTitleAreas_[i].getY()),
+                               static_cast<float>(getHeight() - kCellPad));
+        }
+    }
 }
 
 void DrumVoiceUI::resized() {
+    sectionTitleAreas_.clear();
     auto area = getLocalBounds().reduced(kCellPad);
-    area.removeFromTop(kSectionTitleH);
+    area.removeFromTop(kSectionTitleH);  // voice-name strip (painted)
     if (controls_.empty())
         return;
 
-    const int cellW = area.getWidth() / static_cast<int>(controls_.size());
-    for (auto& c : controls_) {
-        auto cell = area.removeFromLeft(cellW).reduced(2, 0);
-        c.label->setBounds(cell.removeFromTop(kCellLabelH));
-        c.slider->setBounds(cell.removeFromTop(juce::jmin(22, cell.getHeight())));
+    if (sections_.empty()) {
+        std::vector<int> all(controls_.size());
+        for (int i = 0; i < static_cast<int>(controls_.size()); ++i)
+            all[static_cast<size_t>(i)] = i;
+        layoutRow(area, all);
+        return;
+    }
+
+    int totalKnobs = 0;
+    for (const auto& s : sections_)
+        totalKnobs += static_cast<int>(s.slots.size());
+    if (totalKnobs == 0)
+        return;
+
+    int x = area.getX();
+    for (size_t i = 0; i < sections_.size(); ++i) {
+        const auto& s = sections_[i];
+        const bool last = (i + 1 == sections_.size());
+        const int w = last ? (area.getRight() - x)
+                           : juce::roundToInt(area.getWidth() *
+                                              (static_cast<double>(s.slots.size()) / totalKnobs));
+        juce::Rectangle<int> sa(x, area.getY(), w, area.getHeight());
+        sectionTitleAreas_.push_back(sa.removeFromTop(kSectionTitleH));
+        layoutRow(sa.reduced(kCellPad, 0), s.slots);
+        x += w;
     }
 }
 
