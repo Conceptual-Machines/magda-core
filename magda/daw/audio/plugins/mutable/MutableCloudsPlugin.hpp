@@ -5,6 +5,8 @@
 #include <array>
 #include <memory>
 
+#include "audio/analysis/AudioTapBuffer.hpp"
+
 namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
@@ -83,6 +85,14 @@ class MutableCloudsPlugin : public te::Plugin {
 
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
+    // Live input-envelope tap for the faceplate's grain-buffer view: one decimated
+    // peak per bucket, ~8s of history across kEnvelopeBuckets buckets.
+    static constexpr int kEnvelopeBuckets = 480;
+    static constexpr double kBufferSeconds = 8.0;
+    const AudioTapBuffer& inputEnvelopeTap() const {
+        return inputEnvelope_;
+    }
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -91,6 +101,12 @@ class MutableCloudsPlugin : public te::Plugin {
     std::array<juce::CachedValue<float>, kNumParams> values_;
 
     double sampleRate_ = 44100.0;
+
+    // Input-envelope decimation state (audio thread).
+    AudioTapBuffer inputEnvelope_{1024};
+    float envPeak_ = 0.0f;
+    int envCount_ = 0;
+    int envBucketLen_ = 256;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MutableCloudsPlugin)
 };

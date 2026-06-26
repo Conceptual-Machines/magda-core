@@ -273,6 +273,8 @@ MutableCloudsPlugin::~MutableCloudsPlugin() {
 void MutableCloudsPlugin::initialise(const te::PluginInitialisationInfo& info) {
     sampleRate_ = info.sampleRate;
     impl_->prepare(sampleRate_);
+    envBucketLen_ =
+        juce::jmax(1, static_cast<int>(kBufferSeconds * sampleRate_ / kEnvelopeBuckets));
 }
 
 void MutableCloudsPlugin::deinitialise() {}
@@ -309,6 +311,18 @@ void MutableCloudsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     float* destR = fc.destBuffer->getNumChannels() > 1
                        ? fc.destBuffer->getWritePointer(1, fc.bufferStartSample)
                        : nullptr;
+
+    // Tap the dry input into a decimated peak envelope; the faceplate uses its
+    // recent level to drive the ambient grain-cloud liveliness.
+    for (int i = 0; i < fc.bufferNumSamples; ++i) {
+        const float s = destR != nullptr ? 0.5f * (destL[i] + destR[i]) : destL[i];
+        envPeak_ = juce::jmax(envPeak_, std::abs(s));
+        if (++envCount_ >= envBucketLen_) {
+            inputEnvelope_.write(&envPeak_, 1);
+            envPeak_ = 0.0f;
+            envCount_ = 0;
+        }
+    }
 
     impl_->process(destL, destR, fc.bufferNumSamples);
 }

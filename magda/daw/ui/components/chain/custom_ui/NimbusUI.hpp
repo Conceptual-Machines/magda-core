@@ -10,6 +10,10 @@
 #include "core/ParameterInfo.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
+namespace magda::daw::audio {
+class MutableCloudsPlugin;
+}
+
 namespace magda::daw::ui {
 
 /**
@@ -35,6 +39,9 @@ class NimbusUI : public juce::Component, private juce::Timer {
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
+    // Bind the live plugin so the grain-buffer view shows the real input.
+    void setPlugin(daw::audio::MutableCloudsPlugin* plugin);
+
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
     void paint(juce::Graphics& g) override;
@@ -59,7 +66,6 @@ class NimbusUI : public juce::Component, private juce::Timer {
     };
 
     static constexpr int kNumModes = 4;
-    static constexpr int kWaveN = 480;
 
     struct Control {
         std::unique_ptr<juce::Label> label;
@@ -72,13 +78,10 @@ class NimbusUI : public juce::Component, private juce::Timer {
 
     std::array<Control, kNumParams> controls_;
 
+    daw::audio::MutableCloudsPlugin* plugin_ = nullptr;
     int curMode_ = 0;
     bool freeze_ = false;
     float animPhase_ = 0.0f;
-
-    // Synthetic record-buffer waveform (min/max envelope), generated once.
-    std::array<float, kWaveN> waveHi_{};
-    std::array<float, kWaveN> waveLo_{};
 
     juce::Rectangle<int> grainArea_, bufferVizArea_, paramsArea_, ctrlArea_;
     juce::Rectangle<int> freezeBtn_, modeLabelRect_, blendLabelRect_;

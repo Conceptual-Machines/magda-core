@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -86,18 +87,6 @@ NimbusUI::NimbusUI() {
     add(kReverb, "Reverb");
     // kMode / kFreeze are discrete, drawn as clickable segments.
 
-    // Generate a synthetic record-buffer envelope (sines + value noise).
-    juce::Random rng(0x6c10d5);
-    for (int i = 0; i < kWaveN; ++i) {
-        const float t = static_cast<float>(i) / kWaveN;
-        float env = 0.35f + 0.65f * std::abs(std::sin(t * 6.2831f * 3.0f) * 0.6f +
-                                             std::sin(t * 6.2831f * 7.3f) * 0.3f);
-        float n = (rng.nextFloat() * 2.0f - 1.0f) * 0.5f;
-        float amp = juce::jlimit(0.05f, 1.0f, env * (0.7f + 0.3f * std::abs(n)));
-        waveHi_[static_cast<size_t>(i)] = amp;
-        waveLo_[static_cast<size_t>(i)] = -amp * (0.8f + 0.2f * std::abs(n));
-    }
-
     startTimerHz(30);
 }
 
@@ -134,6 +123,10 @@ std::vector<LinkableTextSlider*> NimbusUI::getLinkableSliders() {
     return out;
 }
 
+void NimbusUI::setPlugin(daw::audio::MutableCloudsPlugin* plugin) {
+    plugin_ = plugin;
+}
+
 void NimbusUI::paintBuffer(juce::Graphics& g) {
     auto b = bufferVizArea_;
     g.setColour(juce::Colour{0xff0a1416});
@@ -141,83 +134,62 @@ void NimbusUI::paintBuffer(juce::Graphics& g) {
     g.setColour(kBorder);
     g.drawRoundedRectangle(b.toFloat().reduced(0.5f), 4.0f, 1.0f);
 
-    auto plot = b.reduced(10, 18);
-    const float cy = plot.getCentreY();
-    const float midY = plot.getY() + plot.getHeight() * 0.5f;
+    auto plot = b.reduced(14, 14);
 
-    // Centre line.
-    g.setColour(kBorder.withAlpha(0.6f));
-    g.drawHorizontalLine((int)midY, (float)plot.getX(), (float)plot.getRight());
-
-    // Waveform envelope.
-    const float colW = plot.getWidth() / static_cast<float>(kWaveN);
-    const float half = plot.getHeight() * 0.46f;
-    g.setColour(kCyan.withAlpha(0.55f));
-    for (int i = 0; i < kWaveN; ++i) {
-        const float x = plot.getX() + i * colW;
-        const float hi = cy - waveHi_[static_cast<size_t>(i)] * half;
-        const float lo = cy - waveLo_[static_cast<size_t>(i)] * half;
-        g.fillRect(juce::Rectangle<float>(x, hi, juce::jmax(0.6f, colW - 0.4f), lo - hi));
+    // Recent input level drives the cloud's liveliness (ambient, not a buffer).
+    float energy = 0.0f;
+    bool haveAudio = false;
+    if (plugin_ != nullptr && plugin_->inputEnvelopeTap().writePosition() > 0) {
+        float env[64];
+        plugin_->inputEnvelopeTap().readLatest(env, 64);
+        float s = 0.0f;
+        for (float e : env)
+            s += e;
+        energy = juce::jlimit(0.0f, 1.0f, s / 64.0f * 1.6f);
+        haveAudio = true;
     }
+    const float life = haveAudio ? (0.22f + 0.78f * energy) : 0.5f;  // gentle idle baseline
 
-    // Grain window (driven by Position / Size), and the grain cloud.
     const float position = (float)controls_[kPosition].slider->getValue();
     const float size = (float)controls_[kSize].slider->getValue();
     const float density = (float)controls_[kDensity].slider->getValue();
     const float texture = (float)controls_[kTexture].slider->getValue();
 
-    const float winW =
-        juce::jlimit(14.0f, (float)plot.getWidth(), (0.06f + 0.30f * size) * plot.getWidth());
-    float winCx = plot.getX() + position * plot.getWidth();
-    winCx = juce::jlimit(plot.getX() + winW * 0.5f, plot.getRight() - winW * 0.5f, winCx);
-    juce::Rectangle<float> win(winCx - winW * 0.5f, (float)plot.getY(), winW,
-                               (float)plot.getHeight());
+    // Cloud drifts horizontally with Position, widens with Size, spreads and
+    // jitters with Texture, thickens with Density.
+    const float cloudW =
+        juce::jmap(size, 0.0f, 1.0f, plot.getWidth() * 0.25f, (float)plot.getWidth());
+    const float cloudCx = plot.getX() + position * plot.getWidth();
+    const float cyc = plot.getCentreY();
+    const float spreadY = plot.getHeight() * (0.2f + 0.7f * texture);
 
-    g.setColour(kCyan.withAlpha(freeze_ ? 0.18f : 0.10f));
-    g.fillRect(win);
-    g.setColour(kCyan.withAlpha(0.7f));
-    g.fillRect(win.getX(), win.getY(), 1.5f, win.getHeight());
-    g.fillRect(win.getRight() - 1.5f, win.getY(), 1.5f, win.getHeight());
-
-    // Grain cloud particles.
-    const int n = 10 + (int)std::lround(density * 70.0f);
+    g.saveState();
+    g.reduceClipRegion(b);
+    const int n = 20 + (int)std::lround(density * 130.0f);
     for (int k = 0; k < n; ++k) {
-        const float bx = hash1(k * 2 + 1);
+        const float bx = hash1(k * 2 + 1) * 2.0f - 1.0f;
         const float by = hash1(k * 2 + 2) * 2.0f - 1.0f;
-        const float jitter = 1.0f + 3.0f * texture;
+        const float jitter = 1.5f + 5.0f * texture;
         const float px =
-            win.getX() + bx * win.getWidth() + std::sin(animPhase_ * 1.3f + k * 1.7f) * jitter;
-        const float py =
-            midY + by * half * (0.25f + 0.7f * texture) + std::cos(animPhase_ + k * 2.3f) * jitter;
-        const float a = 0.25f + 0.55f * std::abs(std::sin(animPhase_ + k * 0.9f));
-        const float rad = 1.4f + 1.6f * hash1(k * 2 + 5);
-        g.setColour(kGrain.withAlpha(a * 0.35f));
+            cloudCx + bx * cloudW * 0.5f + std::sin(animPhase_ * 1.1f + k * 1.7f) * jitter;
+        const float py = cyc + by * spreadY * 0.5f + std::cos(animPhase_ + k * 2.3f) * jitter;
+        const float shimmer = 0.3f + 0.7f * std::abs(std::sin(animPhase_ * 0.9f + k));
+        const float a = juce::jlimit(0.0f, 1.0f, life * shimmer);
+        const float rad = 1.3f + 1.8f * hash1(k * 2 + 5);
+        g.setColour(kGrain.withAlpha(a * 0.28f));
         g.fillEllipse(px - rad * 2.0f, py - rad * 2.0f, rad * 4.0f, rad * 4.0f);  // glow
         g.setColour(kGrain.withAlpha(a));
         g.fillEllipse(px - rad, py - rad, rad * 2.0f, rad * 2.0f);
     }
-
-    // Playhead at the window centre.
-    g.setColour(kPink);
-    g.fillRect(winCx - 0.75f, (float)plot.getY() - 6.0f, 1.5f, (float)plot.getHeight() + 6.0f);
-    g.fillEllipse(winCx - 3.0f, (float)plot.getY() - 9.0f, 6.0f, 6.0f);
-
-    // Labels.
-    g.setColour(kDim);
-    g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
-    g.drawText("RECORD BUFFER", b.reduced(12, 8), juce::Justification::topLeft);
-    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText("-8s", b.reduced(12, 8), juce::Justification::bottomLeft);
-    g.drawText("now", b.reduced(12, 8), juce::Justification::bottomRight);
+    g.restoreState();
 
     // Freeze / mode indicator (top-right).
     auto ind = b.reduced(12, 8).removeFromTop(14);
     g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
     g.setColour(kDim);
     g.drawText(juce::String(kModes[curMode_].name), ind, juce::Justification::topRight);
-    auto frozen = ind.withTrimmedRight(74);
     g.setColour(freeze_ ? kCyan : kDim.withAlpha(0.6f));
-    g.drawText(juce::String::fromUTF8("\xe2\x97\x8f ") + "FROZEN", frozen,
+    g.drawText(juce::String::fromUTF8("\xe2\x97\x8f ") + "FROZEN", ind.withTrimmedRight(74),
                juce::Justification::topRight);
 }
 
@@ -232,7 +204,7 @@ void NimbusUI::paint(juce::Graphics& g) {
     };
 
     panel(grainArea_);
-    titleStrip(g, grainArea_.reduced(14, 10), "GRAIN BUFFER", "8s stereo - granular cloud");
+    titleStrip(g, grainArea_.reduced(14, 10), "GRAIN CLOUD", "granular texture");
     paintBuffer(g);
 
     panel(paramsArea_);
@@ -327,10 +299,16 @@ void NimbusUI::layoutRow(juce::Rectangle<int> row, const std::vector<int>& indic
 void NimbusUI::resized() {
     auto r = getLocalBounds().reduced(8);
 
-    // GRAIN BUFFER spectrum on top (absorbs vertical slack).
-    const int bottomH = 230;
-    grainArea_ = r.removeFromTop(juce::jmax(180, r.getHeight() - bottomH - 8));
-    r.removeFromTop(8);
+    // Bottom: PARAMETERS panel, full width, snug to its two rows + blend label.
+    const int paramsH = 168;
+    auto bottom = r.removeFromBottom(paramsH);
+    r.removeFromBottom(8);
+    paramsArea_ = bottom;
+
+    // Top row (absorbs vertical slack): GRAIN CLOUD (left) | controls (right).
+    grainArea_ = r.removeFromLeft(r.getWidth() * 3 / 5 - 4);
+    r.removeFromLeft(8);
+    ctrlArea_ = r;
 
     {
         auto a = grainArea_.reduced(12, 10);
@@ -338,26 +316,19 @@ void NimbusUI::resized() {
         bufferVizArea_ = a;
     }
 
-    // Bottom split: PARAMETERS (left) | controls (right).
-    paramsArea_ = r.removeFromLeft(r.getWidth() * 11 / 20 - 4);
-    r.removeFromLeft(8);
-    ctrlArea_ = r;
-
-    // PARAMETERS: Position/Size/Pitch, Density/Texture, then the blend routes.
+    // PARAMETERS: Position/Size/Pitch/Density/Texture, then the blend routes.
     {
         auto a = paramsArea_.reduced(12, 10);
         a.removeFromTop(22);
         const int rowH = 48;
-        layoutRow(a.removeFromTop(rowH), {kPosition, kSize, kPitch});
-        a.removeFromTop(10);
-        layoutRow(a.removeFromTop(rowH), {kDensity, kTexture});
-        a.removeFromTop(16);
+        layoutRow(a.removeFromTop(rowH), {kPosition, kSize, kPitch, kDensity, kTexture});
+        a.removeFromTop(14);
         blendLabelRect_ = a.removeFromTop(14);
         a.removeFromTop(4);
         layoutRow(a.removeFromTop(rowH), {kDryWet, kSpread, kFeedback, kReverb});
     }
 
-    // Right controls: FREEZE, then PLAYBACK MODE (2x2) filling the rest.
+    // Top-right controls: FREEZE, then PLAYBACK MODE (2x2) filling the rest.
     {
         auto a = ctrlArea_.reduced(12, 12);
         freezeBtn_ = a.removeFromTop(46);

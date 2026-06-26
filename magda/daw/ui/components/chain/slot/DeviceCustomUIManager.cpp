@@ -24,6 +24,7 @@
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MidiFileWriter.hpp"
@@ -1204,6 +1205,9 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*nimbusUI_);
         nimbusUI_->updateFromParameters(device.parameters);
+        // Bind the live plugin for the grain-buffer input view; re-run from
+        // setDevicePath() since create() runs before the path is valid.
+        bindAnalyzerPlugins();
     } else if (device.pluginId.containsIgnoreCase("4osc")) {
         fourOscUI_ = std::make_unique<FourOscUI>();
         fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
@@ -1513,7 +1517,8 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
 }
 
 void DeviceCustomUIManager::bindAnalyzerPlugins() {
-    if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr && levelsUI_ == nullptr)
+    if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr && levelsUI_ == nullptr &&
+        nimbusUI_ == nullptr)
         return;
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (audioEngine == nullptr)
@@ -1533,6 +1538,9 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     if (levelsUI_ != nullptr)
         if (auto* lv = dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()))
             levelsUI_->setPlugin(lv);
+    if (nimbusUI_ != nullptr)
+        if (auto* cl = dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin.get()))
+            nimbusUI_->setPlugin(cl);
 }
 
 // =============================================================================
