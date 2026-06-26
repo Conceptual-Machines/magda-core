@@ -18,7 +18,7 @@ gate = button("gate");
 tune   = hslider("Tune [idx:0]",   120, 50,  400,  0.1);
 bend   = hslider("Bend [idx:1]",   0.4, 0.0, 1.0,  0.001);
 attack = hslider("Attack [idx:2]", 3,   1,   100,  0.1) * 0.001;
-decay  = hslider("Decay [idx:3]",  400, 50,  2000, 1) * 0.001;
+decay  = hslider("Decay [idx:3]",  400, 5,   2000, 1) * 0.001;
 
 // ============================================================================
 // Voice: pitch-swept sine (Bend sets the sweep depth) under a percussive AR.

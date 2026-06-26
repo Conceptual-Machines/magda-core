@@ -55,7 +55,7 @@ std::vector<MagdaHatCompiledPlugin::HostSlotInfo> MagdaHatCompiledPlugin::voiceS
         {.name = "Decay",
          .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 5.0f,
+         .minValue = 1.0f,
          .maxValue = 4000.0f,
          .defaultValue = 100.0f},
     };

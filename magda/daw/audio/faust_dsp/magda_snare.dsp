@@ -19,8 +19,8 @@ tune      = hslider("Tune [idx:0]",         180,  100, 400,   0.1);
 tone      = hslider("Tone [idx:1]",         3000, 800, 12000, 1);
 snappy    = hslider("Snappy [idx:2]",       0.6,  0.0, 1.0,   0.001);
 attack    = hslider("Attack [idx:3]",       2,    1,   100,   0.1) * 0.001;
-bodyDec   = hslider("Body Decay [idx:4]",   180,  20,  1500,  1) * 0.001;
-rattleDec = hslider("Rattle Decay [idx:5]", 200,  20,  1500,  1) * 0.001;
+bodyDec   = hslider("Body Decay [idx:4]",   180,  1,   1500,  1) * 0.001;
+rattleDec = hslider("Rattle Decay [idx:5]", 200,  1,   1500,  1) * 0.001;
 snap      = hslider("Snap [idx:6]",         0.3,  0.0, 1.0,   0.001);
 snapTime  = hslider("Snap Time [idx:7]",    12,   2,   80,    0.1) * 0.001;
 

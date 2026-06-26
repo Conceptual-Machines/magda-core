@@ -56,7 +56,7 @@ std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voic
         {.name = "Decay",
          .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 5.0f,
+         .minValue = 1.0f,
          .maxValue = 4000.0f,
          .defaultValue = 500.0f},
         {.name = "Drive",
