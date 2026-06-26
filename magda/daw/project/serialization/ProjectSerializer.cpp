@@ -598,39 +598,52 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
     // are properly notified (prevents stale selection after project load)
     SelectionManager::getInstance().clearSelection();
 
-    // Clear all existing data from managers
-    trackManager.clearAllTracks();
-    clipManager.clearAllClips();
-    automationManager.clearAll();
+    // Coalesce the per-item structural notifications fired by the clear + restore
+    // below into a single one per manager. Without this, restoring N tracks fires
+    // notifyTracksChanged() N times, and each one rebuilds every track/mixer panel
+    // AND re-runs AudioBridge::syncAll() over all tracks -- O(N^2) work that hangs
+    // the UI for seconds on a large project. The batch fires one notification when
+    // the scope closes.
+    {
+        TrackManager::BatchScope trackBatch;
+        ClipManager::BatchScope clipBatch;
+        AutomationManager::BatchScope automationBatch;
 
-    // Restore tracks
-    for (auto& track : stagedTracks) {
-        trackManager.restoreTrack(track);
+        // Clear all existing data from managers
+        trackManager.clearAllTracks();
+        clipManager.clearAllClips();
+        automationManager.clearAll();
+
+        // Restore tracks
+        for (auto& track : stagedTracks) {
+            trackManager.restoreTrack(track);
+        }
+
+        // After all tracks are restored, ensure TrackManager ID counters
+        // (track/device/rack/chain) are updated to avoid ID collisions.
+        trackManager.refreshIdCountersFromTracks();
+
+        // Restore clips
+        for (auto& clip : stagedClips) {
+            clipManager.restoreClip(clip);
+        }
+
+        // Restore automation lanes
+        for (auto& lane : stagedAutomation) {
+            automationManager.restoreLane(lane);
+        }
+
+        // Restore automation clips
+        for (auto& clip : stagedAutomationClips) {
+            automationManager.restoreClip(clip);
+        }
+
+        // Update automation ID counters to avoid collisions
+        automationManager.refreshIdCountersFromLanes();
     }
 
-    // After all tracks are restored, ensure TrackManager ID counters
-    // (track/device/rack/chain) are updated to avoid ID collisions.
-    trackManager.refreshIdCountersFromTracks();
-
-    // Restore clips
-    for (auto& clip : stagedClips) {
-        clipManager.restoreClip(clip);
-    }
-
-    // Restore automation lanes
-    for (auto& lane : stagedAutomation) {
-        automationManager.restoreLane(lane);
-    }
-
-    // Restore automation clips
-    for (auto& clip : stagedAutomationClips) {
-        automationManager.restoreClip(clip);
-    }
-
-    // Update automation ID counters to avoid collisions
-    automationManager.refreshIdCountersFromLanes();
-
-    // Select the first track so the UI has a valid selection after load
+    // Select the first track so the UI has a valid selection after load. Done
+    // after the batch closes so panels exist and reflect the selection.
     if (!stagedTracks.empty()) {
         SelectionManager::getInstance().selectTrack(stagedTracks[0].id);
     }
