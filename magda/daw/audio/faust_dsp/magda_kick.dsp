@@ -1,5 +1,5 @@
 declare name "MagdaKick";
-declare description "Old-school drum-machine kick (808/909 lineage): a pitched sine sweep into a saturator (Faust synths.lib sy.kick). Knob-tuned; the played MIDI note only gates the voice. Pitch/Click/Attack/Decay/Drive are host macros.";
+declare description "Old-school drum-machine kick (808/909 lineage): a phase-reset pitched sine sweep into a saturator (inlined from Faust synths.lib sy.kick). Knob-tuned; the played MIDI note only gates the voice. Pitch/Click/Attack/Decay/Drive are host macros.";
 
 import("stdfaust.lib");
 
@@ -26,5 +26,15 @@ drive  = hslider("Drive [idx:4]",  2.0, 1.0, 10.0, 0.01);
 // ============================================================================
 // Voice
 // ============================================================================
-voice   = sy.kick(pitch, click, attack, decay, drive, gate) * gain;
+// Inlined from synths.lib sy.kick, but with a phase-reset sine so every hit
+// starts at phase 0 (sy.kick's os.osc free-runs, giving an inconsistent
+// transient hit-to-hit - audible at these low pitches). Reset fires for one
+// sample on the gate's rising edge, same idiom as magda_polysynth.dsp.
+gateRise = gate > gate';
+sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
+env      = en.adsr(attack, decay, 0.0, 0.1, gate);
+pitchenv = en.adsr(0.005, click, 0.0, 0.1, gate);
+osc      = sinR((1 + pitchenv * 4) * pitch);
+
+voice   = ma.tanh(env * osc * drive) * gain;
 process = voice <: _, _;

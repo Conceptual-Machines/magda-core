@@ -23,9 +23,13 @@ decay  = hslider("Decay [idx:3]",  400, 5,   2000, 1) * 0.001;
 // ============================================================================
 // Voice: pitch-swept sine (Bend sets the sweep depth) under a percussive AR.
 // ============================================================================
+// Phase-reset sine so every hit starts at phase 0 for a consistent transient
+// (one-sample reset on the gate rising edge, same idiom as magda_polysynth.dsp).
+gateRise = gate > gate';
+sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
 env      = en.adsr(attack, decay, 0.0, 0.1, gate);
 pitchenv = en.adsr(0.002, decay * 0.4, 0.0, 0.1, gate);
-osc      = os.osc(tune * (1 + pitchenv * bend * 2));
+osc      = sinR(tune * (1 + pitchenv * bend * 2));
 
 voice   = (osc * env) * gain;
 process = voice <: _, _;
