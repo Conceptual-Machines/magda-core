@@ -484,6 +484,34 @@ void DeviceCustomUIManager::createToneGeneratorUI(const magda::DeviceInfo& devic
     update(device);
 }
 
+bool DeviceCustomUIManager::createAnalyzerUI(const magda::DeviceInfo& device,
+                                             juce::Component& parent) {
+    if (device.pluginId.containsIgnoreCase(daw::audio::OscilloscopePlugin::xmlTypeName)) {
+        oscilloscopeUI_ = std::make_unique<OscilloscopeUI>();
+        parent.addAndMakeVisible(*oscilloscopeUI_);
+        // Plugin binding is deferred to bindAnalyzerPlugins(), re-run from
+        // setDevicePath(): create() runs before the slot's path is valid.
+        bindAnalyzerPlugins();
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::SpectrumAnalyzerPlugin::xmlTypeName)) {
+        spectrumAnalyzerUI_ = std::make_unique<SpectrumAnalyzerUI>();
+        parent.addAndMakeVisible(*spectrumAnalyzerUI_);
+        bindAnalyzerPlugins();
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::LevelsPlugin::xmlTypeName)) {
+        levelsUI_ = std::make_unique<LevelsUI>();
+        parent.addAndMakeVisible(*levelsUI_);
+        bindAnalyzerPlugins();
+        return true;
+    }
+
+    return false;
+}
+
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase("tone")) {
@@ -1335,21 +1363,8 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                 }
             }
         }
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::OscilloscopePlugin::xmlTypeName)) {
-        oscilloscopeUI_ = std::make_unique<OscilloscopeUI>();
-        parent->addAndMakeVisible(*oscilloscopeUI_);
-        // Plugin binding is deferred to bindAnalyzerPlugins(), re-run from
-        // setDevicePath(): create() runs before the slot's path is valid.
-        bindAnalyzerPlugins();
-    } else if (device.pluginId.containsIgnoreCase(
-                   daw::audio::SpectrumAnalyzerPlugin::xmlTypeName)) {
-        spectrumAnalyzerUI_ = std::make_unique<SpectrumAnalyzerUI>();
-        parent->addAndMakeVisible(*spectrumAnalyzerUI_);
-        bindAnalyzerPlugins();
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::LevelsPlugin::xmlTypeName)) {
-        levelsUI_ = std::make_unique<LevelsUI>();
-        parent->addAndMakeVisible(*levelsUI_);
-        bindAnalyzerPlugins();
+    } else {
+        createAnalyzerUI(device, *parent);
     }
 }
 
