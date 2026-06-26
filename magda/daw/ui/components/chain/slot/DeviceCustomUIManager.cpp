@@ -41,6 +41,7 @@
 #include "custom_ui/FourOscUI.hpp"
 #include "custom_ui/ImpulseResponseUI.hpp"
 #include "custom_ui/LevelsUI.hpp"
+#include "custom_ui/MateriaUI.hpp"
 #include "custom_ui/OscilloscopeUI.hpp"
 #include "custom_ui/PhaserUI.hpp"
 #include "custom_ui/PitchShiftUI.hpp"
@@ -273,6 +274,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return polySynthUI_.get();
     if (fmUI_)
         return fmUI_.get();
+    if (materiaUI_)
+        return materiaUI_.get();
     if (eqUI_)
         return eqUI_.get();
     if (compressorUI_)
@@ -321,6 +324,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return polySynthUI_->getLinkableSliders();
     if (fmUI_)
         return fmUI_->getLinkableSliders();
+    if (materiaUI_)
+        return materiaUI_->getLinkableSliders();
     if (toneGeneratorUI_)
         return toneGeneratorUI_->getLinkableSliders();
     if (compressorUI_)
@@ -352,8 +357,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || faustInstrumentUI_ ||
-           polySynthUI_ || fmUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ ||
-           phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ || faustUI_ ||
+           polySynthUI_ || fmUI_ || materiaUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ ||
+           chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ || faustUI_ ||
            chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
            oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
@@ -367,6 +372,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 720;  // osc + filter columns + stacked envelope column on one page
     if (fmUI_)
         return 740;  // 4x4 matrix + 4 operator columns + wider amp/right column
+    if (materiaUI_)
+        return 980;  // VOICE row + EXCITER | RESONATOR two-column faceplate
     if (eqUI_)
         return 400;
     if (compressorUI_)
@@ -475,6 +482,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         polySynthUI_->updateFromParameters(device.parameters);
     if (fmUI_ && device.pluginId.equalsIgnoreCase("magda_fm"))
         fmUI_->updateFromParameters(device.parameters);
+    if (materiaUI_ && device.pluginId.equalsIgnoreCase("magda_elements"))
+        materiaUI_->updateFromParameters(device.parameters);
     if (eqUI_ && device.pluginId.equalsIgnoreCase("eq"))
         eqUI_->updateFromParameters(device.parameters);
     if (compressorUI_ && isLegacyTeCompressorPluginId(device.pluginId))
@@ -1153,6 +1162,14 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         };
         parent->addAndMakeVisible(*fmUI_);
         fmUI_->updateFromParameters(device.parameters);
+    } else if (device.pluginId.equalsIgnoreCase("magda_elements")) {
+        materiaUI_ = std::make_unique<MateriaUI>();
+        materiaUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+            if (cb.onParameterChanged)
+                cb.onParameterChanged(paramIndex, value);
+        };
+        parent->addAndMakeVisible(*materiaUI_);
+        materiaUI_->updateFromParameters(device.parameters);
     } else if (device.pluginId.containsIgnoreCase("4osc")) {
         fourOscUI_ = std::make_unique<FourOscUI>();
         fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
