@@ -19,8 +19,8 @@ class dsp_poly;
 namespace magda::daw::audio::compiled {
 
 /**
- * @brief Shared base for the compiled-Faust polyphonic instruments (Pluck,
- *        Percussion, ...).
+ * @brief Shared base for the compiled-Faust polyphonic instruments (FM, the
+ *        drum-machine voices, ...).
  *
  * Holds everything identical across these devices: the mydsp_poly voice engine,
  * the per-voice [idx:N] macro fan-out, MIDI-driven voice allocation, and the
@@ -113,13 +113,13 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
 
   protected:
     // ---- Hooks a concrete device implements -------------------------------
-    // Allocate one single-voice dsp instance (e.g. `new MagdaPluckDsp()`). The
+    // Allocate one single-voice dsp instance (e.g. `new MagdaKickDsp()`). The
     // base wraps it in mydsp_poly.
     virtual ::dsp* createVoiceDsp() const = 0;
     // The voice-macro slots, in [idx:0..N-1] order. Their count defines where
     // the Gain control slot begins.
     virtual std::vector<HostSlotInfo> voiceSlotInfos() const = 0;
-    // Parameter-id prefix, e.g. "magda_pluck_". Must be stable (it keys state).
+    // Parameter-id prefix, e.g. "magda_kick_". Must be stable (it keys state).
     virtual const char* slotIdPrefix() const = 0;
     // Voice-allocator size.
     virtual int numVoices() const {

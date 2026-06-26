@@ -81,6 +81,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/MateriaUI.cpp
     custom_ui/HaloUI.cpp
     custom_ui/NimbusUI.cpp
+    custom_ui/DrumVoiceUI.cpp
     custom_ui/AdsrGraph.cpp
     custom_ui/ArpeggiatorUI.cpp
     custom_ui/StepSequencerUI.cpp
