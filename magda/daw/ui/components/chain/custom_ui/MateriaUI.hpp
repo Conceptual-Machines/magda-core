@@ -43,6 +43,8 @@ class MateriaUI : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
 
   private:
     // Param indices — must match MutableElementsPlugin::ParamIndex.
@@ -73,15 +75,23 @@ class MateriaUI : public juce::Component {
         std::unique_ptr<LinkableTextSlider> slider;
     };
 
-    // Lay a vertical stack of [label + slider] rows into `area`.
-    void layoutRows(juce::Rectangle<int> area, const std::vector<int>& indices, int rowH);
+    // Lay a vertical stack of [label + slider] rows into `area`, top-aligned.
+    void layoutRows(juce::Rectangle<int> area, const std::vector<int>& indices, int rowH, int gap);
+
+    // Excitation-blend triangle corners (bow, blow, strike), derived from
+    // blendArea_ so paint() and the drag handler stay in sync.
+    std::array<juce::Point<float>, 3> triangleCorners() const;
+    // Map a point in the blend pad to bow/blow/strike levels and commit them.
+    void applyBlendDrag(juce::Point<int> p);
 
     std::array<Control, kNumParams> controls_;
 
     // Section rectangles, cached in resized() for painted titles/placeholders.
     juce::Rectangle<int> voiceArea_, exciterArea_, resonatorArea_;
+    // Zone bands (captions + controls) for segment dividers + labels.
+    juce::Rectangle<int> voiceZonesArea_, exciterColsArea_;
     juce::Rectangle<int> blendArea_, bowCol_, blowCol_, strikeCol_;
-    juce::Rectangle<int> modalVizArea_, meterArea_;
+    juce::Rectangle<int> modalVizArea_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MateriaUI)
 };

@@ -373,7 +373,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (fmUI_)
         return 740;  // 4x4 matrix + 4 operator columns + wider amp/right column
     if (materiaUI_)
-        return 980;  // VOICE row + EXCITER | RESONATOR two-column faceplate
+        return 720;  // VOICE row + EXCITER | RESONATOR two-column faceplate
     if (eqUI_)
         return 400;
     if (compressorUI_)
