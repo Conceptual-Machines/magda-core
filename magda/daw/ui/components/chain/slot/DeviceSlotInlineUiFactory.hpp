@@ -71,6 +71,16 @@ void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePat
                                              CompiledDevicePanel* compiledPanel,
                                              DeviceCustomUIManager& customUI);
 
+void updateDeviceSlotInlineUi(const magda::DeviceInfo& device, CompiledDevicePanel* compiledPanel,
+                              DeviceCustomUIManager& customUI);
+
+void refreshDeviceSlotInlineUiParameterValues(const magda::DeviceInfo& device,
+                                              CompiledDevicePanel* compiledPanel,
+                                              DeviceCustomUIManager& customUI);
+
+void readAndPushDeviceSlotInlineUiModMatrix(magda::DeviceId deviceId,
+                                            DeviceCustomUIManager& customUI);
+
 void configureDeviceSlotLinkableSliders(
     const std::vector<LinkableTextSlider*>& sliders, const magda::DeviceInfo& device,
     const magda::ChainNodePath& nodePath, const DeviceSlotModulationContext& context,
