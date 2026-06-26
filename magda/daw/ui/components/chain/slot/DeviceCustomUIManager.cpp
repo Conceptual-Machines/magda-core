@@ -512,6 +512,74 @@ bool DeviceCustomUIManager::createAnalyzerUI(const magda::DeviceInfo& device,
     return false;
 }
 
+bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
+                                                juce::Component& parent) {
+    if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
+        chordEngineUI_ = std::make_unique<ChordPanelContent>();
+        parent.addAndMakeVisible(*chordEngineUI_);
+        // Connect to the plugin instance
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
+                    chordEngineUI_->setChordEngine(cp, magda::INVALID_TRACK_ID);
+                    chordPlugin_ = cp;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
+        arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
+        parent.addAndMakeVisible(*arpeggiatorUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
+                    arpeggiatorUI_->setArpeggiator(arp);
+                    arpPlugin_ = arp;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::PolyStepSequencerPlugin::xmlTypeName)) {
+        // NB: checked before the mono sequencer — "polystepsequencer" also
+        // contains "stepsequencer", so the order of these branches matters.
+        polyStepSequencerUI_ = std::make_unique<PolyStepSequencerUI>();
+        parent.addAndMakeVisible(*polyStepSequencerUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
+                    polyStepSequencerUI_->setPlugin(seq);
+                    polyStepSeqPlugin_ = seq;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
+        stepSequencerUI_ = std::make_unique<StepSequencerUI>();
+        parent.addAndMakeVisible(*stepSequencerUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
+                    stepSequencerUI_->setPlugin(seq);
+                    stepSeqPlugin_ = seq;
+                }
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
+
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase("tone")) {
@@ -1311,59 +1379,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
         parent->addAndMakeVisible(*impulseResponseUI_);
         update(device);
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
-        chordEngineUI_ = std::make_unique<ChordPanelContent>();
-        parent->addAndMakeVisible(*chordEngineUI_);
-        // Connect to the plugin instance
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
-                    chordEngineUI_->setChordEngine(cp, magda::INVALID_TRACK_ID);
-                    chordPlugin_ = cp;
-                }
-            }
-        }
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
-        arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
-        parent->addAndMakeVisible(*arpeggiatorUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
-                    arpeggiatorUI_->setArpeggiator(arp);
-                    arpPlugin_ = arp;
-                }
-            }
-        }
-    } else if (device.pluginId.containsIgnoreCase(
-                   daw::audio::PolyStepSequencerPlugin::xmlTypeName)) {
-        // NB: checked before the mono sequencer — "polystepsequencer" also
-        // contains "stepsequencer", so the order of these branches matters.
-        polyStepSequencerUI_ = std::make_unique<PolyStepSequencerUI>();
-        parent->addAndMakeVisible(*polyStepSequencerUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
-                    polyStepSequencerUI_->setPlugin(seq);
-                    polyStepSeqPlugin_ = seq;
-                }
-            }
-        }
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
-        stepSequencerUI_ = std::make_unique<StepSequencerUI>();
-        parent->addAndMakeVisible(*stepSequencerUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
-                    stepSequencerUI_->setPlugin(seq);
-                    stepSeqPlugin_ = seq;
-                }
-            }
-        }
-    } else {
+    } else if (!createMidiUtilityUI(device, *parent)) {
         createAnalyzerUI(device, *parent);
     }
 }
