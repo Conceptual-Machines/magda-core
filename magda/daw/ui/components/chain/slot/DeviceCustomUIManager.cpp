@@ -388,7 +388,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (haloUI_)
         return 760;  // modal-response spectrum + PARAMETERS | RESONATOR MODEL
     if (nimbusUI_)
-        return 880;  // grain-buffer view + PARAMETERS | mode/blend controls
+        return 720;  // grain cloud + PARAMETERS | mode controls
     if (eqUI_)
         return 400;
     if (compressorUI_)

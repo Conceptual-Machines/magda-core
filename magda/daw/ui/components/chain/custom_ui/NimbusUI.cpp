@@ -87,6 +87,17 @@ NimbusUI::NimbusUI() {
     add(kReverb, "Reverb");
     // kMode / kFreeze are discrete, drawn as clickable segments.
 
+    // Colour-group the grain controls (matches Materia's accents): Position and
+    // Density in pink, Size and Texture in teal.
+    auto colour = [this](int idx, juce::Colour c) {
+        controls_[static_cast<size_t>(idx)].slider->setTextColour(c);
+        controls_[static_cast<size_t>(idx)].label->setColour(juce::Label::textColourId, c);
+    };
+    colour(kPosition, kPink);
+    colour(kDensity, kPink);
+    colour(kSize, kCyan);
+    colour(kTexture, kCyan);
+
     startTimerHz(30);
 }
 
@@ -251,13 +262,16 @@ void NimbusUI::paint(juce::Graphics& g) {
         g.setColour(sel ? kCyan : kBorder);
         g.drawRoundedRectangle(r.reduced(0.5f), 4.0f, 1.0f);
         auto box = modeBtn_[static_cast<size_t>(i)];
-        auto subRow = box.removeFromBottom(13);
+        const bool showSub = box.getHeight() >= 30;  // hide subtitle when cramped
+        auto subRow = showSub ? box.removeFromBottom(12) : juce::Rectangle<int>();
         g.setColour(sel ? kText : kDim);
         g.setFont(FontManager::getInstance().getUIFontBold(11.0f));
         g.drawText(kModes[i].name, box, juce::Justification::centred);
-        g.setColour(sel ? kCyan : kDim.withAlpha(0.7f));
-        g.setFont(FontManager::getInstance().getUIFont(8.5f));
-        g.drawText(kModes[i].sub, subRow, juce::Justification::centred);
+        if (showSub) {
+            g.setColour(sel ? kCyan : kDim.withAlpha(0.7f));
+            g.setFont(FontManager::getInstance().getUIFont(8.5f));
+            g.drawText(kModes[i].sub, subRow, juce::Justification::centred);
+        }
     }
 
     // BLEND ROUTES label (the four value boxes paint themselves as sliders).
@@ -291,24 +305,24 @@ void NimbusUI::layoutRow(juce::Rectangle<int> row, const std::vector<int>& indic
     for (int idx : indices) {
         auto cell = row.removeFromLeft(cellW).reduced(6, 0);
         auto& c = controls_[static_cast<size_t>(idx)];
-        c.label->setBounds(cell.removeFromTop(14));
-        c.slider->setBounds(cell.removeFromTop(30));
+        c.label->setBounds(cell.removeFromTop(13));
+        c.slider->setBounds(cell.removeFromTop(24));
     }
 }
 
 void NimbusUI::resized() {
     auto r = getLocalBounds().reduced(8);
 
-    // Bottom: PARAMETERS panel, full width, snug to its two rows + blend label.
-    const int paramsH = 168;
-    auto bottom = r.removeFromBottom(paramsH);
-    r.removeFromBottom(8);
-    paramsArea_ = bottom;
+    // Split the height evenly so the top row (cloud + controls) and the
+    // PARAMETERS panel stretch together as the slot grows.
+    auto top = r.removeFromTop((r.getHeight() - 8) / 2);
+    r.removeFromTop(8);
+    paramsArea_ = r;
 
-    // Top row (absorbs vertical slack): GRAIN CLOUD (left) | controls (right).
-    grainArea_ = r.removeFromLeft(r.getWidth() * 3 / 5 - 4);
-    r.removeFromLeft(8);
-    ctrlArea_ = r;
+    // Top row: GRAIN CLOUD (left) | FREEZE + PLAYBACK MODE controls (right).
+    grainArea_ = top.removeFromLeft(top.getWidth() / 2 - 4);
+    top.removeFromLeft(8);
+    ctrlArea_ = top;
 
     {
         auto a = grainArea_.reduced(12, 10);
@@ -318,24 +332,28 @@ void NimbusUI::resized() {
 
     // PARAMETERS: Position/Size/Pitch/Density/Texture, then the blend routes.
     {
-        auto a = paramsArea_.reduced(12, 10);
-        a.removeFromTop(22);
-        const int rowH = 48;
-        layoutRow(a.removeFromTop(rowH), {kPosition, kSize, kPitch, kDensity, kTexture});
-        a.removeFromTop(14);
-        blendLabelRect_ = a.removeFromTop(14);
-        a.removeFromTop(4);
+        auto a = paramsArea_.reduced(12, 8);
+        a.removeFromTop(18);  // title strip
+        const int rowH = 38;
+        // Centre the two control rows in the panel body so extra height reads as
+        // balanced margin rather than dead space at the bottom.
+        const int blockH = rowH + 8 + 12 + 2 + rowH;
+        a.removeFromTop(juce::jmax(0, (a.getHeight() - blockH) / 2));
+        layoutRow(a.removeFromTop(rowH), {kPosition, kDensity, kSize, kTexture, kPitch});
+        a.removeFromTop(8);
+        blendLabelRect_ = a.removeFromTop(12);
+        a.removeFromTop(2);
         layoutRow(a.removeFromTop(rowH), {kDryWet, kSpread, kFeedback, kReverb});
     }
 
     // Top-right controls: FREEZE, then PLAYBACK MODE (2x2) filling the rest.
     {
-        auto a = ctrlArea_.reduced(12, 12);
-        freezeBtn_ = a.removeFromTop(46);
-        a.removeFromTop(14);
+        auto a = ctrlArea_.reduced(12, 10);
+        freezeBtn_ = a.removeFromTop(28);
+        a.removeFromTop(10);
 
-        modeLabelRect_ = a.removeFromTop(14);
-        a.removeFromTop(8);
+        modeLabelRect_ = a.removeFromTop(13);
+        a.removeFromTop(6);
         auto modeGrid = a;  // fill the remaining panel height
         const int gx = 6, gy = 6;
         const int cw = (modeGrid.getWidth() - gx) / 2;
