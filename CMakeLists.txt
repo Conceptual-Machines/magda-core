@@ -383,6 +383,9 @@ file(GLOB MI_SOURCES CONFIGURE_DEPENDS
 add_library(magda_mutable STATIC ${MI_SOURCES})
 target_include_directories(magda_mutable PUBLIC ${MI_ROOT})
 target_compile_definitions(magda_mutable PUBLIC TEST)
+if(MSVC)
+    target_compile_definitions(magda_mutable PUBLIC _USE_MATH_DEFINES)
+endif()
 set_target_properties(magda_mutable PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(magda::mutable ALIAS magda_mutable)
 
