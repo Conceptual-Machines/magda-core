@@ -53,7 +53,7 @@ class MutableElementsPlugin : public te::Plugin {
     };
 
     static const char* getPluginName() {
-        return "Elements";
+        return "Materia";
     }
     static const char* xmlTypeName;
 
@@ -64,7 +64,7 @@ class MutableElementsPlugin : public te::Plugin {
         return xmlTypeName;
     }
     juce::String getShortName(int) override {
-        return "Elements";
+        return "Materia";
     }
     juce::String getSelectableDescription() override {
         return getName();

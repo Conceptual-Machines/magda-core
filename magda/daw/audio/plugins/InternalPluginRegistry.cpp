@@ -185,17 +185,17 @@ const InternalPluginSpec kSpecs[] = {
      "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics).",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, kLevelsAliases,
      std::size(kLevelsAliases), matches<LevelsPlugin>, nullptr, true},
-    {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, "Elements", "Synth",
+    {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, "Materia", "Synth",
      "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike exciter into a "
      "modal + string resonator and stereo space).",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0,
      matches<MutableElementsPlugin>, makeProcessor<MutableElementsProcessor>, true, true},
-    {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, "Rings", "Synth",
+    {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, "Halo", "Synth",
      "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic / inharmonic / "
      "FM models) excited by MIDI.",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableRingsPlugin>,
      makeProcessor<MutableRingsProcessor>, true, true},
-    {InternalDeviceKind::MutableClouds, MutableCloudsPlugin::xmlTypeName, "Clouds", "Texture",
+    {InternalDeviceKind::MutableClouds, MutableCloudsPlugin::xmlTypeName, "Nimbus", "Texture",
      "Mutable Instruments Clouds port: granular texture processor (granular / stretch / "
      "looping-delay / spectral) with freeze.",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableCloudsPlugin>,

@@ -45,7 +45,7 @@ class MutableCloudsPlugin : public te::Plugin {
     };
 
     static const char* getPluginName() {
-        return "Clouds";
+        return "Nimbus";
     }
     static const char* xmlTypeName;
 
@@ -56,7 +56,7 @@ class MutableCloudsPlugin : public te::Plugin {
         return xmlTypeName;
     }
     juce::String getShortName(int) override {
-        return "Clouds";
+        return "Nimbus";
     }
     juce::String getSelectableDescription() override {
         return getName();

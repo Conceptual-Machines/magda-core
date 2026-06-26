@@ -44,7 +44,7 @@ class MutableRingsPlugin : public te::Plugin {
     };
 
     static const char* getPluginName() {
-        return "Rings";
+        return "Halo";
     }
     static const char* xmlTypeName;
 
@@ -55,7 +55,7 @@ class MutableRingsPlugin : public te::Plugin {
         return xmlTypeName;
     }
     juce::String getShortName(int) override {
-        return "Rings";
+        return "Halo";
     }
     juce::String getSelectableDescription() override {
         return getName();

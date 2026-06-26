@@ -78,13 +78,13 @@ const InternalDeviceMetadata kMetadata[] = {
      "Signal meter for monitoring level inside a chain."},
     {InternalDeviceKind::MagdaSampler, "Sampler", "", "Sampler",
      "Sample playback instrument with envelope, pitch, start/end, and looping controls."},
-    {InternalDeviceKind::MutableElements, "Elements", "", "Synth",
+    {InternalDeviceKind::MutableElements, "Materia", "", "Synth",
      "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike exciter "
      "into a modal + string resonator and stereo space)."},
-    {InternalDeviceKind::MutableRings, "Rings", "", "Synth",
+    {InternalDeviceKind::MutableRings, "Halo", "", "Synth",
      "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic-string / "
      "inharmonic / FM models) excited by MIDI."},
-    {InternalDeviceKind::MutableClouds, "Clouds", "", "Texture",
+    {InternalDeviceKind::MutableClouds, "Nimbus", "", "Texture",
      "Mutable Instruments Clouds port: granular texture processor (granular / stretch / "
      "looping-delay / spectral) with freeze, processing the track audio."},
     {InternalDeviceKind::DrumGrid, "Drum Grid", "", "Drums",
