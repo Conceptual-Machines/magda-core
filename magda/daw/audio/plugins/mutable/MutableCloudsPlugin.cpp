@@ -123,6 +123,12 @@ const std::array<Desc, MutableCloudsPlugin::kNumParams> kDescs = {{
 //==============================================================================
 struct MutableCloudsPlugin::Impl {
     Impl() {
+        // See MutableElementsPlugin: zero the heap-allocated processor + its
+        // external audio buffers before Init so no stale state/samples surface
+        // on a fresh instance (the upstream DSP assumes zero-initialised BSS).
+        std::memset(static_cast<void*>(&processor_), 0, sizeof(processor_));
+        std::memset(largeBuffer_, 0, sizeof(largeBuffer_));
+        std::memset(smallBuffer_, 0, sizeof(smallBuffer_));
         processor_.Init(largeBuffer_, sizeof(largeBuffer_), smallBuffer_, sizeof(smallBuffer_));
         processor_.set_num_channels(2);
         processor_.set_low_fidelity(false);

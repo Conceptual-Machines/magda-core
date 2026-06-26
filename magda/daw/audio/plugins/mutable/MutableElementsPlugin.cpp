@@ -67,6 +67,14 @@ const std::array<Desc, MutableElementsPlugin::kNumParams> kDescs = {{
 struct MutableElementsPlugin::Impl {
     Impl() {
         std::memset(silence_, 0, sizeof(silence_));
+        // The upstream DSP objects assume zero-initialised BSS (they're statics
+        // on the embedded target) and Part::Init() doesn't reset every byte of
+        // sub-DSP state. Here Part is heap-allocated with a do-nothing ctor, so
+        // without this its filter/exciter history is garbage and a fresh
+        // instance can ring "from nowhere". These are non-polymorphic POD-like
+        // structs, so zeroing before Init() is safe and matches the target.
+        std::memset(static_cast<void*>(&part_), 0, sizeof(part_));
+        std::memset(reverbBuffer_, 0, sizeof(reverbBuffer_));
         part_.Init(reverbBuffer_);
         uint32_t seed[3] = {0x12345678u, 0x9abcdef0u, 0x0f1e2d3cu};
         part_.Seed(seed, 3);

@@ -59,6 +59,12 @@ const std::array<Desc, MutableRingsPlugin::kNumParams> kDescs = {{
 struct MutableRingsPlugin::Impl {
     Impl() {
         std::memset(silence_, 0, sizeof(silence_));
+        // See MutableElementsPlugin: upstream assumes zero-initialised BSS and
+        // Part::Init() doesn't reset every byte of state, so zero the
+        // heap-allocated Part before Init to avoid garbage filter/voice state
+        // ringing on a fresh instance.
+        std::memset(static_cast<void*>(&part_), 0, sizeof(part_));
+        std::memset(reverbBuffer_, 0, sizeof(reverbBuffer_));
         part_.Init(reverbBuffer_);
     }
 
