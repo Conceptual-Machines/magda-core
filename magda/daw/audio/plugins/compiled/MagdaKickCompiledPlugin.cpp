@@ -41,7 +41,7 @@ std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voic
          .minValue = 30.0f,
          .maxValue = 120.0f,
          .defaultValue = 55.0f},
-        {.name = "Click",
+        {.name = "Sweep",
          .unit = "ms",
          .scale = ParameterScale::Linear,
          .minValue = 5.0f,
@@ -64,6 +64,11 @@ std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voic
          .minValue = 1.0f,
          .maxValue = 10.0f,
          .defaultValue = 2.0f},
+        {.name = "Click",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.3f},
     };
 }
 
