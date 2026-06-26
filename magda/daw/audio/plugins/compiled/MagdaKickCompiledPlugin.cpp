@@ -41,7 +41,12 @@ std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voic
          .minValue = 30.0f,
          .maxValue = 120.0f,
          .defaultValue = 55.0f},
-        {.name = "Sweep",
+        {.name = "Snap",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
+        {.name = "Snap Time",
          .unit = "ms",
          .scale = ParameterScale::Linear,
          .minValue = 5.0f,
@@ -53,7 +58,7 @@ std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voic
          .minValue = 5.0f,
          .maxValue = 400.0f,
          .defaultValue = 5.0f},
-        {.name = "Decay",
+        {.name = "Body",
          .unit = "ms",
          .scale = ParameterScale::Linear,
          .minValue = 1.0f,
@@ -78,8 +83,8 @@ const CompiledPluginSpec& getMagdaKickSpec() {
         .displayName = "Kick",
         .browserCategory = "Drums",
         .description = "Old-school drum-machine kick (808/909 lineage): a pitched sine sweep into "
-                       "a saturator (Faust synths.lib). Knob-tuned, MIDI-gated - drop it on a "
-                       "DrumGrid pad or play it standalone.",
+                       "a saturator, plus a noise click transient. Knob-tuned, MIDI-gated - drop "
+                       "it on a DrumGrid pad or play it standalone.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaKickCompiledPlugin(info);
         },
