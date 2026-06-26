@@ -17,7 +17,7 @@ gate = button("gate");
 // expects, same convention as magda_fm.dsp).
 pitch  = hslider("Pitch [idx:0]",  800,  317, 3170,  1);
 tone   = hslider("Tone [idx:1]",   8000, 800, 18000, 1);
-attack = hslider("Attack [idx:2]", 5,    5,   200,   0.1) * 0.001;
+attack = hslider("Attack [idx:2]", 0,    0,   200,   0.1) * 0.001;
 decay  = hslider("Decay [idx:3]",  100,  1,   4000,  1) * 0.001;
 
 // ============================================================================
