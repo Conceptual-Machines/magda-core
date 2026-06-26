@@ -40,6 +40,7 @@ class PolySynthUI;
 class FMUI;
 class MateriaUI;
 class HaloUI;
+class NimbusUI;
 class SpectrumAnalyzerUI;
 class PitchShiftUI;
 class ReverbUI;
@@ -236,6 +237,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<FMUI> fmUI_;
     std::unique_ptr<MateriaUI> materiaUI_;
     std::unique_ptr<HaloUI> haloUI_;
+    std::unique_ptr<NimbusUI> nimbusUI_;
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;

@@ -80,6 +80,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FMUI.cpp
     custom_ui/MateriaUI.cpp
     custom_ui/HaloUI.cpp
+    custom_ui/NimbusUI.cpp
     custom_ui/AdsrGraph.cpp
     custom_ui/ArpeggiatorUI.cpp
     custom_ui/StepSequencerUI.cpp
@@ -179,6 +180,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/LayoutStableTabbedComponent.hpp
     custom_ui/FourOscUI.hpp
     custom_ui/HaloUI.hpp
+    custom_ui/NimbusUI.hpp
     custom_ui/ArpeggiatorUI.hpp
     custom_ui/StepSequencerUI.hpp
     custom_ui/PolyStepSequencerUI.hpp
