@@ -787,7 +787,7 @@ jobs:
         # DawProjectValidator <exe>/dawproject/*.xsd), so mirror them into
         # staging. Without dawproject/ the validator falls back to the baked-in
         # build-tree source path, which does not exist on an end-user machine.
-        foreach ($dir in @("faustlibraries", "drumkits", "dawproject")) {
+        foreach ($dir in @("faustlibraries", "drumkits", "dawproject", "models")) {
           $src = Join-Path $exeDir $dir
           if (-not (Test-Path $src)) {
             Write-Error "$dir/ missing next to MAGDA.exe at $src"
@@ -1009,7 +1009,7 @@ jobs:
         # DawProjectValidator <exe>/dawproject/*.xsd), so mirror them into the
         # AppDir. Without dawproject/ the validator falls back to the baked-in
         # build-tree source path, which does not exist on an end-user machine.
-        for dir in faustlibraries drumkits dawproject; do
+        for dir in faustlibraries drumkits dawproject models; do
           src="$(dirname "$BINARY")/$dir"
           if [ ! -d "$src" ]; then
             echo "$dir/ missing next to MAGDA binary at $src"
