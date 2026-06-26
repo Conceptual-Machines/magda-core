@@ -484,6 +484,103 @@ void DeviceCustomUIManager::createToneGeneratorUI(const magda::DeviceInfo& devic
     update(device);
 }
 
+bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
+                                            juce::Component& parent, const Callbacks& callbacks) {
+    if (!device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
+        return false;
+
+    samplerUI_ = std::make_unique<SamplerUI>();
+    samplerUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+        if (cb.onParameterChanged)
+            cb.onParameterChanged(paramIndex, value);
+    };
+
+    samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+            sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
+            sampler->loopEnabledValue = enabled;
+        }
+    };
+
+    samplerUI_->onRootNoteChanged = [this](int note) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+            sampler->setRootNote(note);
+        }
+    };
+
+    samplerUI_->getPlaybackPosition = [this]() -> double {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return 0.0;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return 0.0;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+            return sampler->getPlaybackPosition();
+        }
+        return 0.0;
+    };
+
+    // Shared logic for loading a sample file and refreshing the UI
+    auto loadFile = [this](const juce::File& file) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        if (bridge->loadSamplerSample(devicePath_, file)) {
+            auto plugin = bridge->getPlugin(devicePath_);
+            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                samplerUI_->updateParameters(
+                    sampler->attackValue.get(), sampler->decayValue.get(),
+                    sampler->sustainValue.get(), sampler->releaseValue.get(),
+                    sampler->pitchValue.get(), sampler->fineValue.get(), sampler->levelValue.get(),
+                    sampler->sampleStartValue.get(), sampler->sampleEndValue.get(),
+                    sampler->loopEnabledValue.get(), sampler->loopStartValue.get(),
+                    sampler->loopEndValue.get(), sampler->velAmountValue.get(),
+                    file.getFileNameWithoutExtension());
+                samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                            sampler->getSampleLengthSeconds());
+            }
+        }
+    };
+
+    samplerUI_->onLoadSampleRequested = [loadFile]() {
+        auto chooser = std::make_shared<juce::FileChooser>("Load Sample", juce::File(),
+                                                           "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+        chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                                 juce::FileBrowserComponent::canSelectFiles,
+                             [loadFile, chooser](const juce::FileChooser&) {
+                                 auto result = chooser->getResult();
+                                 if (result.existsAsFile())
+                                     loadFile(result);
+                             });
+    };
+
+    samplerUI_->onFileDropped = loadFile;
+
+    parent.addAndMakeVisible(*samplerUI_);
+    update(device);
+
+    return true;
+}
+
 bool DeviceCustomUIManager::createAnalyzerUI(const magda::DeviceInfo& device,
                                              juce::Component& parent) {
     if (device.pluginId.containsIgnoreCase(daw::audio::OscilloscopePlugin::xmlTypeName)) {
@@ -818,95 +915,8 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                                    const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase("tone")) {
         createToneGeneratorUI(device, *parent, callbacks);
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-        samplerUI_ = std::make_unique<SamplerUI>();
-        samplerUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-
-        samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
-                sampler->loopEnabledValue = enabled;
-            }
-        };
-
-        samplerUI_->onRootNoteChanged = [this](int note) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                sampler->setRootNote(note);
-            }
-        };
-
-        samplerUI_->getPlaybackPosition = [this]() -> double {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return 0.0;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return 0.0;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                return sampler->getPlaybackPosition();
-            }
-            return 0.0;
-        };
-
-        // Shared logic for loading a sample file and refreshing the UI
-        auto loadFile = [this](const juce::File& file) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            if (bridge->loadSamplerSample(devicePath_, file)) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                    samplerUI_->updateParameters(
-                        sampler->attackValue.get(), sampler->decayValue.get(),
-                        sampler->sustainValue.get(), sampler->releaseValue.get(),
-                        sampler->pitchValue.get(), sampler->fineValue.get(),
-                        sampler->levelValue.get(), sampler->sampleStartValue.get(),
-                        sampler->sampleEndValue.get(), sampler->loopEnabledValue.get(),
-                        sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-                        sampler->velAmountValue.get(), file.getFileNameWithoutExtension());
-                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                                sampler->getSampleLengthSeconds());
-                }
-            }
-        };
-
-        samplerUI_->onLoadSampleRequested = [loadFile]() {
-            auto chooser = std::make_shared<juce::FileChooser>(
-                "Load Sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-            chooser->launchAsync(juce::FileBrowserComponent::openMode |
-                                     juce::FileBrowserComponent::canSelectFiles,
-                                 [loadFile, chooser](const juce::FileChooser&) {
-                                     auto result = chooser->getResult();
-                                     if (result.existsAsFile())
-                                         loadFile(result);
-                                 });
-        };
-
-        samplerUI_->onFileDropped = loadFile;
-
-        parent->addAndMakeVisible(*samplerUI_);
-        update(device);
+    } else if (createSamplerUI(device, *parent, callbacks)) {
+        // handled by helper
     } else if (device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
         drumGridUI_ = std::make_unique<DrumGridUI>();
 
