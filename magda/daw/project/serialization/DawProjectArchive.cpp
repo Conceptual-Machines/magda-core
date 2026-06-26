@@ -123,15 +123,26 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
     if (!readZipEntry(zip, "project.xml", projectXml, error))
         return false;
 
-    if (!DawProjectValidator::validateProjectXml(projectXml, error))
-        return false;
+    // Schema validation is advisory, not a gate. Real-world DAWproject exporters
+    // (e.g. Cubase) emit files that violate the strict <xs:sequence> ordering in
+    // the bundled XSD even when the data is semantically fine, and our parser is
+    // order-independent (it locates children by name). So we log schema problems
+    // for diagnostics but still hand the XML to the parser, which is the real
+    // gate: it fails loudly only if it genuinely cannot read the project.
+    juce::String validationWarning;
+    if (!DawProjectValidator::validateProjectXml(projectXml, validationWarning))
+        juce::Logger::writeToLog("DAWproject import: project.xml failed schema validation, "
+                                 "continuing anyway:\n" +
+                                 validationWarning);
 
     juce::String metadataXml;
-    if (readZipEntry(zip, "metadata.xml", metadataXml, error)) {
-        if (!DawProjectValidator::validateMetadataXml(metadataXml, error))
-            return false;
-    } else {
-        error.clear();
+    juce::String metadataReadError;
+    if (readZipEntry(zip, "metadata.xml", metadataXml, metadataReadError)) {
+        juce::String metadataWarning;
+        if (!DawProjectValidator::validateMetadataXml(metadataXml, metadataWarning))
+            juce::Logger::writeToLog("DAWproject import: metadata.xml failed schema validation, "
+                                     "continuing anyway:\n" +
+                                     metadataWarning);
     }
 
     if (!DawProjectXmlAdapter::fromProjectXml(projectXml, outDocument, error))
