@@ -216,8 +216,12 @@ class DeviceCustomUIManager {
                                const Callbacks& callbacks);
     bool createAnalyzerUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent);
+    bool createFourOscUI(const magda::DeviceInfo& device, juce::Component& parent,
+                         const Callbacks& callbacks);
     bool createSimpleEffectUI(const magda::DeviceInfo& device, juce::Component& parent,
                               const Callbacks& callbacks);
+    bool createImpulseResponseUI(const magda::DeviceInfo& device, juce::Component& parent,
+                                 const Callbacks& callbacks);
 
     // Path of the device this manager is bound to. Used by every internal
     // plugin lookup; the bare device.id is no longer sufficient under
