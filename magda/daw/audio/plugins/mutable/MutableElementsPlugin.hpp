@@ -49,6 +49,7 @@ class MutableElementsPlugin : public te::Plugin {
         kPitch,
         kFine,
         kLevel,
+        kVelAmp,  // velocity -> amplitude depth (0 = fixed level, 1 = full velocity)
         kNumParams
     };
 

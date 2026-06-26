@@ -67,6 +67,7 @@ class MateriaUI : public juce::Component {
         kPitch,
         kFine,
         kLevel,
+        kVelAmp,
         kNumParams
     };
 

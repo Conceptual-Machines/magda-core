@@ -57,6 +57,7 @@ const std::array<Desc, MutableElementsPlugin::kNumParams> kDescs = {{
     {"pitch", "Pitch", 0.0f, Kind::Pitch},
     {"fine", "Fine", 0.0f, Kind::Fine},
     {"level", "Level", 0.0f, Kind::Level},
+    {"velAmp", "Vel>Amp", 1.0f, Kind::Normalised},
 }};
 
 }  // namespace
@@ -125,10 +126,12 @@ struct MutableElementsPlugin::Impl {
             activeNote_ = held_[heldCount_ - 1];  // legato back to held note
     }
 
-    void setPerformance(float transposeSemitones) {
+    void setPerformance(float transposeSemitones, float velToAmp) {
         perf_.gate = gate_;
         perf_.note = static_cast<float>(activeNote_) + transposeSemitones;
-        perf_.strength = strength_;
+        // velToAmp blends the note strength between a fixed full level (0, so
+        // velocity is ignored) and the played velocity (1, full sensitivity).
+        perf_.strength = juce::jlimit(0.0f, 1.0f, 1.0f - velToAmp * (1.0f - strength_));
         perf_.modulation = 0.0f;
     }
 
@@ -285,6 +288,7 @@ void MutableElementsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     p->modulation_frequency = 0.0f;
 
     const float transpose = v[kPitch] + v[kFine] * 0.01f;
+    const float velToAmp = v[kVelAmp];
 
     auto* destL = fc.destBuffer->getWritePointer(0, fc.bufferStartSample);
     float* destR = fc.destBuffer->getNumChannels() > 1
@@ -297,7 +301,7 @@ void MutableElementsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     auto renderTo = [&](int upto) {
         if (upto <= pos)
             return;
-        impl_->setPerformance(transpose);
+        impl_->setPerformance(transpose, velToAmp);
         impl_->generate(destL + pos, destR != nullptr ? destR + pos : nullptr, upto - pos);
         pos = upto;
     };

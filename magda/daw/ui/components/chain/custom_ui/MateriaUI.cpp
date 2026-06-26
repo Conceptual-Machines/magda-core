@@ -79,6 +79,7 @@ MateriaUI::MateriaUI() {
     add(kPitch, "Coarse", kText);
     add(kFine, "Fine", kText);
     add(kLevel, "Level", kText);
+    add(kVelAmp, "Vel>Amp", kText);
 
     add(kBow, "Level", cBow);
     add(kBowTimbre, "Timbre", cBow);
@@ -138,7 +139,7 @@ void MateriaUI::paint(juce::Graphics& g) {
         // Segment the value boxes into named zones with vertical dividers.
         // Groups: [Contour, Signature] | [Coarse, Fine] | [Level].
         const auto z = voiceZonesArea_;
-        const int cellW = z.getWidth() / 5;
+        const int cellW = z.getWidth() / 6;
         g.setColour(kBorder);
         g.fillRect(z.getX() + 2 * cellW, z.getY(), 1, z.getHeight());
         g.fillRect(z.getX() + 4 * cellW, z.getY(), 1, z.getHeight());
@@ -152,7 +153,7 @@ void MateriaUI::paint(juce::Graphics& g) {
         };
         caption("EXCITATION CONTOUR", 0, 2);
         caption("PITCH", 2, 2);
-        caption("OUTPUT", 4, 1);
+        caption("OUTPUT", 4, 2);
     }
     panel(exciterArea_);
     titleStrip(g, exciterArea_.reduced(14, 10), "EXCITER", "");
@@ -339,9 +340,9 @@ void MateriaUI::resized() {
         a.removeFromTop(14);  // title strip
         voiceZonesArea_ = a;
         a.removeFromTop(13);  // zone-caption strip
-        const std::array<int, 5> order{kContour, kSignature, kPitch, kFine, kLevel};
-        int cellW = a.getWidth() / 5;
-        for (int k = 0; k < 5; ++k) {
+        const std::array<int, 6> order{kContour, kSignature, kPitch, kFine, kLevel, kVelAmp};
+        int cellW = a.getWidth() / 6;
+        for (int k = 0; k < 6; ++k) {
             auto cell = a.removeFromLeft(cellW).reduced(6, 0);
             auto& c = controls_[static_cast<size_t>(order[static_cast<size_t>(k)])];
             c.label->setBounds(cell.removeFromTop(12));
