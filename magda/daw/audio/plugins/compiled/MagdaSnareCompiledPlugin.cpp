@@ -37,12 +37,28 @@ std::vector<MagdaSnareCompiledPlugin::HostSlotInfo> MagdaSnareCompiledPlugin::vo
     const {
     using magda::ParameterScale;
     return {
-        // Transient
+        // Transient (pitched sine sweep + noise blend)
         {.name = "Transient",
          .scale = ParameterScale::Linear,
          .minValue = 0.0f,
          .maxValue = 1.0f,
-         .defaultValue = 0.4f},
+         .defaultValue = 0.5f},
+        {.name = "Trans Pitch",
+         .scale = ParameterScale::Linear,
+         .minValue = 100.0f,
+         .maxValue = 2000.0f,
+         .defaultValue = 400.0f},
+        {.name = "Trans Sweep",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
+        {.name = "Trans Decay",
+         .unit = "ms",
+         .scale = ParameterScale::Linear,
+         .minValue = 1.0f,
+         .maxValue = 100.0f,
+         .defaultValue = 10.0f},
         {.name = "Trans Tone",
          .scale = ParameterScale::Linear,
          .minValue = 1000.0f,
