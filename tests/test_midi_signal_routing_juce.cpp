@@ -57,7 +57,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testInstrumentRackPassesMidiThrough(); });
-        magda::test::runWithCleanJuceState([this] { testStepSequencerDefaultsToReplacingMidi(); });
+        magda::test::runWithCleanJuceState([this] { testStepSequencerDefaultsToMidiThru(); });
         magda::test::runWithCleanJuceState(
             [this] { testStepSequencerMidiThruPassesWhileStopped(); });
         magda::test::runWithCleanJuceState([this] { testStepSequencerStepRecordingStopsAtEnd(); });
@@ -869,8 +869,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         trackManager.setAudioEngine(nullptr);
     }
 
-    void testStepSequencerDefaultsToReplacingMidi() {
-        beginTest("Step sequencer defaults to MIDI replace and restores MIDI thru state");
+    void testStepSequencerDefaultsToMidiThru() {
+        beginTest("Step sequencer defaults to MIDI thru and restores MIDI thru state");
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -885,15 +885,15 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         if (seq == nullptr)
             return;
 
-        expect(!seq->midiThru.get(), "Fresh step sequencers should block incoming MIDI");
+        expect(seq->midiThru.get(), "Fresh step sequencers should pass incoming MIDI");
 
         juce::ValueTree saved(te::IDs::PLUGIN);
         saved.setProperty(te::IDs::type, magda::daw::audio::StepSequencerPlugin::xmlTypeName,
                           nullptr);
-        saved.setProperty("seqMidiThru", true, nullptr);
+        saved.setProperty("seqMidiThru", false, nullptr);
         seq->restorePluginStateFromValueTree(saved);
 
-        expect(seq->midiThru.get(), "Saved MIDI thru state should be restored");
+        expect(!seq->midiThru.get(), "Saved MIDI thru state should be restored");
     }
 
     void testStepSequencerMidiThruPassesWhileStopped() {
