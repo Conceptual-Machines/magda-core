@@ -28,10 +28,13 @@ class DrumVoiceUI : public juce::Component {
     explicit DrumVoiceUI(const juce::String& pluginId);
     ~DrumVoiceUI() override;
 
-    /// A named group of host slots, laid out as one titled column.
+    /// A named group of host slots, laid out as one titled column with a small
+    /// envelope graph drawn from its attack/decay slots.
     struct Section {
         juce::String title;
         std::vector<int> slots;
+        int attackSlot = -1;  // host slot of this layer's Attack (-1 = instant)
+        int decaySlot = -1;   // host slot of this layer's primary Decay (-1 = no graph)
     };
 
     /// True if `pluginId` is one of the drum-machine voice devices.
@@ -68,11 +71,17 @@ class DrumVoiceUI : public juce::Component {
     // Lay the given slots out as a label-on-top row filling `area`.
     void layoutRow(juce::Rectangle<int> area, const std::vector<int>& slots);
 
+    // Draw a layer's attack->decay envelope (linear segments, matching the dsp)
+    // into `area`, with time scaled by `axisMaxMs` so layer lengths compare.
+    void drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, const Section& s,
+                      float axisMaxMs);
+
     juce::String title_;
     std::vector<Section> sections_;
     std::vector<Control> controls_;
-    // Title strips per section, cached in resized() for paint().
+    // Title + envelope strips per section, cached in resized() for paint().
     std::vector<juce::Rectangle<int>> sectionTitleAreas_;
+    std::vector<juce::Rectangle<int>> sectionEnvAreas_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumVoiceUI)
 };

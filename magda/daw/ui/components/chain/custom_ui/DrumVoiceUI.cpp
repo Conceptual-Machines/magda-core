@@ -7,6 +7,7 @@ namespace magda::daw::ui {
 
 namespace {
 constexpr int kSectionTitleH = 15;
+constexpr int kEnvH = 26;  // per-section envelope graph strip
 constexpr int kCellLabelH = 12;
 constexpr int kCellPad = 4;
 constexpr int kCellW = 76;  // per-knob column width (preferred sizing)
@@ -33,38 +34,34 @@ juce::String DrumVoiceUI::titleFor(const juce::String& pluginId) {
 }
 
 std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& pluginId) {
-    // Slot indices match the [idx:N] pins in each voice's .dsp.
+    // Slot indices match the [idx:N] pins in each voice's .dsp. decaySlot (and
+    // attackSlot when the layer has one) drive the per-section envelope graph.
     if (pluginId.equalsIgnoreCase("magda_tom"))
         return {
-            // Body: Tune, Bend, Attack, Body.
-            {"Body", {0, 1, 2, 3}},
-            // Noise: level, tone, decay.
-            {"Noise", {4, 5, 6}},
+            {.title = "Body", .slots = {0, 1, 2, 3}, .attackSlot = 2, .decaySlot = 3},
+            {.title = "Noise", .slots = {4, 5, 6}, .decaySlot = 6},
         };
     if (pluginId.equalsIgnoreCase("magda_hat"))
         return {
-            // Ring: level, pitch, spread, decay.
-            {"Ring", {0, 1, 2, 3}},
-            // Noise: level, tone, decay.
-            {"Noise", {4, 5, 6}},
+            {.title = "Ring", .slots = {0, 1, 2, 3}, .decaySlot = 3},
+            {.title = "Noise", .slots = {4, 5, 6}, .decaySlot = 6},
         };
     if (pluginId.equalsIgnoreCase("magda_kick"))
         return {
-            // Transient: amount, pitch, sweep, decay.
-            {"Transient", {0, 1, 2, 3}},
-            // Body: Pitch, Snap, Snap Time, Attack, Body, Drive.
-            {"Body", {4, 5, 6, 7, 8, 9}},
-            // Click: amount, tone.
-            {"Click", {10, 11}},
+            {.title = "Transient", .slots = {0, 1, 2, 3}, .decaySlot = 3},
+            {.title = "Body", .slots = {4, 5, 6, 7, 8, 9}, .attackSlot = 7, .decaySlot = 8},
+            {.title = "Click", .slots = {10, 11}},
         };
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
-            // Transient: amount, pitch, sweep, decay, tone.
-            {"Transient", {0, 1, 2, 3, 4}},
-            // Body: Tune, Snap, Snap Time, Attack, Body Decay.
-            {"Body", {5, 6, 7, 8, 9}},
-            // Rattle/tail: Snappy, Tone, HP Freq, HP Reso, Rattle Decay, Drive.
-            {"Rattle", {10, 11, 12, 13, 14, 15}},
+            {.title = "Transient", .slots = {0, 1, 2, 3, 4}, .decaySlot = 3},
+            {.title = "Body", .slots = {5, 6, 7, 8, 9}, .attackSlot = 8, .decaySlot = 9},
+            {.title = "Rattle", .slots = {10, 11, 12, 13, 14, 15}, .decaySlot = 14},
+        };
+    if (pluginId.equalsIgnoreCase("magda_clap"))
+        return {
+            {.title = "Flam", .slots = {0, 1, 2, 3}, .decaySlot = 2},
+            {.title = "Shape", .slots = {4, 5, 6}},
         };
     return {};  // other voices: single flat row
 }
@@ -89,6 +86,7 @@ void DrumVoiceUI::ensureControls(int count) {
         c.slider->onValueChanged = [this, idx](double v) {
             if (onParameterChanged)
                 onParameterChanged(idx, static_cast<float>(v));
+            repaint();  // refresh the envelope graphs
         };
         addAndMakeVisible(*c.slider);
 
@@ -108,6 +106,7 @@ void DrumVoiceUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
     }
     resized();
+    repaint();  // envelope graphs reflect the new values
 }
 
 std::vector<LinkableTextSlider*> DrumVoiceUI::getLinkableSliders() {
@@ -152,9 +151,26 @@ void DrumVoiceUI::paint(juce::Graphics& g) {
     auto titleArea = getLocalBounds().removeFromTop(kSectionTitleH).reduced(kCellPad, 0);
     g.drawText(title_, titleArea, juce::Justification::centredLeft, false);
 
+    // Time axis shared across sections so layer lengths compare visually
+    // (attack + decay, in ms).
+    float axisMaxMs = 1.0f;
+    for (const auto& s : sections_) {
+        if (s.decaySlot < 0 || s.decaySlot >= static_cast<int>(controls_.size()))
+            continue;
+        float t =
+            static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
+        if (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
+            t +=
+                static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue());
+        axisMaxMs = juce::jmax(axisMaxMs, t);
+    }
+
     // Section titles + a divider down the left edge of each section after the
-    // first. sectionTitleAreas_ is filled by resized(), 1:1 with sections_.
+    // first, plus the per-section envelope graph. sectionTitleAreas_ /
+    // sectionEnvAreas_ are filled by resized(), 1:1 with sections_.
     for (size_t i = 0; i < sectionTitleAreas_.size() && i < sections_.size(); ++i) {
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText(sections_[i].title, sectionTitleAreas_[i].reduced(2, 0),
                    juce::Justification::centredLeft, false);
         if (i > 0) {
@@ -162,11 +178,14 @@ void DrumVoiceUI::paint(juce::Graphics& g) {
             g.drawVerticalLine(x, static_cast<float>(sectionTitleAreas_[i].getY()),
                                static_cast<float>(getHeight() - kCellPad));
         }
+        if (i < sectionEnvAreas_.size())
+            drawEnvelope(g, sectionEnvAreas_[i], sections_[i], axisMaxMs);
     }
 }
 
 void DrumVoiceUI::resized() {
     sectionTitleAreas_.clear();
+    sectionEnvAreas_.clear();
     auto area = getLocalBounds().reduced(kCellPad);
     area.removeFromTop(kSectionTitleH);  // voice-name strip (painted)
     if (controls_.empty())
@@ -195,9 +214,45 @@ void DrumVoiceUI::resized() {
                                               (static_cast<double>(s.slots.size()) / totalKnobs));
         juce::Rectangle<int> sa(x, area.getY(), w, area.getHeight());
         sectionTitleAreas_.push_back(sa.removeFromTop(kSectionTitleH));
+        sectionEnvAreas_.push_back(sa.removeFromTop(kEnvH).reduced(kCellPad, 2));
         layoutRow(sa.reduced(kCellPad, 0), s.slots);
         x += w;
     }
+}
+
+void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, const Section& s,
+                               float axisMaxMs) {
+    if (s.decaySlot < 0 || s.decaySlot >= static_cast<int>(controls_.size()) || axisMaxMs <= 0.0f)
+        return;
+
+    const float attackMs =
+        (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
+            ? static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue())
+            : 0.0f;
+    const float decayMs =
+        static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
+
+    const auto r = area.toFloat();
+    const float xA = r.getX() + r.getWidth() * (attackMs / axisMaxMs);
+    const float xD = r.getX() + r.getWidth() * ((attackMs + decayMs) / axisMaxMs);
+    const float top = r.getY() + 1.0f;
+    const float bot = r.getBottom() - 1.0f;
+
+    // Linear attack ramp to the peak, then linear decay to zero (matches the
+    // dsp's linear en.ar / en.adsr segments).
+    juce::Path p;
+    p.startNewSubPath(r.getX(), bot);
+    p.lineTo(xA, top);
+    p.lineTo(juce::jmin(xD, r.getRight()), bot);
+
+    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    g.setColour(accent.withAlpha(0.18f));
+    juce::Path fill = p;
+    fill.lineTo(r.getX(), bot);
+    fill.closeSubPath();
+    g.fillPath(fill);
+    g.setColour(accent);
+    g.strokePath(p, juce::PathStrokeType(1.2f));
 }
 
 }  // namespace magda::daw::ui
