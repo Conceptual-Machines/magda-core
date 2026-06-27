@@ -248,14 +248,23 @@ DeviceInfo TrackManager::deviceInfoFromPluginObject(const juce::DynamicObject& p
     device.pluginId = uniqueId.isNotEmpty() ? uniqueId
                                             : pluginObj.getProperty("name").toString() + "_" +
                                                   pluginObj.getProperty("format").toString();
-    device.isInstrument = static_cast<bool>(pluginObj.getProperty("isInstrument"));
+    const auto rawCategory = pluginObj.hasProperty("rawCategory")
+                                 ? pluginObj.getProperty("rawCategory").toString()
+                                 : pluginObj.getProperty("category").toString();
+    const auto rawSubcategory = pluginObj.hasProperty("rawSubcategory")
+                                    ? pluginObj.getProperty("rawSubcategory").toString()
+                                    : pluginObj.getProperty("subcategory").toString();
+    device.isInstrument = rawCategory.isNotEmpty()
+                              ? rawCategory == "Instrument"
+                              : static_cast<bool>(pluginObj.getProperty("isInstrument"));
     if (pluginObj.hasProperty("deviceType"))
         device.deviceType =
             static_cast<DeviceType>(static_cast<int>(pluginObj.getProperty("deviceType")));
-    else if (pluginObj.getProperty("subcategory").toString() == "MIDI")
+    else if (rawSubcategory == "MIDI")
         device.deviceType = DeviceType::MIDI;
     else
         device.deviceType = device.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+    device.browserCategoryOverride = pluginObj.getProperty("categoryOverride").toString();
     device.uniqueId = pluginObj.getProperty("uniqueId").toString();
     device.fileOrIdentifier = pluginObj.getProperty("fileOrIdentifier").toString();
 

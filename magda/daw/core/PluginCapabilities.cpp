@@ -1,7 +1,6 @@
 #include "PluginCapabilities.hpp"
 
 #include "AppPaths.hpp"
-#include "PluginPreferences.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -26,15 +25,8 @@ void setInt(juce::DynamicObject& obj, const juce::Identifier& key, int value) {
     obj.setProperty(key, value);
 }
 
-bool isManualMidiFxDevice(const DeviceInfo& device) {
-    const auto identifier = PluginPreferences::identifierForDevice(device);
-    if (identifier.isEmpty())
-        return false;
-    return PluginPreferences::getInstance().treatsAsMidiFx(identifier);
-}
-
 bool hasMidiOutputOverride(const DeviceInfo& device) {
-    return device.deviceType == DeviceType::MIDI || isManualMidiFxDevice(device);
+    return device.deviceType == DeviceType::MIDI;
 }
 
 PluginCapabilitySnapshot snapshotFromVar(const juce::var& value) {
@@ -247,19 +239,12 @@ bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
 }
 
 void applyCachedCapabilitiesToDevice(DeviceInfo& device) {
-    const bool manualMidiFx = isManualMidiFxDevice(device);
-    if (manualMidiFx) {
-        device.isInstrument = false;
-        device.deviceType = DeviceType::MIDI;
-        device.producesMidi = true;
-    }
-
     const auto identifier = PluginCapabilityCache::identifierForDevice(device);
     auto snapshot = PluginCapabilityCache::getInstance().find(identifier);
     if (!snapshot)
         return;
 
-    device.producesMidi = snapshot->hasMidiOutput || manualMidiFx;
+    device.producesMidi = snapshot->hasMidiOutput;
     if (!device.isInstrument && snapshot->hasMidiInput)
         device.canReceiveMidi = true;
 }

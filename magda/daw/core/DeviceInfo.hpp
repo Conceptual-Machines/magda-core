@@ -87,6 +87,11 @@ struct DeviceInfo {
     bool isInstrument = false;  // true for instruments (synths, samplers), false for effects
     DeviceType deviceType = DeviceType::Effect;  // Instrument, Effect, or MIDI
 
+    // User/browser categorization override (e.g. "MIDI FX"). This is UX
+    // metadata only; it must not rewrite JUCE scan facts or routing
+    // capabilities such as isInstrument, canReceiveMidi, or producesMidi.
+    juce::String browserCategoryOverride;
+
     // External plugin identity from JUCE. Populated for scanned VST/AU/etc.
     // plugins using PluginDescription::createIdentifierString(); it is not
     // guaranteed for internal MAGDA devices.
