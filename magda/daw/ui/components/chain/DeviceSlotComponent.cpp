@@ -48,11 +48,11 @@
 #include "slot/DeviceSlotMidiUiBinding.hpp"
 #include "slot/DeviceSlotModulationContext.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
+#include "slot/DeviceSlotParameterPaging.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
-#include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -1511,105 +1511,37 @@ void DeviceSlotComponent::onMacroPageRemoveRequested(int /*itemsToRemove*/) {
 }
 
 void DeviceSlotComponent::updateParameterSlots() {
-    auto safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this);
-    paramGrid_->updateParameterSlots(
-        device_, paramGrid_->getCurrentPage(), [safeThis](int paramIndex, double value) {
-            auto self = safeThis;
-            if (!self)
-                return;
-            if (!self->nodePath_.isValid())
-                return;
-            // Update local cache immediately for responsive UI
-            if (auto* param = self->device_.findParameterByIndex(paramIndex))
-                param->currentValue = static_cast<float>(value);
-            if (self->compiledPanel_)
-                self->compiledPanel_->updateFromDevice(self->device_);
-            magda::TrackManager::getInstance().setDeviceParameterValue(self->nodePath_, paramIndex,
-                                                                       static_cast<float>(value));
-            if (self->traits_.compiledPresentation &&
-                refreshEngineAwareCompiledSlots(self->device_, self->nodePath_, paramIndex,
-                                                *self->paramGrid_)) {
-                self->updateParameterSlots();
-                self->updateParamModulation();
-                return;
-            }
-            // Re-evaluate gate conditions now that the local cache is updated.
-            // This makes gated cells (e.g. Time / Division when Sync toggles)
-            // respond immediately without waiting for the next full repaint.
-            self->paramGrid_->refreshEnabledStates(self->device_,
-                                                   self->paramGrid_->getCurrentPage());
-        });
+    updateDeviceSlotParameterSlots(
+        device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
+        {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+         .updateParamModulation = [this]() { updateParamModulation(); }});
 }
 
 void DeviceSlotComponent::updateParameterValues() {
-    // Update only parameter values (no callback rewiring)
-    paramGrid_->updateParameterValues(device_, paramGrid_->getCurrentPage());
+    updateDeviceSlotParameterValues(device_, *paramGrid_);
 }
 
 bool DeviceSlotComponent::applySavedParameterConfig() {
-    if (!paramGrid_ || device_.uniqueId.isEmpty() || device_.parameters.empty())
-        return false;
-
-    magda::DeviceInfo tempDevice = device_;
-    if (!ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice))
-        return false;
-
-    if (!tempDevice.visibleParameters.empty()) {
-        if (nodePath_.isValid())
-            magda::TrackManager::getInstance().setDeviceVisibleParameters(
-                nodePath_, tempDevice.visibleParameters);
-        device_.visibleParameters = tempDevice.visibleParameters;
-    }
-
-    // Mixer mini-chain selection (empty = fall back to first non-hidden params).
-    // Pushed unconditionally so deselecting all clears a prior selection.
-    if (nodePath_.isValid())
-        magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
-            nodePath_, tempDevice.miniMixerParameters);
-    device_.miniMixerParameters = tempDevice.miniMixerParameters;
-
-    // Apply detected parameter metadata (unit, scale, range, choices).
-    device_.parameters = tempDevice.parameters;
-    return true;
+    return applyDeviceSlotSavedParameterConfig(device_, nodePath_, paramGrid_.get());
 }
 
 void DeviceSlotComponent::updateParameterPagination() {
-    if (!paramGrid_)
-        return;
-    const int totalPages = juce::jmax(1, paramGrid_->getLayout().totalPages(device_));
-    int currentPage = device_.currentParameterPage;
-    if (currentPage >= totalPages)
-        currentPage = totalPages - 1;
-    if (currentPage < 0)
-        currentPage = 0;
-    paramGrid_->updatePageControls(currentPage, totalPages);
+    updateDeviceSlotParameterPagination(device_, paramGrid_.get());
 }
 
 void DeviceSlotComponent::goToPrevPage() {
-    int currentPage = paramGrid_->getCurrentPage();
-    if (currentPage > 0) {
-        int newPage = currentPage - 1;
-        // Save page state to device (UI-only state, no TrackManager notification needed)
-        device_.currentParameterPage = newPage;
-        paramGrid_->updatePageControls(newPage, paramGrid_->getTotalPages());
-        updateParameterSlots();   // Reload parameters for new page
-        updateParamModulation();  // Update mod/macro links for new params
-        repaint();
-    }
+    goToPreviousDeviceSlotParameterPage(
+        device_, *paramGrid_,
+        {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+         .updateParamModulation = [this]() { updateParamModulation(); },
+         .repaint = [this]() { repaint(); }});
 }
 
 void DeviceSlotComponent::goToNextPage() {
-    int currentPage = paramGrid_->getCurrentPage();
-    int totalPages = paramGrid_->getTotalPages();
-    if (currentPage < totalPages - 1) {
-        int newPage = currentPage + 1;
-        // Save page state to device (UI-only state, no TrackManager notification needed)
-        device_.currentParameterPage = newPage;
-        paramGrid_->updatePageControls(newPage, totalPages);
-        updateParameterSlots();   // Reload parameters for new page
-        updateParamModulation();  // Update mod/macro links for new params
-        repaint();
-    }
+    goToNextDeviceSlotParameterPage(device_, *paramGrid_,
+                                    {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+                                     .updateParamModulation = [this]() { updateParamModulation(); },
+                                     .repaint = [this]() { repaint(); }});
 }
 
 void DeviceSlotComponent::openMacroPanelForSelectionIfNeeded() {
