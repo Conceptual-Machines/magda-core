@@ -9,7 +9,7 @@ namespace magda::daw::ui {
 
 namespace {
 constexpr int kSectionTitleH = 15;
-constexpr int kEnvH = 26;  // per-section envelope graph strip
+constexpr int kEnvH = 48;  // per-section envelope graph strip
 constexpr int kCellLabelH = 12;
 constexpr int kCellPad = 4;
 constexpr int kCellW = 76;  // per-knob column width (preferred sizing)
