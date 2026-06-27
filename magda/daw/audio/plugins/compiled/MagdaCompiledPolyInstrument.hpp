@@ -180,6 +180,11 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     // re-triggering it, guaranteeing one voice per pitch and no hung notes.
     std::array<bool, 128> polyHeld_{};
     int lastVoiceMode_ = 0;
+    // Transport play state from the previous block. On the playing->stopped edge
+    // we flush all voices: clip playback doesn't send note-offs when the user
+    // hits Stop mid-note, so the Faust voice would stay gated on and keep
+    // sounding (the graph runs continuously for live monitoring).
+    bool wasPlaying_ = false;
 
     // Voice macros only (0 .. voiceSlotCount-1): that control's zone in EVERY
     // voice (group=false), so a single host value fans out to all voices.

@@ -339,6 +339,12 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
     if (!poly_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
 
+    // Stop mid-note doesn't deliver note-offs, so a sounding clip voice would
+    // hang gated-on. Flush every voice on the playing->stopped edge.
+    if (wasPlaying_ && !fc.isPlaying)
+        resetAllVoices();
+    wasPlaying_ = fc.isPlaying;
+
     // Fan each voice macro out to every poly voice (Glide forced to 0 so reused
     // voices never portamento) and to the mono voice (real value, incl. Glide).
     for (int slot = 0; slot < voiceSlotCount(); ++slot) {
