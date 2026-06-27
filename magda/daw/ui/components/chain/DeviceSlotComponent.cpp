@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include <algorithm>
+#include <utility>
 
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
@@ -32,9 +33,9 @@
 #include "engine/TracktionEngineWrapper.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
 #include "layout/NodeHeaderStyles.hpp"
+#include "modulation/DeviceLinkCallbacks.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
-#include "modulation/ModulationOwnerPath.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
@@ -70,271 +71,53 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
                                                           bool expandMacroPanelOnDirectLink) {
     juce::Component::SafePointer<DeviceSlotComponent> safeThis(this);
 
-    target.onModLinkedWithAmount = [safeThis](int modIndex, magda::ControlTarget target,
-                                              float amount) {
+    DeviceLinkCallbackContext context;
+    context.getNodePath = [safeThis]() {
         auto self = safeThis;
-        if (!self)
-            return;
-
-        auto nodePath = self->nodePath_;
-        auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
-        if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
-            magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target, amount);
-            if (!self)
-                return;
-
+        return self ? self->nodePath_ : magda::ChainNodePath{};
+    };
+    context.onMacroTargetChanged = [safeThis](int macroIndex, magda::ControlTarget target) {
+        if (auto self = safeThis)
+            self->onMacroTargetChangedInternal(macroIndex, target);
+    };
+    context.updateParamModulation = [safeThis]() {
+        if (auto self = safeThis)
+            self->updateParamModulation();
+    };
+    context.updateModsPanel = [safeThis]() {
+        if (auto self = safeThis)
             self->updateModsPanel();
-            if (!self->modPanelVisible_) {
-                self->modButton_->setToggleState(true, juce::dontSendNotification);
-                self->modButton_->setActive(true);
-                self->setModPanelVisible(true);
-            }
-            magda::SelectionManager::getInstance().selectMod(nodePath, modIndex);
-        } else if (activeModSelection.isValid() &&
-                   activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeModSelection.parentPath);
-            magda::TrackManager::getInstance().setModTarget(ownerPath, modIndex, target);
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, modIndex, target,
-                                                                amount);
-        } else if (activeModSelection.isValid()) {
-            magda::TrackManager::getInstance().setModTarget(activeModSelection.parentPath, modIndex,
-                                                            target);
-            magda::TrackManager::getInstance().setModLinkAmount(activeModSelection.parentPath,
-                                                                modIndex, target, amount);
-        }
-
-        if (self)
-            self->updateParamModulation();
     };
-
-    target.onModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto nodePath = self->nodePath_;
-        magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
-        if (!self)
-            return;
-
-        self->updateParamModulation();
-        self->updateModsPanel();
-    };
-
-    target.onRackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
-        if (rackPath.isValid())
-            magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
-        if (!self)
-            return;
-
-        self->updateParamModulation();
-        self->updateModsPanel();
-    };
-
-    target.onTrackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto trackId = self->nodePath_.trackId;
-        if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeModLink(ChainNodePath::trackLevel(trackId),
-                                                             modIndex, target);
-        if (!self)
-            return;
-
-        self->updateParamModulation();
-        self->updateModsPanel();
-    };
-
-    target.onModAmountChanged = [safeThis](int modIndex, magda::ControlTarget target,
-                                           float amount) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto nodePath = self->nodePath_;
-        auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
-        if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target, amount);
-            if (self)
-                self->updateModsPanel();
-        } else if (activeModSelection.isValid() &&
-                   activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeModSelection.parentPath);
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, modIndex, target,
-                                                                amount);
-        } else if (activeModSelection.isValid()) {
-            magda::TrackManager::getInstance().setModLinkAmount(activeModSelection.parentPath,
-                                                                modIndex, target, amount);
-        }
-
-        if (self)
-            self->updateParamModulation();
-    };
-
-    target.onMacroLinkedWithAmount = [safeThis](int macroIndex, magda::ControlTarget target,
-                                                float amount) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto nodePath = self->nodePath_;
-        auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
-        if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setMacroTarget(nodePath, macroIndex, target);
-            magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target,
-                                                                  amount);
-            if (!self)
-                return;
-
+    context.updateMacroPanel = [safeThis]() {
+        if (auto self = safeThis)
             self->updateMacroPanel();
-            if (!self->paramPanelVisible_) {
-                self->macroButton_->setToggleState(true, juce::dontSendNotification);
-                self->macroButton_->setActive(true);
-                self->setParamPanelVisible(true);
-            }
-        } else if (activeMacroSelection.isValid() &&
-                   activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeMacroSelection.parentPath);
-            magda::TrackManager::getInstance().setMacroTarget(ownerPath, macroIndex, target);
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, macroIndex, target,
-                                                                  amount);
-        } else if (activeMacroSelection.isValid()) {
-            magda::TrackManager::getInstance().setMacroTarget(activeMacroSelection.parentPath,
-                                                              macroIndex, target);
-            magda::TrackManager::getInstance().setMacroLinkAmount(activeMacroSelection.parentPath,
-                                                                  macroIndex, target, amount);
-        }
-
-        if (self)
-            self->updateParamModulation();
     };
-
-    target.onMacroLinked = [safeThis, expandMacroPanelOnDirectLink](int macroIndex,
-                                                                    magda::ControlTarget target) {
+    context.expandModPanelForDirectLink = [safeThis]() {
         auto self = safeThis;
-        if (!self)
+        if (!self || self->modPanelVisible_)
             return;
 
-        self->onMacroTargetChangedInternal(macroIndex, target);
-        if (!self)
-            return;
-
-        self->updateParamModulation();
-        if (!expandMacroPanelOnDirectLink || !target.isValid())
-            return;
-
-        auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
-        if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == self->nodePath_ &&
-            !self->paramPanelVisible_) {
-            self->macroButton_->setToggleState(true, juce::dontSendNotification);
-            self->macroButton_->setActive(true);
-            self->setParamPanelVisible(true);
-        }
+        self->modButton_->setToggleState(true, juce::dontSendNotification);
+        self->modButton_->setActive(true);
+        self->setModPanelVisible(true);
     };
-
-    target.onMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
+    context.expandMacroPanelForDirectLink = [safeThis]() {
         auto self = safeThis;
-        if (!self)
+        if (!self || self->paramPanelVisible_)
             return;
 
-        magda::TrackManager::getInstance().removeMacroLink(self->nodePath_, macroIndex, target);
-        if (!self)
-            return;
-
-        self->updateParamModulation();
-        self->updateMacroPanel();
+        self->macroButton_->setToggleState(true, juce::dontSendNotification);
+        self->macroButton_->setActive(true);
+        self->setParamPanelVisible(true);
     };
-
-    target.onTrackMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto trackId = self->nodePath_.trackId;
-        if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeMacroLink(ChainNodePath::trackLevel(trackId),
-                                                               macroIndex, target);
-        if (!self)
-            return;
-
-        self->updateParamModulation();
-        self->updateMacroPanel();
+    context.selectModForDirectLink = [safeThis](const magda::ChainNodePath& nodePath,
+                                                int modIndex) {
+        if (safeThis)
+            magda::SelectionManager::getInstance().selectMod(nodePath, modIndex);
     };
+    context.expandMacroPanelOnDirectLink = expandMacroPanelOnDirectLink;
 
-    target.onRackMacroLinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
-        if (rackPath.isValid())
-            magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
-        if (self)
-            self->updateParamModulation();
-    };
-
-    target.onTrackMacroLinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto trackId = self->nodePath_.trackId;
-        if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setMacroTarget(ChainNodePath::trackLevel(trackId),
-                                                              macroIndex, target);
-        if (self)
-            self->updateParamModulation();
-    };
-
-    target.onRackMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
-        if (rackPath.isValid())
-            magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
-        if (!self)
-            return;
-
-        self->updateParamModulation();
-        self->updateMacroPanel();
-    };
-
-    target.onMacroAmountChanged = [safeThis](int macroIndex, magda::ControlTarget target,
-                                             float amount) {
-        auto self = safeThis;
-        if (!self)
-            return;
-
-        auto nodePath = self->nodePath_;
-        auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
-        if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target,
-                                                                  amount);
-            if (self)
-                self->updateMacroPanel();
-        } else if (activeMacroSelection.isValid() &&
-                   activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeMacroSelection.parentPath);
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, macroIndex, target,
-                                                                  amount);
-        } else if (activeMacroSelection.isValid()) {
-            magda::TrackManager::getInstance().setMacroLinkAmount(activeMacroSelection.parentPath,
-                                                                  macroIndex, target, amount);
-        }
-
-        if (self)
-            self->updateParamModulation();
-    };
+    wireDeviceModMacroLinkCallbacks(target, std::move(context));
 }
 
 void DeviceSlotComponent::setupGainMeterControls() {
