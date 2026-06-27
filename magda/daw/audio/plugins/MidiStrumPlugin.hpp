@@ -55,6 +55,12 @@ class MidiStrumPlugin : public MidiDevicePlugin {
     void applyToBuffer(const te::PluginRenderContext&) override;
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
+    /// UI viz helper: normalized onset times [0,1] for `count` evenly-spaced
+    /// notes, using the current Shape preset and Cycles. Computed fresh (its own
+    /// local LUT, not the audio-thread `lut_`) so it is safe to call from the
+    /// message thread.
+    std::vector<float> curveOnsetPreview(int count) const;
+
     // CachedValues (persistence) + AutomatableParameters (macro/mod linking).
     juce::CachedValue<int> trigger, order, shape, cycles;
     juce::CachedValue<float> strumLength, syncInterval;

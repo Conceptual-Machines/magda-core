@@ -11,6 +11,7 @@
 namespace magda::daw::audio {
 class ArpeggiatorPlugin;
 class MidiChordEnginePlugin;
+class MidiStrumPlugin;
 class OscilloscopePlugin;
 class PolyStepSequencerPlugin;
 class SpectrumAnalyzerPlugin;
@@ -47,6 +48,7 @@ class PitchShiftUI;
 class ReverbUI;
 class SamplerUI;
 class StepSequencerUI;
+class StrumUI;
 class ToneGeneratorUI;
 
 /**
@@ -213,6 +215,9 @@ class DeviceCustomUIManager {
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();
     }
+    StrumUI* getStrumUI() const {
+        return strumUI_.get();
+    }
     PolyStepSequencerUI* getPolyStepSequencerUI() const {
         return polyStepSequencerUI_.get();
     }
@@ -268,6 +273,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
+    std::unique_ptr<StrumUI> strumUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
     std::unique_ptr<PolyStepSequencerUI> polyStepSequencerUI_;
     std::unique_ptr<OscilloscopeUI> oscilloscopeUI_;
@@ -276,6 +282,7 @@ class DeviceCustomUIManager {
 
     // Plugin raw pointers for timer polling / setNodePath updates
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
+    daw::audio::MidiStrumPlugin* strumPlugin_ = nullptr;
     daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     daw::audio::PolyStepSequencerPlugin* polyStepSeqPlugin_ = nullptr;
     daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;

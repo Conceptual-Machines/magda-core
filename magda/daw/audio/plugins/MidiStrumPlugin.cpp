@@ -338,4 +338,21 @@ void MidiStrumPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) 
                                             syncInterval);
 }
 
+std::vector<float> MidiStrumPlugin::curveOnsetPreview(int count) const {
+    std::vector<float> out;
+    if (count <= 0)
+        return out;
+
+    std::array<float, 1024> lut{};
+    buildLut(shape.get(), lut);
+    const int cyc = cycles.get() + 1;  // index 0..7 -> 1..8
+
+    out.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        const float u = (count == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(count - 1);
+        out.push_back(juce::jlimit(0.0f, 1.0f, sampleCycled(lut, u, cyc)));
+    }
+    return out;
+}
+
 }  // namespace magda::daw::audio

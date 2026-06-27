@@ -19,6 +19,7 @@
 #include "audio/plugins/IFaustEditorModel.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
@@ -55,6 +56,7 @@
 #include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
+#include "custom_ui/StrumUI.hpp"
 #include "custom_ui/ToneGeneratorUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
@@ -318,6 +320,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return chordEngineUI_.get();
     if (arpeggiatorUI_)
         return arpeggiatorUI_.get();
+    if (strumUI_)
+        return strumUI_.get();
     if (stepSequencerUI_)
         return stepSequencerUI_.get();
     if (polyStepSequencerUI_)
@@ -372,6 +376,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return samplerUI_->getLinkableSliders();
     if (arpeggiatorUI_)
         return arpeggiatorUI_->getLinkableSliders();
+    if (strumUI_)
+        return strumUI_->getLinkableSliders();
     if (stepSequencerUI_)
         return stepSequencerUI_->getLinkableSliders();
     if (polyStepSequencerUI_)
@@ -386,7 +392,7 @@ bool DeviceCustomUIManager::hasAnyUI() const {
            impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
            polySynthUI_ || fmUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ || reverbUI_ ||
            delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ ||
-           faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
+           faustUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ || stepSequencerUI_ ||
            polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
@@ -711,6 +717,21 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
                 if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
                     arpeggiatorUI_->setArpeggiator(arp);
                     arpPlugin_ = arp;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName)) {
+        strumUI_ = std::make_unique<StrumUI>();
+        parent.addAndMakeVisible(*strumUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* strum = dynamic_cast<daw::audio::MidiStrumPlugin*>(plugin.get())) {
+                    strumUI_->setPlugin(strum);
+                    strumPlugin_ = strum;
                 }
             }
         }
