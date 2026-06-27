@@ -203,6 +203,7 @@ class FourOscUI : public juce::Component {
             LinkableTextSlider decaySlider{TextSlider::Format::Decimal};
             LinkableTextSlider sustainSlider{TextSlider::Format::Decimal};
             LinkableTextSlider releaseSlider{TextSlider::Format::Decimal};
+            AdsrGraph graph;  // draggable envelope beside the value boxes
         };
         EnvRow rows_[2];
         juce::Label hdrAtk_, hdrDec_, hdrSus_, hdrRel_;
@@ -228,6 +229,7 @@ class FourOscUI : public juce::Component {
       public:
         LFOTab(FourOscUI& owner);
         void resized() override;
+        void paint(juce::Graphics& g) override;
         void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
         void updatePluginState(const FourOscPluginState& state);
         void updateModEntries(const std::vector<ModMatrixEntry>& entries);
@@ -244,6 +246,10 @@ class FourOscUI : public juce::Component {
             LinkableTextSlider rateSlider{TextSlider::Format::Decimal};
             LinkableTextSlider depthSlider{TextSlider::Format::Decimal};
             juce::ToggleButton syncButton{"Sync"};
+            // Preview of the selected wave shape (drawn in paint()).
+            juce::Rectangle<int> previewBounds;
+            int shape = 0;       // 0 Off / 1 Sine / 2 Square / 3 Saw / 4 Triangle / 5 Noise
+            float depth = 0.0f;  // 0..1, scales the preview amplitude
         };
         LFORow rows_[2];
         static void setupWaveSelector(IconSelector& selector);
