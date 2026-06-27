@@ -38,26 +38,41 @@ std::vector<MagdaClapCompiledPlugin::HostSlotInfo> MagdaClapCompiledPlugin::voic
     return {
         {.name = "Tone",
          .scale = ParameterScale::Linear,
-         .minValue = 500.0f,
-         .maxValue = 3000.0f,
-         .defaultValue = 1200.0f},
+         .minValue = 400.0f,
+         .maxValue = 4000.0f,
+         .defaultValue = 1000.0f},
         {.name = "Spread",
          .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 3.0f,
+         .minValue = 2.0f,
          .maxValue = 30.0f,
          .defaultValue = 9.0f},
         {.name = "Decay",
          .unit = "ms",
          .scale = ParameterScale::Linear,
          .minValue = 20.0f,
-         .maxValue = 1000.0f,
+         .maxValue = 1500.0f,
          .defaultValue = 200.0f},
         {.name = "Tail",
          .scale = ParameterScale::Linear,
          .minValue = 0.0f,
          .maxValue = 1.0f,
-         .defaultValue = 0.5f},
+         .defaultValue = 0.4f},
+        {.name = "HP Freq",
+         .scale = ParameterScale::Linear,
+         .minValue = 500.0f,
+         .maxValue = 8000.0f,
+         .defaultValue = 2000.0f},
+        {.name = "HP Reso",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.5f,
+         .maxValue = 10.0f,
+         .defaultValue = 1.0f},
+        {.name = "Drive",
+         .scale = ParameterScale::Linear,
+         .minValue = 1.0f,
+         .maxValue = 20.0f,
+         .defaultValue = 1.0f},
     };
 }
 
@@ -66,9 +81,9 @@ const CompiledPluginSpec& getMagdaClapSpec() {
         .pluginId = MagdaClapCompiledPlugin::xmlTypeName,
         .displayName = "Clap",
         .browserCategory = "Drums",
-        .description = "Synthetic clap: a band-passed noise burst plus two delayed copies (Spread "
-                       "spacing) for the hand-clap flam, over a longer diffuse tail. Knob-tuned, "
-                       "MIDI-gated - drop it on a DrumGrid pad or play it standalone.",
+        .description = "Synthetic clap: one band-passed noise source shaped by a fast "
+                       "three-triangle envelope (the hand-clap flam), over a diffuse tail. "
+                       "Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or play it standalone.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaClapCompiledPlugin(info);
         },
