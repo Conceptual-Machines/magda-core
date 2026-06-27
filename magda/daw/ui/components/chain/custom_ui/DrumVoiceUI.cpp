@@ -54,7 +54,7 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
         };
     if (pluginId.equalsIgnoreCase("magda_kick"))
         return {
-            {.title = "Transient", .slots = {0, 1, 2, 3}, .decaySlot = 3},
+            {.title = "Transient", .slots = {0, 1, 2, 3, 13}, .decaySlot = 3, .curveSlot = 13},
             {.title = "Body",
              .slots = {4, 5, 6, 7, 8, 9, 12},
              .attackSlot = 7,
@@ -65,7 +65,7 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
         };
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
-            {.title = "Transient", .slots = {0, 1, 2, 3, 4}, .decaySlot = 3},
+            {.title = "Transient", .slots = {0, 1, 2, 3, 4, 17}, .decaySlot = 3, .curveSlot = 17},
             {.title = "Body",
              .slots = {5, 6, 7, 8, 9, 16},
              .attackSlot = 8,

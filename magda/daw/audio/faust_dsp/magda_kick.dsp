@@ -32,6 +32,7 @@ drive     = hslider("Drive [idx:9]",      2.0, 1.0, 10.0, 0.01);
 clickAmt  = hslider("Click [idx:10]",      0.3,  0.0, 1.0,   0.001);
 clickTone = hslider("Click Tone [idx:11]", 2000, 500, 12000, 1);
 curve     = hslider("Curve [idx:12]",      0,   -50,  50,    1);
+transCurve = hslider("Trans Curve [idx:13]", 0,  -50,  50,    1);
 
 // ============================================================================
 // Voice: Transient + Body + Click. Phase-reset sines (consistent transient).
@@ -44,7 +45,8 @@ sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
 transAEnv = en.ar(0.0002, transDec, gate);
 transPEnv = en.ar(0.0001, 0.003, gate);
 transFreq = transPitch * (1 + transPEnv * transSweep * 16);
-trans     = sinR(transFreq) * transAEnv * transAmt;
+transCurveExp = pow(8.0, transCurve / 50.0);
+trans     = sinR(transFreq) * pow(transAEnv, transCurveExp) * transAmt;
 
 // Body: low pitched sine with its Snap pitch env (Snap*8 -> up to ~9x pitch).
 // Auto-ducks under the transient so the sweep punches through cleanly.

@@ -34,6 +34,7 @@ hpReso    = hslider("HP Reso [idx:13]",      0.7,  0.5,  10.0,  0.01);
 rattleDec = hslider("Rattle Decay [idx:14]", 200,  1,    1500,  1) * 0.001;
 drive     = hslider("Drive [idx:15]",        1.0,  1.0,  20.0,  0.01);
 curve     = hslider("Curve [idx:16]",        0,   -50,   50,    1);
+transCurve = hslider("Trans Curve [idx:17]", 0,   -50,   50,    1);
 
 // ============================================================================
 // Voice: Transient + Body + Rattle, summed and soft-clipped.
@@ -47,8 +48,10 @@ sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
 transAEnv  = en.ar(0.0002, transDec, gate);
 transPEnv  = en.ar(0.0001, 0.003, gate);
 transFreq  = transPitch * (1 + transPEnv * transSweep * 16);
-transSine  = sinR(transFreq) * transAEnv;
-transNoise = (no.noise : fi.highpass(2, transTone)) * transAEnv * 0.6;
+transCurveExp = pow(8.0, transCurve / 50.0);
+transAEnvS = pow(transAEnv, transCurveExp);
+transSine  = sinR(transFreq) * transAEnvS;
+transNoise = (no.noise : fi.highpass(2, transTone)) * transAEnvS * 0.6;
 trans      = (transSine + transNoise) * transAmt;
 
 // Body: two tuned partials with a fast pitch snap (Snap*8 -> up to ~9x tune).
