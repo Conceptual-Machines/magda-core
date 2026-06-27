@@ -6,6 +6,8 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.cpp
     ai/AIPanelComponent.cpp
     slot/DeviceCustomUIManager.cpp
+    slot/DeviceSlotAnalyzerContextActions.cpp
+    slot/DeviceSlotAutomationControls.cpp
     slot/DeviceSlotContentLayout.cpp
     slot/DeviceSlotContentPainter.cpp
     slot/DeviceSlotGainMeterControls.cpp
@@ -14,8 +16,13 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceSlotInlineUiFactory.cpp
     slot/DeviceSlotMidiActivity.cpp
     slot/DeviceSlotMidiUiBinding.cpp
+    slot/DeviceSlotModMacroCommands.cpp
     slot/DeviceSlotModulationContext.cpp
+    slot/DeviceSlotMultiOutControls.cpp
+    slot/DeviceSlotParameterPaging.cpp
     slot/DeviceSlotParamLayoutFactory.cpp
+    slot/DeviceSlotSelectionHandling.cpp
+    slot/DeviceSlotSidechainControls.cpp
     slot/DeviceParameterChangeHandler.cpp
     slot/DevicePresetMenu.cpp
     slot/DeviceSlotTraits.cpp
@@ -107,6 +114,8 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.hpp
     ai/AIPanelComponent.hpp
     slot/DeviceCustomUIManager.hpp
+    slot/DeviceSlotAnalyzerContextActions.hpp
+    slot/DeviceSlotAutomationControls.hpp
     slot/DeviceSlotContentLayout.hpp
     slot/DeviceSlotContentPainter.hpp
     slot/DeviceSlotGainMeterControls.hpp
@@ -115,8 +124,13 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceSlotInlineUiFactory.hpp
     slot/DeviceSlotMidiActivity.hpp
     slot/DeviceSlotMidiUiBinding.hpp
+    slot/DeviceSlotModMacroCommands.hpp
     slot/DeviceSlotModulationContext.hpp
+    slot/DeviceSlotMultiOutControls.hpp
+    slot/DeviceSlotParameterPaging.hpp
     slot/DeviceSlotParamLayoutFactory.hpp
+    slot/DeviceSlotSelectionHandling.hpp
+    slot/DeviceSlotSidechainControls.hpp
     slot/DeviceParameterChangeHandler.hpp
     slot/DevicePresetMenu.hpp
     slot/DeviceSlotTraits.hpp
@@ -191,6 +205,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/OscilloscopeUI.hpp
     custom_ui/SpectrumAnalyzerUI.hpp
     modulation/DeviceLinkCallbacks.hpp
+    modulation/ModulationOwnerPath.hpp
     modulation/MacroKnobComponent.hpp
     modulation/MacroPanelComponent.hpp
     modulation/ModKnobComponent.hpp
