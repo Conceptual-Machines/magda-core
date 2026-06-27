@@ -23,6 +23,7 @@
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
+#include "plugins/MidiDevicePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
@@ -56,6 +57,21 @@ void removeSourceFromPlugins(const std::vector<te::Plugin*>& plugins,
                              te::AutomatableParameter::ModifierSource& source) {
     for (auto* plugin : plugins)
         removeSourceFromPlugin(plugin, source);
+}
+
+bool pluginProducesMidi(te::Plugin& plugin) {
+    if (auto* processor = plugin.getWrappedAudioProcessor())
+        return processor->producesMidi() || processor->isMidiEffect();
+
+    return dynamic_cast<daw::audio::MidiDevicePlugin*>(&plugin) != nullptr;
+}
+
+void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
+    if (plugin.canSidechain())
+        device.canSidechain = true;
+    if (plugin.takesMidiInput() && !device.isInstrument)
+        device.canReceiveMidi = true;
+    device.producesMidi = pluginProducesMidi(plugin);
 }
 
 void removeSourceFromModifierParams(const std::map<ModId, te::Modifier::Ptr>& modifiers,
@@ -1244,11 +1260,7 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
                 if (auto* devInfo = getDeviceInfoForPath(devicePath)) {
                     processor->populateParameters(*devInfo);
 
-                    // Update capability flags
-                    if (plugin->canSidechain())
-                        devInfo->canSidechain = true;
-                    if (plugin->takesMidiInput() && !devInfo->isInstrument)
-                        devInfo->canReceiveMidi = true;
+                    updateDeviceCapabilityFlags(*devInfo, *plugin);
                     AutoAliasGenerator::regenerateForDevice(devicePath);
                 }
             }
@@ -1717,10 +1729,7 @@ void PluginManager::syncMasterPlugins() {
 
         // Update capability flags on the DeviceInfo
         if (auto* devInfo = TrackManager::getInstance().getDevice(MASTER_TRACK_ID, device.id)) {
-            if (plugin->canSidechain())
-                devInfo->canSidechain = true;
-            if (plugin->takesMidiInput() && !device.isInstrument)
-                devInfo->canReceiveMidi = true;
+            updateDeviceCapabilityFlags(*devInfo, *plugin);
         }
 
         // Handle async loading for external plugins
@@ -1769,10 +1778,7 @@ void PluginManager::syncMasterPlugins() {
         // Post-fx devices are addressed by a post-fx path, not the top-level
         // getDevice() lookup used for fx devices above.
         if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(postPath)) {
-            if (plugin->canSidechain())
-                devInfo->canSidechain = true;
-            if (plugin->takesMidiInput() && !device.isInstrument)
-                devInfo->canReceiveMidi = true;
+            updateDeviceCapabilityFlags(*devInfo, *plugin);
         }
 
         if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
@@ -1815,10 +1821,7 @@ void PluginManager::syncMasterPlugins() {
         registerRackPluginProcessor(miniPath, plugin, device);
 
         if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(miniPath)) {
-            if (plugin->canSidechain())
-                devInfo->canSidechain = true;
-            if (plugin->takesMidiInput() && !device.isInstrument)
-                devInfo->canReceiveMidi = true;
+            updateDeviceCapabilityFlags(*devInfo, *plugin);
         }
 
         if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
@@ -2187,10 +2190,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
     if (plugin) {
         // Update capability flags on the DeviceInfo in TrackManager
         if (auto* devInfo = getDeviceInfoForPath(devicePath)) {
-            if (plugin->canSidechain())
-                devInfo->canSidechain = true;
-            if (plugin->takesMidiInput() && !device.isInstrument)
-                devInfo->canReceiveMidi = true;
+            updateDeviceCapabilityFlags(*devInfo, *plugin);
         }
 
         // Store the processor if we created one

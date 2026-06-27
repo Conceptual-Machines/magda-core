@@ -481,6 +481,9 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     if (device.canReceiveMidi) {
         obj->setProperty("canReceiveMidi", true);
     }
+    if (device.producesMidi) {
+        obj->setProperty("producesMidi", true);
+    }
     // Always persisted: default is true, so a missing field must read back as
     // true (old projects) and an explicit user-disabled false must survive.
     obj->setProperty("midiInThru", device.midiInThru);
@@ -640,6 +643,10 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     auto canReceiveMidiVar = obj->getProperty("canReceiveMidi");
     if (!canReceiveMidiVar.isVoid()) {
         outDevice.canReceiveMidi = static_cast<bool>(canReceiveMidiVar);
+    }
+    auto producesMidiVar = obj->getProperty("producesMidi");
+    if (!producesMidiVar.isVoid()) {
+        outDevice.producesMidi = static_cast<bool>(producesMidiVar);
     }
     auto midiInThruVar = obj->getProperty("midiInThru");
     if (!midiInThruVar.isVoid()) {
