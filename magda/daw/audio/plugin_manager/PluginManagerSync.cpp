@@ -59,6 +59,57 @@ void removeSourceFromPlugins(const std::vector<te::Plugin*>& plugins,
         removeSourceFromPlugin(plugin, source);
 }
 
+const char* boolText(bool value) {
+    return value ? "true" : "false";
+}
+
+const char* deviceTypeText(DeviceType type) {
+    switch (type) {
+        case DeviceType::Instrument:
+            return "Instrument";
+        case DeviceType::Effect:
+            return "Effect";
+        case DeviceType::MIDI:
+            return "MIDI";
+        case DeviceType::Analysis:
+            return "Analysis";
+    }
+
+    return "Unknown";
+}
+
+const char* pluginFormatText(PluginFormat format) {
+    switch (format) {
+        case PluginFormat::VST3:
+            return "VST3";
+        case PluginFormat::AU:
+            return "AU";
+        case PluginFormat::VST:
+            return "VST";
+        case PluginFormat::Internal:
+            return "Internal";
+    }
+
+    return "Unknown";
+}
+
+juce::String describeStringArray(const juce::StringArray& values) {
+    return values.isEmpty() ? juce::String("<none>") : values.joinIntoString(", ");
+}
+
+juce::String describeProcessorBuses(juce::AudioProcessor& processor, bool input) {
+    juce::StringArray buses;
+
+    for (int i = 0; i < processor.getBusCount(input); ++i) {
+        if (auto* bus = processor.getBus(input, i)) {
+            buses.add(bus->getName() + ":" + juce::String(bus->getNumberOfChannels()) + "ch" +
+                      (bus->isMain() ? ":main" : ""));
+        }
+    }
+
+    return buses.isEmpty() ? juce::String("<none>") : buses.joinIntoString(", ");
+}
+
 bool pluginProducesMidi(te::Plugin& plugin) {
     if (auto* processor = plugin.getWrappedAudioProcessor())
         return processor->producesMidi() || processor->isMidiEffect();
@@ -66,12 +117,67 @@ bool pluginProducesMidi(te::Plugin& plugin) {
     return dynamic_cast<daw::audio::MidiDevicePlugin*>(&plugin) != nullptr;
 }
 
+void logDeviceCapabilityInspection(const DeviceInfo& device, te::Plugin& plugin,
+                                   bool producesMidi) {
+    juce::StringArray inputChannels;
+    juce::StringArray outputChannels;
+    plugin.getChannelNames(&inputChannels, &outputChannels);
+
+    DBG("[MAGDA][PluginCapabilities] device"
+        << " id=" << device.id << " name=\"" << device.name << "\""
+        << " manufacturer=\"" << device.manufacturer << "\""
+        << " pluginId=\"" << device.pluginId << "\""
+        << " uniqueId=\"" << device.uniqueId << "\""
+        << " fileOrIdentifier=\"" << device.fileOrIdentifier << "\""
+        << " format=" << pluginFormatText(device.format)
+        << " deviceType=" << deviceTypeText(device.deviceType) << " device.isInstrument="
+        << boolText(device.isInstrument) << " device.canSidechain=" << boolText(device.canSidechain)
+        << " device.canReceiveMidi=" << boolText(device.canReceiveMidi) << " detected.producesMidi="
+        << boolText(producesMidi) << " te.name=\"" << plugin.getName() << "\""
+        << " te.vendor=\"" << plugin.getVendor() << "\""
+        << " te.type=\"" << plugin.getPluginType() << "\""
+        << " te.isSynth=" << boolText(plugin.isSynth())
+        << " te.takesMidiInput=" << boolText(plugin.takesMidiInput())
+        << " te.takesAudioInput=" << boolText(plugin.takesAudioInput())
+        << " te.canSidechain=" << boolText(plugin.canSidechain())
+        << " te.producesAudioWhenNoAudioInput=" << boolText(plugin.producesAudioWhenNoAudioInput())
+        << " te.noTail=" << boolText(plugin.noTail()) << " te.tailLength=" << plugin.getTailLength()
+        << " te.latencySeconds=" << plugin.getLatencySeconds()
+        << " te.outputsGiven0Inputs=" << plugin.getNumOutputChannelsGivenInputs(0)
+        << " te.outputsGiven2Inputs=" << plugin.getNumOutputChannelsGivenInputs(2)
+        << " te.inputChannels=\"" << describeStringArray(inputChannels) << "\""
+        << " te.outputChannels=\"" << describeStringArray(outputChannels) << "\"");
+
+    if (auto* processor = plugin.getWrappedAudioProcessor()) {
+        DBG("[MAGDA][PluginCapabilities] processor"
+            << " deviceId=" << device.id << " name=\"" << processor->getName() << "\""
+            << " acceptsMidi=" << boolText(processor->acceptsMidi())
+            << " producesMidi=" << boolText(processor->producesMidi())
+            << " isMidiEffect=" << boolText(processor->isMidiEffect())
+            << " supportsMPE=" << boolText(processor->supportsMPE())
+            << " totalInputs=" << processor->getTotalNumInputChannels()
+            << " totalOutputs=" << processor->getTotalNumOutputChannels() << " inputBusCount="
+            << processor->getBusCount(true) << " outputBusCount=" << processor->getBusCount(false)
+            << " inputBuses=\"" << describeProcessorBuses(*processor, true) << "\""
+            << " outputBuses=\"" << describeProcessorBuses(*processor, false) << "\""
+            << " latencySamples=" << processor->getLatencySamples() << " tailSeconds="
+            << processor->getTailLengthSeconds() << " numPrograms=" << processor->getNumPrograms());
+    } else {
+        DBG("[MAGDA][PluginCapabilities] processor"
+            << " deviceId=" << device.id << " wrappedAudioProcessor=<none>"
+            << " internalMidiDevice="
+            << boolText(dynamic_cast<daw::audio::MidiDevicePlugin*>(&plugin) != nullptr));
+    }
+}
+
 void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     if (plugin.canSidechain())
         device.canSidechain = true;
     if (plugin.takesMidiInput() && !device.isInstrument)
         device.canReceiveMidi = true;
-    device.producesMidi = pluginProducesMidi(plugin);
+    const bool producesMidi = pluginProducesMidi(plugin);
+    logDeviceCapabilityInspection(device, plugin, producesMidi);
+    device.producesMidi = producesMidi;
 }
 
 void removeSourceFromModifierParams(const std::map<ModId, te::Modifier::Ptr>& modifiers,
@@ -2133,8 +2239,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             }
 
             // Adopt the resolved plugin's instrument classification (the imported
-            // deviceRole may be wrong), so MAGDA wraps/routes it correctly.
-            if (found) {
+            // deviceRole may be wrong), so MAGDA wraps/routes it correctly. A
+            // DeviceType::MIDI device is an explicit MAGDA role override for
+            // instrument-form MIDI generators, so preserve it.
+            if (found && device.deviceType != DeviceType::MIDI) {
                 if (auto* live = getDeviceInfoForPath(devicePath);
                     live && live->isInstrument != desc.isInstrument) {
                     live->isInstrument = desc.isInstrument;

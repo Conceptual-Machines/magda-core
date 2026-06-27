@@ -547,11 +547,16 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
 
-    // Prefer drum grid (instruments only — piano roll is the default for MIDI clips)
+    const auto pluginIdentifier = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+
+    // Instrument-form plugins can be manually routed as MIDI FX when their
+    // runtime metadata is too synth-like to classify automatically.
     if (plugin.category == "Instrument") {
-        const bool prefersGrid =
-            magda::PluginPreferences::getInstance().prefersDrumGrid(plugin.uniqueId);
+        auto& prefs = magda::PluginPreferences::getInstance();
+        const bool prefersGrid = prefs.prefersDrumGrid(pluginIdentifier);
+        const bool treatsAsMidiFx = prefs.treatsAsMidiFx(pluginIdentifier);
         menu.addItem(10, "Prefer Drum Grid", true, prefersGrid);
+        menu.addItem(11, "Treat as MIDI FX", true, treatsAsMidiFx);
         menu.addSeparator();
     }
 
@@ -567,12 +572,16 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
             // Helper to create device info from plugin
             auto createDevice = [&plugin]() {
                 magda::DeviceInfo device;
+                const auto pluginIdentifier =
+                    plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+                const bool treatsAsMidiFx =
+                    magda::PluginPreferences::getInstance().treatsAsMidiFx(pluginIdentifier);
                 device.name = plugin.name;
                 device.manufacturer = plugin.manufacturer;
                 device.pluginId = plugin.uniqueId.isEmpty() ? (plugin.name + "_" + plugin.format)
                                                             : plugin.uniqueId;
-                device.isInstrument = (plugin.category == "Instrument");
-                if (plugin.subcategory == "MIDI")
+                device.isInstrument = (plugin.category == "Instrument" && !treatsAsMidiFx);
+                if (treatsAsMidiFx || plugin.subcategory == "MIDI")
                     device.deviceType = magda::DeviceType::MIDI;
                 else if (device.isInstrument)
                     device.deviceType = magda::DeviceType::Instrument;
@@ -639,8 +648,18 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     break;
                 case 10: {
                     auto& prefs = magda::PluginPreferences::getInstance();
-                    prefs.setPrefersDrumGrid(plugin.uniqueId,
-                                             !prefs.prefersDrumGrid(plugin.uniqueId));
+                    const auto pluginIdentifier =
+                        plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+                    prefs.setPrefersDrumGrid(pluginIdentifier,
+                                             !prefs.prefersDrumGrid(pluginIdentifier));
+                    break;
+                }
+                case 11: {
+                    auto& prefs = magda::PluginPreferences::getInstance();
+                    const auto pluginIdentifier =
+                        plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+                    prefs.setTreatsAsMidiFx(pluginIdentifier,
+                                            !prefs.treatsAsMidiFx(pluginIdentifier));
                     break;
                 }
             }

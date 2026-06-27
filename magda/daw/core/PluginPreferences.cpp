@@ -56,6 +56,26 @@ void PluginPreferences::setPrefersDrumGrid(const juce::String& pluginIdentifier,
         notifyDrumGridPreferenceChanged(pluginIdentifier);
 }
 
+bool PluginPreferences::treatsAsMidiFx(const juce::String& pluginIdentifier) const {
+    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
+        return false;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    return midiFxPlugins_.find(pluginIdentifier) != midiFxPlugins_.end();
+}
+
+void PluginPreferences::setTreatsAsMidiFx(const juce::String& pluginIdentifier,
+                                          bool treatAsMidiFx) {
+    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
+        return;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    const bool changed = treatAsMidiFx ? midiFxPlugins_.insert(pluginIdentifier).second
+                                       : midiFxPlugins_.erase(pluginIdentifier) > 0;
+    if (changed)
+        saveUnlocked();
+}
+
 juce::String PluginPreferences::identifierForDevice(const DeviceInfo& device) {
     return device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
 }
@@ -99,6 +119,7 @@ void PluginPreferences::setDefaultKitRows(const juce::String& pluginIdentifier,
 
 void PluginPreferences::loadUnlocked() {
     drumGridPlugins_.clear();
+    midiFxPlugins_.clear();
     defaultKits_.clear();
     auto file = magda::paths::pluginPreferencesFile();
     if (!file.existsAsFile())
@@ -119,6 +140,15 @@ void PluginPreferences::loadUnlocked() {
             auto id = entry.toString();
             if (id.isNotEmpty() && id != kInstrumentRackWrapperId)
                 drumGridPlugins_.insert(id);
+        }
+    }
+
+    auto midiFxVar = payload->getProperty("treatAsMidiFx");
+    if (midiFxVar.isArray()) {
+        for (const auto& entry : *midiFxVar.getArray()) {
+            auto id = entry.toString();
+            if (id.isNotEmpty() && id != kInstrumentRackWrapperId)
+                midiFxPlugins_.insert(id);
         }
     }
 
@@ -156,6 +186,10 @@ void PluginPreferences::saveUnlocked() const {
     for (const auto& id : drumGridPlugins_)
         prefersList.add(juce::var(id));
 
+    juce::Array<juce::var> midiFxList;
+    for (const auto& id : midiFxPlugins_)
+        midiFxList.add(juce::var(id));
+
     juce::Array<juce::var> kitsList;
     for (const auto& [pluginId, rows] : defaultKits_) {
         if (rows.empty())
@@ -178,6 +212,7 @@ void PluginPreferences::saveUnlocked() const {
 
     auto* payload = new juce::DynamicObject();
     payload->setProperty("prefersDrumGrid", prefersList);
+    payload->setProperty("treatAsMidiFx", midiFxList);
     payload->setProperty("defaultKits", kitsList);
 
     auto* envelope = new juce::DynamicObject();

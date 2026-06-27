@@ -71,4 +71,11 @@ TEST_CASE("PluginPreferences ignores Tracktion instrument wrapper id", "[plugin_
 
     REQUIRE_FALSE(prefs.prefersDrumGrid("rack"));
     REQUIRE(prefs.prefersDrumGrid("drumgrid"));
+    REQUIRE_FALSE(prefs.treatsAsMidiFx("rack"));
+
+    prefs.setTreatsAsMidiFx("VST3-Stochas-9e4b6434-3fb7fec3", true);
+    REQUIRE(prefs.treatsAsMidiFx("VST3-Stochas-9e4b6434-3fb7fec3"));
+
+    prefs.setTreatsAsMidiFx("VST3-Stochas-9e4b6434-3fb7fec3", false);
+    REQUIRE_FALSE(prefs.treatsAsMidiFx("VST3-Stochas-9e4b6434-3fb7fec3"));
 }
