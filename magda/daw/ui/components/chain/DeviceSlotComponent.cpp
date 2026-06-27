@@ -1079,8 +1079,7 @@ void DeviceSlotComponent::showPresetMenu() {
 void DeviceSlotComponent::refreshPresetsButton() {
     if (!presetsButton_)
         return;
-    const auto label = pluginPresetName_.isNotEmpty() ? pluginPresetName_ : juce::String("Presets");
-    presetsButton_->setButtonText(label);
+    presetsButton_->setButtonText(pluginPresetPresenter_.getCurrentPresetLabel());
 }
 
 bool DeviceSlotComponent::hasPluginPresetsAvailable() const {
@@ -1089,52 +1088,27 @@ bool DeviceSlotComponent::hasPluginPresetsAvailable() const {
 
 void DeviceSlotComponent::showPluginPresetMenu() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    PluginPresetMenuActions actions;
-    actions.saveAs = [self]() {
-        if (self != nullptr)
-            self->showSavePluginPresetDialog();
-    };
-    actions.loadFile = [self](const juce::File& file) {
-        if (self != nullptr)
-            self->loadPluginPresetFile(file);
-    };
-    actions.selectionChanged = [self](const juce::File& currentFile,
-                                      const juce::String& displayName) {
-        if (self == nullptr)
-            return;
-        self->currentPluginPresetFile_ = currentFile;
-        self->pluginPresetName_ = displayName;
-        self->refreshPresetsButton();
-    };
-
-    magda::daw::ui::showPluginPresetMenu(presetsButton_.get(), device_, nodePath_,
-                                         isInternalDevice(), currentPluginPresetFile_,
-                                         std::move(actions));
+    pluginPresetPresenter_.showMenu(presetsButton_.get(), device_, nodePath_, isInternalDevice(),
+                                    [self]() {
+                                        if (self != nullptr)
+                                            self->refreshPresetsButton();
+                                    });
 }
 
 void DeviceSlotComponent::loadPluginPresetFile(const juce::File& file) {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    magda::daw::ui::loadPluginPresetFile(
-        nodePath_, file, [self](const juce::File& currentFile, const juce::String& displayName) {
-            if (self == nullptr)
-                return;
-            self->currentPluginPresetFile_ = currentFile;
-            self->pluginPresetName_ = displayName;
+    pluginPresetPresenter_.loadFile(nodePath_, file, [self]() {
+        if (self != nullptr)
             self->refreshPresetsButton();
-        });
+    });
 }
 
 void DeviceSlotComponent::showSavePluginPresetDialog() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    magda::daw::ui::showSavePluginPresetDialog(
-        device_, nodePath_, pluginPresetName_,
-        [self](const juce::File& currentFile, const juce::String& displayName) {
-            if (self == nullptr)
-                return;
-            self->currentPluginPresetFile_ = currentFile;
-            self->pluginPresetName_ = displayName;
+    pluginPresetPresenter_.showSaveDialog(device_, nodePath_, [self]() {
+        if (self != nullptr)
             self->refreshPresetsButton();
-        });
+    });
 }
 
 void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
@@ -1156,8 +1130,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // MAGDA preset reference (a preset is tied to one plugin).
     if (device.pluginId != device_.pluginId) {
         magdaPresetPresenter_.clearCurrentPreset();
-        pluginPresetName_.clear();
-        currentPluginPresetFile_ = juce::File();
+        pluginPresetPresenter_.clearCurrentPreset();
         // AI panel output + conversation are plugin-specific too — wipe so we
         // don't show stale results or carry history onto a different plugin.
         if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
