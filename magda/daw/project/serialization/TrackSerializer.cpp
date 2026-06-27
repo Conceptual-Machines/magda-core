@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "../../core/InternalDeviceKind.hpp"
+#include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
@@ -681,6 +682,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
     }
 
+    applyCachedCapabilitiesToDevice(outDevice);
     return true;
 }
 

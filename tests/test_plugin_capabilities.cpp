@@ -2,8 +2,7 @@
 
 #include "magda/daw/core/PluginCapabilities.hpp"
 
-TEST_CASE("MIDI thru toggle support is capability-backed and backend-aware",
-          "[plugin_capabilities]") {
+TEST_CASE("MIDI thru toggle support follows MIDI output capability", "[plugin_capabilities]") {
     magda::DeviceInfo wrappedMidiProducer;
     wrappedMidiProducer.isInstrument = true;
     wrappedMidiProducer.deviceType = magda::DeviceType::Instrument;
@@ -21,8 +20,17 @@ TEST_CASE("MIDI thru toggle support is capability-backed and backend-aware",
 
     auto midiFxCaps = magda::midiCapabilitiesForDevice(midiFxProducer);
     REQUIRE(midiFxCaps.hasMidiOutput);
-    REQUIRE_FALSE(midiFxCaps.supportsMidiInputThruToggle);
-    REQUIRE_FALSE(magda::supportsMidiInputThruToggle(midiFxProducer));
+    REQUIRE(midiFxCaps.supportsMidiInputThruToggle);
+    REQUIRE(magda::supportsMidiInputThruToggle(midiFxProducer));
+
+    magda::DeviceInfo manuallyMarkedMidiFx;
+    manuallyMarkedMidiFx.isInstrument = false;
+    manuallyMarkedMidiFx.deviceType = magda::DeviceType::MIDI;
+
+    auto manualCaps = magda::midiCapabilitiesForDevice(manuallyMarkedMidiFx);
+    REQUIRE(manualCaps.hasMidiOutput);
+    REQUIRE(manualCaps.supportsMidiInputThruToggle);
+    REQUIRE(magda::supportsMidiInputThruToggle(manuallyMarkedMidiFx));
 }
 
 TEST_CASE("External MIDI input routing is narrower than MIDI input capability",

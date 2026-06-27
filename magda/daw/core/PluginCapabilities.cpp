@@ -1,6 +1,7 @@
 #include "PluginCapabilities.hpp"
 
 #include "AppPaths.hpp"
+#include "PluginPreferences.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -23,6 +24,17 @@ void setBool(juce::DynamicObject& obj, const juce::Identifier& key, bool value) 
 
 void setInt(juce::DynamicObject& obj, const juce::Identifier& key, int value) {
     obj.setProperty(key, value);
+}
+
+bool isManualMidiFxDevice(const DeviceInfo& device) {
+    const auto identifier = PluginPreferences::identifierForDevice(device);
+    if (identifier.isEmpty())
+        return false;
+    return PluginPreferences::getInstance().treatsAsMidiFx(identifier);
+}
+
+bool hasMidiOutputOverride(const DeviceInfo& device) {
+    return device.deviceType == DeviceType::MIDI || isManualMidiFxDevice(device);
 }
 
 PluginCapabilitySnapshot snapshotFromVar(const juce::var& value) {
@@ -79,15 +91,12 @@ juce::var snapshotToVar(const PluginCapabilitySnapshot& snapshot) {
 
 DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
     DeviceMidiCapabilities capabilities;
+    const bool midiOutputOverride = hasMidiOutputOverride(device);
     capabilities.hasMidiInput = device.isInstrument || device.canReceiveMidi;
-    capabilities.hasMidiOutput = device.producesMidi;
+    capabilities.hasMidiOutput = device.producesMidi || midiOutputOverride;
     capabilities.hasAudioInput = device.deviceType == DeviceType::Effect || device.canSidechain;
     capabilities.hasAudioOutput = device.isInstrument || device.deviceType == DeviceType::Effect;
-
-    // This is intentionally backend-aware. Non-instrument MIDI FX may be able
-    // to support this once a generic MIDI routing wrapper exists, but today only
-    // the instrument wrapper implements this switch.
-    capabilities.supportsMidiInputThruToggle = device.isInstrument && capabilities.hasMidiOutput;
+    capabilities.supportsMidiInputThruToggle = capabilities.hasMidiOutput;
     capabilities.supportsExternalMidiInputRouting = device.canReceiveMidi;
     return capabilities;
 }
@@ -96,10 +105,10 @@ DeviceMidiCapabilities mergeSnapshotWithDevice(const PluginCapabilitySnapshot& s
                                                const DeviceInfo& device) {
     auto capabilities = fallbackCapabilitiesForDevice(device);
     capabilities.hasMidiInput = snapshot.hasMidiInput;
-    capabilities.hasMidiOutput = snapshot.hasMidiOutput;
+    capabilities.hasMidiOutput = snapshot.hasMidiOutput || hasMidiOutputOverride(device);
     capabilities.hasAudioInput = snapshot.hasAudioInput;
     capabilities.hasAudioOutput = snapshot.hasAudioOutput;
-    capabilities.supportsMidiInputThruToggle = device.isInstrument && snapshot.hasMidiOutput;
+    capabilities.supportsMidiInputThruToggle = capabilities.hasMidiOutput;
     capabilities.supportsExternalMidiInputRouting = !device.isInstrument && snapshot.hasMidiInput;
     return capabilities;
 }
@@ -238,12 +247,19 @@ bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
 }
 
 void applyCachedCapabilitiesToDevice(DeviceInfo& device) {
+    const bool manualMidiFx = isManualMidiFxDevice(device);
+    if (manualMidiFx) {
+        device.isInstrument = false;
+        device.deviceType = DeviceType::MIDI;
+        device.producesMidi = true;
+    }
+
     const auto identifier = PluginCapabilityCache::identifierForDevice(device);
     auto snapshot = PluginCapabilityCache::getInstance().find(identifier);
     if (!snapshot)
         return;
 
-    device.producesMidi = snapshot->hasMidiOutput;
+    device.producesMidi = snapshot->hasMidiOutput || manualMidiFx;
     if (!device.isInstrument && snapshot->hasMidiInput)
         device.canReceiveMidi = true;
 }
