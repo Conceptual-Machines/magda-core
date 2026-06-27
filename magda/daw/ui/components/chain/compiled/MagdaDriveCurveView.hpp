@@ -3,7 +3,7 @@
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 
 namespace magda::daw::audio {
-class FaustPlugin;
+class IFaustEditorModel;
 struct FaustParamSlot;
 }  // namespace magda::daw::audio
 
@@ -29,7 +29,7 @@ namespace magda::daw::ui {
  */
 class MagdaDriveCurveView : public FaustCustomView, public juce::Timer {
   public:
-    explicit MagdaDriveCurveView(magda::daw::audio::FaustPlugin& plugin);
+    explicit MagdaDriveCurveView(magda::daw::audio::IFaustEditorModel& plugin);
     ~MagdaDriveCurveView() override;
 
     int getPreferredHeight() const override {
@@ -49,7 +49,7 @@ class MagdaDriveCurveView : public FaustCustomView, public juce::Timer {
     /// back to the slot's default value if the zone pointer is null.
     static float readSlotValue(const magda::daw::audio::FaustParamSlot* slot);
 
-    magda::daw::audio::FaustPlugin& plugin_;
+    magda::daw::audio::IFaustEditorModel& plugin_;
 
     // Last sampled values — repaints fire only when one of these changes.
     float lastDrive_ = 0.0f;

@@ -74,7 +74,15 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FaustUI.cpp
     custom_ui/FaustCodeEditorWindow.cpp
     custom_ui/FaustCustomUIRegistry.cpp
+    custom_ui/FaustInstrumentTabbedUI.cpp
     custom_ui/FourOscUI.cpp
+    custom_ui/PolySynthUI.cpp
+    custom_ui/FMUI.cpp
+    custom_ui/MateriaUI.cpp
+    custom_ui/HaloUI.cpp
+    custom_ui/NimbusUI.cpp
+    custom_ui/DrumVoiceUI.cpp
+    custom_ui/AdsrGraph.cpp
     custom_ui/ArpeggiatorUI.cpp
     custom_ui/StepSequencerUI.cpp
     custom_ui/PolyStepSequencerUI.cpp
@@ -169,7 +177,11 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FaustUI.hpp
     custom_ui/FaustCodeEditorWindow.hpp
     custom_ui/FaustCustomUIRegistry.hpp
+    custom_ui/FaustInstrumentTabbedUI.hpp
+    custom_ui/LayoutStableTabbedComponent.hpp
     custom_ui/FourOscUI.hpp
+    custom_ui/HaloUI.hpp
+    custom_ui/NimbusUI.hpp
     custom_ui/ArpeggiatorUI.hpp
     custom_ui/StepSequencerUI.hpp
     custom_ui/PolyStepSequencerUI.hpp

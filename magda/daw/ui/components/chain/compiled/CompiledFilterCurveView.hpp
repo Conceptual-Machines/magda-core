@@ -26,6 +26,23 @@ class CompiledFilterCurveView final : public juce::Component,
                           const ParamLinkContext* linkContext) override;
     void setCompiledPlugin(magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin);
 
+    /// Drive the curve directly from raw values, for hosts that are not the
+    /// MagdaFilterCompiledPlugin (e.g. the poly synth's built-in SVF). Bypasses
+    /// the device-snapshot / plugin path entirely.
+    /// @param engine     0=SVF 1=Ladder 2=Korg35 3=Oberheim 4=SallenKey
+    /// @param modeIndex   this view's order: 0=LP 1=BP 2=HP 3=Notch
+    /// @param doubleSlope  true = 24 dB/oct (two cascaded stages); false = 12 dB
+    void setRawState(int engine, int modeIndex, float cutoffHz, float resonance01, float drive01,
+                     bool doubleSlope = false);
+
+    /// Override the curve/fill accent (defaults to ACCENT_GREEN). Lets a host
+    /// match the curve to its own theme (e.g. the poly synth's blue envelopes).
+    void setCurveColour(juce::Colour colour) {
+        curveColour_ = colour;
+        hasCurveColour_ = true;
+        repaint();
+    }
+
     // CompiledDevicePanel
     juce::Component& component() override {
         return *this;
@@ -50,11 +67,14 @@ class CompiledFilterCurveView final : public juce::Component,
     float resonance_ = 0.0f;
     float drive_ = 0.0f;
     int modeIndex_ = 0;
+    bool doublePole_ = false;  // 24 dB/oct: square the magnitude
     float targetCutoffHz_ = 1000.0f;
     float targetResonance_ = 0.0f;
     float targetDrive_ = 0.0f;
     int targetModeIndex_ = 0;
     bool initialised_ = false;
+    juce::Colour curveColour_;
+    bool hasCurveColour_ = false;
     magda::DeviceInfo deviceSnapshot_;
     ParamLinkContext linkContext_;
     bool hasLinkContext_ = false;

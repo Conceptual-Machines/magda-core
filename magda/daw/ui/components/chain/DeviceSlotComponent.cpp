@@ -1472,8 +1472,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     auto* activeCustomUI = customUI_.getActiveUI();
     auto* compiledPanelComponent =
         compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
-    const bool pluginPresetsAvailable =
-        !collapsed_ && !traits_.isFaust && hasPluginPresetsAvailable();
+    const bool pluginPresetsAvailable = !collapsed_ && !traits_.isFaust &&
+                                        !traits_.isFaustInstrument && hasPluginPresetsAvailable();
     // Chord-track devices emit no audio yet, so they show no output meter.
     const auto* slotTrack = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = slotTrack && slotTrack->type == magda::TrackType::Chord;

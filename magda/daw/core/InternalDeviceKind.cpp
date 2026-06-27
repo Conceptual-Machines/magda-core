@@ -7,12 +7,14 @@
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/AudioSidechainMonitorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/FaustInstrumentPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "audio/plugins/LevelsPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "audio/plugins/MidiReceivePlugin.hpp"
+#include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
@@ -20,6 +22,9 @@
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/TrackMeasurementPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
+#include "audio/plugins/mutable/MutableElementsPlugin.hpp"
+#include "audio/plugins/mutable/MutableRingsPlugin.hpp"
 #include "audio/session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -73,6 +78,15 @@ const InternalDeviceMetadata kMetadata[] = {
      "Signal meter for monitoring level inside a chain."},
     {InternalDeviceKind::MagdaSampler, "Sampler", "", "Sampler",
      "Sample playback instrument with envelope, pitch, start/end, and looping controls."},
+    {InternalDeviceKind::MutableElements, "Materia", "", "Synth",
+     "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike exciter "
+     "into a modal + string resonator and stereo space)."},
+    {InternalDeviceKind::MutableRings, "Halo", "", "Synth",
+     "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic-string / "
+     "inharmonic / FM models) excited by MIDI."},
+    {InternalDeviceKind::MutableClouds, "Nimbus", "", "Texture",
+     "Mutable Instruments Clouds port: granular texture processor (granular / stretch / "
+     "looping-delay / spectral) with freeze, processing the track audio."},
     {InternalDeviceKind::DrumGrid, "Drum Grid", "", "Drums",
      "Pad-based drum instrument with per-pad sample and effect chains."},
     {InternalDeviceKind::MidiReceive, "MIDI Receive", "", "MIDI",
@@ -103,6 +117,8 @@ const InternalDeviceMetadata kMetadata[] = {
      "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics)."},
     {InternalDeviceKind::Faust, "Faust", "", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code."},
+    {InternalDeviceKind::FaustInstrument, "Faust Instrument", "", "Experimental",
+     "Polyphonic Faust synth instrument driven by MIDI (POC)."},
 };
 
 struct CompiledMetadataCache {
@@ -143,11 +159,16 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     // for each so the classifier doesn't depend on a using-directive.
     using daw::audio::ArpeggiatorPlugin;
     using daw::audio::DrumGridPlugin;
+    using daw::audio::FaustInstrumentPlugin;
     using daw::audio::FaustPlugin;
     using daw::audio::InstrumentMeterTapPlugin;
     using daw::audio::LevelsPlugin;
     using daw::audio::MagdaSamplerPlugin;
     using daw::audio::MidiChordEnginePlugin;
+    using daw::audio::MidiStrumPlugin;
+    using daw::audio::MutableCloudsPlugin;
+    using daw::audio::MutableElementsPlugin;
+    using daw::audio::MutableRingsPlugin;
     using daw::audio::OscilloscopePlugin;
     using daw::audio::PolyStepSequencerPlugin;
     using daw::audio::SpectrumAnalyzerPlugin;
@@ -175,9 +196,13 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::TeLevelMeter, "meter", TE::LevelMeterPlugin::xmlTypeName},
         // MAGDA daw::audio:: plugins
         {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::MutableClouds, MutableCloudsPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::DrumGrid, DrumGridPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::Strum, MidiStrumPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::PolyStepSequencer, PolyStepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},
@@ -186,6 +211,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::InstrumentMeterTap, InstrumentMeterTapPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::FaustInstrument, FaustInstrumentPlugin::xmlTypeName, nullptr},
         // Plugins still in plain magda:: (older infra layers).
         {InternalDeviceKind::MidiReceive, MidiReceivePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::SidechainMonitor, SidechainMonitorPlugin::xmlTypeName, nullptr},
