@@ -9,9 +9,7 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
-#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
@@ -23,8 +21,6 @@
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
-#include "custom_ui/OscilloscopeUI.hpp"
-#include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
@@ -37,6 +33,7 @@
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotAnalyzerContextActions.hpp"
 #include "slot/DeviceSlotAutomationControls.hpp"
 #include "slot/DeviceSlotContentLayout.hpp"
 #include "slot/DeviceSlotContentPainter.hpp"
@@ -1474,40 +1471,7 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 // ControllerRegistry, and chain-node selection changes.
 
 void DeviceSlotComponent::toggleAnalyzerWindow() {
-    if (analyzerWindow_ != nullptr) {
-        const bool show = !analyzerWindow_->isVisible();
-        analyzerWindow_->setVisible(show);
-        if (show)
-            analyzerWindow_->toFront(true);
-        if (uiButton_ != nullptr) {
-            uiButton_->setToggleState(show, juce::dontSendNotification);
-            uiButton_->setActive(show);
-        }
-        return;
-    }
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-    if (bridge == nullptr)
-        return;
-    auto plugin = bridge->getPlugin(nodePath_);
-    std::unique_ptr<juce::Component> content;
-    if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
-        auto ui = std::make_unique<OscilloscopeUI>();
-        ui->setPlugin(scope);
-        content = std::move(ui);
-    } else if (auto* spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
-        auto ui = std::make_unique<SpectrumAnalyzerUI>();
-        ui->setPlugin(spec);
-        ui->setTrackId(nodePath_.trackId);  // enables the masking overlay in the external window
-        content = std::move(ui);
-    }
-    if (content == nullptr)
-        return;
-    analyzerWindow_ = std::make_unique<AnalyzerWindow>(device_.name, std::move(content));
-    if (uiButton_ != nullptr) {
-        uiButton_->setToggleState(true, juce::dontSendNotification);
-        uiButton_->setActive(true);
-    }
+    toggleDeviceSlotAnalyzerWindow(analyzerWindow_, device_, nodePath_, uiButton_.get());
 }
 
 // =============================================================================
@@ -1552,45 +1516,7 @@ void DeviceSlotComponent::showMultiOutMenu() {
 // =============================================================================
 
 void DeviceSlotComponent::showContextMenu() {
-    juce::PopupMenu menu;
-    auto& selection = magda::SelectionManager::getInstance();
-    const bool hasMultiSelection =
-        selection.isChainNodeSelected(nodePath_) && selection.getSelectedChainNodes().size() > 1;
-    menu.addItem(1, hasMultiSelection ? "Add Selection to New Rack" : "Add to New Rack");
-
-    menu.addSeparator();
-    menu.addItem(100, "Delete");
-
-    auto safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this);
-    auto path = nodePath_;
-    auto callback = onDeviceDeleted;
-    auto selectedPaths = hasMultiSelection ? selection.getSelectedChainNodes()
-                                           : std::vector<magda::ChainNodePath>{path};
-
-    menu.showMenuAsync(
-        juce::PopupMenu::Options(), [safeThis, path, callback, selectedPaths](int result) {
-            if (safeThis == nullptr || result == 0)
-                return;
-
-            if (result == 1) {
-                // Add to New Rack
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::WrapChainElementsInRackCommand>(selectedPaths));
-            } else if (result == 100) {
-                // Delete — same deferred logic as onDeleteClicked
-                juce::MessageManager::callAsync([path, callback]() {
-                    if (path.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::RemoveDeviceFromTrackCommand>(
-                                path.trackId, path.topLevelDeviceId));
-                    } else {
-                        magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
-                    }
-                    if (callback)
-                        callback();
-                });
-            }
-        });
+    showDeviceSlotContextMenu(*this, nodePath_, onDeviceDeleted);
 }
 
 // =============================================================================
