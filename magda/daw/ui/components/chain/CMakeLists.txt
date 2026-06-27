@@ -15,6 +15,7 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceSlotInlineUiFactory.cpp
     slot/DeviceSlotMidiActivity.cpp
     slot/DeviceSlotMidiUiBinding.cpp
+    slot/DeviceSlotModMacroCommands.cpp
     slot/DeviceSlotModulationContext.cpp
     slot/DeviceSlotMultiOutControls.cpp
     slot/DeviceSlotParameterPaging.cpp
@@ -120,6 +121,7 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceSlotInlineUiFactory.hpp
     slot/DeviceSlotMidiActivity.hpp
     slot/DeviceSlotMidiUiBinding.hpp
+    slot/DeviceSlotModMacroCommands.hpp
     slot/DeviceSlotModulationContext.hpp
     slot/DeviceSlotMultiOutControls.hpp
     slot/DeviceSlotParameterPaging.hpp

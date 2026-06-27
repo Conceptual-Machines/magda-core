@@ -46,6 +46,7 @@
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotMidiUiBinding.hpp"
+#include "slot/DeviceSlotModMacroCommands.hpp"
 #include "slot/DeviceSlotModulationContext.hpp"
 #include "slot/DeviceSlotMultiOutControls.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
@@ -129,6 +130,13 @@ void DeviceSlotComponent::setupGainMeterControls() {
 
 void DeviceSlotComponent::syncGainControlsFromDevice() {
     syncDeviceSlotGainControlsFromDevice(gainLabel_, gainSlider_.get(), device_);
+}
+
+DeviceSlotModMacroCommandCallbacks DeviceSlotComponent::modMacroCommandCallbacks() {
+    return {.updateParamModulation = [this]() { updateParamModulation(); },
+            .updateModsPanel = [this]() { updateModsPanel(); },
+            .updateMacroPanel = [this]() { updateMacroPanel(); },
+            .refreshPanels = [this]() { refreshPanels(); }};
 }
 
 void DeviceSlotComponent::refreshMixKnobFromDevice(bool relayoutOnVisibilityChange) {
@@ -1221,195 +1229,150 @@ std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDev
 }
 
 void DeviceSlotComponent::onModTargetChangedInternal(int modIndex, magda::ControlTarget target) {
-    magda::TrackManager::getInstance().setModTarget(nodePath_, modIndex, target);
+    setDeviceSlotModTarget(nodePath_, modIndex, target);
     // Note: caller must check SafePointer before calling updateParamModulation()
     // because setControlTarget may trigger notifyTrackDevicesChanged which rebuilds UI
 }
 
 void DeviceSlotComponent::onModNameChangedInternal(int modIndex, const juce::String& name) {
-    magda::UndoManager::getInstance().executeCommand(
-        std::make_unique<magda::SetModNameCommand>(nodePath_, modIndex, name));
+    renameDeviceSlotMod(nodePath_, modIndex, name);
 }
 
 void DeviceSlotComponent::onModTypeChangedInternal(int modIndex, magda::ModType type) {
-    magda::TrackManager::getInstance().setModType(nodePath_, modIndex, type);
+    setDeviceSlotModType(nodePath_, modIndex, type);
 }
 
 void DeviceSlotComponent::onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) {
-    magda::TrackManager::getInstance().setModWaveform(nodePath_, modIndex, waveform);
+    setDeviceSlotModWaveform(nodePath_, modIndex, waveform);
 }
 
 void DeviceSlotComponent::onModRateChangedInternal(int modIndex, float rate) {
-    magda::TrackManager::getInstance().setModRate(nodePath_, modIndex, rate);
+    setDeviceSlotModRate(nodePath_, modIndex, rate);
 }
 
 void DeviceSlotComponent::onModPhaseOffsetChangedInternal(int modIndex, float phaseOffset) {
-    magda::TrackManager::getInstance().setModPhaseOffset(nodePath_, modIndex, phaseOffset);
+    setDeviceSlotModPhaseOffset(nodePath_, modIndex, phaseOffset);
 }
 
 void DeviceSlotComponent::onModTempoSyncChangedInternal(int modIndex, bool tempoSync) {
-    magda::TrackManager::getInstance().setModTempoSync(nodePath_, modIndex, tempoSync);
+    setDeviceSlotModTempoSync(nodePath_, modIndex, tempoSync);
 }
 
 void DeviceSlotComponent::onModSyncDivisionChangedInternal(int modIndex,
                                                            magda::SyncDivision division) {
-    magda::TrackManager::getInstance().setModSyncDivision(nodePath_, modIndex, division);
+    setDeviceSlotModSyncDivision(nodePath_, modIndex, division);
 }
 
 void DeviceSlotComponent::onModTriggerModeChangedInternal(int modIndex,
                                                           magda::LFOTriggerMode mode) {
-    magda::TrackManager::getInstance().setModTriggerMode(nodePath_, modIndex, mode);
+    setDeviceSlotModTriggerMode(nodePath_, modIndex, mode);
 }
 
 void DeviceSlotComponent::onModAudioAttackChangedInternal(int modIndex, float ms) {
-    magda::TrackManager::getInstance().setModAudioAttack(nodePath_, modIndex, ms);
+    setDeviceSlotModAudioAttack(nodePath_, modIndex, ms);
 }
 
 void DeviceSlotComponent::onModAudioReleaseChangedInternal(int modIndex, float ms) {
-    magda::TrackManager::getInstance().setModAudioRelease(nodePath_, modIndex, ms);
+    setDeviceSlotModAudioRelease(nodePath_, modIndex, ms);
 }
 
 void DeviceSlotComponent::onModEnvelopeChangedInternal(int modIndex, const magda::ModInfo& mod) {
-    magda::TrackManager::getInstance().setModEnvelope(nodePath_, modIndex, mod);
+    setDeviceSlotModEnvelope(nodePath_, modIndex, mod);
 }
 
 void DeviceSlotComponent::onModRandomChangedInternal(int modIndex, const magda::ModInfo& mod) {
-    magda::TrackManager::getInstance().setModRandom(nodePath_, modIndex, mod);
+    setDeviceSlotModRandom(nodePath_, modIndex, mod);
 }
 
 void DeviceSlotComponent::onModFollowerChangedInternal(int modIndex, const magda::ModInfo& mod) {
-    magda::TrackManager::getInstance().setModFollower(nodePath_, modIndex, mod);
+    setDeviceSlotModFollower(nodePath_, modIndex, mod);
 }
 
 void DeviceSlotComponent::onModCurveChangedInternal(int /*modIndex*/) {
-    DBG("[HardCorner] DeviceSlotComponent notifyModCurveChanged path=" << nodePath_.toString());
-    // Curve points are already written directly to ModInfo by LFOCurveEditor.
-    // Just notify the audio thread to pick up the new data.
-    magda::TrackManager::getInstance().notifyModCurveChanged(nodePath_);
+    notifyDeviceSlotModCurveChanged(nodePath_);
 }
 
 void DeviceSlotComponent::onMacroValueChangedInternal(int macroIndex, float value) {
-    magda::TrackManager::getInstance().setMacroValue(nodePath_, macroIndex, value);
-    updateParamModulation();  // Refresh param indicators to show new value
+    setDeviceSlotMacroValue(nodePath_, macroIndex, value, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onMacroTargetChangedInternal(int macroIndex,
                                                        magda::ControlTarget target) {
-    // Check if the active macro is from this device or a parent rack
-    auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
-    if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath_) {
-        magda::TrackManager::getInstance().setMacroTarget(nodePath_, macroIndex, target);
-    } else if (activeMacroSelection.isValid()) {
-        magda::TrackManager::getInstance().setMacroTarget(activeMacroSelection.parentPath,
-                                                          macroIndex, target);
-    } else {
-        magda::TrackManager::getInstance().setMacroTarget(nodePath_, macroIndex, target);
-    }
-    updateParamModulation();  // Refresh param indicators
+    setDeviceSlotMacroTarget(nodePath_, macroIndex, target, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onMacroNameChangedInternal(int macroIndex, const juce::String& name) {
-    magda::UndoManager::getInstance().executeCommand(
-        std::make_unique<magda::SetMacroNameCommand>(nodePath_, macroIndex, name));
+    renameDeviceSlotMacro(nodePath_, macroIndex, name);
 }
 
 void DeviceSlotComponent::onMacroAllLinksClearedInternal(int macroIndex) {
-    magda::TrackManager::getInstance().clearAllMacroLinks(nodePath_, macroIndex);
-    updateParamModulation();
-    updateMacroPanel();
+    clearAllDeviceSlotMacroLinks(nodePath_, macroIndex, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onMacroLinkAmountChangedInternal(int macroIndex,
                                                            magda::ControlTarget target,
                                                            float amount) {
-    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath_, macroIndex, target, amount);
-    updateParamModulation();
+    setDeviceSlotMacroLinkAmount(nodePath_, macroIndex, target, amount, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::ControlTarget target,
                                                         float amount) {
-    magda::TrackManager::getInstance().setMacroTarget(nodePath_, macroIndex, target);
-    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath_, macroIndex, target, amount);
-    updateParamModulation();
-
-    // Auto-select the linked param so user can see the link and adjust amount
-    if (target.isValid())
-        magda::SelectionManager::getInstance().selectParam(nodePath_, target.paramIndex);
+    createDeviceSlotMacroLink(nodePath_, macroIndex, target, amount, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onMacroLinkRemovedInternal(int macroIndex, magda::ControlTarget target) {
-    magda::TrackManager::getInstance().removeMacroLink(nodePath_, macroIndex, target);
-    updateMacroPanel();
-    updateParamModulation();
+    removeDeviceSlotMacroLink(nodePath_, macroIndex, target, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onMacroLinkBipolarChangedInternal(int macroIndex,
                                                             magda::ControlTarget target,
                                                             bool bipolar) {
-    magda::TrackManager::getInstance().setMacroLinkBipolar(nodePath_, macroIndex, target, bipolar);
-    updateParamModulation();
+    setDeviceSlotMacroLinkBipolar(nodePath_, macroIndex, target, bipolar,
+                                  modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onModClickedInternal(int modIndex) {
-    magda::SelectionManager::getInstance().selectMod(nodePath_, modIndex);
+    selectDeviceSlotMod(nodePath_, modIndex);
 }
 
 void DeviceSlotComponent::onMacroClickedInternal(int macroIndex) {
-    magda::SelectionManager::getInstance().selectMacro(nodePath_, macroIndex);
+    selectDeviceSlotMacro(nodePath_, macroIndex);
 }
 
 void DeviceSlotComponent::onModLinkAmountChangedInternal(int modIndex, magda::ControlTarget target,
                                                          float amount) {
-    magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target, amount);
-    updateParamModulation();
+    setDeviceSlotModLinkAmount(nodePath_, modIndex, target, amount, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onModLinkEnabledChangedInternal(int modIndex, magda::ControlTarget target,
                                                           bool enabled) {
-    magda::TrackManager::getInstance().setModLinkEnabled(nodePath_, modIndex, target, enabled);
-    updateParamModulation();
+    setDeviceSlotModLinkEnabled(nodePath_, modIndex, target, enabled, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onModNewLinkCreatedInternal(int modIndex, magda::ControlTarget target,
                                                       float amount) {
-    magda::TrackManager::getInstance().setModTarget(nodePath_, modIndex, target);
-    magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target, amount);
-    updateParamModulation();
-
-    // Auto-select the linked param so user can see the link and adjust amount
-    if (target.isValid()) {
-        magda::SelectionManager::getInstance().selectParam(nodePath_, target.paramIndex);
-    }
+    createDeviceSlotModLink(nodePath_, modIndex, target, amount, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ControlTarget target) {
-    magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
-    updateModsPanel();
-    updateParamModulation();
+    removeDeviceSlotModLink(nodePath_, modIndex, target, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onModAllLinksClearedInternal(int modIndex) {
-    magda::TrackManager::getInstance().clearAllModLinks(nodePath_, modIndex);
-    updateModsPanel();
-    updateParamModulation();
+    clearAllDeviceSlotModLinks(nodePath_, modIndex, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type,
                                                     magda::LFOWaveform waveform) {
-    magda::TrackManager::getInstance().addMod(nodePath_, slotIndex, type, waveform);
-    // Refresh both panels — adding a mod can introduce a new ModParam target
-    // for macros, so the macro-link menu must rebuild too. refreshPanels()
-    // guards each by its own visibility flag.
-    refreshPanels();
+    addDeviceSlotMod(nodePath_, slotIndex, type, waveform, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onModRemoveRequestedInternal(int modIndex) {
-    magda::TrackManager::getInstance().removeMod(nodePath_, modIndex);
-    refreshPanels();
+    removeDeviceSlotMod(nodePath_, modIndex, modMacroCommandCallbacks());
 }
 
 void DeviceSlotComponent::onModEnableToggledInternal(int modIndex, bool enabled) {
-    magda::TrackManager::getInstance().setModEnabled(nodePath_, modIndex, enabled);
+    setDeviceSlotModEnabled(nodePath_, modIndex, enabled);
 }
 
 void DeviceSlotComponent::onModPageAddRequested(int /*itemsToAdd*/) {
@@ -1423,11 +1386,11 @@ void DeviceSlotComponent::onModPageRemoveRequested(int /*itemsToRemove*/) {
 }
 
 void DeviceSlotComponent::onMacroPageAddRequested(int /*itemsToAdd*/) {
-    magda::TrackManager::getInstance().addMacroPage(nodePath_);
+    addDeviceSlotMacroPage(nodePath_);
 }
 
 void DeviceSlotComponent::onMacroPageRemoveRequested(int /*itemsToRemove*/) {
-    magda::TrackManager::getInstance().removeMacroPage(nodePath_);
+    removeDeviceSlotMacroPage(nodePath_);
 }
 
 void DeviceSlotComponent::updateParameterSlots() {
