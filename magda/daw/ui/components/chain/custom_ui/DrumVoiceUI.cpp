@@ -425,8 +425,8 @@ void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWhe
             continue;
         const float cur =
             static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
-        // Scroll down bends the curve up (toward swelled/negative).
-        const float delta = (wheel.isReversed ? -wheel.deltaY : wheel.deltaY) * 60.0f;
+        // Scroll down bends the curve down (toward punchy/positive); up = swelled.
+        const float delta = (wheel.isReversed ? wheel.deltaY : -wheel.deltaY) * 60.0f;
         setSlotValue(s.curveSlot,
                      juce::jlimit(slotMin_[static_cast<size_t>(s.curveSlot)],
                                   slotMax_[static_cast<size_t>(s.curveSlot)], cur + delta));
