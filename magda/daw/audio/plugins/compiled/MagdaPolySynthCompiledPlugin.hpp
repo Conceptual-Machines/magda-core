@@ -179,6 +179,12 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
         float gain = 0.0f;
     };
     std::vector<HeldNote> heldNotes_;
+    // Poly-mode sounding pitches. The Faust voice allocator hands out a fresh
+    // voice on every keyOn without checking whether that pitch is already
+    // sounding, so a duplicate note-on (or a dropped note-off) strands a voice
+    // that never gets released. We release any existing voice for a pitch before
+    // re-triggering it, guaranteeing one voice per pitch and no hung notes.
+    std::array<bool, 128> polyHeld_{};
     float currentBend_ = 0.0f;  // normalised [-1, 1]
     int lastVoiceMode_ = 0;
 

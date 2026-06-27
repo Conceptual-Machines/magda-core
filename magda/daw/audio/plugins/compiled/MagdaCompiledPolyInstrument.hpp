@@ -2,6 +2,7 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
 #include <deque>
 #include <memory>
 #include <vector>
@@ -172,6 +173,12 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
         float gain = 0.0f;
     };
     std::vector<HeldNote> heldNotes_;
+    // Poly-mode sounding pitches. The Faust voice allocator hands out a fresh
+    // voice on every keyOn without checking whether that pitch is already
+    // sounding, so a duplicate note-on (or a dropped note-off) strands a voice
+    // that never gets released. We release any existing voice for a pitch before
+    // re-triggering it, guaranteeing one voice per pitch and no hung notes.
+    std::array<bool, 128> polyHeld_{};
     int lastVoiceMode_ = 0;
 
     // Voice macros only (0 .. voiceSlotCount-1): that control's zone in EVERY
