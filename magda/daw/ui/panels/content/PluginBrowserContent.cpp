@@ -25,6 +25,31 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
+    return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+}
+
+bool treatsAsMidiFx(const PluginBrowserInfo& plugin) {
+    return magda::PluginPreferences::getInstance().treatsAsMidiFx(
+        preferenceIdentifierForPlugin(plugin));
+}
+
+juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
+    return treatsAsMidiFx(plugin) ? juce::String("Effect") : plugin.category;
+}
+
+juce::String effectiveSubcategoryForPlugin(const PluginBrowserInfo& plugin) {
+    return treatsAsMidiFx(plugin) ? juce::String("MIDI") : plugin.subcategory;
+}
+
+bool effectiveIsInstrument(const PluginBrowserInfo& plugin) {
+    return plugin.category == "Instrument" && !treatsAsMidiFx(plugin);
+}
+
+}  // namespace
+
 // =============================================================================
 // PluginBrowserInfo
 // =============================================================================
@@ -101,11 +126,12 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         // dominate the row height)
         auto iconArea = bounds.removeFromLeft(18);
         auto iconBounds = iconArea.toFloat().withSizeKeepingCentre(12.0f, 12.0f);
-        if (plugin_.category == "Instrument" && owner_.instrumentIcon_) {
+        const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin_);
+        if (effectiveSubcategory == "MIDI" && owner_.midiIcon_) {
+            owner_.midiIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+        } else if (effectiveIsInstrument(plugin_) && owner_.instrumentIcon_) {
             owner_.instrumentIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred,
                                                1.0f);
-        } else if (plugin_.subcategory == "MIDI" && owner_.midiIcon_) {
-            owner_.midiIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         } else if (owner_.effectIcon_) {
             owner_.effectIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
@@ -162,10 +188,10 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         obj->setProperty("type", "plugin");
         obj->setProperty("name", plugin_.name);
         obj->setProperty("manufacturer", plugin_.manufacturer);
-        obj->setProperty("category", plugin_.category);
+        obj->setProperty("category", effectiveCategoryForPlugin(plugin_));
         obj->setProperty("format", plugin_.format);
-        obj->setProperty("subcategory", plugin_.subcategory);
-        obj->setProperty("isInstrument", plugin_.category == "Instrument");
+        obj->setProperty("subcategory", effectiveSubcategoryForPlugin(plugin_));
+        obj->setProperty("isInstrument", effectiveIsInstrument(plugin_));
         obj->setProperty("isExternal", plugin_.isExternal);
         // External plugin identification
         obj->setProperty("uniqueId", plugin_.uniqueId);
@@ -434,10 +460,12 @@ void PluginBrowserContent::rebuildTree() {
 
     for (const auto& plugin : plugins_) {
         juce::String groupKey;
+        const auto effectiveCategory = effectiveCategoryForPlugin(plugin);
+        const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin);
 
         switch (currentViewMode_) {
             case ViewMode::ByCategory:
-                groupKey = plugin.category + "/" + plugin.subcategory;
+                groupKey = effectiveCategory + "/" + effectiveSubcategory;
                 break;
             case ViewMode::ByManufacturer:
                 groupKey = plugin.manufacturer;
@@ -511,9 +539,14 @@ void PluginBrowserContent::filterBySearch(const juce::String& searchText) {
     auto root = std::make_unique<CategoryTreeItem>("Search Results");
 
     for (const auto& plugin : plugins_) {
+        const auto effectiveCategory = effectiveCategoryForPlugin(plugin);
+        const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin);
         if (plugin.name.containsIgnoreCase(searchText) ||
             plugin.manufacturer.containsIgnoreCase(searchText) ||
-            plugin.subcategory.containsIgnoreCase(searchText)) {
+            plugin.category.containsIgnoreCase(searchText) ||
+            plugin.subcategory.containsIgnoreCase(searchText) ||
+            effectiveCategory.containsIgnoreCase(searchText) ||
+            effectiveSubcategory.containsIgnoreCase(searchText)) {
             root->addSubItem(new PluginTreeItem(plugin, *this));
         }
     }
@@ -547,7 +580,7 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
 
-    const auto pluginIdentifier = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
 
     // Instrument-form plugins can be manually routed as MIDI FX when their
     // runtime metadata is too synth-like to classify automatically.
@@ -572,8 +605,7 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
             // Helper to create device info from plugin
             auto createDevice = [&plugin]() {
                 magda::DeviceInfo device;
-                const auto pluginIdentifier =
-                    plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+                const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
                 const bool treatsAsMidiFx =
                     magda::PluginPreferences::getInstance().treatsAsMidiFx(pluginIdentifier);
                 device.name = plugin.name;
@@ -648,18 +680,18 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     break;
                 case 10: {
                     auto& prefs = magda::PluginPreferences::getInstance();
-                    const auto pluginIdentifier =
-                        plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+                    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
                     prefs.setPrefersDrumGrid(pluginIdentifier,
                                              !prefs.prefersDrumGrid(pluginIdentifier));
+                    rebuildTree();
                     break;
                 }
                 case 11: {
                     auto& prefs = magda::PluginPreferences::getInstance();
-                    const auto pluginIdentifier =
-                        plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+                    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
                     prefs.setTreatsAsMidiFx(pluginIdentifier,
                                             !prefs.treatsAsMidiFx(pluginIdentifier));
+                    rebuildTree();
                     break;
                 }
             }
