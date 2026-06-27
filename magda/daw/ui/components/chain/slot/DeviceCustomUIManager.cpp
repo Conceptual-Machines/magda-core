@@ -823,6 +823,75 @@ bool DeviceCustomUIManager::createFourOscUI(const magda::DeviceInfo& device,
     return true;
 }
 
+bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& device,
+                                                     juce::Component& parent,
+                                                     const Callbacks& callbacks) {
+    if (device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
+        faustInstrumentUI_ = std::make_unique<FaustInstrumentTabbedUI>();
+        forwardParameterChanges(*faustInstrumentUI_, callbacks);
+        faustInstrumentUI_->setDevicePath(devicePath_);
+        parent.addAndMakeVisible(*faustInstrumentUI_);
+        refreshLivePluginBindings();
+        update(device);
+        if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
+            faustInstrumentUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
+            pendingCustomUITabIndex_ = NO_PENDING_TAB;
+        }
+        return true;
+    }
+
+    if (device.pluginId.equalsIgnoreCase("magda_polysynth")) {
+        polySynthUI_ = std::make_unique<PolySynthUI>();
+        forwardParameterChanges(*polySynthUI_, callbacks);
+        parent.addAndMakeVisible(*polySynthUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.equalsIgnoreCase("magda_fm")) {
+        fmUI_ = std::make_unique<FMUI>();
+        forwardParameterChanges(*fmUI_, callbacks);
+        parent.addAndMakeVisible(*fmUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.equalsIgnoreCase("magda_elements")) {
+        materiaUI_ = std::make_unique<MateriaUI>();
+        forwardParameterChanges(*materiaUI_, callbacks);
+        parent.addAndMakeVisible(*materiaUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.equalsIgnoreCase("magda_rings")) {
+        haloUI_ = std::make_unique<HaloUI>();
+        forwardParameterChanges(*haloUI_, callbacks);
+        parent.addAndMakeVisible(*haloUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.equalsIgnoreCase("magda_clouds")) {
+        nimbusUI_ = std::make_unique<NimbusUI>();
+        forwardParameterChanges(*nimbusUI_, callbacks);
+        parent.addAndMakeVisible(*nimbusUI_);
+        refreshLivePluginBindings();
+        update(device);
+        return true;
+    }
+
+    if (DrumVoiceUI::handles(device.pluginId)) {
+        drumVoiceUI_ = std::make_unique<DrumVoiceUI>(device.pluginId);
+        forwardParameterChanges(*drumVoiceUI_, callbacks);
+        parent.addAndMakeVisible(*drumVoiceUI_);
+        update(device);
+        return true;
+    }
+
+    return false;
+}
+
 bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device,
                                                  juce::Component& parent,
                                                  const Callbacks& callbacks) {
@@ -1514,6 +1583,8 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // handled by helper
     } else if (createFourOscUI(device, *parent, callbacks)) {
         // handled by helper
+    } else if (createCustomInstrumentUI(device, *parent, callbacks)) {
+        // handled by helper
     } else if (createSimpleEffectUI(device, *parent, callbacks)) {
         // handled by helper
     } else if (createImpulseResponseUI(device, *parent, callbacks)) {
@@ -1729,6 +1800,35 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
                 }
             }
         }
+    }
+
+    if (faustInstrumentUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
+        faustInstrumentUI_->updateFromParameters(device.parameters);
+    }
+
+    if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth")) {
+        polySynthUI_->updateFromParameters(device.parameters);
+    }
+
+    if (fmUI_ && device.pluginId.equalsIgnoreCase("magda_fm")) {
+        fmUI_->updateFromParameters(device.parameters);
+    }
+
+    if (materiaUI_ && device.pluginId.equalsIgnoreCase("magda_elements")) {
+        materiaUI_->updateFromParameters(device.parameters);
+    }
+
+    if (haloUI_ && device.pluginId.equalsIgnoreCase("magda_rings")) {
+        haloUI_->updateFromParameters(device.parameters);
+    }
+
+    if (nimbusUI_ && device.pluginId.equalsIgnoreCase("magda_clouds")) {
+        nimbusUI_->updateFromParameters(device.parameters);
+    }
+
+    if (drumVoiceUI_ && DrumVoiceUI::handles(device.pluginId)) {
+        drumVoiceUI_->updateFromParameters(device.parameters);
     }
 
     if (eqUI_ && device.pluginId.equalsIgnoreCase("eq")) {
