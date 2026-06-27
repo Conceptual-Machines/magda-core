@@ -12,6 +12,8 @@ static const juce::Identifier trigger("strumTrigger");
 static const juce::Identifier order("strumOrder");
 static const juce::Identifier shape("strumShape");
 static const juce::Identifier cycles("strumCycles");
+static const juce::Identifier loopSync("strumLoopSync");
+static const juce::Identifier loopRate("strumLoopRate");
 static const juce::Identifier strumLength("strumLength");
 static const juce::Identifier syncInterval("strumSyncInterval");
 }  // namespace StrumIDs
@@ -97,6 +99,8 @@ MidiStrumPlugin::MidiStrumPlugin(const te::PluginCreationInfo& info) : MidiDevic
     order.referTo(state, StrumIDs::order, um, 0);
     shape.referTo(state, StrumIDs::shape, um, 1);  // Ease In
     cycles.referTo(state, StrumIDs::cycles, um, 0);
+    loopSync.referTo(state, StrumIDs::loopSync, um, 0);  // Time (free ms)
+    loopRate.referTo(state, StrumIDs::loopRate, um, 2);  // 1/4
     strumLength.referTo(state, StrumIDs::strumLength, um, 90.0f);
     syncInterval.referTo(state, StrumIDs::syncInterval, um, 500.0f);
 
@@ -104,6 +108,9 @@ MidiStrumPlugin::MidiStrumPlugin(const te::PluginCreationInfo& info) : MidiDevic
     orderParam = addParam("order", "Order", {0.0f, 3.0f, 1.0f});
     shapeParam = addParam("shape", "Shape", {0.0f, 7.0f, 1.0f});
     cyclesParam = addParam("cycles", "Cycles", {0.0f, 7.0f, 1.0f});
+    loopSyncParam = addParam("loopsync", "Loop Sync", {0.0f, 1.0f, 1.0f});
+    loopRateParam =
+        addParam("looprate", "Loop Rate", {0.0f, static_cast<float>(kNumLoopRates - 1), 1.0f});
     strumLengthParam = addParam("strumlength", "Strum Length", {1.0f, 400.0f});
     syncIntervalParam = addParam("syncinterval", "Sync Interval", {60.0f, 2000.0f});
 
@@ -112,6 +119,10 @@ MidiStrumPlugin::MidiStrumPlugin(const te::PluginCreationInfo& info) : MidiDevic
     orderParam->setParameterFromHost(static_cast<float>(order.get()), juce::dontSendNotification);
     shapeParam->setParameterFromHost(static_cast<float>(shape.get()), juce::dontSendNotification);
     cyclesParam->setParameterFromHost(static_cast<float>(cycles.get()), juce::dontSendNotification);
+    loopSyncParam->setParameterFromHost(static_cast<float>(loopSync.get()),
+                                        juce::dontSendNotification);
+    loopRateParam->setParameterFromHost(static_cast<float>(loopRate.get()),
+                                        juce::dontSendNotification);
     strumLengthParam->setParameterFromHost(strumLength.get(), juce::dontSendNotification);
     syncIntervalParam->setParameterFromHost(syncInterval.get(), juce::dontSendNotification);
 
@@ -129,6 +140,43 @@ MidiStrumPlugin::~MidiStrumPlugin() {
     notifyListenersOfDeletion();
 }
 
+double MidiStrumPlugin::loopRateToBeats(int rateIndex) {
+    // Index order must match the UI division list: 1/1, 1/2, 1/4, 1/4T, 1/8,
+    // 1/8T, 1/16, 1/16T. Value is the loop length in quarter-note beats.
+    switch (juce::jlimit(0, kNumLoopRates - 1, rateIndex)) {
+        case 0:
+            return 4.0;  // 1/1
+        case 1:
+            return 2.0;  // 1/2
+        case 2:
+            return 1.0;  // 1/4
+        case 3:
+            return 2.0 / 3.0;  // 1/4T
+        case 4:
+            return 0.5;  // 1/8
+        case 5:
+            return 1.0 / 3.0;  // 1/8T
+        case 6:
+            return 0.25;  // 1/16
+        case 7:
+            return 1.0 / 6.0;  // 1/16T
+        default:
+            return 1.0;
+    }
+}
+
+int MidiStrumPlugin::loopIntervalSamples(const te::PluginRenderContext& fc) const {
+    const auto mode = static_cast<LoopSync>(controlIndex(loopSyncParam.get(), loopSync));
+    if (mode == LoopSync::Beat) {
+        const double beats = loopRateToBeats(controlIndex(loopRateParam.get(), loopRate));
+        const double bpm = juce::jmax(1.0, edit.tempoSequence.getBpmAt(fc.editTime.getStart()));
+        const double secs = beats * 60.0 / bpm;
+        return static_cast<int>(secs * sampleRate_);
+    }
+    const float ms = controlValue(syncIntervalParam.get(), syncInterval);
+    return static_cast<int>(ms * 0.001f * sampleRate_);
+}
+
 void MidiStrumPlugin::syncParamFromProperty(const juce::Identifier& property) {
     if (property == StrumIDs::trigger && triggerParam)
         triggerParam->setParameterFromHost(static_cast<float>(trigger.get()),
@@ -142,6 +190,12 @@ void MidiStrumPlugin::syncParamFromProperty(const juce::Identifier& property) {
     else if (property == StrumIDs::cycles && cyclesParam)
         cyclesParam->setParameterFromHost(static_cast<float>(cycles.get()),
                                           juce::dontSendNotification);
+    else if (property == StrumIDs::loopSync && loopSyncParam)
+        loopSyncParam->setParameterFromHost(static_cast<float>(loopSync.get()),
+                                            juce::dontSendNotification);
+    else if (property == StrumIDs::loopRate && loopRateParam)
+        loopRateParam->setParameterFromHost(static_cast<float>(loopRate.get()),
+                                            juce::dontSendNotification);
     else if (property == StrumIDs::strumLength && strumLengthParam)
         strumLengthParam->setParameterFromHost(strumLength.get(), juce::dontSendNotification);
     else if (property == StrumIDs::syncInterval && syncIntervalParam)
@@ -190,8 +244,8 @@ void MidiStrumPlugin::scheduleStrum() {
     if (held_.empty())
         return;
 
-    // Sync re-strum: stop whatever is currently ringing before the new pass.
-    if (static_cast<Trigger>(controlIndex(triggerParam.get(), trigger)) == Trigger::Sync)
+    // Loop re-strum: stop whatever is currently ringing before the new pass.
+    if (static_cast<Trigger>(controlIndex(triggerParam.get(), trigger)) == Trigger::Loop)
         scheduleReleaseAll();
 
     std::vector<Held> notes = held_;
@@ -232,6 +286,18 @@ void MidiStrumPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     const int n = fc.bufferNumSamples;
     if (n <= 0)
         return;
+
+    // Stop mid-strum: the upstream clip stops sending note-offs, so release
+    // everything sounding and drop the latched chord on the playing->stopped
+    // edge to avoid hung notes downstream. (The note-offs queued here fire in
+    // step 3 below.)
+    if (wasPlaying_ && !fc.isPlaying) {
+        scheduleReleaseAll();
+        held_.clear();
+        collectLeft_ = -1;
+        syncLeft_ = 0;
+    }
+    wasPlaying_ = fc.isPlaying;
 
     // Rebuild the curve LUT when Shape changes.
     const int shp = controlIndex(shapeParam.get(), shape);
@@ -284,8 +350,7 @@ void MidiStrumPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         syncLeft_ -= n;
         if (syncLeft_ <= 0) {
             scheduleStrum();
-            const float ms = controlValue(syncIntervalParam.get(), syncInterval);
-            syncLeft_ = juce::jmax(1, static_cast<int>(ms * 0.001f * sampleRate_));
+            syncLeft_ = juce::jmax(1, loopIntervalSamples(fc));
         }
     }
 
@@ -334,8 +399,8 @@ void MidiStrumPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 }
 
 void MidiStrumPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    tracktion::copyPropertiesToCachedValues(v, trigger, order, shape, cycles, strumLength,
-                                            syncInterval);
+    tracktion::copyPropertiesToCachedValues(v, trigger, order, shape, cycles, loopSync, loopRate,
+                                            strumLength, syncInterval);
 }
 
 std::vector<float> MidiStrumPlugin::curveOnsetPreview(int count) const {

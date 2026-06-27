@@ -55,14 +55,17 @@ class StrumUI : public juce::Component, private juce::ValueTree::Listener {
     LinkableTextSlider cyclesSlider_;
     juce::Label lengthLabel_;
     LinkableTextSlider lengthSlider_;
-    juce::Label syncLabel_;
-    LinkableTextSlider syncSlider_;
+    juce::Label loopModeLabel_;
+    juce::ComboBox loopModeCombo_;
+    juce::Label loopLabel_;
+    LinkableTextSlider syncSlider_;  // Loop interval in Time (ms) mode.
+    juce::ComboBox loopRateCombo_;   // Loop division in Beat-sync mode.
     juce::Label vizLabel_;
     OnsetStrip onsetStrip_;
 
     void syncFromPlugin();
     void refreshOnsets();
-    void updateSyncEnabled();
+    void updateLoopControls();
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupCombo(juce::ComboBox& combo);
     void setupSlider(LinkableTextSlider& slider, double min, double max, double step);

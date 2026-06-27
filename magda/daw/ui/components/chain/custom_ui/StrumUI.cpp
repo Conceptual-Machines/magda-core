@@ -56,11 +56,11 @@ StrumUI::StrumUI() {
     setupLabel(triggerLabel_, "TRIGGER");
     setupCombo(triggerCombo_);
     triggerCombo_.addItem("Chord", 1);
-    triggerCombo_.addItem("Sync", 2);
+    triggerCombo_.addItem("Loop", 2);
     triggerCombo_.onChange = [this] {
         if (plugin_) {
             plugin_->trigger = triggerCombo_.getSelectedId() - 1;
-            updateSyncEnabled();
+            updateLoopControls();
         }
     };
 
@@ -110,7 +110,18 @@ StrumUI::StrumUI() {
             plugin_->strumLength = static_cast<float>(value);
     };
 
-    setupLabel(syncLabel_, "SYNC");
+    setupLabel(loopModeLabel_, "LOOP BY");
+    setupCombo(loopModeCombo_);
+    loopModeCombo_.addItem("Time", 1);
+    loopModeCombo_.addItem("Beat", 2);
+    loopModeCombo_.onChange = [this] {
+        if (plugin_) {
+            plugin_->loopSync = loopModeCombo_.getSelectedId() - 1;
+            updateLoopControls();
+        }
+    };
+
+    setupLabel(loopLabel_, "LOOP");
     setupSlider(syncSlider_, 60, 2000, 1);
     syncSlider_.setValueFormatter(
         [](double v) { return juce::String(juce::roundToInt(v)) + " ms"; });
@@ -119,6 +130,15 @@ StrumUI::StrumUI() {
     syncSlider_.onValueChanged = [this](double value) {
         if (plugin_)
             plugin_->syncInterval = static_cast<float>(value);
+    };
+
+    setupCombo(loopRateCombo_);
+    static const char* rateNames[] = {"1/1", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T"};
+    for (int i = 0; i < 8; ++i)
+        loopRateCombo_.addItem(rateNames[i], i + 1);
+    loopRateCombo_.onChange = [this] {
+        if (plugin_)
+            plugin_->loopRate = loopRateCombo_.getSelectedId() - 1;
     };
 
     setupLabel(vizLabel_, "ONSETS");
@@ -132,6 +152,8 @@ StrumUI::~StrumUI() {
     triggerCombo_.setLookAndFeel(nullptr);
     orderCombo_.setLookAndFeel(nullptr);
     shapeCombo_.setLookAndFeel(nullptr);
+    loopModeCombo_.setLookAndFeel(nullptr);
+    loopRateCombo_.setLookAndFeel(nullptr);
 }
 
 void StrumUI::setPlugin(daw::audio::MidiStrumPlugin* plugin) {
@@ -158,9 +180,11 @@ void StrumUI::syncFromPlugin() {
                            juce::dontSendNotification);
     lengthSlider_.setValue(static_cast<double>(plugin_->strumLength.get()),
                            juce::dontSendNotification);
+    loopModeCombo_.setSelectedId(plugin_->loopSync.get() + 1, juce::dontSendNotification);
+    loopRateCombo_.setSelectedId(plugin_->loopRate.get() + 1, juce::dontSendNotification);
     syncSlider_.setValue(static_cast<double>(plugin_->syncInterval.get()),
                          juce::dontSendNotification);
-    updateSyncEnabled();
+    updateLoopControls();
     refreshOnsets();
 }
 
@@ -169,12 +193,27 @@ void StrumUI::refreshOnsets() {
         onsetStrip_.setOnsets(plugin_->curveOnsetPreview(PREVIEW_TICKS));
 }
 
-void StrumUI::updateSyncEnabled() {
+void StrumUI::updateLoopControls() {
     if (!plugin_)
         return;
-    bool sync = static_cast<Strum::Trigger>(plugin_->trigger.get()) == Strum::Trigger::Sync;
-    syncSlider_.setEnabled(sync);
-    syncSlider_.setAlpha(sync ? 1.0f : 0.3f);
+    const bool loop = static_cast<Strum::Trigger>(plugin_->trigger.get()) == Strum::Trigger::Loop;
+    const bool beat =
+        static_cast<Strum::LoopSync>(plugin_->loopSync.get()) == Strum::LoopSync::Beat;
+
+    // The loop controls only matter in Loop mode; grey them out otherwise.
+    loopModeCombo_.setEnabled(loop);
+    loopModeCombo_.setAlpha(loop ? 1.0f : 0.3f);
+    loopModeLabel_.setAlpha(loop ? 1.0f : 0.3f);
+    loopLabel_.setAlpha(loop ? 1.0f : 0.3f);
+
+    // Time mode shows the ms slider; Beat mode shows the division combo. They
+    // share the same row slot, so only one is visible at a time.
+    syncSlider_.setVisible(!beat);
+    syncSlider_.setEnabled(loop);
+    syncSlider_.setAlpha(loop ? 1.0f : 0.3f);
+    loopRateCombo_.setVisible(beat);
+    loopRateCombo_.setEnabled(loop);
+    loopRateCombo_.setAlpha(loop ? 1.0f : 0.3f);
 }
 
 void StrumUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) {
@@ -214,7 +253,15 @@ void StrumUI::resized() {
     // Right column
     layoutRow(rightCol, cyclesLabel_, cyclesSlider_);
     layoutRow(rightCol, lengthLabel_, lengthSlider_);
-    layoutRow(rightCol, syncLabel_, syncSlider_);
+    layoutRow(rightCol, loopModeLabel_, loopModeCombo_);
+
+    // Full-width LOOP interval row: the ms slider and the division combo share
+    // the same slot - updateLoopControls() shows whichever matches LOOP BY.
+    bounds.removeFromTop(ROW_GAP);
+    auto loopRow = bounds.removeFromTop(ROW_HEIGHT);
+    loopLabel_.setBounds(loopRow.removeFromLeft(LABEL_WIDTH));
+    syncSlider_.setBounds(loopRow);
+    loopRateCombo_.setBounds(loopRow);
 
     bounds.removeFromTop(ROW_GAP);
     auto vizLabelRow = bounds.removeFromTop(ROW_HEIGHT);
@@ -248,12 +295,12 @@ void StrumUI::setupSlider(LinkableTextSlider& slider, double min, double max, do
 
 std::vector<LinkableTextSlider*> StrumUI::getLinkableSliders() {
     // Param registration order: 0=trigger, 1=order, 2=shape, 3=cycles,
-    // 4=strumlength, 5=syncinterval. Only the sliders are macro-linkable; the
-    // combos (trigger/order/shape) are not.
+    // 4=loopsync, 5=looprate, 6=strumlength, 7=syncinterval. Only the sliders are
+    // macro-linkable; the combos (trigger/order/shape/loop-mode/loop-rate) are not.
     magda::ChainNodePath dummy;
     cyclesSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 3, dummy);
-    lengthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 4, dummy);
-    syncSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 5, dummy);
+    lengthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 6, dummy);
+    syncSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 7, dummy);
     return {&cyclesSlider_, &lengthSlider_, &syncSlider_};
 }
 

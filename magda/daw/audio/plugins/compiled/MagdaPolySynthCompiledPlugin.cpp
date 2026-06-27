@@ -498,6 +498,12 @@ void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
     if (!poly_ || !monoVoice_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
 
+    // Stop mid-note doesn't deliver note-offs, so a sounding voice would hang
+    // gated-on. Flush every voice on the playing->stopped edge.
+    if (wasPlaying_ && !fc.isPlaying)
+        resetAllVoices();
+    wasPlaying_ = fc.isPlaying;
+
     // Fan each host macro out to every poly voice's zone AND the mono voice's
     // zone (RT-safe pointer writes), so both engines track the controls.
     for (int slot = 0; slot < kHostSlotCount; ++slot) {

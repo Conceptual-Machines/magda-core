@@ -190,6 +190,10 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     std::array<bool, 128> polyHeld_{};
     float currentBend_ = 0.0f;  // normalised [-1, 1]
     int lastVoiceMode_ = 0;
+    // Transport play state from the previous block. On the playing->stopped edge
+    // we flush all voices: clip playback doesn't send note-offs when the user
+    // hits Stop mid-note, so the voice would stay gated on and keep sounding.
+    bool wasPlaying_ = false;
 
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
