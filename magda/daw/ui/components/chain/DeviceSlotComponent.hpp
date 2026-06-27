@@ -292,11 +292,8 @@ class DeviceSlotComponent : public NodeComponent,
     void loadPluginPresetFile(const juce::File& file);
     void showSavePluginPresetDialog();
 
-    // Most-recently loaded plugin preset (cleared when the device's pluginId
-    // changes). pluginPresetName_ is the display label; currentPluginPresetFile_
-    // is the source file used to tick the entry in the popup menu.
-    juce::File currentPluginPresetFile_;
-    juce::String pluginPresetName_;
+    // Plugin preset menu state/actions.
+    PluginDevicePresetPresenter pluginPresetPresenter_;
 
     // MAGDA preset menu state/actions.
     MagdaDevicePresetPresenter magdaPresetPresenter_;
