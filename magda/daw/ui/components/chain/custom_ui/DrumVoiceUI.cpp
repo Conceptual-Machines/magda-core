@@ -22,6 +22,18 @@ constexpr DrumVoice kDrumVoices[] = {
     {"magda_kick", "Kick"}, {"magda_snare", "Snare"}, {"magda_clap", "Clap"},
     {"magda_hat", "Hat"},   {"magda_tom", "Tom"},
 };
+
+// UI-only short label: sections are titled, so drop the redundant section prefix
+// from the param name (the host/automation name keeps its unique full name).
+juce::String displayLabel(juce::String name) {
+    if (name.startsWith("Trans "))
+        name = name.substring(6);
+    if (name == "Transient" || name == "Ring" || name == "Noise")
+        return "Level";  // the layer's own level/amount knob
+    if (name == "Body")
+        return "Decay";  // the body amp decay
+    return name;
+}
 }  // namespace
 
 bool DrumVoiceUI::handles(const juce::String& pluginId) {
@@ -119,7 +131,7 @@ void DrumVoiceUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         if (info.paramIndex < 0 || info.paramIndex >= static_cast<int>(controls_.size()))
             continue;
         auto& c = controls_[static_cast<size_t>(info.paramIndex)];
-        c.label->setText(info.name, juce::dontSendNotification);
+        c.label->setText(displayLabel(info.name), juce::dontSendNotification);
         c.slider->setParameterInfo(info);
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
         slotMin_[static_cast<size_t>(info.paramIndex)] = info.minValue;
