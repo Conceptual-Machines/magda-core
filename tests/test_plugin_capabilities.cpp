@@ -24,3 +24,27 @@ TEST_CASE("MIDI thru toggle support is capability-backed and backend-aware",
     REQUIRE_FALSE(midiFxCaps.supportsMidiInputThruToggle);
     REQUIRE_FALSE(magda::supportsMidiInputThruToggle(midiFxProducer));
 }
+
+TEST_CASE("External MIDI input routing is narrower than MIDI input capability",
+          "[plugin_capabilities]") {
+    magda::DeviceInfo instrument;
+    instrument.isInstrument = true;
+    instrument.deviceType = magda::DeviceType::Instrument;
+    instrument.canReceiveMidi = false;
+
+    auto instrumentCaps = magda::midiCapabilitiesForDevice(instrument);
+    REQUIRE(instrumentCaps.hasMidiInput);
+    REQUIRE_FALSE(instrumentCaps.supportsExternalMidiInputRouting);
+    REQUIRE_FALSE(magda::supportsExternalMidiInputRouting(instrument));
+
+    magda::DeviceInfo midiRoutableFx;
+    midiRoutableFx.isInstrument = false;
+    midiRoutableFx.deviceType = magda::DeviceType::Effect;
+    midiRoutableFx.canReceiveMidi = true;
+
+    auto fxCaps = magda::midiCapabilitiesForDevice(midiRoutableFx);
+    REQUIRE(fxCaps.hasMidiInput);
+    REQUIRE(fxCaps.supportsExternalMidiInputRouting);
+    REQUIRE(magda::supportsExternalMidiInputRouting(midiRoutableFx));
+    REQUIRE(magda::supportsSidechainRoutingMenu(midiRoutableFx));
+}

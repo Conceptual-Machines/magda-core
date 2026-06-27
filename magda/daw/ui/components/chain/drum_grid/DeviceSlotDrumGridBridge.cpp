@@ -312,8 +312,9 @@ bool shouldShowMacroButton(bool isDrumGrid, magda::DeviceType deviceType, bool i
            isArpeggiator || isStepSequencer || isDrumGrid;
 }
 
-bool shouldShowSidechainButton(bool isDrumGrid, bool canSidechain, bool canReceiveMidi) {
-    return !isDrumGrid && (canSidechain || canReceiveMidi);
+bool shouldShowSidechainButton(bool isDrumGrid, bool canSidechain,
+                               bool supportsExternalMidiInputRouting) {
+    return !isDrumGrid && (canSidechain || supportsExternalMidiInputRouting);
 }
 
 bool shouldShowCollapsedUiButton(bool isDrumGrid, bool isInternalDevice) {

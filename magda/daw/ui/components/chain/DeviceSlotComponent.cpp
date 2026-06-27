@@ -544,7 +544,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     scButton_->onClick = [this]() { showSidechainMenu(); };
-    scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
+    scButton_->setVisible(supportsSidechainRoutingMenu(device_));
     addAndMakeVisible(*scButton_);
     updateScButtonState();
 
@@ -1184,7 +1184,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update sidechain button visibility and state
     if (scButton_) {
         scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
-            traits_.isDrumGrid, device_.canSidechain, device_.canReceiveMidi));
+            traits_.isDrumGrid, device_.canSidechain, supportsExternalMidiInputRouting(device_)));
         updateScButtonState();
     }
 
@@ -2343,12 +2343,12 @@ void DeviceSlotComponent::showSidechainMenu() {
     // Read live sidechain state from TrackManager (device_ may be stale)
     magda::SidechainConfig currentSidechain;
     bool canAudio = device_.canSidechain;
-    bool canMidi = device_.canReceiveMidi;
+    bool canMidi = supportsExternalMidiInputRouting(device_);
     if (auto* currentDevice =
             magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
         currentSidechain = currentDevice->sidechain;
         canAudio = currentDevice->canSidechain;
-        canMidi = currentDevice->canReceiveMidi;
+        canMidi = supportsExternalMidiInputRouting(*currentDevice);
     }
 
     // "None" option to clear sidechain

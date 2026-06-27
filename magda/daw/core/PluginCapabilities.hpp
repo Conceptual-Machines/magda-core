@@ -43,6 +43,11 @@ struct DeviceMidiCapabilities {
     // Current implementation support, not a statement that the plugin itself
     // could never support it. Today this is backed by InstrumentRackManager.
     bool supportsMidiInputThruToggle = false;
+
+    // Current routing support for feeding MIDI from another track/device into
+    // this plugin. This is narrower than hasMidiInput; instruments consume track
+    // MIDI, but are not currently exposed as MIDI sidechain destinations.
+    bool supportsExternalMidiInputRouting = false;
 };
 
 class PluginCapabilityCache {
@@ -69,5 +74,7 @@ class PluginCapabilityCache {
 
 DeviceMidiCapabilities midiCapabilitiesForDevice(const DeviceInfo& device);
 bool supportsMidiInputThruToggle(const DeviceInfo& device);
+bool supportsExternalMidiInputRouting(const DeviceInfo& device);
+bool supportsSidechainRoutingMenu(const DeviceInfo& device);
 
 }  // namespace magda

@@ -88,6 +88,7 @@ DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
     // to support this once a generic MIDI routing wrapper exists, but today only
     // the instrument wrapper implements this switch.
     capabilities.supportsMidiInputThruToggle = device.isInstrument && capabilities.hasMidiOutput;
+    capabilities.supportsExternalMidiInputRouting = device.canReceiveMidi;
     return capabilities;
 }
 
@@ -99,6 +100,7 @@ DeviceMidiCapabilities mergeSnapshotWithDevice(const PluginCapabilitySnapshot& s
     capabilities.hasAudioInput = snapshot.hasAudioInput;
     capabilities.hasAudioOutput = snapshot.hasAudioOutput;
     capabilities.supportsMidiInputThruToggle = device.isInstrument && snapshot.hasMidiOutput;
+    capabilities.supportsExternalMidiInputRouting = !device.isInstrument && snapshot.hasMidiInput;
     return capabilities;
 }
 
@@ -225,6 +227,14 @@ DeviceMidiCapabilities midiCapabilitiesForDevice(const DeviceInfo& device) {
 
 bool supportsMidiInputThruToggle(const DeviceInfo& device) {
     return midiCapabilitiesForDevice(device).supportsMidiInputThruToggle;
+}
+
+bool supportsExternalMidiInputRouting(const DeviceInfo& device) {
+    return midiCapabilitiesForDevice(device).supportsExternalMidiInputRouting;
+}
+
+bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
+    return device.canSidechain || supportsExternalMidiInputRouting(device);
 }
 
 }  // namespace magda
