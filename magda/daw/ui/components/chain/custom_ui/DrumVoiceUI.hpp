@@ -61,12 +61,19 @@ class DrumVoiceUI : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    // Envelope graphs are interactive: drag the peak/end dots to set
+    // attack/decay, scroll over a graph to set its Curve.
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
     struct Control {
         std::unique_ptr<juce::Label> label;
         std::unique_ptr<LinkableTextSlider> slider;
     };
+    enum class Drag { None, Attack, Decay };
 
     // Build one labelled box per host slot (idempotent: only grows to `count`).
     void ensureControls(int count);
@@ -78,14 +85,23 @@ class DrumVoiceUI : public juce::Component {
     // into `area`, with time scaled by `axisMaxMs` so layer lengths compare.
     void drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, const Section& s,
                       float axisMaxMs);
+    // The env's per-section time axis (ms): attack max + decay max from the slots.
+    float sectionAxisMaxMs(const Section& s) const;
+    // Peak (attack) and end (decay) handle points of section `i`'s graph.
+    bool envHandles(int i, juce::Point<float>& peak, juce::Point<float>& end) const;
+    // Push `value` (real units) into a slot's box + the host, then repaint.
+    void setSlotValue(int slot, float value);
 
     juce::String title_;
     std::vector<Section> sections_;
     std::vector<Control> controls_;
-    std::vector<float> slotMax_;  // real-unit max per slot (for per-section env axis)
+    std::vector<float> slotMin_;  // real-unit min per slot (drag clamps)
+    std::vector<float> slotMax_;  // real-unit max per slot (per-section env axis + clamps)
     // Title + envelope strips per section, cached in resized() for paint().
     std::vector<juce::Rectangle<int>> sectionTitleAreas_;
     std::vector<juce::Rectangle<int>> sectionEnvAreas_;
+    int dragSection_ = -1;
+    Drag dragKind_ = Drag::None;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumVoiceUI)
 };

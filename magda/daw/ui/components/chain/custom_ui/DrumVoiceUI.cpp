@@ -112,6 +112,7 @@ void DrumVoiceUI::ensureControls(int count) {
 
 void DrumVoiceUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     ensureControls(static_cast<int>(params.size()));
+    slotMin_.resize(controls_.size(), 0.0f);
     slotMax_.resize(controls_.size(), 1.0f);
 
     for (const auto& info : params) {
@@ -121,6 +122,7 @@ void DrumVoiceUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         c.label->setText(info.name, juce::dontSendNotification);
         c.slider->setParameterInfo(info);
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
+        slotMin_[static_cast<size_t>(info.paramIndex)] = info.minValue;
         slotMax_[static_cast<size_t>(info.paramIndex)] = info.maxValue;
     }
     resized();
@@ -294,6 +296,121 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
     g.fillPath(fill);
     g.setColour(accent);
     g.strokePath(p, juce::PathStrokeType(1.2f));
+
+    // Draggable handles: peak (attack, when present) and end (decay).
+    constexpr float kDot = 3.0f;
+    if (s.attackSlot >= 0)
+        g.fillEllipse(xA - kDot, top - kDot, 2 * kDot, 2 * kDot);
+    g.fillEllipse(xD - kDot, bot - kDot, 2 * kDot, 2 * kDot);
+}
+
+float DrumVoiceUI::sectionAxisMaxMs(const Section& s) const {
+    if (s.decaySlot < 0 || s.decaySlot >= static_cast<int>(slotMax_.size()))
+        return 1.0f;
+    float m = slotMax_[static_cast<size_t>(s.decaySlot)];
+    if (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(slotMax_.size()))
+        m += slotMax_[static_cast<size_t>(s.attackSlot)];
+    return juce::jmax(1.0f, m);
+}
+
+bool DrumVoiceUI::envHandles(int i, juce::Point<float>& peak, juce::Point<float>& end) const {
+    if (i < 0 || i >= static_cast<int>(sectionEnvAreas_.size()) ||
+        i >= static_cast<int>(sections_.size()))
+        return false;
+    const auto& s = sections_[static_cast<size_t>(i)];
+    if (s.decaySlot < 0 || s.decaySlot >= static_cast<int>(controls_.size()))
+        return false;
+    const auto r = sectionEnvAreas_[static_cast<size_t>(i)].toFloat();
+    const float axis = sectionAxisMaxMs(s);
+    const float aMs =
+        (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
+            ? static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue())
+            : 0.0f;
+    const float dMs =
+        static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
+    const float xA = r.getX() + r.getWidth() * (aMs / axis);
+    const float xD = juce::jmin(r.getRight(), r.getX() + r.getWidth() * ((aMs + dMs) / axis));
+    peak = {xA, r.getY() + 1.0f};
+    end = {xD, r.getBottom() - 1.0f};
+    return true;
+}
+
+void DrumVoiceUI::setSlotValue(int slot, float value) {
+    if (slot < 0 || slot >= static_cast<int>(controls_.size()))
+        return;
+    controls_[static_cast<size_t>(slot)].slider->setValue(value, juce::dontSendNotification);
+    if (onParameterChanged)
+        onParameterChanged(slot, value);
+    repaint();
+}
+
+void DrumVoiceUI::mouseDown(const juce::MouseEvent& e) {
+    dragSection_ = -1;
+    dragKind_ = Drag::None;
+    const auto pos = e.position;
+    for (int i = 0; i < static_cast<int>(sections_.size()); ++i) {
+        juce::Point<float> peak, end;
+        if (!envHandles(i, peak, end))
+            continue;
+        const auto& s = sections_[static_cast<size_t>(i)];
+        if (s.attackSlot >= 0 && pos.getDistanceFrom(peak) <= 9.0f) {
+            dragSection_ = i;
+            dragKind_ = Drag::Attack;
+            return;
+        }
+        if (pos.getDistanceFrom(end) <= 9.0f) {
+            dragSection_ = i;
+            dragKind_ = Drag::Decay;
+            return;
+        }
+    }
+}
+
+void DrumVoiceUI::mouseDrag(const juce::MouseEvent& e) {
+    if (dragSection_ < 0 || dragKind_ == Drag::None)
+        return;
+    const auto& s = sections_[static_cast<size_t>(dragSection_)];
+    const auto r = sectionEnvAreas_[static_cast<size_t>(dragSection_)].toFloat();
+    const float axis = sectionAxisMaxMs(s);
+    const float t = juce::jlimit(0.0f, axis, (e.position.x - r.getX()) / r.getWidth() * axis);
+
+    if (dragKind_ == Drag::Attack) {
+        setSlotValue(s.attackSlot, juce::jlimit(slotMin_[static_cast<size_t>(s.attackSlot)],
+                                                slotMax_[static_cast<size_t>(s.attackSlot)], t));
+    } else {  // Decay
+        const float aMs = (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
+                              ? static_cast<float>(
+                                    controls_[static_cast<size_t>(s.attackSlot)].slider->getValue())
+                              : 0.0f;
+        setSlotValue(s.decaySlot,
+                     juce::jlimit(slotMin_[static_cast<size_t>(s.decaySlot)],
+                                  slotMax_[static_cast<size_t>(s.decaySlot)], t - aMs));
+    }
+}
+
+void DrumVoiceUI::mouseUp(const juce::MouseEvent&) {
+    dragSection_ = -1;
+    dragKind_ = Drag::None;
+}
+
+void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
+    // Scroll over a section's envelope graph to set its Curve.
+    for (int i = 0;
+         i < static_cast<int>(sectionEnvAreas_.size()) && i < static_cast<int>(sections_.size());
+         ++i) {
+        const auto& s = sections_[static_cast<size_t>(i)];
+        if (s.curveSlot < 0 || s.curveSlot >= static_cast<int>(controls_.size()))
+            continue;
+        if (!sectionEnvAreas_[static_cast<size_t>(i)].toFloat().contains(e.position))
+            continue;
+        const float cur =
+            static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
+        const float delta = (wheel.isReversed ? -wheel.deltaY : wheel.deltaY) * 0.5f;
+        setSlotValue(s.curveSlot,
+                     juce::jlimit(slotMin_[static_cast<size_t>(s.curveSlot)],
+                                  slotMax_[static_cast<size_t>(s.curveSlot)], cur + delta));
+        return;
+    }
 }
 
 }  // namespace magda::daw::ui
