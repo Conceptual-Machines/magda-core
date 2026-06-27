@@ -51,10 +51,11 @@ class FMUI : public juce::Component {
     static constexpr int kWaveBase = 28;     // 28..31
     static constexpr int kGlideSlot = 32;
     static constexpr int kVelAmtSlot = 33;
-    static constexpr int kResetBase = 34;  // 34..37 (per-op phase reset)
-    static constexpr int kGainSlot = 38;
-    static constexpr int kVoiceModeSlot = 39;
-    static constexpr int kNumParams = 40;
+    static constexpr int kResetBase = 34;   // 34..37 (per-op phase reset)
+    static constexpr int kEnableBase = 38;  // 38..41 (per-op enable / mute)
+    static constexpr int kGainSlot = 42;
+    static constexpr int kVoiceModeSlot = 43;
+    static constexpr int kNumParams = 44;
     static constexpr int kNumWaves = 5;  // Sine / Triangle / Saw / Square / Noise
 
     struct Control {
@@ -66,6 +67,10 @@ class FMUI : public juce::Component {
     void updateWaveSelectors();
     void setOpReset(int op, bool on);
     void updateResetButtons();
+    void setOpEnable(int op, bool on);
+    void updateEnableButtons();
+    // Grey out (and disable) every control in a disabled operator's column.
+    void applyOpColumnEnabled(int op);
     void layoutCells(juce::Rectangle<int> area, const std::vector<int>& indices, int cols);
 
     std::array<Control, kNumParams> controls_;
@@ -75,6 +80,9 @@ class FMUI : public juce::Component {
     // Per-operator phase-reset toggles (overlay the hidden reset sliders).
     std::array<std::unique_ptr<juce::TextButton>, kNumOps> resetButtons_;
     std::array<bool, kNumOps> opReset_{};
+    // Per-operator enable (mute) toggles; disabling greys out the column.
+    std::array<std::unique_ptr<juce::TextButton>, kNumOps> enableButtons_;
+    std::array<bool, kNumOps> opEnabled_{};  // all true after construction
 
     // Draggable amp ADSR envelope (replaces the A/D/S/R value boxes as the editor).
     std::unique_ptr<AdsrGraph> ampGraph_;

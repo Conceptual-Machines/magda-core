@@ -80,6 +80,15 @@ reset(1) = nentry("Op2 Reset [idx:35] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1)
 reset(2) = nentry("Op3 Reset [idx:36] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
 reset(3) = nentry("Op4 Reset [idx:37] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
 
+// Per-operator enable (idx 38..41): an On/Off toggle that mutes the operator
+// entirely - it stops sounding AND stops modulating (its output is gated before
+// the feedback bus). Smoothed so toggling does not click. Default On.
+// (`enable` is a reserved Faust primitive, so the function is named opEn.)
+opEn(0) = nentry("Op1 Enable [idx:38] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+opEn(1) = nentry("Op2 Enable [idx:39] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+opEn(2) = nentry("Op3 Enable [idx:40] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+opEn(3) = nentry("Op4 Enable [idx:41] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+
 // ============================================================================
 // FM matrix
 // ============================================================================
@@ -106,7 +115,8 @@ with {
     tri(x) = 4.0 * abs(x - 0.5) - 1.0;
     saw(x) = 2.0 * x - 1.0;
     sqr(x) = 2.0 * float(x < 0.5) - 1.0;
-    op(i) = ba.selectn(5, int(wave(i)), sine(p(i)), tri(p(i)), saw(p(i)), sqr(p(i)), no.noise);
+    op(i) = ba.selectn(5, int(wave(i)), sine(p(i)), tri(p(i)), saw(p(i)), sqr(p(i)), no.noise)
+            * sm(opEn(i));
 };
 
 // dB -> linear gain (floored to silence at -60 dB), smoothed to avoid steps.
