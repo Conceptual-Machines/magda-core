@@ -38,6 +38,13 @@ class PluginPreferences {
     /** Toggle the drum-grid preference. Writes immediately to disk. */
     void setPrefersDrumGrid(const juce::String& pluginIdentifier, bool prefer);
 
+    /** True iff new instances of this browser plugin should be created as MIDI
+     *  FX even when the plugin scan reports them as instruments. */
+    bool treatsAsMidiFx(const juce::String& pluginIdentifier) const;
+
+    /** Toggle the manual MIDI FX role override. Writes immediately to disk. */
+    void setTreatsAsMidiFx(const juce::String& pluginIdentifier, bool treatAsMidiFx);
+
     /** Canonical key for user-global plugin preferences from the MAGDA model.
      *  External plugins prefer DeviceInfo::uniqueId (JUCE scan identity).
      *  Internal MAGDA devices fall back to DeviceInfo::pluginId ("4osc",
@@ -66,6 +73,7 @@ class PluginPreferences {
 
     mutable std::mutex mutex_;
     std::unordered_set<juce::String> drumGridPlugins_;
+    std::unordered_set<juce::String> midiFxPlugins_;
     std::unordered_map<juce::String, std::vector<magda::KitRow>> defaultKits_;
     juce::ListenerList<Listener> listeners_;
 
