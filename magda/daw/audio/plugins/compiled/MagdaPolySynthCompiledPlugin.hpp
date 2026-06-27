@@ -107,8 +107,11 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     // Velocity routing: depth into amplitude, and octaves into the filter cutoff.
     static constexpr int kVelAmpSlot = 37;
     static constexpr int kVelFilterSlot = 38;
+    // Per-oscillator enable (mute that oscillator), discrete Off/On, default On.
+    // osc n -> kOscEnableBaseSlot + (n - 1), idx 39..42.
+    static constexpr int kOscEnableBaseSlot = 39;
 
-    static constexpr int kHostSlotCount = 39;
+    static constexpr int kHostSlotCount = 43;
 
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 

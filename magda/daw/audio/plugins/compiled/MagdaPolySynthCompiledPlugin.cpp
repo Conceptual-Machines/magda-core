@@ -372,6 +372,16 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                      .maxValue = 6.0f,
                                      .defaultValue = 0.0f};
 
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        hostSlotInfo_[kOscEnableBaseSlot + osc] = {.name =
+                                                       "Osc " + juce::String(osc + 1) + " Enable",
+                                                   .scale = magda::ParameterScale::Discrete,
+                                                   .minValue = 0.0f,
+                                                   .maxValue = 1.0f,
+                                                   .defaultValue = 1.0f,
+                                                   .choices = {"Off", "On"}};
+    }
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 

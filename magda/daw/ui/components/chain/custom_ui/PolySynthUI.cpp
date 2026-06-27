@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -15,18 +15,28 @@ constexpr int kSectionTitleH = 15;
 constexpr int kCellLabelH = 12;
 constexpr int kCellPad = 3;
 constexpr int kSectionGap = 4;
+
+// Waveform icons in the dsp's wave order: 0 Sine / 1 Saw / 2 Square / 3 Triangle,
+// so the selector index maps 1:1 to the Osc Wave slot value.
+void populateWaveSelector(IconSelector& sel) {
+    sel.addOption(BinaryData::fadmodsine_svg, BinaryData::fadmodsine_svgSize, "Sine");
+    sel.addOption(BinaryData::fadmodsawup_svg, BinaryData::fadmodsawup_svgSize, "Saw");
+    sel.addOption(BinaryData::fadmodsquare_svg, BinaryData::fadmodsquare_svgSize, "Square");
+    sel.addOption(BinaryData::fadmodtri_svg, BinaryData::fadmodtri_svgSize, "Triangle");
+}
 }  // namespace
 
 PolySynthUI::PolySynthUI() {
     // Short per-slot labels. The oscillator cells are prefixed with the
     // oscillator number so each cell is self-describing in the dense grid.
+    // Per-oscillator control labels. The column header (the enable toggle) carries
+    // the oscillator number, so these are bare control names.
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         const int base = osc * kOscSlotCount;
-        const juce::String p = "O" + juce::String(osc + 1) + " ";
-        labels_[static_cast<size_t>(base + 0)] = p + "Wave";
-        labels_[static_cast<size_t>(base + 1)] = p + "Lvl";
-        labels_[static_cast<size_t>(base + 2)] = p + "Crs";
-        labels_[static_cast<size_t>(base + 3)] = p + "Fine";
+        labels_[static_cast<size_t>(base + 0)] = "Wave";
+        labels_[static_cast<size_t>(base + 1)] = "Level";
+        labels_[static_cast<size_t>(base + 2)] = "Coarse";
+        labels_[static_cast<size_t>(base + 3)] = "Fine";
     }
     labels_[kFilterTypeSlot] = "Type";
     labels_[kCutoffSlot] = "Cutoff";
@@ -155,26 +165,31 @@ PolySynthUI::PolySynthUI() {
         voiceModeButtons_[static_cast<size_t>(v)] = std::move(btn);
     }
 
-    // Per-oscillator wave dropdown (replaces the wave value box) + phase-reset
-    // icon toggle, both per osc row in the OSC section.
-    static const char* kWaveNames[4] = {"Sine", "Saw", "Square", "Triangle"};
+    // Per-oscillator waveform icon selector (replaces the wave value box) plus an
+    // enable toggle and a phase-reset toggle, one of each per oscillator column.
+    oscEnabled_.fill(true);
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto combo = std::make_unique<juce::ComboBox>();
-        combo->setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
-        // Match the value boxes' fill/border so the dropdown blends with the grid.
-        combo->setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-        for (int w = 0; w < 4; ++w)
-            combo->addItem(kWaveNames[w], w + 1);  // id = wave + 1
-        combo->onChange = [this, osc]() {
-            if (auto* c = waveSelectors_[static_cast<size_t>(osc)].get())
-                setOscWave(osc, c->getSelectedId() - 1);
-        };
-        addAndMakeVisible(*combo);
-        waveSelectors_[static_cast<size_t>(osc)] = std::move(combo);
+        auto& sel = waveSelectors_[static_cast<size_t>(osc)];
+        populateWaveSelector(sel);
+        sel.onChange = [this, osc](int wave) { setOscWave(osc, wave); };
+        addAndMakeVisible(sel);
 
-        auto rst = std::make_unique<juce::TextButton>("");  // "Rst" label sits above it
+        // Enable (mute) toggle, doubling as the column header. Lit = audible.
+        auto en = std::make_unique<juce::TextButton>("OSC " + juce::String(osc + 1));
+        en->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        en->setClickingTogglesState(false);
+        en->setColour(juce::TextButton::buttonColourId,
+                      DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        en->setColour(juce::TextButton::buttonOnColourId,
+                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        en->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        en->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        en->setTooltip("Enable / disable this oscillator");
+        en->onClick = [this, osc]() { setOscEnable(osc, !oscEnabled_[static_cast<size_t>(osc)]); };
+        addAndMakeVisible(*en);
+        oscEnableButtons_[static_cast<size_t>(osc)] = std::move(en);
+
+        auto rst = std::make_unique<juce::TextButton>("R");  // phase-reset toggle
         rst->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         rst->setClickingTogglesState(false);
         rst->setColour(juce::TextButton::buttonColourId,
@@ -199,10 +214,14 @@ PolySynthUI::PolySynthUI() {
     controls_[kVoiceModeSlot].slider->setVisible(false);
     controls_[kVoiceModeSlot].label->setVisible(false);
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        // Wave dropdown / reset button replace the value boxes; keep the labels as
-        // column headers and hide the underlying sliders.
+        // Icon selector / enable + reset toggles replace the value boxes; hide the
+        // underlying sliders and the wave/reset labels (the toggles are labelled).
         controls_[osc * kOscSlotCount].slider->setVisible(false);
+        controls_[osc * kOscSlotCount].label->setVisible(false);
         controls_[kOscResetBaseSlot + osc].slider->setVisible(false);
+        controls_[kOscResetBaseSlot + osc].label->setVisible(false);
+        controls_[kOscEnableBaseSlot + osc].slider->setVisible(false);
+        controls_[kOscEnableBaseSlot + osc].label->setVisible(false);
     }
     // Slightly smaller font on the osc value boxes so the unit suffix is not
     // cramped and the boxes read lighter.
@@ -214,6 +233,7 @@ PolySynthUI::PolySynthUI() {
     updateSlopeButtons();
     updateVoiceModeButtons();
     updateOscResetButtons();
+    updateOscEnableButtons();
     updateWaveSelectors();
 }
 
@@ -227,10 +247,10 @@ PolySynthUI::~PolySynthUI() {
     for (auto& btn : voiceModeButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
-    for (auto& combo : waveSelectors_)
-        if (combo)
-            combo->setLookAndFeel(nullptr);
     for (auto& btn : oscResetButtons_)
+        if (btn)
+            btn->setLookAndFeel(nullptr);
+    for (auto& btn : oscEnableButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
 }
@@ -306,6 +326,51 @@ void PolySynthUI::updateOscResetButtons() {
                 oscReset_[static_cast<size_t>(osc)], juce::dontSendNotification);
 }
 
+void PolySynthUI::setOscEnable(int osc, bool on) {
+    if (osc < 0 || osc >= kNumOscillators)
+        return;
+    oscEnabled_[static_cast<size_t>(osc)] = on;
+    const int slot = kOscEnableBaseSlot + osc;
+    controls_[slot].slider->setValue(on ? 1.0 : 0.0, juce::dontSendNotification);
+    if (onParameterChanged)
+        onParameterChanged(slot, on ? 1.0f : 0.0f);
+    updateOscEnableButtons();
+    applyOscColumnEnabled(osc);
+}
+
+void PolySynthUI::updateOscEnableButtons() {
+    for (int osc = 0; osc < kNumOscillators; ++osc)
+        if (oscEnableButtons_[static_cast<size_t>(osc)])
+            oscEnableButtons_[static_cast<size_t>(osc)]->setToggleState(
+                oscEnabled_[static_cast<size_t>(osc)], juce::dontSendNotification);
+}
+
+void PolySynthUI::applyOscColumnEnabled(int osc) {
+    if (osc < 0 || osc >= kNumOscillators)
+        return;
+    const bool on = oscEnabled_[static_cast<size_t>(osc)];
+    const float alpha = on ? 1.0f : 0.3f;
+    // Grey out (and disable interaction with) everything in the column except the
+    // enable toggle itself, which stays live so the column can be re-enabled.
+    const int base = osc * kOscSlotCount;
+    for (int p = 0; p < kOscSlotCount; ++p) {
+        auto& c = controls_[static_cast<size_t>(base + p)];
+        c.slider->setEnabled(on);
+        c.slider->setAlpha(alpha);
+        if (c.label)
+            c.label->setAlpha(alpha);
+    }
+    auto& sel = waveSelectors_[static_cast<size_t>(osc)];
+    sel.setEnabled(on);
+    sel.setAlpha(alpha);
+    if (auto& rst = oscResetButtons_[static_cast<size_t>(osc)]) {
+        rst->setEnabled(on);
+        rst->setAlpha(alpha);
+    }
+    if (auto& rlabel = controls_[static_cast<size_t>(kOscResetBaseSlot + osc)].label)
+        rlabel->setAlpha(alpha);
+}
+
 void PolySynthUI::setOscWave(int osc, int wave) {
     if (osc < 0 || osc >= kNumOscillators)
         return;
@@ -319,12 +384,9 @@ void PolySynthUI::setOscWave(int osc, int wave) {
 
 void PolySynthUI::updateWaveSelectors() {
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        if (!waveSelectors_[static_cast<size_t>(osc)])
-            continue;
         const int wave = juce::jlimit(
             0, 3, static_cast<int>(std::round(controls_[osc * kOscSlotCount].slider->getValue())));
-        waveSelectors_[static_cast<size_t>(osc)]->setSelectedId(wave + 1,
-                                                                juce::dontSendNotification);
+        waveSelectors_[static_cast<size_t>(osc)].setSelectedIndex(wave, juce::dontSendNotification);
     }
 }
 
@@ -404,6 +466,12 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
             oscReset_[static_cast<size_t>(idx - kOscResetBaseSlot)] = info.currentValue >= 0.5f;
             updateOscResetButtons();
         }
+        if (idx >= kOscEnableBaseSlot && idx < kOscEnableBaseSlot + kNumOscillators) {
+            const int osc = idx - kOscEnableBaseSlot;
+            oscEnabled_[static_cast<size_t>(osc)] = info.currentValue >= 0.5f;
+            updateOscEnableButtons();
+            applyOscColumnEnabled(osc);
+        }
 
         // Mirror the ADSR slots into their envelope graphs (carries the range too).
         if (idx >= kAmpAttackSlot && idx < kAmpAttackSlot + AdsrGraph::kNumStages)
@@ -427,39 +495,42 @@ void PolySynthUI::layoutOscSection() {
     auto a = oscArea_.reduced(kSectionGap);
     a.removeFromTop(kSectionTitleH);
 
-    // Oscillator rows at a fixed height (full width), with a reset-button column
-    // on the right; the spare space below holds the performance controls.
-    constexpr int kMaxRowH = 38;
-    const int contentH = std::min(a.getHeight(), kNumOscillators * kMaxRowH);
-    auto oscRegion = a.removeFromTop(contentH);
-    auto rstGrid = oscRegion.removeFromRight(36);
+    // Four oscillator columns side by side. Each column, top to bottom: the enable
+    // toggle (header, carries the osc number), the waveform icon selector, the
+    // Level / Coarse / Fine value boxes, and a phase-reset toggle pinned to the
+    // bottom. The performance controls live in the spare space below.
+    constexpr int kHeaderH = 18;
+    constexpr int kWaveH = 22;
+    constexpr int kResetH = 16;
+    constexpr int kColsMaxH = 176;
+    const int perfH = (kCellLabelH + 18) + kSectionGap * 2 + (kCellLabelH + 24) + kSectionGap * 2;
+    auto colsRegion = a.removeFromTop(juce::jmin(kColsMaxH, juce::jmax(0, a.getHeight() - perfH)));
 
-    std::vector<int> oscParams;
-    oscParams.reserve(kNumOscillators * kOscSlotCount);
-    for (int i = 0; i < kNumOscillators * kOscSlotCount; ++i)
-        oscParams.push_back(i);
-    layoutCells(oscRegion, oscParams, kOscSlotCount);
-
-    // Overlay each wave dropdown on its (hidden) wave slider's bounds, so it sits
-    // under the column label exactly where the value box would be.
-    for (int osc = 0; osc < kNumOscillators; ++osc)
-        if (waveSelectors_[static_cast<size_t>(osc)])
-            waveSelectors_[static_cast<size_t>(osc)]->setBounds(
-                controls_[static_cast<size_t>(osc * kOscSlotCount)].slider->getBounds());
-
-    // Reset cells: "Rst" label on top (like the other columns), a small toggle
-    // button centered beneath it.
-    const int rowH = rstGrid.getHeight() / kNumOscillators;
+    const int colW = colsRegion.getWidth() / kNumOscillators;
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto cell = rstGrid.removeFromTop(rowH).reduced(kCellPad, 1);
-        controls_[static_cast<size_t>(kOscResetBaseSlot + osc)].label->setBounds(
-            cell.removeFromTop(kCellLabelH));
-        if (oscResetButtons_[static_cast<size_t>(osc)])
-            oscResetButtons_[static_cast<size_t>(osc)]->setBounds(cell.withSizeKeepingCentre(
-                juce::jmin(26, cell.getWidth()), juce::jmin(14, cell.getHeight())));
+        auto col = juce::Rectangle<int>(colsRegion.getX() + osc * colW, colsRegion.getY(), colW,
+                                        colsRegion.getHeight())
+                       .reduced(kCellPad, 1);
+        if (auto& en = oscEnableButtons_[static_cast<size_t>(osc)])
+            en->setBounds(col.removeFromTop(kHeaderH));
+        col.removeFromTop(2);
+        waveSelectors_[static_cast<size_t>(osc)].setBounds(col.removeFromTop(kWaveH));
+        col.removeFromTop(2);
+        // Reset toggle pinned to the bottom, value boxes fill the rest.
+        auto resetRow = col.removeFromBottom(kResetH);
+        if (auto& rst = oscResetButtons_[static_cast<size_t>(osc)])
+            rst->setBounds(resetRow.withSizeKeepingCentre(juce::jmin(30, resetRow.getWidth()),
+                                                          juce::jmin(14, resetRow.getHeight())));
+        const int boxH = col.getHeight() / 3;
+        for (int p = 1; p < kOscSlotCount; ++p) {  // Level / Coarse / Fine
+            auto cell = col.removeFromTop(boxH).reduced(0, 1);
+            auto& c = controls_[static_cast<size_t>(osc * kOscSlotCount + p)];
+            c.label->setBounds(cell.removeFromTop(kCellLabelH));
+            c.slider->setBounds(cell);
+        }
     }
 
-    // Performance controls in the spare space below the oscillator rows.
+    // Performance controls in the spare space below the oscillator columns.
     a.removeFromTop(kSectionGap * 2);
     // Voice Mode segmented buttons.
     auto modeRow = a.removeFromTop(kCellLabelH + 18);
@@ -527,12 +598,14 @@ void PolySynthUI::resized() {
     // column's spare space below the oscillator rows.
     const int adsrW = b.getWidth() * 2 / 7;
     const int mainW = b.getWidth() - adsrW;
-    const int colW = mainW / 2;
+    // OSC now holds four oscillator columns, so give it a little more than half of
+    // the main block; FILTER keeps the response curve + 2x2 grid in the rest.
+    const int oscW = mainW * 11 / 20;
     const int adsrX = b.getX() + mainW;
     const int halfH = b.getHeight() / 2;
 
-    oscArea_ = {b.getX(), b.getY(), colW, b.getHeight()};
-    filterArea_ = {b.getX() + colW, b.getY(), mainW - colW, b.getHeight()};
+    oscArea_ = {b.getX(), b.getY(), oscW, b.getHeight()};
+    filterArea_ = {b.getX() + oscW, b.getY(), mainW - oscW, b.getHeight()};
     ampArea_ = {adsrX, b.getY(), adsrW, halfH};
     filterEnvArea_ = {adsrX, b.getY() + halfH, adsrW, b.getHeight() - halfH};
 

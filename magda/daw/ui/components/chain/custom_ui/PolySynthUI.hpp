@@ -10,6 +10,7 @@
 #include "compiled/CompiledFilterCurveView.hpp"
 #include "core/ParameterInfo.hpp"
 #include "custom_ui/AdsrGraph.hpp"
+#include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -49,7 +50,7 @@ class PolySynthUI : public juce::Component {
     // Host slot layout — must match magda_polysynth.dsp / the C++ wrapper.
     static constexpr int kNumOscillators = 4;
     static constexpr int kOscSlotCount = 4;  // wave / level / coarse / fine
-    static constexpr int kNumParams = 39;
+    static constexpr int kNumParams = 43;
 
     static constexpr int kFilterTypeSlot = 16;
     static constexpr int kCutoffSlot = 17;
@@ -65,9 +66,10 @@ class PolySynthUI : public juce::Component {
     static constexpr int kOscResetBaseSlot = 33;  // osc n -> + (n - 1), idx 33..36
     static constexpr int kVelAmpSlot = 37;
     static constexpr int kVelFilterSlot = 38;
-    static constexpr int kNumFilterTypes = 4;  // Lowpass / Highpass / Bandpass / Notch
-    static constexpr int kNumSlopes = 2;       // 12 dB / 24 dB
-    static constexpr int kNumVoiceModes = 3;   // Poly / Mono / Legato
+    static constexpr int kOscEnableBaseSlot = 39;  // osc n -> + (n - 1), idx 39..42
+    static constexpr int kNumFilterTypes = 4;      // Lowpass / Highpass / Bandpass / Notch
+    static constexpr int kNumSlopes = 2;           // 12 dB / 24 dB
+    static constexpr int kNumVoiceModes = 3;       // Poly / Mono / Legato
 
     struct Control {
         std::unique_ptr<juce::Label> label;
@@ -103,10 +105,16 @@ class PolySynthUI : public juce::Component {
     // Per-oscillator phase-reset on/off toggles.
     void setOscReset(int osc, bool on);
     void updateOscResetButtons();
-    // Per-oscillator wave dropdowns.
+    // Per-oscillator enable (mute) toggles. Disabling greys out the column.
+    void setOscEnable(int osc, bool on);
+    void updateOscEnableButtons();
+    // Apply the enabled/disabled visual state (grey-out) to every control in an
+    // oscillator's column.
+    void applyOscColumnEnabled(int osc);
+    // Per-oscillator wave icon selectors.
     void setOscWave(int osc, int wave);
     void updateWaveSelectors();
-    // OSC section layout (wave dropdowns + value boxes + reset icons).
+    // OSC section layout (wave selectors + value boxes + enable/reset toggles).
     void layoutOscSection();
 
     std::array<Control, kNumParams> controls_;
@@ -127,15 +135,19 @@ class PolySynthUI : public juce::Component {
     int filterSlope_ = 0;  // 0 = 12 dB, 1 = 24 dB
     int voiceMode_ = 0;    // 0 = Poly, 1 = Mono, 2 = Legato
     std::array<bool, kNumOscillators> oscReset_{};
+    std::array<bool, kNumOscillators> oscEnabled_{};  // all true after construction
 
     // Segmented Filter Type + Slope + Voice Mode buttons (replace value boxes).
     std::array<std::unique_ptr<juce::TextButton>, kNumFilterTypes> typeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumSlopes> slopeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumVoiceModes> voiceModeButtons_;
-    // Per-oscillator wave dropdowns (replace the wave value boxes).
-    std::array<std::unique_ptr<juce::ComboBox>, kNumOscillators> waveSelectors_;
-    // Per-oscillator phase-reset toggles, one per osc row.
+    // Per-oscillator waveform icon selectors (replace the wave value boxes),
+    // matching the FM operator UI.
+    std::array<IconSelector, kNumOscillators> waveSelectors_;
+    // Per-oscillator phase-reset toggles, one per oscillator column.
     std::array<std::unique_ptr<juce::TextButton>, kNumOscillators> oscResetButtons_;
+    // Per-oscillator enable (mute) toggles, one per oscillator column.
+    std::array<std::unique_ptr<juce::TextButton>, kNumOscillators> oscEnableButtons_;
 
     // Cached section rectangles for the painted titles.
     juce::Rectangle<int> oscArea_, filterArea_, ampArea_, filterEnvArea_;
