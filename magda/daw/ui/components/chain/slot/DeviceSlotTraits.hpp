@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
-#include "compiled/CompiledPluginPresentation.hpp"
+#include "../compiled/CompiledPluginPresentation.hpp"
 
 namespace magda::daw::ui {
 

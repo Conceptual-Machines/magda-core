@@ -74,6 +74,10 @@ class PluginCapabilityCache {
 };
 
 DeviceMidiCapabilities midiCapabilitiesForDevice(const DeviceInfo& device);
+bool hasMidiInput(const DeviceInfo& device);
+bool hasMidiOutput(const DeviceInfo& device);
+bool supportsMidiSourceToggle(const DeviceInfo& device);
+bool supportsMidiInputRouting(const DeviceInfo& device);
 bool supportsMidiInputThruToggle(const DeviceInfo& device);
 bool supportsExternalMidiInputRouting(const DeviceInfo& device);
 bool supportsSidechainRoutingMenu(const DeviceInfo& device);

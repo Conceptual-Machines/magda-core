@@ -31,10 +31,6 @@ juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
 }
 
-bool treatsAsMidiFx(const PluginBrowserInfo& plugin) {
-    return plugin.categoryOverride == "MIDI FX";
-}
-
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
     if (plugin.categoryOverride == "Instrument")
         return "Instrument";
