@@ -327,14 +327,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Helper to create custom UI for internal devices
     void createCustomUI();
-    void updateCustomUI();
     void refreshInlinePluginBindings();
-    // Lightweight per-frame refresh: push current device_.parameters values
-    // into any active custom UI's sliders/knobs, without the heavy plugin-state
-    // reads (waveforms, drum pad info, etc) that updateCustomUI does. Safe to
-    // call from timerCallback.
-    void refreshCustomUIParameterValues();
-    void readAndPushModMatrix();  // Read FourOsc mod matrix and push to UI
     void setupCustomUILinking();
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
     template <typename LinkTarget>

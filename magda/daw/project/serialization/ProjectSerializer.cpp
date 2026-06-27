@@ -12,6 +12,8 @@
 
 namespace magda {
 
+thread_local juce::String ProjectSerializer::lastError_;
+
 // ============================================================================
 // File I/O with gzip compression
 // ============================================================================

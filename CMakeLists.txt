@@ -152,6 +152,12 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # gRPC removed - using simple in-process agent system instead
 
+# Hide host symbols by default so hosted plugins with their own static JUCE copy
+# cannot bind to MAGDA's JUCE definitions at load time.
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+
 # Tracktion Engine for DAW functionality (using local submodule)
 add_subdirectory(third_party/tracktion_engine)
 

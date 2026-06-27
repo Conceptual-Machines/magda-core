@@ -253,6 +253,14 @@ void addCompiledInternalFxEntry(std::vector<InternalFxEntry>& entries,
     }
 }
 
+template <typename Ui>
+void forwardParameterChanges(Ui& ui, const DeviceCustomUIManager::Callbacks& callbacks) {
+    ui.onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+        if (cb.onParameterChanged)
+            cb.onParameterChanged(paramIndex, value);
+    };
+}
+
 }  // namespace
 
 DeviceCustomUIManager::DeviceCustomUIManager() = default;
@@ -530,106 +538,448 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
 // create
 // =============================================================================
 
+void DeviceCustomUIManager::createToneGeneratorUI(const magda::DeviceInfo& device,
+                                                  juce::Component& parent,
+                                                  const Callbacks& callbacks) {
+    toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
+    forwardParameterChanges(*toneGeneratorUI_, callbacks);
+    parent.addAndMakeVisible(*toneGeneratorUI_);
+    update(device);
+}
+
+bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
+                                            juce::Component& parent, const Callbacks& callbacks) {
+    if (!device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
+        return false;
+
+    samplerUI_ = std::make_unique<SamplerUI>();
+    samplerUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+        if (cb.onParameterChanged)
+            cb.onParameterChanged(paramIndex, value);
+    };
+
+    samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+            sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
+            sampler->loopEnabledValue = enabled;
+        }
+    };
+
+    samplerUI_->onRootNoteChanged = [this](int note) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+            sampler->setRootNote(note);
+        }
+    };
+
+    samplerUI_->getPlaybackPosition = [this]() -> double {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return 0.0;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return 0.0;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+            return sampler->getPlaybackPosition();
+        }
+        return 0.0;
+    };
+
+    // Shared logic for loading a sample file and refreshing the UI
+    auto loadFile = [this](const juce::File& file) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        if (bridge->loadSamplerSample(devicePath_, file)) {
+            auto plugin = bridge->getPlugin(devicePath_);
+            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                samplerUI_->updateParameters(
+                    sampler->attackValue.get(), sampler->decayValue.get(),
+                    sampler->sustainValue.get(), sampler->releaseValue.get(),
+                    sampler->pitchValue.get(), sampler->fineValue.get(), sampler->levelValue.get(),
+                    sampler->sampleStartValue.get(), sampler->sampleEndValue.get(),
+                    sampler->loopEnabledValue.get(), sampler->loopStartValue.get(),
+                    sampler->loopEndValue.get(), sampler->velAmountValue.get(),
+                    file.getFileNameWithoutExtension());
+                samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                            sampler->getSampleLengthSeconds());
+            }
+        }
+    };
+
+    samplerUI_->onLoadSampleRequested = [loadFile]() {
+        auto chooser = std::make_shared<juce::FileChooser>("Load Sample", juce::File(),
+                                                           "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+        chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                                 juce::FileBrowserComponent::canSelectFiles,
+                             [loadFile, chooser](const juce::FileChooser&) {
+                                 auto result = chooser->getResult();
+                                 if (result.existsAsFile())
+                                     loadFile(result);
+                             });
+    };
+
+    samplerUI_->onFileDropped = loadFile;
+
+    parent.addAndMakeVisible(*samplerUI_);
+    update(device);
+
+    return true;
+}
+
+bool DeviceCustomUIManager::createAnalyzerUI(const magda::DeviceInfo& device,
+                                             juce::Component& parent) {
+    if (device.pluginId.containsIgnoreCase(daw::audio::OscilloscopePlugin::xmlTypeName)) {
+        oscilloscopeUI_ = std::make_unique<OscilloscopeUI>();
+        parent.addAndMakeVisible(*oscilloscopeUI_);
+        // Plugin binding is deferred to bindAnalyzerPlugins(), re-run from
+        // setDevicePath(): create() runs before the slot's path is valid.
+        bindAnalyzerPlugins();
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::SpectrumAnalyzerPlugin::xmlTypeName)) {
+        spectrumAnalyzerUI_ = std::make_unique<SpectrumAnalyzerUI>();
+        parent.addAndMakeVisible(*spectrumAnalyzerUI_);
+        bindAnalyzerPlugins();
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::LevelsPlugin::xmlTypeName)) {
+        levelsUI_ = std::make_unique<LevelsUI>();
+        parent.addAndMakeVisible(*levelsUI_);
+        bindAnalyzerPlugins();
+        return true;
+    }
+
+    return false;
+}
+
+bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
+                                                juce::Component& parent) {
+    if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
+        chordEngineUI_ = std::make_unique<ChordPanelContent>();
+        parent.addAndMakeVisible(*chordEngineUI_);
+        // Connect to the plugin instance
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
+                    chordEngineUI_->setChordEngine(cp, magda::INVALID_TRACK_ID);
+                    chordPlugin_ = cp;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
+        arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
+        parent.addAndMakeVisible(*arpeggiatorUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
+                    arpeggiatorUI_->setArpeggiator(arp);
+                    arpPlugin_ = arp;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::PolyStepSequencerPlugin::xmlTypeName)) {
+        // NB: checked before the mono sequencer — "polystepsequencer" also
+        // contains "stepsequencer", so the order of these branches matters.
+        polyStepSequencerUI_ = std::make_unique<PolyStepSequencerUI>();
+        parent.addAndMakeVisible(*polyStepSequencerUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
+                    polyStepSequencerUI_->setPlugin(seq);
+                    polyStepSeqPlugin_ = seq;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
+        stepSequencerUI_ = std::make_unique<StepSequencerUI>();
+        parent.addAndMakeVisible(*stepSequencerUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(devicePath_);
+                if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
+                    stepSequencerUI_->setPlugin(seq);
+                    stepSeqPlugin_ = seq;
+                }
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool DeviceCustomUIManager::createFourOscUI(const magda::DeviceInfo& device,
+                                            juce::Component& parent, const Callbacks& callbacks) {
+    if (!device.pluginId.containsIgnoreCase("4osc"))
+        return false;
+
+    fourOscUI_ = std::make_unique<FourOscUI>();
+    fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+        if (cb.onParameterChanged)
+            cb.onParameterChanged(paramIndex, value);
+    };
+    fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get()))
+            fourOsc->state.setProperty(juce::Identifier(propertyId), value, nullptr);
+    };
+    fourOscUI_->onModDepthChanged = [this](int paramIndex, int modSourceId, float depth) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
+            auto params = fourOsc->getAutomatableParameters();
+            if (paramIndex >= 0 && paramIndex < params.size()) {
+                auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
+                fourOsc->setModulationDepth(src, params[paramIndex], depth);
+                static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
+            }
+        }
+    };
+    fourOscUI_->onModEntryRemoved = [this](int paramIndex, int modSourceId) {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
+            auto params = fourOsc->getAutomatableParameters();
+            if (paramIndex >= 0 && paramIndex < params.size()) {
+                auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
+                fourOsc->clearModulation(src, params[paramIndex]);
+                static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
+            }
+            readAndPushModMatrix(devicePath_.getDeviceId());
+        }
+    };
+    fourOscUI_->onModMatrixStructureChanged = [this]() {
+        readAndPushModMatrix(devicePath_.getDeviceId());
+    };
+    parent.addAndMakeVisible(*fourOscUI_);
+    update(device);
+    readAndPushModMatrix(device.id);
+    // Restore saved tab index after rebuild
+    if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
+        fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
+        pendingCustomUITabIndex_ = NO_PENDING_TAB;
+    }
+
+    return true;
+}
+
+bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device,
+                                                 juce::Component& parent,
+                                                 const Callbacks& callbacks) {
+    if (device.pluginId.equalsIgnoreCase("eq")) {
+        eqUI_ = std::make_unique<EqualiserUI>();
+        forwardParameterChanges(*eqUI_, callbacks);
+        eqUI_->getDBGainAtFrequency = [this](float freq) -> float {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return 0.0f;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return 0.0f;
+            auto plugin = bridge->getPlugin(devicePath_);
+            if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin.get()))
+                return eq->getDBGainAtFrequency(freq);
+            return 0.0f;
+        };
+        parent.addAndMakeVisible(*eqUI_);
+        update(device);
+        return true;
+    }
+
+    if (isLegacyTeCompressorPluginId(device.pluginId)) {
+        compressorUI_ = std::make_unique<CompressorUI>();
+        forwardParameterChanges(*compressorUI_, callbacks);
+        parent.addAndMakeVisible(*compressorUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("reverb") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
+        reverbUI_ = std::make_unique<ReverbUI>();
+        forwardParameterChanges(*reverbUI_, callbacks);
+        parent.addAndMakeVisible(*reverbUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("delay") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Delay)) {
+        delayUI_ = std::make_unique<DelayUI>();
+        forwardParameterChanges(*delayUI_, callbacks);
+        parent.addAndMakeVisible(*delayUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("chorus") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Chorus)) {
+        chorusUI_ = std::make_unique<ChorusUI>();
+        forwardParameterChanges(*chorusUI_, callbacks);
+        parent.addAndMakeVisible(*chorusUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("phaser") &&
+        !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Phaser)) {
+        phaserUI_ = std::make_unique<PhaserUI>();
+        forwardParameterChanges(*phaserUI_, callbacks);
+        parent.addAndMakeVisible(*phaserUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("lowpass")) {
+        filterUI_ = std::make_unique<FilterUI>();
+        forwardParameterChanges(*filterUI_, callbacks);
+        parent.addAndMakeVisible(*filterUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.containsIgnoreCase("pitchshift")) {
+        pitchShiftUI_ = std::make_unique<PitchShiftUI>();
+        forwardParameterChanges(*pitchShiftUI_, callbacks);
+        parent.addAndMakeVisible(*pitchShiftUI_);
+        update(device);
+        return true;
+    }
+
+    return false;
+}
+
+bool DeviceCustomUIManager::createImpulseResponseUI(const magda::DeviceInfo& device,
+                                                    juce::Component& parent,
+                                                    const Callbacks& callbacks) {
+    if (!device.pluginId.containsIgnoreCase("impulseresponse"))
+        return false;
+
+    impulseResponseUI_ = std::make_unique<ImpulseResponseUI>();
+    impulseResponseUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
+        if (cb.onParameterChanged)
+            cb.onParameterChanged(paramIndex, value);
+    };
+
+    // Helper to load an IR file into the plugin
+    auto loadIR = [this](const juce::File& file) {
+        if (!file.existsAsFile()) {
+            DBG("IR load: file does not exist: " << file.getFullPathName());
+            return;
+        }
+
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine) {
+            DBG("IR load: no audio engine");
+            return;
+        }
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge) {
+            DBG("IR load: no audio bridge");
+            return;
+        }
+        auto plugin = bridge->getPlugin(devicePath_);
+        if (!plugin) {
+            DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
+            return;
+        }
+        auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
+        if (!ir) {
+            DBG("IR load: plugin is not ImpulseResponsePlugin, type: " << plugin->getName());
+            return;
+        }
+        if (ir->loadImpulseResponse(file)) {
+            ir->name = file.getFileNameWithoutExtension();
+            if (impulseResponseUI_)
+                impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
+
+            // Capture plugin state so the IR persists in the project
+            bridge->getPluginManager().capturePluginState(devicePath_);
+        } else {
+            DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
+        }
+    };
+
+    impulseResponseUI_->onLoadIRRequested = [loadIR]() {
+        DBG("IR: LOAD button clicked, opening file chooser");
+        auto chooser = std::make_shared<juce::FileChooser>("Load Impulse Response", juce::File(),
+                                                           "*.wav;*.aif;*.aiff;*.flac;*.ogg");
+        chooser->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [loadIR, chooser](const juce::FileChooser&) {
+                auto result = chooser->getResult();
+                DBG("IR: file chooser callback, result=" << result.getFullPathName() << " exists="
+                                                         << (int)result.existsAsFile());
+                if (result.existsAsFile())
+                    loadIR(result);
+            });
+    };
+
+    impulseResponseUI_->onFileDropped = [loadIR](const juce::File& file) {
+        DBG("IR: file dropped: " << file.getFullPathName());
+        loadIR(file);
+    };
+
+    parent.addAndMakeVisible(*impulseResponseUI_);
+    update(device);
+
+    return true;
+}
+
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase("tone")) {
-        toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
-        toneGeneratorUI_->onParameterChanged = [cb = callbacks](int paramIndex,
-                                                                float normalizedValue) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, normalizedValue);
-        };
-        parent->addAndMakeVisible(*toneGeneratorUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-        samplerUI_ = std::make_unique<SamplerUI>();
-        samplerUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-
-        samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
-                sampler->loopEnabledValue = enabled;
-            }
-        };
-
-        samplerUI_->onRootNoteChanged = [this](int note) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                sampler->setRootNote(note);
-            }
-        };
-
-        samplerUI_->getPlaybackPosition = [this]() -> double {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return 0.0;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return 0.0;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                return sampler->getPlaybackPosition();
-            }
-            return 0.0;
-        };
-
-        // Shared logic for loading a sample file and refreshing the UI
-        auto loadFile = [this](const juce::File& file) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            if (bridge->loadSamplerSample(devicePath_, file)) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                    samplerUI_->updateParameters(
-                        sampler->attackValue.get(), sampler->decayValue.get(),
-                        sampler->sustainValue.get(), sampler->releaseValue.get(),
-                        sampler->pitchValue.get(), sampler->fineValue.get(),
-                        sampler->levelValue.get(), sampler->sampleStartValue.get(),
-                        sampler->sampleEndValue.get(), sampler->loopEnabledValue.get(),
-                        sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-                        sampler->velAmountValue.get(), file.getFileNameWithoutExtension());
-                    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                                sampler->getSampleLengthSeconds());
-                }
-            }
-        };
-
-        samplerUI_->onLoadSampleRequested = [loadFile]() {
-            auto chooser = std::make_shared<juce::FileChooser>(
-                "Load Sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-            chooser->launchAsync(juce::FileBrowserComponent::openMode |
-                                     juce::FileBrowserComponent::canSelectFiles,
-                                 [loadFile, chooser](const juce::FileChooser&) {
-                                     auto result = chooser->getResult();
-                                     if (result.existsAsFile())
-                                         loadFile(result);
-                                 });
-        };
-
-        samplerUI_->onFileDropped = loadFile;
-
-        parent->addAndMakeVisible(*samplerUI_);
-        update(device);
+        createToneGeneratorUI(device, *parent, callbacks);
+    } else if (createSamplerUI(device, *parent, callbacks)) {
+        // handled by helper
     } else if (device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
         drumGridUI_ = std::make_unique<DrumGridUI>();
 
@@ -1208,284 +1558,14 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // Bind the live plugin for the grain-buffer input view; re-run from
         // setDevicePath() since create() runs before the path is valid.
         bindAnalyzerPlugins();
-    } else if (device.pluginId.containsIgnoreCase("4osc")) {
-        fourOscUI_ = std::make_unique<FourOscUI>();
-        fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get()))
-                fourOsc->state.setProperty(juce::Identifier(propertyId), value, nullptr);
-        };
-        fourOscUI_->onModDepthChanged = [this](int paramIndex, int modSourceId, float depth) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
-                auto params = fourOsc->getAutomatableParameters();
-                if (paramIndex >= 0 && paramIndex < params.size()) {
-                    auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
-                    fourOsc->setModulationDepth(src, params[paramIndex], depth);
-                    static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
-                }
-            }
-        };
-        fourOscUI_->onModEntryRemoved = [this](int paramIndex, int modSourceId) {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
-                auto params = fourOsc->getAutomatableParameters();
-                if (paramIndex >= 0 && paramIndex < params.size()) {
-                    auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
-                    fourOsc->clearModulation(src, params[paramIndex]);
-                    static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
-                }
-                readAndPushModMatrix(devicePath_.getDeviceId());
-            }
-        };
-        fourOscUI_->onModMatrixStructureChanged = [this]() {
-            readAndPushModMatrix(devicePath_.getDeviceId());
-        };
-        parent->addAndMakeVisible(*fourOscUI_);
-        update(device);
-        readAndPushModMatrix(device.id);
-        // Restore saved tab index after rebuild
-        if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
-            fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
-            pendingCustomUITabIndex_ = NO_PENDING_TAB;
-        }
-    } else if (device.pluginId.equalsIgnoreCase("eq")) {
-        eqUI_ = std::make_unique<EqualiserUI>();
-        eqUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        eqUI_->getDBGainAtFrequency = [this](float freq) -> float {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return 0.0f;
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
-                return 0.0f;
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin.get()))
-                return eq->getDBGainAtFrequency(freq);
-            return 0.0f;
-        };
-        parent->addAndMakeVisible(*eqUI_);
-        update(device);
-    } else if (isLegacyTeCompressorPluginId(device.pluginId)) {
-        compressorUI_ = std::make_unique<CompressorUI>();
-        compressorUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*compressorUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("reverb") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Reverb)) {
-        reverbUI_ = std::make_unique<ReverbUI>();
-        reverbUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*reverbUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("delay") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Delay)) {
-        delayUI_ = std::make_unique<DelayUI>();
-        delayUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*delayUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("chorus") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Chorus)) {
-        chorusUI_ = std::make_unique<ChorusUI>();
-        chorusUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*chorusUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("phaser") &&
-               !shouldSuppressLegacyUi(device.pluginId, LegacyUiKind::Phaser)) {
-        phaserUI_ = std::make_unique<PhaserUI>();
-        phaserUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*phaserUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("lowpass")) {
-        filterUI_ = std::make_unique<FilterUI>();
-        filterUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*filterUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
-        pitchShiftUI_ = std::make_unique<PitchShiftUI>();
-        pitchShiftUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-        parent->addAndMakeVisible(*pitchShiftUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
-        impulseResponseUI_ = std::make_unique<ImpulseResponseUI>();
-        impulseResponseUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-            if (cb.onParameterChanged)
-                cb.onParameterChanged(paramIndex, value);
-        };
-
-        // Helper to load an IR file into the plugin
-        auto loadIR = [this](const juce::File& file) {
-            if (!file.existsAsFile()) {
-                DBG("IR load: file does not exist: " << file.getFullPathName());
-                return;
-            }
-
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine) {
-                DBG("IR load: no audio engine");
-                return;
-            }
-            auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge) {
-                DBG("IR load: no audio bridge");
-                return;
-            }
-            auto plugin = bridge->getPlugin(devicePath_);
-            if (!plugin) {
-                DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
-                return;
-            }
-            auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
-            if (!ir) {
-                DBG("IR load: plugin is not ImpulseResponsePlugin, type: " << plugin->getName());
-                return;
-            }
-            if (ir->loadImpulseResponse(file)) {
-                ir->name = file.getFileNameWithoutExtension();
-                if (impulseResponseUI_)
-                    impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
-
-                // Capture plugin state so the IR persists in the project
-                bridge->getPluginManager().capturePluginState(devicePath_);
-            } else {
-                DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
-            }
-        };
-
-        impulseResponseUI_->onLoadIRRequested = [loadIR]() {
-            DBG("IR: LOAD button clicked, opening file chooser");
-            auto chooser = std::make_shared<juce::FileChooser>(
-                "Load Impulse Response", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg");
-            chooser->launchAsync(
-                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                [loadIR, chooser](const juce::FileChooser&) {
-                    auto result = chooser->getResult();
-                    DBG("IR: file chooser callback, result="
-                        << result.getFullPathName() << " exists=" << (int)result.existsAsFile());
-                    if (result.existsAsFile())
-                        loadIR(result);
-                });
-        };
-
-        impulseResponseUI_->onFileDropped = [loadIR](const juce::File& file) {
-            DBG("IR: file dropped: " << file.getFullPathName());
-            loadIR(file);
-        };
-
-        parent->addAndMakeVisible(*impulseResponseUI_);
-        update(device);
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
-        chordEngineUI_ = std::make_unique<ChordPanelContent>();
-        parent->addAndMakeVisible(*chordEngineUI_);
-        // Connect to the plugin instance
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
-                    chordEngineUI_->setChordEngine(cp, magda::INVALID_TRACK_ID);
-                    chordPlugin_ = cp;
-                }
-            }
-        }
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
-        arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
-        parent->addAndMakeVisible(*arpeggiatorUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
-                    arpeggiatorUI_->setArpeggiator(arp);
-                    arpPlugin_ = arp;
-                }
-            }
-        }
-    } else if (device.pluginId.containsIgnoreCase(
-                   daw::audio::PolyStepSequencerPlugin::xmlTypeName)) {
-        // NB: checked before the mono sequencer — "polystepsequencer" also
-        // contains "stepsequencer", so the order of these branches matters.
-        polyStepSequencerUI_ = std::make_unique<PolyStepSequencerUI>();
-        parent->addAndMakeVisible(*polyStepSequencerUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
-                    polyStepSequencerUI_->setPlugin(seq);
-                    polyStepSeqPlugin_ = seq;
-                }
-            }
-        }
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
-        stepSequencerUI_ = std::make_unique<StepSequencerUI>();
-        parent->addAndMakeVisible(*stepSequencerUI_);
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(devicePath_);
-                if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
-                    stepSequencerUI_->setPlugin(seq);
-                    stepSeqPlugin_ = seq;
-                }
-            }
-        }
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::OscilloscopePlugin::xmlTypeName)) {
-        oscilloscopeUI_ = std::make_unique<OscilloscopeUI>();
-        parent->addAndMakeVisible(*oscilloscopeUI_);
-        // Plugin binding is deferred to bindAnalyzerPlugins(), re-run from
-        // setDevicePath(): create() runs before the slot's path is valid.
-        bindAnalyzerPlugins();
-    } else if (device.pluginId.containsIgnoreCase(
-                   daw::audio::SpectrumAnalyzerPlugin::xmlTypeName)) {
-        spectrumAnalyzerUI_ = std::make_unique<SpectrumAnalyzerUI>();
-        parent->addAndMakeVisible(*spectrumAnalyzerUI_);
-        bindAnalyzerPlugins();
-    } else if (device.pluginId.containsIgnoreCase(daw::audio::LevelsPlugin::xmlTypeName)) {
-        levelsUI_ = std::make_unique<LevelsUI>();
-        parent->addAndMakeVisible(*levelsUI_);
-        bindAnalyzerPlugins();
+    } else if (createFourOscUI(device, *parent, callbacks)) {
+        // handled by helper
+    } else if (createSimpleEffectUI(device, *parent, callbacks)) {
+        // handled by helper
+    } else if (createImpulseResponseUI(device, *parent, callbacks)) {
+        // handled by helper
+    } else if (!createMidiUtilityUI(device, *parent)) {
+        createAnalyzerUI(device, *parent);
     }
 }
 
