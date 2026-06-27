@@ -23,16 +23,21 @@ constexpr DrumVoice kDrumVoices[] = {
     {"magda_hat", "Hat"},   {"magda_tom", "Tom"},
 };
 
-// UI-only short label: sections are titled, so drop the redundant section prefix
-// from the param name (the host/automation name keeps its unique full name).
-juce::String displayLabel(juce::String name) {
-    if (name.startsWith("Trans "))
-        name = name.substring(6);
-    if (name == "Transient" || name == "Ring" || name == "Noise")
-        return "Level";  // the layer's own level/amount knob
-    if (name == "Body")
-        return "Decay";  // the body amp decay
-    return name;
+// UI label derived from the composed host name `<section>_<role>` (e.g.
+// "transient_level" -> "Level", "body_snap_time" -> "Snap Time"). Sections are
+// titled, so the section prefix is dropped and the role is prettified.
+juce::String displayLabel(const juce::String& hostName) {
+    juce::String role = hostName.fromFirstOccurrenceOf("_", false, false);
+    if (role.isEmpty())
+        role = hostName;
+    auto words = juce::StringArray::fromTokens(role.replaceCharacter('_', ' '), " ", "");
+    for (auto& w : words) {
+        if (w.equalsIgnoreCase("hp"))
+            w = "HP";
+        else if (w.isNotEmpty())
+            w = w.substring(0, 1).toUpperCase() + w.substring(1);
+    }
+    return words.joinIntoString(" ");
 }
 }  // namespace
 
