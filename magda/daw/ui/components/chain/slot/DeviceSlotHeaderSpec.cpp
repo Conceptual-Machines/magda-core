@@ -105,9 +105,8 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     }
 
     visibility.learn = !isInternalDevice;
-    visibility.instMidiThru = supportsMidiInputThruToggle(device);
-    visibility.sidechain = drum_grid_slot::shouldShowSidechainButton(
-        traits.isDrumGrid, device.canSidechain, supportsExternalMidiInputRouting(device));
+    visibility.instMidiThru = supportsMidiSourceToggle(device);
+    visibility.sidechain = !traits.isDrumGrid && supportsSidechainRoutingMenu(device);
     visibility.multiOut = device.multiOut.isMultiOut;
     visibility.ui = !isInternalDevice || traits.hasAnalyzerPopout;
     visibility.exportClip = false;

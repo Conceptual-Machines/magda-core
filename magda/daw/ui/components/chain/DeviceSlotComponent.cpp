@@ -544,7 +544,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     scButton_->onClick = [this]() { showSidechainMenu(); };
-    scButton_->setVisible(supportsSidechainRoutingMenu(device_));
+    scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
     addAndMakeVisible(*scButton_);
     updateScButtonState();
 
@@ -684,7 +684,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // "MIDI in thru" toggle for wrapped instruments. The plugin's own MIDI
     // output always flows downstream; this only passes the raw input past the
     // instrument so a MIDI-triggered FX placed after it still receives notes.
-    if (supportsMidiInputThruToggle(device)) {
+    if (supportsMidiSourceToggle(device)) {
         instMidiThruButton_ = std::make_unique<magda::SvgButton>(
             "MidiInThru", BinaryData::compare_svg, BinaryData::compare_svgSize);
         instMidiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
@@ -1156,8 +1156,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update sidechain button visibility and state
     if (scButton_) {
-        scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
-            traits_.isDrumGrid, device_.canSidechain, supportsExternalMidiInputRouting(device_)));
+        scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
         updateScButtonState();
     }
 
@@ -2316,12 +2315,12 @@ void DeviceSlotComponent::showSidechainMenu() {
     // Read live sidechain state from TrackManager (device_ may be stale)
     magda::SidechainConfig currentSidechain;
     bool canAudio = device_.canSidechain;
-    bool canMidi = supportsExternalMidiInputRouting(device_);
+    bool canMidi = supportsMidiInputRouting(device_);
     if (auto* currentDevice =
             magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
         currentSidechain = currentDevice->sidechain;
         canAudio = currentDevice->canSidechain;
-        canMidi = supportsExternalMidiInputRouting(*currentDevice);
+        canMidi = supportsMidiInputRouting(*currentDevice);
     }
 
     // "None" option to clear sidechain

@@ -226,16 +226,32 @@ DeviceMidiCapabilities midiCapabilitiesForDevice(const DeviceInfo& device) {
     return PluginCapabilityCache::getInstance().capabilitiesForDevice(device);
 }
 
-bool supportsMidiInputThruToggle(const DeviceInfo& device) {
+bool hasMidiInput(const DeviceInfo& device) {
+    return midiCapabilitiesForDevice(device).hasMidiInput;
+}
+
+bool hasMidiOutput(const DeviceInfo& device) {
+    return midiCapabilitiesForDevice(device).hasMidiOutput;
+}
+
+bool supportsMidiSourceToggle(const DeviceInfo& device) {
     return midiCapabilitiesForDevice(device).supportsMidiInputThruToggle;
 }
 
-bool supportsExternalMidiInputRouting(const DeviceInfo& device) {
+bool supportsMidiInputRouting(const DeviceInfo& device) {
     return midiCapabilitiesForDevice(device).supportsExternalMidiInputRouting;
 }
 
+bool supportsMidiInputThruToggle(const DeviceInfo& device) {
+    return supportsMidiSourceToggle(device);
+}
+
+bool supportsExternalMidiInputRouting(const DeviceInfo& device) {
+    return supportsMidiInputRouting(device);
+}
+
 bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
-    return device.canSidechain || supportsExternalMidiInputRouting(device);
+    return device.canSidechain || supportsMidiInputRouting(device);
 }
 
 void applyCachedCapabilitiesToDevice(DeviceInfo& device) {

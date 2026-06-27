@@ -4,8 +4,8 @@
 
 #include <vector>
 
+#include "DeviceSlotTraits.hpp"
 #include "core/DeviceInfo.hpp"
-#include "slot/DeviceSlotTraits.hpp"
 
 namespace magda::daw::ui {
 
