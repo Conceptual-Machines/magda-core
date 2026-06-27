@@ -13,7 +13,7 @@ gate = button("gate");
 // ============================================================================
 // Host macro controls ([idx:N]) - grouped Ring / Noise.
 // Time controls are in milliseconds (* 0.001 -> the seconds en.ar expects).
-// Curve is a bipolar -50..50 decay-shape knob (8^(c/50): 0 linear, + punchy).
+// Curve is a bipolar -50..50 decay-shape knob (8^(-c/50): 0 linear, + swelled, - fast).
 // ============================================================================
 // Ring (inharmonic additive partials)
 ringLvl    = hslider("Ring [idx:0]",       0.6,  0.0, 1.0,  0.001);
@@ -38,13 +38,13 @@ sr(b)  = 1.0 + (b - 1.0) * spread;
 ratios = (sr(1.0), sr(1.34), sr(1.81), sr(2.27), sr(2.67), sr(3.08));
 gains  = (1.0, 0.8, 0.7, 0.6, 0.5, 0.45);
 N      = 6;
-ringCurveExp = pow(8.0, ringCurve / 50.0);
+ringCurveExp = pow(8.0, -ringCurve / 50.0);
 partial(i) = os.osc(ringPitch * ba.take(i + 1, ratios)) * ba.take(i + 1, gains) *
              pow(en.ar(0.001, ringDec * (1.0 - 0.5 * (i / N)), gate), ringCurveExp);
 ring = par(i, N, partial(i)) :> _ : *(ringLvl);
 
 // High-passed noise sizzle with its own curve-shaped decay.
-noiseCurveExp = pow(8.0, noiseCurve / 50.0);
+noiseCurveExp = pow(8.0, -noiseCurve / 50.0);
 noise = (no.noise : fi.highpass(3, tone)) * pow(en.ar(0.001, noiseDec, gate), noiseCurveExp) *
         noiseLvl;
 

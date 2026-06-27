@@ -37,12 +37,12 @@ sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
 bodyEnv  = en.adsr(attack, bodyDec, 0.0, 0.1, gate);
 pitchenv = en.adsr(0.002, bodyDec * 0.4, 0.0, 0.1, gate);
 // Curve shapes the (linear) body decay: bipolar -50..50 knob -> exponent
-// 8^(c/50), 0 = linear, >0 punchy, <0 swelled.
-curveExp = pow(8.0, curve / 50.0);
+// 8^(-c/50), 0 = linear, >0 swelled, <0 fast.
+curveExp = pow(8.0, -curve / 50.0);
 body     = sinR(tune * (1 + pitchenv * bend * 2)) * pow(bodyEnv, curveExp);
 
 // Noise: high-passed stick/skin attack with its own decay.
-noiseCurveExp = pow(8.0, noiseCurve / 50.0);
+noiseCurveExp = pow(8.0, -noiseCurve / 50.0);
 noise = (no.noise : fi.highpass(2, tone)) * pow(en.ar(0.001, noiseDec, gate), noiseCurveExp) * noiseLvl;
 
 voice   = ma.tanh(body + noise) * gain;

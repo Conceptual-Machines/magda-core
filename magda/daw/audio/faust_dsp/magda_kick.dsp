@@ -45,7 +45,7 @@ sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
 transAEnv = en.ar(0.0002, transDec, gate);
 transPEnv = en.ar(0.0001, 0.003, gate);
 transFreq = transPitch * (1 + transPEnv * transSweep * 16);
-transCurveExp = pow(8.0, transCurve / 50.0);
+transCurveExp = pow(8.0, -transCurve / 50.0);
 trans     = sinR(transFreq) * pow(transAEnv, transCurveExp) * transAmt;
 
 // Body: low pitched sine with its Snap pitch env (Snap*8 -> up to ~9x pitch).
@@ -55,8 +55,8 @@ pitchenv = en.adsr(0.005, snapTime, 0.0, 0.1, gate);
 osc      = sinR((1 + pitchenv * snap * 8) * pitch);
 carve    = 1.0 - transAEnv * transAmt;
 // Curve shapes the (linear) body decay. The bipolar -50..50 knob maps to an
-// exponent 8^(c/50): 0 = linear, >0 punchy/concave, <0 swelled.
-curveExp = pow(8.0, curve / 50.0);
+// exponent 8^(-c/50): 0 = linear, >0 swelled, <0 fast/concave.
+curveExp = pow(8.0, -curve / 50.0);
 bodySig  = osc * pow(bodyEnv, curveExp) * carve;
 
 // Click: a short high-passed noise transient (the beater tick).

@@ -49,7 +49,7 @@ sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
 transAEnv  = en.ar(0.0002, transDec, gate);
 transPEnv  = en.ar(0.0001, 0.003, gate);
 transFreq  = transPitch * (1 + transPEnv * transSweep * 16);
-transCurveExp = pow(8.0, transCurve / 50.0);
+transCurveExp = pow(8.0, -transCurve / 50.0);
 transAEnvS = pow(transAEnv, transCurveExp);
 transSine  = sinR(transFreq) * transAEnvS;
 transNoise = (no.noise : fi.highpass(2, transTone)) * transAEnvS * 0.6;
@@ -64,13 +64,13 @@ f0       = tune * (1 + pitchEnv * snap * 8);
 partials = sinR(f0) * 0.8 + sinR(f0 * 1.59) * 0.5;
 carve    = 1.0 - transAEnv * transAmt;
 // Curve shapes the (linear) body decay: bipolar -50..50 knob -> exponent
-// 8^(c/50), 0 = linear, >0 punchy, <0 swelled.
-curveExp = pow(8.0, curve / 50.0);
+// 8^(-c/50), 0 = linear, >0 swelled, <0 fast.
+curveExp = pow(8.0, -curve / 50.0);
 body     = partials * pow(bodyEnv, curveExp) * carve;
 
 // Rattle / tail: band-passed noise -> resonant high-pass -> tanh drive, with its
 // own decay. Snappy crossfades body <-> rattle.
-rattleCurveExp = pow(8.0, rattleCurve / 50.0);
+rattleCurveExp = pow(8.0, -rattleCurve / 50.0);
 rattleEnv = pow(en.ar(0.001, rattleDec, gate), rattleCurveExp);
 rattle    = (no.noise : fi.resonbp(tone, 0.8, 1.0) : fi.resonhp(hpFreq, hpReso, 1.0)) * rattleEnv;
 // Rattle ducks under the transient (full, scaled by Transient amount) and a bit

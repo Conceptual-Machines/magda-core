@@ -281,13 +281,13 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
     const float decayMs =
         static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
 
-    // Curve knob (-50..50) -> decay exponent 8^(c/50), matching the dsp. 0 (or no
-    // curve slot) = linear.
+    // Curve knob (-50..50) -> decay exponent 8^(-c/50), matching the dsp. 0 (or no
+    // curve slot) = linear; >0 = swelled/sustained, <0 = fast.
     const float curve =
         (s.curveSlot >= 0 && s.curveSlot < static_cast<int>(controls_.size()))
             ? static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue())
             : 0.0f;
-    const float exponent = std::pow(8.0f, curve / 50.0f);
+    const float exponent = std::pow(8.0f, -curve / 50.0f);
 
     const auto r = area.toFloat();
     const float xA = r.getX() + r.getWidth() * (attackMs / axisMaxMs);
@@ -425,8 +425,8 @@ void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWhe
             continue;
         const float cur =
             static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
-        // Scroll down bends the curve down (toward punchy/positive); up = swelled.
-        const float delta = (wheel.isReversed ? wheel.deltaY : -wheel.deltaY) * 60.0f;
+        // Scroll down bends the curve down (toward fast/negative); up = swelled/positive.
+        const float delta = (wheel.isReversed ? -wheel.deltaY : wheel.deltaY) * 60.0f;
         setSlotValue(s.curveSlot,
                      juce::jlimit(slotMin_[static_cast<size_t>(s.curveSlot)],
                                   slotMax_[static_cast<size_t>(s.curveSlot)], cur + delta));

@@ -34,7 +34,7 @@ ts = (+(1.0 / ma.SR) : *(1.0 - gateRise)) ~ _;
 w      = spread * 0.5;
 tri(c) = max(0.0, 1.0 - abs(ts - c) / w);
 bursts = tri(0.0) + tri(spread) + tri(2.0 * spread);
-curveExp = pow(8.0, curve / 50.0);
+curveExp = pow(8.0, -curve / 50.0);
 tail   = pow(en.ar(0.001, decay, gate), curveExp) * tailLvl;
 
 // Band-pass into a resonant high-pass (~2 kHz) for bite, then tanh drive.
