@@ -2,26 +2,9 @@
 
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "modulation/ModulationOwnerPath.hpp"
 
 namespace magda::daw::ui {
-namespace {
-
-magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& devicePath) {
-    magda::ChainNodePath rackPath;
-    rackPath.trackId = devicePath.trackId;
-    int rackStepIndex = -1;
-    for (int i = 0; i < static_cast<int>(devicePath.steps.size()); ++i) {
-        if (devicePath.steps[static_cast<size_t>(i)].type == magda::ChainStepType::Rack)
-            rackStepIndex = i;
-    }
-    if (rackStepIndex >= 0) {
-        rackPath.steps.assign(devicePath.steps.begin(),
-                              devicePath.steps.begin() + rackStepIndex + 1);
-    }
-    return rackPath;
-}
-
-}  // namespace
 
 DeviceSlotModulationContext resolveDeviceSlotModulationContext(
     const magda::ChainNodePath& devicePath, const magda::ModArray* deviceMods,

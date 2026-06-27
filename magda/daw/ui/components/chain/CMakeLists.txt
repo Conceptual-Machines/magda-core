@@ -191,6 +191,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/OscilloscopeUI.hpp
     custom_ui/SpectrumAnalyzerUI.hpp
     modulation/DeviceLinkCallbacks.hpp
+    modulation/ModulationOwnerPath.hpp
     modulation/MacroKnobComponent.hpp
     modulation/MacroPanelComponent.hpp
     modulation/ModKnobComponent.hpp
