@@ -24,6 +24,7 @@
 namespace magda::daw::ui {
 
 class AnalyzerWindow;
+struct DeviceSlotModMacroCommandCallbacks;
 class FaustCustomView;
 class FaustUI;
 
@@ -217,6 +218,7 @@ class DeviceSlotComponent : public NodeComponent,
   private:
     magda::DeviceInfo device_;
     DeviceSlotTraits traits_;
+    DeviceSlotModMacroCommandCallbacks modMacroCommandCallbacks();
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
     // Header controls
@@ -330,7 +332,6 @@ class DeviceSlotComponent : public NodeComponent,
     void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 
     void showAutomationLaneForParam(int paramIndex);
-    void openMacroPanelForSelectionIfNeeded();
 
     // Dynamic layout helpers
     int getVisibleParamCount() const;
