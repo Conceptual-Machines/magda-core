@@ -29,7 +29,8 @@ te::Plugin::Ptr findMeterTapPlugin(te::RackType::Ptr rackType) {
 
 InstrumentRackManager::InstrumentRackManager(te::Edit& edit) : edit_(edit) {}
 
-te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument, bool midiInThru) {
+te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument,
+                                                      bool passRawMidiInput) {
     if (!instrument) {
         return nullptr;
     }
@@ -82,12 +83,12 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     // synth emits no MIDI, so the connection simply carries nothing.
     rackType->addConnection(synthId, 0, rackIOId, 0);
 
-    // The rack's raw MIDI INPUT passing straight through (bypassing the plugin)
-    // is the user-controlled "MIDI in thru" toggle. Off by default: an arp then
-    // forwards only its transformed stream rather than that plus the dry notes.
-    // Enable it to feed a MIDI-triggered FX (e.g. ShaperBox) sitting after the
-    // instrument. See setMidiInThru().
-    if (midiInThru)
+    // The rack's raw MIDI INPUT passes straight through (bypassing the plugin) so
+    // the notes keep flowing to every downstream device - that is how a
+    // MIDI-triggered modulation after an instrument still sees the trigger. The
+    // decision comes from ChainRoutingModel: a plain instrument always forwards
+    // (RawInputOnly); a MIDI-output device follows its midiInThru flag.
+    if (passRawMidiInput)
         rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
@@ -122,9 +123,9 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
 
 te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr instrument,
                                                               int numOutputChannels,
-                                                              bool midiInThru) {
+                                                              bool passRawMidiInput) {
     if (!instrument || numOutputChannels <= 2) {
-        return wrapInstrument(instrument, midiInThru);  // Fallback to normal wrapping
+        return wrapInstrument(instrument, passRawMidiInput);  // Fallback to normal wrapping
     }
 
     // 1. Create a new RackType in the edit
@@ -173,8 +174,9 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     // Plugin's own MIDI output always flows downstream (see wrapInstrument).
     rackType->addConnection(synthId, 0, rackIOId, 0);
 
-    // "MIDI in thru" toggle: raw input bypassing the plugin (see wrapInstrument).
-    if (midiInThru)
+    // Raw input bypassing the plugin so notes reach downstream devices (see
+    // wrapInstrument).
+    if (passRawMidiInput)
         rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)

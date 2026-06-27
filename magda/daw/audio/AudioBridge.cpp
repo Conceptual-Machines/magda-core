@@ -4,6 +4,7 @@
 #include <unordered_set>
 
 #include "../core/AutomationManager.hpp"
+#include "../core/ChainRoutingModel.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/Config.hpp"
 #include "../core/ModulatorEngine.hpp"
@@ -476,8 +477,10 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
         if (auto* rackInstance = rackManager.getRackInstance(deviceId)) {
             rackInstance->setEnabled(!device->bypassed);
         }
-        // Keep the wrapper's "MIDI in thru" passthrough in sync with the model.
-        rackManager.setMidiInThru(deviceId, device->midiInThru);
+        // Keep the wrapper's raw-MIDI passthrough in sync with the routing model
+        // (always on for a plain instrument; midiInThru-controlled for a
+        // MIDI-output device), so notes keep reaching downstream devices.
+        rackManager.setMidiInThru(deviceId, routing::makeRoutingNode(*device).passesRawMidiInput());
     }
 
     // Push gain to the audio-graph atomic so DeviceGainNode picks it up.

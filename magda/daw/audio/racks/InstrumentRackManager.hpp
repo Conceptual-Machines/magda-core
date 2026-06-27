@@ -23,8 +23,11 @@ namespace te = tracktion;
  *   MIDI in:           rack I/O pin 0 --> synth pin 0
  *   Plugin MIDI out:   synth pin 0 --> rack out pin 0 (always; lets a wrapped
  *                      sequencer/arp trigger downstream instruments)
- *   MIDI in thru:      rack I/O pin 0 --> rack out pin 0 (only when midiInThru;
- *                      passes raw input past the plugin to a downstream MIDI FX)
+ *   MIDI in thru:      rack I/O pin 0 --> rack out pin 0 (when passRawMidiInput;
+ *                      keeps the incoming MIDI flowing to every downstream device
+ *                      so MIDI-triggered modulations fire anywhere in the chain.
+ *                      Derived from ChainRoutingModel: always true for a plain
+ *                      instrument, midiInThru-controlled for a MIDI-output device.)
  *   Audio passthrough: rack I/O pin 1 --> rack out pin 1, pin 2 --> rack out pin 2
  *   Synth output:      synth pin 1/2 --> meter tap pin 1/2 --> rack out pin 1/2
  *   (Multiple connections to same output pin are summed by TE automatically)
@@ -36,21 +39,22 @@ class InstrumentRackManager {
     /**
      * @brief Wrap an instrument plugin in a RackType with audio passthrough
      * @param instrument The instrument plugin to wrap
-     * @param midiInThru Wire raw MIDI input past the plugin to the rack output
-     *                   (for a MIDI-FX placed after the instrument). Default on.
+     * @param passRawMidiInput Keep the raw MIDI input flowing to the rack output
+     *                   (so devices after the instrument still see the notes).
+     *                   Compute from routing::makeRoutingNode(device).passesRawMidiInput().
      * @return The RackInstance plugin to insert on the track (or nullptr on failure)
      */
-    te::Plugin::Ptr wrapInstrument(te::Plugin::Ptr instrument, bool midiInThru = true);
+    te::Plugin::Ptr wrapInstrument(te::Plugin::Ptr instrument, bool passRawMidiInput = true);
 
     /**
      * @brief Wrap a multi-output instrument in a RackType with all output pins exposed
      * @param instrument The instrument plugin to wrap
      * @param numOutputChannels Total number of output channels (e.g. 32 for 16 stereo pairs)
-     * @param midiInThru See wrapInstrument().
+     * @param passRawMidiInput See wrapInstrument().
      * @return The main RackInstance plugin (outputs 1,2) to insert on the track
      */
     te::Plugin::Ptr wrapMultiOutInstrument(te::Plugin::Ptr instrument, int numOutputChannels,
-                                           bool midiInThru = true);
+                                           bool passRawMidiInput = true);
 
     /**
      * @brief Create a RackInstance for a specific output pair from a multi-out instrument
