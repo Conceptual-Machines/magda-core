@@ -27,6 +27,22 @@ bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
     return false;
 }
 
+std::unordered_set<te::LevelMeasurer*> getLiveInputMeasurers(te::Edit& edit) {
+    std::unordered_set<te::LevelMeasurer*> liveMeasurers;
+
+    if (auto* playbackContext = edit.getCurrentPlaybackContext()) {
+        for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+            if (!inputDeviceInstance ||
+                dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr)
+                continue;
+
+            liveMeasurers.insert(&inputDeviceInstance->owner.levelMeasurer);
+        }
+    }
+
+    return liveMeasurers;
+}
+
 MeterData readMeterClient(te::LevelMeasurer::Client& client) {
     MeterData data;
 
@@ -148,9 +164,10 @@ AudioBridge::~AudioBridge() {
         });
 
         // Unregister live input meter clients
+        const auto liveInputMeasurers = getLiveInputMeasurers(edit_);
         for (auto& [trackId, entry] : inputMeterClients_) {
             juce::ignoreUnused(trackId);
-            if (entry.measurer)
+            if (entry.measurer && liveInputMeasurers.count(entry.measurer) != 0)
                 entry.measurer->removeClient(entry.client);
         }
         inputMeterClients_.clear();
@@ -184,9 +201,10 @@ void AudioBridge::resetTestState() {
         }
     });
 
+    const auto liveInputMeasurers = getLiveInputMeasurers(edit_);
     for (auto& [trackId, entry] : inputMeterClients_) {
         juce::ignoreUnused(trackId);
-        if (entry.measurer)
+        if (entry.measurer && liveInputMeasurers.count(entry.measurer) != 0)
             entry.measurer->removeClient(entry.client);
     }
     inputMeterClients_.clear();
@@ -931,6 +949,7 @@ void AudioBridge::updateMetering() {
 
 void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrack*>& trackMapping) {
     std::map<TrackId, te::LevelMeasurer*> desired;
+    const auto liveInputMeasurers = getLiveInputMeasurers(edit_);
 
     if (auto* playbackContext = edit_.getCurrentPlaybackContext()) {
         for (const auto& [trackId, track] : trackMapping) {
@@ -965,7 +984,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
             entry.measurer = measurer;
             measurer->addClient(entry.client);
         } else if (entry.measurer != measurer) {
-            if (entry.measurer)
+            if (entry.measurer && liveInputMeasurers.count(entry.measurer) != 0)
                 entry.measurer->removeClient(entry.client);
             entry.measurer = measurer;
             measurer->addClient(entry.client);
@@ -978,7 +997,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
             continue;
         }
 
-        if (it->second.measurer)
+        if (it->second.measurer && liveInputMeasurers.count(it->second.measurer) != 0)
             it->second.measurer->removeClient(it->second.client);
         it = inputMeterClients_.erase(it);
     }
