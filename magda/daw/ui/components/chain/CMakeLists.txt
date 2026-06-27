@@ -17,6 +17,7 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceSlotModulationContext.cpp
     slot/DeviceSlotParameterPaging.cpp
     slot/DeviceSlotParamLayoutFactory.cpp
+    slot/DeviceSlotSidechainControls.cpp
     slot/DeviceParameterChangeHandler.cpp
     slot/DevicePresetMenu.cpp
     slot/DeviceSlotTraits.cpp
@@ -119,6 +120,7 @@ target_sources(magda_daw_app PRIVATE
     slot/DeviceSlotModulationContext.hpp
     slot/DeviceSlotParameterPaging.hpp
     slot/DeviceSlotParamLayoutFactory.hpp
+    slot/DeviceSlotSidechainControls.hpp
     slot/DeviceParameterChangeHandler.hpp
     slot/DevicePresetMenu.hpp
     slot/DeviceSlotTraits.hpp
