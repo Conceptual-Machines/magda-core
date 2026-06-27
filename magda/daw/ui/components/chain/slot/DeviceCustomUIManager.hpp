@@ -226,6 +226,8 @@ class DeviceCustomUIManager {
                                const Callbacks& callbacks);
     bool createSamplerUI(const magda::DeviceInfo& device, juce::Component& parent,
                          const Callbacks& callbacks);
+    bool createDrumGridUI(const magda::DeviceInfo& device, juce::Component& parent,
+                          const Callbacks& callbacks);
     bool createAnalyzerUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createFourOscUI(const magda::DeviceInfo& device, juce::Component& parent,
