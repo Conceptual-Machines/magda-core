@@ -6,6 +6,7 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.cpp
     ai/AIPanelComponent.cpp
     slot/DeviceCustomUIManager.cpp
+    slot/DeviceSlotAutomationControls.cpp
     slot/DeviceSlotContentLayout.cpp
     slot/DeviceSlotContentPainter.cpp
     slot/DeviceSlotGainMeterControls.cpp
@@ -110,6 +111,7 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.hpp
     ai/AIPanelComponent.hpp
     slot/DeviceCustomUIManager.hpp
+    slot/DeviceSlotAutomationControls.hpp
     slot/DeviceSlotContentLayout.hpp
     slot/DeviceSlotContentPainter.hpp
     slot/DeviceSlotGainMeterControls.hpp

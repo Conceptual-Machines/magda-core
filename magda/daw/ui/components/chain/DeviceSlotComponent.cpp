@@ -16,7 +16,6 @@
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
-#include "core/ParameterUtils.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -39,6 +38,7 @@
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotAutomationControls.hpp"
 #include "slot/DeviceSlotContentLayout.hpp"
 #include "slot/DeviceSlotContentPainter.hpp"
 #include "slot/DeviceSlotGainMeterControls.hpp"
@@ -635,95 +635,13 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
 }
 
 void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
-    if (nodePath_.isPostFx())
-        return;
-
-    auto trackId = nodePath_.trackId;
-    if (trackId == magda::INVALID_TRACK_ID)
-        return;
-    magda::AutomationTarget target;
-    target.kind = magda::ControlTarget::Kind::PluginParam;
-    target.devicePath.trackId = trackId;
-    target.devicePath = nodePath_;
-    target.paramIndex = paramIndex;
-    juce::String pName = "Param " + juce::String(paramIndex);
-    if (const auto* info = device_.findParameterByIndex(paramIndex))
-        pName = info->name;
-    auto& automationMgr = magda::AutomationManager::getInstance();
-    auto laneId = automationMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
-    automationMgr.setLaneVisible(laneId, true);
+    showDeviceSlotAutomationLaneForParam(nodePath_, paramIndex);
 }
 
 void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
                                                  double normalizedValue) {
-    // Curve-driven update: the lane has pushed a new value (drag preview,
-    // stopped rebake, or TE playback). Only react to DeviceParameter lanes
-    // that target this device — the engine sends us every lane because lane
-    // registration is global.
-    const auto* lane = magda::AutomationManager::getInstance().getLane(laneId);
-    if (!lane)
-        return;
-
-    if (lane->target.kind != magda::ControlTarget::Kind::PluginParam)
-        return;
-
-    if (lane->target.devicePath.getDeviceId() != device_.id)
-        return;
-
-    // Overridden state covers both "user dragging right now" and "user
-    // released and the lane is latched to their value" — either way, skip
-    // the curve write so we don't yank the control back to the curve.
-    if (magda::AutomationManager::getInstance().getVisualState(lane->target) ==
-        magda::AutomationVisualState::Overridden)
-        return;
-
-    const int paramIndex = lane->target.paramIndex;
-    auto* stored = device_.findParameterByIndex(paramIndex);
-    if (stored == nullptr)
-        return;
-
-    // Convert the lane's MAGDA-normalized [0,1] back to the plugin's NATIVE
-    // range (what te::AutomatableParameter actually stores). See the long
-    // comment that used to live here for why we project against the param's
-    // teMin/teMax instead of its display range when an AI-Detect override
-    // diverges them.
-    const float modelValue =
-        magda::ParameterUtils::normalizedToModelValue(
-            magda::ParameterNormalizedValue::clamped(static_cast<float>(normalizedValue)), *stored)
-            .value;
-
-    // Keep the cached value in sync so any non-automation refresh path and
-    // custom UI read the same value-space that live parameter writes use.
-    stored->currentValue = modelValue;
-
-    // Push into the param slot (if the matching parameter is on the current
-    // page) and into any active custom UI so the on-device knob follows too.
-    if (paramGrid_) {
-        const int paramsPerPage = paramGrid_->getSlotCount();
-        const int currentPage = paramGrid_->getCurrentPage();
-        const int pageOffset = currentPage * paramsPerPage;
-        const bool useVisibilityFilter = !device_.visibleParameters.empty();
-
-        for (int slotIndex = 0; slotIndex < paramsPerPage; ++slotIndex) {
-            const int visibleParamIndex = pageOffset + slotIndex;
-            int actualParamIndex;
-            if (useVisibilityFilter) {
-                if (visibleParamIndex >= static_cast<int>(device_.visibleParameters.size()))
-                    continue;
-                actualParamIndex =
-                    device_.visibleParameters[static_cast<size_t>(visibleParamIndex)];
-            } else {
-                actualParamIndex = visibleParamIndex;
-            }
-            if (actualParamIndex == paramIndex) {
-                if (auto* slot = paramGrid_->getSlot(slotIndex))
-                    slot->setParamValue(modelValue);
-                break;
-            }
-        }
-    }
-
-    refreshDeviceSlotInlineUiParameterValues(device_, compiledPanel_.get(), customUI_);
+    applyDeviceSlotAutomationValueChange(device_, paramGrid_.get(), compiledPanel_.get(), customUI_,
+                                         laneId, normalizedValue);
 }
 
 bool DeviceSlotComponent::stripsAnalysisChrome() const {
