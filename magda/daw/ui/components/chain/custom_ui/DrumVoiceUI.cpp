@@ -261,13 +261,13 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
     const float decayMs =
         static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
 
-    // Curve knob (0..1) -> decay exponent 8^(2c-1), matching the dsp. 0.5 (or no
+    // Curve knob (-50..50) -> decay exponent 8^(c/50), matching the dsp. 0 (or no
     // curve slot) = linear.
     const float curve =
         (s.curveSlot >= 0 && s.curveSlot < static_cast<int>(controls_.size()))
             ? static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue())
-            : 0.5f;
-    const float exponent = std::pow(8.0f, 2.0f * curve - 1.0f);
+            : 0.0f;
+    const float exponent = std::pow(8.0f, curve / 50.0f);
 
     const auto r = area.toFloat();
     const float xA = r.getX() + r.getWidth() * (attackMs / axisMaxMs);
@@ -405,7 +405,8 @@ void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWhe
             continue;
         const float cur =
             static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
-        const float delta = (wheel.isReversed ? -wheel.deltaY : wheel.deltaY) * 0.5f;
+        // Scroll up = punchier (positive). deltaY>0 is "up", so negate to invert.
+        const float delta = (wheel.isReversed ? wheel.deltaY : -wheel.deltaY) * 60.0f;
         setSlotValue(s.curveSlot,
                      juce::jlimit(slotMin_[static_cast<size_t>(s.curveSlot)],
                                   slotMax_[static_cast<size_t>(s.curveSlot)], cur + delta));

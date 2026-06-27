@@ -23,7 +23,7 @@ bodyDec  = hslider("Body [idx:3]",   400, 5,   2000, 1) * 0.001;
 noiseLvl = hslider("Noise [idx:4]",       0.3,  0.0, 1.0,   0.001);
 tone     = hslider("Tone [idx:5]",        1500, 200, 12000, 1);
 noiseDec = hslider("Noise Decay [idx:6]", 60,   5,   1000,  1) * 0.001;
-curve    = hslider("Curve [idx:7]",       0.5,  0.0, 1.0,   0.001);
+curve    = hslider("Curve [idx:7]",       0,   -50,  50,    1);
 
 // ============================================================================
 // Voice: pitch-swept sine Body + high-passed Noise attack.
@@ -35,9 +35,9 @@ sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
 // a percussive AR.
 bodyEnv  = en.adsr(attack, bodyDec, 0.0, 0.1, gate);
 pitchenv = en.adsr(0.002, bodyDec * 0.4, 0.0, 0.1, gate);
-// Curve shapes the (linear) body decay: 0..1 knob -> exponent 8^(2c-1), 0.5 =
-// linear, >0.5 punchy, <0.5 swelled.
-curveExp = pow(8.0, 2.0 * curve - 1.0);
+// Curve shapes the (linear) body decay: bipolar -50..50 knob -> exponent
+// 8^(c/50), 0 = linear, >0 punchy, <0 swelled.
+curveExp = pow(8.0, curve / 50.0);
 body     = sinR(tune * (1 + pitchenv * bend * 2)) * pow(bodyEnv, curveExp);
 
 // Noise: high-passed stick/skin attack with its own decay.
