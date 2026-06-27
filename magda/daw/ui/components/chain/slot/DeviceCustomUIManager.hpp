@@ -232,6 +232,8 @@ class DeviceCustomUIManager {
     bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createFourOscUI(const magda::DeviceInfo& device, juce::Component& parent,
                          const Callbacks& callbacks);
+    bool createCustomInstrumentUI(const magda::DeviceInfo& device, juce::Component& parent,
+                                  const Callbacks& callbacks);
     bool createSimpleEffectUI(const magda::DeviceInfo& device, juce::Component& parent,
                               const Callbacks& callbacks);
     bool createImpulseResponseUI(const magda::DeviceInfo& device, juce::Component& parent,
