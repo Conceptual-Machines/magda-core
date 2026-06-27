@@ -73,6 +73,11 @@ std::vector<MagdaClapCompiledPlugin::HostSlotInfo> MagdaClapCompiledPlugin::voic
          .minValue = 1.0f,
          .maxValue = 20.0f,
          .defaultValue = 1.0f},
+        {.name = "flam_curve",
+         .scale = ParameterScale::Linear,
+         .minValue = -50.0f,
+         .maxValue = 50.0f,
+         .defaultValue = 0.0f},
     };
 }
 

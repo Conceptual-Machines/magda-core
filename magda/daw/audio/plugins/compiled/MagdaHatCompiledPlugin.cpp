@@ -75,6 +75,16 @@ std::vector<MagdaHatCompiledPlugin::HostSlotInfo> MagdaHatCompiledPlugin::voiceS
          .minValue = 5.0f,
          .maxValue = 2000.0f,
          .defaultValue = 100.0f},
+        {.name = "ring_curve",
+         .scale = ParameterScale::Linear,
+         .minValue = -50.0f,
+         .maxValue = 50.0f,
+         .defaultValue = 0.0f},
+        {.name = "noise_curve",
+         .scale = ParameterScale::Linear,
+         .minValue = -50.0f,
+         .maxValue = 50.0f,
+         .defaultValue = 0.0f},
     };
 }
 

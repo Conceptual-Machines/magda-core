@@ -135,6 +135,11 @@ std::vector<MagdaSnareCompiledPlugin::HostSlotInfo> MagdaSnareCompiledPlugin::vo
          .minValue = -50.0f,
          .maxValue = 50.0f,
          .defaultValue = 0.0f},
+        {.name = "rattle_curve",
+         .scale = ParameterScale::Linear,
+         .minValue = -50.0f,
+         .maxValue = 50.0f,
+         .defaultValue = 0.0f},
     };
 }
 

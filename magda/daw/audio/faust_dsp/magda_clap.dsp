@@ -20,6 +20,7 @@ tailLvl = hslider("Tail [idx:3]",    0.4,  0.0, 1.0,  0.001);
 hpFreq  = hslider("HP Freq [idx:4]", 2000, 500, 8000, 1);
 hpReso  = hslider("HP Reso [idx:5]", 1.0,  0.5, 10.0, 0.01);
 drive   = hslider("Drive [idx:6]",   1.0,  1.0, 20.0, 0.01);
+curve   = hslider("Curve [idx:7]",   0,   -50, 50,   1);
 
 // ============================================================================
 // Voice
@@ -33,7 +34,8 @@ ts = (+(1.0 / ma.SR) : *(1.0 - gateRise)) ~ _;
 w      = spread * 0.5;
 tri(c) = max(0.0, 1.0 - abs(ts - c) / w);
 bursts = tri(0.0) + tri(spread) + tri(2.0 * spread);
-tail   = en.ar(0.001, decay, gate) * tailLvl;
+curveExp = pow(8.0, curve / 50.0);
+tail   = pow(en.ar(0.001, decay, gate), curveExp) * tailLvl;
 
 // Band-pass into a resonant high-pass (~2 kHz) for bite, then tanh drive.
 nz      = no.noise : fi.resonbp(tone, 1.6, 1.0) : fi.resonhp(hpFreq, hpReso, 1.0);

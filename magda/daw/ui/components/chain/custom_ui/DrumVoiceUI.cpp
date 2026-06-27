@@ -62,12 +62,12 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
              .attackSlot = 2,
              .decaySlot = 3,
              .curveSlot = 7},
-            {.title = "Noise", .slots = {4, 5, 6}, .decaySlot = 6},
+            {.title = "Noise", .slots = {4, 5, 6, 8}, .decaySlot = 6, .curveSlot = 8},
         };
     if (pluginId.equalsIgnoreCase("magda_hat"))
         return {
-            {.title = "Ring", .slots = {0, 1, 2, 3}, .decaySlot = 3},
-            {.title = "Noise", .slots = {4, 5, 6}, .decaySlot = 6},
+            {.title = "Ring", .slots = {0, 1, 2, 3, 7}, .decaySlot = 3, .curveSlot = 7},
+            {.title = "Noise", .slots = {4, 5, 6, 8}, .decaySlot = 6, .curveSlot = 8},
         };
     if (pluginId.equalsIgnoreCase("magda_kick"))
         return {
@@ -89,11 +89,14 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
              .decaySlot = 9,
              .curveSlot = 16,
              .cols = 3},
-            {.title = "Rattle", .slots = {10, 11, 12, 13, 14, 15}, .decaySlot = 14},
+            {.title = "Rattle",
+             .slots = {10, 11, 12, 13, 14, 15, 18},
+             .decaySlot = 14,
+             .curveSlot = 18},
         };
     if (pluginId.equalsIgnoreCase("magda_clap"))
         return {
-            {.title = "Flam", .slots = {0, 1, 2, 3}, .decaySlot = 2},
+            {.title = "Flam", .slots = {0, 1, 2, 3, 7}, .decaySlot = 2, .curveSlot = 7},
             {.title = "Shape", .slots = {4, 5, 6}},
         };
     return {};  // other voices: single flat row
@@ -422,8 +425,8 @@ void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWhe
             continue;
         const float cur =
             static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
-        // Scroll up = punchier (positive). deltaY>0 is "up", so negate to invert.
-        const float delta = (wheel.isReversed ? wheel.deltaY : -wheel.deltaY) * 60.0f;
+        // Scroll down bends the curve up (toward swelled/negative).
+        const float delta = (wheel.isReversed ? -wheel.deltaY : wheel.deltaY) * 60.0f;
         setSlotValue(s.curveSlot,
                      juce::jlimit(slotMin_[static_cast<size_t>(s.curveSlot)],
                                   slotMax_[static_cast<size_t>(s.curveSlot)], cur + delta));

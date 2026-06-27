@@ -35,6 +35,7 @@ rattleDec = hslider("Rattle Decay [idx:14]", 200,  1,    1500,  1) * 0.001;
 drive     = hslider("Drive [idx:15]",        1.0,  1.0,  20.0,  0.01);
 curve     = hslider("Curve [idx:16]",        0,   -50,   50,    1);
 transCurve = hslider("Trans Curve [idx:17]", 0,   -50,   50,    1);
+rattleCurve = hslider("Rattle Curve [idx:18]", 0, -50,   50,    1);
 
 // ============================================================================
 // Voice: Transient + Body + Rattle, summed and soft-clipped.
@@ -69,9 +70,13 @@ body     = partials * pow(bodyEnv, curveExp) * carve;
 
 // Rattle / tail: band-passed noise -> resonant high-pass -> tanh drive, with its
 // own decay. Snappy crossfades body <-> rattle.
-rattleEnv = en.ar(0.001, rattleDec, gate);
+rattleCurveExp = pow(8.0, rattleCurve / 50.0);
+rattleEnv = pow(en.ar(0.001, rattleDec, gate), rattleCurveExp);
 rattle    = (no.noise : fi.resonbp(tone, 0.8, 1.0) : fi.resonhp(hpFreq, hpReso, 1.0)) * rattleEnv;
-rattleOut = ma.tanh(rattle * drive);
+// Rattle ducks under the transient (full, scaled by Transient amount) and a bit
+// under the body, so the crack and body punch through the noise tail.
+rattleCarve = (1.0 - transAEnv * transAmt) * (1.0 - 0.3 * bodyEnv);
+rattleOut = ma.tanh(rattle * drive) * rattleCarve;
 
 voice   = ma.tanh(body * (1.0 - 0.5 * snappy) + rattleOut * snappy * 1.5 + trans) * gain;
 process = voice <: _, _;

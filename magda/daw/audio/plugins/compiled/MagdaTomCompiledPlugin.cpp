@@ -80,6 +80,11 @@ std::vector<MagdaTomCompiledPlugin::HostSlotInfo> MagdaTomCompiledPlugin::voiceS
          .minValue = -50.0f,
          .maxValue = 50.0f,
          .defaultValue = 0.0f},
+        {.name = "noise_curve",
+         .scale = ParameterScale::Linear,
+         .minValue = -50.0f,
+         .maxValue = 50.0f,
+         .defaultValue = 0.0f},
     };
 }
 
