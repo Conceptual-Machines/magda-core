@@ -333,7 +333,6 @@ class DeviceSlotComponent : public NodeComponent,
     void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 
     void showAutomationLaneForParam(int paramIndex);
-    void openMacroPanelForSelectionIfNeeded();
 
     // Dynamic layout helpers
     int getVisibleParamCount() const;
