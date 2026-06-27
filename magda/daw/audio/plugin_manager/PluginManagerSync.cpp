@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "../../core/InternalDeviceKind.hpp"
+#include "../../core/PluginCapabilities.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
@@ -117,6 +118,41 @@ bool pluginProducesMidi(te::Plugin& plugin) {
     return dynamic_cast<daw::audio::MidiDevicePlugin*>(&plugin) != nullptr;
 }
 
+PluginCapabilitySnapshot makePluginCapabilitySnapshot(const DeviceInfo& device,
+                                                      te::Plugin& plugin) {
+    PluginCapabilitySnapshot snapshot;
+    snapshot.pluginIdentifier = PluginCapabilityCache::identifierForDevice(device);
+    snapshot.name = device.name.isNotEmpty() ? device.name : plugin.getName();
+    snapshot.manufacturer =
+        device.manufacturer.isNotEmpty() ? device.manufacturer : plugin.getVendor();
+    snapshot.format = pluginFormatText(device.format);
+    snapshot.tracktionTakesMidiInput = plugin.takesMidiInput();
+    snapshot.tracktionTakesAudioInput = plugin.takesAudioInput();
+    snapshot.tracktionProducesAudioWhenNoAudioInput = plugin.producesAudioWhenNoAudioInput();
+    snapshot.hasMidiOutput = pluginProducesMidi(plugin);
+    snapshot.hasMidiInput = snapshot.tracktionTakesMidiInput;
+    snapshot.hasAudioInput = snapshot.tracktionTakesAudioInput;
+    snapshot.hasAudioOutput = plugin.getNumOutputChannelsGivenInputs(0) > 0 ||
+                              plugin.getNumOutputChannelsGivenInputs(2) > 0;
+
+    if (auto* processor = plugin.getWrappedAudioProcessor()) {
+        snapshot.processorAcceptsMidi = processor->acceptsMidi();
+        snapshot.processorProducesMidi = processor->producesMidi();
+        snapshot.processorIsMidiEffect = processor->isMidiEffect();
+        snapshot.audioInputChannels = processor->getTotalNumInputChannels();
+        snapshot.audioOutputChannels = processor->getTotalNumOutputChannels();
+        snapshot.inputBusCount = processor->getBusCount(true);
+        snapshot.outputBusCount = processor->getBusCount(false);
+        snapshot.hasMidiInput = snapshot.hasMidiInput || snapshot.processorAcceptsMidi;
+        snapshot.hasMidiOutput = snapshot.hasMidiOutput || snapshot.processorProducesMidi ||
+                                 snapshot.processorIsMidiEffect;
+        snapshot.hasAudioInput = snapshot.hasAudioInput || snapshot.audioInputChannels > 0;
+        snapshot.hasAudioOutput = snapshot.hasAudioOutput || snapshot.audioOutputChannels > 0;
+    }
+
+    return snapshot;
+}
+
 void logDeviceCapabilityInspection(const DeviceInfo& device, te::Plugin& plugin,
                                    bool producesMidi) {
     juce::StringArray inputChannels;
@@ -171,13 +207,15 @@ void logDeviceCapabilityInspection(const DeviceInfo& device, te::Plugin& plugin,
 }
 
 void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
+    const auto snapshot = makePluginCapabilitySnapshot(device, plugin);
+    PluginCapabilityCache::getInstance().update(snapshot);
+
     if (plugin.canSidechain())
         device.canSidechain = true;
-    if (plugin.takesMidiInput() && !device.isInstrument)
+    if (snapshot.hasMidiInput && !device.isInstrument)
         device.canReceiveMidi = true;
-    const bool producesMidi = pluginProducesMidi(plugin);
-    logDeviceCapabilityInspection(device, plugin, producesMidi);
-    device.producesMidi = producesMidi;
+    logDeviceCapabilityInspection(device, plugin, snapshot.hasMidiOutput);
+    device.producesMidi = snapshot.hasMidiOutput;
 }
 
 void removeSourceFromModifierParams(const std::map<ModId, te::Modifier::Ptr>& modifiers,

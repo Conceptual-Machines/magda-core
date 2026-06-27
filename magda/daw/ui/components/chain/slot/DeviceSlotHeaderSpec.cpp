@@ -1,5 +1,6 @@
 #include "slot/DeviceSlotHeaderSpec.hpp"
 
+#include "core/PluginCapabilities.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 
 namespace magda::daw::ui {
@@ -104,7 +105,7 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     }
 
     visibility.learn = !isInternalDevice;
-    visibility.instMidiThru = device.isInstrument && device.producesMidi;
+    visibility.instMidiThru = supportsMidiInputThruToggle(device);
     visibility.sidechain = drum_grid_slot::shouldShowSidechainButton(
         traits.isDrumGrid, device.canSidechain, device.canReceiveMidi);
     visibility.multiOut = device.multiOut.isMultiOut;
