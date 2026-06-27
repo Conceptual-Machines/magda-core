@@ -158,6 +158,7 @@ struct DeviceInfo {
     SidechainConfig sidechain;
     bool canSidechain = false;    // true if TE plugin supports audio sidechain input
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
+    bool producesMidi = false;    // true if the live plugin can output MIDI
 
     // "MIDI in thru": for a wrapped instrument, pass the rack's raw MIDI input
     // past the plugin to the rack output so a MIDI-triggered FX placed after the

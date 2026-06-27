@@ -452,7 +452,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // "MIDI in thru" toggle for wrapped instruments. The plugin's own MIDI
     // output always flows downstream; this only passes the raw input past the
     // instrument so a MIDI-triggered FX placed after it still receives notes.
-    if (device.isInstrument) {
+    if (device.isInstrument && device.producesMidi) {
         instMidiThruButton_ = std::make_unique<magda::SvgButton>(
             "MidiInThru", BinaryData::compare_svg, BinaryData::compare_svgSize);
         instMidiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
