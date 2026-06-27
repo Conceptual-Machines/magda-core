@@ -893,15 +893,21 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
             const auto outputChannels = getAudioOutputCount(rackType, node.id);
 
             if (node.receivesChainMidi) {
-                for (const auto& midiSource : midiBusSources)
+                const auto inputMidiSources = midiBusSources;
+                for (const auto& midiSource : inputMidiSources)
                     addRackConnection(rackType, midiSource, 0, node.id, 0, "chain midi bus");
-            }
 
-            if (node.outputsPluginMidi && node.receivesChainMidi) {
-                if (node.passesRawMidiInput)
-                    midiBusSources.push_back(node.id);
-                else
-                    midiBusSources = {node.id};
+                if (node.outputsPluginMidi) {
+                    if (node.passesRawMidiInput) {
+                        midiBusSources = inputMidiSources;
+                        midiBusSources.push_back(node.id);
+                    } else {
+                        midiBusSources = {node.id};
+                    }
+                } else if (node.passesRawMidiInput) {
+                    midiBusSources =
+                        node.isInstrument ? inputMidiSources : std::vector<te::EditItemID>{node.id};
+                }
             }
 
             if (node.isInstrument) {
