@@ -166,6 +166,9 @@ class DeviceCustomUIManager {
     daw::audio::ArpeggiatorPlugin* getArpPlugin() const {
         return arpPlugin_;
     }
+    daw::audio::MidiStrumPlugin* getStrumPlugin() const {
+        return strumPlugin_;
+    }
     daw::audio::StepSequencerPlugin* getStepSeqPlugin() const {
         return stepSeqPlugin_;
     }
@@ -182,6 +185,9 @@ class DeviceCustomUIManager {
     }
     void setPolyStepSeqPlugin(daw::audio::PolyStepSequencerPlugin* p) {
         polyStepSeqPlugin_ = p;
+    }
+    void setStrumPlugin(daw::audio::MidiStrumPlugin* p) {
+        strumPlugin_ = p;
     }
 
     // Tab index for FourOscUI persistence across rebuilds

@@ -589,8 +589,8 @@ void DeviceSlotComponent::timerCallback() {
         }
     }
 
-    if (traits_.isArpeggiator || traits_.isStepSequencer || traits_.isPolyStepSequencer ||
-        traits_.isChordEngine) {
+    if (traits_.isArpeggiator || traits_.isStrum || traits_.isStepSequencer ||
+        traits_.isPolyStepSequencer || traits_.isChordEngine) {
         refreshDeviceSlotMidiActivity(traits_, customUI_, midiNoteStrip_, lastMidiNote_,
                                       lastChordNotes_, lastChordCount_);
 

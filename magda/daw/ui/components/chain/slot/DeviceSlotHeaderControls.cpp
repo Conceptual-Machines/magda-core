@@ -128,7 +128,8 @@ void applyMidiOnlyDeviceHeaderVisibility(const DeviceSlotTraits& traits,
         return;
 
     setVisibleIfPresent(modButton, false);
-    if (!traits.isArpeggiator && !traits.isStepSequencer && !traits.isPolyStepSequencer)
+    if (!traits.isArpeggiator && !traits.isStrum && !traits.isStepSequencer &&
+        !traits.isPolyStepSequencer)
         setVisibleIfPresent(macroButton, false);
 }
 

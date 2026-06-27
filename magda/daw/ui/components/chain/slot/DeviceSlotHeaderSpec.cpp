@@ -43,7 +43,7 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
     switch (id) {
         case HeaderControlId::Macro:
             return drum_grid_slot::shouldShowMacroButton(
-                traits.isDrumGrid, device.deviceType, traits.isArpeggiator,
+                traits.isDrumGrid, device.deviceType, traits.isArpeggiator || traits.isStrum,
                 traits.isStepSequencer || traits.isPolyStepSequencer);
         case HeaderControlId::Mod:
             return visibility.mod;
@@ -76,8 +76,8 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
 }  // namespace
 
 bool isMidiUtilityDeviceSlot(const DeviceSlotTraits& traits) {
-    return traits.isChordEngine || traits.isArpeggiator || traits.isStepSequencer ||
-           traits.isPolyStepSequencer;
+    return traits.isChordEngine || traits.isArpeggiator || traits.isStrum ||
+           traits.isStepSequencer || traits.isPolyStepSequencer;
 }
 
 HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& traits,
@@ -86,8 +86,8 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     HeaderControlVisibility visibility;
 
     visibility.mod = drum_grid_slot::shouldShowModButton(traits.isDrumGrid, device.deviceType);
-    visibility.macro = visibility.mod || traits.isArpeggiator || traits.isStepSequencer ||
-                       traits.isPolyStepSequencer;
+    visibility.macro = visibility.mod || traits.isArpeggiator || traits.isStrum ||
+                       traits.isStepSequencer || traits.isPolyStepSequencer;
     visibility.ai = traits.isAISupported && (visibility.mod || traits.isArpeggiator ||
                                              traits.isStepSequencer || traits.isPolyStepSequencer);
     visibility.random = traits.isStepSequencer || traits.isPolyStepSequencer;

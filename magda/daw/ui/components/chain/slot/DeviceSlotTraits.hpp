@@ -10,6 +10,7 @@ struct DeviceSlotTraits {
     bool isDrumGrid = false;
     bool isChordEngine = false;
     bool isArpeggiator = false;
+    bool isStrum = false;
     bool isStepSequencer = false;
     bool isPolyStepSequencer = false;
     bool isFaust = false;            // interpreter Faust EFFECT: header + param grid layout

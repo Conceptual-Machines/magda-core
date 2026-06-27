@@ -14,6 +14,7 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     traits.isDrumGrid = kind == magda::InternalDeviceKind::DrumGrid;
     traits.isChordEngine = kind == magda::InternalDeviceKind::MidiChordEngine;
     traits.isArpeggiator = kind == magda::InternalDeviceKind::Arpeggiator;
+    traits.isStrum = kind == magda::InternalDeviceKind::Strum;
     traits.isStepSequencer = kind == magda::InternalDeviceKind::StepSequencer;
     traits.isPolyStepSequencer = kind == magda::InternalDeviceKind::PolyStepSequencer;
     // The interpreter Faust EFFECT uses the header+grid body layout (isFaust).
