@@ -38,21 +38,26 @@ std::vector<MagdaClapCompiledPlugin::HostSlotInfo> MagdaClapCompiledPlugin::voic
     return {
         {.name = "Tone",
          .scale = ParameterScale::Linear,
-         .minValue = 400.0f,
-         .maxValue = 3500.0f,
-         .defaultValue = 1500.0f},
-        {.name = "Attack",
+         .minValue = 500.0f,
+         .maxValue = 3000.0f,
+         .defaultValue = 1200.0f},
+        {.name = "Spread",
          .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 0.0f,
-         .maxValue = 200.0f,
-         .defaultValue = 0.0f},
+         .minValue = 3.0f,
+         .maxValue = 30.0f,
+         .defaultValue = 9.0f},
         {.name = "Decay",
          .unit = "ms",
          .scale = ParameterScale::Linear,
+         .minValue = 20.0f,
+         .maxValue = 1000.0f,
+         .defaultValue = 200.0f},
+        {.name = "Tail",
+         .scale = ParameterScale::Linear,
          .minValue = 0.0f,
-         .maxValue = 2000.0f,
-         .defaultValue = 0.0f},
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
     };
 }
 
@@ -61,9 +66,9 @@ const CompiledPluginSpec& getMagdaClapSpec() {
         .pluginId = MagdaClapCompiledPlugin::xmlTypeName,
         .displayName = "Clap",
         .browserCategory = "Drums",
-        .description = "Old-school drum-machine clap: four offset noise bursts through a resonant "
-                       "lowpass (Faust synths.lib). Knob-tuned, MIDI-gated - drop it on a DrumGrid "
-                       "pad or play it standalone.",
+        .description = "Synthetic clap: a band-passed noise burst plus two delayed copies (Spread "
+                       "spacing) for the hand-clap flam, over a longer diffuse tail. Knob-tuned, "
+                       "MIDI-gated - drop it on a DrumGrid pad or play it standalone.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaClapCompiledPlugin(info);
         },
