@@ -125,6 +125,11 @@ std::vector<MagdaSnareCompiledPlugin::HostSlotInfo> MagdaSnareCompiledPlugin::vo
          .minValue = 1.0f,
          .maxValue = 20.0f,
          .defaultValue = 1.0f},
+        {.name = "Curve",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
     };
 }
 

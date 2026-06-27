@@ -103,6 +103,11 @@ std::vector<MagdaKickCompiledPlugin::HostSlotInfo> MagdaKickCompiledPlugin::voic
          .minValue = 500.0f,
          .maxValue = 12000.0f,
          .defaultValue = 2000.0f},
+        {.name = "Curve",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
     };
 }
 

@@ -33,6 +33,7 @@ hpFreq    = hslider("HP Freq [idx:12]",      300,  20,   6000,  1);
 hpReso    = hslider("HP Reso [idx:13]",      0.7,  0.5,  10.0,  0.01);
 rattleDec = hslider("Rattle Decay [idx:14]", 200,  1,    1500,  1) * 0.001;
 drive     = hslider("Drive [idx:15]",        1.0,  1.0,  20.0,  0.01);
+curve     = hslider("Curve [idx:16]",        0.5,  0.0,  1.0,   0.001);
 
 // ============================================================================
 // Voice: Transient + Body + Rattle, summed and soft-clipped.
@@ -58,7 +59,10 @@ pitchEnv = en.ar(0.0005, snapTime, gate);
 f0       = tune * (1 + pitchEnv * snap * 8);
 partials = sinR(f0) * 0.8 + sinR(f0 * 1.59) * 0.5;
 carve    = 1.0 - transAEnv * transAmt;
-body     = partials * bodyEnv * carve;
+// Curve shapes the (linear) body decay: 0..1 knob -> exponent 8^(2c-1), 0.5 =
+// linear, >0.5 punchy, <0.5 swelled.
+curveExp = pow(8.0, 2.0 * curve - 1.0);
+body     = partials * pow(bodyEnv, curveExp) * carve;
 
 // Rattle / tail: band-passed noise -> resonant high-pass -> tanh drive, with its
 // own decay. Snappy crossfades body <-> rattle.

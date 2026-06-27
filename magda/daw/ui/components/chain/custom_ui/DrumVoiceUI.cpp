@@ -1,5 +1,7 @@
 #include "custom_ui/DrumVoiceUI.hpp"
 
+#include <cmath>
+
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -38,7 +40,11 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
     // attackSlot when the layer has one) drive the per-section envelope graph.
     if (pluginId.equalsIgnoreCase("magda_tom"))
         return {
-            {.title = "Body", .slots = {0, 1, 2, 3}, .attackSlot = 2, .decaySlot = 3},
+            {.title = "Body",
+             .slots = {0, 1, 2, 3, 7},
+             .attackSlot = 2,
+             .decaySlot = 3,
+             .curveSlot = 7},
             {.title = "Noise", .slots = {4, 5, 6}, .decaySlot = 6},
         };
     if (pluginId.equalsIgnoreCase("magda_hat"))
@@ -50,16 +56,22 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
         return {
             {.title = "Transient", .slots = {0, 1, 2, 3}, .decaySlot = 3},
             {.title = "Body",
-             .slots = {4, 5, 6, 7, 8, 9},
+             .slots = {4, 5, 6, 7, 8, 9, 12},
              .attackSlot = 7,
              .decaySlot = 8,
+             .curveSlot = 12,
              .cols = 3},
             {.title = "Click", .slots = {10, 11}},
         };
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
             {.title = "Transient", .slots = {0, 1, 2, 3, 4}, .decaySlot = 3},
-            {.title = "Body", .slots = {5, 6, 7, 8, 9}, .attackSlot = 8, .decaySlot = 9, .cols = 3},
+            {.title = "Body",
+             .slots = {5, 6, 7, 8, 9, 16},
+             .attackSlot = 8,
+             .decaySlot = 9,
+             .curveSlot = 16,
+             .cols = 3},
             {.title = "Rattle", .slots = {10, 11, 12, 13, 14, 15}, .decaySlot = 14},
         };
     if (pluginId.equalsIgnoreCase("magda_clap"))
@@ -247,18 +259,32 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
     const float decayMs =
         static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
 
+    // Curve knob (0..1) -> decay exponent 8^(2c-1), matching the dsp. 0.5 (or no
+    // curve slot) = linear.
+    const float curve =
+        (s.curveSlot >= 0 && s.curveSlot < static_cast<int>(controls_.size()))
+            ? static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue())
+            : 0.5f;
+    const float exponent = std::pow(8.0f, 2.0f * curve - 1.0f);
+
     const auto r = area.toFloat();
     const float xA = r.getX() + r.getWidth() * (attackMs / axisMaxMs);
-    const float xD = r.getX() + r.getWidth() * ((attackMs + decayMs) / axisMaxMs);
+    const float xD =
+        juce::jmin(r.getRight(), r.getX() + r.getWidth() * ((attackMs + decayMs) / axisMaxMs));
     const float top = r.getY() + 1.0f;
     const float bot = r.getBottom() - 1.0f;
 
-    // Linear attack ramp to the peak, then linear decay to zero (matches the
-    // dsp's linear en.ar / en.adsr segments).
+    // Linear attack ramp to the peak, then the decay as a sampled power curve
+    // (env = (1-p)^exponent), matching the dsp's pow(env, ...) shaping.
     juce::Path p;
     p.startNewSubPath(r.getX(), bot);
     p.lineTo(xA, top);
-    p.lineTo(juce::jmin(xD, r.getRight()), bot);
+    constexpr int kSteps = 24;
+    for (int i = 1; i <= kSteps; ++i) {
+        const float pn = static_cast<float>(i) / kSteps;
+        const float e = std::pow(1.0f - pn, exponent);
+        p.lineTo(xA + (xD - xA) * pn, bot - (bot - top) * e);
+    }
 
     auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
     g.setColour(accent.withAlpha(0.18f));

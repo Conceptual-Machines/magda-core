@@ -31,6 +31,7 @@ drive     = hslider("Drive [idx:9]",      2.0, 1.0, 10.0, 0.01);
 // Click
 clickAmt  = hslider("Click [idx:10]",      0.3,  0.0, 1.0,   0.001);
 clickTone = hslider("Click Tone [idx:11]", 2000, 500, 12000, 1);
+curve     = hslider("Curve [idx:12]",      0.5,  0.0, 1.0,   0.001);
 
 // ============================================================================
 // Voice: Transient + Body + Click. Phase-reset sines (consistent transient).
@@ -51,7 +52,11 @@ bodyEnv  = en.adsr(attack, bodyDec, 0.0, 0.1, gate);
 pitchenv = en.adsr(0.005, snapTime, 0.0, 0.1, gate);
 osc      = sinR((1 + pitchenv * snap * 8) * pitch);
 carve    = 1.0 - transAEnv * transAmt;
-bodySig  = osc * bodyEnv * carve;
+// Curve shapes the (linear) body decay. The 0..1 knob maps to an exponent
+// 8^(2c-1): 0.5 = linear, >0.5 punchy/concave, <0.5 swelled. (Mapping this way
+// keeps 0 a valid extreme - pow(env,0) would just be a constant.)
+curveExp = pow(8.0, 2.0 * curve - 1.0);
+bodySig  = osc * pow(bodyEnv, curveExp) * carve;
 
 // Click: a short high-passed noise transient (the beater tick).
 clickEnv = en.ar(0.0002, 0.004, gate);

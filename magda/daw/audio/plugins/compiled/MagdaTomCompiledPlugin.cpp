@@ -75,6 +75,11 @@ std::vector<MagdaTomCompiledPlugin::HostSlotInfo> MagdaTomCompiledPlugin::voiceS
          .minValue = 5.0f,
          .maxValue = 1000.0f,
          .defaultValue = 60.0f},
+        {.name = "Curve",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.5f},
     };
 }
 

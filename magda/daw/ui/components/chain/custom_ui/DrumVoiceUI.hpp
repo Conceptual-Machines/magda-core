@@ -35,6 +35,7 @@ class DrumVoiceUI : public juce::Component {
         std::vector<int> slots;
         int attackSlot = -1;  // host slot of this layer's Attack (-1 = instant)
         int decaySlot = -1;   // host slot of this layer's primary Decay (-1 = no graph)
+        int curveSlot = -1;   // host slot of this layer's decay Curve (-1 = linear)
         int cols = 2;         // value boxes are laid out in this many columns
     };
 
