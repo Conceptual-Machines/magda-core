@@ -11,6 +11,7 @@
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "engine/AudioEngine.hpp"
+#include "modulation/ModulationOwnerPath.hpp"
 #include "slot/DeviceSlotModulationContext.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
@@ -38,12 +39,6 @@ DeviceCustomUIManager::Callbacks makeCustomUiCallbacks(DeviceSlotInlineUiCallbac
     return customCallbacks;
 }
 
-magda::ChainNodePath getModulationOwnerPath(const magda::ChainNodePath& selectionPath) {
-    return selectionPath.getType() == magda::ChainNodeType::Track
-               ? magda::ChainNodePath::trackLevel(selectionPath.trackId)
-               : selectionPath;
-}
-
 void linkCompiledParameter(int paramIndex, float amount,
                            const DeviceSlotInlineUiCallbackContext& context,
                            bool updateAmountOnly) {
@@ -63,7 +58,7 @@ void linkCompiledParameter(int paramIndex, float amount,
         if (!selection.isValid())
             return;
 
-        const auto ownerPath = getModulationOwnerPath(selection.parentPath);
+        const auto ownerPath = modulationOwnerPathForSelection(selection.parentPath);
         if (!updateAmountOnly)
             magda::TrackManager::getInstance().setModTarget(ownerPath, selection.modIndex, target);
         magda::TrackManager::getInstance().setModLinkAmount(ownerPath, selection.modIndex, target,
@@ -87,7 +82,7 @@ void linkCompiledParameter(int paramIndex, float amount,
         if (!selection.isValid())
             return;
 
-        const auto ownerPath = getModulationOwnerPath(selection.parentPath);
+        const auto ownerPath = modulationOwnerPathForSelection(selection.parentPath);
         if (!updateAmountOnly)
             magda::TrackManager::getInstance().setMacroTarget(ownerPath, selection.macroIndex,
                                                               target);

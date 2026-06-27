@@ -34,6 +34,7 @@
 #include "layout/NodeHeaderStyles.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
+#include "modulation/ModulationOwnerPath.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DevicePresetMenu.hpp"
@@ -61,21 +62,6 @@ namespace {
 
 using node_header::applyHeaderIconStyle;
 using node_header::GainSliderWithMeterTooltip;
-
-magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& devicePath) {
-    magda::ChainNodePath rackPath;
-    rackPath.trackId = devicePath.trackId;
-    int rackStepIndex = -1;
-    for (int i = 0; i < static_cast<int>(devicePath.steps.size()); ++i) {
-        if (devicePath.steps[static_cast<size_t>(i)].type == magda::ChainStepType::Rack)
-            rackStepIndex = i;
-    }
-    if (rackStepIndex >= 0) {
-        rackPath.steps.assign(devicePath.steps.begin(),
-                              devicePath.steps.begin() + rackStepIndex + 1);
-    }
-    return rackPath;
-}
 
 }  // namespace
 
@@ -107,11 +93,10 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
             magda::SelectionManager::getInstance().selectMod(nodePath, modIndex);
         } else if (activeModSelection.isValid() &&
                    activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            auto trackId = activeModSelection.parentPath.trackId;
-            magda::TrackManager::getInstance().setModTarget(ChainNodePath::trackLevel(trackId),
-                                                            modIndex, target);
-            magda::TrackManager::getInstance().setModLinkAmount(ChainNodePath::trackLevel(trackId),
-                                                                modIndex, target, amount);
+            const auto ownerPath = modulationOwnerPathForSelection(activeModSelection.parentPath);
+            magda::TrackManager::getInstance().setModTarget(ownerPath, modIndex, target);
+            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, modIndex, target,
+                                                                amount);
         } else if (activeModSelection.isValid()) {
             magda::TrackManager::getInstance().setModTarget(activeModSelection.parentPath, modIndex,
                                                             target);
@@ -182,9 +167,9 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
                 self->updateModsPanel();
         } else if (activeModSelection.isValid() &&
                    activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            magda::TrackManager::getInstance().setModLinkAmount(
-                ChainNodePath::trackLevel(activeModSelection.parentPath.trackId), modIndex, target,
-                amount);
+            const auto ownerPath = modulationOwnerPathForSelection(activeModSelection.parentPath);
+            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, modIndex, target,
+                                                                amount);
         } else if (activeModSelection.isValid()) {
             magda::TrackManager::getInstance().setModLinkAmount(activeModSelection.parentPath,
                                                                 modIndex, target, amount);
@@ -217,11 +202,10 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
             }
         } else if (activeMacroSelection.isValid() &&
                    activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            auto trackId = activeMacroSelection.parentPath.trackId;
-            magda::TrackManager::getInstance().setMacroTarget(ChainNodePath::trackLevel(trackId),
-                                                              macroIndex, target);
-            magda::TrackManager::getInstance().setMacroLinkAmount(
-                ChainNodePath::trackLevel(trackId), macroIndex, target, amount);
+            const auto ownerPath = modulationOwnerPathForSelection(activeMacroSelection.parentPath);
+            magda::TrackManager::getInstance().setMacroTarget(ownerPath, macroIndex, target);
+            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, macroIndex, target,
+                                                                  amount);
         } else if (activeMacroSelection.isValid()) {
             magda::TrackManager::getInstance().setMacroTarget(activeMacroSelection.parentPath,
                                                               macroIndex, target);
@@ -340,9 +324,9 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
                 self->updateMacroPanel();
         } else if (activeMacroSelection.isValid() &&
                    activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            magda::TrackManager::getInstance().setMacroLinkAmount(
-                ChainNodePath::trackLevel(activeMacroSelection.parentPath.trackId), macroIndex,
-                target, amount);
+            const auto ownerPath = modulationOwnerPathForSelection(activeMacroSelection.parentPath);
+            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, macroIndex, target,
+                                                                  amount);
         } else if (activeMacroSelection.isValid()) {
             magda::TrackManager::getInstance().setMacroLinkAmount(activeMacroSelection.parentPath,
                                                                   macroIndex, target, amount);
