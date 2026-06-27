@@ -617,12 +617,26 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(amountSlider_);
 
+    // Draggable filter ADSR graph above the value boxes; a handle drag writes the
+    // plugin value and keeps the matching box in sync.
+    envGraph_.onStageChanged = [this](int paramIndex, float value) {
+        if (owner_.onParameterChanged)
+            owner_.onParameterChanged(paramIndex, value);
+        const int stage = paramIndex - kFilterBase;
+        LinkableTextSlider* boxes[] = {&attackSlider_, &decaySlider_, &sustainSlider_,
+                                       &releaseSlider_};
+        if (stage >= 0 && stage < 4)
+            boxes[stage]->setValue(value, juce::dontSendNotification);
+    };
+    addAndMakeVisible(envGraph_);
+
     // Filter ADSR
     setupLabel(atkLabel_, "ATK");
     attackSlider_.setRange(0.0, 60.0, 0.001);
     attackSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Attack, static_cast<float>(v));
     };
     addAndMakeVisible(attackSlider_);
 
@@ -631,6 +645,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     decaySlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 1, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Decay, static_cast<float>(v));
     };
     addAndMakeVisible(decaySlider_);
 
@@ -639,6 +654,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     sustainSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 2, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Sustain, static_cast<float>(v));
     };
     addAndMakeVisible(sustainSlider_);
 
@@ -647,6 +663,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     releaseSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 3, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Release, static_cast<float>(v));
     };
     addAndMakeVisible(releaseSlider_);
 }
@@ -697,8 +714,15 @@ void FourOscUI::FilterTab::resized() {
     amountSlider_.setBounds(row3.removeFromLeft(sliderW));
     area.removeFromTop(gap);
 
-    // Row 4: Filter ADSR with icon
-    auto row4 = area.removeFromTop(rowH);
+    // Filter ADSR value boxes at the bottom, the draggable graph filling the gap
+    // above them.
+    auto row4 = area.removeFromBottom(rowH);
+    if (area.getHeight() > gap) {
+        envGraph_.setBounds(area.reduced(2));
+        envGraph_.setVisible(true);
+    } else {
+        envGraph_.setVisible(false);  // not enough room (collapsed slot)
+    }
     atkLabel_.setBounds(row4.removeFromLeft(labelW));
     row4.removeFromLeft(gap);
     attackSlider_.setBounds(row4.removeFromLeft(sliderW));
@@ -730,6 +754,16 @@ void FourOscUI::FilterTab::updateFromParameters(const std::vector<magda::Paramet
     amountSlider_.setValue(params[kFilterBase + 6].currentValue, juce::dontSendNotification);
     keySlider_.setValue(params[kFilterBase + 7].currentValue, juce::dontSendNotification);
     velocitySlider_.setValue(params[kFilterBase + 8].currentValue, juce::dontSendNotification);
+
+    // Mirror the ADSR slots into the envelope graph (carries each stage's range).
+    envGraph_.setStage(AdsrGraph::Attack, kFilterBase, params[kFilterBase],
+                       params[kFilterBase].currentValue);
+    envGraph_.setStage(AdsrGraph::Decay, kFilterBase + 1, params[kFilterBase + 1],
+                       params[kFilterBase + 1].currentValue);
+    envGraph_.setStage(AdsrGraph::Sustain, kFilterBase + 2, params[kFilterBase + 2],
+                       params[kFilterBase + 2].currentValue);
+    envGraph_.setStage(AdsrGraph::Release, kFilterBase + 3, params[kFilterBase + 3],
+                       params[kFilterBase + 3].currentValue);
 }
 
 void FourOscUI::FilterTab::updatePluginState(const FourOscPluginState& state) {
@@ -746,11 +780,26 @@ void FourOscUI::FilterTab::setupLabel(juce::Label& label, const juce::String& te
 // =============================================================================
 
 FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
+    // Draggable amp ADSR graph above the value boxes. A handle drag writes the
+    // plugin value and keeps the matching box in sync, so the boxes stay
+    // authoritative for linking/automation.
+    envGraph_.onStageChanged = [this](int paramIndex, float value) {
+        if (owner_.onParameterChanged)
+            owner_.onParameterChanged(paramIndex, value);
+        const int stage = paramIndex - kAmpBase;
+        LinkableTextSlider* boxes[] = {&attackSlider_, &decaySlider_, &sustainSlider_,
+                                       &releaseSlider_};
+        if (stage >= 0 && stage < 4)
+            boxes[stage]->setValue(value, juce::dontSendNotification);
+    };
+    addAndMakeVisible(envGraph_);
+
     setupLabel(atkLabel_, "ATK");
     attackSlider_.setRange(0.001, 60.0, 0.001);
     attackSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Attack, static_cast<float>(v));
     };
     addAndMakeVisible(attackSlider_);
 
@@ -759,6 +808,7 @@ FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
     decaySlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase + 1, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Decay, static_cast<float>(v));
     };
     addAndMakeVisible(decaySlider_);
 
@@ -767,6 +817,7 @@ FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
     sustainSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase + 2, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Sustain, static_cast<float>(v));
     };
     addAndMakeVisible(sustainSlider_);
 
@@ -775,6 +826,7 @@ FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
     releaseSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase + 3, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Release, static_cast<float>(v));
     };
     addAndMakeVisible(releaseSlider_);
 
@@ -801,6 +853,11 @@ void FourOscUI::AmpTab::resized() {
     constexpr int labelW = 36;
     constexpr int sliderW = 50;
     constexpr int gap = 4;
+
+    // Envelope graph fills the space above the two control rows.
+    auto graphArea = area.removeFromTop(juce::jmax(50, area.getHeight() - 2 * rowH - 2 * gap));
+    envGraph_.setBounds(graphArea.reduced(2));
+    area.removeFromTop(gap);
 
     // Row 1: ADSR
     auto row1 = area.removeFromTop(rowH);
@@ -840,6 +897,16 @@ void FourOscUI::AmpTab::updateFromParameters(const std::vector<magda::ParameterI
     sustainSlider_.setValue(params[kAmpBase + 2].currentValue, juce::dontSendNotification);
     releaseSlider_.setValue(params[kAmpBase + 3].currentValue, juce::dontSendNotification);
     velocitySlider_.setValue(params[kAmpBase + 4].currentValue, juce::dontSendNotification);
+
+    // Mirror the ADSR slots into the envelope graph (carries each stage's range).
+    envGraph_.setStage(AdsrGraph::Attack, kAmpBase, params[kAmpBase],
+                       params[kAmpBase].currentValue);
+    envGraph_.setStage(AdsrGraph::Decay, kAmpBase + 1, params[kAmpBase + 1],
+                       params[kAmpBase + 1].currentValue);
+    envGraph_.setStage(AdsrGraph::Sustain, kAmpBase + 2, params[kAmpBase + 2],
+                       params[kAmpBase + 2].currentValue);
+    envGraph_.setStage(AdsrGraph::Release, kAmpBase + 3, params[kAmpBase + 3],
+                       params[kAmpBase + 3].currentValue);
 }
 
 void FourOscUI::AmpTab::updatePluginState(const FourOscPluginState& state) {

@@ -877,11 +877,13 @@ void SamplerUI::paint(juce::Graphics& g) {
                 envPath.lineTo(envX(tRelease), envY(s));
                 envPath.lineTo(envX(tEnd), envY(0.0f));
 
-                g.setColour(juce::Colours::white.withAlpha(0.6f));
-                g.strokePath(envPath, juce::PathStrokeType(1.5f));
+                const auto envColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).brighter(0.3f);
+                g.setColour(envColour);
+                g.strokePath(envPath, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved,
+                                                           juce::PathStrokeType::rounded));
 
                 // Breakpoint dots
-                constexpr float dotR = 3.0f;
+                constexpr float dotR = 4.5f;
                 g.fillEllipse(envX(tAttack) - dotR, envY(1.0f) - dotR, dotR * 2, dotR * 2);
                 g.fillEllipse(envX(tDecay) - dotR, envY(s) - dotR, dotR * 2, dotR * 2);
                 g.fillEllipse(envX(tEnd) - dotR, envY(0.0f) - dotR, dotR * 2, dotR * 2);

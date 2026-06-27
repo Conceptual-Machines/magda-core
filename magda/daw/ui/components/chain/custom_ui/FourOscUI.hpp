@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "core/DeviceInfo.hpp"
+#include "custom_ui/AdsrGraph.hpp"
 #include "custom_ui/LayoutStableTabbedComponent.hpp"
 #include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
@@ -143,7 +144,8 @@ class FourOscUI : public juce::Component {
         LinkableTextSlider keySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider velocitySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider amountSlider_{TextSlider::Format::Decimal};
-        // Filter envelope
+        // Filter envelope: draggable graph over the A/D/S/R value boxes.
+        AdsrGraph envGraph_;
         LinkableTextSlider attackSlider_{TextSlider::Format::Decimal};
         LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
@@ -167,6 +169,8 @@ class FourOscUI : public juce::Component {
 
       private:
         FourOscUI& owner_;
+        // Amp envelope: draggable graph over the A/D/S/R value boxes.
+        AdsrGraph envGraph_;
         LinkableTextSlider attackSlider_{TextSlider::Format::Decimal};
         LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
