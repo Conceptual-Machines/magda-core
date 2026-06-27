@@ -39,6 +39,7 @@
 #include "slot/DevicePresetMenu.hpp"
 #include "slot/DeviceSlotContentLayout.hpp"
 #include "slot/DeviceSlotContentPainter.hpp"
+#include "slot/DeviceSlotGainMeterControls.hpp"
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
@@ -59,7 +60,6 @@ namespace magda::daw::ui {
 namespace {
 
 using node_header::applyHeaderIconStyle;
-using node_header::FlatGainSliderLookAndFeel;
 using node_header::GainSliderWithMeterTooltip;
 
 magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& devicePath) {
@@ -354,91 +354,17 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
 }
 
 void DeviceSlotComponent::setupGainMeterControls() {
-    // Gain label in header (dB format, draggable)
-    gainLabel_.setRange(-60.0, 12.0, 0.0);
-    gainLabel_.setValue(device_.gainDb, juce::dontSendNotification);
-    gainLabel_.setFontSize(10.0f);
-    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
-    gainLabel_.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
-    gainLabel_.onValueChange = [this]() {
-        // Use TrackManager method to notify AudioBridge for audio sync
-        magda::TrackManager::getInstance().setDeviceGainDb(
-            nodePath_, static_cast<float>(gainLabel_.getValue()));
-        // A manual gain edit supersedes any gain-staging mark on this device.
-        magda::GainStagingManager::getInstance().clearApplied(nodePath_);
-    };
-    addAndMakeVisible(gainLabel_);
-
-    // Vertical gain slider overlaid on the meter, with a tooltip that reports
-    // both the current gain and the meter's peak-hold dB.
-    gainSlider_ = std::make_unique<GainSliderWithMeterTooltip>(
-        juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
-    gainSlider_->setRange(-60.0, 12.0, 0.1);
-    gainSlider_->setValue(device_.gainDb, juce::dontSendNotification);
-    gainSlider_->setTooltip("Device Gain (dB)");
-    // Overlay slider on top of the meter — keep track/background transparent so
-    // the meter shows through; only the thumb is drawn.
-    gainSlider_->setLookAndFeel(&FlatGainSliderLookAndFeel::getInstance());
-    gainSlider_->setColour(juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
-    gainSlider_->setColour(juce::Slider::trackColourId, juce::Colours::transparentBlack);
-    // Without this, click 1 of a double-click drags the thumb to the cursor
-    // before mouseDoubleClick fires its reset, so the visible jump is "thumb
-    // to mouse → thumb to 0", not just "thumb to 0".
-    gainSlider_->setSliderSnapsToMousePosition(false);
-    gainSlider_->setDoubleClickReturnValue(true, 0.0);
-    gainSlider_->onValueChange = [this]() {
-        magda::TrackManager::getInstance().setDeviceGainDb(
-            nodePath_, static_cast<float>(gainSlider_->getValue()));
-        // A manual gain edit supersedes any gain-staging mark on this device.
-        magda::GainStagingManager::getInstance().clearApplied(nodePath_);
-    };
-    addAndMakeVisible(*gainSlider_);
-
-    // Mix knob sits at the top of the meter strip. Drives an equal-power
-    // crossfade between TE's DryGain/WetGain wrapper params. Hidden when the
-    // device has no such pair (native MAGDA / Faust devices).
-    mixKnob_ = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
-                                              juce::Slider::NoTextBox);
-    mixKnob_->setLookAndFeel(&node_header::MixKnobLookAndFeel::getInstance());
-    mixKnob_->setRange(0.0, 1.0, 0.001);
-    mixKnob_->setValue(1.0, juce::dontSendNotification);  // default to fully wet
-    mixKnob_->setDoubleClickReturnValue(true, 1.0);
-    mixKnob_->setSliderSnapsToMousePosition(false);
-    mixKnob_->setTooltip("Wet / Dry Mix (equal-power)");
-    mixKnob_->onValueChange = [this]() {
-        const double pos = juce::jlimit(0.0, 1.0, mixKnob_->getValue());
-        const double dry = std::cos(pos * juce::MathConstants<double>::halfPi);
-        const double wet = std::sin(pos * juce::MathConstants<double>::halfPi);
-        for (const auto& p : device_.wrapperParameters) {
-            if (p.wrapperRole == magda::WrapperRole::DryGain) {
-                magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, p.paramIndex,
-                                                                           static_cast<float>(dry));
-            } else if (p.wrapperRole == magda::WrapperRole::WetGain) {
-                magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, p.paramIndex,
-                                                                           static_cast<float>(wet));
-            }
-        }
-    };
-    addChildComponent(*mixKnob_);
+    setupDeviceSlotGainMeterControls(*this, gainLabel_, levelMeter_, gainSlider_, mixKnob_, device_,
+                                     [this]() { return nodePath_; });
 }
 
 void DeviceSlotComponent::syncGainControlsFromDevice() {
-    gainLabel_.setValue(device_.gainDb, juce::dontSendNotification);
-    if (gainSlider_ != nullptr)
-        gainSlider_->setValue(device_.gainDb, juce::dontSendNotification);
+    syncDeviceSlotGainControlsFromDevice(gainLabel_, gainSlider_.get(), device_);
 }
 
 void DeviceSlotComponent::refreshMixKnobFromDevice(bool relayoutOnVisibilityChange) {
-    if (mixKnob_ == nullptr)
-        return;
-
-    const bool show = hasWrapperMixPair();
-    const bool wasVisible = mixKnob_->isVisible();
-    mixKnob_->setVisible(show);
-    if (show)
-        syncMixKnobFromDevice();
-    if (relayoutOnVisibilityChange && show != wasVisible)
-        resized();  // setVisible alone doesn't re-run layoutMeterStrip
+    refreshDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_, relayoutOnVisibilityChange,
+                                       [this]() { resized(); });
 }
 
 DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : device_(device) {
@@ -2531,36 +2457,15 @@ void DeviceSlotComponent::updateScButtonState() {
 }
 
 bool DeviceSlotComponent::hasWrapperMixPair() const {
-    bool dry = false, wet = false;
-    for (const auto& p : device_.wrapperParameters) {
-        if (p.wrapperRole == magda::WrapperRole::DryGain)
-            dry = true;
-        else if (p.wrapperRole == magda::WrapperRole::WetGain)
-            wet = true;
-    }
-    return dry && wet;
+    return magda::daw::ui::hasWrapperMixPair(device_);
 }
 
 double DeviceSlotComponent::currentMixPosition() const {
-    // Inverse of the cos/sin pair we write — derive crossfade position from
-    // current dry+wet wrapper values so the knob reflects external edits
-    // (preset load, automation, plugin native UI).
-    float dry = 1.0f, wet = 0.0f;
-    for (const auto& p : device_.wrapperParameters) {
-        if (p.wrapperRole == magda::WrapperRole::DryGain)
-            dry = p.currentValue;
-        else if (p.wrapperRole == magda::WrapperRole::WetGain)
-            wet = p.currentValue;
-    }
-    if (dry <= 0.0f && wet <= 0.0f)
-        return 0.0;
-    const double angle = std::atan2(static_cast<double>(wet), static_cast<double>(dry));
-    return juce::jlimit(0.0, 1.0, angle / juce::MathConstants<double>::halfPi);
+    return magda::daw::ui::currentMixPosition(device_);
 }
 
 void DeviceSlotComponent::syncMixKnobFromDevice() {
-    if (mixKnob_ != nullptr)
-        mixKnob_->setValue(currentMixPosition(), juce::dontSendNotification);
+    syncDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_);
 }
 
 }  // namespace magda::daw::ui
