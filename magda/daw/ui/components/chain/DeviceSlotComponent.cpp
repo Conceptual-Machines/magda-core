@@ -12,7 +12,6 @@
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
-#include "core/Config.hpp"
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
@@ -51,6 +50,7 @@
 #include "slot/DeviceSlotMultiOutControls.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
 #include "slot/DeviceSlotParameterPaging.hpp"
+#include "slot/DeviceSlotSelectionHandling.hpp"
 #include "slot/DeviceSlotSidechainControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
@@ -1427,22 +1427,6 @@ void DeviceSlotComponent::goToNextPage() {
                                      .repaint = [this]() { repaint(); }});
 }
 
-void DeviceSlotComponent::openMacroPanelForSelectionIfNeeded() {
-    if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
-        !macroButton_ || !nodePath_.isValid() || !exposesDeviceModulation()) {
-        return;
-    }
-
-    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
-    if (selectedPath != nodePath_) {
-        return;
-    }
-
-    macroButton_->setToggleState(true, juce::dontSendNotification);
-    macroButton_->setActive(true);
-    setParamPanelVisible(true);
-}
-
 // ============================================================================
 // SelectionManagerListener
 // ============================================================================
@@ -1454,62 +1438,35 @@ void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& 
         return;
     }
 
-    openMacroPanelForSelectionIfNeeded();
+    openDeviceSlotMacroPanelForSelectionIfNeeded(
+        nodePath_, paramPanelVisible_, exposesDeviceModulation(), macroButton_.get(),
+        {.setParamPanelVisible = [this](bool visible) { setParamPanelVisible(visible); }});
 }
 
 void DeviceSlotComponent::selectionTypeChanged(magda::SelectionType newType) {
     // Call base class first (handles node deselection)
     NodeComponent::selectionTypeChanged(newType);
 
-    // Clear param slot selection visual when switching away from Param selection
-    if (newType != magda::SelectionType::Param) {
-        paramGrid_->setAllSlotsSelected(false);
-    }
-
-    // Update param slots' contextual mod filter
-    updateParamModulation();
+    applyDeviceSlotSelectionTypeChange(
+        newType, *paramGrid_, {.updateParamModulation = [this]() { updateParamModulation(); }});
 }
 
 void DeviceSlotComponent::modSelectionChanged(const magda::ModSelection& selection) {
-    // Update param slots to show contextual indicators
-    updateParamModulation();
-
-    // Update mod knob selection highlight
-    if (modsPanel_) {
-        if (selection.isValid() && selection.parentPath == nodePath_) {
-            modsPanel_->setSelectedModIndex(selection.modIndex);
-        } else {
-            modsPanel_->setSelectedModIndex(-1);
-        }
-    }
+    applyDeviceSlotModSelectionChange(
+        nodePath_, selection, modsPanel_.get(),
+        {.updateParamModulation = [this]() { updateParamModulation(); }});
 }
 
 void DeviceSlotComponent::macroSelectionChanged(const magda::MacroSelection& selection) {
-    // Update param slots to show contextual indicators
-    updateParamModulation();
-
-    // Update macro knob selection highlight
-    if (macroPanel_) {
-        if (selection.isValid() && selection.parentPath == nodePath_) {
-            macroPanel_->setSelectedMacroIndex(selection.macroIndex);
-        } else {
-            macroPanel_->setSelectedMacroIndex(-1);
-        }
-    }
+    applyDeviceSlotMacroSelectionChange(
+        nodePath_, selection, macroPanel_.get(),
+        {.updateParamModulation = [this]() { updateParamModulation(); }});
 }
 
 void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& selection) {
-    // Refresh mod and macro data from TrackManager BEFORE setting selected param
-    // This ensures knobs have fresh link data when updateAmountDisplay() is called
-    updateModsPanel();
-    updateMacroPanel();
-
-    // Update param slot selection states
-    for (int i = 0; i < paramGrid_->getSlotCount(); ++i) {
-        bool isSelected =
-            selection.isValid() && selection.devicePath == nodePath_ && selection.paramIndex == i;
-        paramGrid_->setSlotSelected(i, isSelected);
-    }
+    applyDeviceSlotParamSelectionChange(nodePath_, selection, *paramGrid_,
+                                        {.updateModsPanel = [this]() { updateModsPanel(); },
+                                         .updateMacroPanel = [this]() { updateMacroPanel(); }});
 }
 
 // Controller-indicator refresh is now done by NodeComponent::
