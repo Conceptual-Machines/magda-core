@@ -227,7 +227,7 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                    .scale = magda::ParameterScale::FaderDB,
                                    .minValue = -60.0f,
                                    .maxValue = 6.0f,
-                                   .defaultValue = (osc == 0) ? 0.0f : -60.0f};
+                                   .defaultValue = (osc == 0) ? -12.0f : -60.0f};
         hostSlotInfo_[base + 2] = {.name = prefix + "Coarse",
                                    .unit =
                                        magda::technicalText(magda::TechnicalTextToken::Semitones),
