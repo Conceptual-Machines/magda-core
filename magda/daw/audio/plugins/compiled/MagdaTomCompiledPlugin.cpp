@@ -52,12 +52,29 @@ std::vector<MagdaTomCompiledPlugin::HostSlotInfo> MagdaTomCompiledPlugin::voiceS
          .minValue = 0.0f,
          .maxValue = 100.0f,
          .defaultValue = 0.0f},
-        {.name = "Decay",
+        {.name = "Body",
          .unit = "ms",
          .scale = ParameterScale::Linear,
          .minValue = 5.0f,
          .maxValue = 2000.0f,
          .defaultValue = 400.0f},
+        // Noise
+        {.name = "Noise",
+         .scale = ParameterScale::Linear,
+         .minValue = 0.0f,
+         .maxValue = 1.0f,
+         .defaultValue = 0.3f},
+        {.name = "Tone",
+         .scale = ParameterScale::Linear,
+         .minValue = 200.0f,
+         .maxValue = 12000.0f,
+         .defaultValue = 1500.0f},
+        {.name = "Noise Decay",
+         .unit = "ms",
+         .scale = ParameterScale::Linear,
+         .minValue = 5.0f,
+         .maxValue = 1000.0f,
+         .defaultValue = 60.0f},
     };
 }
 
@@ -66,9 +83,10 @@ const CompiledPluginSpec& getMagdaTomSpec() {
         .pluginId = MagdaTomCompiledPlugin::xmlTypeName,
         .displayName = "Tom",
         .browserCategory = "Drums",
-        .description = "Old-school drum-machine tom: a tuned sine with a downward pitch sweep "
-                       "under a percussive envelope. Knob-tuned, MIDI-gated - drop it on a "
-                       "DrumGrid pad or play it standalone.",
+        .description = "Synthetic tom in two layers: a tuned sine Body with a downward pitch sweep "
+                       "and a high-passed Noise stick/skin attack, each with its own level and "
+                       "decay. Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or play it "
+                       "standalone.",
         .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
             return new MagdaTomCompiledPlugin(info);
         },

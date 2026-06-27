@@ -1,5 +1,5 @@
 declare name "MagdaTom";
-declare description "Old-school drum-machine tom: a tuned sine with a downward pitch sweep and a percussive amp envelope. Knob-tuned; the played MIDI note only gates the voice. Tune/Bend/Attack/Decay are host macros.";
+declare description "Synthetic tom in two layers: a tuned phase-reset sine Body with a downward pitch sweep, and a high-passed Noise stick/skin attack with its own level and decay. Knob-tuned; the played MIDI note only gates the voice.";
 
 import("stdfaust.lib");
 
@@ -11,25 +11,33 @@ gain = hslider("gain", 1, 0, 1, 0.01);
 gate = button("gate");
 
 // ============================================================================
-// Host macro controls ([idx:N])
+// Host macro controls ([idx:N]) - grouped Body / Noise.
+// Time controls are in milliseconds (* 0.001 -> the seconds en.adsr/en.ar want).
 // ============================================================================
-// Time controls are in milliseconds (* 0.001 converts to the seconds en.adsr
-// expects, same convention as magda_fm.dsp).
-tune   = hslider("Tune [idx:0]",   120, 50,  400,  0.1);
-bend   = hslider("Bend [idx:1]",   0.4, 0.0, 1.0,  0.001);
-attack = hslider("Attack [idx:2]", 0,   0,   100,  0.1) * 0.001;
-decay  = hslider("Decay [idx:3]",  400, 5,   2000, 1) * 0.001;
+// Body
+tune     = hslider("Tune [idx:0]",   120, 50,  400,  0.1);
+bend     = hslider("Bend [idx:1]",   0.4, 0.0, 1.0,  0.001);
+attack   = hslider("Attack [idx:2]", 0,   0,   100,  0.1) * 0.001;
+bodyDec  = hslider("Body [idx:3]",   400, 5,   2000, 1) * 0.001;
+// Noise
+noiseLvl = hslider("Noise [idx:4]",       0.3,  0.0, 1.0,   0.001);
+tone     = hslider("Tone [idx:5]",        1500, 200, 12000, 1);
+noiseDec = hslider("Noise Decay [idx:6]", 60,   5,   1000,  1) * 0.001;
 
 // ============================================================================
-// Voice: pitch-swept sine (Bend sets the sweep depth) under a percussive AR.
+// Voice: pitch-swept sine Body + high-passed Noise attack.
 // ============================================================================
-// Phase-reset sine so every hit starts at phase 0 for a consistent transient
-// (one-sample reset on the gate rising edge, same idiom as magda_polysynth.dsp).
 gateRise = gate > gate';
 sinR(f)  = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, gateRise));
-env      = en.adsr(attack, decay, 0.0, 0.1, gate);
-pitchenv = en.adsr(0.002, decay * 0.4, 0.0, 0.1, gate);
-osc      = sinR(tune * (1 + pitchenv * bend * 2));
 
-voice   = (osc * env) * gain;
+// Body: phase-reset sine with a downward pitch sweep (Bend sets the depth) under
+// a percussive AR.
+bodyEnv  = en.adsr(attack, bodyDec, 0.0, 0.1, gate);
+pitchenv = en.adsr(0.002, bodyDec * 0.4, 0.0, 0.1, gate);
+body     = sinR(tune * (1 + pitchenv * bend * 2)) * bodyEnv;
+
+// Noise: high-passed stick/skin attack with its own decay.
+noise = (no.noise : fi.highpass(2, tone)) * en.ar(0.001, noiseDec, gate) * noiseLvl;
+
+voice   = ma.tanh(body + noise) * gain;
 process = voice <: _, _;
