@@ -18,10 +18,11 @@ namespace magda::daw::ui {
 struct PluginBrowserInfo {
     juce::String name;
     juce::String manufacturer;
-    juce::String category;     // Instrument, Effect, etc.
-    juce::String format;       // VST3, AU, etc.
-    juce::String subcategory;  // EQ, Compressor, Synth, etc.
-    juce::String alias;        // @alias for DSL/AI (e.g. "serum_2", "pro_q3")
+    juce::String category;          // Instrument, Effect, etc.
+    juce::String format;            // VST3, AU, etc.
+    juce::String subcategory;       // EQ, Compressor, Synth, etc.
+    juce::String categoryOverride;  // User browser category override, e.g. "MIDI FX"
+    juce::String alias;             // @alias for DSL/AI (e.g. "serum_2", "pro_q3")
     bool isFavorite = false;
     bool isExternal = false;  // true for VST3/AU, false for internal
 

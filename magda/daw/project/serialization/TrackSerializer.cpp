@@ -399,6 +399,8 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("format", static_cast<int>(device.format));
     obj->setProperty("isInstrument", device.isInstrument);
     obj->setProperty("deviceType", static_cast<int>(device.deviceType));
+    if (device.browserCategoryOverride.isNotEmpty())
+        obj->setProperty("browserCategoryOverride", device.browserCategoryOverride);
     obj->setProperty("uniqueId", device.uniqueId);
     obj->setProperty("fileOrIdentifier", device.fileOrIdentifier);
     obj->setProperty("bypassed", device.bypassed);
@@ -534,6 +536,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
             static_cast<DeviceType>(static_cast<int>(obj->getProperty("deviceType")));
     else
         outDevice.deviceType = outDevice.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+    outDevice.browserCategoryOverride = obj->getProperty("browserCategoryOverride").toString();
     outDevice.uniqueId = obj->getProperty("uniqueId").toString();
     outDevice.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
     outDevice.bypassed = obj->getProperty("bypassed");

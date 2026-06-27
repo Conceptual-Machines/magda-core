@@ -38,11 +38,20 @@ class PluginPreferences {
     /** Toggle the drum-grid preference. Writes immediately to disk. */
     void setPrefersDrumGrid(const juce::String& pluginIdentifier, bool prefer);
 
-    /** True iff new instances of this browser plugin should be created as MIDI
-     *  FX even when the plugin scan reports them as instruments. */
+    /** Optional browser/category override. Values are UX labels such as
+     *  "Instrument", "MIDI FX", "Audio FX", or "Analyzer". The override wins
+     *  for browser grouping/display only and does not change technical
+     *  capabilities. */
+    juce::String browserCategoryOverride(const juce::String& pluginIdentifier) const;
+
+    /** Set/clear the browser/category override. Writes immediately to disk. */
+    void setBrowserCategoryOverride(const juce::String& pluginIdentifier,
+                                    const juce::String& categoryOverride);
+
+    /** Compatibility helper for the legacy MIDI FX category override. */
     bool treatsAsMidiFx(const juce::String& pluginIdentifier) const;
 
-    /** Toggle the manual MIDI FX role override. Writes immediately to disk. */
+    /** Compatibility helper for the legacy MIDI FX category override. */
     void setTreatsAsMidiFx(const juce::String& pluginIdentifier, bool treatAsMidiFx);
 
     /** Canonical key for user-global plugin preferences from the MAGDA model.
@@ -73,7 +82,7 @@ class PluginPreferences {
 
     mutable std::mutex mutex_;
     std::unordered_set<juce::String> drumGridPlugins_;
-    std::unordered_set<juce::String> midiFxPlugins_;
+    std::unordered_map<juce::String, juce::String> categoryOverrides_;
     std::unordered_map<juce::String, std::vector<magda::KitRow>> defaultKits_;
     juce::ListenerList<Listener> listeners_;
 
