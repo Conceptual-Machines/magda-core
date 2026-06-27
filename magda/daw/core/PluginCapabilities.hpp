@@ -41,7 +41,8 @@ struct DeviceMidiCapabilities {
     bool hasAudioOutput = false;
 
     // Current implementation support, not a statement that the plugin itself
-    // could never support it. Today this is backed by InstrumentRackManager.
+    // could never support it. This is backed by the shared chain MIDI routing
+    // model and any runtime wrapper/rack graph that consumes it.
     bool supportsMidiInputThruToggle = false;
 
     // Current routing support for feeding MIDI from another track/device into
