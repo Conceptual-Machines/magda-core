@@ -432,7 +432,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
                                                              BinaryData::compare_svgSize);
         midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        midiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        midiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
+        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
         midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
         midiThruButton_->setToggleable(true);
         midiThruButton_->onClick = [this]() {
@@ -462,7 +463,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         instMidiThruButton_ = std::make_unique<magda::SvgButton>(
             "MidiInThru", BinaryData::compare_svg, BinaryData::compare_svgSize);
         instMidiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        instMidiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        instMidiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
+        instMidiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
         instMidiThruButton_->setTooltip("MIDI in thru: pass input to a MIDI FX after this device");
         instMidiThruButton_->setToggleable(true);
         instMidiThruButton_->setActive(device.midiInThru);
