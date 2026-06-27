@@ -49,13 +49,17 @@ std::vector<DrumVoiceUI::Section> DrumVoiceUI::sectionsFor(const juce::String& p
     if (pluginId.equalsIgnoreCase("magda_kick"))
         return {
             {.title = "Transient", .slots = {0, 1, 2, 3}, .decaySlot = 3},
-            {.title = "Body", .slots = {4, 5, 6, 7, 8, 9}, .attackSlot = 7, .decaySlot = 8},
+            {.title = "Body",
+             .slots = {4, 5, 6, 7, 8, 9},
+             .attackSlot = 7,
+             .decaySlot = 8,
+             .cols = 3},
             {.title = "Click", .slots = {10, 11}},
         };
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
             {.title = "Transient", .slots = {0, 1, 2, 3, 4}, .decaySlot = 3},
-            {.title = "Body", .slots = {5, 6, 7, 8, 9}, .attackSlot = 8, .decaySlot = 9},
+            {.title = "Body", .slots = {5, 6, 7, 8, 9}, .attackSlot = 8, .decaySlot = 9, .cols = 3},
             {.title = "Rattle", .slots = {10, 11, 12, 13, 14, 15}, .decaySlot = 14},
         };
     if (pluginId.equalsIgnoreCase("magda_clap"))
@@ -96,6 +100,7 @@ void DrumVoiceUI::ensureControls(int count) {
 
 void DrumVoiceUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     ensureControls(static_cast<int>(params.size()));
+    slotMax_.resize(controls_.size(), 1.0f);
 
     for (const auto& info : params) {
         if (info.paramIndex < 0 || info.paramIndex >= static_cast<int>(controls_.size()))
@@ -104,6 +109,7 @@ void DrumVoiceUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         c.label->setText(info.name, juce::dontSendNotification);
         c.slider->setParameterInfo(info);
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
+        slotMax_[static_cast<size_t>(info.paramIndex)] = info.maxValue;
     }
     resized();
     repaint();  // envelope graphs reflect the new values
@@ -118,24 +124,30 @@ std::vector<LinkableTextSlider*> DrumVoiceUI::getLinkableSliders() {
 }
 
 int DrumVoiceUI::preferredContentWidth() const {
-    int knobs = static_cast<int>(controls_.size());
-    if (!sections_.empty()) {
-        knobs = 0;
-        for (const auto& s : sections_)
-            knobs += static_cast<int>(s.slots.size());
-    }
-    return juce::jmax(1, knobs) * kCellW + 2 * kCellPad;
+    if (sections_.empty())
+        return juce::jmax(1, static_cast<int>(controls_.size())) * kCellW + 2 * kCellPad;
+    int cols = 0;
+    for (const auto& s : sections_)
+        cols += s.cols;  // each section is `cols` columns wide
+    return juce::jmax(1, cols) * kCellW + 2 * kCellPad;
 }
 
-void DrumVoiceUI::layoutRow(juce::Rectangle<int> area, const std::vector<int>& slots) {
+void DrumVoiceUI::layoutGrid(juce::Rectangle<int> area, const std::vector<int>& slots, int cols,
+                             int rowH) {
     if (slots.empty())
         return;
-    const int cellW = area.getWidth() / static_cast<int>(slots.size());
-    for (int idx : slots) {
+    cols = juce::jmax(1, cols);
+    const int cellW = area.getWidth() / cols;
+    for (int i = 0; i < static_cast<int>(slots.size()); ++i) {
+        const int idx = slots[static_cast<size_t>(i)];
         if (idx < 0 || idx >= static_cast<int>(controls_.size()))
             continue;
+        const int col = i % cols;
+        const int row = i / cols;
+        auto cell =
+            juce::Rectangle<int>(area.getX() + col * cellW, area.getY() + row * rowH, cellW, rowH)
+                .reduced(2, 1);
         auto& c = controls_[static_cast<size_t>(idx)];
-        auto cell = area.removeFromLeft(cellW).reduced(2, 0);
         c.label->setBounds(cell.removeFromTop(kCellLabelH));
         c.slider->setBounds(cell.removeFromTop(juce::jmin(22, cell.getHeight())));
     }
@@ -151,35 +163,31 @@ void DrumVoiceUI::paint(juce::Graphics& g) {
     auto titleArea = getLocalBounds().removeFromTop(kSectionTitleH).reduced(kCellPad, 0);
     g.drawText(title_, titleArea, juce::Justification::centredLeft, false);
 
-    // Time axis shared across sections so layer lengths compare visually
-    // (attack + decay, in ms).
-    float axisMaxMs = 1.0f;
-    for (const auto& s : sections_) {
-        if (s.decaySlot < 0 || s.decaySlot >= static_cast<int>(controls_.size()))
-            continue;
-        float t =
-            static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
-        if (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
-            t +=
-                static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue());
-        axisMaxMs = juce::jmax(axisMaxMs, t);
-    }
-
     // Section titles + a divider down the left edge of each section after the
     // first, plus the per-section envelope graph. sectionTitleAreas_ /
-    // sectionEnvAreas_ are filled by resized(), 1:1 with sections_.
+    // sectionEnvAreas_ are filled by resized(), 1:1 with sections_. Each
+    // envelope is scaled to its OWN decay range (slot max), so changing one
+    // section's decay never rescales another's graph.
     for (size_t i = 0; i < sectionTitleAreas_.size() && i < sections_.size(); ++i) {
+        const auto& s = sections_[i];
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText(sections_[i].title, sectionTitleAreas_[i].reduced(2, 0),
-                   juce::Justification::centredLeft, false);
+        g.drawText(s.title, sectionTitleAreas_[i].reduced(2, 0), juce::Justification::centredLeft,
+                   false);
         if (i > 0) {
             const int x = sectionTitleAreas_[i].getX() - kCellPad / 2;
             g.drawVerticalLine(x, static_cast<float>(sectionTitleAreas_[i].getY()),
                                static_cast<float>(getHeight() - kCellPad));
         }
+
+        float axisMaxMs = 1.0f;
+        if (s.decaySlot >= 0 && s.decaySlot < static_cast<int>(slotMax_.size())) {
+            axisMaxMs = slotMax_[static_cast<size_t>(s.decaySlot)];
+            if (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(slotMax_.size()))
+                axisMaxMs += slotMax_[static_cast<size_t>(s.attackSlot)];
+        }
         if (i < sectionEnvAreas_.size())
-            drawEnvelope(g, sectionEnvAreas_[i], sections_[i], axisMaxMs);
+            drawEnvelope(g, sectionEnvAreas_[i], s, axisMaxMs);
     }
 }
 
@@ -195,27 +203,34 @@ void DrumVoiceUI::resized() {
         std::vector<int> all(controls_.size());
         for (int i = 0; i < static_cast<int>(controls_.size()); ++i)
             all[static_cast<size_t>(i)] = i;
-        layoutRow(area, all);
+        layoutGrid(area, all, static_cast<int>(all.size()), juce::jmin(36, area.getHeight()));
         return;
     }
 
-    int totalKnobs = 0;
-    for (const auto& s : sections_)
-        totalKnobs += static_cast<int>(s.slots.size());
-    if (totalKnobs == 0)
+    int totalCols = 0;
+    int maxRows = 1;
+    for (const auto& s : sections_) {
+        totalCols += s.cols;
+        maxRows = juce::jmax(maxRows, (static_cast<int>(s.slots.size()) + s.cols - 1) / s.cols);
+    }
+    if (totalCols == 0)
         return;
+
+    // One uniform row height across all sections so the grids align.
+    const int knobAreaH = juce::jmax(1, area.getHeight() - kSectionTitleH - kEnvH);
+    const int rowH = juce::jmax(20, knobAreaH / maxRows);
 
     int x = area.getX();
     for (size_t i = 0; i < sections_.size(); ++i) {
         const auto& s = sections_[i];
         const bool last = (i + 1 == sections_.size());
-        const int w = last ? (area.getRight() - x)
-                           : juce::roundToInt(area.getWidth() *
-                                              (static_cast<double>(s.slots.size()) / totalKnobs));
+        const int w =
+            last ? (area.getRight() - x)
+                 : juce::roundToInt(area.getWidth() * (static_cast<double>(s.cols) / totalCols));
         juce::Rectangle<int> sa(x, area.getY(), w, area.getHeight());
         sectionTitleAreas_.push_back(sa.removeFromTop(kSectionTitleH));
         sectionEnvAreas_.push_back(sa.removeFromTop(kEnvH).reduced(kCellPad, 2));
-        layoutRow(sa.reduced(kCellPad, 0), s.slots);
+        layoutGrid(sa.reduced(kCellPad, 0), s.slots, s.cols, rowH);
         x += w;
     }
 }

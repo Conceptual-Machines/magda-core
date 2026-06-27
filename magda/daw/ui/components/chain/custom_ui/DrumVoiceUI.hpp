@@ -35,6 +35,7 @@ class DrumVoiceUI : public juce::Component {
         std::vector<int> slots;
         int attackSlot = -1;  // host slot of this layer's Attack (-1 = instant)
         int decaySlot = -1;   // host slot of this layer's primary Decay (-1 = no graph)
+        int cols = 2;         // value boxes are laid out in this many columns
     };
 
     /// True if `pluginId` is one of the drum-machine voice devices.
@@ -68,8 +69,9 @@ class DrumVoiceUI : public juce::Component {
 
     // Build one labelled box per host slot (idempotent: only grows to `count`).
     void ensureControls(int count);
-    // Lay the given slots out as a label-on-top row filling `area`.
-    void layoutRow(juce::Rectangle<int> area, const std::vector<int>& slots);
+    // Lay the given slots out as a label-on-top grid of `cols` columns, each row
+    // `rowH` tall, filling `area`.
+    void layoutGrid(juce::Rectangle<int> area, const std::vector<int>& slots, int cols, int rowH);
 
     // Draw a layer's attack->decay envelope (linear segments, matching the dsp)
     // into `area`, with time scaled by `axisMaxMs` so layer lengths compare.
@@ -79,6 +81,7 @@ class DrumVoiceUI : public juce::Component {
     juce::String title_;
     std::vector<Section> sections_;
     std::vector<Control> controls_;
+    std::vector<float> slotMax_;  // real-unit max per slot (for per-section env axis)
     // Title + envelope strips per section, cached in resized() for paint().
     std::vector<juce::Rectangle<int>> sectionTitleAreas_;
     std::vector<juce::Rectangle<int>> sectionEnvAreas_;
