@@ -516,11 +516,14 @@ void PolySynthUI::layoutOscSection() {
         col.removeFromTop(2);
         waveSelectors_[static_cast<size_t>(osc)].setBounds(col.removeFromTop(kWaveH));
         col.removeFromTop(2);
-        // Reset toggle pinned to the bottom, value boxes fill the rest.
+        // Reset (retrigger) toggle pinned to the bottom, left-aligned with the
+        // column's value boxes; value boxes fill the rest.
         auto resetRow = col.removeFromBottom(kResetH);
-        if (auto& rst = oscResetButtons_[static_cast<size_t>(osc)])
-            rst->setBounds(resetRow.withSizeKeepingCentre(juce::jmin(30, resetRow.getWidth()),
-                                                          juce::jmin(14, resetRow.getHeight())));
+        if (auto& rst = oscResetButtons_[static_cast<size_t>(osc)]) {
+            const int rw = juce::jmin(24, resetRow.getWidth());
+            const int rh = juce::jmin(12, resetRow.getHeight());
+            rst->setBounds(resetRow.getX(), resetRow.getCentreY() - rh / 2, rw, rh);
+        }
         const int boxH = col.getHeight() / 3;
         for (int p = 1; p < kOscSlotCount; ++p) {  // Level / Coarse / Fine
             auto cell = col.removeFromTop(boxH).reduced(0, 1);
@@ -532,9 +535,8 @@ void PolySynthUI::layoutOscSection() {
 
     // Performance controls in the spare space below the oscillator columns.
     a.removeFromTop(kSectionGap * 2);
-    // Voice Mode segmented buttons.
+    // Voice Mode segmented buttons, spanning the full OSC-section width.
     auto modeRow = a.removeFromTop(kCellLabelH + 18);
-    modeRow = modeRow.removeFromLeft(juce::jmin(260, modeRow.getWidth()));
     const int segW = modeRow.getWidth() / kNumVoiceModes;
     for (int v = 0; v < kNumVoiceModes; ++v) {
         if (!voiceModeButtons_[static_cast<size_t>(v)])
