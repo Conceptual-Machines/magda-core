@@ -13,6 +13,7 @@
 #include "Config.hpp"
 #include "InternalDeviceKind.hpp"
 #include "ModulatorEngine.hpp"
+#include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
@@ -1801,6 +1802,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
 
     DeviceInfo newDevice = device;
     newDevice.id = nextPostFxDeviceId_++;
+    applyCachedCapabilitiesToDevice(newDevice);
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
 
@@ -1865,6 +1867,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
 
     DeviceInfo newDevice = device;
     newDevice.id = nextMixerAnalysisDeviceId_++;
+    applyCachedCapabilitiesToDevice(newDevice);
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
@@ -2804,6 +2807,7 @@ void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const Devi
 DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     DeviceInfo newDevice = device;
     newDevice.id = nextFxDeviceId_++;
+    applyCachedCapabilitiesToDevice(newDevice);
     stampDefaultKitIfMissing(newDevice);
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;

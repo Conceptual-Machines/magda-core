@@ -76,5 +76,6 @@ DeviceMidiCapabilities midiCapabilitiesForDevice(const DeviceInfo& device);
 bool supportsMidiInputThruToggle(const DeviceInfo& device);
 bool supportsExternalMidiInputRouting(const DeviceInfo& device);
 bool supportsSidechainRoutingMenu(const DeviceInfo& device);
+void applyCachedCapabilitiesToDevice(DeviceInfo& device);
 
 }  // namespace magda

@@ -237,4 +237,15 @@ bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
     return device.canSidechain || supportsExternalMidiInputRouting(device);
 }
 
+void applyCachedCapabilitiesToDevice(DeviceInfo& device) {
+    const auto identifier = PluginCapabilityCache::identifierForDevice(device);
+    auto snapshot = PluginCapabilityCache::getInstance().find(identifier);
+    if (!snapshot)
+        return;
+
+    device.producesMidi = snapshot->hasMidiOutput;
+    if (!device.isInstrument && snapshot->hasMidiInput)
+        device.canReceiveMidi = true;
+}
+
 }  // namespace magda
