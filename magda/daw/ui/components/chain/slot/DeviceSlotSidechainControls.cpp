@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/PluginCapabilities.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
@@ -25,11 +26,11 @@ void showDeviceSlotSidechainMenu(const magda::DeviceInfo& device,
 
     magda::SidechainConfig currentSidechain;
     bool canAudio = device.canSidechain;
-    bool canMidi = device.canReceiveMidi;
+    bool canMidi = supportsMidiInputRouting(device);
     if (auto* currentDevice = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath)) {
         currentSidechain = currentDevice->sidechain;
         canAudio = currentDevice->canSidechain;
-        canMidi = currentDevice->canReceiveMidi;
+        canMidi = supportsMidiInputRouting(*currentDevice);
     }
 
     const bool isNone = !currentSidechain.isActive();

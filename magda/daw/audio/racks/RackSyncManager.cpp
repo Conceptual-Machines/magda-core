@@ -94,8 +94,9 @@ bool addRackConnection(te::RackType& rackType, te::EditItemID src, int sourcePin
 struct ChainPluginNode {
     te::EditItemID id;
     bool isInstrument = false;
-    bool transformsMidi = false;
+    bool outputsPluginMidi = false;
     bool receivesChainMidi = true;
+    bool passesRawMidiInput = false;
 };
 
 struct AudioBusSource {
@@ -850,16 +851,16 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
                 auto pluginIt = synced.innerPlugins.find(node.deviceId);
                 if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
                     chainPluginNodes.push_back({pluginIt->second->itemID, node.injectsAudio(),
-                                                node.replacesChainMidi(),
-                                                node.receivesChainMidi()});
+                                                node.outputsPluginMidi(), node.receivesChainMidi(),
+                                                node.passesRawMidiInput()});
                 }
             } else if (node.kind == routing::ChainRoutingNodeKind::Rack) {
                 const auto nestedKey = pathKey(chainPath.withRack(node.rackId));
                 auto rackIt = synced.nestedRackInstances.find(nestedKey);
                 if (rackIt != synced.nestedRackInstances.end() && rackIt->second) {
                     chainPluginNodes.push_back({rackIt->second->itemID, false,
-                                                node.replacesChainMidi(),
-                                                node.receivesChainMidi()});
+                                                node.outputsPluginMidi(), node.receivesChainMidi(),
+                                                node.passesRawMidiInput()});
                 }
             }
         }
@@ -868,7 +869,7 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
         // so they pass clean audio through with per-chain volume/pan control)
         auto volPanIt = synced.chainVolPanPlugins.find(pathKey(chainPath));
         if (volPanIt != synced.chainVolPanPlugins.end() && volPanIt->second) {
-            chainPluginNodes.push_back({volPanIt->second->itemID, false, false, false});
+            chainPluginNodes.push_back({volPanIt->second->itemID, false, false, false, false});
         }
 
         if (chainPluginNodes.empty())
@@ -882,19 +883,32 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
         // Wire an explicit chain audio bus and MIDI bus:
         // - effects/nested racks process the current audio bus
         // - instruments inject generated audio into the current audio bus
-        // - MIDI processors replace the MIDI bus
+        // - MIDI processors can replace, pass through, or merge with the MIDI bus
         // - instruments and MIDI-triggered FX receive MIDI without stopping it
         std::vector<AudioBusSource> audioBusSources = {{rackIOId, 1, 2}};
-        te::EditItemID midiBusSource = rackIOId;
+        std::vector<te::EditItemID> midiBusSources = {rackIOId};
 
         for (const auto& node : chainPluginNodes) {
             const auto inputChannels = getAudioInputCount(rackType, node.id);
             const auto outputChannels = getAudioOutputCount(rackType, node.id);
 
-            if (node.receivesChainMidi)
-                addRackConnection(rackType, midiBusSource, 0, node.id, 0, "chain midi bus");
-            if (node.transformsMidi && node.receivesChainMidi)
-                midiBusSource = node.id;
+            if (node.receivesChainMidi) {
+                const auto inputMidiSources = midiBusSources;
+                for (const auto& midiSource : inputMidiSources)
+                    addRackConnection(rackType, midiSource, 0, node.id, 0, "chain midi bus");
+
+                if (node.outputsPluginMidi) {
+                    if (node.passesRawMidiInput) {
+                        midiBusSources = inputMidiSources;
+                        midiBusSources.push_back(node.id);
+                    } else {
+                        midiBusSources = {node.id};
+                    }
+                } else if (node.passesRawMidiInput) {
+                    midiBusSources =
+                        node.isInstrument ? inputMidiSources : std::vector<te::EditItemID>{node.id};
+                }
+            }
 
             if (node.isInstrument) {
                 if (outputChannels >= 1) {
@@ -919,7 +933,8 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
         }
 
         if (chainActive) {
-            addRackConnection(rackType, midiBusSource, 0, rackIOId, 0, "chain output midi");
+            for (const auto& midiSource : midiBusSources)
+                addRackConnection(rackType, midiSource, 0, rackIOId, 0, "chain output midi");
             for (const auto& source : audioBusSources) {
                 addRackConnection(rackType, source.id, source.leftPin, rackIOId, outLeftPin,
                                   "chain output left");

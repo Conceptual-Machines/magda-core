@@ -57,7 +57,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testInstrumentRackPassesMidiThrough(); });
-        magda::test::runWithCleanJuceState([this] { testStepSequencerDefaultsToReplacingMidi(); });
+        magda::test::runWithCleanJuceState([this] { testStepSequencerDefaultsToMidiThru(); });
         magda::test::runWithCleanJuceState(
             [this] { testStepSequencerMidiThruPassesWhileStopped(); });
         magda::test::runWithCleanJuceState([this] { testStepSequencerStepRecordingStopsAtEnd(); });
@@ -69,6 +69,10 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState(
             [this] { testPolyStepSequencerCopyPatternToClipboard(); });
         magda::test::runWithCleanJuceState([this] { testRackSyncWiresNestedRackAsGraphNode(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testRackSyncKeepsRawMidiPassthroughOrderedThroughProcessors(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testRackSyncMergesRawAndPluginMidiForThruProducer(); });
         magda::test::runWithCleanJuceState([this] { testRackTypeRejectsRecursiveRackInstances(); });
         magda::test::runWithCleanJuceState([this] { testRackSyncBypassedChainPreservesMidi(); });
         magda::test::runWithCleanJuceState(
@@ -365,6 +369,92 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         }
 
         rackSync.removeRack(outer.id);
+    }
+
+    void testRackSyncKeepsRawMidiPassthroughOrderedThroughProcessors() {
+        beginTest("Rack sync keeps raw MIDI passthrough ordered through processors");
+
+        magda::RackInfo rack;
+        rack.id = 9150;
+        rack.name = "Ordered MIDI Passthrough Rack";
+
+        magda::ChainInfo chain;
+        chain.id = 9151;
+        auto first = makeInternalDevice(9152, "First MIDI FX", "magda_filter");
+        auto second = makeInternalDevice(9153, "Second MIDI FX", "magda_filter");
+        first.canReceiveMidi = true;
+        second.canReceiveMidi = true;
+        chain.elements.push_back(magda::makeDeviceElement(first));
+        chain.elements.push_back(magda::makeDeviceElement(second));
+        rack.chains.push_back(std::move(chain));
+
+        auto* rackType = syncTestRack(rack, 915);
+        if (!rackType)
+            return;
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        auto* firstPlugin = rackSync.getInnerPlugin(first.id);
+        auto* secondPlugin = rackSync.getInnerPlugin(second.id);
+        expect(firstPlugin != nullptr, "First processor should be loaded into the rack");
+        expect(secondPlugin != nullptr, "Second processor should be loaded into the rack");
+        if (!firstPlugin || !secondPlugin)
+            return;
+
+        const auto rackIO = te::EditItemID();
+        expect(hasConnection(*rackType, rackIO, 0, firstPlugin->itemID, 0),
+               "Rack MIDI input should feed the first processor");
+        expect(hasConnection(*rackType, firstPlugin->itemID, 0, secondPlugin->itemID, 0),
+               "Raw MIDI passthrough should advance through the first processor");
+        expect(!hasConnection(*rackType, rackIO, 0, secondPlugin->itemID, 0),
+               "Second processor should not bypass the ordered MIDI graph");
+        expect(hasConnection(*rackType, secondPlugin->itemID, 0, rackIO, 0),
+               "Rack MIDI output should come from the final passthrough processor");
+
+        rackSync.removeRack(rack.id);
+    }
+
+    void testRackSyncMergesRawAndPluginMidiForThruProducer() {
+        beginTest("Rack sync merges raw and plugin MIDI for thru producers");
+
+        magda::RackInfo rack;
+        rack.id = 9160;
+        rack.name = "MIDI Merge Rack";
+
+        magda::ChainInfo chain;
+        chain.id = 9161;
+        auto sequencer = makeInternalDevice(9162, "Step Sequencer",
+                                            magda::daw::audio::StepSequencerPlugin::xmlTypeName);
+        sequencer.canReceiveMidi = true;
+        sequencer.producesMidi = true;
+        sequencer.midiInThru = true;
+        chain.elements.push_back(magda::makeDeviceElement(sequencer));
+        rack.chains.push_back(std::move(chain));
+
+        auto* rackType = syncTestRack(rack, 916);
+        if (!rackType)
+            return;
+
+        auto& rackSync = magda::test::getSharedEngine()
+                             .getAudioBridge()
+                             ->getPluginManager()
+                             .getRackSyncManager();
+        auto* sequencerPlugin = rackSync.getInnerPlugin(sequencer.id);
+        expect(sequencerPlugin != nullptr, "MIDI producer should be loaded into the rack");
+        if (!sequencerPlugin)
+            return;
+
+        const auto rackIO = te::EditItemID();
+        expect(hasConnection(*rackType, rackIO, 0, sequencerPlugin->itemID, 0),
+               "Rack MIDI input should feed the MIDI producer");
+        expect(hasConnection(*rackType, rackIO, 0, rackIO, 0),
+               "MIDI thru should keep raw input connected to rack output");
+        expect(hasConnection(*rackType, sequencerPlugin->itemID, 0, rackIO, 0),
+               "MIDI thru should also connect plugin MIDI output to rack output");
+
+        rackSync.removeRack(rack.id);
     }
 
     void testRackTypeRejectsRecursiveRackInstances() {
@@ -869,8 +959,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         trackManager.setAudioEngine(nullptr);
     }
 
-    void testStepSequencerDefaultsToReplacingMidi() {
-        beginTest("Step sequencer defaults to MIDI replace and restores MIDI thru state");
+    void testStepSequencerDefaultsToMidiThru() {
+        beginTest("Step sequencer defaults to MIDI thru and restores MIDI thru state");
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -885,15 +975,15 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         if (seq == nullptr)
             return;
 
-        expect(!seq->midiThru.get(), "Fresh step sequencers should block incoming MIDI");
+        expect(seq->midiThru.get(), "Fresh step sequencers should pass incoming MIDI");
 
         juce::ValueTree saved(te::IDs::PLUGIN);
         saved.setProperty(te::IDs::type, magda::daw::audio::StepSequencerPlugin::xmlTypeName,
                           nullptr);
-        saved.setProperty("seqMidiThru", true, nullptr);
+        saved.setProperty("seqMidiThru", false, nullptr);
         seq->restorePluginStateFromValueTree(saved);
 
-        expect(seq->midiThru.get(), "Saved MIDI thru state should be restored");
+        expect(!seq->midiThru.get(), "Saved MIDI thru state should be restored");
     }
 
     void testStepSequencerMidiThruPassesWhileStopped() {

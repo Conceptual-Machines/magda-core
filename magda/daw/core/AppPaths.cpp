@@ -177,6 +177,10 @@ juce::File pluginPreferencesFile() {
     return dataDir().getChildFile("plugin_preferences.json");
 }
 
+juce::File pluginCapabilitiesFile() {
+    return dataDir().getChildFile("plugin_capabilities.json");
+}
+
 juce::File parameterDetectorLog() {
     return dataDir().getChildFile("param_detector.log");
 }

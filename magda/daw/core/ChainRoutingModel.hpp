@@ -10,13 +10,18 @@ namespace magda::routing {
 enum class ChainContainerKind { Track, Rack };
 enum class ChainRoutingNodeKind { Device, Rack };
 enum class MidiInputPolicy { Chain, ExternalSidechain };
-enum class MidiOutputPolicy { PassThrough, Replace };
+enum class MidiOutputPolicy { RawInputOnly, PluginOutputOnly, MergeRawInputAndPluginOutput };
 enum class AudioRole { Processor, InstrumentInjector, NestedRack };
 
 /**
  * Source-of-truth routing policy for one visible chain element. Runtime code
  * can compile this into Tracktion plugin order, rack graph connections, or
  * helper plugins without re-deriving sidechain/MIDI-thru rules locally.
+ *
+ * MIDI output policies:
+ * - RawInputOnly: preserve the incoming MIDI bus.
+ * - PluginOutputOnly: replace incoming MIDI with the plugin/rack MIDI output.
+ * - MergeRawInputAndPluginOutput: keep raw MIDI and add plugin/rack MIDI output.
  */
 struct ChainRoutingNode {
     ChainRoutingNodeKind kind = ChainRoutingNodeKind::Device;
@@ -24,7 +29,7 @@ struct ChainRoutingNode {
     RackId rackId = INVALID_RACK_ID;
     AudioRole audioRole = AudioRole::Processor;
     MidiInputPolicy midiInput = MidiInputPolicy::Chain;
-    MidiOutputPolicy midiOutput = MidiOutputPolicy::Replace;
+    MidiOutputPolicy midiOutput = MidiOutputPolicy::PluginOutputOnly;
     TrackId midiSidechainSourceTrackId = INVALID_TRACK_ID;
 
     bool receivesChainMidi() const {
@@ -37,7 +42,19 @@ struct ChainRoutingNode {
     }
 
     bool replacesChainMidi() const {
-        return receivesChainMidi() && midiOutput == MidiOutputPolicy::Replace;
+        return receivesChainMidi() && midiOutput == MidiOutputPolicy::PluginOutputOnly;
+    }
+
+    bool passesRawMidiInput() const {
+        return receivesChainMidi() &&
+               (midiOutput == MidiOutputPolicy::RawInputOnly ||
+                midiOutput == MidiOutputPolicy::MergeRawInputAndPluginOutput);
+    }
+
+    bool outputsPluginMidi() const {
+        return receivesChainMidi() &&
+               (midiOutput == MidiOutputPolicy::PluginOutputOnly ||
+                midiOutput == MidiOutputPolicy::MergeRawInputAndPluginOutput);
     }
 
     bool injectsAudio() const {
@@ -60,6 +77,7 @@ inline bool usesExternalMidiSidechain(const DeviceInfo& device) {
 
 inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {
     const auto externalMidiSidechain = usesExternalMidiSidechain(device);
+    const auto outputsMidi = device.producesMidi || device.deviceType == DeviceType::MIDI;
 
     ChainRoutingNode node;
     node.kind = ChainRoutingNodeKind::Device;
@@ -67,12 +85,14 @@ inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {
     node.audioRole = device.isInstrument ? AudioRole::InstrumentInjector : AudioRole::Processor;
     node.midiInput =
         externalMidiSidechain ? MidiInputPolicy::ExternalSidechain : MidiInputPolicy::Chain;
-    // Preserve the existing rack graph semantics: instruments receive chain
-    // MIDI as a trigger but do not consume it; non-instruments replace the MIDI
-    // bus unless their MIDI comes from an exclusive external sidechain.
-    node.midiOutput = !externalMidiSidechain && !device.isInstrument
-                          ? MidiOutputPolicy::Replace
-                          : MidiOutputPolicy::PassThrough;
+    if (externalMidiSidechain) {
+        node.midiOutput = MidiOutputPolicy::RawInputOnly;
+    } else if (outputsMidi) {
+        node.midiOutput = device.midiInThru ? MidiOutputPolicy::MergeRawInputAndPluginOutput
+                                            : MidiOutputPolicy::PluginOutputOnly;
+    } else {
+        node.midiOutput = MidiOutputPolicy::RawInputOnly;
+    }
     node.midiSidechainSourceTrackId =
         externalMidiSidechain ? device.sidechain.sourceTrackId : INVALID_TRACK_ID;
     return node;
@@ -84,7 +104,7 @@ inline ChainRoutingNode makeRoutingNode(const RackInfo& rack) {
     node.rackId = rack.id;
     node.audioRole = AudioRole::NestedRack;
     node.midiInput = MidiInputPolicy::Chain;
-    node.midiOutput = MidiOutputPolicy::Replace;
+    node.midiOutput = MidiOutputPolicy::PluginOutputOnly;
     return node;
 }
 

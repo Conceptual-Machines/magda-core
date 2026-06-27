@@ -13,6 +13,7 @@
 #include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/PluginCapabilities.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -317,7 +318,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     scButton_->onClick = [this]() { showSidechainMenu(); };
-    scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
+    scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
     addAndMakeVisible(*scButton_);
     updateScButtonState();
 
@@ -431,7 +432,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
                                                              BinaryData::compare_svgSize);
         midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        midiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        midiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
+        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
         midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
         midiThruButton_->setToggleable(true);
         midiThruButton_->onClick = [this]() {
@@ -457,11 +459,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // "MIDI in thru" toggle for wrapped instruments. The plugin's own MIDI
     // output always flows downstream; this only passes the raw input past the
     // instrument so a MIDI-triggered FX placed after it still receives notes.
-    if (device.isInstrument && device.producesMidi) {
+    if (supportsMidiSourceToggle(device)) {
         instMidiThruButton_ = std::make_unique<magda::SvgButton>(
             "MidiInThru", BinaryData::compare_svg, BinaryData::compare_svgSize);
         instMidiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        instMidiThruButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        instMidiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
+        instMidiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
         instMidiThruButton_->setTooltip("MIDI in thru: pass input to a MIDI FX after this device");
         instMidiThruButton_->setToggleable(true);
         instMidiThruButton_->setActive(device.midiInThru);
@@ -847,8 +850,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update sidechain button visibility and state
     if (scButton_) {
-        scButton_->setVisible(drum_grid_slot::shouldShowSidechainButton(
-            traits_.isDrumGrid, device_.canSidechain, device_.canReceiveMidi));
+        scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
         updateScButtonState();
     }
 

@@ -31,21 +31,47 @@ juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
 }
 
-bool treatsAsMidiFx(const PluginBrowserInfo& plugin) {
-    return magda::PluginPreferences::getInstance().treatsAsMidiFx(
-        preferenceIdentifierForPlugin(plugin));
-}
-
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
-    return treatsAsMidiFx(plugin) ? juce::String("Effect") : plugin.category;
+    if (plugin.categoryOverride == "Instrument")
+        return "Instrument";
+    if (plugin.categoryOverride == "MIDI FX" || plugin.categoryOverride == "Audio FX")
+        return "Effect";
+    if (plugin.categoryOverride == "Analyzer")
+        return "Analysis";
+    return plugin.category;
 }
 
 juce::String effectiveSubcategoryForPlugin(const PluginBrowserInfo& plugin) {
-    return treatsAsMidiFx(plugin) ? juce::String("MIDI") : plugin.subcategory;
+    if (plugin.categoryOverride == "MIDI FX")
+        return "MIDI";
+    if (plugin.categoryOverride == "Audio FX")
+        return "Audio FX";
+    if (plugin.categoryOverride == "Analyzer")
+        return "Analyzer";
+    return plugin.subcategory;
 }
 
 bool effectiveIsInstrument(const PluginBrowserInfo& plugin) {
-    return plugin.category == "Instrument" && !treatsAsMidiFx(plugin);
+    if (plugin.categoryOverride == "Instrument")
+        return true;
+    if (plugin.categoryOverride.isNotEmpty())
+        return false;
+    return plugin.category == "Instrument";
+}
+
+void applyRawPluginFieldsToDevice(const PluginBrowserInfo& plugin, magda::DeviceInfo& device) {
+    device.name = plugin.name;
+    device.manufacturer = plugin.manufacturer;
+    device.pluginId =
+        plugin.uniqueId.isEmpty() ? (plugin.name + "_" + plugin.format) : plugin.uniqueId;
+    device.isInstrument = plugin.category == "Instrument";
+    if (plugin.subcategory == "MIDI")
+        device.deviceType = magda::DeviceType::MIDI;
+    else if (device.isInstrument)
+        device.deviceType = magda::DeviceType::Instrument;
+    else
+        device.deviceType = magda::DeviceType::Effect;
+    device.browserCategoryOverride = plugin.categoryOverride;
 }
 
 }  // namespace
@@ -189,9 +215,13 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         obj->setProperty("name", plugin_.name);
         obj->setProperty("manufacturer", plugin_.manufacturer);
         obj->setProperty("category", effectiveCategoryForPlugin(plugin_));
+        obj->setProperty("rawCategory", plugin_.category);
         obj->setProperty("format", plugin_.format);
         obj->setProperty("subcategory", effectiveSubcategoryForPlugin(plugin_));
-        obj->setProperty("isInstrument", effectiveIsInstrument(plugin_));
+        obj->setProperty("rawSubcategory", plugin_.subcategory);
+        obj->setProperty("categoryOverride", plugin_.categoryOverride);
+        obj->setProperty("isInstrument", plugin_.category == "Instrument");
+        obj->setProperty("browserIsInstrument", effectiveIsInstrument(plugin_));
         obj->setProperty("isExternal", plugin_.isExternal);
         // External plugin identification
         obj->setProperty("uniqueId", plugin_.uniqueId);
@@ -444,6 +474,10 @@ void PluginBrowserContent::refreshPluginList() {
     plugins_.clear();
     buildInternalPluginList();
     loadExternalPlugins();
+    auto& prefs = magda::PluginPreferences::getInstance();
+    for (auto& plugin : plugins_)
+        plugin.categoryOverride =
+            prefs.browserCategoryOverride(preferenceIdentifierForPlugin(plugin));
     loadFavorites();
     loadAliases();
     rebuildTree();
@@ -587,7 +621,7 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     if (plugin.category == "Instrument") {
         auto& prefs = magda::PluginPreferences::getInstance();
         const bool prefersGrid = prefs.prefersDrumGrid(pluginIdentifier);
-        const bool treatsAsMidiFx = prefs.treatsAsMidiFx(pluginIdentifier);
+        const bool treatsAsMidiFx = plugin.categoryOverride == "MIDI FX";
         menu.addItem(10, "Prefer Drum Grid", true, prefersGrid);
         menu.addItem(11, "Treat as MIDI FX", true, treatsAsMidiFx);
         menu.addSeparator();
@@ -605,20 +639,7 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
             // Helper to create device info from plugin
             auto createDevice = [&plugin]() {
                 magda::DeviceInfo device;
-                const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
-                const bool treatsAsMidiFx =
-                    magda::PluginPreferences::getInstance().treatsAsMidiFx(pluginIdentifier);
-                device.name = plugin.name;
-                device.manufacturer = plugin.manufacturer;
-                device.pluginId = plugin.uniqueId.isEmpty() ? (plugin.name + "_" + plugin.format)
-                                                            : plugin.uniqueId;
-                device.isInstrument = (plugin.category == "Instrument" && !treatsAsMidiFx);
-                if (treatsAsMidiFx || plugin.subcategory == "MIDI")
-                    device.deviceType = magda::DeviceType::MIDI;
-                else if (device.isInstrument)
-                    device.deviceType = magda::DeviceType::Instrument;
-                else
-                    device.deviceType = magda::DeviceType::Effect;
+                applyRawPluginFieldsToDevice(plugin, device);
                 // External plugin identification
                 device.uniqueId = plugin.uniqueId;
                 device.fileOrIdentifier = plugin.fileOrIdentifier;
@@ -689,8 +710,14 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 case 11: {
                     auto& prefs = magda::PluginPreferences::getInstance();
                     const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
-                    prefs.setTreatsAsMidiFx(pluginIdentifier,
-                                            !prefs.treatsAsMidiFx(pluginIdentifier));
+                    const auto currentOverride = prefs.browserCategoryOverride(pluginIdentifier);
+                    prefs.setBrowserCategoryOverride(
+                        pluginIdentifier,
+                        currentOverride == "MIDI FX" ? juce::String() : juce::String("MIDI FX"));
+                    for (auto& p : plugins_) {
+                        if (preferenceIdentifierForPlugin(p) == pluginIdentifier)
+                            p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
+                    }
                     rebuildTree();
                     break;
                 }

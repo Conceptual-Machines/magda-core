@@ -49,7 +49,7 @@ PolyStepSequencerPlugin::PolyStepSequencerPlugin(const te::PluginCreationInfo& i
     hardAngle.referTo(state, PSeqIDs::hardAngle, um, false);
     quantize.referTo(state, PSeqIDs::quantize, um, 0.0f);
     quantizeSub.referTo(state, PSeqIDs::quantizeSub, um, 16);
-    midiThru.referTo(state, PSeqIDs::midiThru, um, false);
+    midiThru.referTo(state, PSeqIDs::midiThru, um, true);
     viewMode.referTo(state, PSeqIDs::viewMode, um, "keys");
 
     // Register automatable parameters for macro/mod linking

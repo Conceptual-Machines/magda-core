@@ -284,11 +284,20 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             device.pluginId = uniqueId.isNotEmpty() ? uniqueId
                                                     : obj->getProperty("name").toString() + "_" +
                                                           obj->getProperty("format").toString();
-            device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
-            if (obj->getProperty("subcategory").toString() == "MIDI")
+            const auto rawCategory = obj->hasProperty("rawCategory")
+                                         ? obj->getProperty("rawCategory").toString()
+                                         : obj->getProperty("category").toString();
+            const auto rawSubcategory = obj->hasProperty("rawSubcategory")
+                                            ? obj->getProperty("rawSubcategory").toString()
+                                            : obj->getProperty("subcategory").toString();
+            device.isInstrument = rawCategory.isNotEmpty()
+                                      ? rawCategory == "Instrument"
+                                      : static_cast<bool>(obj->getProperty("isInstrument"));
+            if (rawSubcategory == "MIDI")
                 device.deviceType = magda::DeviceType::MIDI;
             else if (device.isInstrument)
                 device.deviceType = magda::DeviceType::Instrument;
+            device.browserCategoryOverride = obj->getProperty("categoryOverride").toString();
             device.uniqueId = obj->getProperty("uniqueId").toString();
             device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
 
