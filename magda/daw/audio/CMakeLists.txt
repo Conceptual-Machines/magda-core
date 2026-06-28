@@ -79,6 +79,21 @@ magda_compile_faust_dsp(
     MAGDA_TOM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_marimba.dsp"
+    MagdaMarimbaDsp
+    MAGDA_MARIMBA_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_djembe.dsp"
+    MagdaDjembeDsp
+    MAGDA_DJEMBE_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_bell.dsp"
+    MagdaBellDsp
+    MAGDA_BELL_GENERATED_CPP
+)
+magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_delay.dsp"
     MagdaDelayDsp
     MAGDA_DELAY_GENERATED_CPP
@@ -217,6 +232,9 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_CLAP_GENERATED_CPP}"
         "${MAGDA_HAT_GENERATED_CPP}"
         "${MAGDA_TOM_GENERATED_CPP}"
+        "${MAGDA_MARIMBA_GENERATED_CPP}"
+        "${MAGDA_DJEMBE_GENERATED_CPP}"
+        "${MAGDA_BELL_GENERATED_CPP}"
         "${MAGDA_DELAY_GENERATED_CPP}"
         "${MAGDA_GRAIN_DELAY_GENERATED_CPP}"
         "${MAGDA_GRIT_GENERATED_CPP}"
@@ -266,6 +284,12 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/MagdaHatCompiledPlugin.hpp
     plugins/compiled/MagdaTomCompiledPlugin.cpp
     plugins/compiled/MagdaTomCompiledPlugin.hpp
+    plugins/compiled/MagdaMarimbaCompiledPlugin.cpp
+    plugins/compiled/MagdaMarimbaCompiledPlugin.hpp
+    plugins/compiled/MagdaDjembeCompiledPlugin.cpp
+    plugins/compiled/MagdaDjembeCompiledPlugin.hpp
+    plugins/compiled/MagdaBellCompiledPlugin.cpp
+    plugins/compiled/MagdaBellCompiledPlugin.hpp
     plugins/compiled/MagdaDelayCompiledPlugin.cpp
     plugins/compiled/MagdaDelayCompiledPlugin.hpp
     plugins/compiled/MagdaGrainDelayCompiledPlugin.cpp
@@ -463,6 +487,7 @@ target_sources(magda_daw PRIVATE
     plugins/FaustParamPool.hpp
     plugins/FaustParamInfo.hpp
     transport/StepClock.hpp
+    plugins/MidiInThruSync.hpp
     plugins/StepSequencerPlugin.hpp
     plugins/PolyStepSequencerPlugin.hpp
 )

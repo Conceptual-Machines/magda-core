@@ -3,9 +3,11 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 
+#include "custom_ui/AdsrGraph.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
@@ -44,7 +46,8 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     void updateParameters(float attack, float decay, float sustain, float release, float pitch,
                           float fine, float level, float sampleStart, float sampleEnd,
                           bool loopEnabled, float loopStart, float loopEnd, float velAmount,
-                          const juce::String& sampleName, int rootNote = 60);
+                          const juce::String& sampleName, int rootNote = 60, float voiceMode = 0.0f,
+                          float glide = 0.0f);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
@@ -146,6 +149,8 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
     LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
     LinkableTextSlider releaseSlider_{TextSlider::Format::Decimal};
+    // Dedicated ADSR graph (its own time axis, decoupled from the waveform).
+    AdsrGraph envGraph_;
 
     // Pitch
     LinkableTextSlider pitchSlider_{TextSlider::Format::Decimal};
@@ -156,6 +161,16 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
 
     // Velocity amount
     LinkableTextSlider velAmountSlider_{TextSlider::Format::Decimal};
+
+    // Voice mode (Poly/Mono/Legato): segmented buttons drive a hidden linkable
+    // slider (param 12). Glide (param 13) is a normal time slider.
+    LinkableTextSlider voiceModeSlider_{TextSlider::Format::Decimal};
+    std::array<std::unique_ptr<juce::TextButton>, 3> voiceModeButtons_;
+    LinkableTextSlider glideSlider_{TextSlider::Format::Decimal};
+    juce::Label voiceModeLabel_, glideLabel_;
+    void setVoiceMode(int mode);
+    void updateVoiceModeButtons();
+    int voiceMode_ = 0;
 
     // Labels
     juce::Label attackLabel_, decayLabel_, sustainLabel_, releaseLabel_;
@@ -173,10 +188,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
         LoopEnd,
         LoopRegion,
         Scroll,
-        Zoom,
-        EnvAttack,
-        EnvDecay,
-        EnvRelease
+        Zoom
     };
     DragTarget currentDrag_ = DragTarget::None;
     double scrollDragStartOffset_ = 0.0;
@@ -193,7 +205,9 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     static constexpr int kMarkerHitPixels = 5;
     static constexpr int kLoopBarHeight = 8;
     DragTarget markerHitTest(const juce::MouseEvent& e, juce::Rectangle<int> waveArea) const;
-    DragTarget envHitTest(const juce::MouseEvent& e, juce::Rectangle<int> waveArea) const;
+
+    // Push the current ADSR slider values (+ ranges) into the envelope graph.
+    void syncEnvGraph();
 
     void setupLabel(juce::Label& label, const juce::String& text);
     void buildWaveformPath(const juce::AudioBuffer<float>* buffer, int width, int height);

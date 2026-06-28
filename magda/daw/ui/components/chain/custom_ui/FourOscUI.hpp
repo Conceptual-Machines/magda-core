@@ -2,35 +2,14 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "core/DeviceInfo.hpp"
+#include "custom_ui/AdsrGraph.hpp"
 #include "custom_ui/LayoutStableTabbedComponent.hpp"
+#include "processors/internal/NativeDeviceProcessors.hpp"
 #include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
-
-/**
- * @brief Non-automatable plugin state for the 4OSC synth
- *
- * These are CachedValues that aren't exposed as AutomatableParameters,
- * so they must be read/written directly on the plugin object.
- */
-struct FourOscPluginState {
-    int oscWaveShape[4] = {0, 0, 0, 0};
-    int oscVoices[4] = {1, 1, 1, 1};
-    int filterType = 0;
-    int filterSlope = 0;
-    bool ampAnalog = false;
-    int lfoWaveShape[2] = {0, 0};
-    bool lfoSync[2] = {false, false};
-    bool distortionOn = false;
-    bool reverbOn = false;
-    bool delayOn = false;
-    bool chorusOn = false;
-    int voiceMode = 2;      // 0=Mono, 1=Legato, 2=Poly
-    int globalVoices = 32;  // Max polyphony
-};
 
 /**
  * @brief A single row in the mod matrix display
@@ -143,7 +122,8 @@ class FourOscUI : public juce::Component {
         LinkableTextSlider keySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider velocitySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider amountSlider_{TextSlider::Format::Decimal};
-        // Filter envelope
+        // Filter envelope: draggable graph over the A/D/S/R value boxes.
+        AdsrGraph envGraph_;
         LinkableTextSlider attackSlider_{TextSlider::Format::Decimal};
         LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
@@ -167,6 +147,8 @@ class FourOscUI : public juce::Component {
 
       private:
         FourOscUI& owner_;
+        // Amp envelope: draggable graph over the A/D/S/R value boxes.
+        AdsrGraph envGraph_;
         LinkableTextSlider attackSlider_{TextSlider::Format::Decimal};
         LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
         LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
@@ -199,6 +181,7 @@ class FourOscUI : public juce::Component {
             LinkableTextSlider decaySlider{TextSlider::Format::Decimal};
             LinkableTextSlider sustainSlider{TextSlider::Format::Decimal};
             LinkableTextSlider releaseSlider{TextSlider::Format::Decimal};
+            AdsrGraph graph;  // draggable envelope beside the value boxes
         };
         EnvRow rows_[2];
         juce::Label hdrAtk_, hdrDec_, hdrSus_, hdrRel_;
@@ -224,6 +207,7 @@ class FourOscUI : public juce::Component {
       public:
         LFOTab(FourOscUI& owner);
         void resized() override;
+        void paint(juce::Graphics& g) override;
         void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
         void updatePluginState(const FourOscPluginState& state);
         void updateModEntries(const std::vector<ModMatrixEntry>& entries);
@@ -240,6 +224,10 @@ class FourOscUI : public juce::Component {
             LinkableTextSlider rateSlider{TextSlider::Format::Decimal};
             LinkableTextSlider depthSlider{TextSlider::Format::Decimal};
             juce::ToggleButton syncButton{"Sync"};
+            // Preview of the selected wave shape (drawn in paint()).
+            juce::Rectangle<int> previewBounds;
+            int shape = 0;       // 0 Off / 1 Sine / 2 Square / 3 Saw / 4 Triangle / 5 Noise
+            float depth = 0.0f;  // 0..1, scales the preview amplitude
         };
         LFORow rows_[2];
         static void setupWaveSelector(IconSelector& selector);

@@ -1,5 +1,8 @@
 #include "custom_ui/FourOscUI.hpp"
 
+#include <cmath>
+#include <cstdint>
+
 #include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -617,12 +620,26 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(amountSlider_);
 
+    // Draggable filter ADSR graph above the value boxes; a handle drag writes the
+    // plugin value and keeps the matching box in sync.
+    envGraph_.onStageChanged = [this](int paramIndex, float value) {
+        if (owner_.onParameterChanged)
+            owner_.onParameterChanged(paramIndex, value);
+        const int stage = paramIndex - kFilterBase;
+        LinkableTextSlider* boxes[] = {&attackSlider_, &decaySlider_, &sustainSlider_,
+                                       &releaseSlider_};
+        if (stage >= 0 && stage < 4)
+            boxes[stage]->setValue(value, juce::dontSendNotification);
+    };
+    addAndMakeVisible(envGraph_);
+
     // Filter ADSR
     setupLabel(atkLabel_, "ATK");
     attackSlider_.setRange(0.0, 60.0, 0.001);
     attackSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Attack, static_cast<float>(v));
     };
     addAndMakeVisible(attackSlider_);
 
@@ -631,6 +648,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     decaySlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 1, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Decay, static_cast<float>(v));
     };
     addAndMakeVisible(decaySlider_);
 
@@ -639,6 +657,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     sustainSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 2, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Sustain, static_cast<float>(v));
     };
     addAndMakeVisible(sustainSlider_);
 
@@ -647,6 +666,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     releaseSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 3, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Release, static_cast<float>(v));
     };
     addAndMakeVisible(releaseSlider_);
 }
@@ -697,8 +717,15 @@ void FourOscUI::FilterTab::resized() {
     amountSlider_.setBounds(row3.removeFromLeft(sliderW));
     area.removeFromTop(gap);
 
-    // Row 4: Filter ADSR with icon
-    auto row4 = area.removeFromTop(rowH);
+    // Filter ADSR value boxes at the bottom, the draggable graph filling the gap
+    // above them.
+    auto row4 = area.removeFromBottom(rowH);
+    if (area.getHeight() > gap) {
+        envGraph_.setBounds(area.reduced(2));
+        envGraph_.setVisible(true);
+    } else {
+        envGraph_.setVisible(false);  // not enough room (collapsed slot)
+    }
     atkLabel_.setBounds(row4.removeFromLeft(labelW));
     row4.removeFromLeft(gap);
     attackSlider_.setBounds(row4.removeFromLeft(sliderW));
@@ -730,6 +757,16 @@ void FourOscUI::FilterTab::updateFromParameters(const std::vector<magda::Paramet
     amountSlider_.setValue(params[kFilterBase + 6].currentValue, juce::dontSendNotification);
     keySlider_.setValue(params[kFilterBase + 7].currentValue, juce::dontSendNotification);
     velocitySlider_.setValue(params[kFilterBase + 8].currentValue, juce::dontSendNotification);
+
+    // Mirror the ADSR slots into the envelope graph (carries each stage's range).
+    envGraph_.setStage(AdsrGraph::Attack, kFilterBase, params[kFilterBase],
+                       params[kFilterBase].currentValue);
+    envGraph_.setStage(AdsrGraph::Decay, kFilterBase + 1, params[kFilterBase + 1],
+                       params[kFilterBase + 1].currentValue);
+    envGraph_.setStage(AdsrGraph::Sustain, kFilterBase + 2, params[kFilterBase + 2],
+                       params[kFilterBase + 2].currentValue);
+    envGraph_.setStage(AdsrGraph::Release, kFilterBase + 3, params[kFilterBase + 3],
+                       params[kFilterBase + 3].currentValue);
 }
 
 void FourOscUI::FilterTab::updatePluginState(const FourOscPluginState& state) {
@@ -746,11 +783,26 @@ void FourOscUI::FilterTab::setupLabel(juce::Label& label, const juce::String& te
 // =============================================================================
 
 FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
+    // Draggable amp ADSR graph above the value boxes. A handle drag writes the
+    // plugin value and keeps the matching box in sync, so the boxes stay
+    // authoritative for linking/automation.
+    envGraph_.onStageChanged = [this](int paramIndex, float value) {
+        if (owner_.onParameterChanged)
+            owner_.onParameterChanged(paramIndex, value);
+        const int stage = paramIndex - kAmpBase;
+        LinkableTextSlider* boxes[] = {&attackSlider_, &decaySlider_, &sustainSlider_,
+                                       &releaseSlider_};
+        if (stage >= 0 && stage < 4)
+            boxes[stage]->setValue(value, juce::dontSendNotification);
+    };
+    addAndMakeVisible(envGraph_);
+
     setupLabel(atkLabel_, "ATK");
     attackSlider_.setRange(0.001, 60.0, 0.001);
     attackSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Attack, static_cast<float>(v));
     };
     addAndMakeVisible(attackSlider_);
 
@@ -759,6 +811,7 @@ FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
     decaySlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase + 1, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Decay, static_cast<float>(v));
     };
     addAndMakeVisible(decaySlider_);
 
@@ -767,6 +820,7 @@ FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
     sustainSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase + 2, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Sustain, static_cast<float>(v));
     };
     addAndMakeVisible(sustainSlider_);
 
@@ -775,6 +829,7 @@ FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
     releaseSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase + 3, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Release, static_cast<float>(v));
     };
     addAndMakeVisible(releaseSlider_);
 
@@ -801,6 +856,11 @@ void FourOscUI::AmpTab::resized() {
     constexpr int labelW = 36;
     constexpr int sliderW = 50;
     constexpr int gap = 4;
+
+    // Envelope graph fills the space above the two control rows.
+    auto graphArea = area.removeFromTop(juce::jmax(50, area.getHeight() - 2 * rowH - 2 * gap));
+    envGraph_.setBounds(graphArea.reduced(2));
+    area.removeFromTop(gap);
 
     // Row 1: ADSR
     auto row1 = area.removeFromTop(rowH);
@@ -840,6 +900,16 @@ void FourOscUI::AmpTab::updateFromParameters(const std::vector<magda::ParameterI
     sustainSlider_.setValue(params[kAmpBase + 2].currentValue, juce::dontSendNotification);
     releaseSlider_.setValue(params[kAmpBase + 3].currentValue, juce::dontSendNotification);
     velocitySlider_.setValue(params[kAmpBase + 4].currentValue, juce::dontSendNotification);
+
+    // Mirror the ADSR slots into the envelope graph (carries each stage's range).
+    envGraph_.setStage(AdsrGraph::Attack, kAmpBase, params[kAmpBase],
+                       params[kAmpBase].currentValue);
+    envGraph_.setStage(AdsrGraph::Decay, kAmpBase + 1, params[kAmpBase + 1],
+                       params[kAmpBase + 1].currentValue);
+    envGraph_.setStage(AdsrGraph::Sustain, kAmpBase + 2, params[kAmpBase + 2],
+                       params[kAmpBase + 2].currentValue);
+    envGraph_.setStage(AdsrGraph::Release, kAmpBase + 3, params[kAmpBase + 3],
+                       params[kAmpBase + 3].currentValue);
 }
 
 void FourOscUI::AmpTab::updatePluginState(const FourOscPluginState& state) {
@@ -912,31 +982,48 @@ FourOscUI::ModEnvTab::ModEnvTab(FourOscUI& owner) : owner_(owner) {
 
         setupLabel(row.label, "ENV " + juce::String(i + 1));
 
+        // Draggable graph beside the value boxes; a handle drag writes the plugin
+        // value and keeps the matching box in sync.
+        row.graph.onStageChanged = [this, i, base](int paramIndex, float value) {
+            if (owner_.onParameterChanged)
+                owner_.onParameterChanged(paramIndex, value);
+            const int stage = paramIndex - base;
+            LinkableTextSlider* boxes[] = {&rows_[i].attackSlider, &rows_[i].decaySlider,
+                                           &rows_[i].sustainSlider, &rows_[i].releaseSlider};
+            if (stage >= 0 && stage < 4)
+                boxes[stage]->setValue(value, juce::dontSendNotification);
+        };
+        addAndMakeVisible(row.graph);
+
         row.attackSlider.setRange(0.0, 60.0, 0.001);
-        row.attackSlider.onValueChanged = [this, idx = base](double v) {
+        row.attackSlider.onValueChanged = [this, i, idx = base](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
+            rows_[i].graph.setStageValue(AdsrGraph::Attack, static_cast<float>(v));
         };
         addAndMakeVisible(row.attackSlider);
 
         row.decaySlider.setRange(0.0, 60.0, 0.001);
-        row.decaySlider.onValueChanged = [this, idx = base + 1](double v) {
+        row.decaySlider.onValueChanged = [this, i, idx = base + 1](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
+            rows_[i].graph.setStageValue(AdsrGraph::Decay, static_cast<float>(v));
         };
         addAndMakeVisible(row.decaySlider);
 
         row.sustainSlider.setRange(0.0, 100.0, 0.1);
-        row.sustainSlider.onValueChanged = [this, idx = base + 2](double v) {
+        row.sustainSlider.onValueChanged = [this, i, idx = base + 2](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
+            rows_[i].graph.setStageValue(AdsrGraph::Sustain, static_cast<float>(v));
         };
         addAndMakeVisible(row.sustainSlider);
 
         row.releaseSlider.setRange(0.001, 60.0, 0.001);
-        row.releaseSlider.onValueChanged = [this, idx = base + 3](double v) {
+        row.releaseSlider.onValueChanged = [this, i, idx = base + 3](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
+            rows_[i].graph.setStageValue(AdsrGraph::Release, static_cast<float>(v));
         };
         addAndMakeVisible(row.releaseSlider);
     }
@@ -982,19 +1069,29 @@ void FourOscUI::ModEnvTab::resized() {
     hdrRel_.setBounds(headerRow.removeFromLeft(sliderW));
     area.removeFromTop(2);
 
+    // Each env: the value-box row on the left (in the header columns), and a
+    // draggable graph filling the rest of the block on the right.
+    constexpr int envBlockH = 46;
+    const int boxesW = labelW + gap + 4 * (sliderW + gap);
     for (int i = 0; i < 2; ++i) {
-        auto rowArea = area.removeFromTop(rowH);
+        auto block = area.removeFromTop(envBlockH);
         area.removeFromTop(gap);
         auto& row = rows_[i];
-        row.label.setBounds(rowArea.removeFromLeft(labelW));
-        rowArea.removeFromLeft(gap);
-        row.attackSlider.setBounds(rowArea.removeFromLeft(sliderW));
-        rowArea.removeFromLeft(gap);
-        row.decaySlider.setBounds(rowArea.removeFromLeft(sliderW));
-        rowArea.removeFromLeft(gap);
-        row.sustainSlider.setBounds(rowArea.removeFromLeft(sliderW));
-        rowArea.removeFromLeft(gap);
-        row.releaseSlider.setBounds(rowArea.removeFromLeft(sliderW));
+
+        auto left = block.removeFromLeft(boxesW);
+        block.removeFromLeft(gap);
+        row.graph.setBounds(block.reduced(2));
+
+        auto boxRow = left.withSizeKeepingCentre(left.getWidth(), rowH);
+        row.label.setBounds(boxRow.removeFromLeft(labelW));
+        boxRow.removeFromLeft(gap);
+        row.attackSlider.setBounds(boxRow.removeFromLeft(sliderW));
+        boxRow.removeFromLeft(gap);
+        row.decaySlider.setBounds(boxRow.removeFromLeft(sliderW));
+        boxRow.removeFromLeft(gap);
+        row.sustainSlider.setBounds(boxRow.removeFromLeft(sliderW));
+        boxRow.removeFromLeft(gap);
+        row.releaseSlider.setBounds(boxRow.removeFromLeft(sliderW));
     }
 
     // Mod destinations section — "+" buttons for Env 1 and Env 2
@@ -1038,6 +1135,16 @@ void FourOscUI::ModEnvTab::updateFromParameters(const std::vector<magda::Paramet
                                         juce::dontSendNotification);
         rows_[i].releaseSlider.setValue(params[static_cast<size_t>(base + 3)].currentValue,
                                         juce::dontSendNotification);
+
+        // Mirror the ADSR slots into this env's graph (carries each stage's range).
+        rows_[i].graph.setStage(AdsrGraph::Attack, base, params[static_cast<size_t>(base)],
+                                params[static_cast<size_t>(base)].currentValue);
+        rows_[i].graph.setStage(AdsrGraph::Decay, base + 1, params[static_cast<size_t>(base + 1)],
+                                params[static_cast<size_t>(base + 1)].currentValue);
+        rows_[i].graph.setStage(AdsrGraph::Sustain, base + 2, params[static_cast<size_t>(base + 2)],
+                                params[static_cast<size_t>(base + 2)].currentValue);
+        rows_[i].graph.setStage(AdsrGraph::Release, base + 3, params[static_cast<size_t>(base + 3)],
+                                params[static_cast<size_t>(base + 3)].currentValue);
     }
 }
 
@@ -1064,6 +1171,8 @@ FourOscUI::LFOTab::LFOTab(FourOscUI& owner) : owner_(owner) {
         // Wave icon selector
         setupWaveSelector(row.waveSelector);
         row.waveSelector.onChange = [this, i](int shape) {
+            rows_[i].shape = shape;
+            repaint();
             if (owner_.onPluginStateChanged)
                 owner_.onPluginStateChanged("lfoShape" + juce::String(i + 1), juce::var(shape));
         };
@@ -1154,6 +1263,9 @@ void FourOscUI::LFOTab::resized() {
         row.depthSlider.setBounds(rowArea.removeFromLeft(sliderW));
         rowArea.removeFromLeft(gap);
         row.syncButton.setBounds(rowArea.removeFromLeft(toggleW));
+        rowArea.removeFromLeft(gap);
+        // Remaining width holds the wave-shape preview (drawn in paint()).
+        row.previewBounds = rowArea.reduced(2, 1);
     }
 
     // Mod destinations section — "+" buttons for LFO 1 and LFO 2
@@ -1191,13 +1303,84 @@ void FourOscUI::LFOTab::updateFromParameters(const std::vector<magda::ParameterI
                                      juce::dontSendNotification);
         rows_[i].depthSlider.setValue(params[static_cast<size_t>(base + 1)].currentValue,
                                       juce::dontSendNotification);
+        rows_[i].depth = static_cast<float>(params[static_cast<size_t>(base + 1)].currentValue);
     }
+    repaint();
 }
 
 void FourOscUI::LFOTab::updatePluginState(const FourOscPluginState& state) {
     for (int i = 0; i < 2; ++i) {
         rows_[i].waveSelector.setSelectedIndex(state.lfoWaveShape[i], juce::dontSendNotification);
         rows_[i].syncButton.setToggleState(state.lfoSync[i], juce::dontSendNotification);
+        rows_[i].shape = state.lfoWaveShape[i];
+    }
+    repaint();
+}
+
+void FourOscUI::LFOTab::paint(juce::Graphics& g) {
+    for (int i = 0; i < 2; ++i) {
+        const auto& row = rows_[i];
+        auto b = row.previewBounds.toFloat();
+        if (b.getWidth() < 8.0f || b.getHeight() < 6.0f)
+            continue;
+
+        // Frame + baseline.
+        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.25f));
+        g.fillRect(b);
+        const float midY = b.getCentreY();
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawHorizontalLine(static_cast<int>(midY), b.getX(), b.getRight());
+
+        if (row.shape == 0)  // Off: flat line only
+            continue;
+
+        // One cycle of the selected shape, amplitude scaled by depth.
+        const float amp = (b.getHeight() * 0.5f - 2.0f) * juce::jlimit(0.0f, 1.0f, row.depth);
+        auto wave = [&](float ph) -> float {  // ph in [0,1) -> [-1,1]
+            switch (row.shape) {
+                case 1:
+                    return std::sin(ph * juce::MathConstants<float>::twoPi);  // Sine
+                case 2:
+                    return ph < 0.5f ? 1.0f : -1.0f;  // Square
+                case 3:
+                    return 2.0f * ph - 1.0f;  // Saw
+                case 4:
+                    return 4.0f * std::abs(ph - 0.5f) - 1.0f;  // Triangle
+                default:
+                    return 0.0f;  // Noise handled below
+            }
+        };
+
+        juce::Path p;
+        const int n = juce::jmax(2, static_cast<int>(b.getWidth()));
+        if (row.shape == 5) {  // Noise: random-ish steps (deterministic, index-based)
+            uint32_t seed = 0x9e3779b9u;
+            for (int x = 0; x < n; ++x) {
+                if ((x % 4) == 0)
+                    seed = seed * 1664525u + 1013904223u;
+                const float v =
+                    (static_cast<float>(seed >> 9) / static_cast<float>(0x7fffff)) - 1.0f;
+                const float px = b.getX() + static_cast<float>(x);
+                const float py = midY - v * amp;
+                if (x == 0)
+                    p.startNewSubPath(px, py);
+                else
+                    p.lineTo(px, py);
+            }
+        } else {
+            for (int x = 0; x < n; ++x) {
+                const float ph = static_cast<float>(x) / static_cast<float>(n - 1);
+                const float px = b.getX() + static_cast<float>(x);
+                const float py = midY - wave(ph) * amp;
+                if (x == 0)
+                    p.startNewSubPath(px, py);
+                else
+                    p.lineTo(px, py);
+            }
+        }
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).brighter(0.3f));
+        g.strokePath(p, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded));
     }
 }
 

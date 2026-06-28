@@ -1,5 +1,6 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace magda::daw::audio {
@@ -33,6 +34,14 @@ SamplerVoice::SamplerVoice() {
 }
 
 void SamplerVoice::setADSR(float attack, float decay, float sustain, float release) {
+    // No-op when nothing changed. updateVoiceParameters() calls this every block,
+    // and juce::ADSR::setParameters() recomputes releaseRate from `sustain`,
+    // clobbering the rate noteOff() derived from the live envelope level. Doing
+    // that every block while a voice is releasing stretches the release far past
+    // its set time, so only push to the ADSR when a value actually changes.
+    if (attack == adsrParams.attack && decay == adsrParams.decay && sustain == adsrParams.sustain &&
+        release == adsrParams.release)
+        return;
     adsrParams.attack = attack;
     adsrParams.decay = decay;
     adsrParams.sustain = sustain;
@@ -43,6 +52,40 @@ void SamplerVoice::setADSR(float attack, float decay, float sustain, float relea
 void SamplerVoice::setPitchOffset(float semitones, float cents) {
     pitchSemitones = semitones;
     fineCents = cents;
+}
+
+double SamplerVoice::pitchRatioForNote(int midiNoteNumber, const SamplerSound& sound) const {
+    // (target freq / root freq) * (source SR / playback SR)
+    double noteWithOffset = midiNoteNumber + pitchSemitones + fineCents / 100.0;
+    auto baseNote = static_cast<int>(std::floor(noteWithOffset));
+    double noteHz = juce::MidiMessage::getMidiNoteInHertz(baseNote);
+    double fractional = noteWithOffset - static_cast<double>(baseNote);
+    if (fractional != 0.0)  // fractional semitones -> exponential
+        noteHz *= std::pow(2.0, fractional / 12.0);
+
+    double rootHz = juce::MidiMessage::getMidiNoteInHertz(sound.rootNote);
+    return (noteHz / rootHz) * (sound.sourceSampleRate / getSampleRate());
+}
+
+void SamplerVoice::beginGlide() {
+    glideSamplesRemaining = static_cast<int>(glideSeconds * getSampleRate());
+    if (glideSamplesRemaining > 0)
+        glideIncrement = (targetPitchRatio - pitchRatio) / glideSamplesRemaining;
+    else
+        pitchRatio = targetPitchRatio;
+}
+
+void SamplerVoice::glideToNote(int midiNoteNumber) {
+    auto* sound = dynamic_cast<SamplerSound*>(getCurrentlyPlayingSound().get());
+    if (sound == nullptr || !sound->hasData())
+        return;
+    targetPitchRatio = pitchRatioForNote(midiNoteNumber, *sound);
+    if (glideSeconds > 0.0)
+        beginGlide();  // slur to the new pitch, no envelope/position change
+    else {
+        pitchRatio = targetPitchRatio;
+        glideSamplesRemaining = 0;
+    }
 }
 
 void SamplerVoice::setPlaybackRegion(double startOffsetSeconds, double endSeconds, bool loop,
@@ -68,17 +111,14 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
     sourceSamplePosition = sampleStartOffset;
     velocityGain = 1.0f - velAmount * (1.0f - velocity);
 
-    // Compute pitch ratio: (target freq / root freq) * (source SR / playback SR)
-    double noteWithOffset = midiNoteNumber + pitchSemitones + fineCents / 100.0;
-    auto baseNote = static_cast<int>(std::floor(noteWithOffset));
-    double noteHz = juce::MidiMessage::getMidiNoteInHertz(baseNote);
-    // For fractional semitones, use exponential calculation
-    double fractional = noteWithOffset - static_cast<double>(baseNote);
-    if (fractional != 0.0)
-        noteHz *= std::pow(2.0, fractional / 12.0);
-
-    double rootHz = juce::MidiMessage::getMidiNoteInHertz(sound->rootNote);
-    pitchRatio = (noteHz / rootHz) * (sound->sourceSampleRate / getSampleRate());
+    targetPitchRatio = pitchRatioForNote(midiNoteNumber, *sound);
+    if (glideSeconds > 0.0 && glidePrimed)
+        beginGlide();  // portamento from the previously played note
+    else {
+        pitchRatio = targetPitchRatio;
+        glideSamplesRemaining = 0;
+    }
+    glidePrimed = true;
 
     adsr.setSampleRate(getSampleRate());
     adsr.setParameters(adsrParams);
@@ -158,10 +198,85 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
         }
 
         sourceSamplePosition += pitchRatio;
+
+        // Advance portamento toward the target pitch.
+        if (glideSamplesRemaining > 0) {
+            pitchRatio += glideIncrement;
+            if (--glideSamplesRemaining == 0)
+                pitchRatio = targetPitchRatio;
+        }
     }
 
     if (!adsr.isActive())
         clearCurrentNote();
+}
+
+//==============================================================================
+// SamplerSynth (Poly / Mono / Legato + glide)
+//==============================================================================
+
+SamplerVoice* SamplerSynth::monoVoice() {
+    for (int i = 0; i < getNumVoices(); ++i)
+        if (auto* v = dynamic_cast<SamplerVoice*>(getVoice(i)))
+            return v;
+    return nullptr;
+}
+
+void SamplerSynth::noteOn(int midiChannel, int midiNoteNumber, float velocity) {
+    if (voiceMode == Poly) {
+        juce::Synthesiser::noteOn(midiChannel, midiNoteNumber, velocity);
+        return;
+    }
+
+    lastVelocity = velocity;
+    heldNotes.erase(std::remove(heldNotes.begin(), heldNotes.end(), midiNoteNumber),
+                    heldNotes.end());
+    const bool alreadySounding = !heldNotes.empty();
+    heldNotes.push_back(midiNoteNumber);
+
+    auto* v = monoVoice();
+    if (v == nullptr)
+        return;
+    v->setGlideSeconds(glideSeconds);
+
+    if (voiceMode == Legato && alreadySounding && v->isVoiceActive()) {
+        v->glideToNote(midiNoteNumber);  // slur: no re-attack
+    } else if (auto sound = getSound(0)) {
+        startVoice(v, sound.get(), midiChannel, midiNoteNumber, velocity);  // retrigger
+    }
+}
+
+void SamplerSynth::noteOff(int midiChannel, int midiNoteNumber, float velocity, bool allowTailOff) {
+    if (voiceMode == Poly) {
+        juce::Synthesiser::noteOff(midiChannel, midiNoteNumber, velocity, allowTailOff);
+        return;
+    }
+
+    heldNotes.erase(std::remove(heldNotes.begin(), heldNotes.end(), midiNoteNumber),
+                    heldNotes.end());
+
+    auto* v = monoVoice();
+    if (v == nullptr)
+        return;
+
+    if (heldNotes.empty()) {
+        stopVoice(v, velocity, allowTailOff);  // release the last note
+        return;
+    }
+
+    // Fall back to the most-recent still-held note.
+    const int top = heldNotes.back();
+    v->setGlideSeconds(glideSeconds);
+    if (voiceMode == Legato && v->isVoiceActive()) {
+        v->glideToNote(top);
+    } else if (auto sound = getSound(0)) {
+        startVoice(v, sound.get(), midiChannel, top, lastVelocity);
+    }
+}
+
+void SamplerSynth::allNotesOff(int midiChannel, bool allowTailOff) {
+    heldNotes.clear();
+    juce::Synthesiser::allNotesOff(midiChannel, allowTailOff);
 }
 
 //==============================================================================
@@ -281,6 +396,40 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
             return v > 1.0f ? v / 100.0f : v;
         });
 
+    // Voice mode (Poly / Mono / Legato) + portamento glide.
+    static const juce::Identifier voiceModeId("voiceMode");
+    voiceModeValue.referTo(state, voiceModeId, um, 0.0f);
+    voiceModeParam = addParam(
+        "voiceMode", "Voice Mode", {0.0f, 2.0f, 1.0f},
+        [](float v) {
+            const int m = juce::jlimit(0, 2, static_cast<int>(std::lround(v)));
+            return juce::String(m == 0 ? "Poly" : m == 1 ? "Mono" : "Legato");
+        },
+        [](const juce::String& s) {
+            if (s.startsWithIgnoreCase("mono"))
+                return 1.0f;
+            if (s.startsWithIgnoreCase("leg"))
+                return 2.0f;
+            return 0.0f;
+        });
+
+    static const juce::Identifier glideId("glide");
+    glideValue.referTo(state, glideId, um, 0.0f);
+    glideParam = addParam(
+        "glide", "Glide", {0.0f, 2000.0f, 0.0f, 0.4f},
+        [](float v) {
+            return v < 1000.0f ? juce::String(static_cast<int>(v)) + " ms"
+                               : juce::String(v / 1000.0f, 2) + " s";
+        },
+        [](const juce::String& s) {
+            juce::String t = s.trim();
+            if (t.endsWithIgnoreCase("ms"))
+                return t.dropLastCharacters(2).trim().getFloatValue();
+            if (t.endsWithIgnoreCase("s"))
+                return t.dropLastCharacters(1).trim().getFloatValue() * 1000.0f;
+            return t.getFloatValue();
+        });
+
     // Non-parameter state
     samplePathValue.referTo(state, te::IDs::source, um, juce::String());
     rootNoteValue.referTo(state, te::IDs::rootNote, um, 60);
@@ -318,6 +467,8 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     loopStartParam->setParameterFromHost(loopStartValue.get(), juce::dontSendNotification);
     loopEndParam->setParameterFromHost(loopEndValue.get(), juce::dontSendNotification);
     velAmountParam->setParameterFromHost(velAmountValue.get(), juce::dontSendNotification);
+    voiceModeParam->setParameterFromHost(voiceModeValue.get(), juce::dontSendNotification);
+    glideParam->setParameterFromHost(glideValue.get(), juce::dontSendNotification);
 
     // Restore sample from saved state
     juce::String savedPath = samplePathValue.get();
@@ -476,7 +627,8 @@ void MagdaSamplerPlugin::syncCachedValueFromParam(int paramIndex) {
 
     // Map param index to the corresponding CachedValue
     // Order: attack(0), decay(1), sustain(2), release(3), pitch(4), fine(5), level(6),
-    //        sampleStart(7), sampleEnd(8), loopStart(9), loopEnd(10), velAmount(11)
+    //        sampleStart(7), sampleEnd(8), loopStart(9), loopEnd(10), velAmount(11),
+    //        voiceMode(12), glide(13)
     switch (paramIndex) {
         case 0:
             attackValue = value;
@@ -514,6 +666,12 @@ void MagdaSamplerPlugin::syncCachedValueFromParam(int paramIndex) {
         case 11:
             velAmountValue = value;
             break;
+        case 12:
+            voiceModeValue = value;
+            break;
+        case 13:
+            glideValue = value;
+            break;
         default:
             break;
     }
@@ -541,6 +699,12 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     float lEnd = juce::jlimit(0.0f, maxSec, loopEndParam->getCurrentValue());
 
     float velAmt = juce::jlimit(0.0f, 1.0f, velAmountParam->getCurrentValue());
+
+    const int voiceMode =
+        juce::jlimit(0, 2, static_cast<int>(std::lround(voiceModeParam->getCurrentValue())));
+    const double glideSeconds = juce::jlimit(0.0f, 2000.0f, glideParam->getCurrentValue()) / 1000.0;
+    synthesiser.setVoiceMode(voiceMode);
+    synthesiser.setGlideSeconds(glideSeconds);
 
     for (int i = 0; i < synthesiser.getNumVoices(); ++i) {
         if (auto* voice = dynamic_cast<SamplerVoice*>(synthesiser.getVoice(i))) {
@@ -616,9 +780,9 @@ void MagdaSamplerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 }
 
 void MagdaSamplerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    te::copyPropertiesToCachedValues(v, attackValue, decayValue, sustainValue, releaseValue,
-                                     pitchValue, fineValue, levelValue, sampleStartValue,
-                                     sampleEndValue, loopStartValue, loopEndValue);
+    te::copyPropertiesToCachedValues(
+        v, attackValue, decayValue, sustainValue, releaseValue, pitchValue, fineValue, levelValue,
+        sampleStartValue, sampleEndValue, loopStartValue, loopEndValue, voiceModeValue, glideValue);
 
     attackValue = clampToParameterRange(attackParam, attackValue.get());
     decayValue = clampToParameterRange(decayParam, decayValue.get());

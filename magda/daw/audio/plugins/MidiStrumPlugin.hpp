@@ -20,8 +20,9 @@ namespace magda::daw::audio {
  * instrument.
  *
  * Notes ring until the chord is released (Chord mode) or the next re-strum
- * (Sync mode) - unlike the old in-instrument path's fixed 6 ms gate, which only
- * worked because struck/plucked voices decay on their own.
+ * (Loop mode) - unlike the old in-instrument path's fixed 6 ms gate, which only
+ * worked because struck/plucked voices decay on their own. The Loop interval is
+ * either a free millisecond value or tempo-locked to a beat division.
  */
 class MidiStrumPlugin : public MidiDevicePlugin {
   public:
@@ -33,8 +34,14 @@ class MidiStrumPlugin : public MidiDevicePlugin {
     }
     static const char* xmlTypeName;
 
-    enum class Trigger { Chord = 0, Sync };
+    enum class Trigger { Chord = 0, Loop };
     enum class Order { Up = 0, Down, UpDown, AsPlayed };
+    // Loop-interval clock source: a free millisecond value, or tempo-locked to a
+    // musical division of the host beat.
+    enum class LoopSync { Time = 0, Beat };
+    // Beat divisions for tempo-locked Loop mode (index order == UI/param order).
+    static double loopRateToBeats(int rateIndex);
+    static constexpr int kNumLoopRates = 8;
 
     juce::String getName() const override {
         return getPluginName();
@@ -55,10 +62,17 @@ class MidiStrumPlugin : public MidiDevicePlugin {
     void applyToBuffer(const te::PluginRenderContext&) override;
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
+    /// UI viz helper: normalized onset times [0,1] for `count` evenly-spaced
+    /// notes, using the current Shape preset and Cycles. Computed fresh (its own
+    /// local LUT, not the audio-thread `lut_`) so it is safe to call from the
+    /// message thread.
+    std::vector<float> curveOnsetPreview(int count) const;
+
     // CachedValues (persistence) + AutomatableParameters (macro/mod linking).
-    juce::CachedValue<int> trigger, order, shape, cycles;
+    juce::CachedValue<int> trigger, order, shape, cycles, loopSync, loopRate;
     juce::CachedValue<float> strumLength, syncInterval;
     te::AutomatableParameter::Ptr triggerParam, orderParam, shapeParam, cyclesParam;
+    te::AutomatableParameter::Ptr loopSyncParam, loopRateParam;
     te::AutomatableParameter::Ptr strumLengthParam, syncIntervalParam;
 
   private:
@@ -74,9 +88,12 @@ class MidiStrumPlugin : public MidiDevicePlugin {
         bool gateOn = true;  // true = note-on, false = note-off
     };
 
-    void scheduleStrum();       // queue note-ons (+ Sync re-strum note-offs)
+    void scheduleStrum();       // queue note-ons (+ Loop re-strum note-offs)
     void scheduleReleaseAll();  // queue note-offs for everything sounding (at clock_)
     void resetStrumState();
+    // Loop re-strum interval in samples: either the free ms value or a tempo-
+    // locked beat division (read from the edit's tempo at the block position).
+    int loopIntervalSamples(const te::PluginRenderContext& fc) const;
     float controlValue(te::AutomatableParameter* p, const juce::CachedValue<float>& cv) const;
     int controlIndex(te::AutomatableParameter* p, const juce::CachedValue<int>& cv) const;
 
@@ -86,9 +103,10 @@ class MidiStrumPlugin : public MidiDevicePlugin {
     std::int64_t clock_ = 0;         // absolute sample counter
     std::int64_t noteOrder_ = 0;     // play-order stamp for As-Played ordering
     int collectLeft_ = -1;           // Chord-mode collect debounce (samples)
-    int syncLeft_ = 0;               // Sync-mode interval countdown (samples)
+    int syncLeft_ = 0;               // Loop-mode interval countdown (samples)
     int lutShape_ = -1;              // shape index the LUT was built for
     std::array<float, 1024> lut_{};  // current strum curve, sampled
+    bool wasPlaying_ = false;        // transport state last block (stop -> flush)
 
     void syncParamFromProperty(const juce::Identifier& property);
     struct ParamSyncListener : public juce::ValueTree::Listener {

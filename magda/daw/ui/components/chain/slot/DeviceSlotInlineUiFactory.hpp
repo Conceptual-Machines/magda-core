@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
 #include <memory>
@@ -42,6 +43,7 @@ struct DeviceSlotInlineUiCallbacks {
     std::function<void(int, float)> onCompiledParamLinkAmountChanged;
     std::function<void(int)> onShowAutomationLane;
     std::function<magda::ChainNodePath()> getNodePath;
+    std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
 };
 
 struct DeviceSlotInlineUiCallbackContext {
@@ -53,6 +55,7 @@ struct DeviceSlotInlineUiCallbackContext {
     std::function<void()> onShowDeviceModPanel;
     std::function<void()> onShowDeviceMacroPanel;
     std::function<void(int)> onShowAutomationLane;
+    std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
 };
 
 DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(

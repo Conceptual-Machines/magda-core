@@ -312,11 +312,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addChildComponent(*presetsButton_);  // hidden by default; shown by refreshPresetsButton
 
     // Sidechain button (only visible when plugin supports sidechain)
-    scButton_ = std::make_unique<juce::TextButton>("SC");
-    scButton_->setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    scButton_ = std::make_unique<magda::SvgButton>("Sidechain", BinaryData::sidechain_svg,
+                                                   BinaryData::sidechain_svgSize);
+    scButton_->setTooltip("Sidechain source");
+    scButton_->setIconPadding(3.5f);  // glyph slightly larger than the 4px default
+    // When a sidechain is active, fill the button background orange (white glyph),
+    // matching the old SC button.
+    scButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
+    scButton_->setActiveColor(juce::Colours::white);
     scButton_->onClick = [this]() { showSidechainMenu(); };
     scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
     addAndMakeVisible(*scButton_);
@@ -428,20 +432,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         randomButton_->onClick = [this]() { randomizeSequencerPattern(traits_, customUI_); };
         addAndMakeVisible(*randomButton_);
 
-        // MIDI-thru toggle (moved out of the sequencer body into the header).
-        midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
-                                                             BinaryData::compare_svgSize);
-        midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        midiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
-        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-        midiThruButton_->setTooltip("MIDI thru: pass input to downstream instruments");
-        midiThruButton_->setToggleable(true);
-        midiThruButton_->onClick = [this]() {
-            if (auto enabled = toggleSequencerMidiThru(traits_, customUI_))
-                midiThruButton_->setActive(*enabled);
-        };
-        addAndMakeVisible(*midiThruButton_);
-
         // Step-record toggle (moved out of the sequencer body into the header).
         stepRecordButton_ = std::make_unique<magda::SvgButton>(
             "StepRecord", BinaryData::record_circle_svg, BinaryData::record_circle_svgSize);
@@ -456,24 +446,25 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         addAndMakeVisible(*stepRecordButton_);
     }
 
-    // "MIDI in thru" toggle for wrapped instruments. The plugin's own MIDI
-    // output always flows downstream; this only passes the raw input past the
-    // instrument so a MIDI-triggered FX placed after it still receives notes.
+    // "MIDI in thru" toggle for devices that can both receive and output MIDI.
+    // The plugin's own MIDI output always flows downstream; this controls
+    // whether the raw input is merged through as well.
     if (supportsMidiSourceToggle(device)) {
-        instMidiThruButton_ = std::make_unique<magda::SvgButton>(
-            "MidiInThru", BinaryData::compare_svg, BinaryData::compare_svgSize);
-        instMidiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        instMidiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
-        instMidiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-        instMidiThruButton_->setTooltip("MIDI in thru: pass input to a MIDI FX after this device");
-        instMidiThruButton_->setToggleable(true);
-        instMidiThruButton_->setActive(device.midiInThru);
-        instMidiThruButton_->onClick = [this]() {
-            const bool enabled = !instMidiThruButton_->isActive();
-            instMidiThruButton_->setActive(enabled);
+        midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
+                                                             BinaryData::compare_svgSize);
+        midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        midiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
+        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        midiThruButton_->setTooltip("MIDI thru: merge raw input with this device's MIDI output");
+        midiThruButton_->setToggleable(true);
+        midiThruButton_->setActive(device.midiInThru);
+        midiThruButton_->onClick = [this]() {
+            const bool enabled = !midiThruButton_->isActive();
+            device_.midiInThru = enabled;
+            midiThruButton_->setActive(enabled);
             magda::TrackManager::getInstance().setDeviceInChainMidiInThruByPath(nodePath_, enabled);
         };
-        addAndMakeVisible(*instMidiThruButton_);
+        addAndMakeVisible(*midiThruButton_);
     }
 
     // Create parameter grid (owns slots + pagination).
@@ -589,18 +580,15 @@ void DeviceSlotComponent::timerCallback() {
         }
     }
 
-    if (traits_.isArpeggiator || traits_.isStepSequencer || traits_.isPolyStepSequencer ||
-        traits_.isChordEngine) {
+    if (traits_.isArpeggiator || traits_.isStrum || traits_.isStepSequencer ||
+        traits_.isPolyStepSequencer || traits_.isChordEngine) {
         refreshDeviceSlotMidiActivity(traits_, customUI_, midiNoteStrip_, lastMidiNote_,
                                       lastChordNotes_, lastChordCount_);
 
-        // Keep the step-seq header toggles in sync with plugin state.
-        if (midiThruButton_ != nullptr || stepRecordButton_ != nullptr) {
+        // Keep the step-record header toggle in sync with plugin state.
+        if (stepRecordButton_ != nullptr) {
             const auto sequencerState = getSequencerDeviceHeaderState(traits_, customUI_);
             if (sequencerState.available) {
-                if (midiThruButton_ != nullptr &&
-                    midiThruButton_->isActive() != sequencerState.midiThru)
-                    midiThruButton_->setActive(sequencerState.midiThru);
                 const bool recChanged = stepRecordButton_ != nullptr &&
                                         stepRecordButton_->isActive() != sequencerState.recording;
                 if (recChanged)
@@ -841,6 +829,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
     syncGainControlsFromDevice();
+    if (midiThruButton_ != nullptr && midiThruButton_->isActive() != device.midiInThru)
+        midiThruButton_->setActive(device.midiInThru);
     refreshMixKnobFromDevice(true);
 
     // Plugin instance may have just become available (or its program list changed
@@ -1134,8 +1124,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .exportClipButton = exportClipButton_.get(),
          .randomButton = randomButton_.get(),
          .stepRecordButton = stepRecordButton_.get(),
-         .midiThruButton = midiThruButton_.get(),
-         .instMidiThruButton = instMidiThruButton_.get()},
+         .midiThruButton = midiThruButton_.get()},
         BUTTON_SIZE);
 }
 

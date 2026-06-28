@@ -1,11 +1,13 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
 #include <memory>
 #include <vector>
 
+#include "core/DeviceInfo.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -40,8 +42,10 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     /** Info about a single plugin slot in the pad chain. */
     struct PluginSlotInfo {
         juce::String name;
+        magda::DeviceInfo device;
         bool isSampler = false;
         tracktion::engine::Plugin* plugin = nullptr;
+        std::function<tracktion::engine::Plugin::Ptr()> livePlugin;
         float gainDb = 0.0f;
         magda::DeviceId deviceId =
             magda::INVALID_DEVICE_ID;  // MAGDA DeviceId for macro/mod linking

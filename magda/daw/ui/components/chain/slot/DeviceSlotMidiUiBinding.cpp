@@ -3,12 +3,14 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/PolyStepSequencerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
+#include "custom_ui/StrumUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"
@@ -38,6 +40,13 @@ void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
     if (auto* arpeggiatorUI = customUI.getArpeggiatorUI()) {
         if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get()))
             arpeggiatorUI->setArpeggiator(arp);
+    }
+
+    if (auto* strumUI = customUI.getStrumUI()) {
+        if (auto* strum = dynamic_cast<daw::audio::MidiStrumPlugin*>(plugin.get())) {
+            strumUI->setPlugin(strum);
+            customUI.setStrumPlugin(strum);
+        }
     }
 
     if (auto* stepSequencerUI = customUI.getStepSequencerUI()) {

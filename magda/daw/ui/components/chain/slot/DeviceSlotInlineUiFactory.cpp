@@ -28,6 +28,15 @@ tracktion::engine::Plugin::Ptr getLivePlugin(const magda::ChainNodePath& path) {
     return {};
 }
 
+tracktion::engine::Plugin::Ptr resolveLivePlugin(const magda::ChainNodePath& path,
+                                                 const DeviceSlotInlineUiCallbacks& callbacks) {
+    if (callbacks.getLivePlugin) {
+        if (auto plugin = callbacks.getLivePlugin())
+            return plugin;
+    }
+    return getLivePlugin(path);
+}
+
 DeviceCustomUIManager::Callbacks makeCustomUiCallbacks(DeviceSlotInlineUiCallbacks callbacks) {
     DeviceCustomUIManager::Callbacks customCallbacks;
     customCallbacks.onParameterChanged = std::move(callbacks.onParameterChanged);
@@ -36,6 +45,7 @@ DeviceCustomUIManager::Callbacks makeCustomUiCallbacks(DeviceSlotInlineUiCallbac
     customCallbacks.onUpdateModsPanel = std::move(callbacks.onUpdateModsPanel);
     customCallbacks.onUpdateMacroPanel = std::move(callbacks.onUpdateMacroPanel);
     customCallbacks.getNodePath = std::move(callbacks.getNodePath);
+    customCallbacks.getLivePlugin = std::move(callbacks.getLivePlugin);
     return customCallbacks;
 }
 
@@ -128,6 +138,7 @@ DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(
     };
     callbacks.onShowAutomationLane = context.onShowAutomationLane;
     callbacks.getNodePath = context.getNodePath;
+    callbacks.getLivePlugin = context.getLivePlugin;
     return callbacks;
 }
 
@@ -148,7 +159,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         if (callbacks.onLayoutChanged)
             storage.compiledPanel->setOnLayoutChanged(callbacks.onLayoutChanged);
 
-        if (auto plugin = getLivePlugin(nodePath))
+        if (auto plugin = resolveLivePlugin(nodePath, callbacks))
             storage.compiledPanel->bindPlugin(plugin.get());
 
         storage.compiledPanel->updateFromDevice(device);
@@ -162,7 +173,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
     if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();
 
-        if (auto plugin = getLivePlugin(nodePath)) {
+        if (auto plugin = resolveLivePlugin(nodePath, callbacks)) {
             if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get())) {
                 storage.faustUI->setPlugin(faustModel);
                 storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(

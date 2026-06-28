@@ -57,8 +57,7 @@ HeaderControlComponents getHeaderControlComponents(DeviceSlotHeaderControls cont
             .exportClipButton = controls.exportClipButton,
             .randomButton = controls.randomButton,
             .stepRecordButton = controls.stepRecordButton,
-            .midiThruButton = controls.midiThruButton,
-            .instMidiThruButton = controls.instMidiThruButton};
+            .midiThruButton = controls.midiThruButton};
 }
 
 }  // namespace
@@ -128,7 +127,8 @@ void applyMidiOnlyDeviceHeaderVisibility(const DeviceSlotTraits& traits,
         return;
 
     setVisibleIfPresent(modButton, false);
-    if (!traits.isArpeggiator && !traits.isStepSequencer && !traits.isPolyStepSequencer)
+    if (!traits.isArpeggiator && !traits.isStrum && !traits.isStepSequencer &&
+        !traits.isPolyStepSequencer)
         setVisibleIfPresent(macroButton, false);
 }
 

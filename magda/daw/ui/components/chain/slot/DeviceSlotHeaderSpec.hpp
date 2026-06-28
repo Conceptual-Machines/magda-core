@@ -16,7 +16,6 @@ enum class HeaderControlId {
     Random,
     StepRecord,
     MidiThru,
-    InstMidiThru,
     Learn,
     UI,
     MultiOut,
@@ -38,7 +37,6 @@ struct HeaderControlComponents {
     juce::Component* randomButton = nullptr;
     juce::Component* stepRecordButton = nullptr;
     juce::Component* midiThruButton = nullptr;
-    juce::Component* instMidiThruButton = nullptr;
 };
 
 struct HeaderControlVisibility {
@@ -48,7 +46,6 @@ struct HeaderControlVisibility {
     bool random = false;
     bool stepRecord = false;
     bool midiThru = false;
-    bool instMidiThru = false;
     bool learn = false;
     bool ui = false;
     bool multiOut = false;

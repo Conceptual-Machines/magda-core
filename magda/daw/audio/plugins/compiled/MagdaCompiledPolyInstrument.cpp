@@ -290,6 +290,7 @@ void MagdaCompiledPolyInstrument::resetAllVoices() {
         poly_->ctrlChange(0, 123, 0);  // All Notes Off
     if (monoVoice_)
         monoVoice_->instanceClear();
+    polyHeld_.fill(false);
     heldNotes_.clear();
     if (monoGateZone_)
         *monoGateZone_ = 0.0f;
@@ -337,6 +338,12 @@ void MagdaCompiledPolyInstrument::reset() {
 void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!poly_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
+
+    // Stop mid-note doesn't deliver note-offs, so a sounding clip voice would
+    // hang gated-on. Flush every voice on the playing->stopped edge.
+    if (wasPlaying_ && !fc.isPlaying)
+        resetAllVoices();
+    wasPlaying_ = fc.isPlaying;
 
     // Fan each voice macro out to every poly voice (Glide forced to 0 so reused
     // voices never portamento) and to the mono voice (real value, incl. Glide).
@@ -416,15 +423,32 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
             cursor = evSample;
 
             if (mode == Poly) {
-                if (m.isNoteOn())
-                    poly_->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-                else if (m.isNoteOff())
-                    poly_->keyOff(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-                else if (m.isController())
+                if (m.isNoteOn()) {
+                    const int note = m.getNoteNumber();
+                    // Release any voice still sounding this pitch before
+                    // re-triggering, so the allocator never accumulates orphan
+                    // voices that would hang (one voice per pitch).
+                    if (note >= 0 && note < 128) {
+                        if (polyHeld_[static_cast<size_t>(note)])
+                            poly_->keyOff(m.getChannel(), note, 0);
+                        polyHeld_[static_cast<size_t>(note)] = true;
+                    }
+                    poly_->keyOn(m.getChannel(), note, m.getVelocity());
+                    strikePulse_.fetch_add(1, std::memory_order_relaxed);
+                } else if (m.isNoteOff()) {
+                    const int note = m.getNoteNumber();
+                    if (note >= 0 && note < 128)
+                        polyHeld_[static_cast<size_t>(note)] = false;
+                    poly_->keyOff(m.getChannel(), note, m.getVelocity());
+                } else if (m.isController()) {
+                    if (m.getControllerNumber() == 120 || m.getControllerNumber() == 123)
+                        polyHeld_.fill(false);
                     poly_->ctrlChange(m.getChannel(), m.getControllerNumber(),
                                       m.getControllerValue());
+                }
             } else {
                 if (m.isNoteOn()) {
+                    strikePulse_.fetch_add(1, std::memory_order_relaxed);
                     if (handleMonoNoteOn(m.getNoteNumber(), m.getVelocity(), mode)) {
                         // One-sample gate-low renders the falling edge; raising it
                         // again gives the rising edge that retriggers.

@@ -7,8 +7,16 @@
 #include "ui/themes/CursorManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+constexpr int kNameRowH = 20;         // top sample-name / root / load row
+constexpr int kCtrlRowH = 30;         // one control row: label(12) + control(18)
+constexpr int kCtrlBlockH = 64;       // two control rows (bottom-aligned in each column)
+constexpr int kRightColPercent = 38;  // right (synth) column width as % of body
+}  // namespace
 
 SamplerUI::SamplerUI() {
     // Sample name label
@@ -161,6 +169,51 @@ SamplerUI::SamplerUI() {
 
     setupTimeSlider(releaseSlider_, 3, 0.001, 10.0, 0.1);
 
+    // --- ADSR graph (its own time axis, decoupled from the waveform) ---
+    addAndMakeVisible(envGraph_);
+    envGraph_.onStageChanged = [this](int paramIndex, float v) {
+        // Drive the matching value box, which forwards the write to the plugin.
+        switch (paramIndex) {
+            case 0:
+                attackSlider_.setValue(v, juce::sendNotificationSync);
+                break;
+            case 1:
+                decaySlider_.setValue(v, juce::sendNotificationSync);
+                break;
+            case 2:
+                sustainSlider_.setValue(v, juce::sendNotificationSync);
+                break;
+            case 3:
+                releaseSlider_.setValue(v, juce::sendNotificationSync);
+                break;
+            default:
+                break;
+        }
+    };
+    // Keep the graph in lockstep when a value box is edited directly (overrides the
+    // generic onValueChanged installed by setupTimeSlider for the ADSR sliders).
+    attackSlider_.onValueChanged = [this](double v) {
+        if (onParameterChanged)
+            onParameterChanged(0, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Attack, static_cast<float>(v));
+    };
+    decaySlider_.onValueChanged = [this](double v) {
+        if (onParameterChanged)
+            onParameterChanged(1, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Decay, static_cast<float>(v));
+    };
+    sustainSlider_.onValueChanged = [this](double v) {
+        if (onParameterChanged)
+            onParameterChanged(2, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Sustain, static_cast<float>(v));
+    };
+    releaseSlider_.onValueChanged = [this](double v) {
+        if (onParameterChanged)
+            onParameterChanged(3, static_cast<float>(v));
+        envGraph_.setStageValue(AdsrGraph::Release, static_cast<float>(v));
+    };
+    syncEnvGraph();
+
     // --- Pitch slider (-24 to +24 semitones) ---
     pitchSlider_.setRange(-24.0, 24.0, 1.0);
     pitchSlider_.setValue(0.0, juce::dontSendNotification);
@@ -226,6 +279,56 @@ SamplerUI::SamplerUI() {
     };
     addAndMakeVisible(velAmountSlider_);
 
+    // --- Glide (param 13): portamento time ---
+    glideSlider_.setRange(0.0, 2000.0, 1.0);
+    glideSlider_.setValue(0.0, juce::dontSendNotification);
+    glideSlider_.setValueFormatter([](double v) {
+        return v < 1000.0 ? juce::String(static_cast<int>(v)) + " ms"
+                          : juce::String(v / 1000.0, 2) + " s";
+    });
+    glideSlider_.setValueParser([](const juce::String& text) {
+        juce::String t = text.trim();
+        if (t.endsWithIgnoreCase("ms"))
+            return static_cast<double>(t.dropLastCharacters(2).trim().getFloatValue());
+        if (t.endsWithIgnoreCase("s"))
+            return static_cast<double>(t.dropLastCharacters(1).trim().getFloatValue()) * 1000.0;
+        return t.getDoubleValue();
+    });
+    glideSlider_.onValueChanged = [this](double value) {
+        if (onParameterChanged)
+            onParameterChanged(13, static_cast<float>(value));
+    };
+    glideSlider_.setParamIndex(13);
+    addAndMakeVisible(glideSlider_);
+
+    // --- Voice Mode (param 12): segmented Poly/Mono/Legato over a hidden slider ---
+    voiceModeSlider_.setRange(0.0, 2.0, 1.0);
+    voiceModeSlider_.setValue(0.0, juce::dontSendNotification);
+    voiceModeSlider_.setParamIndex(12);
+    voiceModeSlider_.onValueChanged = [this](double value) {
+        if (onParameterChanged)
+            onParameterChanged(12, static_cast<float>(value));
+    };
+    addChildComponent(voiceModeSlider_);  // hidden carrier; buttons drive it
+    static const char* kModeNames[3] = {"Poly", "Mono", "Legato"};
+    for (int m = 0; m < 3; ++m) {
+        auto btn = std::make_unique<juce::TextButton>(kModeNames[m]);
+        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        btn->setClickingTogglesState(false);
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        btn->setConnectedEdges((m > 0 ? juce::Button::ConnectedOnLeft : 0) |
+                               (m < 2 ? juce::Button::ConnectedOnRight : 0));
+        btn->onClick = [this, m]() { setVoiceMode(m); };
+        addAndMakeVisible(*btn);
+        voiceModeButtons_[static_cast<size_t>(m)] = std::move(btn);
+    }
+    updateVoiceModeButtons();
+
     // --- Labels ---
     setupLabel(startLabel_, "START");
     setupLabel(endLabel_, "END");
@@ -239,10 +342,30 @@ SamplerUI::SamplerUI() {
     setupLabel(fineLabel_, "FINE");
     setupLabel(levelLabel_, "LEVEL");
     setupLabel(velAmountLabel_, "VEL");
+    setupLabel(voiceModeLabel_, "VOICE");
+    setupLabel(glideLabel_, "GLIDE");
+}
+
+void SamplerUI::setVoiceMode(int mode) {
+    voiceMode_ = juce::jlimit(0, 2, mode);
+    voiceModeSlider_.setValue(voiceMode_, juce::dontSendNotification);
+    if (onParameterChanged)
+        onParameterChanged(12, static_cast<float>(voiceMode_));
+    updateVoiceModeButtons();
+}
+
+void SamplerUI::updateVoiceModeButtons() {
+    for (int m = 0; m < 3; ++m)
+        if (voiceModeButtons_[static_cast<size_t>(m)])
+            voiceModeButtons_[static_cast<size_t>(m)]->setToggleState(m == voiceMode_,
+                                                                      juce::dontSendNotification);
 }
 
 SamplerUI::~SamplerUI() {
     stopTimer();
+    for (auto& btn : voiceModeButtons_)
+        if (btn)
+            btn->setLookAndFeel(nullptr);
 }
 
 void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
@@ -256,16 +379,23 @@ void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
 void SamplerUI::updateParameters(float attack, float decay, float sustain, float release,
                                  float pitch, float fine, float level, float sampleStart,
                                  float sampleEnd, bool loopEnabled, float loopStart, float loopEnd,
-                                 float velAmount, const juce::String& sampleName, int rootNote) {
+                                 float velAmount, const juce::String& sampleName, int rootNote,
+                                 float voiceMode, float glide) {
     attackSlider_.setValue(attack, juce::dontSendNotification);
     decaySlider_.setValue(decay, juce::dontSendNotification);
     sustainSlider_.setValue(sustain, juce::dontSendNotification);
     releaseSlider_.setValue(release, juce::dontSendNotification);
+    syncEnvGraph();  // mirror the live ADSR values into the graph
     pitchSlider_.setValue(pitch, juce::dontSendNotification);
     fineSlider_.setValue(fine, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);
     waveformGain_ = juce::Decibels::decibelsToGain(level);
     velAmountSlider_.setValue(velAmount, juce::dontSendNotification);
+
+    glideSlider_.setValue(glide, juce::dontSendNotification);
+    voiceMode_ = juce::jlimit(0, 2, static_cast<int>(std::lround(voiceMode)));
+    voiceModeSlider_.setValue(voiceMode_, juce::dontSendNotification);
+    updateVoiceModeButtons();
 
     rootNoteSlider_.setValue(rootNote, juce::dontSendNotification);
 
@@ -411,12 +541,41 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*
 // =============================================================================
 
 juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
+    // Left column: the waveform sits above that column's 2-row control block.
     auto area = getLocalBounds().reduced(4);
-    area.removeFromTop(22);  // Skip sample name row (20 + 2 gap)
-    // Controls below: label(12) + slider(18) + margin = 38
-    static constexpr int kControlsHeight = 38;
-    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight - 2);
-    return area.removeFromTop(waveHeight);
+    area.removeFromTop(kNameRowH + 2);
+    const int rightColW = juce::jmax(280, area.getWidth() * kRightColPercent / 100);
+    area.removeFromRight(rightColW + 4);  // right (synth) column + gap -> left column
+    area.removeFromBottom(kCtrlBlockH);   // left column's control block
+    return area;
+}
+
+void SamplerUI::syncEnvGraph() {
+    auto timeInfo = [](float mn, float mx, int idx, float val) {
+        magda::ParameterInfo i;
+        i.minValue = mn;
+        i.maxValue = mx;
+        i.scale = magda::ParameterScale::Logarithmic;  // usable spread for short times
+        i.unit = "s";
+        i.defaultValue = mn;
+        i.currentValue = val;
+        i.paramIndex = idx;
+        return i;
+    };
+    const float a = static_cast<float>(attackSlider_.getValue());
+    const float d = static_cast<float>(decaySlider_.getValue());
+    const float s = static_cast<float>(sustainSlider_.getValue());
+    const float r = static_cast<float>(releaseSlider_.getValue());
+    envGraph_.setStage(AdsrGraph::Attack, 0, timeInfo(0.001f, 5.0f, 0, a), a);
+    envGraph_.setStage(AdsrGraph::Decay, 1, timeInfo(0.001f, 5.0f, 1, d), d);
+    magda::ParameterInfo si;
+    si.minValue = 0.0f;
+    si.maxValue = 1.0f;
+    si.scale = magda::ParameterScale::Linear;
+    si.currentValue = s;
+    si.paramIndex = 2;
+    envGraph_.setStage(AdsrGraph::Sustain, 2, si, s);
+    envGraph_.setStage(AdsrGraph::Release, 3, timeInfo(0.001f, 10.0f, 3, r), r);
 }
 
 float SamplerUI::secondsToPixelX(double seconds, juce::Rectangle<int> waveArea) const {
@@ -469,59 +628,6 @@ SamplerUI::DragTarget SamplerUI::markerHitTest(const juce::MouseEvent& e,
             return DragTarget::LoopRegion;
     }
 
-    // Check envelope breakpoints
-    auto envTarget = envHitTest(e, waveArea);
-    if (envTarget != DragTarget::None)
-        return envTarget;
-
-    return DragTarget::None;
-}
-
-SamplerUI::DragTarget SamplerUI::envHitTest(const juce::MouseEvent& e,
-                                            juce::Rectangle<int> waveArea) const {
-    if (!hasWaveform_ || sampleLength_ <= 0.0)
-        return DragTarget::None;
-
-    float mx = static_cast<float>(e.getPosition().x);
-    float my = static_cast<float>(e.getPosition().y);
-    float wY = static_cast<float>(waveArea.getY());
-    float wH = static_cast<float>(waveArea.getHeight());
-
-    double startSec = startSlider_.getValue();
-    float a = static_cast<float>(attackSlider_.getValue());
-    float d = static_cast<float>(decaySlider_.getValue());
-    float s = static_cast<float>(sustainSlider_.getValue());
-    float noteDur = static_cast<float>(endSlider_.getValue() - startSec);
-    float r = static_cast<float>(releaseSlider_.getValue());
-
-    if (noteDur <= 0.0f)
-        return DragTarget::None;
-
-    auto envX = [&](float t) -> float {
-        return secondsToPixelX(startSec + static_cast<double>(t), waveArea);
-    };
-    auto envY = [&](float level) -> float { return wY + wH * (1.0f - level); };
-
-    constexpr float hitR = 8.0f;
-
-    // Attack breakpoint (end of attack = peak)
-    float ax = envX(a);
-    float ay = envY(1.0f);
-    if ((mx - ax) * (mx - ax) + (my - ay) * (my - ay) <= hitR * hitR)
-        return DragTarget::EnvAttack;
-
-    // Decay breakpoint (end of decay = sustain level)
-    float dx = envX(a + d);
-    float dy = envY(s);
-    if ((mx - dx) * (mx - dx) + (my - dy) * (my - dy) <= hitR * hitR)
-        return DragTarget::EnvDecay;
-
-    // Release breakpoint (end of release = zero)
-    float rx = envX(noteDur + r);
-    float ry = envY(0.0f);
-    if ((mx - rx) * (mx - rx) + (my - ry) * (my - ry) <= hitR * hitR)
-        return DragTarget::EnvRelease;
-
     return DragTarget::None;
 }
 
@@ -567,9 +673,8 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
     if (currentDrag_ == DragTarget::None)
         return;
 
-    // For non-envelope targets, set marker position immediately
-    if (currentDrag_ != DragTarget::EnvAttack && currentDrag_ != DragTarget::EnvDecay &&
-        currentDrag_ != DragTarget::EnvRelease) {
+    // Set marker position immediately
+    {
         double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
         switch (currentDrag_) {
             case DragTarget::SampleEnd:
@@ -668,38 +773,6 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
 
-    // Envelope breakpoint dragging
-    if (currentDrag_ == DragTarget::EnvAttack || currentDrag_ == DragTarget::EnvDecay ||
-        currentDrag_ == DragTarget::EnvRelease) {
-        double startSec = startSlider_.getValue();
-        double endSec = endSlider_.getValue();
-        double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
-        float my = static_cast<float>(e.getPosition().y);
-        float wY = static_cast<float>(waveArea.getY());
-        float wH = static_cast<float>(waveArea.getHeight());
-        float level = 1.0f - (my - wY) / wH;
-
-        if (currentDrag_ == DragTarget::EnvAttack) {
-            // Drag X = attack time (relative to sample start)
-            float newAttack = juce::jlimit(0.001f, 5.0f, static_cast<float>(seconds - startSec));
-            attackSlider_.setValue(newAttack, juce::sendNotificationSync);
-        } else if (currentDrag_ == DragTarget::EnvDecay) {
-            // Drag X = attack + decay time, drag Y = sustain level
-            float attackVal = static_cast<float>(attackSlider_.getValue());
-            float newDecay =
-                juce::jlimit(0.001f, 5.0f, static_cast<float>(seconds - startSec) - attackVal);
-            float newSustain = juce::jlimit(0.0f, 1.0f, level);
-            decaySlider_.setValue(newDecay, juce::sendNotificationSync);
-            sustainSlider_.setValue(newSustain, juce::sendNotificationSync);
-        } else {
-            // Release: drag X = release time (relative to note-off)
-            float newRelease = juce::jlimit(0.001f, 10.0f, static_cast<float>(seconds - endSec));
-            releaseSlider_.setValue(newRelease, juce::sendNotificationSync);
-        }
-        repaint();
-        return;
-    }
-
     double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
 
     switch (currentDrag_) {
@@ -745,11 +818,6 @@ void SamplerUI::mouseMove(const juce::MouseEvent& e) {
             break;
         case DragTarget::LoopRegion:
             setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-            break;
-        case DragTarget::EnvAttack:
-        case DragTarget::EnvDecay:
-        case DragTarget::EnvRelease:
-            setMouseCursor(juce::MouseCursor::CrosshairCursor);
             break;
         default:
             setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -797,10 +865,12 @@ void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
 
 std::vector<LinkableTextSlider*> SamplerUI::getLinkableSliders() {
     // Parameter indices: 0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
-    //                    7=sampleStart, 8=sampleEnd, 9=loopStart, 10=loopEnd, 11=velAmount
-    return {&attackSlider_, &decaySlider_,     &sustainSlider_, &releaseSlider_,
-            &pitchSlider_,  &fineSlider_,      &levelSlider_,   &startSlider_,
-            &endSlider_,    &loopStartSlider_, &loopEndSlider_, &velAmountSlider_};
+    //                    7=sampleStart, 8=sampleEnd, 9=loopStart, 10=loopEnd, 11=velAmount,
+    //                    12=voiceMode, 13=glide
+    return {&attackSlider_,    &decaySlider_,     &sustainSlider_, &releaseSlider_,
+            &pitchSlider_,     &fineSlider_,      &levelSlider_,   &startSlider_,
+            &endSlider_,       &loopStartSlider_, &loopEndSlider_, &velAmountSlider_,
+            &voiceModeSlider_, &glideSlider_};
 }
 
 void SamplerUI::timerCallback() {
@@ -842,51 +912,9 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.strokePath(waveformPath_, juce::PathStrokeType(0.5f));
         g.restoreState();
 
-        // ADSR envelope overlay
-        if (sampleLength_ > 0.0) {
-            float a = static_cast<float>(attackSlider_.getValue());
-            float d = static_cast<float>(decaySlider_.getValue());
-            float s = static_cast<float>(sustainSlider_.getValue());
-            float r = static_cast<float>(releaseSlider_.getValue());
-            double startSec = startSlider_.getValue();
-            double endSec = endSlider_.getValue();
-            double noteDuration = endSec - startSec;
-
-            if (noteDuration > 0.0) {
-                float wY = static_cast<float>(waveformArea.getY());
-                float wH = static_cast<float>(waveformArea.getHeight());
-
-                // Time points (relative to sample start)
-                float tAttack = a;
-                float tDecay = tAttack + d;
-                // Sustain holds until release begins (at note-off = end of sample region)
-                float tRelease = static_cast<float>(noteDuration);
-                float tEnd = tRelease + r;
-
-                // Convert time offsets (from sample start) to pixel X
-                auto envX = [&](float t) -> float {
-                    return secondsToPixelX(startSec + static_cast<double>(t), waveformArea);
-                };
-                // Envelope level (1.0 = top, 0.0 = bottom) to pixel Y
-                auto envY = [&](float level) -> float { return wY + wH * (1.0f - level); };
-
-                juce::Path envPath;
-                envPath.startNewSubPath(envX(0.0f), envY(0.0f));
-                envPath.lineTo(envX(tAttack), envY(1.0f));
-                envPath.lineTo(envX(tDecay), envY(s));
-                envPath.lineTo(envX(tRelease), envY(s));
-                envPath.lineTo(envX(tEnd), envY(0.0f));
-
-                g.setColour(juce::Colours::white.withAlpha(0.6f));
-                g.strokePath(envPath, juce::PathStrokeType(1.5f));
-
-                // Breakpoint dots
-                constexpr float dotR = 3.0f;
-                g.fillEllipse(envX(tAttack) - dotR, envY(1.0f) - dotR, dotR * 2, dotR * 2);
-                g.fillEllipse(envX(tDecay) - dotR, envY(s) - dotR, dotR * 2, dotR * 2);
-                g.fillEllipse(envX(tEnd) - dotR, envY(0.0f) - dotR, dotR * 2, dotR * 2);
-            }
-        }
+        // (ADSR is shown in its own dedicated graph below the waveform, not as an
+        // overlay — the amp envelope's time axis is unrelated to sample position,
+        // especially for looped samples.)
 
         // Loop region highlight (semi-transparent green) + top drag bar
         if (loopButton_->isActive() && sampleLength_ > 0.0) {
@@ -952,23 +980,13 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.drawText("Drop sample or click Load", waveformArea, juce::Justification::centred);
     }
 
-    // --- Vertical separators between control columns ---
-    auto ctrlArea = getLocalBounds().reduced(4);
-    ctrlArea.removeFromTop(22);  // sample name row
-    auto waveBounds = getWaveformBounds();
-    ctrlArea.removeFromTop(waveBounds.getHeight() + 2);  // waveform + gap
-
-    int totalW = ctrlArea.getWidth();
-    int col1W = totalW * 3 / 8;
-    int col2W = totalW * 2 / 8;
-
-    int sep1X = ctrlArea.getX() + col1W;
-    int sep2X = ctrlArea.getX() + col1W + col2W;
-    int sepTop = ctrlArea.getY() + 2;
-    int sepBottom = ctrlArea.getBottom();
+    // --- Divider between the left (waveform) and right (synth) columns ---
+    auto body = getLocalBounds().reduced(4);
+    body.removeFromTop(kNameRowH + 2);
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawVerticalLine(sep1X, static_cast<float>(sepTop), static_cast<float>(sepBottom));
-    g.drawVerticalLine(sep2X, static_cast<float>(sepTop), static_cast<float>(sepBottom));
+    auto wave = getWaveformBounds();
+    g.drawVerticalLine(wave.getRight() + 2, static_cast<float>(body.getY()),
+                       static_cast<float>(body.getBottom()));
 }
 
 // =============================================================================
@@ -978,11 +996,10 @@ void SamplerUI::paint(juce::Graphics& g) {
 void SamplerUI::resized() {
     auto area = getLocalBounds().reduced(4);
 
-    // Row 1: Sample name + Root note + Load button
-    auto sampleRow = area.removeFromTop(20);
+    // Row 1: Sample name + Root note + Load button (full width).
+    auto sampleRow = area.removeFromTop(kNameRowH);
     loadButton_->setBounds(sampleRow.removeFromRight(20));
     sampleRow.removeFromRight(4);
-    // Root note: label + slider on the right side of the header
     auto rootArea = sampleRow.removeFromRight(70);
     rootNoteLabel_.setBounds(rootArea.removeFromLeft(30));
     rootNoteSlider_.setBounds(rootArea);
@@ -990,74 +1007,84 @@ void SamplerUI::resized() {
     sampleNameLabel_.setBounds(sampleRow);
     area.removeFromTop(2);
 
-    // Waveform display — absorbs remaining space above controls
-    // Controls: label(12) + slider(18) = 30
-    static constexpr int kControlsHeight = 30;
-    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight - 2);
-    area.removeFromTop(waveHeight);
-    area.removeFromTop(2);
+    // Two columns: LEFT (waveform + sample controls), RIGHT (ADSR graph + synth
+    // controls). Each is the viz on top with a 2-row control block bottom-aligned,
+    // so both viz areas share the same top and bottom.
+    const int rightColW = juce::jmax(280, area.getWidth() * kRightColPercent / 100);
+    auto rightCol = area.removeFromRight(rightColW);
+    area.removeFromRight(4);  // gap
+    auto leftCol = area;      // waveform column (waveform rect = getWaveformBounds)
 
-    auto controlsArea = area;
+    auto layoutCell = [](juce::Rectangle<int> cell, juce::Label& label,
+                         LinkableTextSlider& slider) {
+        label.setBounds(cell.removeFromTop(12));
+        slider.setBounds(cell.removeFromTop(18).reduced(1, 0));
+    };
 
-    // Split into 3 columns: Start/Loop (3/8) | Pitch (2/8) | Amp (3/8)
-    int totalW = controlsArea.getWidth();
-    int col1W = totalW * 3 / 8;
-    int col2W = totalW * 2 / 8;
-    auto col1 = controlsArea.removeFromLeft(col1W).reduced(2, 0);
-    auto col2 = controlsArea.removeFromLeft(col2W).reduced(2, 0);
-    auto col3 = controlsArea.reduced(2, 0);
+    // --- LEFT column control block (waveform fills above it) ---
+    auto leftCtrl = leftCol.removeFromBottom(kCtrlBlockH);
+    {
+        // Row 1: START | END | (icon) L.START | L.END
+        auto row1 = leftCtrl.removeFromTop(kCtrlRowH);
+        leftCtrl.removeFromTop(2);
+        auto row2 = leftCtrl.removeFromTop(kCtrlRowH);
+        int quarter = row1.getWidth() / 4;
+        int iconW = 20;
+        int loopW = (row1.getWidth() - 2 * quarter - iconW) / 2;
+        auto r1lab = row1.removeFromTop(12);
+        startLabel_.setBounds(r1lab.removeFromLeft(quarter));
+        endLabel_.setBounds(r1lab.removeFromLeft(quarter));
+        r1lab.removeFromLeft(iconW);
+        loopStartLabel_.setBounds(r1lab.removeFromLeft(loopW));
+        loopEndLabel_.setBounds(r1lab);
+        startSlider_.setBounds(row1.removeFromLeft(quarter).reduced(1, 0));
+        endSlider_.setBounds(row1.removeFromLeft(quarter).reduced(1, 0));
+        loopButton_->setBounds(row1.removeFromLeft(iconW));
+        loopStartSlider_.setBounds(row1.removeFromLeft(loopW).reduced(1, 0));
+        loopEndSlider_.setBounds(row1.reduced(1, 0));
 
-    // --- Column 1: Start / End / Loop ---
-    // Labels: START | END | (icon) L.START | L.END
-    auto c1LabelRow = col1.removeFromTop(12);
-    int quarterC1 = col1.getWidth() / 4;
-    int iconW = 20;
-    int loopSliderW = (col1.getWidth() - 2 * quarterC1 - iconW) / 2;
-    startLabel_.setBounds(c1LabelRow.removeFromLeft(quarterC1));
-    endLabel_.setBounds(c1LabelRow.removeFromLeft(quarterC1));
-    c1LabelRow.removeFromLeft(iconW);  // loop icon space
-    loopStartLabel_.setBounds(c1LabelRow.removeFromLeft(loopSliderW));
-    loopEndLabel_.setBounds(c1LabelRow);
+        // Row 2: PITCH | FINE | VOICE (segmented) | GLIDE
+        const int unit = row2.getWidth() / 5;
+        auto r2lab = row2.removeFromTop(12);
+        pitchLabel_.setBounds(r2lab.removeFromLeft(unit));
+        fineLabel_.setBounds(r2lab.removeFromLeft(unit));
+        voiceModeLabel_.setBounds(r2lab.removeFromLeft(unit * 2));
+        glideLabel_.setBounds(r2lab);
+        pitchSlider_.setBounds(row2.removeFromLeft(unit).reduced(1, 0));
+        fineSlider_.setBounds(row2.removeFromLeft(unit).reduced(1, 0));
+        auto voiceRow = row2.removeFromLeft(unit * 2).reduced(1, 0);
+        int btnW = voiceRow.getWidth() / 3;
+        for (int m = 0; m < 3; ++m) {
+            auto cell = (m == 2) ? voiceRow : voiceRow.removeFromLeft(btnW);
+            if (voiceModeButtons_[static_cast<size_t>(m)])
+                voiceModeButtons_[static_cast<size_t>(m)]->setBounds(cell);
+        }
+        glideSlider_.setBounds(row2.reduced(1, 0));
+    }
 
-    // Sliders: [start] | [end] | [icon][lstart] | [lend]
-    auto c1Row = col1.removeFromTop(18);
-    startSlider_.setBounds(c1Row.removeFromLeft(quarterC1).reduced(1, 0));
-    endSlider_.setBounds(c1Row.removeFromLeft(quarterC1).reduced(1, 0));
-    loopButton_->setBounds(c1Row.removeFromLeft(iconW));
-    loopStartSlider_.setBounds(c1Row.removeFromLeft(loopSliderW).reduced(1, 0));
-    loopEndSlider_.setBounds(c1Row.reduced(1, 0));
+    // --- RIGHT column: ADSR graph (top) + 2-row control block ---
+    auto rightCtrl = rightCol.removeFromBottom(kCtrlBlockH);
+    rightCol.removeFromBottom(2);
+    envGraph_.setBounds(rightCol);
+    {
+        // Row 1: ATK | DEC | SUS | REL
+        auto row1 = rightCtrl.removeFromTop(kCtrlRowH);
+        rightCtrl.removeFromTop(2);
+        auto row2 = rightCtrl.removeFromTop(kCtrlRowH);
+        int q = row1.getWidth() / 4;
+        layoutCell(row1.removeFromLeft(q), attackLabel_, attackSlider_);
+        layoutCell(row1.removeFromLeft(q), decayLabel_, decaySlider_);
+        layoutCell(row1.removeFromLeft(q), sustainLabel_, sustainSlider_);
+        layoutCell(row1, releaseLabel_, releaseSlider_);
 
-    // --- Column 2: Pitch ---
-    // Labels: PITCH | FINE
-    auto c2LabelRow = col2.removeFromTop(12);
-    int halfCol2 = col2.getWidth() / 2;
-    pitchLabel_.setBounds(c2LabelRow.removeFromLeft(halfCol2));
-    fineLabel_.setBounds(c2LabelRow);
-
-    // Sliders: [pitch] | [fine]
-    auto c2Row = col2.removeFromTop(18);
-    pitchSlider_.setBounds(c2Row.removeFromLeft(halfCol2).reduced(1, 0));
-    fineSlider_.setBounds(c2Row.reduced(1, 0));
-
-    // --- Column 3: Amp ---
-    // Labels: ATK | DEC | SUS | REL | LEVEL | VEL
-    auto c3LabelRow = col3.removeFromTop(12);
-    int sixthCol3 = col3.getWidth() / 6;
-    attackLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
-    decayLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
-    sustainLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
-    releaseLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
-    levelLabel_.setBounds(c3LabelRow.removeFromLeft(sixthCol3));
-    velAmountLabel_.setBounds(c3LabelRow);
-
-    // Sliders: [atk] | [dec] | [sus] | [rel] | [level] | [vel]
-    auto c3Row = col3.removeFromTop(18);
-    attackSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
-    decaySlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
-    sustainSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
-    releaseSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
-    levelSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
-    velAmountSlider_.setBounds(c3Row.reduced(1, 0));
+        // Row 2: LEVEL | VEL
+        int half = row2.getWidth() / 2;
+        auto r2lab = row2.removeFromTop(12);
+        levelLabel_.setBounds(r2lab.removeFromLeft(half));
+        velAmountLabel_.setBounds(r2lab);
+        levelSlider_.setBounds(row2.removeFromLeft(half).reduced(1, 0));
+        velAmountSlider_.setBounds(row2.reduced(1, 0));
+    }
 
     // Rebuild waveform path at new size
     if (hasWaveform_ && waveformBuffer_ != nullptr) {

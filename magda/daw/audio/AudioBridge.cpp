@@ -4,6 +4,7 @@
 #include <unordered_set>
 
 #include "../core/AutomationManager.hpp"
+#include "../core/ChainRoutingModel.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/Config.hpp"
 #include "../core/ModulatorEngine.hpp"
@@ -13,6 +14,7 @@
 #include "AudioThumbnailManager.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
+#include "plugins/MidiInThruSync.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -458,6 +460,9 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
             tePlugin->setEnabled(!device->bypassed);
     }
 
+    if (auto tePlugin = pluginManager_.getPlugin(devicePath))
+        daw::audio::syncPluginMidiInThru(tePlugin.get(), device->midiInThru);
+
     // Wrapped instruments consume MIDI while active. Only top-level devices own
     // instrument wrapper racks; post-fx/mixer-analysis ids are section-local and
     // can overlap with a top-level instrument id.
@@ -466,8 +471,10 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
         if (auto* rackInstance = rackManager.getRackInstance(deviceId)) {
             rackInstance->setEnabled(!device->bypassed);
         }
-        // Keep the wrapper's "MIDI in thru" passthrough in sync with the model.
-        rackManager.setMidiInThru(deviceId, device->midiInThru);
+        // Keep the wrapper's raw-MIDI passthrough in sync with the routing model
+        // (always on for a plain instrument; midiInThru-controlled for a
+        // MIDI-output device), so notes keep reaching downstream devices.
+        rackManager.setMidiInThru(deviceId, routing::makeRoutingNode(*device).passesRawMidiInput());
     }
 
     // Push gain to the audio-graph atomic so DeviceGainNode picks it up.

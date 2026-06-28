@@ -2,7 +2,7 @@
 
 #include "magda/daw/core/PluginCapabilities.hpp"
 
-TEST_CASE("MIDI thru toggle support follows MIDI output capability", "[plugin_capabilities]") {
+TEST_CASE("MIDI thru toggle support requires MIDI input and MIDI output", "[plugin_capabilities]") {
     magda::DeviceInfo wrappedMidiProducer;
     wrappedMidiProducer.isInstrument = true;
     wrappedMidiProducer.deviceType = magda::DeviceType::Instrument;
@@ -21,22 +21,49 @@ TEST_CASE("MIDI thru toggle support follows MIDI output capability", "[plugin_ca
     midiFxProducer.producesMidi = true;
 
     auto midiFxCaps = magda::midiCapabilitiesForDevice(midiFxProducer);
+    REQUIRE(midiFxCaps.hasMidiInput);
+    REQUIRE(magda::hasMidiInput(midiFxProducer));
     REQUIRE(midiFxCaps.hasMidiOutput);
     REQUIRE(magda::hasMidiOutput(midiFxProducer));
     REQUIRE(magda::supportsMidiSourceToggle(midiFxProducer));
     REQUIRE(midiFxCaps.supportsMidiInputThruToggle);
     REQUIRE(magda::supportsMidiInputThruToggle(midiFxProducer));
 
-    magda::DeviceInfo manuallyMarkedMidiFx;
-    manuallyMarkedMidiFx.isInstrument = false;
-    manuallyMarkedMidiFx.deviceType = magda::DeviceType::MIDI;
+    magda::DeviceInfo audioFxWithMidiInAndOut;
+    audioFxWithMidiInAndOut.isInstrument = false;
+    audioFxWithMidiInAndOut.deviceType = magda::DeviceType::Effect;
+    audioFxWithMidiInAndOut.canReceiveMidi = true;
+    audioFxWithMidiInAndOut.producesMidi = true;
 
-    auto manualCaps = magda::midiCapabilitiesForDevice(manuallyMarkedMidiFx);
-    REQUIRE(manualCaps.hasMidiOutput);
-    REQUIRE(magda::hasMidiOutput(manuallyMarkedMidiFx));
-    REQUIRE(magda::supportsMidiSourceToggle(manuallyMarkedMidiFx));
-    REQUIRE(manualCaps.supportsMidiInputThruToggle);
-    REQUIRE(magda::supportsMidiInputThruToggle(manuallyMarkedMidiFx));
+    auto audioFxCaps = magda::midiCapabilitiesForDevice(audioFxWithMidiInAndOut);
+    REQUIRE(audioFxCaps.hasMidiInput);
+    REQUIRE(magda::hasMidiInput(audioFxWithMidiInAndOut));
+    REQUIRE(audioFxCaps.hasMidiOutput);
+    REQUIRE(magda::hasMidiOutput(audioFxWithMidiInAndOut));
+    REQUIRE(audioFxCaps.supportsMidiInputThruToggle);
+    REQUIRE(magda::supportsMidiInputThruToggle(audioFxWithMidiInAndOut));
+
+    magda::DeviceInfo midiOutputOnlyFx;
+    midiOutputOnlyFx.isInstrument = false;
+    midiOutputOnlyFx.deviceType = magda::DeviceType::Effect;
+    midiOutputOnlyFx.producesMidi = true;
+
+    auto outputOnlyCaps = magda::midiCapabilitiesForDevice(midiOutputOnlyFx);
+    REQUIRE_FALSE(outputOnlyCaps.hasMidiInput);
+    REQUIRE(outputOnlyCaps.hasMidiOutput);
+    REQUIRE_FALSE(outputOnlyCaps.supportsMidiInputThruToggle);
+    REQUIRE_FALSE(magda::supportsMidiInputThruToggle(midiOutputOnlyFx));
+
+    magda::DeviceInfo midiInputOnlyFx;
+    midiInputOnlyFx.isInstrument = false;
+    midiInputOnlyFx.deviceType = magda::DeviceType::Effect;
+    midiInputOnlyFx.canReceiveMidi = true;
+
+    auto inputOnlyCaps = magda::midiCapabilitiesForDevice(midiInputOnlyFx);
+    REQUIRE(inputOnlyCaps.hasMidiInput);
+    REQUIRE_FALSE(inputOnlyCaps.hasMidiOutput);
+    REQUIRE_FALSE(inputOnlyCaps.supportsMidiInputThruToggle);
+    REQUIRE_FALSE(magda::supportsMidiInputThruToggle(midiInputOnlyFx));
 }
 
 TEST_CASE("External MIDI input routing is narrower than MIDI input capability",
@@ -88,5 +115,5 @@ TEST_CASE("MIDI controls are capability-based for non-instrument devices",
     auto generatorCaps = magda::midiCapabilitiesForDevice(nonInstrumentMidiGenerator);
     REQUIRE(generatorCaps.hasMidiOutput);
     REQUIRE(magda::hasMidiOutput(nonInstrumentMidiGenerator));
-    REQUIRE(magda::supportsMidiSourceToggle(nonInstrumentMidiGenerator));
+    REQUIRE_FALSE(magda::supportsMidiSourceToggle(nonInstrumentMidiGenerator));
 }

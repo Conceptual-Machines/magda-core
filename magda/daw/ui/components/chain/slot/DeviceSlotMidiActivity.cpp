@@ -4,6 +4,7 @@
 
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
@@ -31,6 +32,22 @@ void refreshSingleNoteStrip(daw::audio::ArpeggiatorPlugin* plugin, magda::MidiNo
 }
 
 void refreshSingleNoteStrip(daw::audio::StepSequencerPlugin* plugin, magda::MidiNoteStrip& strip,
+                            int& lastNote) {
+    if (plugin == nullptr)
+        return;
+
+    const int note = plugin->midiOutNote_.load(std::memory_order_relaxed);
+    const int vel = plugin->midiOutVelocity_.load(std::memory_order_relaxed);
+    if (note != lastNote) {
+        if (lastNote >= 0)
+            strip.clearNote(lastNote);
+        lastNote = note;
+    }
+    if (note >= 0)
+        strip.setNote(note, vel);
+}
+
+void refreshSingleNoteStrip(daw::audio::MidiStrumPlugin* plugin, magda::MidiNoteStrip& strip,
                             int& lastNote) {
     if (plugin == nullptr)
         return;
@@ -87,6 +104,8 @@ void refreshDeviceSlotMidiActivity(const DeviceSlotTraits& traits,
                                    std::array<int, 32>& lastChordNotes, int& lastChordCount) {
     if (traits.isArpeggiator) {
         refreshSingleNoteStrip(customUI.getArpPlugin(), midiNoteStrip, lastSingleNote);
+    } else if (traits.isStrum) {
+        refreshSingleNoteStrip(customUI.getStrumPlugin(), midiNoteStrip, lastSingleNote);
     } else if (traits.isStepSequencer) {
         refreshSingleNoteStrip(customUI.getStepSeqPlugin(), midiNoteStrip, lastSingleNote);
     } else if (traits.isPolyStepSequencer) {

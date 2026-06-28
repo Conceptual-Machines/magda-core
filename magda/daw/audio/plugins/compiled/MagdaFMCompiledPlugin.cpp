@@ -122,6 +122,14 @@ std::vector<MagdaFMCompiledPlugin::HostSlotInfo> MagdaFMCompiledPlugin::voiceSlo
                      .maxValue = 1.0f,
                      .defaultValue = 0.0f,
                      .choices = {"Off", "On"}});
+    // 38..41: per-op enable (mute), default On.
+    for (int i = 0; i < 4; ++i)
+        v.push_back({.name = "Op" + juce::String(i + 1) + " Enable",
+                     .scale = ParameterScale::Discrete,
+                     .minValue = 0.0f,
+                     .maxValue = 1.0f,
+                     .defaultValue = 1.0f,
+                     .choices = {"Off", "On"}});
 
     return v;
 }

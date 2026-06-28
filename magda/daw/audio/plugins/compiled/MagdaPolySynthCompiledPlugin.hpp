@@ -107,8 +107,11 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     // Velocity routing: depth into amplitude, and octaves into the filter cutoff.
     static constexpr int kVelAmpSlot = 37;
     static constexpr int kVelFilterSlot = 38;
+    // Per-oscillator enable (mute that oscillator), discrete Off/On, default On.
+    // osc n -> kOscEnableBaseSlot + (n - 1), idx 39..42.
+    static constexpr int kOscEnableBaseSlot = 39;
 
-    static constexpr int kHostSlotCount = 39;
+    static constexpr int kHostSlotCount = 43;
 
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 
@@ -179,8 +182,18 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
         float gain = 0.0f;
     };
     std::vector<HeldNote> heldNotes_;
+    // Poly-mode sounding pitches. The Faust voice allocator hands out a fresh
+    // voice on every keyOn without checking whether that pitch is already
+    // sounding, so a duplicate note-on (or a dropped note-off) strands a voice
+    // that never gets released. We release any existing voice for a pitch before
+    // re-triggering it, guaranteeing one voice per pitch and no hung notes.
+    std::array<bool, 128> polyHeld_{};
     float currentBend_ = 0.0f;  // normalised [-1, 1]
     int lastVoiceMode_ = 0;
+    // Transport play state from the previous block. On the playing->stopped edge
+    // we flush all voices: clip playback doesn't send note-offs when the user
+    // hits Stop mid-note, so the voice would stay gated on and keep sounding.
+    bool wasPlaying_ = false;
 
     std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
     std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;

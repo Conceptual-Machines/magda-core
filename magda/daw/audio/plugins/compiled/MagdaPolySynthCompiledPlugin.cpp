@@ -227,7 +227,7 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                    .scale = magda::ParameterScale::FaderDB,
                                    .minValue = -60.0f,
                                    .maxValue = 6.0f,
-                                   .defaultValue = (osc == 0) ? 0.0f : -60.0f};
+                                   .defaultValue = (osc == 0) ? -12.0f : -60.0f};
         hostSlotInfo_[base + 2] = {.name = prefix + "Coarse",
                                    .unit =
                                        magda::technicalText(magda::TechnicalTextToken::Semitones),
@@ -372,6 +372,16 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                      .maxValue = 6.0f,
                                      .defaultValue = 0.0f};
 
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        hostSlotInfo_[kOscEnableBaseSlot + osc] = {.name =
+                                                       "Osc " + juce::String(osc + 1) + " Enable",
+                                                   .scale = magda::ParameterScale::Discrete,
+                                                   .minValue = 0.0f,
+                                                   .maxValue = 1.0f,
+                                                   .defaultValue = 1.0f,
+                                                   .choices = {"Off", "On"}};
+    }
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 
@@ -442,6 +452,7 @@ void MagdaPolySynthCompiledPlugin::resetAllVoices() {
         poly_->ctrlChange(0, 123, 0);  // All Notes Off: release every poly voice
     if (monoVoice_)
         monoVoice_->instanceClear();
+    polyHeld_.fill(false);
     heldNotes_.clear();
     if (monoGateZone_)
         *monoGateZone_ = 0.0f;
@@ -486,6 +497,12 @@ void MagdaPolySynthCompiledPlugin::handleMonoNoteOff(int note) {
 void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!poly_ || !monoVoice_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
+
+    // Stop mid-note doesn't deliver note-offs, so a sounding voice would hang
+    // gated-on. Flush every voice on the playing->stopped edge.
+    if (wasPlaying_ && !fc.isPlaying)
+        resetAllVoices();
+    wasPlaying_ = fc.isPlaying;
 
     // Fan each host macro out to every poly voice's zone AND the mono voice's
     // zone (RT-safe pointer writes), so both engines track the controls.
@@ -581,13 +598,28 @@ void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
                 if (monoBendZone_)
                     *monoBendZone_ = currentBend_;
             } else if (mode == Poly) {
-                if (m.isNoteOn())
-                    poly_->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-                else if (m.isNoteOff())
-                    poly_->keyOff(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-                else if (m.isController())
+                if (m.isNoteOn()) {
+                    const int note = m.getNoteNumber();
+                    // Release any voice still sounding this pitch before
+                    // re-triggering, so the allocator never accumulates orphan
+                    // voices that would hang (one voice per pitch).
+                    if (note >= 0 && note < 128) {
+                        if (polyHeld_[static_cast<size_t>(note)])
+                            poly_->keyOff(m.getChannel(), note, 0);
+                        polyHeld_[static_cast<size_t>(note)] = true;
+                    }
+                    poly_->keyOn(m.getChannel(), note, m.getVelocity());
+                } else if (m.isNoteOff()) {
+                    const int note = m.getNoteNumber();
+                    if (note >= 0 && note < 128)
+                        polyHeld_[static_cast<size_t>(note)] = false;
+                    poly_->keyOff(m.getChannel(), note, m.getVelocity());
+                } else if (m.isController()) {
+                    if (m.getControllerNumber() == 120 || m.getControllerNumber() == 123)
+                        polyHeld_.fill(false);
                     poly_->ctrlChange(m.getChannel(), m.getControllerNumber(),
                                       m.getControllerValue());
+                }
             } else {
                 if (m.isNoteOn()) {
                     if (handleMonoNoteOn(m.getNoteNumber(), m.getVelocity(), mode)) {

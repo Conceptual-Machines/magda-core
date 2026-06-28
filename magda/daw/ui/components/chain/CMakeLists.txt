@@ -90,8 +90,10 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/HaloUI.cpp
     custom_ui/NimbusUI.cpp
     custom_ui/DrumVoiceUI.cpp
+    custom_ui/StruckInstrumentUI.cpp
     custom_ui/AdsrGraph.cpp
     custom_ui/ArpeggiatorUI.cpp
+    custom_ui/StrumUI.cpp
     custom_ui/StepSequencerUI.cpp
     custom_ui/PolyStepSequencerUI.cpp
     custom_ui/LevelsUI.cpp
@@ -199,6 +201,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/HaloUI.hpp
     custom_ui/NimbusUI.hpp
     custom_ui/ArpeggiatorUI.hpp
+    custom_ui/StrumUI.hpp
     custom_ui/StepSequencerUI.hpp
     custom_ui/PolyStepSequencerUI.hpp
     custom_ui/LevelsUI.hpp

@@ -99,23 +99,21 @@ void showDeviceSlotSidechainMenu(const magda::DeviceInfo& device,
         });
 }
 
-void updateDeviceSlotSidechainButtonState(juce::TextButton* button,
+void updateDeviceSlotSidechainButtonState(magda::SvgButton* button,
                                           const magda::SidechainConfig& sidechain) {
     if (button == nullptr)
         return;
 
-    if (sidechain.isActive()) {
-        const juce::String label =
-            sidechain.type == magda::SidechainConfig::Type::MIDI ? "MI" : "SC";
-        button->setButtonText(label);
-        button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
-        button->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    // The icon highlights (orange, via its active state) when a sidechain is
+    // routed; the tooltip distinguishes the MIDI vs audio source.
+    const bool active = sidechain.isActive();
+    button->setActive(active);
+    if (active) {
+        button->setTooltip(sidechain.type == magda::SidechainConfig::Type::MIDI
+                               ? "Sidechain: MIDI"
+                               : "Sidechain: audio");
     } else {
-        button->setButtonText("SC");
-        button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        button->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        button->setTooltip("Sidechain source");
     }
 }
 

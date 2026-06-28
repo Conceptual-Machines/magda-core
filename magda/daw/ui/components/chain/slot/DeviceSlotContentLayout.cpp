@@ -15,8 +15,8 @@ void setVisibleIfPresent(juce::Component* component, bool shouldBeVisible) {
 }
 
 bool isMidiUtility(const DeviceSlotTraits& traits) {
-    return traits.isChordEngine || traits.isArpeggiator || traits.isStepSequencer ||
-           traits.isPolyStepSequencer;
+    return traits.isChordEngine || traits.isArpeggiator || traits.isStrum ||
+           traits.isStepSequencer || traits.isPolyStepSequencer;
 }
 
 void layoutPluginPresetButton(juce::Rectangle<int> secondHeaderArea, const DeviceSlotTraits& traits,
@@ -111,7 +111,8 @@ void showExpandedHeaderControls(const DeviceSlotTraits& traits, const magda::Dev
                         drum_grid_slot::shouldShowModButton(traits.isDrumGrid, device.deviceType));
     setVisibleIfPresent(controls.macroButton,
                         drum_grid_slot::shouldShowMacroButton(
-                            traits.isDrumGrid, device.deviceType, traits.isArpeggiator,
+                            traits.isDrumGrid, device.deviceType,
+                            traits.isArpeggiator || traits.isStrum,
                             traits.isStepSequencer || traits.isPolyStepSequencer));
     setVisibleIfPresent(controls.uiButton, !internalDevice || traits.isAnalysis);
     setVisibleIfPresent(controls.powerButton, true);

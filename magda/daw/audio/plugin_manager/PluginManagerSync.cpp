@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../core/ChainRoutingModel.hpp"
 #include "../../core/InternalDeviceKind.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/RackInfo.hpp"
@@ -25,6 +26,7 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiDevicePlugin.hpp"
+#include "plugins/MidiInThruSync.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
@@ -1333,13 +1335,15 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
                     auto* track = self.trackController_.getAudioTrack(trackId);
                     int pluginIdx = track ? track->pluginList.indexOf(plugin.get()) : -1;
 
+                    const bool passRawMidi =
+                        routing::makeRoutingNode(*devInfo).passesRawMidiInput();
                     te::Plugin::Ptr rackPlugin;
                     if (numOutputChannels > 2) {
                         rackPlugin = self.instrumentRackManager_.wrapMultiOutInstrument(
-                            plugin, numOutputChannels, devInfo->midiInThru);
+                            plugin, numOutputChannels, passRawMidi);
                     } else {
                         rackPlugin =
-                            self.instrumentRackManager_.wrapInstrument(plugin, devInfo->midiInThru);
+                            self.instrumentRackManager_.wrapInstrument(plugin, passRawMidi);
                     }
 
                     if (rackPlugin) {
@@ -2276,6 +2280,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
         // Apply device state
         plugin->setEnabled(!device.bypassed);
+        daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
         // Wrap instruments in a RackType with audio passthrough so both synth
         // output and audio clips on the same track are summed together.
@@ -2291,12 +2296,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             // Remember the plugin's position before wrapping removes it from the track
             int pluginIdx = track->pluginList.indexOf(plugin.get());
 
+            const bool passRawMidi = routing::makeRoutingNode(device).passesRawMidiInput();
             te::Plugin::Ptr rackPlugin;
             if (numOutputChannels > 2) {
                 rackPlugin = instrumentRackManager_.wrapMultiOutInstrument(
-                    plugin, numOutputChannels, device.midiInThru);
+                    plugin, numOutputChannels, passRawMidi);
             } else {
-                rackPlugin = instrumentRackManager_.wrapInstrument(plugin, device.midiInThru);
+                rackPlugin = instrumentRackManager_.wrapInstrument(plugin, passRawMidi);
             }
 
             if (rackPlugin) {

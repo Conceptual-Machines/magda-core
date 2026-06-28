@@ -2,6 +2,8 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <vector>
+
 namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
@@ -42,6 +44,14 @@ class SamplerVoice : public juce::SynthesiserVoice {
     void setVelocityAmount(float amount) {
         velAmount = amount;
     }
+    // Portamento glide time (seconds); 0 = instant pitch change.
+    void setGlideSeconds(double s) {
+        glideSeconds = s;
+    }
+    // Legato note change: re-target the pitch (gliding if enabled) WITHOUT
+    // re-triggering the envelope or restarting the sample. Used by SamplerSynth's
+    // mono/legato handling.
+    void glideToNote(int midiNoteNumber);
 
     bool canPlaySound(juce::SynthesiserSound* sound) override;
     void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound*,
@@ -58,6 +68,12 @@ class SamplerVoice : public juce::SynthesiserVoice {
     }
 
   private:
+    // Pitch ratio for `midiNoteNumber`, including the pitch/fine offset, against
+    // the loaded sound's root note and sample rate.
+    double pitchRatioForNote(int midiNoteNumber, const SamplerSound& sound) const;
+    // Arm a glide from the current pitchRatio to targetPitchRatio over glideSeconds.
+    void beginGlide();
+
     juce::ADSR adsr;
     juce::ADSR::Parameters adsrParams;
     double pitchRatio = 1.0;
@@ -67,11 +83,52 @@ class SamplerVoice : public juce::SynthesiserVoice {
     float pitchSemitones = 0.0f;
     float fineCents = 0.0f;
 
+    // Portamento state.
+    double glideSeconds = 0.0;
+    double targetPitchRatio = 1.0;
+    double glideIncrement = 0.0;
+    int glideSamplesRemaining = 0;
+    bool glidePrimed = false;  // false until the first note; first note jumps (no glide)
+
     double sampleStartOffset = 0.0;
     double sampleEndSample = 0.0;  // 0 = play to end of file
     bool loopEnabled = false;
     double loopStartSample = 0.0;
     double loopEndSample = 0.0;
+};
+
+//==============================================================================
+/**
+ * @brief Synthesiser subclass adding Poly / Mono / Legato voice modes + glide.
+ *
+ * Poly is stock juce::Synthesiser allocation. Mono and Legato collapse playing to
+ * a single voice driven from a held-note stack: Mono re-attacks on every new note
+ * and on fall-back to a still-held note; Legato slurs (re-targets the pitch
+ * without re-attacking) while any note is held. Glide ramps the voice pitch on
+ * each change.
+ */
+class SamplerSynth : public juce::Synthesiser {
+  public:
+    enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
+
+    void setVoiceMode(int mode) {
+        voiceMode = mode;
+    }
+    void setGlideSeconds(double s) {
+        glideSeconds = s;
+    }
+
+    void noteOn(int midiChannel, int midiNoteNumber, float velocity) override;
+    void noteOff(int midiChannel, int midiNoteNumber, float velocity, bool allowTailOff) override;
+    void allNotesOff(int midiChannel, bool allowTailOff) override;
+
+  private:
+    SamplerVoice* monoVoice();
+
+    int voiceMode = Poly;
+    double glideSeconds = 0.0;
+    std::vector<int> heldNotes;  // most-recent at the back
+    float lastVelocity = 1.0f;
 };
 
 //==============================================================================
@@ -146,11 +203,13 @@ class MagdaSamplerPlugin : public te::Plugin {
     juce::CachedValue<float> pitchValue, fineValue, levelValue;
     juce::CachedValue<float> sampleStartValue, sampleEndValue, loopStartValue, loopEndValue;
     juce::CachedValue<float> velAmountValue;
+    juce::CachedValue<float> voiceModeValue, glideValue;
 
     te::AutomatableParameter::Ptr attackParam, decayParam, sustainParam, releaseParam;
     te::AutomatableParameter::Ptr pitchParam, fineParam, levelParam;
     te::AutomatableParameter::Ptr sampleStartParam, sampleEndParam, loopStartParam, loopEndParam;
     te::AutomatableParameter::Ptr velAmountParam;
+    te::AutomatableParameter::Ptr voiceModeParam, glideParam;
 
     // Non-parameter state
     juce::CachedValue<juce::String> samplePathValue;
@@ -166,7 +225,7 @@ class MagdaSamplerPlugin : public te::Plugin {
 
   private:
     //==============================================================================
-    juce::Synthesiser synthesiser;
+    SamplerSynth synthesiser;
     SamplerSound* currentSound = nullptr;  // owned by synthesiser
     double sampleRate = 44100.0;
     int numVoices = 8;

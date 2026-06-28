@@ -116,6 +116,7 @@ class DrumGridPlugin : public te::Plugin {
     // Convenience pad-level API (finds/creates single-note chain for padIndex)
     void loadSampleToPad(int padIndex, const juce::File& file);
     void loadPluginToPad(int padIndex, const juce::PluginDescription& desc);
+    void loadInternalPluginToPad(int padIndex, const juce::String& pluginId);
     void clearPad(int padIndex);
 
     // Swap the chains of two pads (or move if only one has a chain)

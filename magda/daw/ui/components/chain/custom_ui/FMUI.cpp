@@ -109,10 +109,35 @@ FMUI::FMUI() {
         if (controls_[static_cast<size_t>(kResetBase + op)].label)
             controls_[static_cast<size_t>(kResetBase + op)].label->setVisible(false);
     }
+
+    // Per-op enable (mute) toggle, doubling as the operator column header.
+    opEnabled_.fill(true);
+    for (int op = 0; op < kNumOps; ++op) {
+        auto btn = std::make_unique<juce::TextButton>("OP " + juce::String(op + 1));
+        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        btn->setClickingTogglesState(false);
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        btn->setTooltip("Enable / disable this operator");
+        btn->onClick = [this, op]() { setOpEnable(op, !opEnabled_[static_cast<size_t>(op)]); };
+        addAndMakeVisible(*btn);
+        enableButtons_[static_cast<size_t>(op)] = std::move(btn);
+        controls_[static_cast<size_t>(kEnableBase + op)].slider->setVisible(false);
+        if (controls_[static_cast<size_t>(kEnableBase + op)].label)
+            controls_[static_cast<size_t>(kEnableBase + op)].label->setVisible(false);
+    }
+    updateEnableButtons();
 }
 
 FMUI::~FMUI() {
     for (auto& b : resetButtons_)
+        if (b)
+            b->setLookAndFeel(nullptr);
+    for (auto& b : enableButtons_)
         if (b)
             b->setLookAndFeel(nullptr);
 }
@@ -134,6 +159,52 @@ void FMUI::updateResetButtons() {
         if (resetButtons_[static_cast<size_t>(op)])
             resetButtons_[static_cast<size_t>(op)]->setToggleState(
                 opReset_[static_cast<size_t>(op)], juce::dontSendNotification);
+}
+
+void FMUI::setOpEnable(int op, bool on) {
+    if (op < 0 || op >= kNumOps)
+        return;
+    opEnabled_[static_cast<size_t>(op)] = on;
+    const int slot = kEnableBase + op;
+    controls_[static_cast<size_t>(slot)].slider->setValue(on ? 1.0 : 0.0,
+                                                          juce::dontSendNotification);
+    if (onParameterChanged)
+        onParameterChanged(slot, on ? 1.0f : 0.0f);
+    updateEnableButtons();
+    applyOpColumnEnabled(op);
+}
+
+void FMUI::updateEnableButtons() {
+    for (int op = 0; op < kNumOps; ++op)
+        if (enableButtons_[static_cast<size_t>(op)])
+            enableButtons_[static_cast<size_t>(op)]->setToggleState(
+                opEnabled_[static_cast<size_t>(op)], juce::dontSendNotification);
+}
+
+void FMUI::applyOpColumnEnabled(int op) {
+    if (op < 0 || op >= kNumOps)
+        return;
+    const bool on = opEnabled_[static_cast<size_t>(op)];
+    const float alpha = on ? 1.0f : 0.3f;
+    // Grey out the operator's Wave / Ratio / Level / Reset; the matrix cells and
+    // the enable toggle itself stay live.
+    auto fade = [&](int slot) {
+        auto& c = controls_[static_cast<size_t>(slot)];
+        c.slider->setEnabled(on);
+        c.slider->setAlpha(alpha);
+        if (c.label)
+            c.label->setAlpha(alpha);
+    };
+    fade(kRatioBase + op);
+    fade(kLevelBase + op);
+    fade(kWaveBase + op);
+    auto& sel = waveSelectors_[static_cast<size_t>(op)];
+    sel.setEnabled(on);
+    sel.setAlpha(alpha);
+    if (auto& rst = resetButtons_[static_cast<size_t>(op)]) {
+        rst->setEnabled(on);
+        rst->setAlpha(alpha);
+    }
 }
 
 void FMUI::setOpWave(int op, int wave) {
@@ -176,6 +247,12 @@ void FMUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params)
         if (idx >= kResetBase && idx < kResetBase + kNumOps) {
             opReset_[static_cast<size_t>(idx - kResetBase)] = info.currentValue >= 0.5f;
             updateResetButtons();
+        }
+        if (idx >= kEnableBase && idx < kEnableBase + kNumOps) {
+            const int op = idx - kEnableBase;
+            opEnabled_[static_cast<size_t>(op)] = info.currentValue >= 0.5f;
+            updateEnableButtons();
+            applyOpColumnEnabled(op);
         }
     }
 }
@@ -254,8 +331,11 @@ void FMUI::resized() {
         for (int op = 0; op < kNumOps; ++op) {
             auto col = juce::Rectangle<int>(a.getX() + op * colW, a.getY(), colW, a.getHeight())
                            .reduced(kCellPad);
+            // Enable toggle / column header.
+            enableButtons_[static_cast<size_t>(op)]->setBounds(col.removeFromTop(16));
+            col.removeFromTop(2);
             // Wave icon selector (hidden slider tracks beneath it).
-            auto waveRow = col.removeFromTop(col.getHeight() * 48 / 100);
+            auto waveRow = col.removeFromTop(col.getHeight() * 44 / 100);
             controls_[static_cast<size_t>(kWaveBase + op)].slider->setBounds(waveRow);
             waveSelectors_[static_cast<size_t>(op)].setBounds(waveRow.reduced(0, kCellLabelH / 2));
 

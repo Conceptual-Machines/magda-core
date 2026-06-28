@@ -81,10 +81,12 @@ oscShape(wave, f, rst) =
 // pre-mix gain in dB (converted to a linear multiplier). selectn evaluates every
 // branch, so all four shapes always run. `bendSemis` shifts every osc together by
 // the live pitch-bend amount; `freqG` carries the glide; `rstOn` restarts this
-// oscillator's phase on note-on.
-oscBank(wave, level, coarse, fine, rstOn) =
+// oscillator's phase on note-on. `en` (0/1) mutes a disabled oscillator,
+// smoothed so toggling it does not click.
+oscBank(wave, level, coarse, fine, rstOn, en) =
     oscShape(wave, f, (rstOn > 0) * gateRise)
     * (level : ba.db2linear : smoo)
+    * (en : smoo)
 with {
     f = freqG * pow(2.0, (coarse + fine / 100.0 + bendSemis) / 12.0);
 };
@@ -147,13 +149,20 @@ velAmp  = hslider("Vel Amp [idx:37]", 1.0, 0.0, 1.0, 0.001) : smoo;
 velFilt = hslider("Vel Filter [unit:oct] [idx:38]", 0.0, 0.0, 6.0, 0.01) : smoo;
 ampVel  = ((1.0 - velAmp) + velAmp * gain) : smoo;
 
+// Per-oscillator enable (idx 39..42): an On/Off toggle that mutes that
+// oscillator. Default On so existing patches are unchanged.
+osc1Enable = nentry("Osc 1 Enable [idx:39] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+osc2Enable = nentry("Osc 2 Enable [idx:40] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+osc3Enable = nentry("Osc 3 Enable [idx:41] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+osc4Enable = nentry("Osc 4 Enable [idx:42] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+
 // ============================================================================
 // DSP
 // ============================================================================
-oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset)
-       + oscBank(osc2Wave, osc2Level, osc2Coarse, osc2Fine, osc2Reset)
-       + oscBank(osc3Wave, osc3Level, osc3Coarse, osc3Fine, osc3Reset)
-       + oscBank(osc4Wave, osc4Level, osc4Coarse, osc4Fine, osc4Reset);
+oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enable)
+       + oscBank(osc2Wave, osc2Level, osc2Coarse, osc2Fine, osc2Reset, osc2Enable)
+       + oscBank(osc3Wave, osc3Level, osc3Coarse, osc3Fine, osc3Reset, osc3Enable)
+       + oscBank(osc4Wave, osc4Level, osc4Coarse, osc4Fine, osc4Reset, osc4Enable);
 
 // Resonance 0..0.95 -> Q 0.5..~9.5. Filter-envelope output scales the cutoff
 // exponentially (in octaves) and the result is clamped to the audio band.

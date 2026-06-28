@@ -2,6 +2,8 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <vector>
@@ -94,6 +96,12 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
 
+    // Monotonic note-on counter, bumped on every voice trigger. A device UI polls
+    // it (on a timer) to flash a strike animation; RT-safe relaxed atomic.
+    std::uint32_t strikePulse() const {
+        return strikePulse_.load(std::memory_order_relaxed);
+    }
+
     // ICompiledFaustPlugin
     int hostSlotCount() const override {
         return hostSlotCountValue();
@@ -172,7 +180,18 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
         float gain = 0.0f;
     };
     std::vector<HeldNote> heldNotes_;
+    // Poly-mode sounding pitches. The Faust voice allocator hands out a fresh
+    // voice on every keyOn without checking whether that pitch is already
+    // sounding, so a duplicate note-on (or a dropped note-off) strands a voice
+    // that never gets released. We release any existing voice for a pitch before
+    // re-triggering it, guaranteeing one voice per pitch and no hung notes.
+    std::array<bool, 128> polyHeld_{};
     int lastVoiceMode_ = 0;
+    // Transport play state from the previous block. On the playing->stopped edge
+    // we flush all voices: clip playback doesn't send note-offs when the user
+    // hits Stop mid-note, so the Faust voice would stay gated on and keep
+    // sounding (the graph runs continuously for live monitoring).
+    bool wasPlaying_ = false;
 
     // Voice macros only (0 .. voiceSlotCount-1): that control's zone in EVERY
     // voice (group=false), so a single host value fans out to all voices.
@@ -187,6 +206,8 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     std::deque<juce::CachedValue<float>> hostCached_;
 
     float limEnv_ = 0.0f;  // output limiter peak envelope
+
+    std::atomic<std::uint32_t> strikePulse_{0};  // note-on counter for UI strike flash
 
     juce::AudioBuffer<float> scratchOut_;
     std::vector<float*> outPtrs_;

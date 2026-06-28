@@ -126,6 +126,13 @@ struct MutableElementsPlugin::Impl {
             activeNote_ = held_[heldCount_ - 1];  // legato back to held note
     }
 
+    // Force-release every held note (CC120/123 panic). Without this a dropped
+    // note-off would strand the gate high and the resonator would never release.
+    void allNotesOff() {
+        heldCount_ = 0;
+        gate_ = false;
+    }
+
     void setPerformance(float transposeSemitones, float velToAmp) {
         perf_.gate = gate_;
         perf_.note = static_cast<float>(activeNote_) + transposeSemitones;
@@ -308,12 +315,16 @@ void MutableElementsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     if (fc.bufferForMidiMessages != nullptr) {
         for (auto& m : *fc.bufferForMidiMessages) {
-            if (!m.isNoteOn() && !m.isNoteOff())
+            const bool isPanic = m.isController() &&
+                                 (m.getControllerNumber() == 120 || m.getControllerNumber() == 123);
+            if (!m.isNoteOn() && !m.isNoteOff() && !isPanic)
                 continue;
             int evPos = juce::jlimit(0, fc.bufferNumSamples - 1,
                                      juce::roundToInt(m.getTimeStamp() * sampleRate_));
             renderTo(evPos);
-            if (m.isNoteOn() && m.getVelocity() > 0)
+            if (isPanic)
+                impl_->allNotesOff();  // CC120/123: release any stuck gate
+            else if (m.isNoteOn() && m.getVelocity() > 0)
                 impl_->noteOn(m.getNoteNumber(), m.getFloatVelocity());
             else
                 impl_->noteOff(m.getNoteNumber());

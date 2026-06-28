@@ -29,8 +29,16 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
                                     CompiledDevicePanel* compiledPanel,
                                     const DeviceSlotTraits& traits,
                                     DeviceSlotParameterPagingCallbacks callbacks) {
+    // Each parameter slot stores a copy of this callback and invokes it on a
+    // later mouse drag, so it must NOT capture the function-local `compiledPanel`
+    // pointer / `callbacks` struct by reference - those die when this function
+    // returns, and the dangling read crashes on the next edit. Capture them by
+    // value; the reference parameters are bound to DeviceSlotComponent members,
+    // which outlive the slots.
     paramGrid.updateParameterSlots(
-        device, paramGrid.getCurrentPage(), [&](int paramIndex, double value) {
+        device, paramGrid.getCurrentPage(),
+        [&device, &nodePath, &paramGrid, &traits, compiledPanel, callbacks](int paramIndex,
+                                                                            double value) {
             if (!nodePath.isValid())
                 return;
 
