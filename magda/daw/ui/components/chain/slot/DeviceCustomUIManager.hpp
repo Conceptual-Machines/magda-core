@@ -26,6 +26,7 @@ class CompressorUI;
 class DelayUI;
 class DrumGridUI;
 class EqualiserUI;
+class ExternalInsertUI;
 class FaustUI;
 class FaustInstrumentTabbedUI;
 class FilterUI;
@@ -230,6 +231,7 @@ class DeviceCustomUIManager {
                           const Callbacks& callbacks);
     bool createAnalyzerUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent);
+    void createExternalInsertUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createFourOscUI(const magda::DeviceInfo& device, juce::Component& parent,
                          const Callbacks& callbacks);
     bool createCustomInstrumentUI(const magda::DeviceInfo& device, juce::Component& parent,
@@ -246,6 +248,7 @@ class DeviceCustomUIManager {
 
     // Custom UI unique_ptrs
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
+    std::unique_ptr<ExternalInsertUI> externalInsertUI_;
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
     std::unique_ptr<FourOscUI> fourOscUI_;
