@@ -68,6 +68,7 @@
 #include "project/ProjectManager.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"
+#include "ui/panels/content/PluginBrowserContent.hpp"
 
 namespace magda::daw::ui {
 
@@ -235,25 +236,36 @@ bool isLegacyTeCompressorPluginId(const juce::String& pluginId) {
     return magda::classifyInternalDevice(pluginId) == magda::InternalDeviceKind::TeCompressor;
 }
 
-struct InternalFxEntry {
-    juce::String name;
-    juce::String pluginId;
-};
-
-void addInternalFxEntry(std::vector<InternalFxEntry>& entries, juce::String name,
-                        juce::String pluginId) {
-    if (pluginId.isNotEmpty())
-        entries.push_back({name, pluginId});
+bool isDrumGridPluginId(const juce::String& pluginId) {
+    return pluginId.equalsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
 }
 
-void addCompiledInternalFxEntry(std::vector<InternalFxEntry>& entries,
-                                const juce::String& displayName) {
-    for (auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
-        if (spec != nullptr && displayName.equalsIgnoreCase(spec->displayName)) {
-            addInternalFxEntry(entries, spec->displayName, spec->pluginId);
-            return;
-        }
-    }
+bool isInstrumentDrop(const juce::DynamicObject& obj) {
+    if (obj.hasProperty("browserIsInstrument"))
+        return static_cast<bool>(obj.getProperty("browserIsInstrument"));
+    return static_cast<bool>(obj.getProperty("isInstrument"));
+}
+
+bool isMidiFxDrop(const juce::DynamicObject& obj) {
+    return obj.getProperty("categoryOverride").toString().equalsIgnoreCase("MIDI FX") ||
+           obj.getProperty("subcategory").toString().equalsIgnoreCase("MIDI") ||
+           obj.getProperty("rawSubcategory").toString().equalsIgnoreCase("MIDI");
+}
+
+bool isMidiFxPlugin(const PluginBrowserInfo& plugin) {
+    return plugin.categoryOverride.equalsIgnoreCase("MIDI FX") ||
+           plugin.subcategory.equalsIgnoreCase("MIDI");
+}
+
+bool isMidiFxPlugin(const juce::PluginDescription& desc) {
+    return desc.category.equalsIgnoreCase("MIDI");
+}
+
+bool pluginDescriptionMatchesDrop(const juce::PluginDescription& desc, const juce::String& fileOrId,
+                                  const juce::String& uniqueId) {
+    return desc.fileOrIdentifier == fileOrId ||
+           (uniqueId.isNotEmpty() &&
+            (desc.createIdentifierString() == uniqueId || juce::String(desc.uniqueId) == uniqueId));
 }
 
 template <typename Ui>
@@ -1213,8 +1225,8 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
             // Handle internal plugins (MagdaSampler, etc.)
             if (!isExternal) {
-                if (uniqueId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-                    dg->loadSampleToPad(padIndex, juce::File());
+                if (isInstrumentDrop(obj) && !isDrumGridPluginId(uniqueId)) {
+                    dg->loadInternalPluginToPad(padIndex, uniqueId);
                     updatePadFromChain(dg, padIndex);
                 }
                 return;
@@ -1233,10 +1245,11 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
             auto& knownPlugins = teWrapper->getKnownPluginList();
             for (const auto& desc : knownPlugins.getTypes()) {
-                if (desc.fileOrIdentifier == fileOrId ||
-                    (uniqueId.isNotEmpty() && juce::String(desc.uniqueId) == uniqueId)) {
-                    dg->loadPluginToPad(padIndex, desc);
-                    updatePadFromChain(dg, padIndex);
+                if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
+                    if (desc.isInstrument) {
+                        dg->loadPluginToPad(padIndex, desc);
+                        updatePadFromChain(dg, padIndex);
+                    }
                     return;
                 }
             }
@@ -1418,11 +1431,17 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         bool isExternal = obj.getProperty("isExternal");
         juce::String uniqueId = obj.getProperty("uniqueId").toString();
 
-        // Handle internal plugins (MagdaSampler as instrument on the pad)
+        // Internal instruments become the pad voice; internal audio effects append to the chain.
         if (!isExternal) {
-            if (uniqueId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-                dg->loadSampleToPad(padIndex, juce::File());
-                updatePadFromChain(dg, padIndex);
+            if (!isDrumGridPluginId(uniqueId) && !isMidiFxDrop(obj)) {
+                if (isInstrumentDrop(obj)) {
+                    dg->loadInternalPluginToPad(padIndex, uniqueId);
+                    updatePadFromChain(dg, padIndex);
+                } else {
+                    int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
+                    if (auto* chain = dg->getChainForNote(midiNote))
+                        dg->addInternalPluginToChain(chain->index, uniqueId, insertIdx);
+                }
                 drumGridUI_->getPadChainPanel().refresh();
             }
             return;
@@ -1440,9 +1459,16 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
         auto& knownPlugins = teWrapper->getKnownPluginList();
         for (const auto& desc : knownPlugins.getTypes()) {
-            if (desc.fileOrIdentifier == fileOrId ||
-                (uniqueId.isNotEmpty() && juce::String(desc.uniqueId) == uniqueId)) {
-                dg->addPluginToPad(padIndex, desc, insertIdx);
+            if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
+                if (isMidiFxPlugin(desc))
+                    return;
+
+                if (desc.isInstrument) {
+                    dg->loadPluginToPad(padIndex, desc);
+                    updatePadFromChain(dg, padIndex);
+                } else {
+                    dg->addPluginToPad(padIndex, desc, insertIdx);
+                }
                 drumGridUI_->getPadChainPanel().refresh();
                 return;
             }
@@ -1510,30 +1536,28 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     };
 
     // "+" button — show plugin picker popup (same as ChainPanel)
-    padChain.onAddDeviceClicked = [this, getDrumGrid](int padIndex) {
+    padChain.onAddDeviceClicked = [this, getDrumGrid, updatePadFromChain](int padIndex) {
         auto* dg = getDrumGrid();
         if (!dg)
             return;
 
         juce::PopupMenu menu;
 
-        // Internal FX plugins (no instruments — pad already has a sampler)
-        juce::PopupMenu internalMenu;
-        std::vector<InternalFxEntry> internals;
-        addInternalFxEntry(internals, "Equaliser", "eq");
-        addCompiledInternalFxEntry(internals, "Compressor");
-        addInternalFxEntry(internals, "Reverb", "reverb");
-        addInternalFxEntry(internals, "Delay", "delay");
-        addInternalFxEntry(internals, "Chorus", "chorus");
-        addCompiledInternalFxEntry(internals, "Phaser");
-        addInternalFxEntry(internals, "Filter", "lowpass");
-        addInternalFxEntry(internals, "Pitch Shift", "pitchshift");
-        addInternalFxEntry(internals, "IR Reverb", "impulseresponse");
-        addCompiledInternalFxEntry(internals, "Utility");
-        int itemId = 1;
-        for (const auto& entry : internals)
-            internalMenu.addItem(itemId++, entry.name);
-        menu.addSubMenu("Internal", internalMenu);
+        std::vector<PluginBrowserInfo> menuInternals;
+        juce::PopupMenu internalInstrumentMenu;
+        juce::PopupMenu internalFxMenu;
+        for (const auto& entry : PluginBrowserContent::getInternalPlugins()) {
+            if (isDrumGridPluginId(entry.uniqueId) || isMidiFxPlugin(entry))
+                continue;
+
+            menuInternals.push_back(entry);
+            const int itemId = static_cast<int>(menuInternals.size());
+            auto& targetMenu =
+                entry.category == "Instrument" ? internalInstrumentMenu : internalFxMenu;
+            targetMenu.addItem(itemId, entry.name);
+        }
+        menu.addSubMenu("Pad Instruments", internalInstrumentMenu);
+        menu.addSubMenu("Internal FX", internalFxMenu);
 
         // External plugins from KnownPluginList
         juce::Array<juce::PluginDescription> externalPlugins;
@@ -1544,49 +1568,67 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         }
 
         if (!externalPlugins.isEmpty()) {
-            std::map<juce::String, juce::PopupMenu> byManufacturer;
+            juce::PopupMenu externalInstrumentMenu;
+            std::map<juce::String, juce::PopupMenu> fxByManufacturer;
             for (int i = 0; i < externalPlugins.size(); ++i) {
                 const auto& desc = externalPlugins[i];
-                // Skip instruments — only show FX
-                if (desc.isInstrument)
+                if (isMidiFxPlugin(desc))
                     continue;
+
                 auto manufacturer =
                     desc.manufacturerName.isEmpty() ? "Unknown" : desc.manufacturerName;
-                byManufacturer[manufacturer].addItem(1000 + i, desc.name);
+                if (desc.isInstrument)
+                    externalInstrumentMenu.addItem(1000 + i, desc.name);
+                else
+                    fxByManufacturer[manufacturer].addItem(1000 + i, desc.name);
             }
-            for (auto& [manufacturer, subMenu] : byManufacturer)
+
+            if (externalInstrumentMenu.getNumItems() > 0)
+                menu.addSubMenu("External Instruments", externalInstrumentMenu);
+            for (auto& [manufacturer, subMenu] : fxByManufacturer)
                 menu.addSubMenu(manufacturer, subMenu);
         }
 
         auto capturedPlugins =
             std::make_shared<juce::Array<juce::PluginDescription>>(std::move(externalPlugins));
         auto capturedInternals =
-            std::make_shared<std::vector<InternalFxEntry>>(std::move(internals));
+            std::make_shared<std::vector<PluginBrowserInfo>>(std::move(menuInternals));
 
-        menu.showMenuAsync(
-            juce::PopupMenu::Options(),
-            [this, padIndex, getDrumGrid, capturedPlugins, capturedInternals](int result) {
-                if (result == 0 || !drumGridUI_)
-                    return;
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, padIndex, getDrumGrid,
+                                                        updatePadFromChain, capturedPlugins,
+                                                        capturedInternals](int result) {
+            if (result == 0 || !drumGridUI_)
+                return;
 
-                auto* dg2 = getDrumGrid();
-                if (!dg2)
-                    return;
+            auto* dg2 = getDrumGrid();
+            if (!dg2)
+                return;
 
-                if (result >= 1 && result <= static_cast<int>(capturedInternals->size())) {
-                    auto& entry = (*capturedInternals)[static_cast<size_t>(result - 1)];
+            if (result >= 1 && result <= static_cast<int>(capturedInternals->size())) {
+                auto& entry = (*capturedInternals)[static_cast<size_t>(result - 1)];
+                if (entry.category == "Instrument") {
+                    dg2->loadInternalPluginToPad(padIndex, entry.uniqueId);
+                    updatePadFromChain(dg2, padIndex);
+                } else {
                     int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
                     if (auto* chain = dg2->getChainForNote(midiNote))
-                        dg2->addInternalPluginToChain(chain->index, entry.pluginId);
-                    drumGridUI_->getPadChainPanel().refresh();
-                } else if (result >= 1000) {
-                    int pluginIdx = result - 1000;
-                    if (pluginIdx < capturedPlugins->size()) {
-                        dg2->addPluginToPad(padIndex, (*capturedPlugins)[pluginIdx]);
-                        drumGridUI_->getPadChainPanel().refresh();
-                    }
+                        dg2->addInternalPluginToChain(chain->index, entry.uniqueId);
                 }
-            });
+                drumGridUI_->getPadChainPanel().refresh();
+            } else if (result >= 1000) {
+                int pluginIdx = result - 1000;
+                if (pluginIdx < capturedPlugins->size()) {
+                    const auto& desc = (*capturedPlugins)[pluginIdx];
+                    if (desc.isInstrument) {
+                        dg2->loadPluginToPad(padIndex, desc);
+                        updatePadFromChain(dg2, padIndex);
+                    } else {
+                        dg2->addPluginToPad(padIndex, desc);
+                    }
+                    drumGridUI_->getPadChainPanel().refresh();
+                }
+            }
+        });
     };
 
     parent.addAndMakeVisible(*drumGridUI_);

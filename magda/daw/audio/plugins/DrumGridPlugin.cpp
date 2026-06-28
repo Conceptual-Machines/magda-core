@@ -1,11 +1,50 @@
 #include "plugins/DrumGridPlugin.hpp"
 
 #include "core/TrackManager.hpp"
+#include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
+
+namespace {
+
+te::Plugin::Ptr createInternalPadPlugin(te::Edit& edit, const juce::String& pluginId) {
+    if (pluginId.isEmpty())
+        return nullptr;
+
+    juce::ValueTree pluginState(te::IDs::PLUGIN);
+    if (auto* compiledSpec = compiled::findCompiledPluginSpec(pluginId))
+        pluginState.setProperty(te::IDs::type, compiledSpec->pluginId, nullptr);
+    else if (auto* internalSpec = findInternalPluginSpecForLoadType(pluginId))
+        pluginState.setProperty(te::IDs::type, internalSpec->pluginId, nullptr);
+    else
+        pluginState.setProperty(te::IDs::type, pluginId, nullptr);
+
+    return edit.getPluginCache().createNewPlugin(pluginState);
+}
+
+void initialisePluginIfNeeded(te::Plugin& plugin, double sampleRate, int blockSize) {
+    if (sampleRate <= 0.0)
+        return;
+
+    te::PluginInitialisationInfo initInfo;
+    initInfo.startTime = tracktion::TimePosition();
+    initInfo.sampleRate = sampleRate;
+    initInfo.blockSizeSamples = blockSize;
+    plugin.baseClassInitialise(initInfo);
+}
+
+void deinitialiseChainPlugins(DrumGridPlugin::Chain& chain) {
+    for (auto& plugin : chain.plugins) {
+        if (plugin != nullptr && !plugin->baseClassNeedsInitialising())
+            plugin->baseClassDeinitialise();
+    }
+}
+
+}  // namespace
 
 const char* DrumGridPlugin::xmlTypeName = "drumgrid";
 
@@ -441,11 +480,9 @@ void DrumGridPlugin::loadSampleToPad(int padIndex, const juce::File& file) {
     sampler->setRootNote(midiNote);
 
     // Deinit old plugins
-    for (auto& p : chain->plugins) {
-        if (p != nullptr && !p->baseClassNeedsInitialising())
-            p->baseClassDeinitialise();
-    }
+    deinitialiseChainPlugins(*chain);
     chain->plugins.clear();
+    chain->pluginGains.clear();
 
     chain->name = file.getFileNameWithoutExtension();
     chain->plugins.push_back(plugin);
@@ -455,13 +492,7 @@ void DrumGridPlugin::loadSampleToPad(int padIndex, const juce::File& file) {
                               magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
 
     // Init new plugin if we're already initialized
-    if (sampleRate_ > 0.0) {
-        te::PluginInitialisationInfo initInfo;
-        initInfo.startTime = tracktion::TimePosition();
-        initInfo.sampleRate = sampleRate_;
-        initInfo.blockSizeSamples = blockSize_;
-        plugin->baseClassInitialise(initInfo);
-    }
+    initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
 
     auto chainTree = findChainTree(chain->index);
     if (chainTree.isValid()) {
@@ -489,11 +520,9 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
         return;
 
     // Deinit old plugins
-    for (auto& p : chain->plugins) {
-        if (p != nullptr && !p->baseClassNeedsInitialising())
-            p->baseClassDeinitialise();
-    }
+    deinitialiseChainPlugins(*chain);
     chain->plugins.clear();
+    chain->pluginGains.clear();
 
     chain->name = desc.name;
     chain->plugins.push_back(plugin);
@@ -503,13 +532,49 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
                               magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
 
     // Init new plugin if we're already initialized
-    if (sampleRate_ > 0.0) {
-        te::PluginInitialisationInfo initInfo;
-        initInfo.startTime = tracktion::TimePosition();
-        initInfo.sampleRate = sampleRate_;
-        initInfo.blockSizeSamples = blockSize_;
-        plugin->baseClassInitialise(initInfo);
+    initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
+
+    auto chainTree = findChainTree(chain->index);
+    if (chainTree.isValid()) {
+        chainTree.setProperty(chainNameId, chain->name, nullptr);
+        while (chainTree.getChildWithName(te::IDs::PLUGIN).isValid())
+            chainTree.removeChild(chainTree.getChildWithName(te::IDs::PLUGIN), nullptr);
+        chainTree.addChild(plugin->state, -1, nullptr);
     }
+
+    assignBusOutputs();
+    notifyGraphRebuildNeeded();
+    notifyChainsChanged();
+}
+
+void DrumGridPlugin::loadInternalPluginToPad(int padIndex, const juce::String& pluginId) {
+    if (padIndex < 0 || padIndex >= maxPads)
+        return;
+
+    if (pluginId.equalsIgnoreCase(MagdaSamplerPlugin::xmlTypeName)) {
+        loadSampleToPad(padIndex, juce::File());
+        return;
+    }
+
+    auto* chain = findOrCreateChainForPad(padIndex);
+    if (!chain)
+        return;
+
+    auto plugin = createInternalPadPlugin(edit, pluginId);
+    if (!plugin)
+        return;
+
+    deinitialiseChainPlugins(*chain);
+    chain->plugins.clear();
+    chain->pluginGains.clear();
+
+    chain->name = plugin->getName();
+    chain->plugins.push_back(plugin);
+
+    plugin->state.setProperty(pluginDeviceIdProp,
+                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
+
+    initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
 
     auto chainTree = findChainTree(chain->index);
     if (chainTree.isValid()) {
@@ -616,15 +681,13 @@ void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescript
         chain->plugins.push_back(plugin);
     else
         chain->plugins.insert(chain->plugins.begin() + insertIndex, plugin);
+    if (insertIndex < 0 || insertIndex >= static_cast<int>(chain->pluginGains.size()))
+        chain->pluginGains.push_back(1.0f);
+    else
+        chain->pluginGains.insert(chain->pluginGains.begin() + insertIndex, 1.0f);
 
     // Init new plugin if we're already initialized
-    if (sampleRate_ > 0.0) {
-        te::PluginInitialisationInfo initInfo;
-        initInfo.startTime = tracktion::TimePosition();
-        initInfo.sampleRate = sampleRate_;
-        initInfo.blockSizeSamples = blockSize_;
-        plugin->baseClassInitialise(initInfo);
-    }
+    initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
 
     // Assign a stable DeviceId for macro/mod linking
     plugin->state.setProperty(pluginDeviceIdProp,
@@ -659,7 +722,7 @@ void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String
     if (!chain)
         return;
 
-    auto plugin = edit.getPluginCache().createNewPlugin(pluginId, {});
+    auto plugin = createInternalPadPlugin(edit, pluginId);
     if (!plugin)
         return;
 
@@ -667,22 +730,36 @@ void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String
         chain->plugins.push_back(plugin);
     else
         chain->plugins.insert(chain->plugins.begin() + insertIndex, plugin);
+    if (insertIndex < 0 || insertIndex >= static_cast<int>(chain->pluginGains.size()))
+        chain->pluginGains.push_back(1.0f);
+    else
+        chain->pluginGains.insert(chain->pluginGains.begin() + insertIndex, 1.0f);
 
-    if (sampleRate_ > 0.0) {
-        te::PluginInitialisationInfo initInfo;
-        initInfo.startTime = tracktion::TimePosition();
-        initInfo.sampleRate = sampleRate_;
-        initInfo.blockSizeSamples = blockSize_;
-        plugin->baseClassInitialise(initInfo);
-    }
+    initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
 
     // Assign a stable DeviceId for macro/mod linking
     plugin->state.setProperty(pluginDeviceIdProp,
                               magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
 
     auto chainTree = findChainTree(chainIndex);
-    if (chainTree.isValid())
-        chainTree.addChild(plugin->state, -1, nullptr);
+    if (chainTree.isValid()) {
+        if (insertIndex < 0 || insertIndex >= static_cast<int>(chain->plugins.size()) - 1)
+            chainTree.addChild(plugin->state, -1, nullptr);
+        else {
+            int pluginChildIdx = 0;
+            int count = 0;
+            for (int c = 0; c < chainTree.getNumChildren(); ++c) {
+                if (chainTree.getChild(c).hasType(te::IDs::PLUGIN)) {
+                    if (count == insertIndex) {
+                        pluginChildIdx = c;
+                        break;
+                    }
+                    ++count;
+                }
+            }
+            chainTree.addChild(plugin->state, pluginChildIdx, nullptr);
+        }
+    }
 
     notifyGraphRebuildNeeded();
 }
@@ -712,6 +789,8 @@ void DrumGridPlugin::removePluginFromChain(int chainIndex, int pluginIndex) {
     if (pluginToRemove != nullptr && !pluginToRemove->baseClassNeedsInitialising())
         pluginToRemove->baseClassDeinitialise();
     chain->plugins.erase(chain->plugins.begin() + pluginIndex);
+    if (pluginIndex < static_cast<int>(chain->pluginGains.size()))
+        chain->pluginGains.erase(chain->pluginGains.begin() + pluginIndex);
     notifyGraphRebuildNeeded();
 }
 
@@ -728,6 +807,12 @@ void DrumGridPlugin::movePluginInChain(int chainIndex, int fromIndex, int toInde
     auto plugin = chain->plugins[static_cast<size_t>(fromIndex)];
     chain->plugins.erase(chain->plugins.begin() + fromIndex);
     chain->plugins.insert(chain->plugins.begin() + toIndex, plugin);
+    if (fromIndex < static_cast<int>(chain->pluginGains.size()) &&
+        toIndex < static_cast<int>(chain->pluginGains.size())) {
+        const auto gain = chain->pluginGains[static_cast<size_t>(fromIndex)];
+        chain->pluginGains.erase(chain->pluginGains.begin() + fromIndex);
+        chain->pluginGains.insert(chain->pluginGains.begin() + toIndex, gain);
+    }
 
     auto chainTree = findChainTree(chainIndex);
     if (chainTree.isValid()) {
