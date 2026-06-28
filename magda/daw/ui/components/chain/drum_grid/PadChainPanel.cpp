@@ -208,14 +208,12 @@ void PadChainPanel::rebuildSlots() {
                     auto slotInfos = getPluginSlots ? getPluginSlots(currentPadIndex_)
                                                     : std::vector<PluginSlotInfo>{};
                     if (pluginIndex < static_cast<int>(slotInfos.size())) {
-                        auto* plugin = slotInfos[static_cast<size_t>(pluginIndex)].plugin;
+                        const auto& info = slotInfos[static_cast<size_t>(pluginIndex)];
+                        auto* plugin = info.plugin;
                         if (plugin) {
-                            name = plugin->getName();
-                            if (auto* ext =
-                                    dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin))
-                                type = ext->desc.pluginFormatName + " Plugin";
-                            else
-                                type = "Internal Plugin";
+                            name = info.device.name.isNotEmpty() ? info.device.name
+                                                                 : plugin->getName();
+                            type = info.device.getFormatString() + " Plugin";
                         }
                     }
                 }
@@ -232,7 +230,7 @@ void PadChainPanel::rebuildSlots() {
         if (info.isSampler) {
             slot->setSampler(dynamic_cast<daw::audio::MagdaSamplerPlugin*>(info.plugin));
         } else if (info.plugin) {
-            slot->setPlugin(info.plugin);
+            slot->setPlugin(info.plugin, info.device, info.livePlugin);
         }
 
         // Apply link mode context (deviceId, macros, mods)

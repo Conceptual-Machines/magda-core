@@ -2,36 +2,14 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "core/DeviceInfo.hpp"
 #include "custom_ui/AdsrGraph.hpp"
 #include "custom_ui/LayoutStableTabbedComponent.hpp"
+#include "processors/internal/NativeDeviceProcessors.hpp"
 #include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
-
-/**
- * @brief Non-automatable plugin state for the 4OSC synth
- *
- * These are CachedValues that aren't exposed as AutomatableParameters,
- * so they must be read/written directly on the plugin object.
- */
-struct FourOscPluginState {
-    int oscWaveShape[4] = {0, 0, 0, 0};
-    int oscVoices[4] = {1, 1, 1, 1};
-    int filterType = 0;
-    int filterSlope = 0;
-    bool ampAnalog = false;
-    int lfoWaveShape[2] = {0, 0};
-    bool lfoSync[2] = {false, false};
-    bool distortionOn = false;
-    bool reverbOn = false;
-    bool delayOn = false;
-    bool chorusOn = false;
-    int voiceMode = 2;      // 0=Mono, 1=Legato, 2=Poly
-    int globalVoices = 32;  // Max polyphony
-};
 
 /**
  * @brief A single row in the mod matrix display

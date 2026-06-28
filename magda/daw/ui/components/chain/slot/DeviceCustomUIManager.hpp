@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <tracktion_engine/tracktion_engine.h>
 
 #include <memory>
 #include <vector>
@@ -83,6 +84,9 @@ class DeviceCustomUIManager {
         std::function<void()> onUpdateMacroPanel;
         // Returns the current node path of the parent (queried at callback time, not capture time)
         std::function<magda::ChainNodePath()> getNodePath;
+        // Optional live-plugin resolver for embedded device contexts that do
+        // not have an AudioBridge-resolvable ChainNodePath, such as DrumGrid pad chains.
+        std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
     };
 
     DeviceCustomUIManager();
@@ -233,6 +237,7 @@ class DeviceCustomUIManager {
     // from the current devicePath_ and hand it to them. Safe to call before the
     // path or plugin exists (it simply binds nothing).
     void bindAnalyzerPlugins();
+    tracktion::engine::Plugin::Ptr getLivePlugin() const;
     void createToneGeneratorUI(const magda::DeviceInfo& device, juce::Component& parent,
                                const Callbacks& callbacks);
     bool createSamplerUI(const magda::DeviceInfo& device, juce::Component& parent,
@@ -254,6 +259,7 @@ class DeviceCustomUIManager {
     // plugin lookup; the bare device.id is no longer sufficient under
     // section-scoped device ids.
     magda::ChainNodePath devicePath_;
+    std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
 
     // Custom UI unique_ptrs
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;

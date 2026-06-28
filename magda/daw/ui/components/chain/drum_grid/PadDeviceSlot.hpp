@@ -1,17 +1,22 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <tracktion_engine/tracktion_engine.h>
 
 #include <array>
 #include <functional>
 #include <memory>
 #include <utility>
 
+#include "core/ChainNodePath.hpp"
+#include "core/DeviceInfo.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "custom_ui/SamplerUI.hpp"
 #include "params/ParamSlotComponent.hpp"
+#include "slot/DeviceCustomUIManager.hpp"
+#include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
@@ -29,6 +34,10 @@ class MagdaSamplerPlugin;
 
 namespace magda::daw::ui {
 
+class CompiledDevicePanel;
+class FaustCustomView;
+class FaustUI;
+
 /**
  * @brief A minimal device slot for a single plugin in a pad's FX chain.
  *
@@ -44,6 +53,8 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     ~PadDeviceSlot() override;
 
     void setPlugin(tracktion::engine::Plugin* plugin);
+    void setPlugin(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device,
+                   std::function<tracktion::engine::Plugin::Ptr()> livePlugin);
     void setSampler(daw::audio::MagdaSamplerPlugin* sampler);
     void clear();
     int getPreferredWidth() const;
@@ -117,10 +128,16 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
 
     tracktion::engine::Plugin* plugin_ = nullptr;
     magda::DeviceId pluginDeviceId_ = magda::INVALID_DEVICE_ID;
+    magda::DeviceInfo device_;
+    magda::ChainNodePath devicePath_;
+    magda::ChainNodePath linkOwnerPath_;
+    std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
     int preferredWidth_ = SLOT_WIDTH;
     int visibleParamCount_ = 0;
+    DeviceSlotTraits traits_;
     bool collapsed_ = false;
     bool selected_ = false;
+    bool usingSharedInlineUi_ = false;
 
     // Header
     juce::Label nameLabel_;
@@ -134,12 +151,18 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
 
     // Content — one of these visible at a time
     std::unique_ptr<SamplerUI> samplerUI_;
+    std::unique_ptr<CompiledDevicePanel> compiledPanel_;
+    std::unique_ptr<FaustUI> faustUI_;
+    std::unique_ptr<FaustCustomView> faustCustomView_;
+    std::unique_ptr<DeviceCustomUIManager> customUI_;
     std::array<std::unique_ptr<ParamSlotComponent>, PLUGIN_PARAM_SLOTS> paramSlots_;
 
     void timerCallback() override;
 
     void setupForSampler(daw::audio::MagdaSamplerPlugin* sampler);
     void setupForExternalPlugin(tracktion::engine::Plugin* plugin);
+    bool setupForSharedDeviceUi(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device);
+    void resetSharedInlineUi();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadDeviceSlot)
 };
