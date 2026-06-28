@@ -15,7 +15,7 @@ namespace {
 constexpr int kNameRowH = 20;         // top sample-name / root / load row
 constexpr int kCtrlRowH = 30;         // one control row: label(12) + control(18)
 constexpr int kCtrlBlockH = 64;       // two control rows (bottom-aligned in each column)
-constexpr int kRightColPercent = 42;  // right (synth) column width as % of body
+constexpr int kRightColPercent = 38;  // right (synth) column width as % of body
 }  // namespace
 
 SamplerUI::SamplerUI() {
