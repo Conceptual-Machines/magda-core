@@ -33,6 +33,32 @@ MutableCloudsProcessor::MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Pt
 FourOscProcessor::FourOscProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
+std::optional<FourOscPluginState> FourOscProcessor::capturePluginState(te::Plugin* plugin) {
+    auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin);
+    if (fourOsc == nullptr)
+        return std::nullopt;
+
+    FourOscPluginState state;
+    for (int i = 0; i < 4; ++i) {
+        state.oscWaveShape[i] = fourOsc->oscParams[i]->waveShapeValue.get();
+        state.oscVoices[i] = fourOsc->oscParams[i]->voicesValue.get();
+    }
+    state.filterType = fourOsc->filterTypeValue.get();
+    state.filterSlope = fourOsc->filterSlopeValue.get();
+    state.ampAnalog = fourOsc->ampAnalogValue.get();
+    for (int i = 0; i < 2; ++i) {
+        state.lfoWaveShape[i] = fourOsc->lfoParams[i]->waveShapeValue.get();
+        state.lfoSync[i] = fourOsc->lfoParams[i]->syncValue.get();
+    }
+    state.distortionOn = fourOsc->distortionOnValue.get();
+    state.reverbOn = fourOsc->reverbOnValue.get();
+    state.delayOn = fourOsc->delayOnValue.get();
+    state.chorusOn = fourOsc->chorusOnValue.get();
+    state.voiceMode = fourOsc->voiceModeValue.get();
+    state.globalVoices = fourOsc->voicesValue.get();
+    return state;
+}
+
 void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) const {
     // filterFreq stores a MIDI note in 0..135.076 that TE turns into Hz via
     // valueToString. The custom UI pins A4 (note 69, 440 Hz) to the visual

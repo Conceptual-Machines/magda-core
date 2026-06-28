@@ -1,10 +1,34 @@
 #pragma once
 
+#include <optional>
+
 #include "processors/base/AutomatablePluginProcessor.hpp"
 
 namespace magda {
 
 namespace te = tracktion;
+
+/**
+ * @brief Non-automatable plugin state for the 4OSC synth.
+ *
+ * These are CachedValues that are not exposed as AutomatableParameters, so
+ * the FourOscProcessor captures them from the live plugin for the custom UI.
+ */
+struct FourOscPluginState {
+    int oscWaveShape[4] = {0, 0, 0, 0};
+    int oscVoices[4] = {1, 1, 1, 1};
+    int filterType = 0;
+    int filterSlope = 0;
+    bool ampAnalog = false;
+    int lfoWaveShape[2] = {0, 0};
+    bool lfoSync[2] = {false, false};
+    bool distortionOn = false;
+    bool reverbOn = false;
+    bool delayOn = false;
+    bool chorusOn = false;
+    int voiceMode = 2;      // 0=Mono, 1=Legato, 2=Poly
+    int globalVoices = 32;  // Max polyphony
+};
 
 /**
  * @brief Processor for the built-in Magda Sampler device
@@ -51,6 +75,8 @@ class MutableCloudsProcessor : public AutomatablePluginProcessor {
 class FourOscProcessor : public AutomatablePluginProcessor {
   public:
     FourOscProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    static std::optional<FourOscPluginState> capturePluginState(te::Plugin* plugin);
 
   protected:
     void customiseParameterInfo(int index, ParameterInfo& info) const override;
