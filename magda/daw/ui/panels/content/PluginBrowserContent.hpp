@@ -23,6 +23,7 @@ struct PluginBrowserInfo {
     juce::String subcategory;       // EQ, Compressor, Synth, etc.
     juce::String categoryOverride;  // User browser category override, e.g. "MIDI FX"
     juce::String alias;             // @alias for DSL/AI (e.g. "serum_2", "pro_q3")
+    juce::String searchKeywords;    // hidden aliases / ids used only for browser search
     bool isFavorite = false;
     bool isExternal = false;  // true for VST3/AU, false for internal
 
@@ -35,8 +36,8 @@ struct PluginBrowserInfo {
 
     // Create internal plugin entry
     static PluginBrowserInfo createInternal(const juce::String& name, const juce::String& pluginId,
-                                            bool isInstrument,
-                                            const juce::String& subcategory = "");
+                                            bool isInstrument, const juce::String& subcategory = "",
+                                            const juce::String& searchKeywords = "");
 
     // Generate a default alias from plugin name (lowercase, underscore-separated)
     static juce::String generateAlias(const juce::String& pluginName);
