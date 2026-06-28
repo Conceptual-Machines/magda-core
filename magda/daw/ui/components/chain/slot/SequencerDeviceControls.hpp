@@ -11,7 +11,6 @@ class DeviceCustomUIManager;
 
 struct SequencerDeviceHeaderState {
     bool available = false;
-    bool midiThru = false;
     bool recording = false;
     DeviceSlotStepRecordingPaintState stepRecording;
 };
@@ -22,9 +21,6 @@ SequencerDeviceHeaderState getSequencerDeviceHeaderState(const DeviceSlotTraits&
                                                          const DeviceCustomUIManager& customUI);
 
 bool randomizeSequencerPattern(const DeviceSlotTraits& traits, DeviceCustomUIManager& customUI);
-
-std::optional<bool> toggleSequencerMidiThru(const DeviceSlotTraits& traits,
-                                            DeviceCustomUIManager& customUI);
 
 std::optional<bool> toggleSequencerStepRecording(const DeviceSlotTraits& traits,
                                                  DeviceCustomUIManager& customUI);

@@ -463,6 +463,7 @@ target_sources(magda_daw PRIVATE
     plugins/FaustParamPool.hpp
     plugins/FaustParamInfo.hpp
     transport/StepClock.hpp
+    plugins/MidiInThruSync.hpp
     plugins/StepSequencerPlugin.hpp
     plugins/PolyStepSequencerPlugin.hpp
 )

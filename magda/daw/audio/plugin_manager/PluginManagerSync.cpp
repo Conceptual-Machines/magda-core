@@ -26,6 +26,7 @@
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiDevicePlugin.hpp"
+#include "plugins/MidiInThruSync.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
@@ -2279,6 +2280,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
         // Apply device state
         plugin->setEnabled(!device.bypassed);
+        daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
         // Wrap instruments in a RackType with audio passthrough so both synth
         // output and audio clips on the same track are summed together.

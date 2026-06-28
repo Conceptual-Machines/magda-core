@@ -7,6 +7,7 @@
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
 #include "plugin_manager/PluginManager.hpp"
+#include "plugins/MidiInThruSync.hpp"
 
 namespace magda {
 
@@ -742,6 +743,7 @@ void RackSyncManager::loadRackContents(SyncedRack& synced, TrackId trackId,
 
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
+                        daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
                     } else {
                     }
@@ -1048,8 +1050,10 @@ void RackSyncManager::updateElementPropertiesRecursive(SyncedRack& synced, const
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
                 auto pluginIt = synced.innerPlugins.find(device.id);
-                if (pluginIt != synced.innerPlugins.end() && pluginIt->second)
+                if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
                     pluginIt->second->setEnabled(!device.bypassed);
+                    daw::audio::syncPluginMidiInThru(pluginIt->second.get(), device.midiInThru);
+                }
             } else if (isRack(element)) {
                 const auto& nestedRack = getRack(element);
                 const auto nestedPath = chainPath.withRack(nestedRack.id);

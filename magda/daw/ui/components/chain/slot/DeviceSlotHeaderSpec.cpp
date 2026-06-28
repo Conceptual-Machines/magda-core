@@ -20,8 +20,6 @@ bool getExpandedVisibility(HeaderControlId id, const HeaderControlVisibility& vi
             return visibility.stepRecord;
         case HeaderControlId::MidiThru:
             return visibility.midiThru;
-        case HeaderControlId::InstMidiThru:
-            return visibility.instMidiThru;
         case HeaderControlId::Learn:
             return visibility.learn;
         case HeaderControlId::UI:
@@ -55,8 +53,6 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
             return visibility.stepRecord;
         case HeaderControlId::MidiThru:
             return visibility.midiThru;
-        case HeaderControlId::InstMidiThru:
-            return false;
         case HeaderControlId::UI:
             return drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid,
                                                                isInternalDevice) ||
@@ -92,7 +88,7 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
                                              traits.isStepSequencer || traits.isPolyStepSequencer);
     visibility.random = traits.isStepSequencer || traits.isPolyStepSequencer;
     visibility.stepRecord = visibility.random;
-    visibility.midiThru = visibility.random;
+    visibility.midiThru = supportsMidiSourceToggle(device);
 
     if (isMidiUtilityDeviceSlot(traits)) {
         visibility.learn = false;
@@ -105,7 +101,6 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     }
 
     visibility.learn = !isInternalDevice;
-    visibility.instMidiThru = supportsMidiSourceToggle(device);
     visibility.sidechain = !traits.isDrumGrid && supportsSidechainRoutingMenu(device);
     visibility.multiOut = device.multiOut.isMultiOut;
     visibility.ui = !isInternalDevice || traits.hasAnalyzerPopout;
@@ -127,8 +122,6 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
         {HeaderControlId::Random, HeaderControlSide::Left, controls.randomButton, 40, 50},
         {HeaderControlId::StepRecord, HeaderControlSide::Left, controls.stepRecordButton, 50, 60},
         {HeaderControlId::MidiThru, HeaderControlSide::Left, controls.midiThruButton, 60, 70},
-        {HeaderControlId::InstMidiThru, HeaderControlSide::Left, controls.instMidiThruButton, 70,
-         0},
         {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton, 80, 0},
         {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton, 90, 10},
         {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 100, 90},

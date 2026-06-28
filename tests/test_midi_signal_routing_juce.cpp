@@ -59,6 +59,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testInstrumentRackPassesMidiThrough(); });
         magda::test::runWithCleanJuceState([this] { testStepSequencerDefaultsToMidiThru(); });
         magda::test::runWithCleanJuceState(
+            [this] { testStepSequencerMidiThruMirrorsDeviceState(); });
+        magda::test::runWithCleanJuceState(
             [this] { testStepSequencerMidiThruPassesWhileStopped(); });
         magda::test::runWithCleanJuceState([this] { testStepSequencerStepRecordingStopsAtEnd(); });
         magda::test::runWithCleanJuceState(
@@ -984,6 +986,60 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         seq->restorePluginStateFromValueTree(saved);
 
         expect(!seq->midiThru.get(), "Saved MIDI thru state should be restored");
+    }
+
+    void testStepSequencerMidiThruMirrorsDeviceState() {
+        beginTest("Step sequencer MIDI thru mirrors DeviceInfo state");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "Audio bridge must be available");
+        if (bridge == nullptr)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("MIDI Thru Mirror");
+        auto sequencer = makeInternalDevice(magda::INVALID_DEVICE_ID, "Step Sequencer",
+                                            magda::daw::audio::StepSequencerPlugin::xmlTypeName);
+        sequencer.canReceiveMidi = true;
+        sequencer.producesMidi = true;
+        sequencer.midiInThru = false;
+
+        const auto deviceId = trackManager.addDeviceToTrack(trackId, sequencer);
+        expect(deviceId != magda::INVALID_DEVICE_ID, "Step sequencer device must be added");
+        if (deviceId == magda::INVALID_DEVICE_ID) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, deviceId);
+        bridge->syncTrackPlugins(trackId);
+
+        auto plugin = bridge->getPlugin(devicePath);
+        auto* seq = dynamic_cast<magda::daw::audio::StepSequencerPlugin*>(plugin.get());
+        expect(seq != nullptr, "Step sequencer runtime plugin must be created");
+        if (seq == nullptr) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        expect(!seq->midiThru.get(), "Runtime MIDI thru should load from DeviceInfo::midiInThru");
+
+        trackManager.setDeviceInChainMidiInThruByPath(devicePath, true);
+        expect(seq->midiThru.get(),
+               "Runtime MIDI thru should follow DeviceInfo when the header control enables it");
+
+        trackManager.setDeviceInChainMidiInThruByPath(devicePath, false);
+        expect(!seq->midiThru.get(),
+               "Runtime MIDI thru should follow DeviceInfo when the header control disables it");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
     }
 
     void testStepSequencerMidiThruPassesWhileStopped() {

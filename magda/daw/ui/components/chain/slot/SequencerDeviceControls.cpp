@@ -26,7 +26,6 @@ SequencerDeviceHeaderState getSequencerDeviceHeaderState(const DeviceSlotTraits&
             return state;
 
         state.available = true;
-        state.midiThru = plugin->midiThru.get();
         state.recording = plugin->isStepRecording();
         if (state.recording) {
             state.stepRecording.active = true;
@@ -44,7 +43,6 @@ SequencerDeviceHeaderState getSequencerDeviceHeaderState(const DeviceSlotTraits&
             return state;
 
         state.available = true;
-        state.midiThru = plugin->midiThru.get();
         state.recording = plugin->isStepRecording();
         if (state.recording) {
             state.stepRecording.active = true;
@@ -75,28 +73,6 @@ bool randomizeSequencerPattern(const DeviceSlotTraits& traits, DeviceCustomUIMan
     }
 
     return false;
-}
-
-std::optional<bool> toggleSequencerMidiThru(const DeviceSlotTraits& traits,
-                                            DeviceCustomUIManager& customUI) {
-    if (traits.isPolyStepSequencer) {
-        if (auto* plugin = customUI.getPolyStepSeqPlugin()) {
-            const bool enabled = !plugin->midiThru.get();
-            plugin->midiThru = enabled;
-            return enabled;
-        }
-        return std::nullopt;
-    }
-
-    if (traits.isStepSequencer) {
-        if (auto* plugin = customUI.getStepSeqPlugin()) {
-            const bool enabled = !plugin->midiThru.get();
-            plugin->midiThru = enabled;
-            return enabled;
-        }
-    }
-
-    return std::nullopt;
 }
 
 std::optional<bool> toggleSequencerStepRecording(const DeviceSlotTraits& traits,
