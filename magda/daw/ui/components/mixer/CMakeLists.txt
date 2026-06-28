@@ -4,7 +4,6 @@ target_sources(magda_daw_app PRIVATE
     MiniChainRow.cpp
     MixAnalysisModal.cpp
     MixerToggleRail.cpp
-    MonitorSelector.cpp
     RoutingSelector.cpp
     MasterChannelStrip.hpp
     InputTypeSelector.hpp
@@ -13,6 +12,5 @@ target_sources(magda_daw_app PRIVATE
     MiniChainRow.hpp
     MixAnalysisModal.hpp
     MixerToggleRail.hpp
-    MonitorSelector.hpp
     RoutingSelector.hpp
 )

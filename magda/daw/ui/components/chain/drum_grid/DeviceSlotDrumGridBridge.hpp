@@ -49,8 +49,7 @@ bool shouldShowModButton(bool isDrumGrid, magda::DeviceType deviceType);
 bool shouldShowMacroButton(bool isDrumGrid, magda::DeviceType deviceType, bool isArpeggiator,
                            bool isStepSequencer);
 
-bool shouldShowSidechainButton(bool isDrumGrid, bool canSidechain,
-                               bool supportsExternalMidiInputRouting);
+bool shouldShowSidechainButton(bool isDrumGrid, bool canSidechain, bool canReceiveMidi);
 
 bool shouldShowCollapsedUiButton(bool isDrumGrid, bool isInternalDevice);
 

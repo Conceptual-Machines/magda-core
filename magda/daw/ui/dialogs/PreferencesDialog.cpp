@@ -2000,7 +2000,7 @@ class ShortcutsPage : public juce::Component {
                     static_cast<uint8_t>(GestureMod_Shift | GestureMod_Command | GestureMod_Alt)};
         }
 
-        static std::array<DragRowSpec, 12> dragRows() {
+        static std::array<DragRowSpec, 11> dragRows() {
             return {
                 DragRowSpec{GestureContext::Arrangement,
                             {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
@@ -2010,9 +2010,6 @@ class ShortcutsPage : public juce::Component {
                              GestureMod_Shift}},
                 DragRowSpec{GestureContext::Arrangement,
                             {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
-                             GestureMod_Alt}},
-                DragRowSpec{GestureContext::Arrangement,
-                            {GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
                              GestureMod_Alt}},
                 DragRowSpec{GestureContext::PianoRoll,
                             {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical,
@@ -2179,19 +2176,10 @@ class ShortcutsPage : public juce::Component {
                     return "Vertical zoom gesture";
                 case GestureActionType::Pan:
                     return "Pan gesture";
-                case GestureActionType::DuplicateOnDrag:
-                    return "Duplicate clips on drag";
                 case GestureActionType::None:
                     return "Unassigned gesture";
             }
             return "Unassigned gesture";
-        }
-
-        // Discrete actions (copy-on-drag) have no analog magnitude, so the
-        // sensitivity and invert columns are meaningless for them.
-        static bool actionHasMagnitude(GestureActionType action) {
-            return action != GestureActionType::None &&
-                   action != GestureActionType::DuplicateOnDrag;
         }
 
         static GestureArea defaultDragAreaFor(GestureContext context, GestureActionType action) {
@@ -2335,14 +2323,13 @@ class ShortcutsPage : public juce::Component {
                 row->invert.setToggleState(binding.invert, juce::dontSendNotification);
 
                 const bool visible = binding.action != GestureActionType::None;
-                const bool hasMagnitude = actionHasMagnitude(binding.action);
                 row->contextLabel.setText(gestureName(binding.action), juce::dontSendNotification);
                 row->contextLabel.setVisible(visible);
                 row->axisLabel.setVisible(visible);
                 row->inputLabel.setVisible(visible);
                 row->learnButton.setVisible(visible);
-                row->sensitivity.setVisible(visible && hasMagnitude);
-                row->invert.setVisible(visible && hasMagnitude);
+                row->sensitivity.setVisible(visible);
+                row->invert.setVisible(visible);
             }
 
             setCapturingRow(nullptr);

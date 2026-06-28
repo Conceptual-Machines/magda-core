@@ -6,23 +6,13 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.cpp
     ai/AIPanelComponent.cpp
     slot/DeviceCustomUIManager.cpp
-    slot/DeviceSlotAnalyzerContextActions.cpp
-    slot/DeviceSlotAutomationControls.cpp
     slot/DeviceSlotContentLayout.cpp
     slot/DeviceSlotContentPainter.cpp
-    slot/DeviceSlotGainMeterControls.cpp
     slot/DeviceSlotHeaderControls.cpp
-    slot/DeviceSlotHeaderSpec.cpp
     slot/DeviceSlotInlineUiFactory.cpp
     slot/DeviceSlotMidiActivity.cpp
     slot/DeviceSlotMidiUiBinding.cpp
-    slot/DeviceSlotModMacroCommands.cpp
-    slot/DeviceSlotModulationContext.cpp
-    slot/DeviceSlotMultiOutControls.cpp
-    slot/DeviceSlotParameterPaging.cpp
     slot/DeviceSlotParamLayoutFactory.cpp
-    slot/DeviceSlotSelectionHandling.cpp
-    slot/DeviceSlotSidechainControls.cpp
     slot/DeviceParameterChangeHandler.cpp
     slot/DevicePresetMenu.cpp
     slot/DeviceSlotTraits.cpp
@@ -82,15 +72,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FaustUI.cpp
     custom_ui/FaustCodeEditorWindow.cpp
     custom_ui/FaustCustomUIRegistry.cpp
-    custom_ui/FaustInstrumentTabbedUI.cpp
     custom_ui/FourOscUI.cpp
-    custom_ui/PolySynthUI.cpp
-    custom_ui/FMUI.cpp
-    custom_ui/MateriaUI.cpp
-    custom_ui/HaloUI.cpp
-    custom_ui/NimbusUI.cpp
-    custom_ui/DrumVoiceUI.cpp
-    custom_ui/AdsrGraph.cpp
     custom_ui/ArpeggiatorUI.cpp
     custom_ui/StepSequencerUI.cpp
     custom_ui/PolyStepSequencerUI.cpp
@@ -114,23 +96,13 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.hpp
     ai/AIPanelComponent.hpp
     slot/DeviceCustomUIManager.hpp
-    slot/DeviceSlotAnalyzerContextActions.hpp
-    slot/DeviceSlotAutomationControls.hpp
     slot/DeviceSlotContentLayout.hpp
     slot/DeviceSlotContentPainter.hpp
-    slot/DeviceSlotGainMeterControls.hpp
     slot/DeviceSlotHeaderControls.hpp
-    slot/DeviceSlotHeaderSpec.hpp
     slot/DeviceSlotInlineUiFactory.hpp
     slot/DeviceSlotMidiActivity.hpp
     slot/DeviceSlotMidiUiBinding.hpp
-    slot/DeviceSlotModMacroCommands.hpp
-    slot/DeviceSlotModulationContext.hpp
-    slot/DeviceSlotMultiOutControls.hpp
-    slot/DeviceSlotParameterPaging.hpp
     slot/DeviceSlotParamLayoutFactory.hpp
-    slot/DeviceSlotSelectionHandling.hpp
-    slot/DeviceSlotSidechainControls.hpp
     slot/DeviceParameterChangeHandler.hpp
     slot/DevicePresetMenu.hpp
     slot/DeviceSlotTraits.hpp
@@ -193,11 +165,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FaustUI.hpp
     custom_ui/FaustCodeEditorWindow.hpp
     custom_ui/FaustCustomUIRegistry.hpp
-    custom_ui/FaustInstrumentTabbedUI.hpp
-    custom_ui/LayoutStableTabbedComponent.hpp
     custom_ui/FourOscUI.hpp
-    custom_ui/HaloUI.hpp
-    custom_ui/NimbusUI.hpp
     custom_ui/ArpeggiatorUI.hpp
     custom_ui/StepSequencerUI.hpp
     custom_ui/PolyStepSequencerUI.hpp
@@ -205,7 +173,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/OscilloscopeUI.hpp
     custom_ui/SpectrumAnalyzerUI.hpp
     modulation/DeviceLinkCallbacks.hpp
-    modulation/ModulationOwnerPath.hpp
     modulation/MacroKnobComponent.hpp
     modulation/MacroPanelComponent.hpp
     modulation/ModKnobComponent.hpp

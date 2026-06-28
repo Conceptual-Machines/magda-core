@@ -87,11 +87,6 @@ struct DeviceInfo {
     bool isInstrument = false;  // true for instruments (synths, samplers), false for effects
     DeviceType deviceType = DeviceType::Effect;  // Instrument, Effect, or MIDI
 
-    // User/browser categorization override (e.g. "MIDI FX"). This is UX
-    // metadata only; it must not rewrite JUCE scan facts or routing
-    // capabilities such as isInstrument, canReceiveMidi, or producesMidi.
-    juce::String browserCategoryOverride;
-
     // External plugin identity from JUCE. Populated for scanned VST/AU/etc.
     // plugins using PluginDescription::createIdentifierString(); it is not
     // guaranteed for internal MAGDA devices.
@@ -163,13 +158,6 @@ struct DeviceInfo {
     SidechainConfig sidechain;
     bool canSidechain = false;    // true if TE plugin supports audio sidechain input
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
-    bool producesMidi = false;    // true if the live plugin can output MIDI
-
-    // "MIDI in thru": pass the chain's raw MIDI input past a MIDI-producing
-    // plugin so downstream devices can receive both the original input and the
-    // plugin's generated MIDI. Off means plugin MIDI output only; on means merge
-    // raw input plus plugin output. Defaults on to preserve historic passthrough.
-    bool midiInThru = true;
 
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;

@@ -3,7 +3,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
-#include <memory>
 #include <optional>
 
 #include "core/DeviceInfo.hpp"
@@ -39,42 +38,7 @@ void loadMagdaPreset(
     std::function<void(const magda::DeviceInfo& liveDevice, const juce::String& presetName)>
         onLoaded);
 
-class MagdaDevicePresetPresenter {
-  public:
-    MagdaDevicePresetPresenter();
-
-    void clearCurrentPreset();
-    void showMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
-                  const magda::ChainNodePath& devicePath,
-                  std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded);
-
-  private:
-    struct State;
-    std::shared_ptr<State> state_;
-};
-
-class PluginDevicePresetPresenter {
-  public:
-    PluginDevicePresetPresenter();
-
-    void clearCurrentPreset();
-    juce::String getCurrentPresetLabel() const;
-    void showMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
-                  const magda::ChainNodePath& devicePath, bool isInternalDevice,
-                  std::function<void()> onSelectionChanged);
-    void loadFile(const magda::ChainNodePath& devicePath, const juce::File& file,
-                  std::function<void()> onSelectionChanged);
-    void showSaveDialog(const magda::DeviceInfo& device, const magda::ChainNodePath& devicePath,
-                        std::function<void()> onSelectionChanged);
-
-  private:
-    struct State;
-    std::shared_ptr<State> state_;
-};
-
 bool hasPluginPresetsAvailable(const magda::DeviceInfo& device, bool isInternalDevice);
-
-juce::LookAndFeel& getPluginPresetsButtonLookAndFeel();
 
 struct PluginPresetMenuActions {
     std::function<void()> saveAs;

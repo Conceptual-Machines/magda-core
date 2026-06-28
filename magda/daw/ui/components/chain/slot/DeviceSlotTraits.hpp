@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
-#include "../compiled/CompiledPluginPresentation.hpp"
+#include "compiled/CompiledPluginPresentation.hpp"
 
 namespace magda::daw::ui {
 
@@ -12,8 +12,7 @@ struct DeviceSlotTraits {
     bool isArpeggiator = false;
     bool isStepSequencer = false;
     bool isPolyStepSequencer = false;
-    bool isFaust = false;            // interpreter Faust EFFECT: header + param grid layout
-    bool isFaustInstrument = false;  // Faust instrument: own tabbed custom UI; shares Faust chrome
+    bool isFaust = false;
     bool isAnalysis = false;  // oscilloscope / spectrum / levels: passthrough, no gain/macros/mods
     bool hasAnalyzerPopout = false;  // scope/spectrum pop into a floating window; levels does not
     bool isAISupported = false;

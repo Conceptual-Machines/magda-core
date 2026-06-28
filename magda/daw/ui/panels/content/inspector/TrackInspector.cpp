@@ -180,7 +180,6 @@ TrackInspector::TrackInspector() {
     muteButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     muteButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
     muteButton_->setIconPadding(3.5f);
-    muteButton_->setInactiveIconOpacity(0.58f);
     muteButton_->setClickingTogglesState(true);
     muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -219,8 +218,7 @@ TrackInspector::TrackInspector() {
     soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_->setIconPadding(7.0f);
-    soloButton_->setInactiveIconOpacity(0.58f);
+    soloButton_->setIconPadding(5.0f);
     soloButton_->setClickingTogglesState(true);
     soloButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -238,8 +236,7 @@ TrackInspector::TrackInspector() {
     recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton_->setIconPadding(7.0f);
-    recordButton_->setInactiveIconOpacity(0.58f);
+    recordButton_->setIconPadding(5.0f);
     recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
         DBG("TrackInspector::recordButton clicked - trackId="
@@ -264,7 +261,6 @@ TrackInspector::TrackInspector() {
             return std::vector<magda::TrackId>(selectedTrackIds_.begin(), selectedTrackIds_.end());
         return std::vector<magda::TrackId>{selectedTrackId_};
     };
-    monitorButton_.setInactiveIconOpacity(0.58f);
     addAndMakeVisible(monitorButton_);
 
     // Gain label (TCP style - draggable dB display)
@@ -323,17 +319,6 @@ TrackInspector::TrackInspector() {
                 std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, oldPan, newPan));
     };
     addAndMakeVisible(*panLabel_);
-
-    automatedSectionLabel_.setText(tr("inspector.automated"), juce::dontSendNotification);
-    automatedSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    automatedSectionLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
-    addAndMakeVisible(automatedSectionLabel_);
-
-    automatedParamsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    automatedParamsLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    automatedParamsLabel_.setJustificationType(juce::Justification::topLeft);
-    addAndMakeVisible(automatedParamsLabel_);
 
     // Routing section
     routingSectionLabel_.setText(tr("inspector.routing"), juce::dontSendNotification);
@@ -456,8 +441,7 @@ TrackInspector::TrackInspector() {
     for (auto* label :
          {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
           &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
-          &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_,
-          &latencyLabel_, &latencyValue_}) {
+          &clipsSectionLabel_, &clipCountLabel_, &latencyLabel_, &latencyValue_}) {
         useLocalizedLabelPainter(*label);
     }
 }
@@ -470,8 +454,7 @@ TrackInspector::~TrackInspector() {
     for (auto* label :
          {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
           &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
-          &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_,
-          &latencyLabel_, &latencyValue_}) {
+          &clipsSectionLabel_, &clipCountLabel_, &latencyLabel_, &latencyValue_}) {
         clearLocalizedLabelPainter(*label);
     }
     for (auto& label : sendDestLabels_)
@@ -482,7 +465,6 @@ TrackInspector::~TrackInspector() {
             mb->removeMidiDeviceListListener(this);
     }
     stopTimer();
-    magda::AutomationManager::getInstance().removeListener(this);
     magda::TrackManager::getInstance().removeListener(this);
 }
 
@@ -508,7 +490,6 @@ void TrackInspector::timerCallback() {
 
 void TrackInspector::onActivated() {
     magda::TrackManager::getInstance().addListener(this);
-    magda::AutomationManager::getInstance().addListener(this);
     populateRoutingSelectors();
     updateFromSelectedTrack();
     // Poll for MIDI device changes every 2 seconds (matching TrackHeadersPanel)
@@ -517,7 +498,6 @@ void TrackInspector::onActivated() {
 
 void TrackInspector::onDeactivated() {
     stopTimer();
-    magda::AutomationManager::getInstance().removeListener(this);
     magda::TrackManager::getInstance().removeListener(this);
 }
 
@@ -556,66 +536,146 @@ void TrackInspector::resized() {
 
     const int selectorGap = 4;
 
-    constexpr int controlRowHeight = 22;
-    constexpr int buttonSize = 22;
-    constexpr int buttonGap = 4;
-    constexpr int panWidth = 42;
-    const int buttonCount =
-        (muteButton_->isVisible() || speakerButton_->isVisible() || chordSpeakerButton_->isVisible()
-             ? 1
-             : 0) +
-        (soloButton_->isVisible() ? 1 : 0) + (recordButton_->isVisible() ? 1 : 0) +
-        (monitorButton_.isVisible() ? 1 : 0);
-    const int controlWidth =
-        std::max(buttonSize, buttonCount * buttonSize + std::max(0, buttonCount - 1) * buttonGap);
+    const int availableWidth = bounds.getWidth();
+    const int stackThreshold = 100;
+    const int buttonGap = 2;
+    const int controlRowHeight = 24;
+    const int wideThreshold = 160;
 
-    auto mixRow = bounds.removeFromTop(controlRowHeight);
-    if (speakerButton_->isVisible()) {
-        auto speakerArea = mixRow.removeFromRight(buttonSize);
-        mixRow.removeFromRight(buttonGap);
-        gainLabel_->setBounds(mixRow);
-        speakerButton_->setBounds(speakerArea);
-        bounds.removeFromTop(separatorPadding);
-        sectionSeparatorYs_.push_back(bounds.getY());
-        bounds.removeFromTop(separatorPadding);
-    } else {
-        gainLabel_->setBounds(mixRow.removeFromLeft(std::min(controlWidth, mixRow.getWidth())));
-        if (panLabel_->isVisible() && mixRow.getWidth() > buttonGap + panWidth) {
-            mixRow.removeFromLeft(buttonGap);
-            panLabel_->setBounds(mixRow.removeFromLeft(panWidth));
+    bool showPan = panLabel_->isVisible();
+    bool showSpeaker = speakerButton_->isVisible();
+    bool showChordSpeaker = chordSpeakerButton_->isVisible();
+    // Count visible buttons for layout
+    int visibleButtons = 0;
+    if (muteButton_->isVisible() || showSpeaker || showChordSpeaker)
+        visibleButtons++;
+    if (soloButton_->isVisible())
+        visibleButtons++;
+    if (recordButton_->isVisible())
+        visibleButtons++;
+    if (monitorButton_.isVisible())
+        visibleButtons++;
+    constexpr int speakerButtonSize = 24;
+
+    // Helper lambda to lay out the button row
+    auto layoutButtons = [&](juce::Rectangle<int>& row, int gap) {
+        if (visibleButtons <= 0)
+            return;
+        if (showSpeaker) {
+            // Master: just the speaker icon (fixed square size).
+            speakerButton_->setBounds(
+                row.removeFromLeft(controlRowHeight)
+                    .withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
+            return;
         }
+        if (showChordSpeaker) {
+            // Chord track: [speaker icon][solo][monitor].
+            chordSpeakerButton_->setBounds(
+                row.removeFromLeft(controlRowHeight)
+                    .withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
+            int textButtons =
+                (soloButton_->isVisible() ? 1 : 0) + (monitorButton_.isVisible() ? 1 : 0);
+            if (textButtons > 0) {
+                row.removeFromLeft(gap);
+                const int btnWidth = (row.getWidth() - (textButtons - 1) * gap) / textButtons;
+                if (soloButton_->isVisible()) {
+                    soloButton_->setBounds(row.removeFromLeft(btnWidth));
+                    if (monitorButton_.isVisible())
+                        row.removeFromLeft(gap);
+                }
+                if (monitorButton_.isVisible())
+                    monitorButton_.setBounds(row);
+            }
+            return;
+        }
+        const int btnWidth = (row.getWidth() - (visibleButtons - 1) * gap) / visibleButtons;
+        muteButton_->setBounds(row.removeFromLeft(btnWidth));
+        if (soloButton_->isVisible()) {
+            row.removeFromLeft(gap);
+            soloButton_->setBounds(row.removeFromLeft(btnWidth));
+        }
+        if (recordButton_->isVisible()) {
+            row.removeFromLeft(gap);
+            recordButton_->setBounds(row.removeFromLeft(btnWidth));
+        }
+        if (monitorButton_.isVisible()) {
+            row.removeFromLeft(gap);
+            monitorButton_.setBounds(row);
+        }
+    };
 
-        bounds.removeFromTop(4);
-        auto buttonRow = bounds.removeFromTop(buttonSize);
-        if (chordSpeakerButton_->isVisible()) {
-            chordSpeakerButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
+    if (availableWidth >= wideThreshold) {
+        // Wide: Vol [Pan] buttons — all on one row
+        auto row = bounds.removeFromTop(controlRowHeight);
+        const int gap = 2;
+        if (showSpeaker) {
+            // Master: volume takes most space, speaker icon is fixed size at end
+            auto speakerArea = row.removeFromRight(36);
+            row.removeFromRight(gap);
+            gainLabel_->setBounds(row);
+            speakerButton_->setBounds(
+                speakerArea.withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
         } else {
-            muteButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-            buttonRow.removeFromLeft(buttonGap);
-            if (soloButton_->isVisible()) {
-                soloButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-                buttonRow.removeFromLeft(buttonGap);
+            const int mixPortion = row.getWidth() * 60 / 100;
+            if (showPan) {
+                const int volWidth = (mixPortion - gap) * 80 / 100;
+                gainLabel_->setBounds(row.removeFromLeft(volWidth));
+                row.removeFromLeft(gap);
+                panLabel_->setBounds(row.removeFromLeft(mixPortion - volWidth - gap));
+            } else {
+                gainLabel_->setBounds(row.removeFromLeft(mixPortion));
             }
-            if (recordButton_->isVisible()) {
-                recordButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-                buttonRow.removeFromLeft(buttonGap);
-            }
-            if (monitorButton_.isVisible())
-                monitorButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
+            row.removeFromLeft(gap);
+            layoutButtons(row, gap);
         }
-        bounds.removeFromTop(separatorPadding);
-        sectionSeparatorYs_.push_back(bounds.getY());
-        bounds.removeFromTop(separatorPadding);
-    }
+    } else if (availableWidth >= stackThreshold) {
+        // Medium: Vol [Pan] on one row, buttons on second row
+        auto mixRow = bounds.removeFromTop(controlRowHeight);
+        if (showSpeaker) {
+            auto speakerArea = mixRow.removeFromRight(36);
+            mixRow.removeFromRight(buttonGap);
+            gainLabel_->setBounds(mixRow);
+            speakerButton_->setBounds(
+                speakerArea.withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
+        } else {
+            if (showPan) {
+                const int mixGap = 4;
+                const int volWidth = (mixRow.getWidth() - mixGap) * 80 / 100;
+                gainLabel_->setBounds(mixRow.removeFromLeft(volWidth));
+                mixRow.removeFromLeft(mixGap);
+                panLabel_->setBounds(mixRow);
+            } else {
+                gainLabel_->setBounds(mixRow);
+            }
+            bounds.removeFromTop(4);
 
-    if (automatedSectionLabel_.isVisible()) {
-        automatedSectionLabel_.setBounds(bounds.removeFromTop(16));
-        bounds.removeFromTop(2);
-        automatedParamsLabel_.setBounds(bounds.removeFromTop(automatedParamsLabel_.getHeight()));
-        bounds.removeFromTop(separatorPadding);
-        sectionSeparatorYs_.push_back(bounds.getY());
-        bounds.removeFromTop(separatorPadding);
+            auto buttonRow = bounds.removeFromTop(controlRowHeight);
+            layoutButtons(buttonRow, buttonGap);
+        }
+    } else {
+        // Narrow: Volume, [Pan], and buttons all stacked
+        auto volRow = bounds.removeFromTop(controlRowHeight);
+        if (showSpeaker) {
+            auto speakerArea = volRow.removeFromRight(36);
+            volRow.removeFromRight(buttonGap);
+            gainLabel_->setBounds(volRow);
+            speakerButton_->setBounds(
+                speakerArea.withSizeKeepingCentre(speakerButtonSize, speakerButtonSize));
+        } else {
+            gainLabel_->setBounds(volRow);
+            if (showPan) {
+                bounds.removeFromTop(2);
+                panLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
+            }
+            bounds.removeFromTop(4);
+
+            auto buttonRow = bounds.removeFromTop(controlRowHeight);
+            layoutButtons(buttonRow, buttonGap);
+        }
     }
+    bounds.removeFromTop(separatorPadding);
+    sectionSeparatorYs_.push_back(bounds.getY());
+    bounds.removeFromTop(separatorPadding);
 
     // Routing section — only lay out if visible (audio out or, for the chord
     // track, MIDI out).
@@ -907,70 +967,13 @@ void TrackInspector::deviceParameterChanged(const magda::ChainNodePath& devicePa
     (void)newValue;
 }
 
-void TrackInspector::automationLanesChanged() {
-    updateAutomatedParametersSummary();
-    resized();
-    repaint();
-}
-
-void TrackInspector::automationLanePropertyChanged(magda::AutomationLaneId laneId) {
-    juce::ignoreUnused(laneId);
-    updateAutomatedParametersSummary();
-    resized();
-    repaint();
-}
-
 // ============================================================================
 // Private Methods
 // ============================================================================
 
-void TrackInspector::updateAutomatedParametersSummary() {
-    if (isMultiTrackMode_ || selectedTrackId_ == magda::INVALID_TRACK_ID) {
-        automatedSectionLabel_.setVisible(false);
-        automatedParamsLabel_.setVisible(false);
-        return;
-    }
-
-    auto& automationManager = magda::AutomationManager::getInstance();
-    auto laneIds = automationManager.getLanesForTrack(selectedTrackId_);
-    if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
-        for (auto laneId : automationManager.getEditScopedLanes())
-            laneIds.push_back(laneId);
-    }
-
-    juce::StringArray names;
-    for (auto laneId : laneIds) {
-        if (const auto* lane = automationManager.getLane(laneId))
-            names.addIfNotAlreadyThere(lane->getDisplayName());
-    }
-
-    if (names.isEmpty()) {
-        automatedSectionLabel_.setVisible(false);
-        automatedParamsLabel_.setVisible(false);
-        return;
-    }
-
-    constexpr int maxShown = 4;
-    juce::String text;
-    const int shown = std::min(maxShown, names.size());
-    for (int i = 0; i < shown; ++i) {
-        if (i > 0)
-            text << "\n";
-        text << "- " << names[i];
-    }
-    if (names.size() > maxShown)
-        text << "\n+ " << juce::String(names.size() - maxShown) << " more";
-
-    automatedParamsLabel_.setText(text, juce::dontSendNotification);
-    automatedParamsLabel_.setSize(1, (shown + (names.size() > maxShown ? 1 : 0)) * 14);
-    automatedSectionLabel_.setVisible(true);
-    automatedParamsLabel_.setVisible(true);
-}
-
 void TrackInspector::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         showTrackControls(false);
-        updateAutomatedParametersSummary();
         return;
     }
 
@@ -991,7 +994,6 @@ void TrackInspector::updateFromSelectedTrack() {
                                 juce::dontSendNotification);
 
         showTrackControls(true);
-        updateAutomatedParametersSummary();
         resized();
         repaint();
         return;
@@ -1058,10 +1060,8 @@ void TrackInspector::updateFromSelectedTrack() {
         }
 
         showTrackControls(true);
-        updateAutomatedParametersSummary();
     } else {
         showTrackControls(false);
-        updateAutomatedParametersSummary();
     }
 
     resized();
@@ -1262,8 +1262,6 @@ void TrackInspector::updateFromMultiTrackSelection() {
     clipCountLabel_.setVisible(false);
     latencyLabel_.setVisible(false);
     latencyValue_.setVisible(false);
-    automatedSectionLabel_.setVisible(false);
-    automatedParamsLabel_.setVisible(false);
 
     resized();
     repaint();
@@ -1337,10 +1335,6 @@ void TrackInspector::showTrackControls(bool show) {
     // Latency — shown for all tracks (including master)
     latencyLabel_.setVisible(show);
     latencyValue_.setVisible(show);
-    if (!show) {
-        automatedSectionLabel_.setVisible(false);
-        automatedParamsLabel_.setVisible(false);
-    }
 }
 
 void TrackInspector::rebuildSendsUI() {

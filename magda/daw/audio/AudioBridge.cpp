@@ -148,6 +148,11 @@ AudioBridge::~AudioBridge() {
         });
 
         // Unregister live input meter clients
+        for (auto& [trackId, entry] : inputMeterClients_) {
+            juce::ignoreUnused(trackId);
+            if (entry.measurer)
+                entry.measurer->removeClient(entry.client);
+        }
         inputMeterClients_.clear();
 
         // Clear baked automation curves BEFORE PluginManager mappings are
@@ -179,6 +184,11 @@ void AudioBridge::resetTestState() {
         }
     });
 
+    for (auto& [trackId, entry] : inputMeterClients_) {
+        juce::ignoreUnused(trackId);
+        if (entry.measurer)
+            entry.measurer->removeClient(entry.client);
+    }
     inputMeterClients_.clear();
 
     automationPlayback_.clearAllLanes();
@@ -462,12 +472,10 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // instrument wrapper racks; post-fx/mixer-analysis ids are section-local and
     // can overlap with a top-level instrument id.
     if (devicePath.getType() == ChainNodeType::TopLevelDevice) {
-        auto& rackManager = pluginManager_.getInstrumentRackManager();
-        if (auto* rackInstance = rackManager.getRackInstance(deviceId)) {
+        if (auto* rackInstance =
+                pluginManager_.getInstrumentRackManager().getRackInstance(deviceId)) {
             rackInstance->setEnabled(!device->bypassed);
         }
-        // Keep the wrapper's "MIDI in thru" passthrough in sync with the model.
-        rackManager.setMidiInThru(deviceId, device->midiInThru);
     }
 
     // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
@@ -927,12 +935,9 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
             if (!track)
                 continue;
 
-            auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-            if (!trackInfo || trackInfo->audioInputDevice.isEmpty())
-                continue;
-
             for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                if (!inputDeviceInstance || inputDeviceInstance->owner.isMidi())
+                if (!inputDeviceInstance ||
+                    dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr)
                     continue;
 
                 if (!inputHasTarget(*inputDeviceInstance, track->itemID))
@@ -947,12 +952,6 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
         }
     }
 
-    std::unordered_set<te::LevelMeasurer*> liveInputMeasurers;
-    for (auto& [trackId, measurer] : desired) {
-        juce::ignoreUnused(trackId);
-        liveInputMeasurers.insert(measurer);
-    }
-
     for (auto& [trackId, measurer] : desired) {
         if (!measurer)
             continue;
@@ -964,7 +963,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
             entry.measurer = measurer;
             measurer->addClient(entry.client);
         } else if (entry.measurer != measurer) {
-            if (entry.measurer && liveInputMeasurers.count(entry.measurer) != 0)
+            if (entry.measurer)
                 entry.measurer->removeClient(entry.client);
             entry.measurer = measurer;
             measurer->addClient(entry.client);
@@ -977,7 +976,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
             continue;
         }
 
-        if (it->second.measurer && liveInputMeasurers.count(it->second.measurer) != 0)
+        if (it->second.measurer)
             it->second.measurer->removeClient(it->second.client);
         it = inputMeterClients_.erase(it);
     }

@@ -17,28 +17,12 @@ export PATH="${VS_ROOT_BASH}/VC/Tools/MSVC/${MSVC_VER}/bin/Hostx64/x64:${WINSDK_
 BUILD_DIR="cmake-build-debug"
 EXE="${BUILD_DIR}/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.exe"
 
-# libxml2 (DAWproject XSD validation) is a vcpkg dependency on Windows (see
-# vcpkg.json). Wire vcpkg in like CI does: point CMake at the vcpkg toolchain
-# and force the x64-windows triplet. Without the explicit triplet, manifest-mode
-# vcpkg installs the x86 default and find_package(LibXml2) fails for the x64
-# build. VCPKG_ROOT must be the native Windows path (e.g. C:/vcpkg) since the
-# native cmake.exe can't read an MSYS /c/... path.
-VCPKG_ROOT="${VCPKG_ROOT:-C:/vcpkg}"
-CMAKE_ARGS=(
-  -G Ninja
-  -DCMAKE_BUILD_TYPE=Debug
-  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-  -DMAGDA_BUILD_TESTS=ON
-  -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-  -DVCPKG_TARGET_TRIPLET=x64-windows
-)
-
 case "${1:-debug}" in
   debug)
     mkdir -p "$BUILD_DIR"
     if [ ! -f "$BUILD_DIR/build.ninja" ]; then
       echo "Configuring..."
-      cd "$BUILD_DIR" && cmake "${CMAKE_ARGS[@]}" ..
+      cd "$BUILD_DIR" && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..
       cd ..
     fi
     cd "$BUILD_DIR" && ninja
@@ -49,7 +33,7 @@ case "${1:-debug}" in
   test)
     mkdir -p "$BUILD_DIR"
     if [ ! -f "$BUILD_DIR/build.ninja" ]; then
-      cd "$BUILD_DIR" && cmake "${CMAKE_ARGS[@]}" ..
+      cd "$BUILD_DIR" && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..
       cd ..
     fi
     cd "$BUILD_DIR" && ninja magda_tests && ./tests/magda_tests.exe
@@ -59,7 +43,7 @@ case "${1:-debug}" in
     ;;
   configure)
     mkdir -p "$BUILD_DIR"
-    cd "$BUILD_DIR" && cmake "${CMAKE_ARGS[@]}" ..
+    cd "$BUILD_DIR" && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..
     ;;
   *)
     echo "Usage: bash winbuild.sh [debug|run|test|clean|configure]"

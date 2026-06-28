@@ -20,7 +20,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
@@ -280,7 +280,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-') }}
     runs-on: macos-15-intel
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
@@ -525,7 +525,7 @@ jobs:
       NSIS_VERSION: "3.10"
       VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
@@ -876,7 +876,7 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v6
       with:
         submodules: recursive
         lfs: true
@@ -1107,7 +1107,7 @@ jobs:
       contents: write
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v7
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 

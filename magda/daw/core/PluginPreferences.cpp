@@ -9,7 +9,6 @@ namespace {
 constexpr const char* kKind = "plugin_preferences";
 constexpr const char* kDrumGridBuiltinId = "drumgrid";
 constexpr const char* kInstrumentRackWrapperId = "rack";
-constexpr const char* kMidiFxCategoryOverride = "MIDI FX";
 
 // Plugins whose per-instance kit should NOT be mirrored to a user-global
 // default. Internal DrumGrid is the canonical case: its kit is built
@@ -57,46 +56,6 @@ void PluginPreferences::setPrefersDrumGrid(const juce::String& pluginIdentifier,
         notifyDrumGridPreferenceChanged(pluginIdentifier);
 }
 
-bool PluginPreferences::treatsAsMidiFx(const juce::String& pluginIdentifier) const {
-    return browserCategoryOverride(pluginIdentifier) == kMidiFxCategoryOverride;
-}
-
-void PluginPreferences::setTreatsAsMidiFx(const juce::String& pluginIdentifier,
-                                          bool treatAsMidiFx) {
-    setBrowserCategoryOverride(
-        pluginIdentifier, treatAsMidiFx ? juce::String(kMidiFxCategoryOverride) : juce::String());
-}
-
-juce::String PluginPreferences::browserCategoryOverride(
-    const juce::String& pluginIdentifier) const {
-    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
-        return {};
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = categoryOverrides_.find(pluginIdentifier);
-    return it == categoryOverrides_.end() ? juce::String() : it->second;
-}
-
-void PluginPreferences::setBrowserCategoryOverride(const juce::String& pluginIdentifier,
-                                                   const juce::String& categoryOverride) {
-    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
-        return;
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto normalized = categoryOverride.trim();
-    bool changed = false;
-    if (normalized.isEmpty()) {
-        changed = categoryOverrides_.erase(pluginIdentifier) > 0;
-    } else {
-        auto it = categoryOverrides_.find(pluginIdentifier);
-        changed = it == categoryOverrides_.end() || it->second != normalized;
-        if (changed)
-            categoryOverrides_[pluginIdentifier] = normalized;
-    }
-    if (changed)
-        saveUnlocked();
-}
-
 juce::String PluginPreferences::identifierForDevice(const DeviceInfo& device) {
     return device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
 }
@@ -140,7 +99,6 @@ void PluginPreferences::setDefaultKitRows(const juce::String& pluginIdentifier,
 
 void PluginPreferences::loadUnlocked() {
     drumGridPlugins_.clear();
-    categoryOverrides_.clear();
     defaultKits_.clear();
     auto file = magda::paths::pluginPreferencesFile();
     if (!file.existsAsFile())
@@ -161,28 +119,6 @@ void PluginPreferences::loadUnlocked() {
             auto id = entry.toString();
             if (id.isNotEmpty() && id != kInstrumentRackWrapperId)
                 drumGridPlugins_.insert(id);
-        }
-    }
-
-    auto midiFxVar = payload->getProperty("treatAsMidiFx");
-    if (midiFxVar.isArray()) {
-        for (const auto& entry : *midiFxVar.getArray()) {
-            auto id = entry.toString();
-            if (id.isNotEmpty() && id != kInstrumentRackWrapperId)
-                categoryOverrides_[id] = kMidiFxCategoryOverride;
-        }
-    }
-
-    auto categoryOverridesVar = payload->getProperty("categoryOverrides");
-    if (categoryOverridesVar.isArray()) {
-        for (const auto& entry : *categoryOverridesVar.getArray()) {
-            auto* categoryObj = entry.getDynamicObject();
-            if (categoryObj == nullptr)
-                continue;
-            auto id = categoryObj->getProperty("plugin").toString();
-            auto category = categoryObj->getProperty("category").toString().trim();
-            if (id.isNotEmpty() && id != kInstrumentRackWrapperId && category.isNotEmpty())
-                categoryOverrides_[id] = category;
         }
     }
 
@@ -220,14 +156,6 @@ void PluginPreferences::saveUnlocked() const {
     for (const auto& id : drumGridPlugins_)
         prefersList.add(juce::var(id));
 
-    juce::Array<juce::var> categoryOverrideList;
-    for (const auto& [pluginId, category] : categoryOverrides_) {
-        auto* categoryObj = new juce::DynamicObject();
-        categoryObj->setProperty("plugin", pluginId);
-        categoryObj->setProperty("category", category);
-        categoryOverrideList.add(juce::var(categoryObj));
-    }
-
     juce::Array<juce::var> kitsList;
     for (const auto& [pluginId, rows] : defaultKits_) {
         if (rows.empty())
@@ -250,7 +178,6 @@ void PluginPreferences::saveUnlocked() const {
 
     auto* payload = new juce::DynamicObject();
     payload->setProperty("prefersDrumGrid", prefersList);
-    payload->setProperty("categoryOverrides", categoryOverrideList);
     payload->setProperty("defaultKits", kitsList);
 
     auto* envelope = new juce::DynamicObject();

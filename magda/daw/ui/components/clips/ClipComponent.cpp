@@ -26,7 +26,6 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
-#include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
@@ -1504,7 +1503,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // select from the anchor, applied immediately. Dragging afterwards moves
     // the selected range via the multi-drag path.
     bool didRangeSelect = false;
-    pendingCopyDragAction_ = false;
+    pendingAltAction_ = false;
     if (e.mods.isShiftDown()) {
         if (magda::isRangeSelectClick(e.mods)) {
             logArrangeRangeSelect("ClipComponent range branch: extending to clip=" +
@@ -1526,12 +1525,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                 juce::String(static_cast<int>(selectionManager.getSelectedClipCount())) +
                 " anchor=" + juce::String(static_cast<int>(selectionManager.getAnchorClip())));
         }
-    } else if (magda::GestureRouter::getInstance().isDuplicateOnDrag(
-                   magda::GestureContext::Arrangement, e.mods)) {
-        // Copy-drag modifier on the body (default Alt, customisable in
-        // Preferences → Gestures): copy on drag, edit cursor on click — both
-        // resolve later, so the selection stays untouched for now.
-        pendingCopyDragAction_ = true;
+    } else if (e.mods.isAltDown() && !e.mods.isCommandDown()) {
+        // Alt+body: copy on drag, edit cursor on click — both resolve later,
+        // so the selection stays untouched for now
+        pendingAltAction_ = true;
     }
 
     // Handle Cmd+Alt+click for blade/split (click-only gesture, no drag)
@@ -1564,7 +1561,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // keep the selection and prepare for potential multi-drag
     size_t selectedCount = selectionManager.getSelectedClipCount();
 
-    if (pendingCopyDragAction_) {
+    if (pendingAltAction_) {
         // Selection deferred: drag start copies, plain release places the edit cursor
     } else if (didRangeSelect) {
         logArrangeRangeSelect("ClipComponent preserving range selection through normal click path");
@@ -1797,10 +1794,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
     // A pending Alt action resolves to copy-drag once a real drag starts
     // (a plain Alt release places the edit cursor in mouseUp instead)
-    if (pendingCopyDragAction_) {
+    if (pendingAltAction_) {
         if (e.getDistanceFromDragStart() < 4)
             return;  // still a click
-        pendingCopyDragAction_ = false;
+        pendingAltAction_ = false;
         auto& sm = SelectionManager::getInstance();
         const bool partOfMultiSelection =
             sm.getSelectedClipCount() > 1 && sm.isClipSelected(clipId_);
@@ -2289,8 +2286,8 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
     // Alt+click released without a drag: place the edit cursor at the click
     // position (the documented gesture; Cmd+Alt is the blade, Alt+drag copies)
-    if (pendingCopyDragAction_) {
-        pendingCopyDragAction_ = false;
+    if (pendingAltAction_) {
+        pendingAltAction_ = false;
         if (!isDragging_) {
             if (parentPanel_) {
                 auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
@@ -2366,7 +2363,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         parentPanel_->clearClipGhost(clipId_);
                     }
 
-                    // Copy-on-drag: create duplicate at final position via undo command
+                    // Shift+drag duplicate: create duplicate at final position via undo command
                     double dupTempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                     auto cmd = std::make_unique<DuplicateClipCommand>(
                         clipId_, BeatPosition{finalStartTime * dupTempo / 60.0}, targetTrackId,
@@ -3093,52 +3090,35 @@ void ClipComponent::showContextMenu() {
     // Split / Trim
     menu.addItem(5, "Split / Trim", canEdit);
 
-    // Slice operations. In-place slicing applies to the whole selection (each
-    // selected audio clip is sliced); the "to Drum Grid" variants stay single
-    // clip, since each would spawn its own drum-grid track.
-    bool canSliceAtMarkers = false;       // single audio clip with warp markers
-    bool canSliceAtGrid = false;          // single audio clip, grid snap active
-    bool canSliceAtMarkersMulti = false;  // every selected clip is audio + warp
-    bool canSliceAtGridMulti = false;     // every selected clip is audio, grid on
-    if (!isChord && canEdit) {
-        double gridInterval = 0.0;
-        if (parentPanel_ && parentPanel_->getTimelineController())
-            gridInterval = parentPanel_->getTimelineController()->getState().getSnapInterval();
-        auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-        auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-
-        auto hasWarpMarkers = [&](const ClipInfo* c, ClipId id) {
-            return c && c->isAudio() && c->warpEnabled && bridge &&
-                   bridge->getWarpMarkers(id).size() > 2;
-        };
-
-        if (isMultiSelection) {
-            bool allAudio = true;
-            bool anyWarp = false;
-            for (auto cid : selectionManager.getSelectedClips()) {
-                const auto* c = clipManager.getClip(cid);
-                if (!c || !c->isAudio()) {
-                    allAudio = false;
-                    break;
+    // Slice operations (single audio clip only)
+    bool canSliceAtMarkers = false;
+    bool canSliceAtGrid = false;
+    if (!isChord && !isMultiSelection && canEdit) {
+        const auto* singleClip = getClipInfo();
+        if (singleClip && singleClip->isAudio()) {
+            // Check for warp markers
+            if (singleClip->warpEnabled) {
+                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+                if (audioEngine) {
+                    auto* bridge = audioEngine->getAudioBridge();
+                    if (bridge) {
+                        auto markers = bridge->getWarpMarkers(clipId_);
+                        canSliceAtMarkers = markers.size() > 2;
+                    }
                 }
-                if (hasWarpMarkers(c, cid))
-                    anyWarp = true;
             }
-            canSliceAtMarkersMulti = allAudio && anyWarp;
-            canSliceAtGridMulti = allAudio && gridInterval > 0.0;
-        } else {
-            const auto* singleClip = getClipInfo();
-            if (singleClip && singleClip->isAudio()) {
-                canSliceAtMarkers = hasWarpMarkers(singleClip, clipId_);
+            // Only enable grid slicing when snap interval is positive
+            if (parentPanel_ && parentPanel_->getTimelineController()) {
+                double gridInterval =
+                    parentPanel_->getTimelineController()->getState().getSnapInterval();
                 canSliceAtGrid = gridInterval > 0.0;
             }
         }
     }
     if (!isChord) {
-        menu.addItem(13, "Slice at Warp Markers In Place",
-                     canSliceAtMarkers || canSliceAtMarkersMulti);
+        menu.addItem(13, "Slice at Warp Markers In Place", canSliceAtMarkers);
         menu.addItem(15, "Slice at Warp Markers to Drum Grid", canSliceAtMarkers);
-        menu.addItem(14, "Slice at Grid In Place", canSliceAtGrid || canSliceAtGridMulti);
+        menu.addItem(14, "Slice at Grid In Place", canSliceAtGrid);
         menu.addItem(16, "Slice at Grid to Drum Grid", canSliceAtGrid);
     }
     menu.addSeparator();
@@ -3208,19 +3188,19 @@ void ClipComponent::showContextMenu() {
     // Quantize (MIDI clips only)
     {
         bool hasMidi = false;
-        bool canSaveMidi = false;
+        bool canSaveSingleMidi = false;
         if (isMultiSelection) {
             for (auto cid : selectionManager.getSelectedClips()) {
                 auto* c = clipManager.getClip(cid);
-                if (c && c->isMidi() && !c->midiNotes.empty())
+                if (c && c->isMidi() && !c->midiNotes.empty()) {
                     hasMidi = true;
-                if (c && c->isMidi() && clipManager.canSaveClipToLibrary(cid))
-                    canSaveMidi = true;
+                    break;
+                }
             }
         } else {
             const auto* ci = getClipInfo();
             hasMidi = ci && ci->isMidi() && !ci->midiNotes.empty();
-            canSaveMidi = ci && ci->isMidi() && clipManager.canSaveClipToLibrary(ci->id);
+            canSaveSingleMidi = ci && ci->isMidi() && clipManager.canSaveClipToLibrary(ci->id);
         }
 
         if (hasMidi) {
@@ -3228,10 +3208,8 @@ void ClipComponent::showContextMenu() {
             // chords round-trip as CHORD: markers — so the Save item is shown
             // for every MIDI clip. Extracting chords onto the chord track only
             // makes sense for clips that aren't already on it.
-            menu.addItem(
-                20, isMultiSelection ? "Save MIDI Clips to Library" : "Save MIDI Clip to Library",
-                canSaveMidi);
-            if (!isChord) {
+            menu.addItem(20, "Save MIDI Clip to Library", canSaveSingleMidi);
+            if (!isChord && !isMultiSelection) {
                 juce::PopupMenu extractMenu;
                 extractMenu.addItem(23, "Append");
                 extractMenu.addItem(24, "Replace Chord Track");
@@ -3462,19 +3440,8 @@ void ClipComponent::showContextMenu() {
                 break;
             }
 
-            case 20: {  // Save MIDI Clip(s) to Library
-                if (selectionManager.getSelectedClipCount() > 1) {
-                    bool anyFailed = false;
-                    for (auto cid : selectionManager.getSelectedClips()) {
-                        const auto* c = clipManager.getClip(cid);
-                        if (c && c->isMidi() && clipManager.canSaveClipToLibrary(cid)) {
-                            if (!clipManager.saveClipToLibrary(cid))
-                                anyFailed = true;
-                        }
-                    }
-                    if (anyFailed)
-                        showMidiClipLibrarySaveFailedAlert();
-                } else if (!clipManager.saveClipToLibrary(clipId_)) {
+            case 20: {  // Save MIDI Clip to Library
+                if (!clipManager.saveClipToLibrary(clipId_)) {
                     showMidiClipLibrarySaveFailedAlert();
                 }
                 break;
@@ -3502,39 +3469,12 @@ void ClipComponent::showContextMenu() {
             }
 
             case 23: {  // Extract Chords to Chord Track (Append)
-                if (selectionManager.getSelectedClipCount() > 1) {
-                    UndoManager::getInstance().beginCompoundOperation(
-                        "Extract Chords to Chord Track");
-                    for (auto cid : selectionManager.getSelectedClips()) {
-                        const auto* c = clipManager.getClip(cid);
-                        if (c && c->isMidi())
-                            extractChordsToChordTrack(cid, false);
-                    }
-                    UndoManager::getInstance().endCompoundOperation();
-                } else {
-                    extractChordsToChordTrack(clipId_, false);
-                }
+                extractChordsToChordTrack(clipId_, false);
                 break;
             }
 
             case 24: {  // Extract Chords to Chord Track (Replace)
-                if (selectionManager.getSelectedClipCount() > 1) {
-                    UndoManager::getInstance().beginCompoundOperation(
-                        "Extract Chords to Chord Track");
-                    // Replace clears the chord track once (first clip), then the
-                    // rest append so all selected clips' chords land on the track.
-                    bool replace = true;
-                    for (auto cid : selectionManager.getSelectedClips()) {
-                        const auto* c = clipManager.getClip(cid);
-                        if (c && c->isMidi()) {
-                            extractChordsToChordTrack(cid, replace);
-                            replace = false;
-                        }
-                    }
-                    UndoManager::getInstance().endCompoundOperation();
-                } else {
-                    extractChordsToChordTrack(clipId_, true);
-                }
+                extractChordsToChordTrack(clipId_, true);
                 break;
             }
 
@@ -3683,26 +3623,15 @@ void ClipComponent::showContextMenu() {
                 break;
             }
 
-            case 13: {  // Slice at Warp Markers In Place
+            case 13: {  // Slice at Warp Markers
                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 auto* audioEngine = TrackManager::getInstance().getAudioEngine();
                 auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-                if (selectionManager.getSelectedClipCount() > 1) {
-                    UndoManager::getInstance().beginCompoundOperation(
-                        "Slice Clips at Warp Markers");
-                    for (auto cid : selectionManager.getSelectedClips()) {
-                        const auto* c = clipManager.getClip(cid);
-                        if (c && c->isAudio())
-                            sliceClipAtWarpMarkers(cid, tempo, bridge);
-                    }
-                    UndoManager::getInstance().endCompoundOperation();
-                } else {
-                    sliceClipAtWarpMarkers(clipId_, tempo, bridge);
-                }
+                sliceClipAtWarpMarkers(clipId_, tempo, bridge);
                 break;
             }
 
-            case 14: {  // Slice at Grid In Place
+            case 14: {  // Slice at Grid
                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 double gridInterval = 0.0;
                 if (parentPanel_ && parentPanel_->getTimelineController()) {
@@ -3711,17 +3640,7 @@ void ClipComponent::showContextMenu() {
                 }
                 auto* audioEngine = TrackManager::getInstance().getAudioEngine();
                 auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-                if (selectionManager.getSelectedClipCount() > 1) {
-                    UndoManager::getInstance().beginCompoundOperation("Slice Clips at Grid");
-                    for (auto cid : selectionManager.getSelectedClips()) {
-                        const auto* c = clipManager.getClip(cid);
-                        if (c && c->isAudio())
-                            sliceClipAtGrid(cid, gridInterval, tempo, bridge);
-                    }
-                    UndoManager::getInstance().endCompoundOperation();
-                } else {
-                    sliceClipAtGrid(clipId_, gridInterval, tempo, bridge);
-                }
+                sliceClipAtGrid(clipId_, gridInterval, tempo, bridge);
                 break;
             }
 

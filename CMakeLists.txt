@@ -89,10 +89,6 @@ if(MSVC)
     # composes with CMake's default MSVC init flags (/DWIN32 /_WINDOWS /EHsc etc.)
     # instead of replacing them like a top-level -DCMAKE_CXX_FLAGS would.
     add_compile_options(/FS)
-    # NOMINMAX: stop <windows.h> defining min()/max() macros, which clobber
-    # std::min/std::max. The Faust poly instruments (poly-dsp.h) transitively
-    # pull in <windows.h>, so without this they fail to compile on MSVC.
-    add_compile_definitions(NOMINMAX)
     # /OPT:REF,ICF preserve release dead-stripping; /Zi + /DEBUG applied per-target (see magda/daw/CMakeLists.txt)
     string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /OPT:REF /OPT:ICF")
 else()
@@ -151,12 +147,6 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # )
 
 # gRPC removed - using simple in-process agent system instead
-
-# Hide host symbols by default so hosted plugins with their own static JUCE copy
-# cannot bind to MAGDA's JUCE definitions at load time.
-set(CMAKE_C_VISIBILITY_PRESET hidden)
-set(CMAKE_CXX_VISIBILITY_PRESET hidden)
-set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # Tracktion Engine for DAW functionality (using local submodule)
 add_subdirectory(third_party/tracktion_engine)
@@ -365,35 +355,6 @@ if(MAGDA_HAVE_CLAP)
 endif()
 
 # Simple agent system - no external dependencies needed
-
-# Mutable Instruments DSP (Elements / Rings / Clouds) - native ports (#1581).
-# Trimmed MIT fork at third_party/eurorack: stmlib + the three modules' DSP only.
-# Built with TEST so stmlib substitutes its portable C paths for the Cortex-M4
-# inline asm (saturating arithmetic, sqrt) and drops firmware section attrs;
-# the results are numerically equivalent. TEST is PUBLIC so any consumer that
-# includes these headers gets the same portable path (magda-core uses no bare
-# TEST macro of its own, so there is no collision).
-set(MI_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eurorack)
-file(GLOB MI_SOURCES CONFIGURE_DEPENDS
-    ${MI_ROOT}/elements/dsp/*.cc
-    ${MI_ROOT}/elements/resources.cc
-    ${MI_ROOT}/rings/dsp/*.cc
-    ${MI_ROOT}/rings/resources.cc
-    ${MI_ROOT}/clouds/dsp/*.cc
-    ${MI_ROOT}/clouds/dsp/pvoc/*.cc
-    ${MI_ROOT}/clouds/resources.cc
-    ${MI_ROOT}/stmlib/utils/random.cc
-    ${MI_ROOT}/stmlib/dsp/atan.cc
-    ${MI_ROOT}/stmlib/dsp/units.cc
-)
-add_library(magda_mutable STATIC ${MI_SOURCES})
-target_include_directories(magda_mutable PUBLIC ${MI_ROOT})
-target_compile_definitions(magda_mutable PUBLIC TEST)
-if(MSVC)
-    target_compile_definitions(magda_mutable PUBLIC _USE_MATH_DEFINES)
-endif()
-set_target_properties(magda_mutable PROPERTIES POSITION_INDEPENDENT_CODE ON)
-add_library(magda::mutable ALIAS magda_mutable)
 
 # Product-based subdirectories
 add_subdirectory(magda/daw)

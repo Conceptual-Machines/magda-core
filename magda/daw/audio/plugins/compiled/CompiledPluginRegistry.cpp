@@ -2,7 +2,6 @@
 
 #include "MagdaBitcrusherCompiledPlugin.hpp"
 #include "MagdaChorusCompiledPlugin.hpp"
-#include "MagdaClapCompiledPlugin.hpp"
 #include "MagdaClipperCompiledPlugin.hpp"
 #include "MagdaCompressorCompiledPlugin.hpp"
 #include "MagdaDelayCompiledPlugin.hpp"
@@ -14,19 +13,14 @@
 #include "MagdaGateExpanderCompiledPlugin.hpp"
 #include "MagdaGrainDelayCompiledPlugin.hpp"
 #include "MagdaGritCompiledPlugin.hpp"
-#include "MagdaHatCompiledPlugin.hpp"
-#include "MagdaKickCompiledPlugin.hpp"
 #include "MagdaLimiterCompiledPlugin.hpp"
 #include "MagdaModCompiledPlugin.hpp"
 #include "MagdaMultibandCompiledPlugin.hpp"
 #include "MagdaPhaserCompiledPlugin.hpp"
 #include "MagdaPitchCompiledPlugin.hpp"
-#include "MagdaPolySynthCompiledPlugin.hpp"
 #include "MagdaReverbCompiledPlugin.hpp"
 #include "MagdaRingModCompiledPlugin.hpp"
 #include "MagdaSaturatorCompiledPlugin.hpp"
-#include "MagdaSnareCompiledPlugin.hpp"
-#include "MagdaTomCompiledPlugin.hpp"
 #include "MagdaUtilityCompiledPlugin.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "processors/CompiledFaustProcessor.hpp"
@@ -60,13 +54,6 @@ const CompiledPluginSpec& getMagdaDimensionSpec();
 const CompiledPluginSpec& getMagdaPitchSpec();
 const CompiledPluginSpec& getMagdaBitcrusherSpec();
 const CompiledPluginSpec& getMagdaUtilitySpec();
-const CompiledPluginSpec& getMagdaPolySynthSpec();
-const CompiledPluginSpec& getMagdaFMSpec();
-const CompiledPluginSpec& getMagdaKickSpec();
-const CompiledPluginSpec& getMagdaSnareSpec();
-const CompiledPluginSpec& getMagdaClapSpec();
-const CompiledPluginSpec& getMagdaHatSpec();
-const CompiledPluginSpec& getMagdaTomSpec();
 
 namespace {
 
@@ -78,9 +65,7 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaFreqShiftSpec(),  &getMagdaLimiterSpec(),    &getMagdaGateExpanderSpec(),
     &getMagdaClipperSpec(),    &getMagdaReverbSpec(),     &getMagdaEqSpec(),
     &getMagdaDimensionSpec(),  &getMagdaPitchSpec(),      &getMagdaBitcrusherSpec(),
-    &getMagdaUtilitySpec(),    &getMagdaPolySynthSpec(),  &getMagdaFMSpec(),
-    &getMagdaKickSpec(),       &getMagdaSnareSpec(),      &getMagdaClapSpec(),
-    &getMagdaHatSpec(),        &getMagdaTomSpec(),
+    &getMagdaUtilitySpec(),
 };
 
 }  // namespace

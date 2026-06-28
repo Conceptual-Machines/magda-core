@@ -569,20 +569,11 @@ class TrackChainContent::ChainContainer : public juce::Component,
             device.pluginId = uniqueId.isNotEmpty() ? uniqueId
                                                     : obj->getProperty("name").toString() + "_" +
                                                           obj->getProperty("format").toString();
-            const auto rawCategory = obj->hasProperty("rawCategory")
-                                         ? obj->getProperty("rawCategory").toString()
-                                         : obj->getProperty("category").toString();
-            const auto rawSubcategory = obj->hasProperty("rawSubcategory")
-                                            ? obj->getProperty("rawSubcategory").toString()
-                                            : obj->getProperty("subcategory").toString();
-            device.isInstrument = rawCategory.isNotEmpty()
-                                      ? rawCategory == "Instrument"
-                                      : static_cast<bool>(obj->getProperty("isInstrument"));
-            if (rawSubcategory == "MIDI")
+            device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
+            if (obj->getProperty("subcategory").toString() == "MIDI")
                 device.deviceType = magda::DeviceType::MIDI;
             else if (device.isInstrument)
                 device.deviceType = magda::DeviceType::Instrument;
-            device.browserCategoryOverride = obj->getProperty("categoryOverride").toString();
             // External plugin identification - critical for loading
             device.uniqueId = obj->getProperty("uniqueId").toString();
             device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();

@@ -165,10 +165,10 @@ class MixerView : public juce::Component,
         std::unique_ptr<juce::Label> trackLabel;
         std::unique_ptr<daw::ui::TextSlider> panSlider;
         std::unique_ptr<daw::ui::TextSlider> volumeSlider;
-        std::unique_ptr<magda::SvgButton> muteButton;
+        std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<magda::ChordAuditionControl> chordSpeakerButton;  // 3-state chord audition
-        std::unique_ptr<magda::SvgButton> soloButton;
-        std::unique_ptr<magda::SvgButton> recordButton;
+        std::unique_ptr<juce::TextButton> soloButton;
+        std::unique_ptr<juce::TextButton> recordButton;
         std::unique_ptr<magda::MonitorControl> monitorButton;
 
         // Routing selectors (toggle + dropdown)

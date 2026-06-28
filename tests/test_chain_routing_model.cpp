@@ -14,17 +14,11 @@ magda::DeviceInfo makeDevice(magda::DeviceId id, bool instrument = false) {
 
 }  // namespace
 
-TEST_CASE("ChainRoutingModel models generic MIDI source and thru modes", "[chain][routing]") {
+TEST_CASE("ChainRoutingModel keeps MIDI-sidechained devices off the chain MIDI bus",
+          "[chain][routing]") {
     auto instrument = makeDevice(10, true);
     auto midiFx = makeDevice(11);
     midiFx.canReceiveMidi = true;
-    midiFx.producesMidi = true;
-    midiFx.midiInThru = false;
-
-    auto mergingMidiFx = makeDevice(14);
-    mergingMidiFx.canReceiveMidi = true;
-    mergingMidiFx.producesMidi = true;
-    mergingMidiFx.midiInThru = true;
 
     auto sidechainedFx = makeDevice(12);
     sidechainedFx.canReceiveMidi = true;
@@ -37,7 +31,6 @@ TEST_CASE("ChainRoutingModel models generic MIDI source and thru modes", "[chain
     std::vector<magda::ChainElement> elements;
     elements.push_back(magda::makeDeviceElement(instrument));
     elements.push_back(magda::makeDeviceElement(midiFx));
-    elements.push_back(magda::makeDeviceElement(mergingMidiFx));
     elements.push_back(magda::makeDeviceElement(sidechainedFx));
     elements.push_back(magda::makeDeviceElement(downstreamFx));
 
@@ -45,40 +38,26 @@ TEST_CASE("ChainRoutingModel models generic MIDI source and thru modes", "[chain
 
     REQUIRE(plan.containerKind == magda::routing::ChainContainerKind::Track);
     REQUIRE(plan.trackId == 1);
-    REQUIRE(plan.nodes.size() == 5);
+    REQUIRE(plan.nodes.size() == 4);
 
     CHECK(plan.nodes[0].deviceId == 10);
     CHECK(plan.nodes[0].receivesChainMidi());
     CHECK_FALSE(plan.nodes[0].replacesChainMidi());
-    CHECK(plan.nodes[0].passesRawMidiInput());
-    CHECK_FALSE(plan.nodes[0].outputsPluginMidi());
     CHECK(plan.nodes[0].injectsAudio());
 
     CHECK(plan.nodes[1].deviceId == 11);
     CHECK(plan.nodes[1].receivesChainMidi());
     CHECK(plan.nodes[1].replacesChainMidi());
-    CHECK_FALSE(plan.nodes[1].passesRawMidiInput());
-    CHECK(plan.nodes[1].outputsPluginMidi());
 
-    CHECK(plan.nodes[2].deviceId == 14);
-    CHECK(plan.nodes[2].receivesChainMidi());
+    CHECK(plan.nodes[2].deviceId == 12);
+    CHECK_FALSE(plan.nodes[2].receivesChainMidi());
+    CHECK(plan.nodes[2].usesExternalMidiSidechain());
+    CHECK(plan.nodes[2].midiSidechainSourceTrackId == 99);
     CHECK_FALSE(plan.nodes[2].replacesChainMidi());
-    CHECK(plan.nodes[2].passesRawMidiInput());
-    CHECK(plan.nodes[2].outputsPluginMidi());
 
-    CHECK(plan.nodes[3].deviceId == 12);
-    CHECK_FALSE(plan.nodes[3].receivesChainMidi());
-    CHECK(plan.nodes[3].usesExternalMidiSidechain());
-    CHECK(plan.nodes[3].midiSidechainSourceTrackId == 99);
-    CHECK_FALSE(plan.nodes[3].replacesChainMidi());
-    CHECK_FALSE(plan.nodes[3].passesRawMidiInput());
-    CHECK_FALSE(plan.nodes[3].outputsPluginMidi());
-
-    CHECK(plan.nodes[4].deviceId == 13);
-    CHECK(plan.nodes[4].receivesChainMidi());
-    CHECK_FALSE(plan.nodes[4].replacesChainMidi());
-    CHECK(plan.nodes[4].passesRawMidiInput());
-    CHECK_FALSE(plan.nodes[4].outputsPluginMidi());
+    CHECK(plan.nodes[3].deviceId == 13);
+    CHECK(plan.nodes[3].receivesChainMidi());
+    CHECK(plan.nodes[3].replacesChainMidi());
 }
 
 TEST_CASE("ChainRoutingModel compiles the same MIDI policy for rack chains", "[chain][routing]") {

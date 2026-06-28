@@ -6,8 +6,7 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/FaustResources.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
-#include "audio/plugins/FaustParamPool.hpp"
-#include "audio/plugins/IFaustEditorModel.hpp"
+#include "audio/plugins/FaustPlugin.hpp"
 #include "compiled/MagdaDriveCurveView.hpp"
 #include "core/AppPaths.hpp"
 #include "core/TrackManager.hpp"
@@ -81,7 +80,7 @@ void FaustUI::setDevicePath(const ChainNodePath& path) {
                                            << " steps=" << static_cast<int>(path.steps.size()));
 }
 
-void FaustUI::setPlugin(magda::daw::audio::IFaustEditorModel* plugin) {
+void FaustUI::setPlugin(magda::daw::audio::FaustPlugin* plugin) {
     plugin_ = plugin;
     DBG("[FaustUI] setPlugin: " << (plugin ? "ok" : "NULL"));
     refreshNameLabel();
@@ -92,7 +91,8 @@ void FaustUI::refreshNameLabel() {
         nameLabel_.setText({}, juce::dontSendNotification);
         return;
     }
-    nameLabel_.setText(plugin_->getDspName(), juce::dontSendNotification);
+    nameLabel_.setText(plugin_->state.getProperty("dspName", juce::String()).toString(),
+                       juce::dontSendNotification);
 }
 
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,
@@ -235,12 +235,10 @@ juce::File FaustUI::userEffectsDir() {
 void FaustUI::saveDspToFile() {
     if (plugin_ == nullptr)
         return;
-    const auto source = plugin_->getDspSource();
+    const auto source = plugin_->state.getProperty("dspSource", juce::String()).toString();
     if (source.isEmpty())
         return;
-    auto name = plugin_->getDspName();
-    if (name.isEmpty())
-        name = "effect";
+    const auto name = plugin_->state.getProperty("dspName", juce::String("effect")).toString();
 
     fileChooser_ = std::make_unique<juce::FileChooser>(
         "Save Faust DSP", userEffectsDir().getChildFile(name + ".dsp"), "*.dsp");
@@ -265,15 +263,15 @@ void FaustUI::showCodeEditor() {
         editorWindow_->toFront(true);
         return;
     }
-    const auto title = juce::String::fromUTF8("Faust DSP \xe2\x80\x94 ") + plugin_->getDspName();
-    const auto source = plugin_->getDspSource();
+    const auto title = juce::String::fromUTF8("Faust DSP \xe2\x80\x94 ") +
+                       plugin_->state.getProperty("dspName", juce::String()).toString();
+    const auto source = plugin_->state.getProperty("dspSource", juce::String()).toString();
     editorWindow_ = std::make_unique<FaustCodeEditorWindow>(
         title, source, [this](const juce::String& src, juce::String& err) -> bool {
             if (plugin_ == nullptr)
                 return false;
-            auto editedName = plugin_->getDspName();
-            if (editedName.isEmpty())
-                editedName = "Custom";
+            const auto editedName =
+                plugin_->state.getProperty("dspName", juce::String("Custom")).toString();
             // Preserve the existing custom-view kind across in-place
             // edits — a user tweaking the bundled MagdaDrive source
             // shouldn't lose its bespoke view because the code editor

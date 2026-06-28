@@ -4,7 +4,6 @@
 #include "../clips/ClipComponent.hpp"
 #include "TrackContentPanel.hpp"
 #include "core/ClipCommands.hpp"
-#include "core/GestureRouter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/UndoManager.hpp"
@@ -121,11 +120,6 @@ void TrackContentPanel::startMultiClipDrag(ClipId anchorClipId, const juce::Poin
     }
 
     isMovingMultipleClips_ = true;
-    // Decide copy-vs-move once, at drag start, from the customisable copy-drag
-    // gesture (default Alt) — mirroring the single-clip path so a multi-clip
-    // selection copies on drag exactly like a single clip does.
-    isMultiClipDuplicating_ = GestureRouter::getInstance().isDuplicateOnDrag(
-        GestureContext::Arrangement, juce::ModifierKeys::getCurrentModifiers());
     anchorClipId_ = anchorClipId;
     multiClipDragStartPos_ = startPos;
     multiClipDragDeltaTime_ = 0.0;
@@ -165,8 +159,11 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
         return;
     }
 
-    // Copy-vs-move was latched in startMultiClipDrag from the copy-drag
-    // gesture; updateMultiClipDrag only renders/commits that decision.
+    // Shift+drag to duplicate (matching single-clip behaviour)
+    bool shiftHeld = juce::ModifierKeys::getCurrentModifiers().isShiftDown();
+    if (shiftHeld && !isMultiClipDuplicating_) {
+        isMultiClipDuplicating_ = true;
+    }
 
     // currentZoom is ppb - convert pixel delta to time through beats
     if (currentZoom <= 0 || tempoBPM <= 0) {
@@ -209,7 +206,7 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
     int numTracks = static_cast<int>(visibleTrackIds_.size());
 
     if (isMultiClipDuplicating_) {
-        // Copy-on-drag: show ghosts at NEW positions, keep originals in place
+        // Shift+drag duplicate: show ghosts at NEW positions, keep originals in place
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
             int targetTrackIdx = juce::jlimit(
@@ -281,7 +278,7 @@ void TrackContentPanel::finishMultiClipDrag() {
     std::unordered_set<ClipId> duplicatedClipIds;
 
     if (isMultiClipDuplicating_) {
-        // Copy-on-drag: create duplicates at final positions through undo system
+        // Shift+drag duplicate: create duplicates at final positions through undo system
         if (isCompound) {
             UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
         }

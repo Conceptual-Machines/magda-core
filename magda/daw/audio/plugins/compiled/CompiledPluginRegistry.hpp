@@ -40,7 +40,6 @@ struct CompiledPluginSpec {
     const char* aliasKey = nullptr;  // defaults to pluginId when null
     const AliasSpec* aliases = nullptr;
     int aliasCount = 0;
-    bool isInstrument = false;  // synth/MIDI instrument vs effect (browser + placement)
 };
 
 /// All compiled-plugin specs known to MAGDA, in stable iteration order.

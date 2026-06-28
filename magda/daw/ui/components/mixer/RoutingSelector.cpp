@@ -20,17 +20,16 @@ void RoutingSelector::paint(juce::Graphics& g) {
         bgColour = bgColour.brighter(0.1f);
     }
 
-    // Draw the control as one rounded field.
+    // Draw main button area
     g.setColour(bgColour);
-    g.fillRoundedRectangle(bounds, 2.0f);
+    g.fillRect(mainArea);
 
-    // Draw dropdown area with only a slight tonal shift so the control reads as
-    // one smooth field instead of two hard boxes.
-    g.setColour(bgColour.darker(0.04f));
+    // Draw dropdown area (slightly different shade)
+    g.setColour(bgColour.darker(0.1f));
     g.fillRect(dropdownArea);
 
     // Draw separator line between main and dropdown
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawLine(dropdownArea.getX(), dropdownArea.getY() + 2, dropdownArea.getX(),
                dropdownArea.getBottom() - 2, 1.0f);
 
@@ -42,7 +41,7 @@ void RoutingSelector::paint(juce::Graphics& g) {
 
     // Draw dropdown arrow
     auto arrowBounds = dropdownArea.reduced(2.0f);
-    float arrowSize = std::min(arrowBounds.getWidth(), arrowBounds.getHeight()) * 0.28f;
+    float arrowSize = std::min(arrowBounds.getWidth(), arrowBounds.getHeight()) * 0.4f;
     float arrowX = arrowBounds.getCentreX();
     float arrowY = arrowBounds.getCentreY();
 
@@ -50,12 +49,12 @@ void RoutingSelector::paint(juce::Graphics& g) {
     arrow.addTriangle(arrowX - arrowSize, arrowY - arrowSize * 0.5f, arrowX + arrowSize,
                       arrowY - arrowSize * 0.5f, arrowX, arrowY + arrowSize * 0.5f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.62f));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     g.fillPath(arrow);
 
     // Draw border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.8f));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawRect(bounds, 1.0f);
 }
 
 void RoutingSelector::resized() {

@@ -172,7 +172,8 @@ class TrackHeadersPanel : public juce::Component,
         // Master-only mute: a speaker toggle matching the inspector/mixer, used
         // in place of the "M" muteButton when isMaster.
         std::unique_ptr<magda::SvgButton> masterMuteButton;
-        // Chord-track-only control for chord audition state.
+        // Chord-track-only: speaker toggle for "preview chords on playback"
+        // (blue = audible, faint grey = silent). Replaces the "M" button.
         std::unique_ptr<ChordAuditionControl> chordAuditionButton;
         std::unique_ptr<magda::SvgButton> soloButton;
         std::unique_ptr<magda::SvgButton> recordButton;        // Record arm button
@@ -325,19 +326,11 @@ class TrackHeadersPanel : public juce::Component,
                            const SideColumn& inner, int trackHeight);
     void layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
                                 const SideColumn& inner, int gapOverride = -1);
-    // Single-row content layout helpers (the passed rect is the already-positioned
-    // inner row). Used both for the top-packed compact layouts and the distributed
-    // fully-expanded layout.
-    void layoutVolPanRow(TrackHeader& header, juce::Rectangle<int> row);
-    void layoutButtonRow(TrackHeader& header, juce::Rectangle<int> row);
-    void layoutRoutingRow(TrackHeader& header, juce::Rectangle<int> row, RoutingSelector& audioDd,
-                          RoutingSelector& midiDd, juce::Component& icon);
 
     // Automation lane height helpers
     int getTrackTotalHeight(int trackIndex) const;
     int getVisibleAutomationLanesHeight(TrackId trackId) const;
     void syncAutomationLaneVisibility();
-    void updateAutomationButtonStates();
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& event) override;

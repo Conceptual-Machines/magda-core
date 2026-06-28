@@ -295,7 +295,7 @@ class ProjectSerializer {
     static juce::File resolveRelativePath(const juce::File& projectFile,
                                           const juce::String& relativePath);
 
-    static thread_local juce::String lastError_;
+    static inline thread_local juce::String lastError_;
 };
 
 }  // namespace magda

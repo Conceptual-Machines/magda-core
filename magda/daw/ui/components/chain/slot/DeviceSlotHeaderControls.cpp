@@ -1,8 +1,6 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 
-#include <algorithm>
-
-#include "slot/DeviceSlotHeaderSpec.hpp"
+#include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 
 namespace magda::daw::ui {
 
@@ -46,19 +44,9 @@ void placeCollapsedButtonIfVisible(juce::Rectangle<int>& area, juce::Component* 
         placeCollapsedButton(area, component, buttonSize);
 }
 
-HeaderControlComponents getHeaderControlComponents(DeviceSlotHeaderControls controls) {
-    return {.macroButton = controls.macroButton,
-            .modButton = controls.modButton,
-            .aiButton = controls.aiButton,
-            .learnButton = controls.learnButton,
-            .sidechainButton = controls.sidechainButton,
-            .multiOutButton = controls.multiOutButton,
-            .uiButton = controls.uiButton,
-            .exportClipButton = controls.exportClipButton,
-            .randomButton = controls.randomButton,
-            .stepRecordButton = controls.stepRecordButton,
-            .midiThruButton = controls.midiThruButton,
-            .instMidiThruButton = controls.instMidiThruButton};
+bool isMidiUtility(const DeviceSlotTraits& traits) {
+    return traits.isChordEngine || traits.isArpeggiator || traits.isStepSequencer ||
+           traits.isPolyStepSequencer;
 }
 
 }  // namespace
@@ -68,27 +56,74 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
                                     bool isInternalDevice, DeviceSlotHeaderControls controls,
                                     int buttonSize) {
     setVisibleIfPresent(controls.gainLabel, false);
-    const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
-    auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
-                                         getHeaderControlComponents(controls));
-    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.expandedOrder < rhs.expandedOrder;
-    });
 
-    setVisibleIfPresent(controls.powerButton, visibility.power);
-    setVisibleIfPresent(controls.presetButton, visibility.preset);
+    const auto placeAIButton = [&] {
+        if (traits.isAISupported) {
+            setVisibleIfPresent(controls.aiButton, true);
+            placeLeft(headerArea, controls.aiButton, buttonSize);
+        } else {
+            setVisibleIfPresent(controls.aiButton, false);
+        }
+    };
 
-    for (auto& spec : specs) {
-        setVisibleIfPresent(spec.component, spec.expandedVisible);
-
-        if (spec.side == HeaderControlSide::Left && spec.expandedVisible)
-            placeLeft(headerArea, spec.component, buttonSize);
+    if (drum_grid_slot::shouldShowModButton(traits.isDrumGrid, device.deviceType)) {
+        placeLeft(headerArea, controls.macroButton, buttonSize);
+        placeLeft(headerArea, controls.modButton, buttonSize);
+        placeAIButton();
+    } else if (traits.isArpeggiator || traits.isStepSequencer || traits.isPolyStepSequencer) {
+        placeLeft(headerArea, controls.macroButton, buttonSize);
+        setVisibleIfPresent(controls.modButton, false);
+        placeAIButton();
+    } else {
+        setVisibleIfPresent(controls.macroButton, false);
+        setVisibleIfPresent(controls.modButton, false);
+        setVisibleIfPresent(controls.aiButton, false);
     }
 
-    for (auto it = specs.rbegin(); it != specs.rend(); ++it) {
-        if (it->side == HeaderControlSide::Right && it->expandedVisible)
-            placeRight(headerArea, it->component, buttonSize);
+    // Step-sequencer action buttons in the header, next to the AI button:
+    // randomize, step record, MIDI thru.
+    if (traits.isStepSequencer || traits.isPolyStepSequencer) {
+        setVisibleIfPresent(controls.randomButton, true);
+        setVisibleIfPresent(controls.stepRecordButton, true);
+        setVisibleIfPresent(controls.midiThruButton, true);
+        placeLeft(headerArea, controls.randomButton, buttonSize);
+        placeLeft(headerArea, controls.stepRecordButton, buttonSize);
+        placeLeft(headerArea, controls.midiThruButton, buttonSize);
+    } else {
+        setVisibleIfPresent(controls.randomButton, false);
+        setVisibleIfPresent(controls.stepRecordButton, false);
+        setVisibleIfPresent(controls.midiThruButton, false);
     }
+
+    if (isMidiUtility(traits)) {
+        setVisibleIfPresent(controls.learnButton, false);
+        setVisibleIfPresent(controls.sidechainButton, false);
+        setVisibleIfPresent(controls.multiOutButton, false);
+        setVisibleIfPresent(controls.powerButton, true);
+        setVisibleIfPresent(controls.presetButton, !traits.isChordEngine);
+        setVisibleIfPresent(controls.exportClipButton, true);
+
+        placeRight(headerArea, controls.exportClipButton, buttonSize);
+        return;
+    }
+
+    setVisibleIfPresent(controls.exportClipButton, false);
+    setVisibleIfPresent(controls.sidechainButton,
+                        drum_grid_slot::shouldShowSidechainButton(
+                            traits.isDrumGrid, device.canSidechain, device.canReceiveMidi));
+    setVisibleIfPresent(controls.multiOutButton, device.multiOut.isMultiOut);
+    setVisibleIfPresent(controls.learnButton, !isInternalDevice);
+    setVisibleIfPresent(controls.powerButton, true);
+    // Analysis devices have no native editor, but the UI button pops the
+    // oscilloscope/spectrum into a floating window. Levels has no popout, so it
+    // is gated on hasAnalyzerPopout rather than isAnalysis.
+    setVisibleIfPresent(controls.uiButton, !isInternalDevice || traits.hasAnalyzerPopout);
+    setVisibleIfPresent(controls.presetButton, true);
+
+    placeRight(headerArea, controls.sidechainButton, buttonSize);
+    placeRight(headerArea, controls.multiOutButton, buttonSize);
+    placeRight(headerArea, controls.uiButton, buttonSize);
+    placeRight(headerArea, controls.learnButton, buttonSize);
 }
 
 void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
@@ -96,7 +131,7 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
                                        const DeviceSlotTraits& traits,
                                        const magda::DeviceInfo& device, bool isInternalDevice,
                                        DeviceSlotCollapsedControls controls, int maxButtonSize) {
-    const bool usesNoteStrip = isMidiUtilityDeviceSlot(traits);
+    const bool usesNoteStrip = isMidiUtility(traits);
     if (controls.levelMeter != nullptr) {
         controls.levelMeter->setBounds(collapsedMeterArea);
         controls.levelMeter->setVisible(!usesNoteStrip);
@@ -108,16 +143,49 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     const int buttonSize = juce::jmin(maxButtonSize, area.getWidth() - 4);
 
-    placeCollapsedButtonIfVisible(area, controls.headerControls.powerButton, true, buttonSize);
+    placeCollapsedButtonIfVisible(area, controls.powerButton, true, buttonSize);
 
-    auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
-                                         getHeaderControlComponents(controls.headerControls));
-    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.collapsedOrder < rhs.collapsedOrder;
-    });
+    const bool showUI =
+        drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid, isInternalDevice) ||
+        traits.hasAnalyzerPopout;
+    placeCollapsedButtonIfVisible(area, controls.uiButton, showUI, buttonSize);
 
-    for (auto& spec : specs) {
-        placeCollapsedButtonIfVisible(area, spec.component, spec.collapsedVisible, buttonSize);
+    const bool showMod = drum_grid_slot::shouldShowModButton(traits.isDrumGrid, device.deviceType);
+    const bool showMacro = drum_grid_slot::shouldShowMacroButton(
+        traits.isDrumGrid, device.deviceType, traits.isArpeggiator,
+        traits.isStepSequencer || traits.isPolyStepSequencer);
+    placeCollapsedButtonIfVisible(area, controls.macroButton, showMacro, buttonSize);
+    placeCollapsedButtonIfVisible(area, controls.modButton, showMod, buttonSize);
+
+    if (traits.isSoundDesignSupported) {
+        area.removeFromTop(4);
+        if (controls.aiButton != nullptr)
+            controls.aiButton->setBounds(
+                area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        setVisibleIfPresent(controls.aiButton, true);
+    } else {
+        setVisibleIfPresent(controls.aiButton, false);
+    }
+
+    const bool showSequencerActions = traits.isStepSequencer || traits.isPolyStepSequencer;
+    if (showSequencerActions) {
+        placeCollapsedButtonIfVisible(area, controls.randomButton, true, buttonSize);
+        placeCollapsedButtonIfVisible(area, controls.stepRecordButton, true, buttonSize);
+        placeCollapsedButtonIfVisible(area, controls.midiThruButton, true, buttonSize);
+    } else {
+        setVisibleIfPresent(controls.randomButton, false);
+        setVisibleIfPresent(controls.stepRecordButton, false);
+        setVisibleIfPresent(controls.midiThruButton, false);
+    }
+
+    placeCollapsedButtonIfVisible(area, controls.exportClipButton, isMidiUtility(traits),
+                                  buttonSize);
+
+    if (device.multiOut.isMultiOut && controls.multiOutButton != nullptr) {
+        area.removeFromTop(4);
+        controls.multiOutButton->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        controls.multiOutButton->setVisible(true);
     }
 }
 

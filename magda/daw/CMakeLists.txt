@@ -74,7 +74,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/faust-text-logo.svg
     ../../assets/icons/general/script.svg
     ../../assets/icons/general/speaker.svg
-    ../../assets/icons/general/speaker_simple.svg
     ../../assets/icons/general/speaker_muted.svg
     ../../assets/icons/general/speaker_on.svg
     ../../assets/icons/general/speaker_off.svg
@@ -168,7 +167,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/automation/horizontal_snap.svg
     ../../assets/icons/automation/vertical_snap.svg
     ../../assets/icons/automation/automation.svg
-    ../../assets/icons/automation/automation_master_header.svg
     # Waveform icons
     ../../assets/icons/waveform/sine-wave.svg
     ../../assets/icons/waveform/time_bend_off.svg
@@ -422,7 +420,6 @@ target_link_libraries(magda_daw
     tracktion::tracktion_engine
     juce_llm
     MagdaAssets
-    magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
     PRIVATE
@@ -464,11 +461,6 @@ target_compile_definitions(magda_daw_app
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
-
-if(APPLE)
-    # Do not let hosted plugins bind to MAGDA's statically linked JUCE symbols.
-    target_link_options(magda_daw_app PRIVATE "-Wl,-exported_symbol,_main")
-endif()
 
 if(JUCE_ASIO_ENABLED)
     target_include_directories(magda_daw PUBLIC
@@ -541,8 +533,6 @@ target_compile_definitions(magda_plugin_scanner
 )
 
 if(APPLE)
-    # Keep scanner exports aligned with the host app.
-    target_link_options(magda_plugin_scanner PRIVATE "-Wl,-exported_symbol,_main")
     target_link_libraries(magda_plugin_scanner
         PRIVATE
         "-framework AudioUnit"

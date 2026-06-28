@@ -1,224 +1,357 @@
 #pragma once
 
-#include <functional>
+#include <juce_gui_basics/juce_gui_basics.h>
 
-#include "core/ChainNodePath.hpp"
-#include "core/ControlTarget.hpp"
 #include "core/LinkModeManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
-#include "modulation/ModulationOwnerPath.hpp"
+
+// Forward declaration
+namespace magda::daw::ui {
+class DeviceSlotComponent;
+class ParamSlotComponent;
+}  // namespace magda::daw::ui
 
 namespace magda::daw::ui {
 
-struct DeviceLinkCallbackContext {
-    std::function<magda::ChainNodePath()> getNodePath;
-    std::function<void(int, magda::ControlTarget)> onMacroTargetChanged;
-    std::function<void()> updateParamModulation;
-    std::function<void()> updateModsPanel;
-    std::function<void()> updateMacroPanel;
-    std::function<void()> expandModPanelForDirectLink;
-    std::function<void()> expandMacroPanelForDirectLink;
-    std::function<void(const magda::ChainNodePath&, int)> selectModForDirectLink;
-    bool expandMacroPanelOnDirectLink = false;
-};
-
-inline magda::ChainNodePath currentDeviceLinkNodePath(const DeviceLinkCallbackContext& context) {
-    return context.getNodePath ? context.getNodePath() : magda::ChainNodePath{};
+inline magda::ChainNodePath nearestRackPathForWidgetPath(const magda::ChainNodePath& path) {
+    magda::ChainNodePath rackPath;
+    rackPath.trackId = path.trackId;
+    int rackStepIndex = -1;
+    for (int i = 0; i < static_cast<int>(path.steps.size()); ++i) {
+        if (path.steps[static_cast<size_t>(i)].type == magda::ChainStepType::Rack)
+            rackStepIndex = i;
+    }
+    if (rackStepIndex >= 0) {
+        rackPath.steps.assign(path.steps.begin(), path.steps.begin() + rackStepIndex + 1);
+    }
+    return rackPath;
 }
 
-inline void updateDeviceLinkParamModulation(const DeviceLinkCallbackContext& context) {
-    if (context.updateParamModulation)
-        context.updateParamModulation();
-}
+/**
+ * @brief Wire all mod/macro link callbacks onto a widget (ParamSlotComponent or
+ * LinkableTextSlider).
+ *
+ * Both widget types expose the same set of mod/macro callback std::function members.
+ * ParamSlotComponent additionally has `onModLinked` (no-amount) and `onMacroValueChanged`;
+ * those are wired via `if constexpr` so the template compiles cleanly for both types.
+ *
+ * @tparam Widget  ParamSlotComponent or LinkableTextSlider
+ * @param widget   Non-null pointer to the widget to configure
+ * @param owner    SafePointer to the owning DeviceSlotComponent
+ */
+template <typename Widget>
+void wireModMacroCallbacks(Widget* widget,
+                           juce::Component::SafePointer<DeviceSlotComponent> owner) {
+    // -------------------------------------------------------------------------
+    // onModLinked — ParamSlotComponent only (no-amount version)
+    // -------------------------------------------------------------------------
+    if constexpr (std::is_same_v<Widget, ParamSlotComponent>) {
+        widget->onModLinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            self->onModTargetChangedInternal(modIndex, target);
+            if (self)
+                self->updateParamModulation();
+        };
+    }
 
-inline void updateDeviceLinkModsPanel(const DeviceLinkCallbackContext& context) {
-    if (context.updateModsPanel)
-        context.updateModsPanel();
-}
-
-inline void updateDeviceLinkMacroPanel(const DeviceLinkCallbackContext& context) {
-    if (context.updateMacroPanel)
-        context.updateMacroPanel();
-}
-
-template <typename LinkTarget>
-void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackContext context) {
-    target.onModLinkedWithAmount = [context](int modIndex, magda::ControlTarget target,
-                                             float amount) {
-        auto nodePath = currentDeviceLinkNodePath(context);
+    // -------------------------------------------------------------------------
+    // onModLinkedWithAmount
+    // -------------------------------------------------------------------------
+    widget->onModLinkedWithAmount = [safeThis = owner](int modIndex, magda::ControlTarget target,
+                                                       float amount) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto nodePath = self->nodePath_;
         auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
         if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
             magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
             magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target, amount);
-            updateDeviceLinkModsPanel(context);
-            if (context.expandModPanelForDirectLink)
-                context.expandModPanelForDirectLink();
-            if (context.selectModForDirectLink)
-                context.selectModForDirectLink(nodePath, modIndex);
+            if (!self)
+                return;
+            self->updateModsPanel();
+            if (!self->modPanelVisible_) {
+                self->modButton_->setToggleState(true, juce::dontSendNotification);
+                self->modButton_->setActive(true);
+                self->setModPanelVisible(true);
+            }
+            magda::SelectionManager::getInstance().selectMod(nodePath, modIndex);
         } else if (activeModSelection.isValid() &&
                    activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeModSelection.parentPath);
-            magda::TrackManager::getInstance().setModTarget(ownerPath, modIndex, target);
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, modIndex, target,
-                                                                amount);
+            auto trackId = activeModSelection.parentPath.trackId;
+            magda::TrackManager::getInstance().setModTarget(ChainNodePath::trackLevel(trackId),
+                                                            modIndex, target);
+            magda::TrackManager::getInstance().setModLinkAmount(ChainNodePath::trackLevel(trackId),
+                                                                modIndex, target, amount);
         } else if (activeModSelection.isValid()) {
             magda::TrackManager::getInstance().setModTarget(activeModSelection.parentPath, modIndex,
                                                             target);
             magda::TrackManager::getInstance().setModLinkAmount(activeModSelection.parentPath,
                                                                 modIndex, target, amount);
         }
-
-        updateDeviceLinkParamModulation(context);
+        if (self)
+            self->updateParamModulation();
     };
 
-    target.onModUnlinked = [context](int modIndex, magda::ControlTarget target) {
-        const auto nodePath = currentDeviceLinkNodePath(context);
-        magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
-        updateDeviceLinkParamModulation(context);
-        updateDeviceLinkModsPanel(context);
+    // -------------------------------------------------------------------------
+    // onModUnlinked
+    // -------------------------------------------------------------------------
+    widget->onModUnlinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
+        if (!self)
+            return;
+        self->updateParamModulation();
+        self->updateModsPanel();
     };
 
-    target.onRackModUnlinked = [context](int modIndex, magda::ControlTarget target) {
-        auto rackPath = nearestRackPathForDevicePath(currentDeviceLinkNodePath(context));
+    widget->onRackModUnlinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto rackPath = nearestRackPathForWidgetPath(self->nodePath_);
         if (rackPath.isValid())
             magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
-        updateDeviceLinkParamModulation(context);
-        updateDeviceLinkModsPanel(context);
+        if (!self)
+            return;
+        self->updateParamModulation();
+        self->updateModsPanel();
     };
 
-    target.onTrackModUnlinked = [context](int modIndex, magda::ControlTarget target) {
-        const auto nodePath = currentDeviceLinkNodePath(context);
-        auto trackId = nodePath.trackId;
+    // -------------------------------------------------------------------------
+    // onTrackModUnlinked
+    // -------------------------------------------------------------------------
+    widget->onTrackModUnlinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto trackId = self->nodePath_.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeModLink(
-                magda::ChainNodePath::trackLevel(trackId), modIndex, target);
-        updateDeviceLinkParamModulation(context);
-        updateDeviceLinkModsPanel(context);
+            magda::TrackManager::getInstance().removeModLink(ChainNodePath::trackLevel(trackId),
+                                                             modIndex, target);
+        if (!self)
+            return;
+        self->updateParamModulation();
+        self->updateModsPanel();
     };
 
-    target.onModAmountChanged = [context](int modIndex, magda::ControlTarget target, float amount) {
-        auto nodePath = currentDeviceLinkNodePath(context);
+    // -------------------------------------------------------------------------
+    // onModAmountChanged
+    // -------------------------------------------------------------------------
+    widget->onModAmountChanged = [safeThis = owner](int modIndex, magda::ControlTarget target,
+                                                    float amount) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto nodePath = self->nodePath_;
         auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
         if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
             magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target, amount);
-            updateDeviceLinkModsPanel(context);
+            if (self)
+                self->updateModsPanel();
         } else if (activeModSelection.isValid() &&
                    activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeModSelection.parentPath);
-            magda::TrackManager::getInstance().setModLinkAmount(ownerPath, modIndex, target,
-                                                                amount);
+            magda::TrackManager::getInstance().setModLinkAmount(
+                ChainNodePath::trackLevel(activeModSelection.parentPath.trackId), modIndex, target,
+                amount);
         } else if (activeModSelection.isValid()) {
             magda::TrackManager::getInstance().setModLinkAmount(activeModSelection.parentPath,
                                                                 modIndex, target, amount);
         }
-
-        updateDeviceLinkParamModulation(context);
+        if (self)
+            self->updateParamModulation();
     };
 
-    target.onMacroLinkedWithAmount = [context](int macroIndex, magda::ControlTarget target,
-                                               float amount) {
-        auto nodePath = currentDeviceLinkNodePath(context);
+    // -------------------------------------------------------------------------
+    // onMacroLinked
+    // -------------------------------------------------------------------------
+    widget->onMacroLinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        self->onMacroTargetChangedInternal(macroIndex, target);
+        if (!self)
+            return;
+        self->updateParamModulation();
+
+        // Auto-expand macros panel and select the linked macro
+        if (target.isValid()) {
+            auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
+            if (activeMacroSelection.isValid() &&
+                activeMacroSelection.parentPath == self->nodePath_) {
+                if (!self->paramPanelVisible_) {
+                    self->macroButton_->setToggleState(true, juce::dontSendNotification);
+                    self->macroButton_->setActive(true);
+                    self->setParamPanelVisible(true);
+                }
+                magda::SelectionManager::getInstance().selectMacro(self->nodePath_, macroIndex);
+            }
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // onMacroLinkedWithAmount
+    // -------------------------------------------------------------------------
+    widget->onMacroLinkedWithAmount = [safeThis = owner](int macroIndex,
+                                                         magda::ControlTarget target,
+                                                         float amount) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto nodePath = self->nodePath_;
         auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
         if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
             magda::TrackManager::getInstance().setMacroTarget(nodePath, macroIndex, target);
             magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target,
                                                                   amount);
-            updateDeviceLinkMacroPanel(context);
-            if (context.expandMacroPanelForDirectLink)
-                context.expandMacroPanelForDirectLink();
+            if (!self)
+                return;
+            self->updateMacroPanel();
+            if (!self->paramPanelVisible_) {
+                self->macroButton_->setToggleState(true, juce::dontSendNotification);
+                self->macroButton_->setActive(true);
+                self->setParamPanelVisible(true);
+            }
+            magda::SelectionManager::getInstance().selectMacro(nodePath, macroIndex);
         } else if (activeMacroSelection.isValid() &&
                    activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeMacroSelection.parentPath);
-            magda::TrackManager::getInstance().setMacroTarget(ownerPath, macroIndex, target);
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, macroIndex, target,
-                                                                  amount);
+            auto trackId = activeMacroSelection.parentPath.trackId;
+            magda::TrackManager::getInstance().setMacroTarget(ChainNodePath::trackLevel(trackId),
+                                                              macroIndex, target);
+            magda::TrackManager::getInstance().setMacroLinkAmount(
+                ChainNodePath::trackLevel(trackId), macroIndex, target, amount);
         } else if (activeMacroSelection.isValid()) {
             magda::TrackManager::getInstance().setMacroTarget(activeMacroSelection.parentPath,
                                                               macroIndex, target);
             magda::TrackManager::getInstance().setMacroLinkAmount(activeMacroSelection.parentPath,
                                                                   macroIndex, target, amount);
         }
-
-        updateDeviceLinkParamModulation(context);
+        if (self)
+            self->updateParamModulation();
     };
 
-    target.onMacroLinked = [context](int macroIndex, magda::ControlTarget target) {
-        if (context.onMacroTargetChanged)
-            context.onMacroTargetChanged(macroIndex, target);
-
-        updateDeviceLinkParamModulation(context);
-        if (!context.expandMacroPanelOnDirectLink || !target.isValid())
+    // -------------------------------------------------------------------------
+    // onMacroUnlinked
+    // -------------------------------------------------------------------------
+    widget->onMacroUnlinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
             return;
-
-        auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
-        if (activeMacroSelection.isValid() &&
-            activeMacroSelection.parentPath == currentDeviceLinkNodePath(context) &&
-            context.expandMacroPanelForDirectLink) {
-            context.expandMacroPanelForDirectLink();
+        magda::TrackManager::getInstance().removeMacroLink(self->nodePath_, macroIndex, target);
+        if (self) {
+            self->updateParamModulation();
+            self->updateMacroPanel();
         }
     };
 
-    target.onMacroUnlinked = [context](int macroIndex, magda::ControlTarget target) {
-        magda::TrackManager::getInstance().removeMacroLink(currentDeviceLinkNodePath(context),
-                                                           macroIndex, target);
-        updateDeviceLinkParamModulation(context);
-        updateDeviceLinkMacroPanel(context);
-    };
-
-    target.onTrackMacroUnlinked = [context](int macroIndex, magda::ControlTarget target) {
-        const auto nodePath = currentDeviceLinkNodePath(context);
-        auto trackId = nodePath.trackId;
+    // -------------------------------------------------------------------------
+    // onTrackMacroUnlinked
+    // -------------------------------------------------------------------------
+    widget->onTrackMacroUnlinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto trackId = self->nodePath_.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeMacroLink(
-                magda::ChainNodePath::trackLevel(trackId), macroIndex, target);
-        updateDeviceLinkParamModulation(context);
-        updateDeviceLinkMacroPanel(context);
+            magda::TrackManager::getInstance().removeMacroLink(ChainNodePath::trackLevel(trackId),
+                                                               macroIndex, target);
+        if (!self)
+            return;
+        self->updateParamModulation();
+        self->updateMacroPanel();
     };
 
-    target.onRackMacroLinked = [context](int macroIndex, magda::ControlTarget target) {
-        auto rackPath = nearestRackPathForDevicePath(currentDeviceLinkNodePath(context));
+    // -------------------------------------------------------------------------
+    // onRackMacroLinked
+    // -------------------------------------------------------------------------
+    widget->onRackMacroLinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto rackPath = nearestRackPathForWidgetPath(self->nodePath_);
         if (rackPath.isValid())
             magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
-        updateDeviceLinkParamModulation(context);
+        if (self)
+            self->updateParamModulation();
     };
 
-    target.onTrackMacroLinked = [context](int macroIndex, magda::ControlTarget target) {
-        const auto nodePath = currentDeviceLinkNodePath(context);
-        auto trackId = nodePath.trackId;
+    // -------------------------------------------------------------------------
+    // onTrackMacroLinked
+    // -------------------------------------------------------------------------
+    widget->onTrackMacroLinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto trackId = self->nodePath_.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setMacroTarget(
-                magda::ChainNodePath::trackLevel(trackId), macroIndex, target);
-        updateDeviceLinkParamModulation(context);
+            magda::TrackManager::getInstance().setMacroTarget(ChainNodePath::trackLevel(trackId),
+                                                              macroIndex, target);
+        if (self)
+            self->updateParamModulation();
     };
 
-    target.onRackMacroUnlinked = [context](int macroIndex, magda::ControlTarget target) {
-        auto rackPath = nearestRackPathForDevicePath(currentDeviceLinkNodePath(context));
+    // -------------------------------------------------------------------------
+    // onRackMacroUnlinked
+    // -------------------------------------------------------------------------
+    widget->onRackMacroUnlinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto rackPath = nearestRackPathForWidgetPath(self->nodePath_);
         if (rackPath.isValid())
             magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
-        updateDeviceLinkParamModulation(context);
-        updateDeviceLinkMacroPanel(context);
+        if (!self)
+            return;
+        self->updateParamModulation();
+        self->updateMacroPanel();
     };
 
-    target.onMacroAmountChanged = [context](int macroIndex, magda::ControlTarget target,
-                                            float amount) {
-        auto nodePath = currentDeviceLinkNodePath(context);
+    // -------------------------------------------------------------------------
+    // onMacroAmountChanged
+    // -------------------------------------------------------------------------
+    widget->onMacroAmountChanged = [safeThis = owner](int macroIndex, magda::ControlTarget target,
+                                                      float amount) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        auto nodePath = self->nodePath_;
         auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
         if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
             magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target,
                                                                   amount);
-            updateDeviceLinkMacroPanel(context);
+            if (self)
+                self->updateMacroPanel();
         } else if (activeMacroSelection.isValid() &&
                    activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            const auto ownerPath = modulationOwnerPathForSelection(activeMacroSelection.parentPath);
-            magda::TrackManager::getInstance().setMacroLinkAmount(ownerPath, macroIndex, target,
-                                                                  amount);
+            magda::TrackManager::getInstance().setMacroLinkAmount(
+                ChainNodePath::trackLevel(activeMacroSelection.parentPath.trackId), macroIndex,
+                target, amount);
         } else if (activeMacroSelection.isValid()) {
             magda::TrackManager::getInstance().setMacroLinkAmount(activeMacroSelection.parentPath,
                                                                   macroIndex, target, amount);
         }
-
-        updateDeviceLinkParamModulation(context);
+        if (self)
+            self->updateParamModulation();
     };
+
+    // -------------------------------------------------------------------------
+    // onMacroValueChanged — ParamSlotComponent only
+    // -------------------------------------------------------------------------
+    if constexpr (std::is_same_v<Widget, ParamSlotComponent>) {
+        widget->onMacroValueChanged = [safeThis = owner](int macroIndex, float value) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            magda::TrackManager::getInstance().setMacroValue(self->nodePath_, macroIndex, value);
+            if (self)
+                self->updateParamModulation();
+        };
+    }
 }
 
 }  // namespace magda::daw::ui

@@ -62,9 +62,10 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             return;
         }
 
-        float opacity = drawOn ? 1.0f : inactiveIconOpacity;
-        if (shouldDrawButtonAsHighlighted && !drawOn && !shouldDrawButtonAsDown)
-            opacity = std::max(opacity, 0.85f);
+        float opacity = 1.0f;
+        if (shouldDrawButtonAsHighlighted && !active && !shouldDrawButtonAsDown) {
+            opacity = 0.85f;
+        }
 
         if (hasBorder) {
             // Bordered toggle (master / chord mute). Both icons carry a full

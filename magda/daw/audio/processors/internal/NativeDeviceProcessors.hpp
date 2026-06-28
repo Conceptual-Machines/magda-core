@@ -17,32 +17,6 @@ class MagdaSamplerProcessor : public AutomatablePluginProcessor {
 };
 
 /**
- * @brief Processor for the native Mutable Instruments Elements synth.
- *
- * Parameters are addressed by index off the plugin's automatable parameters.
- */
-class MutableElementsProcessor : public AutomatablePluginProcessor {
-  public:
-    MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-};
-
-/**
- * @brief Processor for the native Mutable Instruments Rings resonator.
- */
-class MutableRingsProcessor : public AutomatablePluginProcessor {
-  public:
-    MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-};
-
-/**
- * @brief Processor for the native Mutable Instruments Clouds granular FX.
- */
-class MutableCloudsProcessor : public AutomatablePluginProcessor {
-  public:
-    MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-};
-
-/**
  * @brief Processor for the built-in 4OSC synthesizer
  *
  * Enumerates parameters generically from plugin->getAutomatableParameters().
@@ -68,24 +42,6 @@ class FourOscProcessor : public AutomatablePluginProcessor {
 class FaustProcessor : public DeviceProcessor {
   public:
     FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-
-    int getParameterCount() const override;
-    ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
-
-    void setParameterByIndex(int paramIndex, float value) override;
-    float getParameterByIndex(int paramIndex) const;
-};
-
-/**
- * @brief Processor for the MAGDA-native Faust polyphonic instrument.
- *
- * Identical pool-backed parameter model to FaustProcessor, but bound to
- * FaustInstrumentPlugin (the synth sibling of the Faust effect host).
- */
-class FaustInstrumentProcessor : public DeviceProcessor {
-  public:
-    FaustInstrumentProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;

@@ -606,9 +606,6 @@ void MainView::dispatchArrangementGesture(const ResolvedGesture& gesture) {
         }
         case GestureActionType::Pan:
         case GestureActionType::None:
-        // DuplicateOnDrag is consumed directly by the arrangement's clip-drag
-        // handlers, never resolved into a parametric scroll/zoom here.
-        case GestureActionType::DuplicateOnDrag:
             break;
     }
 }
@@ -2651,17 +2648,14 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
 MainView::MasterHeaderPanel::MasterHeaderPanel() {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
-    AutomationManager::getInstance().addListener(this);
 
     setupControls();
 
     // Sync initial state from master channel
     masterChannelChanged();
-    updateAutomationButtonState();
 }
 
 MainView::MasterHeaderPanel::~MasterHeaderPanel() {
-    AutomationManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
 }
 
@@ -2675,7 +2669,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setTooltip("Mute master");
     speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    speakerButton->setIconPadding(7.0f);
+    speakerButton->setIconPadding(3.5f);  // larger speaker glyph
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2684,9 +2678,8 @@ void MainView::MasterHeaderPanel::setupControls() {
 
     // Automation button: same icon as the per-track headers, opens the master
     // automation menu.
-    automationButton =
-        std::make_unique<SvgButton>("Automation", BinaryData::automation_master_header_svg,
-                                    BinaryData::automation_master_header_svgSize);
+    automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
+                                                   BinaryData::automation_svgSize);
     automationButton->setTooltip(tr("tracks.automation"));
     automationButton->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
@@ -2694,8 +2687,7 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    automationButton->setIconPadding(2.5f);
+    automationButton->setIconPadding(4.5f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2797,10 +2789,10 @@ void MainView::MasterHeaderPanel::resized() {
     // Two rows sharing a fixed icon column. The value/meter column takes the
     // remaining width; the peak readout sits below the meter instead of
     // occupying a separate empty-left column.
-    const int controlH = 22;
-    const int rowGap = 6;
+    const int rowH = 20;
+    const int rowGap = 2;
     const int colGap = 6;
-    const int iconSize = controlH;
+    const int iconSize = 20;
     const int rowLeftInset = 6;
     const int iconRightInset = 8;
 
@@ -2808,9 +2800,9 @@ void MainView::MasterHeaderPanel::resized() {
     const int mainColumnWidth =
         juce::jmax(0, contentArea.getWidth() - iconColumnWidth - colGap - iconRightInset);
 
-    auto row1 = contentArea.removeFromTop(controlH);
+    auto row1 = contentArea.removeFromTop(rowH);
     contentArea.removeFromTop(rowGap);
-    auto meterRow = contentArea.removeFromTop(controlH);
+    auto meterRow = contentArea;
 
     auto topMain = row1.removeFromLeft(mainColumnWidth);
     row1.removeFromLeft(colGap);
@@ -2824,10 +2816,10 @@ void MainView::MasterHeaderPanel::resized() {
     meterMain.removeFromLeft(rowLeftInset);
 
     constexpr int peakReadoutHeight = 10;
+    auto peakReadout = meterMain.removeFromBottom(peakReadoutHeight);
     auto peakMeterBounds = meterMain;
-    auto readoutArea = contentArea.withX(meterMain.getX()).withWidth(meterMain.getWidth());
-    auto peakReadout = readoutArea.removeFromTop(peakReadoutHeight);
-    auto meterIconAligned = meterIcon;
+    auto meterIconAligned =
+        meterIcon.withY(peakMeterBounds.getY()).withHeight(peakMeterBounds.getHeight());
 
     volumeLabel->setBounds(topMain);
     speakerButton->setBounds(topIcon.withSizeKeepingCentre(iconSize, iconSize));
@@ -2847,21 +2839,6 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
     volumeLabel->setValue(gainToDb(master.volume), juce::dontSendNotification);
 
     repaint();
-}
-
-void MainView::MasterHeaderPanel::automationLanesChanged() {
-    updateAutomationButtonState();
-}
-
-void MainView::MasterHeaderPanel::automationLanePropertyChanged(AutomationLaneId laneId) {
-    juce::ignoreUnused(laneId);
-    updateAutomationButtonState();
-}
-
-void MainView::MasterHeaderPanel::updateAutomationButtonState() {
-    if (automationButton)
-        automationButton->setActive(
-            !AutomationManager::getInstance().getLanesForTrack(MASTER_TRACK_ID).empty());
 }
 
 void MainView::MasterHeaderPanel::setPeakLevels(float leftPeak, float rightPeak) {

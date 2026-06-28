@@ -14,7 +14,3 @@
 [submodule "third_party/faust"]
 	path = third_party/faust
 	url = https://github.com/Conceptual-Machines/faust.git
-[submodule "third_party/eurorack"]
-	path = third_party/eurorack
-	url = https://github.com/Conceptual-Machines/eurorack.git
-	branch = magda

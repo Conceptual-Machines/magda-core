@@ -13,7 +13,6 @@
 #include "Config.hpp"
 #include "InternalDeviceKind.hpp"
 #include "ModulatorEngine.hpp"
-#include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
@@ -248,23 +247,14 @@ DeviceInfo TrackManager::deviceInfoFromPluginObject(const juce::DynamicObject& p
     device.pluginId = uniqueId.isNotEmpty() ? uniqueId
                                             : pluginObj.getProperty("name").toString() + "_" +
                                                   pluginObj.getProperty("format").toString();
-    const auto rawCategory = pluginObj.hasProperty("rawCategory")
-                                 ? pluginObj.getProperty("rawCategory").toString()
-                                 : pluginObj.getProperty("category").toString();
-    const auto rawSubcategory = pluginObj.hasProperty("rawSubcategory")
-                                    ? pluginObj.getProperty("rawSubcategory").toString()
-                                    : pluginObj.getProperty("subcategory").toString();
-    device.isInstrument = rawCategory.isNotEmpty()
-                              ? rawCategory == "Instrument"
-                              : static_cast<bool>(pluginObj.getProperty("isInstrument"));
+    device.isInstrument = static_cast<bool>(pluginObj.getProperty("isInstrument"));
     if (pluginObj.hasProperty("deviceType"))
         device.deviceType =
             static_cast<DeviceType>(static_cast<int>(pluginObj.getProperty("deviceType")));
-    else if (rawSubcategory == "MIDI")
+    else if (pluginObj.getProperty("subcategory").toString() == "MIDI")
         device.deviceType = DeviceType::MIDI;
     else
         device.deviceType = device.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
-    device.browserCategoryOverride = pluginObj.getProperty("categoryOverride").toString();
     device.uniqueId = pluginObj.getProperty("uniqueId").toString();
     device.fileOrIdentifier = pluginObj.getProperty("fileOrIdentifier").toString();
 
@@ -1811,7 +1801,6 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
 
     DeviceInfo newDevice = device;
     newDevice.id = nextPostFxDeviceId_++;
-    applyCachedCapabilitiesToDevice(newDevice);
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
 
@@ -1876,7 +1865,6 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
 
     DeviceInfo newDevice = device;
     newDevice.id = nextMixerAnalysisDeviceId_++;
-    applyCachedCapabilitiesToDevice(newDevice);
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
@@ -2816,7 +2804,6 @@ void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const Devi
 DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     DeviceInfo newDevice = device;
     newDevice.id = nextFxDeviceId_++;
-    applyCachedCapabilitiesToDevice(newDevice);
     stampDefaultKitIfMissing(newDevice);
     if (isAnalysisDevice(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;

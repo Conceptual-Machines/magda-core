@@ -18,7 +18,7 @@ jobs:
   synchronize-with-crowdin:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_PAT }}
 

@@ -3,7 +3,6 @@
 #include <utility>
 
 #include "core/ParameterUtils.hpp"
-#include "plugins/FaustInstrumentPlugin.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/FaustParamPool.hpp"
 #include "plugins/FaustPlugin.hpp"
@@ -15,15 +14,6 @@ namespace magda {
 // =============================================================================
 
 MagdaSamplerProcessor::MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
-
-MutableElementsProcessor::MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
-
-MutableRingsProcessor::MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
-
-MutableCloudsProcessor::MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
@@ -132,70 +122,6 @@ void FaustProcessor::setParameterByIndex(int paramIndex, float value) {
 }
 
 float FaustProcessor::getParameterByIndex(int paramIndex) const {
-    if (!plugin_)
-        return 0.0f;
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size()) {
-        const auto info = getParameterInfo(paramIndex);
-        return ParameterUtils::normalizedToReal(params[paramIndex]->getCurrentValue(), info);
-    }
-    return 0.0f;
-}
-
-// =============================================================================
-// FaustInstrumentProcessor
-// =============================================================================
-
-FaustInstrumentProcessor::FaustInstrumentProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, std::move(plugin)) {}
-
-int FaustInstrumentProcessor::getParameterCount() const {
-    auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
-    if (faust == nullptr)
-        return 0;
-    return faust->getPool().activeCount();
-}
-
-ParameterInfo FaustInstrumentProcessor::getParameterInfo(int index) const {
-    auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
-    if (faust == nullptr || index < 0 || index >= daw::audio::FaustParamPool::kSize)
-        return {};
-    return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
-}
-
-void FaustInstrumentProcessor::populateParameters(DeviceInfo& info) const {
-    info.parameters.clear();
-    auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
-    if (faust == nullptr)
-        return;
-    // Only push active slots; each ParameterInfo carries its real slot index in
-    // `paramIndex` so links / automation / MIDI Learn bind to the stable slot.
-    auto params = plugin_->getAutomatableParameters();
-    for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
-        const auto& slot = faust->getPool().slot(i);
-        if (slot.active) {
-            auto paramInfo = daw::audio::paramInfoFromSlot(slot);
-            if (i >= 0 && i < params.size() && params[i]) {
-                paramInfo.currentValue =
-                    ParameterUtils::normalizedToReal(params[i]->getCurrentValue(), paramInfo);
-            }
-            info.parameters.push_back(std::move(paramInfo));
-        }
-    }
-}
-
-void FaustInstrumentProcessor::setParameterByIndex(int paramIndex, float value) {
-    if (!plugin_)
-        return;
-    auto params = plugin_->getAutomatableParameters();
-    if (paramIndex >= 0 && paramIndex < params.size()) {
-        const auto info = getParameterInfo(paramIndex);
-        const float normalised = ParameterUtils::realToNormalized(value, info);
-        params[paramIndex]->setParameterFromHost(normalised, juce::sendNotificationSync);
-    }
-}
-
-float FaustInstrumentProcessor::getParameterByIndex(int paramIndex) const {
     if (!plugin_)
         return 0.0f;
     auto params = plugin_->getAutomatableParameters();

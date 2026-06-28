@@ -146,8 +146,6 @@
     "clips": "Clips",
     "clip_count.one": "{0} clip",
     "clip_count.other": "{0} clips",
-    "automated": "Automated",
-    "automated_empty": "No automated parameters",
     "latency": "Latency"
   },
   "dialogs": {

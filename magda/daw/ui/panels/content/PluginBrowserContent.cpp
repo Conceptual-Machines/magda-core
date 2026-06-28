@@ -25,103 +25,6 @@
 
 namespace magda::daw::ui {
 
-namespace {
-
-juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
-    return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
-}
-
-juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
-    if (plugin.categoryOverride == "Instrument")
-        return "Instrument";
-    if (plugin.categoryOverride == "MIDI FX" || plugin.categoryOverride == "Audio FX")
-        return "Effect";
-    if (plugin.categoryOverride == "Analyzer")
-        return "Analysis";
-    return plugin.category;
-}
-
-juce::String effectiveSubcategoryForPlugin(const PluginBrowserInfo& plugin) {
-    if (plugin.categoryOverride == "MIDI FX")
-        return "MIDI";
-    if (plugin.categoryOverride == "Audio FX")
-        return "Audio FX";
-    if (plugin.categoryOverride == "Analyzer")
-        return "Analyzer";
-    return plugin.subcategory;
-}
-
-void addSearchKeyword(juce::StringArray& keywords, const char* keyword) {
-    if (keyword != nullptr) {
-        const juce::String value(keyword);
-        if (value.isNotEmpty())
-            keywords.addIfNotAlreadyThere(value);
-    }
-}
-
-juce::String joinSearchKeywords(juce::StringArray keywords) {
-    keywords.removeEmptyStrings();
-    keywords.removeDuplicates(false);
-    return keywords.joinIntoString(" ");
-}
-
-void addOriginalMutableNameKeywords(juce::StringArray& keywords, InternalDeviceKind kind) {
-    switch (kind) {
-        case InternalDeviceKind::MutableElements:
-            keywords.addIfNotAlreadyThere("Elements");
-            break;
-        case InternalDeviceKind::MutableRings:
-            keywords.addIfNotAlreadyThere("Rings");
-            break;
-        case InternalDeviceKind::MutableClouds:
-            keywords.addIfNotAlreadyThere("Clouds");
-            break;
-        default:
-            break;
-    }
-}
-
-juce::String searchKeywordsForInternalSpec(const audio::InternalPluginSpec& spec) {
-    juce::StringArray keywords;
-    addSearchKeyword(keywords, spec.pluginId);
-    for (int i = 0; i < spec.loadAliasCount; ++i)
-        addSearchKeyword(keywords, spec.loadAliases[i]);
-    addOriginalMutableNameKeywords(keywords, spec.kind);
-    return joinSearchKeywords(keywords);
-}
-
-juce::String searchKeywordsForCompiledSpec(const audio::compiled::CompiledPluginSpec& spec) {
-    juce::StringArray keywords;
-    addSearchKeyword(keywords, spec.pluginId);
-    addSearchKeyword(keywords, spec.aliasKey);
-    return joinSearchKeywords(keywords);
-}
-
-bool effectiveIsInstrument(const PluginBrowserInfo& plugin) {
-    if (plugin.categoryOverride == "Instrument")
-        return true;
-    if (plugin.categoryOverride.isNotEmpty())
-        return false;
-    return plugin.category == "Instrument";
-}
-
-void applyRawPluginFieldsToDevice(const PluginBrowserInfo& plugin, magda::DeviceInfo& device) {
-    device.name = plugin.name;
-    device.manufacturer = plugin.manufacturer;
-    device.pluginId =
-        plugin.uniqueId.isEmpty() ? (plugin.name + "_" + plugin.format) : plugin.uniqueId;
-    device.isInstrument = plugin.category == "Instrument";
-    if (plugin.subcategory == "MIDI")
-        device.deviceType = magda::DeviceType::MIDI;
-    else if (device.isInstrument)
-        device.deviceType = magda::DeviceType::Instrument;
-    else
-        device.deviceType = magda::DeviceType::Effect;
-    device.browserCategoryOverride = plugin.categoryOverride;
-}
-
-}  // namespace
-
 // =============================================================================
 // PluginBrowserInfo
 // =============================================================================
@@ -142,8 +45,7 @@ PluginBrowserInfo PluginBrowserInfo::fromPluginDescription(const juce::PluginDes
 
 PluginBrowserInfo PluginBrowserInfo::createInternal(const juce::String& name,
                                                     const juce::String& pluginId, bool isInstrument,
-                                                    const juce::String& subcategory,
-                                                    const juce::String& searchKeywords) {
+                                                    const juce::String& subcategory) {
     PluginBrowserInfo info;
     info.name = name;
     info.manufacturer = "MAGDA";
@@ -157,7 +59,6 @@ PluginBrowserInfo PluginBrowserInfo::createInternal(const juce::String& name,
     info.uniqueId = pluginId;
     info.fileOrIdentifier = pluginId;
     info.alias = generateAlias(name);
-    info.searchKeywords = searchKeywords;
     return info;
 }
 
@@ -200,12 +101,11 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         // dominate the row height)
         auto iconArea = bounds.removeFromLeft(18);
         auto iconBounds = iconArea.toFloat().withSizeKeepingCentre(12.0f, 12.0f);
-        const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin_);
-        if (effectiveSubcategory == "MIDI" && owner_.midiIcon_) {
-            owner_.midiIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
-        } else if (effectiveIsInstrument(plugin_) && owner_.instrumentIcon_) {
+        if (plugin_.category == "Instrument" && owner_.instrumentIcon_) {
             owner_.instrumentIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred,
                                                1.0f);
+        } else if (plugin_.subcategory == "MIDI" && owner_.midiIcon_) {
+            owner_.midiIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         } else if (owner_.effectIcon_) {
             owner_.effectIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
@@ -262,14 +162,10 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         obj->setProperty("type", "plugin");
         obj->setProperty("name", plugin_.name);
         obj->setProperty("manufacturer", plugin_.manufacturer);
-        obj->setProperty("category", effectiveCategoryForPlugin(plugin_));
-        obj->setProperty("rawCategory", plugin_.category);
+        obj->setProperty("category", plugin_.category);
         obj->setProperty("format", plugin_.format);
-        obj->setProperty("subcategory", effectiveSubcategoryForPlugin(plugin_));
-        obj->setProperty("rawSubcategory", plugin_.subcategory);
-        obj->setProperty("categoryOverride", plugin_.categoryOverride);
+        obj->setProperty("subcategory", plugin_.subcategory);
         obj->setProperty("isInstrument", plugin_.category == "Instrument");
-        obj->setProperty("browserIsInstrument", effectiveIsInstrument(plugin_));
         obj->setProperty("isExternal", plugin_.isExternal);
         // External plugin identification
         obj->setProperty("uniqueId", plugin_.uniqueId);
@@ -459,14 +355,12 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     for (const auto* spec : audio::getAllInternalPluginSpecs()) {
         if (spec->showInBrowser)
             list.push_back(PluginBrowserInfo::createInternal(
-                spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory,
-                searchKeywordsForInternalSpec(*spec)));
+                spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory));
     }
     // Compiled-Faust devices come from their own registry.
     for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
-        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
-                                                         spec->isInstrument, spec->browserCategory,
-                                                         searchKeywordsForCompiledSpec(*spec)));
+        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId, false,
+                                                         spec->browserCategory));
     }
     return list;
 }
@@ -524,10 +418,6 @@ void PluginBrowserContent::refreshPluginList() {
     plugins_.clear();
     buildInternalPluginList();
     loadExternalPlugins();
-    auto& prefs = magda::PluginPreferences::getInstance();
-    for (auto& plugin : plugins_)
-        plugin.categoryOverride =
-            prefs.browserCategoryOverride(preferenceIdentifierForPlugin(plugin));
     loadFavorites();
     loadAliases();
     rebuildTree();
@@ -544,12 +434,10 @@ void PluginBrowserContent::rebuildTree() {
 
     for (const auto& plugin : plugins_) {
         juce::String groupKey;
-        const auto effectiveCategory = effectiveCategoryForPlugin(plugin);
-        const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin);
 
         switch (currentViewMode_) {
             case ViewMode::ByCategory:
-                groupKey = effectiveCategory + "/" + effectiveSubcategory;
+                groupKey = plugin.category + "/" + plugin.subcategory;
                 break;
             case ViewMode::ByManufacturer:
                 groupKey = plugin.manufacturer;
@@ -623,19 +511,9 @@ void PluginBrowserContent::filterBySearch(const juce::String& searchText) {
     auto root = std::make_unique<CategoryTreeItem>("Search Results");
 
     for (const auto& plugin : plugins_) {
-        const auto effectiveCategory = effectiveCategoryForPlugin(plugin);
-        const auto effectiveSubcategory = effectiveSubcategoryForPlugin(plugin);
         if (plugin.name.containsIgnoreCase(searchText) ||
             plugin.manufacturer.containsIgnoreCase(searchText) ||
-            plugin.category.containsIgnoreCase(searchText) ||
-            plugin.subcategory.containsIgnoreCase(searchText) ||
-            plugin.categoryOverride.containsIgnoreCase(searchText) ||
-            plugin.alias.containsIgnoreCase(searchText) ||
-            plugin.uniqueId.containsIgnoreCase(searchText) ||
-            plugin.fileOrIdentifier.containsIgnoreCase(searchText) ||
-            plugin.searchKeywords.containsIgnoreCase(searchText) ||
-            effectiveCategory.containsIgnoreCase(searchText) ||
-            effectiveSubcategory.containsIgnoreCase(searchText)) {
+            plugin.subcategory.containsIgnoreCase(searchText)) {
             root->addSubItem(new PluginTreeItem(plugin, *this));
         }
     }
@@ -669,16 +547,11 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
 
-    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
-
-    // Instrument-form plugins can be manually routed as MIDI FX when their
-    // runtime metadata is too synth-like to classify automatically.
+    // Prefer drum grid (instruments only — piano roll is the default for MIDI clips)
     if (plugin.category == "Instrument") {
-        auto& prefs = magda::PluginPreferences::getInstance();
-        const bool prefersGrid = prefs.prefersDrumGrid(pluginIdentifier);
-        const bool treatsAsMidiFx = plugin.categoryOverride == "MIDI FX";
+        const bool prefersGrid =
+            magda::PluginPreferences::getInstance().prefersDrumGrid(plugin.uniqueId);
         menu.addItem(10, "Prefer Drum Grid", true, prefersGrid);
-        menu.addItem(11, "Treat as MIDI FX", true, treatsAsMidiFx);
         menu.addSeparator();
     }
 
@@ -694,7 +567,17 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
             // Helper to create device info from plugin
             auto createDevice = [&plugin]() {
                 magda::DeviceInfo device;
-                applyRawPluginFieldsToDevice(plugin, device);
+                device.name = plugin.name;
+                device.manufacturer = plugin.manufacturer;
+                device.pluginId = plugin.uniqueId.isEmpty() ? (plugin.name + "_" + plugin.format)
+                                                            : plugin.uniqueId;
+                device.isInstrument = (plugin.category == "Instrument");
+                if (plugin.subcategory == "MIDI")
+                    device.deviceType = magda::DeviceType::MIDI;
+                else if (device.isInstrument)
+                    device.deviceType = magda::DeviceType::Instrument;
+                else
+                    device.deviceType = magda::DeviceType::Effect;
                 // External plugin identification
                 device.uniqueId = plugin.uniqueId;
                 device.fileOrIdentifier = plugin.fileOrIdentifier;
@@ -756,24 +639,8 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     break;
                 case 10: {
                     auto& prefs = magda::PluginPreferences::getInstance();
-                    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
-                    prefs.setPrefersDrumGrid(pluginIdentifier,
-                                             !prefs.prefersDrumGrid(pluginIdentifier));
-                    rebuildTree();
-                    break;
-                }
-                case 11: {
-                    auto& prefs = magda::PluginPreferences::getInstance();
-                    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
-                    const auto currentOverride = prefs.browserCategoryOverride(pluginIdentifier);
-                    prefs.setBrowserCategoryOverride(
-                        pluginIdentifier,
-                        currentOverride == "MIDI FX" ? juce::String() : juce::String("MIDI FX"));
-                    for (auto& p : plugins_) {
-                        if (preferenceIdentifierForPlugin(p) == pluginIdentifier)
-                            p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
-                    }
-                    rebuildTree();
+                    prefs.setPrefersDrumGrid(plugin.uniqueId,
+                                             !prefs.prefersDrumGrid(plugin.uniqueId));
                     break;
                 }
             }

@@ -40,14 +40,10 @@ enum class InternalDeviceKind {
     TeLevelMeter,
     // --- MAGDA native instrument / MIDI plugins ------------------------
     MagdaSampler,
-    MutableElements,
-    MutableRings,
-    MutableClouds,
     DrumGrid,
     MidiReceive,
     MidiChordEngine,
     Arpeggiator,
-    Strum,
     StepSequencer,
     PolyStepSequencer,
     SidechainMonitor,
@@ -60,8 +56,7 @@ enum class InternalDeviceKind {
     SpectrumAnalyzer,
     Levels,  // loudness/level/stereo meter (issue #1389)
     // --- Faust ---------------------------------------------------------
-    Faust,            // interpreter-based, runs arbitrary user .dsp (effect)
-    FaustInstrument,  // interpreter-based polyphonic Faust synth (POC)
+    Faust,  // interpreter-based, runs arbitrary user .dsp
 };
 
 struct InternalDeviceMetadata {

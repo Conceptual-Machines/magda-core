@@ -127,7 +127,6 @@ void SelectionManager::selectTrack(TrackId trackId) {
 
     // Clear other selection types
     selectedClipId_ = INVALID_CLIP_ID;
-    selectedClipIds_.clear();
     timeRangeSelection_ = TimeRangeSelection{};
 
     selectionType_ = SelectionType::Track;
@@ -176,7 +175,6 @@ void SelectionManager::selectTracks(const std::unordered_set<TrackId>& trackIds)
 
     // Clear other selection types
     selectedClipId_ = INVALID_CLIP_ID;
-    selectedClipIds_.clear();
     timeRangeSelection_ = TimeRangeSelection{};
     ClipManager::getInstance().clearClipSelection();
 
@@ -222,7 +220,6 @@ void SelectionManager::addTrackToSelection(TrackId trackId) {
 
     // Clear other selection types
     selectedClipId_ = INVALID_CLIP_ID;
-    selectedClipIds_.clear();
     timeRangeSelection_ = TimeRangeSelection{};
     ClipManager::getInstance().clearClipSelection();
 
@@ -308,7 +305,6 @@ void SelectionManager::selectClip(ClipId clipId) {
 
     // Clear other selection types
     selectedTrackId_ = INVALID_TRACK_ID;
-    selectedTrackIds_.clear();
     selectedClipIds_.clear();
     timeRangeSelection_ = TimeRangeSelection{};
 
@@ -357,7 +353,6 @@ void SelectionManager::selectClips(const std::unordered_set<ClipId>& clipIds) {
 
     // Clear other selection types
     selectedTrackId_ = INVALID_TRACK_ID;
-    selectedTrackIds_.clear();
     selectedClipId_ = INVALID_CLIP_ID;
     timeRangeSelection_ = TimeRangeSelection{};
 
@@ -395,7 +390,6 @@ void SelectionManager::addClipToSelection(ClipId clipId) {
         bool typeChanged = selectionType_ != SelectionType::MultiClip;
 
         selectedTrackId_ = INVALID_TRACK_ID;
-        selectedTrackIds_.clear();
         selectedClipId_ = INVALID_CLIP_ID;
         timeRangeSelection_ = TimeRangeSelection{};
 

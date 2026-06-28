@@ -118,39 +118,6 @@ void CompiledFilterCurveView::setCompiledPlugin(
     compiledPlugin_ = plugin;
 }
 
-void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutoffHz,
-                                          float resonance01, float drive01, bool doubleSlope) {
-    compiledPlugin_ = nullptr;  // raw path: never read from a plugin / snapshot
-    if (doublePole_ != doubleSlope) {
-        doublePole_ = doubleSlope;
-        repaint();
-    }
-    family_ = static_cast<FilterFamily>(juce::jlimit(0, 4, engine));
-    targetModeIndex_ = juce::jlimit(0, 3, modeIndex);
-    targetCutoffHz_ = juce::jlimit(kMinCutoffHz, kMaxFreq, cutoffHz);
-    targetResonance_ = juce::jlimit(0.0f, 1.0f, resonance01);
-    targetDrive_ = juce::jlimit(0.0f, 1.0f, drive01);
-
-    if (!initialised_) {
-        cutoffHz_ = targetCutoffHz_;
-        resonance_ = targetResonance_;
-        drive_ = targetDrive_;
-        modeIndex_ = targetModeIndex_;
-        initialised_ = true;
-        repaint();
-        return;
-    }
-
-    modeIndex_ = targetModeIndex_;
-    const bool needsAnimation = std::abs(std::log(cutoffHz_ / targetCutoffHz_)) > 0.0005f ||
-                                std::abs(resonance_ - targetResonance_) > 0.0005f ||
-                                std::abs(drive_ - targetDrive_) > 0.0005f;
-    if (needsAnimation && !isTimerRunning())
-        startTimerHz(60);
-    else
-        repaint();
-}
-
 void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
                                                const ParamLinkContext* linkContext) {
     deviceSnapshot_ = device;
@@ -316,9 +283,6 @@ float CompiledFilterCurveView::responseDbAt(float frequencyHz) const {
             break;
     }
 
-    if (doublePole_)
-        magnitude *= magnitude;  // 24 dB/oct: two cascaded stages
-
     const float driveTrimDb = -drive_ * 2.5f;
     return linearToDb(magnitude) + driveTrimDb;
 }
@@ -399,8 +363,7 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     fillPath.lineTo(plot.getRight(), zeroY);
     fillPath.closeSubPath();
 
-    const auto accent =
-        hasCurveColour_ ? curveColour_ : DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
     g.setColour(accent.withAlpha(0.13f + drive_ * 0.08f));
     g.fillPath(fillPath);
     g.setColour(accent.withAlpha(0.9f));
