@@ -312,11 +312,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addChildComponent(*presetsButton_);  // hidden by default; shown by refreshPresetsButton
 
     // Sidechain button (only visible when plugin supports sidechain)
-    scButton_ = std::make_unique<juce::TextButton>("SC");
-    scButton_->setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    scButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    scButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    scButton_ = std::make_unique<magda::SvgButton>("Sidechain", BinaryData::sidechain_svg,
+                                                   BinaryData::sidechain_svgSize);
+    scButton_->setTooltip("Sidechain source");
+    scButton_->setIconPadding(3.5f);  // glyph slightly larger than the 4px default
+    // When a sidechain is active, fill the button background orange (white glyph),
+    // matching the old SC button.
+    scButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
+    scButton_->setActiveColor(juce::Colours::white);
     scButton_->onClick = [this]() { showSidechainMenu(); };
     scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
     addAndMakeVisible(*scButton_);

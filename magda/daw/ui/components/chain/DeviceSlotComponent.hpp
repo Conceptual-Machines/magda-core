@@ -226,7 +226,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> macroButton_;
     std::unique_ptr<magda::SvgButton> aiButton_;
     magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
-    std::unique_ptr<juce::TextButton> scButton_;        // Sidechain source selector
+    std::unique_ptr<magda::SvgButton> scButton_;        // Sidechain source selector
     std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> learnButton_;
