@@ -434,6 +434,7 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
                         polyHeld_[static_cast<size_t>(note)] = true;
                     }
                     poly_->keyOn(m.getChannel(), note, m.getVelocity());
+                    strikePulse_.fetch_add(1, std::memory_order_relaxed);
                 } else if (m.isNoteOff()) {
                     const int note = m.getNoteNumber();
                     if (note >= 0 && note < 128)
@@ -447,6 +448,7 @@ void MagdaCompiledPolyInstrument::applyToBuffer(const te::PluginRenderContext& f
                 }
             } else {
                 if (m.isNoteOn()) {
+                    strikePulse_.fetch_add(1, std::memory_order_relaxed);
                     if (handleMonoNoteOn(m.getNoteNumber(), m.getVelocity(), mode)) {
                         // One-sample gate-low renders the falling edge; raising it
                         // again gives the rising edge that retriggers.

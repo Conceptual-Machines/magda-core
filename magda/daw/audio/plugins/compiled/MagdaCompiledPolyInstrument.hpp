@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <array>
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <vector>
@@ -94,6 +95,12 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     float displayValueToNativeValue(int slotIndex, float displayValue) const;
     float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
+
+    // Monotonic note-on counter, bumped on every voice trigger. A device UI polls
+    // it (on a timer) to flash a strike animation; RT-safe relaxed atomic.
+    std::uint32_t strikePulse() const {
+        return strikePulse_.load(std::memory_order_relaxed);
+    }
 
     // ICompiledFaustPlugin
     int hostSlotCount() const override {
@@ -199,6 +206,8 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     std::deque<juce::CachedValue<float>> hostCached_;
 
     float limEnv_ = 0.0f;  // output limiter peak envelope
+
+    std::atomic<std::uint32_t> strikePulse_{0};  // note-on counter for UI strike flash
 
     juce::AudioBuffer<float> scratchOut_;
     std::vector<float*> outPtrs_;

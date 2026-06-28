@@ -1,5 +1,6 @@
 #include "CompiledPluginRegistry.hpp"
 
+#include "MagdaBellCompiledPlugin.hpp"
 #include "MagdaBitcrusherCompiledPlugin.hpp"
 #include "MagdaChorusCompiledPlugin.hpp"
 #include "MagdaClapCompiledPlugin.hpp"
@@ -7,6 +8,7 @@
 #include "MagdaCompressorCompiledPlugin.hpp"
 #include "MagdaDelayCompiledPlugin.hpp"
 #include "MagdaDimensionCompiledPlugin.hpp"
+#include "MagdaDjembeCompiledPlugin.hpp"
 #include "MagdaEqCompiledPlugin.hpp"
 #include "MagdaFilterCompiledPlugin.hpp"
 #include "MagdaFlangerCompiledPlugin.hpp"
@@ -17,6 +19,7 @@
 #include "MagdaHatCompiledPlugin.hpp"
 #include "MagdaKickCompiledPlugin.hpp"
 #include "MagdaLimiterCompiledPlugin.hpp"
+#include "MagdaMarimbaCompiledPlugin.hpp"
 #include "MagdaModCompiledPlugin.hpp"
 #include "MagdaMultibandCompiledPlugin.hpp"
 #include "MagdaPhaserCompiledPlugin.hpp"
@@ -67,6 +70,9 @@ const CompiledPluginSpec& getMagdaSnareSpec();
 const CompiledPluginSpec& getMagdaClapSpec();
 const CompiledPluginSpec& getMagdaHatSpec();
 const CompiledPluginSpec& getMagdaTomSpec();
+const CompiledPluginSpec& getMagdaMarimbaSpec();
+const CompiledPluginSpec& getMagdaDjembeSpec();
+const CompiledPluginSpec& getMagdaBellSpec();
 
 namespace {
 
@@ -80,7 +86,8 @@ const CompiledPluginSpec* const kAllSpecs[] = {
     &getMagdaDimensionSpec(),  &getMagdaPitchSpec(),      &getMagdaBitcrusherSpec(),
     &getMagdaUtilitySpec(),    &getMagdaPolySynthSpec(),  &getMagdaFMSpec(),
     &getMagdaKickSpec(),       &getMagdaSnareSpec(),      &getMagdaClapSpec(),
-    &getMagdaHatSpec(),        &getMagdaTomSpec(),
+    &getMagdaHatSpec(),        &getMagdaTomSpec(),        &getMagdaMarimbaSpec(),
+    &getMagdaDjembeSpec(),     &getMagdaBellSpec(),
 };
 
 }  // namespace

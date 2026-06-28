@@ -26,6 +26,7 @@
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
 #include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
@@ -59,6 +60,7 @@
 #include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
+#include "custom_ui/StruckInstrumentUI.hpp"
 #include "custom_ui/StrumUI.hpp"
 #include "custom_ui/ToneGeneratorUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
@@ -361,6 +363,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return nimbusUI_.get();
     if (drumVoiceUI_)
         return drumVoiceUI_.get();
+    if (struckUI_)
+        return struckUI_.get();
     if (eqUI_)
         return eqUI_.get();
     if (compressorUI_)
@@ -419,6 +423,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return nimbusUI_->getLinkableSliders();
     if (drumVoiceUI_)
         return drumVoiceUI_->getLinkableSliders();
+    if (struckUI_)
+        return struckUI_->getLinkableSliders();
     if (toneGeneratorUI_)
         return toneGeneratorUI_->getLinkableSliders();
     if (compressorUI_)
@@ -458,7 +464,7 @@ bool DeviceCustomUIManager::hasAnyUI() const {
            polySynthUI_ || fmUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ || reverbUI_ ||
            delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ ||
            faustUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_ || struckUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -478,6 +484,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 720;  // grain cloud + PARAMETERS | mode controls
     if (drumVoiceUI_)
         return drumVoiceUI_->preferredContentWidth();  // one labelled box per knob
+    if (struckUI_)
+        return struckUI_->preferredContentWidth();  // body panel + EXCITER | RESONATOR
     if (eqUI_)
         return 400;
     if (compressorUI_)
@@ -594,6 +602,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         polySynthUI_->updateFromParameters(device.parameters);
     if (drumVoiceUI_ && DrumVoiceUI::handles(device.pluginId))
         drumVoiceUI_->updateFromParameters(device.parameters);
+    if (struckUI_ && StruckInstrumentUI::handles(device.pluginId))
+        struckUI_->updateFromParameters(device.parameters);
     if (fmUI_ && device.pluginId.equalsIgnoreCase("magda_fm"))
         fmUI_->updateFromParameters(device.parameters);
     if (materiaUI_ && device.pluginId.equalsIgnoreCase("magda_elements"))
@@ -928,6 +938,15 @@ bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& de
         drumVoiceUI_ = std::make_unique<DrumVoiceUI>(device.pluginId);
         forwardParameterChanges(*drumVoiceUI_, callbacks);
         parent.addAndMakeVisible(*drumVoiceUI_);
+        update(device);
+        return true;
+    }
+
+    if (StruckInstrumentUI::handles(device.pluginId)) {
+        struckUI_ = std::make_unique<StruckInstrumentUI>(device.pluginId);
+        forwardParameterChanges(*struckUI_, callbacks);
+        parent.addAndMakeVisible(*struckUI_);
+        refreshLivePluginBindings();  // bind for the note-on strike flash
         update(device);
         return true;
     }
@@ -1682,6 +1701,13 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
             model = dynamic_cast<magda::daw::audio::IFaustEditorModel*>(plugin.get());
         faustInstrumentUI_->setPlugin(model);
     }
+
+    if (struckUI_ != nullptr) {
+        daw::audio::compiled::MagdaCompiledPolyInstrument* inst = nullptr;
+        if (auto plugin = getLivePlugin())
+            inst = dynamic_cast<daw::audio::compiled::MagdaCompiledPolyInstrument*>(plugin.get());
+        struckUI_->setLivePlugin(inst);
+    }
 }
 
 void DeviceCustomUIManager::bindAnalyzerPlugins() {
@@ -1851,6 +1877,10 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
 
     if (drumVoiceUI_ && DrumVoiceUI::handles(device.pluginId)) {
         drumVoiceUI_->updateFromParameters(device.parameters);
+    }
+
+    if (struckUI_ && StruckInstrumentUI::handles(device.pluginId)) {
+        struckUI_->updateFromParameters(device.parameters);
     }
 
     if (eqUI_ && device.pluginId.equalsIgnoreCase("eq")) {
