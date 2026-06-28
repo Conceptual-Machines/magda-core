@@ -1,5 +1,7 @@
 #include "GestureRouter.hpp"
 
+#include <unordered_set>
+
 #include "Config.hpp"
 
 namespace magda {
@@ -191,6 +193,13 @@ void GestureRouter::installDefaults() {
                {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_Alt},
                {GestureActionType::ZoomHorizontal, kFineDragZoomSensitivity, false});
 
+    // Copy-on-drag: holding Alt while dragging a clip body duplicates it
+    // instead of moving it. Applies identically to single and multi-clip
+    // drags; the modifier is user-customisable like every other gesture.
+    setBinding(GestureContext::Arrangement,
+               {GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical, GestureMod_Alt},
+               {GestureActionType::DuplicateOnDrag, 1.0f, false});
+
     for (auto context : {GestureContext::PianoRoll, GestureContext::DrumGrid}) {
         setBinding(
             context,
@@ -319,6 +328,14 @@ void GestureRouter::resetToDefaults() {
 // Persistence (#22)
 // ----------------------------------------------------------------------------
 
+bool GestureRouter::isDuplicateOnDrag(GestureContext context,
+                                      const juce::ModifierKeys& mods) const {
+    const GestureInput input{GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
+                             gestureModifierMaskFrom(mods)};
+    const auto* binding = findBinding(context, input);
+    return binding != nullptr && binding->action == GestureActionType::DuplicateOnDrag;
+}
+
 juce::var GestureRouter::toVar() const {
     // Emit only bindings that differ from (or are absent in) the defaults, so
     // config.json stores user overrides and code stays the source of truth.
@@ -345,39 +362,61 @@ juce::var GestureRouter::toVar() const {
 void GestureRouter::loadFromVar(const juce::var& v) {
     resetToDefaults();
 
-    if (auto* arr = v.getArray()) {
-        for (const auto& entry : *arr) {
-            auto* obj = entry.getDynamicObject();
-            if (obj == nullptr)
-                continue;
+    auto* arr = v.getArray();
+    if (arr == nullptr)
+        return;
 
-            const auto context =
-                static_cast<GestureContext>(static_cast<int>(obj->getProperty("context")));
-            const auto kindValue = obj->getProperty("kind");
-            const auto areaValue = obj->getProperty("area");
-            const auto kind =
-                static_cast<GestureInputKind>(kindValue.isVoid() ? 0 : static_cast<int>(kindValue));
-            const auto area =
-                static_cast<GestureArea>(areaValue.isVoid() ? 0 : static_cast<int>(areaValue));
-            const auto axis = static_cast<GestureAxis>(static_cast<int>(obj->getProperty("axis")));
-            const auto mask = static_cast<uint8_t>(static_cast<int>(obj->getProperty("mods")));
+    auto decode = [](const juce::DynamicObject& obj) {
+        const auto context =
+            static_cast<GestureContext>(static_cast<int>(obj.getProperty("context")));
+        const auto kindValue = obj.getProperty("kind");
+        const auto areaValue = obj.getProperty("area");
+        const GestureInput input{
+            static_cast<GestureInputKind>(kindValue.isVoid() ? 0 : static_cast<int>(kindValue)),
+            static_cast<GestureArea>(areaValue.isVoid() ? 0 : static_cast<int>(areaValue)),
+            static_cast<GestureAxis>(static_cast<int>(obj.getProperty("axis"))),
+            static_cast<uint8_t>(static_cast<int>(obj.getProperty("mods")))};
+        return std::pair{context, input};
+    };
 
-            GestureBinding binding;
-            binding.action =
+    // Drag keys collapse the axis (makeKey), so a learned binding on one axis
+    // and a disabled-legacy binding on the other land on the same key. Collect
+    // the keys that a non-None override claims first, so a None override never
+    // clobbers a sibling that maps to the same key. A None override whose key
+    // no one else claims still applies — that is the user disabling a default
+    // drag gesture (e.g. moving copy-on-drag off Alt).
+    std::unordered_set<uint64_t> claimedKeys;
+    for (const auto& entry : *arr) {
+        if (auto* obj = entry.getDynamicObject()) {
+            const auto action =
                 static_cast<GestureActionType>(static_cast<int>(obj->getProperty("action")));
-            binding.sensitivity =
-                static_cast<float>(static_cast<double>(obj->getProperty("sensitivity")));
-            binding.invert = static_cast<bool>(obj->getProperty("invert"));
-            binding =
-                retuneLearnedDragBinding(context, {kind, area, axis, mask}, binding, defaults_);
-            if (kind == GestureInputKind::Drag && binding.action == GestureActionType::None) {
-                if (const auto* existing = findBinding(context, {kind, area, axis, mask});
-                    existing != nullptr && existing->action != GestureActionType::None) {
-                    continue;
-                }
+            if (action != GestureActionType::None) {
+                const auto [context, input] = decode(*obj);
+                claimedKeys.insert(makeKey(context, input));
             }
-            setBinding(context, {kind, area, axis, mask}, binding);
         }
+    }
+
+    for (const auto& entry : *arr) {
+        auto* obj = entry.getDynamicObject();
+        if (obj == nullptr)
+            continue;
+
+        const auto [context, input] = decode(*obj);
+
+        GestureBinding binding;
+        binding.action =
+            static_cast<GestureActionType>(static_cast<int>(obj->getProperty("action")));
+        binding.sensitivity =
+            static_cast<float>(static_cast<double>(obj->getProperty("sensitivity")));
+        binding.invert = static_cast<bool>(obj->getProperty("invert"));
+        binding = retuneLearnedDragBinding(context, input, binding, defaults_);
+
+        if (input.kind == GestureInputKind::Drag && binding.action == GestureActionType::None &&
+            claimedKeys.count(makeKey(context, input)) != 0) {
+            continue;
+        }
+        setBinding(context, input, binding);
     }
 }
 

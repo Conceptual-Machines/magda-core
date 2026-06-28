@@ -686,8 +686,20 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             DBG("BounceToNewTrack: no TracktionEngineWrapper available");
             return;
         }
-        auto cmd = std::make_unique<BounceToNewTrackCommand>(clipId, engine);
-        UndoManager::getInstance().executeCommand(std::move(cmd));
+
+        auto selectedClips = SelectionManager::getInstance().getSelectedClips();
+        if (selectedClips.size() > 1) {
+            // Multi-clip bounce: one new track per selected clip, single undo step.
+            UndoManager::getInstance().beginCompoundOperation("Bounce Clips To New Tracks");
+            for (auto cid : selectedClips) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<BounceToNewTrackCommand>(cid, engine));
+            }
+            UndoManager::getInstance().endCompoundOperation();
+        } else {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<BounceToNewTrackCommand>(clipId, engine));
+        }
     };
 
     juce::Logger::writeToLog("[MainComponent] Setting up resize handles, view mode, callbacks...");

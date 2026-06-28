@@ -606,6 +606,9 @@ void MainView::dispatchArrangementGesture(const ResolvedGesture& gesture) {
         }
         case GestureActionType::Pan:
         case GestureActionType::None:
+        // DuplicateOnDrag is consumed directly by the arrangement's clip-drag
+        // handlers, never resolved into a parametric scroll/zoom here.
+        case GestureActionType::DuplicateOnDrag:
             break;
     }
 }

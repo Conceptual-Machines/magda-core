@@ -163,6 +163,54 @@ TEST_CASE("GestureRouter: drag zoom defaults", "[gesture]") {
     }
 }
 
+TEST_CASE("GestureRouter: copy-on-drag gesture", "[gesture]") {
+    auto& router = GestureRouter::getInstance();
+    router.resetToDefaults();
+
+    SECTION("Alt is the default copy-drag modifier in the arrangement") {
+        REQUIRE(router.isDuplicateOnDrag(GestureContext::Arrangement,
+                                         juce::ModifierKeys(juce::ModifierKeys::altModifier)));
+    }
+
+    SECTION("a plain drag does not copy") {
+        REQUIRE_FALSE(router.isDuplicateOnDrag(GestureContext::Arrangement, juce::ModifierKeys()));
+    }
+
+    SECTION("other modifiers do not trigger copy by default") {
+        REQUIRE_FALSE(router.isDuplicateOnDrag(
+            GestureContext::Arrangement, juce::ModifierKeys(juce::ModifierKeys::shiftModifier)));
+        REQUIRE_FALSE(router.isDuplicateOnDrag(
+            GestureContext::Arrangement, juce::ModifierKeys(juce::ModifierKeys::commandModifier)));
+    }
+
+    SECTION("the copy modifier is customisable and survives persistence") {
+        // Rebind copy-on-drag from Alt to Command and round-trip through the
+        // override blob, exactly as Preferences → Gestures would.
+        const GestureInput altBody{GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
+                                   GestureMod_Alt};
+        const GestureInput cmdBody{GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
+                                   GestureMod_Command};
+        // Disabling a default means setting it to None (clearBinding would not
+        // persist — toVar only stores diffs from defaults), exactly as the
+        // preferences page does when a gesture's modifier is reassigned.
+        router.setBinding(GestureContext::Arrangement, altBody,
+                          {GestureActionType::None, 1.0f, false});
+        router.setBinding(GestureContext::Arrangement, cmdBody,
+                          {GestureActionType::DuplicateOnDrag, 1.0f, false});
+
+        const auto blob = router.toVar();
+        router.resetToDefaults();
+        router.loadFromVar(blob);
+
+        REQUIRE(router.isDuplicateOnDrag(GestureContext::Arrangement,
+                                         juce::ModifierKeys(juce::ModifierKeys::commandModifier)));
+        REQUIRE_FALSE(router.isDuplicateOnDrag(
+            GestureContext::Arrangement, juce::ModifierKeys(juce::ModifierKeys::altModifier)));
+
+        router.resetToDefaults();
+    }
+}
+
 TEST_CASE("GestureRouter: magnitude sign and reversal", "[gesture]") {
     auto& router = GestureRouter::getInstance();
     router.resetToDefaults();

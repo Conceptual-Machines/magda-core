@@ -17,10 +17,11 @@ namespace magda {
  *                            ("range select")
  *  - Cmd + marquee drag   -> add the marquee contents to the selection
  *
- * Shift+drag gestures that start on an item (duplicate, stretch) are
- * unaffected: range select fires on click, drags are disambiguated by the
- * usual movement threshold. Shift+Ctrl stays reserved for the erase
- * gesture, which is why range select excludes Ctrl.
+ * Shift+edge stretch is unaffected: range select fires on click, drags are
+ * disambiguated by the usual movement threshold. Copy-on-drag is a separate,
+ * customisable gesture (default Alt) resolved through GestureRouter, not here.
+ * Shift+Ctrl stays reserved for the erase gesture, which is why range select
+ * excludes Ctrl.
  */
 inline bool isToggleSelectClick(const juce::ModifierKeys& mods) {
     return mods.isCommandDown() && !mods.isShiftDown();
