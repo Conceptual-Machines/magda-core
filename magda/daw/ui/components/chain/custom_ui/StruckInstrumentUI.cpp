@@ -193,7 +193,8 @@ juce::Point<float> StruckInstrumentUI::strikePoint() const {
         case Kind::Djembe: {
             const auto c = gr.getCentre();
             const float maxR = juce::jmin(gr.getWidth(), gr.getHeight()) * 0.45f;
-            return {c.x, c.y - pos * maxR};
+            const float r = pos * maxR;
+            return {c.x + std::cos(djembeAngle_) * r, c.y + std::sin(djembeAngle_) * r};
         }
         case Kind::Bell:
         default:
@@ -212,7 +213,13 @@ void StruckInstrumentUI::setPositionFromPoint(juce::Point<int> p) {
         case Kind::Djembe: {
             const auto c = gr.getCentre();
             const float maxR = juce::jmin(gr.getWidth(), gr.getHeight()) * 0.45f;
-            pos = pf.getDistanceFrom(c) / juce::jmax(1.0f, maxR);
+            const auto v = pf - c;
+            pos = v.getDistanceFromOrigin() / juce::jmax(1.0f, maxR);
+            // Track the drag direction so the dot follows the mouse rather than
+            // snapping to a fixed axis; ignore the angle near the centre where it
+            // is ill-defined (avoids jitter / sudden flips).
+            if (v.getDistanceFromOrigin() > 3.0f)
+                djembeAngle_ = std::atan2(v.y, v.x);
             break;
         }
         case Kind::Bell:

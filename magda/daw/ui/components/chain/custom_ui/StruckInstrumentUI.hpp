@@ -86,6 +86,10 @@ class StruckInstrumentUI : public juce::Component, private juce::Timer {
     magda::daw::audio::compiled::MagdaCompiledPolyInstrument* plugin_ = nullptr;
     std::uint32_t lastStrikePulse_ = 0;
     float flash_ = 0.0f;  // strike-flash level, decays each timer tick
+    // Djembe only: the angle of the strike dot on the membrane. Position is the
+    // radius (center->edge); the angle is UI state so the dot tracks the mouse
+    // instead of snapping to a fixed axis (default straight up).
+    float djembeAngle_ = -1.5707963f;  // -pi/2
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StruckInstrumentUI)
 };
