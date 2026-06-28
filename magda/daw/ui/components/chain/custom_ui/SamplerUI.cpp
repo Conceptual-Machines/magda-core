@@ -12,9 +12,10 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kNameRowH = 20;      // top sample-name / root / load row
-constexpr int kBottomRowH = 32;    // bottom full-width control row (label + control)
-constexpr int kAmpControlsH = 64;  // amp value boxes under the ADSR graph (2 rows)
+constexpr int kNameRowH = 20;         // top sample-name / root / load row
+constexpr int kCtrlRowH = 30;         // one control row: label(12) + control(18)
+constexpr int kCtrlBlockH = 64;       // two control rows (bottom-aligned in each column)
+constexpr int kRightColPercent = 42;  // right (synth) column width as % of body
 }  // namespace
 
 SamplerUI::SamplerUI() {
@@ -540,13 +541,12 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*
 // =============================================================================
 
 juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
-    // The waveform occupies the left of the body: below the name row, above the
-    // bottom control row, left of the right column (ADSR graph + amp boxes).
+    // Left column: the waveform sits above that column's 2-row control block.
     auto area = getLocalBounds().reduced(4);
     area.removeFromTop(kNameRowH + 2);
-    area.removeFromBottom(kBottomRowH + 2);
-    const int rightColW = juce::jmax(260, area.getWidth() * 38 / 100);
-    area.removeFromRight(rightColW + 4);  // right column + gap
+    const int rightColW = juce::jmax(280, area.getWidth() * kRightColPercent / 100);
+    area.removeFromRight(rightColW + 4);  // right (synth) column + gap -> left column
+    area.removeFromBottom(kCtrlBlockH);   // left column's control block
     return area;
 }
 
@@ -980,22 +980,13 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.drawText("Drop sample or click Load", waveformArea, juce::Justification::centred);
     }
 
-    // --- Dividers: waveform | right column, and between bottom-row groups ---
+    // --- Divider between the left (waveform) and right (synth) columns ---
     auto body = getLocalBounds().reduced(4);
     body.removeFromTop(kNameRowH + 2);
-    auto bottom = body.removeFromBottom(kBottomRowH);
-    body.removeFromBottom(2);
-
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     auto wave = getWaveformBounds();
     g.drawVerticalLine(wave.getRight() + 2, static_cast<float>(body.getY()),
                        static_cast<float>(body.getBottom()));
-
-    const int bw = bottom.getWidth();
-    g.drawVerticalLine(bottom.getX() + bw * 44 / 100, static_cast<float>(bottom.getY()),
-                       static_cast<float>(bottom.getBottom()));
-    g.drawVerticalLine(bottom.getX() + bw * 66 / 100, static_cast<float>(bottom.getY()),
-                       static_cast<float>(bottom.getBottom()));
 }
 
 // =============================================================================
@@ -1016,85 +1007,84 @@ void SamplerUI::resized() {
     sampleNameLabel_.setBounds(sampleRow);
     area.removeFromTop(2);
 
-    // Bottom row (full width): Sample/Loop | Pitch | Voice/Glide.
-    auto bottomRow = area.removeFromBottom(kBottomRowH);
-    area.removeFromBottom(2);
-
-    // Body: waveform on the left, right column (ADSR graph + amp boxes).
-    const int rightColW = juce::jmax(260, area.getWidth() * 38 / 100);
+    // Two columns: LEFT (waveform + sample controls), RIGHT (ADSR graph + synth
+    // controls). Each is the viz on top with a 2-row control block bottom-aligned,
+    // so both viz areas share the same top and bottom.
+    const int rightColW = juce::jmax(280, area.getWidth() * kRightColPercent / 100);
     auto rightCol = area.removeFromRight(rightColW);
-    area.removeFromRight(4);  // gap; `area` left = waveform (matches getWaveformBounds)
-
-    // --- Right column: ADSR graph (top) + amp boxes (bottom) ---
-    auto ampArea = rightCol.removeFromBottom(kAmpControlsH);
-    rightCol.removeFromBottom(2);
-    envGraph_.setBounds(rightCol);
+    area.removeFromRight(4);  // gap
+    auto leftCol = area;      // waveform column (waveform rect = getWaveformBounds)
 
     auto layoutCell = [](juce::Rectangle<int> cell, juce::Label& label,
                          LinkableTextSlider& slider) {
         label.setBounds(cell.removeFromTop(12));
         slider.setBounds(cell.removeFromTop(18).reduced(1, 0));
     };
-    // Row 1: ATK DEC SUS REL  | Row 2: LEVEL VEL
-    auto ampRow1 = ampArea.removeFromTop(30);
-    ampArea.removeFromTop(2);
-    auto ampRow2 = ampArea.removeFromTop(30);
-    int q = ampRow1.getWidth() / 4;
-    layoutCell(ampRow1.removeFromLeft(q), attackLabel_, attackSlider_);
-    layoutCell(ampRow1.removeFromLeft(q), decayLabel_, decaySlider_);
-    layoutCell(ampRow1.removeFromLeft(q), sustainLabel_, sustainSlider_);
-    layoutCell(ampRow1, releaseLabel_, releaseSlider_);
-    int h = ampRow2.getWidth() / 2;
-    layoutCell(ampRow2.removeFromLeft(h), levelLabel_, levelSlider_);
-    layoutCell(ampRow2, velAmountLabel_, velAmountSlider_);
 
-    // --- Bottom row: three groups ---
-    int totalW = bottomRow.getWidth();
-    auto g1 = bottomRow.removeFromLeft(totalW * 44 / 100).reduced(2, 0);  // sample/loop
-    auto g2 = bottomRow.removeFromLeft(totalW * 22 / 100).reduced(2, 0);  // pitch
-    auto g3 = bottomRow.reduced(2, 0);                                    // voice/glide
+    // --- LEFT column control block (waveform fills above it) ---
+    auto leftCtrl = leftCol.removeFromBottom(kCtrlBlockH);
+    {
+        // Row 1: START | END | (icon) L.START | L.END
+        auto row1 = leftCtrl.removeFromTop(kCtrlRowH);
+        leftCtrl.removeFromTop(2);
+        auto row2 = leftCtrl.removeFromTop(kCtrlRowH);
+        int quarter = row1.getWidth() / 4;
+        int iconW = 20;
+        int loopW = (row1.getWidth() - 2 * quarter - iconW) / 2;
+        auto r1lab = row1.removeFromTop(12);
+        startLabel_.setBounds(r1lab.removeFromLeft(quarter));
+        endLabel_.setBounds(r1lab.removeFromLeft(quarter));
+        r1lab.removeFromLeft(iconW);
+        loopStartLabel_.setBounds(r1lab.removeFromLeft(loopW));
+        loopEndLabel_.setBounds(r1lab);
+        startSlider_.setBounds(row1.removeFromLeft(quarter).reduced(1, 0));
+        endSlider_.setBounds(row1.removeFromLeft(quarter).reduced(1, 0));
+        loopButton_->setBounds(row1.removeFromLeft(iconW));
+        loopStartSlider_.setBounds(row1.removeFromLeft(loopW).reduced(1, 0));
+        loopEndSlider_.setBounds(row1.reduced(1, 0));
 
-    // Group 1: START | END | (icon) L.START | L.END
-    auto g1Label = g1.removeFromTop(12);
-    int quarter = g1.getWidth() / 4;
-    int iconW = 20;
-    int loopSliderW = (g1.getWidth() - 2 * quarter - iconW) / 2;
-    startLabel_.setBounds(g1Label.removeFromLeft(quarter));
-    endLabel_.setBounds(g1Label.removeFromLeft(quarter));
-    g1Label.removeFromLeft(iconW);
-    loopStartLabel_.setBounds(g1Label.removeFromLeft(loopSliderW));
-    loopEndLabel_.setBounds(g1Label);
-    auto g1Row = g1.removeFromTop(18);
-    startSlider_.setBounds(g1Row.removeFromLeft(quarter).reduced(1, 0));
-    endSlider_.setBounds(g1Row.removeFromLeft(quarter).reduced(1, 0));
-    loopButton_->setBounds(g1Row.removeFromLeft(iconW));
-    loopStartSlider_.setBounds(g1Row.removeFromLeft(loopSliderW).reduced(1, 0));
-    loopEndSlider_.setBounds(g1Row.reduced(1, 0));
-
-    // Group 2: PITCH | FINE
-    auto g2Label = g2.removeFromTop(12);
-    int halfG2 = g2.getWidth() / 2;
-    pitchLabel_.setBounds(g2Label.removeFromLeft(halfG2));
-    fineLabel_.setBounds(g2Label);
-    auto g2Row = g2.removeFromTop(18);
-    pitchSlider_.setBounds(g2Row.removeFromLeft(halfG2).reduced(1, 0));
-    fineSlider_.setBounds(g2Row.reduced(1, 0));
-
-    // Group 3: VOICE (segmented) | GLIDE
-    auto g3Label = g3.removeFromTop(12);
-    int glideW = g3.getWidth() / 3;
-    int voiceW = g3.getWidth() - glideW;
-    voiceModeLabel_.setBounds(g3Label.removeFromLeft(voiceW));
-    glideLabel_.setBounds(g3Label);
-    auto g3Row = g3.removeFromTop(18);
-    auto voiceRow = g3Row.removeFromLeft(voiceW).reduced(1, 0);
-    int btnW = voiceRow.getWidth() / 3;
-    for (int m = 0; m < 3; ++m) {
-        auto cell = (m == 2) ? voiceRow : voiceRow.removeFromLeft(btnW);
-        if (voiceModeButtons_[static_cast<size_t>(m)])
-            voiceModeButtons_[static_cast<size_t>(m)]->setBounds(cell);
+        // Row 2: PITCH | FINE | VOICE (segmented) | GLIDE
+        const int unit = row2.getWidth() / 5;
+        auto r2lab = row2.removeFromTop(12);
+        pitchLabel_.setBounds(r2lab.removeFromLeft(unit));
+        fineLabel_.setBounds(r2lab.removeFromLeft(unit));
+        voiceModeLabel_.setBounds(r2lab.removeFromLeft(unit * 2));
+        glideLabel_.setBounds(r2lab);
+        pitchSlider_.setBounds(row2.removeFromLeft(unit).reduced(1, 0));
+        fineSlider_.setBounds(row2.removeFromLeft(unit).reduced(1, 0));
+        auto voiceRow = row2.removeFromLeft(unit * 2).reduced(1, 0);
+        int btnW = voiceRow.getWidth() / 3;
+        for (int m = 0; m < 3; ++m) {
+            auto cell = (m == 2) ? voiceRow : voiceRow.removeFromLeft(btnW);
+            if (voiceModeButtons_[static_cast<size_t>(m)])
+                voiceModeButtons_[static_cast<size_t>(m)]->setBounds(cell);
+        }
+        glideSlider_.setBounds(row2.reduced(1, 0));
     }
-    glideSlider_.setBounds(g3Row.reduced(1, 0));
+
+    // --- RIGHT column: ADSR graph (top) + 2-row control block ---
+    auto rightCtrl = rightCol.removeFromBottom(kCtrlBlockH);
+    rightCol.removeFromBottom(2);
+    envGraph_.setBounds(rightCol);
+    {
+        // Row 1: ATK | DEC | SUS | REL
+        auto row1 = rightCtrl.removeFromTop(kCtrlRowH);
+        rightCtrl.removeFromTop(2);
+        auto row2 = rightCtrl.removeFromTop(kCtrlRowH);
+        int q = row1.getWidth() / 4;
+        layoutCell(row1.removeFromLeft(q), attackLabel_, attackSlider_);
+        layoutCell(row1.removeFromLeft(q), decayLabel_, decaySlider_);
+        layoutCell(row1.removeFromLeft(q), sustainLabel_, sustainSlider_);
+        layoutCell(row1, releaseLabel_, releaseSlider_);
+
+        // Row 2: LEVEL | VEL
+        int half = row2.getWidth() / 2;
+        auto r2lab = row2.removeFromTop(12);
+        levelLabel_.setBounds(r2lab.removeFromLeft(half));
+        velAmountLabel_.setBounds(r2lab);
+        levelSlider_.setBounds(row2.removeFromLeft(half).reduced(1, 0));
+        velAmountSlider_.setBounds(row2.reduced(1, 0));
+    }
 
     // Rebuild waveform path at new size
     if (hasWaveform_ && waveformBuffer_ != nullptr) {
