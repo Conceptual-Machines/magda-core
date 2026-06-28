@@ -382,6 +382,13 @@ void MagdaPolySynthCompiledPlugin::buildHostParameters() {
                                                    .choices = {"Off", "On"}};
     }
 
+    hostSlotInfo_[kOutputGainSlot] = {.name = "Output",
+                                      .unit = "dB",
+                                      .scale = magda::ParameterScale::FaderDB,
+                                      .minValue = -60.0f,
+                                      .maxValue = 6.0f,
+                                      .defaultValue = 0.0f};
+
     juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
     auto* undoManager = getUndoManager();
 

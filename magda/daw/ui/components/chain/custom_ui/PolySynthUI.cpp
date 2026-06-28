@@ -59,6 +59,7 @@ PolySynthUI::PolySynthUI() {
         labels_[kOscResetBaseSlot + osc] = "Rst";
     labels_[kVelAmpSlot] = "Vel>Amp";
     labels_[kVelFilterSlot] = "Vel>Cut";
+    labels_[kOutputGainSlot] = "Output";
 
     for (int i = 0; i < kNumParams; ++i) {
         auto& c = controls_[static_cast<size_t>(i)];
@@ -546,9 +547,10 @@ void PolySynthUI::layoutOscSection() {
         voiceModeButtons_[static_cast<size_t>(v)]->setBounds(seg);
     }
     a.removeFromTop(kSectionGap * 2);
-    // Glide / Bend Range / Vel>Amp / Vel>Cut in one labelled row.
+    // Glide / Bend Range / Vel>Amp / Vel>Cut / Output in one labelled row.
     auto perfRow = a.removeFromTop(kCellLabelH + 24);
-    layoutCells(perfRow, {kGlideSlot, kBendRangeSlot, kVelAmpSlot, kVelFilterSlot}, 4);
+    layoutCells(perfRow, {kGlideSlot, kBendRangeSlot, kVelAmpSlot, kVelFilterSlot, kOutputGainSlot},
+                5);
 }
 
 void PolySynthUI::layoutCells(juce::Rectangle<int> a, const std::vector<int>& indices, int cols) {

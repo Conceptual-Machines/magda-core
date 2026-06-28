@@ -156,6 +156,11 @@ osc2Enable = nentry("Osc 2 Enable [idx:40] [style:menu{'Off':0;'On':1}]", 1, 0, 
 osc3Enable = nentry("Osc 3 Enable [idx:41] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
 osc4Enable = nentry("Osc 4 Enable [idx:42] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
 
+// Output gain (idx 43): a master trim applied per voice after the soft-clip, so
+// thick multi-oscillator / polyphonic patches (which can sum hot) can be pulled
+// back down. 0 dB = unity.
+outGain = hslider("Output [unit:dB] [idx:43]", 0, -60, 6, 0.1) : ba.db2linear : smoo;
+
 // ============================================================================
 // DSP
 // ============================================================================
@@ -191,7 +196,7 @@ ampEnv  = en.adsr(aAtt, aDec, aSus, aRel, gate);
 // signals at unity at full drive (matches magda_filter_svf.dsp).
 drivenIn(x) = (1.0 - fDrive) * x
             + fDrive * (ma.tanh(4.0 * x) / ma.tanh(4.0));
-voice   = (oscMix * resComp : drivenIn : filterSlope) * ampEnv * ampVel : ma.tanh;
+voice   = ((oscMix * resComp : drivenIn : filterSlope) * ampEnv * ampVel : ma.tanh) * outGain;
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

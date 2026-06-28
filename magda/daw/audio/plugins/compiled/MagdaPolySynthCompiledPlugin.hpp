@@ -110,8 +110,10 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     // Per-oscillator enable (mute that oscillator), discrete Off/On, default On.
     // osc n -> kOscEnableBaseSlot + (n - 1), idx 39..42.
     static constexpr int kOscEnableBaseSlot = 39;
+    // Master output gain (dB), applied per voice after the soft-clip.
+    static constexpr int kOutputGainSlot = 43;
 
-    static constexpr int kHostSlotCount = 43;
+    static constexpr int kHostSlotCount = 44;
 
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 
