@@ -19,10 +19,11 @@ strikePos   = hslider("Strike Position [idx:0]", 0.3, 0.0, 1.0, 0.001);
 strikeTone  = hslider("Strike Tone [unit:Hz] [idx:1] [scale:log]", 7000, 500, 12000, 1);
 // Sharpness of the strike transient (0 = soft mallet, 1 = hard).
 strikeSharp = hslider("Strike Sharpness [idx:2]", 0.25, 0.0, 1.0, 0.001);
-// Ring time (T60) of the bar in seconds. The pm.marimba wrapper fixes this at
-// 0.1; exposing it lets the bar ring from a dry knock up to a vibraphone-like
-// sustain. The decay ratio / slope keep their model defaults (1 / 5).
-decay       = hslider("Decay [unit:s] [idx:3]", 0.1, 0.05, 2.0, 0.001);
+// Ring time (T60) of the bar in milliseconds (converted to the seconds the model
+// wants). The pm.marimba wrapper fixes this at 100 ms; exposing it lets the bar
+// ring from a dry knock up to a vibraphone-like sustain. The decay ratio / slope
+// keep their model defaults (1 / 5).
+decay       = hslider("Decay [unit:ms] [idx:3]", 100, 50, 2000, 1) * 0.001;
 
 // The strike fires on the gate's rising edge (one-sample trigger per note-on).
 trigger = gate > gate';

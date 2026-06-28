@@ -18,9 +18,10 @@ gate = button("gate");
 // ============================================================================
 strikePos   = hslider("Strike Position [idx:0]", 0.4, 0.0, 1.0, 0.001);
 strikeSharp = hslider("Strike Sharpness [idx:1]", 0.5, 0.0, 1.0, 0.001);
-// Ring time of the lowest mode in seconds (higher modes decay proportionally
-// faster, as in the original model). pm.djembeModel fixes this at ~0.6s.
-decay       = hslider("Decay [unit:s] [idx:2]", 0.6, 0.05, 3.0, 0.001);
+// Ring time of the lowest mode in milliseconds (converted to seconds; higher
+// modes decay proportionally faster, as in the original model). pm.djembeModel
+// fixes this at ~600 ms.
+decay       = hslider("Decay [unit:ms] [idx:2]", 600, 50, 3000, 1) * 0.001;
 // Frequency spacing between successive modes (Hz). pm.djembeModel fixes this at
 // 200; lower clusters the modes near the fundamental (pitched / tom-like),
 // higher spreads them out (metallic / gong-like).

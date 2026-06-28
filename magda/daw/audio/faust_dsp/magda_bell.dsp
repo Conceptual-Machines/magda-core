@@ -20,10 +20,11 @@ gate = button("gate");
 strikePos   = hslider("Strike Position [idx:0]", 0.3, 0.0, 1.0, 0.001);
 strikeTone  = hslider("Strike Tone [unit:Hz] [idx:1] [scale:log]", 7000, 500, 12000, 1);
 strikeSharp = hslider("Strike Sharpness [idx:2]", 0.25, 0.0, 1.0, 0.001);
-// Ring time (T60) in seconds. The pm.churchBell wrapper fixes this at 30s (a full
-// cathedral ring); exposing it lets the bell go from a short tine to a long toll.
-// The decay ratio / slope keep the wrapper's bell defaults (1 / 2.5).
-decay       = hslider("Decay [unit:s] [idx:3]", 8.0, 0.3, 40.0, 0.01);
+// Ring time (T60) in milliseconds (converted to seconds). The pm.churchBell
+// wrapper fixes this at 30 s (a full cathedral ring); exposing it lets the bell
+// go from a short tine to a long toll. The decay ratio / slope keep the
+// wrapper's bell defaults (1 / 2.5).
+decay       = hslider("Decay [unit:ms] [idx:3]", 8000, 300, 40000, 1) * 0.001;
 
 trigger = gate > gate';
 

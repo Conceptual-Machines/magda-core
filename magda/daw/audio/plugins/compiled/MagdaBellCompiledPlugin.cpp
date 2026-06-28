@@ -53,11 +53,11 @@ std::vector<MagdaBellCompiledPlugin::HostSlotInfo> MagdaBellCompiledPlugin::voic
          .maxValue = 1.0f,
          .defaultValue = 0.25f},
         {.name = "decay",
-         .unit = "s",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 0.3f,
-         .maxValue = 40.0f,
-         .defaultValue = 8.0f},
+         .minValue = 300.0f,
+         .maxValue = 40000.0f,
+         .defaultValue = 8000.0f},
     };
 }
 

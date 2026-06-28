@@ -54,11 +54,11 @@ std::vector<MagdaMarimbaCompiledPlugin::HostSlotInfo> MagdaMarimbaCompiledPlugin
          .maxValue = 1.0f,
          .defaultValue = 0.25f},
         {.name = "decay",
-         .unit = "s",
+         .unit = "ms",
          .scale = ParameterScale::Linear,
-         .minValue = 0.05f,
-         .maxValue = 2.0f,
-         .defaultValue = 0.1f},
+         .minValue = 50.0f,
+         .maxValue = 2000.0f,
+         .defaultValue = 100.0f},
     };
 }
 
