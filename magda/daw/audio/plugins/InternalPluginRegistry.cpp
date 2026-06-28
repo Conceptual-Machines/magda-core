@@ -113,6 +113,15 @@ const InternalPluginSpec kSpecs[] = {
      "Signal meter for monitoring level inside a chain.",
      InternalPluginCreateMode::LevelMeterValueTree, false, true, kMeterAliases,
      std::size(kMeterAliases), matches<te::LevelMeterPlugin>, nullptr},
+    // Hardware send/return insert (External FX / Instrument). Created like any
+    // other TE built-in (string factory + saved-state round-trip); send/return
+    // device selection lives in the plugin's CachedValue state. No DeviceProcessor
+    // (no automatable param grid) and no rack hosting for now. Browser exposure +
+    // the send/return picker UI land in a later phase, so showInBrowser stays off.
+    {InternalDeviceKind::ExternalInsert, te::InsertPlugin::xmlTypeName, "External Insert",
+     "External", "Hardware send/return insert for outboard audio FX and MIDI instruments.",
+     InternalPluginCreateMode::SavedStateOrFresh, false, true, nullptr, 0,
+     matches<te::InsertPlugin>, nullptr, false, false},
     {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, "Sampler", "Sampler",
      "Sample playback instrument with envelope, pitch, start/end, and looping controls.",
      InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MagdaSamplerPlugin>,
@@ -244,6 +253,7 @@ bool shouldUseTracktionStringFactory(InternalDeviceKind kind) {
         case InternalDeviceKind::TeVolumeAndPan:
         case InternalDeviceKind::TeFourOsc:
         case InternalDeviceKind::TeToneGenerator:
+        case InternalDeviceKind::ExternalInsert:
             return true;
         default:
             return false;

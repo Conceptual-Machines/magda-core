@@ -96,12 +96,19 @@ record path, so the only overlapping control (MIDI-out) is removed by suppressio
 `PluginFormat`, **no** new `DeviceInfo` fields, **no** change to the VST
 (`ExternalPlugin`) loader.
 
-- `InternalDeviceKind` (`core/InternalDeviceKind.hpp`): add `ExternalFx`,
-  `ExternalInstrument`. Add both to `shouldUseTracktionStringFactory`.
-- `InternalPluginRegistry.cpp` `kSpecs[]`: two entries, both
+- `InternalDeviceKind` (`core/InternalDeviceKind.hpp`): add **one** kind,
+  `ExternalInsert`, added to `shouldUseTracktionStringFactory`. (Not two: both
+  FX and Instrument are the same `te::InsertPlugin` with `xmlTypeName "insert"`,
+  and `classifyInternalDevice`/`findInternalPluginSpec` key on that id — two kinds
+  would collide. The FX-vs-Instrument split is a per-`DeviceInfo` presentation
+  concern, surfaced as two browser entries + default send/return config later.)
+- `InternalPluginRegistry.cpp` `kSpecs[]`: one entry, `ExternalInsert`,
   `pluginId = te::InsertPlugin::xmlTypeName`, `createMode = SavedStateOrFresh`,
-  `matches<te::InsertPlugin>`, `showInBrowser = true`, category `"External"`;
-  differ only in `displayName` + `isInstrument` (FX=false, Instrument=true).
+  `matches<te::InsertPlugin>`, `createProcessor = nullptr` (no param grid),
+  `canCreateDetached = false` (no racks yet), category `"External"`.
+  `showInBrowser` stays `false` until the picker UI lands (Phase 2).
+  Status: **done (Phase 1)** — `classifyInternalDevice("insert") == ExternalInsert`,
+  the spec resolves, app + tests build, covered by `test_external_insert_registry.cpp`.
 - Persistence is **free**: `SavedStateOrFresh` round-trips the plugin's ValueTree
   as XML, and `name`/`inputDevice`/`outputDevice`/`manualAdjustMs` are
   `CachedValue` properties in that tree (see `restorePluginStateFromValueTree`).

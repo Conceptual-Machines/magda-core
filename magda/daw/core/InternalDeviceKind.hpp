@@ -38,6 +38,8 @@ enum class InternalDeviceKind {
     TeFourOsc,
     TeToneGenerator,
     TeLevelMeter,
+    // --- Hardware insert (External FX / Instrument via te::InsertPlugin) -
+    ExternalInsert,
     // --- MAGDA native instrument / MIDI plugins ------------------------
     MagdaSampler,
     MutableElements,

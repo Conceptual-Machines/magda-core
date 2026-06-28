@@ -76,6 +76,8 @@ const InternalDeviceMetadata kMetadata[] = {
      "Simple tone generator for calibration, routing checks, and utility signals."},
     {InternalDeviceKind::TeLevelMeter, "Level Meter", "", "Meter",
      "Signal meter for monitoring level inside a chain."},
+    {InternalDeviceKind::ExternalInsert, "External Insert", "", "External",
+     "Hardware send/return insert for outboard audio FX and MIDI instruments."},
     {InternalDeviceKind::MagdaSampler, "Sampler", "", "Sampler",
      "Sample playback instrument with envelope, pitch, start/end, and looping controls."},
     {InternalDeviceKind::MutableElements, "Materia", "", "Synth",
@@ -194,6 +196,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::TeFourOsc, "4OSC Synth", nullptr},
         {InternalDeviceKind::TeToneGenerator, "tone", TE::ToneGeneratorPlugin::xmlTypeName},
         {InternalDeviceKind::TeLevelMeter, "meter", TE::LevelMeterPlugin::xmlTypeName},
+        {InternalDeviceKind::ExternalInsert, TE::InsertPlugin::xmlTypeName, nullptr},
         // MAGDA daw::audio:: plugins
         {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, nullptr},
