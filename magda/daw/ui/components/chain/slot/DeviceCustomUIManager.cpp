@@ -1759,6 +1759,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         float sampleStart = 0.0f, sampleEnd = 0.0f;
         float loopStart = 0.0f, loopEnd = 0.0f;
         float velAmount = 1.0f;
+        float voiceMode = 0.0f, glide = 0.0f;
         bool loopEnabled = false;
         int rootNote = 60;
         juce::String sampleName;
@@ -1781,6 +1782,10 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         if (device.parameters.size() >= 12) {
             velAmount = device.parameters[11].currentValue;
         }
+        if (device.parameters.size() >= 14) {
+            voiceMode = device.parameters[12].currentValue;
+            glide = device.parameters[13].currentValue;
+        }
 
         auto plugin = getLivePlugin();
         if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
@@ -1800,7 +1805,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
 
         samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level,
                                      sampleStart, sampleEnd, loopEnabled, loopStart, loopEnd,
-                                     velAmount, sampleName, rootNote);
+                                     velAmount, sampleName, rootNote, voiceMode, glide);
     }
 
     if (drumGridUI_ &&
