@@ -26,6 +26,18 @@ te::InsertPlugin* liveInsert(const magda::ChainNodePath& path) {
     return nullptr;
 }
 
+// After a send/return device change: the insert's send/return is wired straight
+// into TE's playback graph at build time (applyToBuffer is a dead stub), so the
+// new routing only takes effect once the graph is rebuilt. Then broadcast a
+// device-property change so the track-level read-only routing mirror
+// (TrackInspector / TrackHeadersPanel) refreshes in real time.
+void rebuildPlaybackGraph(te::InsertPlugin& insert, const magda::ChainNodePath& path) {
+    if (auto* ctx = insert.edit.getCurrentPlaybackContext();
+        ctx != nullptr && ctx->isPlaybackGraphAllocated())
+        ctx->reallocate();
+    magda::TrackManager::getInstance().notifyDevicePropertyChanged(path);
+}
+
 // The picker id whose mapped name matches the plugin's current device, else 0
 // ("None").
 int idForName(const std::map<int, juce::String>& names, const juce::String& current) {
@@ -121,6 +133,7 @@ void ExternalInsertUI::rebuildFromPlugin() {
         if (auto* ins = liveInsert(devicePath_)) {
             ins->outputDevice = (id <= 0) ? juce::String() : sendNames_[id];
             ins->updateDeviceTypes();
+            rebuildPlaybackGraph(*ins, devicePath_);
         }
     };
 
@@ -131,6 +144,7 @@ void ExternalInsertUI::rebuildFromPlugin() {
         if (auto* ins = liveInsert(devicePath_)) {
             ins->inputDevice = (id <= 0) ? juce::String() : returnNames_[id];
             ins->updateDeviceTypes();
+            rebuildPlaybackGraph(*ins, devicePath_);
         }
     };
 

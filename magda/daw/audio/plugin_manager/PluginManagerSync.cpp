@@ -2284,7 +2284,16 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
         // Wrap instruments in a RackType with audio passthrough so both synth
         // output and audio clips on the same track are summed together.
-        if (device.isInstrument) {
+        //
+        // Exception: an External Instrument is a te::InsertPlugin. TE only turns
+        // an InsertPlugin into a graph-level send/return when it sits DIRECTLY in
+        // the track's plugin list (EditNodeBuilder special-case). Inside a
+        // RackType it would be processed as a normal plugin and hit
+        // InsertPlugin::applyToBuffer's jassertfalse (dead stub), with no audio
+        // routed. So never wrap it, even though it presents as an instrument.
+        const bool isExternalInsert =
+            classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert;
+        if (device.isInstrument && !isExternalInsert) {
             // Detect multi-output capability
             int numOutputChannels = 2;
             if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {

@@ -1818,6 +1818,44 @@ std::vector<std::string> TrackManager::getChainSummary(TrackId trackId) const {
     return out;
 }
 
+TrackManager::ExternalInstrumentRouting TrackManager::getExternalInstrumentRouting(
+    TrackId trackId) const {
+    ExternalInstrumentRouting routing;
+    const auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return routing;
+
+    // Inserts can't live inside racks (canCreateDetached=false), so only the
+    // top-level chain elements need checking.
+    for (const auto& e : track->chain.fxChainElements) {
+        if (!magda::isDevice(e))
+            continue;
+        const auto& d = magda::getDevice(e);
+        if (!(d.isInstrument &&
+              classifyInternalDevice(d.pluginId) == InternalDeviceKind::ExternalInsert))
+            continue;
+
+        routing.present = true;
+        // Mirror the live insert's chosen send/return devices so the track-level
+        // selectors can display them. The plugin may not be resolvable yet
+        // (path invalid during load); present stays true regardless.
+        if (audioEngine_ != nullptr) {
+            if (auto* bridge = audioEngine_->getAudioBridge()) {
+                auto path = ChainNodePath::topLevelDevice(trackId, d.id);
+                if (auto plugin = bridge->getPlugin(path)) {
+                    if (auto* insert =
+                            dynamic_cast<tracktion::engine::InsertPlugin*>(plugin.get())) {
+                        routing.midiOut = insert->outputDevice.get();
+                        routing.audioReturn = insert->inputDevice.get();
+                    }
+                }
+            }
+        }
+        break;
+    }
+    return routing;
+}
+
 void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
     DBG("TrackManager::moveNode trackId=" << trackId << " from=" << fromIndex << " to=" << toIndex);
     if (auto* track = getTrack(trackId)) {

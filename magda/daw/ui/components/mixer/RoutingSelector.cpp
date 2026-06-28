@@ -14,9 +14,12 @@ void RoutingSelector::paint(juce::Graphics& g) {
     auto mainArea = getMainButtonArea().toFloat();
     auto dropdownArea = getDropdownArea().toFloat();
 
-    // Background: always use BUTTON_NORMAL, brighter on hover
+    // Background: always use BUTTON_NORMAL, brighter on hover. Read-only
+    // controls are dimmed and never react to hover.
     auto bgColour = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
-    if (isHovering_) {
+    if (readOnly_) {
+        bgColour = bgColour.withAlpha(0.5f);
+    } else if (isHovering_) {
         bgColour = bgColour.brighter(0.1f);
     }
 
@@ -34,11 +37,17 @@ void RoutingSelector::paint(juce::Graphics& g) {
     g.drawLine(dropdownArea.getX(), dropdownArea.getY() + 2, dropdownArea.getX(),
                dropdownArea.getBottom() - 2, 1.0f);
 
-    // Draw selected name as text in main area
+    // Draw selected name as text in main area. Read-only controls mirror their
+    // owner's selection (readOnlyDisplay_) in a dimmed colour.
     auto textBounds = mainArea.reduced(2.0f, 1.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(
+        DarkTheme::getColour(readOnly_ ? DarkTheme::TEXT_SECONDARY : DarkTheme::TEXT_PRIMARY)
+            .withAlpha(readOnly_ ? 0.6f : 1.0f));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText(getSelectedName(), textBounds, juce::Justification::centredLeft, true);
+    const juce::String displayText =
+        readOnly_ ? (readOnlyDisplay_.isNotEmpty() ? readOnlyDisplay_ : juce::String("None"))
+                  : getSelectedName();
+    g.drawText(displayText, textBounds, juce::Justification::centredLeft, true);
 
     // Draw dropdown arrow
     auto arrowBounds = dropdownArea.reduced(2.0f);
@@ -64,16 +73,32 @@ void RoutingSelector::resized() {
 
 void RoutingSelector::mouseDown(const juce::MouseEvent& e) {
     juce::ignoreUnused(e);
+    if (readOnly_)
+        return;
     showPopupMenu();
 }
 
 void RoutingSelector::mouseEnter(const juce::MouseEvent&) {
+    if (readOnly_)
+        return;
     isHovering_ = true;
     repaint();
 }
 
 void RoutingSelector::mouseExit(const juce::MouseEvent&) {
+    if (readOnly_)
+        return;
     isHovering_ = false;
+    repaint();
+}
+
+void RoutingSelector::setReadOnly(bool readOnly, const juce::String& displayText) {
+    if (readOnly_ == readOnly && readOnlyDisplay_ == displayText)
+        return;
+    readOnly_ = readOnly;
+    readOnlyDisplay_ = displayText;
+    if (readOnly_)
+        isHovering_ = false;
     repaint();
 }
 

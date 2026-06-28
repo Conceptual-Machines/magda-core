@@ -854,6 +854,11 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
         rebuildSendsUI();
 
+        // Adding/removing/editing an External Instrument insert changes the
+        // read-only mirror on the track MIDI-out / audio-in, so re-apply it.
+        if (!isMultiTrackMode_)
+            showTrackControls(true);
+
         // Refresh latency (devices added/removed/loaded)
         if (latencyLabel_.isVisible()) {
             double latency =
@@ -866,6 +871,13 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
             latencyValue_.repaint();
         }
     }
+}
+
+void TrackInspector::devicePropertyChanged(const magda::ChainNodePath& devicePath) {
+    // An External Instrument's send/return picker changed: re-apply the
+    // read-only mirror on this track's MIDI-out / audio-in.
+    if (!isMultiTrackMode_ && devicePath.trackId == selectedTrackId_)
+        showTrackControls(true);
 }
 
 void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
@@ -1270,6 +1282,17 @@ void TrackInspector::showTrackControls(bool show) {
     outputSelector_->setVisible(p.audioOut);
     midiOutputSelector_->setVisible(p.midiOut);
     outputIcon_->setVisible(p.anyOutput());
+
+    // An External Instrument insert owns the track's MIDI send + audio return.
+    // The track-level MIDI-out and audio-in stay visible but go read-only and
+    // mirror the device's selection (the synth audio returns via the insert,
+    // not the record path), so the routing is only editable on the device.
+    auto extRouting =
+        (show && !isMaster)
+            ? magda::TrackManager::getInstance().getExternalInstrumentRouting(selectedTrackId_)
+            : magda::TrackManager::ExternalInstrumentRouting{};
+    midiOutputSelector_->setReadOnly(extRouting.present, extRouting.midiOut);
+    audioInputSelector_->setReadOnly(extRouting.present, extRouting.audioReturn);
 
     sendReceiveSectionLabel_.setVisible(p.sends);
     addSendButton_->setVisible(p.sends);
