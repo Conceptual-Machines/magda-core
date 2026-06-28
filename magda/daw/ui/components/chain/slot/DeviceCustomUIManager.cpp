@@ -76,6 +76,7 @@
 #include "media_db/RobertaTokenizer.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
 #include "project/ProjectManager.hpp"
+#include "slot/ExternalInsertUI.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
@@ -443,6 +444,8 @@ DeviceCustomUIManager::~DeviceCustomUIManager() {
 juce::Component* DeviceCustomUIManager::getActiveUI() const {
     if (toneGeneratorUI_)
         return toneGeneratorUI_.get();
+    if (externalInsertUI_)
+        return externalInsertUI_.get();
     if (samplerUI_)
         return samplerUI_.get();
     if (drumGridUI_)
@@ -627,6 +630,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 800;  // 400 (BASE_SLOT_WIDTH) * 2
     if (drumGridUI_)
         return drumGridFallback;
+    if (externalInsertUI_)
+        return 360;  // two device pickers + manual-latency field
     return 0;
 }
 
@@ -2025,9 +2030,21 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // handled by helper
     } else if (createImpulseResponseUI(device, *parent, uiCallbacks)) {
         // handled by helper
+    } else if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert) {
+        createExternalInsertUI(device, *parent);
     } else if (!createMidiUtilityUI(device, *parent)) {
         createAnalyzerUI(device, *parent);
     }
+}
+
+void DeviceCustomUIManager::createExternalInsertUI(const magda::DeviceInfo& device,
+                                                   juce::Component& parent) {
+    externalInsertUI_ = std::make_unique<ExternalInsertUI>(device.isInstrument);
+    parent.addAndMakeVisible(*externalInsertUI_);
+    // create() may run before the slot's path is valid; setDevicePath() rebinds
+    // the pickers from the live plugin once refreshLivePluginBindings() fires.
+    if (devicePath_.isValid())
+        externalInsertUI_->setDevicePath(devicePath_);
 }
 
 void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
@@ -2053,6 +2070,9 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
 
 void DeviceCustomUIManager::refreshLivePluginBindings() {
     bindAnalyzerPlugins();
+
+    if (externalInsertUI_ != nullptr)
+        externalInsertUI_->setDevicePath(devicePath_);
 
     if (faustInstrumentUI_ != nullptr) {
         faustInstrumentUI_->setDevicePath(devicePath_);

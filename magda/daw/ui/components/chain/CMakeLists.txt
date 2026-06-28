@@ -6,6 +6,7 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.cpp
     ai/AIPanelComponent.cpp
     slot/DeviceCustomUIManager.cpp
+    slot/ExternalInsertUI.cpp
     slot/DeviceSlotAnalyzerContextActions.cpp
     slot/DeviceSlotAutomationControls.cpp
     slot/DeviceSlotContentLayout.cpp
