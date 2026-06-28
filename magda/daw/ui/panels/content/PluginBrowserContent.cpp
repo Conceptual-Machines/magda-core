@@ -51,6 +51,52 @@ juce::String effectiveSubcategoryForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.subcategory;
 }
 
+void addSearchKeyword(juce::StringArray& keywords, const char* keyword) {
+    if (keyword != nullptr) {
+        const juce::String value(keyword);
+        if (value.isNotEmpty())
+            keywords.addIfNotAlreadyThere(value);
+    }
+}
+
+juce::String joinSearchKeywords(juce::StringArray keywords) {
+    keywords.removeEmptyStrings();
+    keywords.removeDuplicates(false);
+    return keywords.joinIntoString(" ");
+}
+
+void addOriginalMutableNameKeywords(juce::StringArray& keywords, InternalDeviceKind kind) {
+    switch (kind) {
+        case InternalDeviceKind::MutableElements:
+            keywords.addIfNotAlreadyThere("Elements");
+            break;
+        case InternalDeviceKind::MutableRings:
+            keywords.addIfNotAlreadyThere("Rings");
+            break;
+        case InternalDeviceKind::MutableClouds:
+            keywords.addIfNotAlreadyThere("Clouds");
+            break;
+        default:
+            break;
+    }
+}
+
+juce::String searchKeywordsForInternalSpec(const audio::InternalPluginSpec& spec) {
+    juce::StringArray keywords;
+    addSearchKeyword(keywords, spec.pluginId);
+    for (int i = 0; i < spec.loadAliasCount; ++i)
+        addSearchKeyword(keywords, spec.loadAliases[i]);
+    addOriginalMutableNameKeywords(keywords, spec.kind);
+    return joinSearchKeywords(keywords);
+}
+
+juce::String searchKeywordsForCompiledSpec(const audio::compiled::CompiledPluginSpec& spec) {
+    juce::StringArray keywords;
+    addSearchKeyword(keywords, spec.pluginId);
+    addSearchKeyword(keywords, spec.aliasKey);
+    return joinSearchKeywords(keywords);
+}
+
 bool effectiveIsInstrument(const PluginBrowserInfo& plugin) {
     if (plugin.categoryOverride == "Instrument")
         return true;
@@ -96,7 +142,8 @@ PluginBrowserInfo PluginBrowserInfo::fromPluginDescription(const juce::PluginDes
 
 PluginBrowserInfo PluginBrowserInfo::createInternal(const juce::String& name,
                                                     const juce::String& pluginId, bool isInstrument,
-                                                    const juce::String& subcategory) {
+                                                    const juce::String& subcategory,
+                                                    const juce::String& searchKeywords) {
     PluginBrowserInfo info;
     info.name = name;
     info.manufacturer = "MAGDA";
@@ -110,6 +157,7 @@ PluginBrowserInfo PluginBrowserInfo::createInternal(const juce::String& name,
     info.uniqueId = pluginId;
     info.fileOrIdentifier = pluginId;
     info.alias = generateAlias(name);
+    info.searchKeywords = searchKeywords;
     return info;
 }
 
@@ -411,12 +459,14 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     for (const auto* spec : audio::getAllInternalPluginSpecs()) {
         if (spec->showInBrowser)
             list.push_back(PluginBrowserInfo::createInternal(
-                spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory));
+                spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory,
+                searchKeywordsForInternalSpec(*spec)));
     }
     // Compiled-Faust devices come from their own registry.
     for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
-        list.push_back(PluginBrowserInfo::createInternal(
-            spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory));
+        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
+                                                         spec->isInstrument, spec->browserCategory,
+                                                         searchKeywordsForCompiledSpec(*spec)));
     }
     return list;
 }
@@ -579,6 +629,11 @@ void PluginBrowserContent::filterBySearch(const juce::String& searchText) {
             plugin.manufacturer.containsIgnoreCase(searchText) ||
             plugin.category.containsIgnoreCase(searchText) ||
             plugin.subcategory.containsIgnoreCase(searchText) ||
+            plugin.categoryOverride.containsIgnoreCase(searchText) ||
+            plugin.alias.containsIgnoreCase(searchText) ||
+            plugin.uniqueId.containsIgnoreCase(searchText) ||
+            plugin.fileOrIdentifier.containsIgnoreCase(searchText) ||
+            plugin.searchKeywords.containsIgnoreCase(searchText) ||
             effectiveCategory.containsIgnoreCase(searchText) ||
             effectiveSubcategory.containsIgnoreCase(searchText)) {
             root->addSubItem(new PluginTreeItem(plugin, *this));
