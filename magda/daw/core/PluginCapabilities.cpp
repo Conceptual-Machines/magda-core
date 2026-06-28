@@ -29,6 +29,10 @@ bool hasMidiOutputOverride(const DeviceInfo& device) {
     return device.deviceType == DeviceType::MIDI;
 }
 
+bool hasMidiInputOverride(const DeviceInfo& device) {
+    return device.deviceType == DeviceType::MIDI;
+}
+
 PluginCapabilitySnapshot snapshotFromVar(const juce::var& value) {
     PluginCapabilitySnapshot snapshot;
     auto* obj = value.getDynamicObject();
@@ -83,12 +87,14 @@ juce::var snapshotToVar(const PluginCapabilitySnapshot& snapshot) {
 
 DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
     DeviceMidiCapabilities capabilities;
+    const bool midiInputOverride = hasMidiInputOverride(device);
     const bool midiOutputOverride = hasMidiOutputOverride(device);
-    capabilities.hasMidiInput = device.isInstrument || device.canReceiveMidi;
+    capabilities.hasMidiInput = device.isInstrument || device.canReceiveMidi || midiInputOverride;
     capabilities.hasMidiOutput = device.producesMidi || midiOutputOverride;
     capabilities.hasAudioInput = device.deviceType == DeviceType::Effect || device.canSidechain;
     capabilities.hasAudioOutput = device.isInstrument || device.deviceType == DeviceType::Effect;
-    capabilities.supportsMidiInputThruToggle = capabilities.hasMidiOutput;
+    capabilities.supportsMidiInputThruToggle =
+        capabilities.hasMidiInput && capabilities.hasMidiOutput;
     capabilities.supportsExternalMidiInputRouting = device.canReceiveMidi;
     return capabilities;
 }
@@ -96,11 +102,12 @@ DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
 DeviceMidiCapabilities mergeSnapshotWithDevice(const PluginCapabilitySnapshot& snapshot,
                                                const DeviceInfo& device) {
     auto capabilities = fallbackCapabilitiesForDevice(device);
-    capabilities.hasMidiInput = snapshot.hasMidiInput;
+    capabilities.hasMidiInput = snapshot.hasMidiInput || hasMidiInputOverride(device);
     capabilities.hasMidiOutput = snapshot.hasMidiOutput || hasMidiOutputOverride(device);
     capabilities.hasAudioInput = snapshot.hasAudioInput;
     capabilities.hasAudioOutput = snapshot.hasAudioOutput;
-    capabilities.supportsMidiInputThruToggle = capabilities.hasMidiOutput;
+    capabilities.supportsMidiInputThruToggle =
+        capabilities.hasMidiInput && capabilities.hasMidiOutput;
     capabilities.supportsExternalMidiInputRouting = !device.isInstrument && snapshot.hasMidiInput;
     return capabilities;
 }

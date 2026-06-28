@@ -456,16 +456,17 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         addAndMakeVisible(*stepRecordButton_);
     }
 
-    // "MIDI in thru" toggle for wrapped instruments. The plugin's own MIDI
-    // output always flows downstream; this only passes the raw input past the
-    // instrument so a MIDI-triggered FX placed after it still receives notes.
+    // "MIDI in thru" toggle for devices that can both receive and output MIDI.
+    // The plugin's own MIDI output always flows downstream; this controls
+    // whether the raw input is merged through as well.
     if (supportsMidiSourceToggle(device)) {
         instMidiThruButton_ = std::make_unique<magda::SvgButton>(
             "MidiInThru", BinaryData::compare_svg, BinaryData::compare_svgSize);
         instMidiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         instMidiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
         instMidiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
-        instMidiThruButton_->setTooltip("MIDI in thru: pass input to a MIDI FX after this device");
+        instMidiThruButton_->setTooltip(
+            "MIDI in thru: merge raw input with this device's MIDI output");
         instMidiThruButton_->setToggleable(true);
         instMidiThruButton_->setActive(device.midiInThru);
         instMidiThruButton_->onClick = [this]() {

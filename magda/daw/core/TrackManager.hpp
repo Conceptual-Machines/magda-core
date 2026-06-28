@@ -456,7 +456,7 @@ class TrackManager {
                                   DeviceId deviceId, bool bypassed);
     void setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
 
-    // "MIDI in thru" toggle for a wrapped instrument (see DeviceInfo::midiInThru).
+    // "MIDI in thru" toggle for any MIDI-in/MIDI-out device (see DeviceInfo::midiInThru).
     void setDeviceInChainMidiInThruByPath(const ChainNodePath& devicePath, bool thru);
 
     // Sidechain configuration (device-level)
