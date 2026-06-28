@@ -100,9 +100,15 @@ class ProjectManager : private juce::Timer {
 
     /**
      * @brief Import a .dawproject archive as a new unsaved Magda project.
+     *
+     * Heavy I/O (zip extraction, embedded-audio unpacking, XML parse) runs on a
+     * background thread; commit + notifications happen on the message thread.
+     * Mirrors loadProjectAsync so a large import does not freeze the UI.
+     * @param onComplete (success, errorMessage); empty error on user cancel.
      */
-    bool importDawProject(const juce::File& file,
-                          std::function<void(const ProjectInfo&)> onBeforeCommit = nullptr);
+    void importDawProjectAsync(const juce::File& file,
+                               std::function<void(const ProjectInfo&)> onBeforeCommit,
+                               std::function<void(bool, const juce::String&)> onComplete);
 
     /**
      * @brief Load project asynchronously (heavy I/O on background thread, commit on message thread)

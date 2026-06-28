@@ -142,25 +142,27 @@ void MainWindow::importDawProjectFile(const juce::File& file) {
         mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
 
     auto& projectManager = ProjectManager::getInstance();
-    const bool ok = projectManager.importDawProject(file, [this](const ProjectInfo& info) {
-        if (!mainComponent || !mainComponent->mainView)
-            return;
-        auto& tc = mainComponent->mainView->getTimelineController();
-        tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
-                               info.timeSignatureDenominator, info.loopEnabled, info.loopStartBeats,
-                               info.loopEndBeats, info.markers, info.timelineLengthBars);
-    });
-
-    if (!ok) {
-        // Empty lastError = user cancelled the unsaved-changes prompt; stay silent.
-        const auto error = projectManager.getLastError();
-        if (error.isNotEmpty())
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon,
-                tr("action.import")
-                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
-                error);
-    }
+    projectManager.importDawProjectAsync(
+        file,
+        [this](const ProjectInfo& info) {
+            if (!mainComponent || !mainComponent->mainView)
+                return;
+            auto& tc = mainComponent->mainView->getTimelineController();
+            tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                   info.timeSignatureDenominator, info.loopEnabled,
+                                   info.loopStartBeats, info.loopEndBeats, info.markers,
+                                   info.timelineLengthBars);
+        },
+        [](bool ok, const juce::String& error) {
+            // Empty error = user cancelled the unsaved-changes prompt; stay silent.
+            if (!ok && error.isNotEmpty())
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon,
+                    tr("action.import")
+                        .replace("{0}",
+                                 magda::technicalText(magda::TechnicalTextToken::DawProject)),
+                    error);
+        });
 }
 
 // ============================================================================

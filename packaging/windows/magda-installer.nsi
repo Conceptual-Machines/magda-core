@@ -75,6 +75,14 @@ Section "Install"
     File /r "${__FILEDIR__}\dawproject\*"
     SetOutPath $INSTDIR
 
+    ; Audio-to-MIDI model - TranscriptionService loads
+    ; <exe>/models/basic_pitch.onnx for "Transcribe to MIDI". Without it the
+    ; feature is unavailable on installed machines (dev builds resolve the
+    ; source-tree fallback, which hides the gap).
+    SetOutPath "$INSTDIR\models"
+    File /r "${__FILEDIR__}\models\*"
+    SetOutPath $INSTDIR
+
     ; Create uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -118,6 +126,7 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\faustlibraries"
     RMDir /r "$INSTDIR\drumkits"
     RMDir /r "$INSTDIR\dawproject"
+    RMDir /r "$INSTDIR\models"
     RMDir "$INSTDIR"
 
     Delete "$SMPROGRAMS\MAGDA\*.*"

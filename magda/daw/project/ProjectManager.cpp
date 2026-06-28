@@ -299,49 +299,70 @@ bool ProjectManager::exportDawProject(const juce::File& file) {
     return true;
 }
 
-bool ProjectManager::importDawProject(const juce::File& file,
-                                      std::function<void(const ProjectInfo&)> onBeforeCommit) {
-    if (isDirty_ && !showUnsavedChangesDialog())
-        return false;
+void ProjectManager::importDawProjectAsync(
+    const juce::File& file, std::function<void(const ProjectInfo&)> onBeforeCommit,
+    std::function<void(bool, const juce::String&)> onComplete) {
+    // Pre-flight checks on the message thread.
+    if (isDirty_ && !showUnsavedChangesDialog()) {
+        if (onComplete)
+            onComplete(false, {});  // empty error = user cancelled
+        return;
+    }
 
     if (!file.existsAsFile()) {
-        lastError_ = "File does not exist: " + file.getFullPathName();
-        return false;
+        if (onComplete)
+            onComplete(false, "File does not exist: " + file.getFullPathName());
+        return;
     }
 
     // Set up the project media directory first so embedded audio extracts into
     // it (the "imported" subdir) and persists with the project, rather than into
-    // a throwaway temp folder.
+    // a throwaway temp folder. Done on the message thread before staging so the
+    // background thread has a valid extraction target.
     createTempMediaDirectory();
     ensureMediaSubdirectories(mediaDirectory_);
+    const auto importedDir = getImportedDirectory();
 
-    StagedProjectData staged;
-    if (!ProjectSerializer::loadDawProjectAndStage(file, staged, getImportedDirectory())) {
-        DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
-        lastError_ = ProjectSerializer::getLastError();
-        return false;
-    }
+    // Join any previous background load before starting a new one.
+    joinBackgroundThread();
 
-    resetTransportForProjectBoundary();
+    auto fileCopy = file;
+    loadThread_ = std::thread([fileCopy, importedDir, onBeforeCommit, onComplete, this]() {
+        auto staged = std::make_shared<StagedProjectData>();
+        const bool ok = ProjectSerializer::loadDawProjectAndStage(fileCopy, *staged, importedDir);
+        juce::String error;
+        if (!ok) {
+            DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
+            error = ProjectSerializer::getLastError();
+        }
 
-    if (onBeforeCommit)
-        onBeforeCommit(staged.info);
+        // Bounce back to the message thread for commit + notification.
+        juce::MessageManager::callAsync([this, staged, ok, error, onBeforeCommit, onComplete]() {
+            if (ok) {
+                resetTransportForProjectBoundary();
 
-    ProjectSerializer::commitStaged(staged);
+                if (onBeforeCommit)
+                    onBeforeCommit(staged->info);
 
-    currentProject_ = staged.info;
-    currentProject_.filePath = {};
-    currentFile_ = juce::File();
-    isProjectOpen_ = true;
+                ProjectSerializer::commitStaged(*staged);
 
-    isDirty_ = true;
-    notifyProjectOpened();
-    notifyDirtyStateChanged();
+                currentProject_ = staged->info;
+                currentProject_.filePath = {};
+                currentFile_ = juce::File();
+                isProjectOpen_ = true;
 
-    if (onAfterLoad)
-        onAfterLoad(currentProject_);
+                isDirty_ = true;
+                notifyProjectOpened();
+                notifyDirtyStateChanged();
 
-    return true;
+                if (onAfterLoad)
+                    onAfterLoad(currentProject_);
+            }
+
+            if (onComplete)
+                onComplete(ok, error);
+        });
+    });
 }
 
 void ProjectManager::loadProjectAsync(const juce::File& file,
