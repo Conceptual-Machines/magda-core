@@ -137,6 +137,45 @@ TEST_CASE("SelectionManager - track toggle ignores stale track set from other se
     tm.clearAllTracks();
 }
 
+TEST_CASE("SelectionManager - track and clip multi-selections are mutually exclusive",
+          "[selection][tracks][clips]") {
+    auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
+    auto& sm = SelectionManager::getInstance();
+
+    cm.clearAllClips();
+    tm.clearAllTracks();
+    sm.clearSelection();
+
+    TrackId trackA = tm.createTrack("A", TrackType::Audio);
+    TrackId trackB = tm.createTrack("B", TrackType::Audio);
+    ClipId clipA = cm.createMidiClip(trackA, 0.0, 2.0, ClipView::Arrangement);
+    ClipId clipB = cm.createMidiClip(trackA, 2.0, 2.0, ClipView::Arrangement);
+
+    // A lingering multi-clip selection must not survive selecting a track —
+    // otherwise getSelectedClips() stays non-empty and Cmd+D duplicates clips
+    // instead of the selected track.
+    sm.selectClips({clipA, clipB});
+    REQUIRE(sm.getSelectedClips().size() == 2);
+
+    sm.selectTrack(trackB);
+    REQUIRE(sm.getSelectedClips().empty());
+    REQUIRE(sm.getSelectionType() == SelectionType::Track);
+    REQUIRE(sm.getSelectedTracks().size() == 1);
+
+    // And the reverse: selecting clips clears a lingering multi-track selection.
+    sm.selectTracks({trackA, trackB});
+    REQUIRE(sm.getSelectedTracks().size() == 2);
+
+    sm.selectClips({clipA, clipB});
+    REQUIRE(sm.getSelectedTracks().empty());
+    REQUIRE(sm.getSelectionType() == SelectionType::MultiClip);
+
+    sm.clearSelection();
+    cm.clearAllClips();
+    tm.clearAllTracks();
+}
+
 TEST_CASE("SelectionManager - listener added during notify does not crash",
           "[selection][listeners]") {
     auto& sm = SelectionManager::getInstance();
