@@ -26,6 +26,7 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
@@ -1503,7 +1504,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // select from the anchor, applied immediately. Dragging afterwards moves
     // the selected range via the multi-drag path.
     bool didRangeSelect = false;
-    pendingAltAction_ = false;
+    pendingCopyDragAction_ = false;
     if (e.mods.isShiftDown()) {
         if (magda::isRangeSelectClick(e.mods)) {
             logArrangeRangeSelect("ClipComponent range branch: extending to clip=" +
@@ -1525,10 +1526,12 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                 juce::String(static_cast<int>(selectionManager.getSelectedClipCount())) +
                 " anchor=" + juce::String(static_cast<int>(selectionManager.getAnchorClip())));
         }
-    } else if (e.mods.isAltDown() && !e.mods.isCommandDown()) {
-        // Alt+body: copy on drag, edit cursor on click — both resolve later,
-        // so the selection stays untouched for now
-        pendingAltAction_ = true;
+    } else if (magda::GestureRouter::getInstance().isDuplicateOnDrag(
+                   magda::GestureContext::Arrangement, e.mods)) {
+        // Copy-drag modifier on the body (default Alt, customisable in
+        // Preferences → Gestures): copy on drag, edit cursor on click — both
+        // resolve later, so the selection stays untouched for now.
+        pendingCopyDragAction_ = true;
     }
 
     // Handle Cmd+Alt+click for blade/split (click-only gesture, no drag)
@@ -1561,7 +1564,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // keep the selection and prepare for potential multi-drag
     size_t selectedCount = selectionManager.getSelectedClipCount();
 
-    if (pendingAltAction_) {
+    if (pendingCopyDragAction_) {
         // Selection deferred: drag start copies, plain release places the edit cursor
     } else if (didRangeSelect) {
         logArrangeRangeSelect("ClipComponent preserving range selection through normal click path");
@@ -1794,10 +1797,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
     // A pending Alt action resolves to copy-drag once a real drag starts
     // (a plain Alt release places the edit cursor in mouseUp instead)
-    if (pendingAltAction_) {
+    if (pendingCopyDragAction_) {
         if (e.getDistanceFromDragStart() < 4)
             return;  // still a click
-        pendingAltAction_ = false;
+        pendingCopyDragAction_ = false;
         auto& sm = SelectionManager::getInstance();
         const bool partOfMultiSelection =
             sm.getSelectedClipCount() > 1 && sm.isClipSelected(clipId_);
@@ -2286,8 +2289,8 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
 
     // Alt+click released without a drag: place the edit cursor at the click
     // position (the documented gesture; Cmd+Alt is the blade, Alt+drag copies)
-    if (pendingAltAction_) {
-        pendingAltAction_ = false;
+    if (pendingCopyDragAction_) {
+        pendingCopyDragAction_ = false;
         if (!isDragging_) {
             if (parentPanel_) {
                 auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
@@ -2363,7 +2366,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         parentPanel_->clearClipGhost(clipId_);
                     }
 
-                    // Shift+drag duplicate: create duplicate at final position via undo command
+                    // Copy-on-drag: create duplicate at final position via undo command
                     double dupTempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                     auto cmd = std::make_unique<DuplicateClipCommand>(
                         clipId_, BeatPosition{finalStartTime * dupTempo / 60.0}, targetTrackId,
