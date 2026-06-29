@@ -334,7 +334,11 @@ magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
 }  // namespace
 
 DeviceCustomUIManager::DeviceCustomUIManager() = default;
-DeviceCustomUIManager::~DeviceCustomUIManager() = default;
+DeviceCustomUIManager::~DeviceCustomUIManager() {
+    if (auto* basicContext = dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get())) {
+        basicContext->invalidate();
+    }
+}
 
 // =============================================================================
 // Queries
@@ -1658,6 +1662,16 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
     livePluginProvider_ = callbacks.getLivePlugin;
+    deviceUiContext_ = callbacks.deviceUiContext;
+    if (deviceUiContext_ == nullptr) {
+        magda::ChainNodePath initialPath;
+        if (callbacks.getNodePath)
+            initialPath = callbacks.getNodePath();
+        deviceUiContext_ = std::make_shared<magda::BasicDeviceUiContext>(device, initialPath);
+    } else if (auto* basicContext =
+                   dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get())) {
+        basicContext->setDevice(device);
+    }
 
     if (device.pluginId.containsIgnoreCase("tone")) {
         createToneGeneratorUI(device, *parent, callbacks);
@@ -1680,6 +1694,9 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
 void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
     devicePath_ = path;
+    if (auto* basicContext = dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get())) {
+        basicContext->setPath(path);
+    }
     // create() bound the analyzer UIs while the path was still invalid; now that
     // it is set, resolve their plugin for real.
     refreshLivePluginBindings();

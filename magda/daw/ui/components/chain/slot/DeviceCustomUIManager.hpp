@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
+#include "core/DeviceUiContext.hpp"
 #include "core/SelectionManager.hpp"
 
 namespace magda::daw::audio {
@@ -88,6 +89,9 @@ class DeviceCustomUIManager {
         // Optional live-plugin resolver for embedded device contexts that do
         // not have an AudioBridge-resolvable ChainNodePath, such as DrumGrid pad chains.
         std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
+        // Optional stable UI context. If omitted, DeviceCustomUIManager creates
+        // a BasicDeviceUiContext so migrations can adopt the context gradually.
+        std::shared_ptr<magda::DeviceUiContext> deviceUiContext;
     };
 
     DeviceCustomUIManager();
@@ -162,6 +166,10 @@ class DeviceCustomUIManager {
 
     /** Preferred content width for layout calculations (matches old per-type if-chains). */
     int getPreferredContentWidth(int drumGridFallback = 0) const;
+
+    std::shared_ptr<magda::DeviceUiContext> getDeviceUiContext() const {
+        return deviceUiContext_;
+    }
 
     // -------------------------------------------------------------------------
     // Accessors used outside createCustomUI / updateCustomUI
@@ -260,6 +268,7 @@ class DeviceCustomUIManager {
     // plugin lookup; the bare device.id is no longer sufficient under
     // section-scoped device ids.
     magda::ChainNodePath devicePath_;
+    std::shared_ptr<magda::DeviceUiContext> deviceUiContext_;
     std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
 
     // Custom UI unique_ptrs
