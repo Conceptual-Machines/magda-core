@@ -520,10 +520,18 @@ jobs:
         rm -rf build
 
   build-windows:
-    # Built on the self-hosted runner (magda-luca). A Windows release already
-    # requires this machine for sign-windows (SimplySign's interactive OTP), so
-    # building here too adds no new dependency, skips the hosted larger-runner
-    # queue/cost, and keeps the unsigned build + signing on one box.
+    # Builds AND signs on the self-hosted runner (magda-luca). Signing uses the
+    # Certum cloud cert via SimplySign, which needs an interactive OTP each
+    # session, so it can only run in this machine's logged-in desktop session -
+    # never on a GitHub-hosted runner. Building here too (rather than on a hosted
+    # larger runner) adds no new dependency, skips the hosted queue/cost, and
+    # keeps build + sign in one job with no artifact round-trip.
+    #
+    # Tag pushes only: signing requires the interactive SimplySign login, so a
+    # workflow_dispatch run (which regenerates artifacts and never publishes)
+    # would otherwise stall on the login wait. create-release is already
+    # tag-gated, so nothing downstream is affected.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: [self-hosted, Windows, magda-luca]
     env:
       NSIS_VERSION: "3.10"
@@ -728,7 +736,7 @@ jobs:
           Write-Warning "MAGDA.pdb not found - crash symbolization unavailable for this release"
         }
 
-    - name: Create installer
+    - name: Stage, sign, and build installer
       shell: powershell
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -822,63 +830,24 @@ jobs:
           Write-Output "Staged $dir/ for installer"
         }
 
-        & $env:MAKENSIS /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
+        # Sign the two exes, build the installer from them, sign the installer,
+        # verify the chain, then write the renamed signed installer + .sha256
+        # into $stage. Parks up to 30 min waiting for SimplySign login (email +
+        # phone OTP) - log in any time before then. This is why the Windows
+        # release runs on the self-hosted runner in the interactive desktop
+        # session: that is where SimplySign Desktop holds the cloud cert.
+        & "packaging\windows\sign-release.ps1" `
+          -StageDir $stage `
+          -Version $env:VERSION `
+          -Makensis $env:MAKENSIS `
+          -WaitMinutes 30
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
-        Move-Item "$stage\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName
-
-        Write-Output "Installer created: $installerName"
+        Move-Item "$stage\$installerName" $installerName -Force
+        Move-Item "$stage\$installerName.sha256" "$installerName.sha256" -Force
+        Write-Output "Signed installer: $installerName"
         Get-ChildItem $installerName
-
-    - name: Generate checksum
-      shell: powershell
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        $installer = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
-        $hash = Get-FileHash -Algorithm SHA256 $installer
-        "$($hash.Hash)  $installer" | Out-File -Encoding utf8 "$installer.sha256"
-        Get-Content "$installer.sha256"
-
-    - name: Create MuseHub source bundle
-      # pwsh (PowerShell 7), NOT Windows PowerShell 5.1: 5.1's Compress-Archive
-      # writes ZIP entry names with backslash separators, which violates the ZIP
-      # spec (forward slashes required) and breaks the nested controllers/, lang/
-      # etc. trees on extraction. pwsh's Compress-Archive emits forward slashes.
-      shell: pwsh
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        # The installer staging dir already holds the exact inputs the .nsi
-        # consumes (unsigned exes, ONNX DLLs, icon, lang/, controllers/). The
-        # MuseHub bundle is that staging dir plus the build wrapper, a version
-        # marker, and the README, zipped for the partner to sign and build.
-        $stage = Join-Path $env:RUNNER_TEMP "magda-installer-stage"
-        if (-not (Test-Path "$stage\magda-installer.nsi")) {
-          Write-Error "installer staging missing at $stage - did the Create installer step run?"
-          exit 1
-        }
-
-        Copy-Item "packaging\windows\musehub\build-installer.ps1" "$stage\"
-        Copy-Item "packaging\windows\musehub\README.md" "$stage\"
-        Set-Content -Path "$stage\version.txt" -Value $env:VERSION -NoNewline -Encoding ascii
-
-        # Belt-and-braces: never ship a built installer inside the source bundle
-        # (the Create installer step already moved it out of the stage).
-        Get-ChildItem $stage -Filter "*Setup.exe" | Remove-Item -Force -ErrorAction SilentlyContinue
-
-        $zip = "MAGDA-$env:VERSION-MuseHub-Source.zip"
-        if (Test-Path $zip) { Remove-Item -Force $zip }
-        $items = Get-ChildItem -Path $stage
-        Compress-Archive -Path $items.FullName -DestinationPath $zip
-        Write-Output "MuseHub source bundle created: $zip"
-        Get-ChildItem $zip
-
-        $hash = Get-FileHash -Algorithm SHA256 $zip
-        # ASCII (not utf8): Windows PowerShell 5.1's utf8 writes a BOM that
-        # breaks `sha256sum -c` parsing of the first line.
-        "$($hash.Hash)  $zip" | Out-File -Encoding ascii "$zip.sha256"
-        Get-Content "$zip.sha256"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v7
@@ -888,8 +857,6 @@ jobs:
           MAGDA-*-Windows-x86_64-Setup.exe
           MAGDA-*-Windows-x86_64-Setup.exe.sha256
           MAGDA-*-Windows-x86_64.pdb
-          MAGDA-*-MuseHub-Source.zip
-          MAGDA-*-MuseHub-Source.zip.sha256
 
     - name: Clean up
       if: always()
@@ -897,126 +864,6 @@ jobs:
       run: |
         Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force (Join-Path $env:RUNNER_TEMP "magda-installer-stage") -ErrorAction SilentlyContinue
-
-  sign-windows:
-    # Code-sign the Windows installer with the Certum cloud cert via SimplySign.
-    # SimplySign needs an interactive OTP from the phone app each session, so
-    # this MUST run on the self-hosted runner (magda-luca) inside the logged-in
-    # desktop session where SimplySign Desktop holds the cert - never on a
-    # GitHub-hosted runner. Tag pushes only: a workflow_dispatch run regenerates
-    # build artifacts and must not require a manual signing login.
-    needs: build-windows
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: [self-hosted, Windows, magda-luca]
-    env:
-      NSIS_VERSION: "3.10"
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        submodules: false
-        lfs: false
-
-    - name: Extract version
-      id: version
-      shell: powershell
-      run: |
-        $version = "${{ github.ref_name }}".TrimStart("v")
-        echo "version=$version" >> $env:GITHUB_OUTPUT
-        Write-Output "Version: $version"
-
-    - name: Download Windows build artifact
-      uses: actions/download-artifact@v8
-      with:
-        name: windows-x86_64-release
-        path: dist
-
-    # NSIS is needed to rebuild the installer from the freshly-signed exes
-    # (signing the outer installer alone would leave the inner exes unsigned).
-    # Provision it exactly as build-windows does: the vendored zip on this
-    # repo's vendor/nsis-X.Y release tag, hash-pinned.
-    - name: Provision NSIS
-      id: nsis
-      shell: powershell
-      env:
-        NSIS_SHA256: "fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110"
-      run: |
-        $nsisDir = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION"
-        $makensis = Join-Path $nsisDir "nsis-$env:NSIS_VERSION\makensis.exe"
-        if (-not (Test-Path $makensis)) {
-          $zip = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION.zip"
-          $url = "https://github.com/${env:GITHUB_REPOSITORY}/releases/download/vendor/nsis-$env:NSIS_VERSION/nsis-$env:NSIS_VERSION.zip"
-          $downloaded = $false
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            try {
-              Write-Output "Downloading NSIS $env:NSIS_VERSION (attempt $attempt/3)"
-              Invoke-WebRequest -Uri $url -OutFile $zip
-              if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 1MB)) { $downloaded = $true; break }
-            } catch {
-              Write-Output "Download attempt $attempt failed: $($_.Exception.Message)"
-            }
-            if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
-          }
-          if (-not $downloaded) { Write-Error "NSIS download failed after 3 attempts"; exit 1 }
-
-          $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
-          if ($actual -ne $env:NSIS_SHA256.ToLower()) {
-            Write-Error "NSIS zip hash mismatch - expected $($env:NSIS_SHA256.ToLower()), got $actual"
-            exit 1
-          }
-          Expand-Archive -Path $zip -DestinationPath $nsisDir -Force
-        }
-        if (-not (Test-Path $makensis)) { Write-Error "makensis.exe missing at $makensis"; exit 1 }
-        echo "makensis=$makensis" >> $env:GITHUB_OUTPUT
-        Write-Output "Resolved makensis: $makensis"
-
-    - name: Unpack installer source bundle
-      id: stage
-      shell: powershell
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        # The MuseHub source bundle is the installer staging dir (signed-in-place
-        # exes + .nsi + DLLs + lang/ + controllers/ + version.txt) zipped. Unpack
-        # it and sign-release.ps1 consumes it directly.
-        $bundle = "dist\MAGDA-$env:VERSION-MuseHub-Source.zip"
-        if (-not (Test-Path $bundle)) { Write-Error "Source bundle not found at $bundle"; exit 1 }
-        $stage = Join-Path $env:RUNNER_TEMP "magda-sign-stage"
-        if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
-        New-Item -ItemType Directory -Path $stage | Out-Null
-        Expand-Archive -Path $bundle -DestinationPath $stage -Force
-        echo "dir=$stage" >> $env:GITHUB_OUTPUT
-        Write-Output "Staged installer inputs at $stage"
-
-    - name: Sign and build installer
-      shell: powershell
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        # Parks and polls up to 30 min for SimplySign login, then signs the two
-        # exes, rebuilds the installer, signs it, verifies, and renames to the
-        # published asset name. Log into SimplySign Desktop (email + phone OTP)
-        # any time before the wait expires.
-        & "packaging\windows\sign-release.ps1" `
-          -StageDir "${{ steps.stage.outputs.dir }}" `
-          -Version $env:VERSION `
-          -Makensis "${{ steps.nsis.outputs.makensis }}" `
-          -WaitMinutes 30
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    - name: Upload signed installer
-      uses: actions/upload-artifact@v7
-      with:
-        name: windows-x86_64-signed
-        path: |
-          ${{ steps.stage.outputs.dir }}\MAGDA-*-Windows-x86_64-Setup.exe
-          ${{ steps.stage.outputs.dir }}\MAGDA-*-Windows-x86_64-Setup.exe.sha256
-
-    - name: Clean up
-      if: always()
-      shell: powershell
-      run: |
-        Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
-        Remove-Item -Recurse -Force (Join-Path $env:RUNNER_TEMP "magda-sign-stage") -ErrorAction SilentlyContinue
 
   build-linux:
     runs-on: ubuntu-latest
@@ -1240,14 +1087,13 @@ jobs:
         startsWith(github.ref, 'refs/tags/v') &&
         needs.build-macos.result == 'success' &&
         needs.build-windows.result == 'success' &&
-        needs.sign-windows.result == 'success' &&
         needs.build-linux.result == 'success' &&
         (
           needs.build-macos-x86_64.result == 'success' ||
           needs.build-macos-x86_64.result == 'skipped'
         )
       }}
-    needs: [build-macos, build-macos-x86_64, build-windows, sign-windows, build-linux]
+    needs: [build-macos, build-macos-x86_64, build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1298,8 +1144,8 @@ jobs:
         files: |
           macos-release/MAGDA-*-macOS-arm64.dmg
           macos-release/MAGDA-*-macOS-arm64.dmg.sha256
-          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe
-          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe.sha256
+          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
+          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
           windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb
           linux-release/*
 
@@ -1319,7 +1165,7 @@ jobs:
           macos-release/MAGDA-*-macOS-arm64.dmg.sha256
           macos-x86_64-release/MAGDA-*-macOS-x86_64.dmg
           macos-x86_64-release/MAGDA-*-macOS-x86_64.dmg.sha256
-          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe
-          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe.sha256
+          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
+          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
           windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb
           linux-release/*
