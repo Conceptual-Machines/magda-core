@@ -12,6 +12,7 @@
 #include <juce_core/juce_core.h>
 
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 #include <map>
 #include <unordered_map>
@@ -300,6 +301,24 @@ class MockClipApi : public ClipApi {
     std::vector<ClipId> deleted;
     std::vector<std::pair<ClipId, juce::String>> nameWrites;
     std::vector<std::pair<ClipId, juce::String>> grooveWrites;
+    std::vector<std::pair<ClipId, MidiNote>> noteAdds;
+
+    struct QuantizeCall {
+        ClipId clipId;
+        std::vector<size_t> noteIndices;
+        double gridResolution;
+        MidiNoteQuantizeMode mode;
+    };
+    std::vector<QuantizeCall> quantizeCalls;
+
+    struct SliceCall {
+        ClipId clipId;
+        std::vector<size_t> noteIndices;
+        int subdivisions;
+    };
+    std::vector<SliceCall> sliceCalls;
+
+    std::vector<std::pair<ClipId, int>> transposeCalls;
 
     ClipId nextId = 100;
 
@@ -327,6 +346,81 @@ class MockClipApi : public ClipApi {
     }
     void setGrooveTemplate(ClipId id, const juce::String& tmpl) override {
         grooveWrites.push_back({id, tmpl});
+    }
+    bool addMidiNote(ClipId id, double startBeat, int noteNumber, double lengthBeats,
+                     int velocity) override {
+        auto* clip = getClip(id);
+        if (clip == nullptr || !clip->isMidi() || lengthBeats <= 0.0)
+            return false;
+
+        MidiNote note;
+        note.startBeat = startBeat;
+        note.noteNumber = noteNumber;
+        note.lengthBeats = lengthBeats;
+        note.velocity = velocity;
+        noteAdds.push_back({id, note});
+        clip->midiNotes.push_back(note);
+        return true;
+    }
+    bool quantizeMidiNotes(ClipId id, const std::vector<size_t>& noteIndices, double gridResolution,
+                           MidiNoteQuantizeMode mode) override {
+        auto* clip = getClip(id);
+        if (clip == nullptr || !clip->isMidi() || noteIndices.empty() || gridResolution <= 0.0)
+            return false;
+
+        quantizeCalls.push_back({id, noteIndices, gridResolution, mode});
+        for (auto index : noteIndices) {
+            if (index >= clip->midiNotes.size())
+                continue;
+
+            auto& note = clip->midiNotes[index];
+            if (mode == MidiNoteQuantizeMode::StartOnly ||
+                mode == MidiNoteQuantizeMode::StartAndLength)
+                note.startBeat = std::round(note.startBeat / gridResolution) * gridResolution;
+            if (mode == MidiNoteQuantizeMode::LengthOnly ||
+                mode == MidiNoteQuantizeMode::StartAndLength)
+                note.lengthBeats = std::max(
+                    gridResolution, std::round(note.lengthBeats / gridResolution) * gridResolution);
+        }
+        return true;
+    }
+    bool sliceMidiNotes(ClipId id, const std::vector<size_t>& noteIndices,
+                        int subdivisions) override {
+        auto* clip = getClip(id);
+        if (clip == nullptr || !clip->isMidi() || noteIndices.empty() || subdivisions < 2)
+            return false;
+
+        sliceCalls.push_back({id, noteIndices, subdivisions});
+        auto original = clip->midiNotes;
+        std::vector<MidiNote> sliced;
+        for (size_t index = 0; index < original.size(); ++index) {
+            const bool shouldSlice =
+                std::find(noteIndices.begin(), noteIndices.end(), index) != noteIndices.end();
+            if (!shouldSlice || original[index].lengthBeats <= 0.0) {
+                sliced.push_back(original[index]);
+                continue;
+            }
+
+            const double sliceLength = original[index].lengthBeats / subdivisions;
+            for (int slice = 0; slice < subdivisions; ++slice) {
+                auto note = original[index];
+                note.startBeat += sliceLength * slice;
+                note.lengthBeats = sliceLength;
+                sliced.push_back(note);
+            }
+        }
+        clip->midiNotes = std::move(sliced);
+        return true;
+    }
+    bool transposeMidiClip(ClipId id, int semitones) override {
+        auto* clip = getClip(id);
+        if (clip == nullptr || !clip->isMidi())
+            return false;
+
+        transposeCalls.push_back({id, semitones});
+        for (auto& note : clip->midiNotes)
+            note.noteNumber += semitones;
+        return true;
     }
     const juce::Array<double>* getCachedTransients(const juce::String&) const override {
         return nullptr;
