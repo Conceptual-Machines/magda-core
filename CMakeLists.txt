@@ -254,11 +254,19 @@ add_library(faust::libfaust ALIAS staticlib)
 # (both compile compatibility.cpp) so they take the narrow branch
 # upstream Faust expects on Windows; other targets are untouched.
 if(MSVC)
+    # The Faust compiler library is vendored third-party code (~390 TUs) that
+    # leans on implicit numeric conversions, so MSVC floods the build with
+    # benign C4244/C4267/C4305 conversion warnings whose formatting + log I/O
+    # measurably slow it. Not our code and not actionable, so silence them on
+    # both Faust targets alongside the _MBCS define.
+    set(_faust_msvc_quiet /wd4244 /wd4267 /wd4305)
     if(TARGET staticlib)
         target_compile_definitions(staticlib PRIVATE _MBCS)
+        target_compile_options(staticlib PRIVATE ${_faust_msvc_quiet})
     endif()
     if(TARGET faust)
         target_compile_definitions(faust PRIVATE _MBCS)
+        target_compile_options(faust PRIVATE ${_faust_msvc_quiet})
     endif()
 endif()
 
@@ -392,25 +400,30 @@ target_compile_definitions(magda_mutable PUBLIC TEST)
 if(MSVC)
     target_compile_definitions(magda_mutable PUBLIC _USE_MATH_DEFINES)
 
-    # The generated resources.cc files are nothing but giant brace-initialised
-    # const float lookup tables (elements/resources.cc alone is ~44k lines of FP
-    # literals). Two MSVC costs here:
-    #   /Od    - the optimiser is pathologically slow constant-folding huge
-    #            static initialiser lists; these are pure data, so disabling
-    #            optimisation costs nothing at runtime.
-    #   /wd4305 - every literal is a double (e.g. 0.0e+00) initialising a
-    #            const float, so MSVC emits a C4305 truncation warning PER
-    #            element. For elements that is ~178k diagnostics, whose
-    #            formatting + log I/O dominates the build. Silencing it is the
-    #            bigger win and clears the warning spam.
-    # TARGET_DIRECTORY scopes the per-file flags to the magda_mutable target
-    # (supported since CMake 3.18; verified the flags actually land).
+    # This is vendored Mutable Instruments DSP. It leans on implicit numeric
+    # conversions throughout (double literals -> float, size_t -> int32, etc.),
+    # so MSVC emits a flood of benign conversion warnings across stmlib headers
+    # and every dsp/*.cc - tens of thousands of them, whose formatting + log
+    # I/O measurably slow the build. We don't own this code and these are not
+    # actionable, so silence them for the whole target:
+    #   C4305 - truncation double -> float (the literal tables, the worst spam)
+    #   C4244 - conversion, possible loss of data
+    #   C4267 - size_t -> smaller int conversion
+    target_compile_options(magda_mutable PRIVATE /wd4305 /wd4244 /wd4267)
+
+    # The generated resources.cc files are giant brace-initialised const float
+    # lookup tables (elements/resources.cc alone is ~44k lines of FP literals).
+    # MSVC's optimiser is pathologically slow constant-folding huge static
+    # initialiser lists, so /O2 burns minutes on data it can't optimise. Disable
+    # optimisation for just these TUs: pure tables, zero runtime cost.
+    # TARGET_DIRECTORY scopes the per-file flag to magda_mutable (supported since
+    # CMake 3.18; verified the flag actually lands).
     set_source_files_properties(
         ${MI_ROOT}/elements/resources.cc
         ${MI_ROOT}/rings/resources.cc
         ${MI_ROOT}/clouds/resources.cc
         TARGET_DIRECTORY magda_mutable
-        PROPERTIES COMPILE_OPTIONS "/Od;/wd4305")
+        PROPERTIES COMPILE_OPTIONS "/Od")
 endif()
 set_target_properties(magda_mutable PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(magda::mutable ALIAS magda_mutable)
