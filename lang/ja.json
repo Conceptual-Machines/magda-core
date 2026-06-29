@@ -146,6 +146,8 @@
     "clips": "クリップ",
     "clip_count.one": "{0} 個のクリップ",
     "clip_count.other": "{0} 個のクリップ",
+    "automated": "オートメーション",
+    "automated_empty": "オートメーションされたパラメーターはありません",
     "latency": "レイテンシー"
   },
   "dialogs": {
