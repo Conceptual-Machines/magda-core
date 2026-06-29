@@ -218,6 +218,10 @@ class DeviceCustomUIManager {
 
     bool randomizeSequencerPattern(bool polyphonic);
     std::optional<bool> toggleSequencerStepRecording(bool polyphonic);
+    void copySequencerPatternToClipboard(bool polyphonic);
+    bool handleSequencerPatternExternalDrag(bool polyphonic, juce::Component* exportButton,
+                                            juce::Component* dragOwner,
+                                            const juce::MouseEvent& event);
 
     // Pending tab index (set before fourOscUI_ is created, consumed in create())
     static constexpr int NO_PENDING_TAB = -1;
