@@ -172,7 +172,15 @@ CompService& CompService::getInstance() {
 }
 
 CompService::CompService() : pool_(std::make_unique<juce::ThreadPool>(1)) {}
-CompService::~CompService() = default;
+
+CompService::~CompService() {
+    // Drain UNBOUNDED (timeout < 0) before pool_ is freed. Relying on
+    // ~ThreadPool's built-in finite-timeout drain is a use-after-free hazard:
+    // if a stitch job overruns the timeout the pool is destroyed under the
+    // running worker, crashing it in ThreadPool::runNextJob.
+    if (pool_)
+        pool_->removeAllJobs(true, -1);
+}
 
 void CompService::setSection(ClipId clipId, double startSeconds, double endSeconds, int takeIndex) {
     auto& cm = ClipManager::getInstance();
