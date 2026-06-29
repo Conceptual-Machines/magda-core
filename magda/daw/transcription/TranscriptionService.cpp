@@ -122,7 +122,14 @@ TranscriptionService& TranscriptionService::getInstance() {
 
 TranscriptionService::TranscriptionService() : pool_(std::make_unique<juce::ThreadPool>(1)) {}
 
-TranscriptionService::~TranscriptionService() = default;
+TranscriptionService::~TranscriptionService() {
+    // Drain UNBOUNDED (timeout < 0) before pool_ is freed. The worker job
+    // captures `this`, so it must not outlive us; ~ThreadPool's built-in
+    // finite-timeout drain could let a long transcribe job overrun and then
+    // run against a freed pool/this, crashing in ThreadPool::runNextJob.
+    if (pool_)
+        pool_->removeAllJobs(true, -1);
+}
 
 BasicPitchTranscriber* TranscriptionService::backend() {
     std::call_once(backendOnce_, [this] {
