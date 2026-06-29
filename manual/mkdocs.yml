@@ -81,6 +81,11 @@ nav:
           - Step Sequencer: devices/step-sequencer.md
           - Poly Sequencer: devices/poly-sequencer.md
       - Instruments:
+          - Poly Synth: devices/poly-synth.md
+          - FM0: devices/fm0.md
+          - Drum Kit: devices/drum-kit.md
+          - Physical Models: devices/physical-models.md
+          - Mutable Ports: devices/mutable.md
           - 4OSC Synth: devices/4osc.md
           - Drum Grid: devices/drum-grid.md
           - Sampler: devices/sampler.md
