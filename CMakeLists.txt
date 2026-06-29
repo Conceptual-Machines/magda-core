@@ -391,6 +391,19 @@ target_include_directories(magda_mutable PUBLIC ${MI_ROOT})
 target_compile_definitions(magda_mutable PUBLIC TEST)
 if(MSVC)
     target_compile_definitions(magda_mutable PUBLIC _USE_MATH_DEFINES)
+
+    # The generated resources.cc files are nothing but giant brace-initialised
+    # const float lookup tables (elements/resources.cc alone is ~44k lines of FP
+    # literals). MSVC's optimiser is pathologically slow on huge static
+    # initialiser lists, so /O2 spends minutes constant-folding data it can't
+    # optimise anyway. Disable optimisation for just these TUs: pure tables,
+    # zero runtime cost, drops their compile time from minutes to ~instant.
+    set_source_files_properties(
+        ${MI_ROOT}/elements/resources.cc
+        ${MI_ROOT}/rings/resources.cc
+        ${MI_ROOT}/clouds/resources.cc
+        TARGET_DIRECTORY magda_mutable
+        PROPERTIES COMPILE_OPTIONS "/Od")
 endif()
 set_target_properties(magda_mutable PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(magda::mutable ALIAS magda_mutable)
