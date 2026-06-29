@@ -72,6 +72,7 @@ target_sources(magda_daw PRIVATE
     AppPaths.hpp
     UIScale.hpp
     DeviceInfo.hpp
+    DeviceUiContext.hpp
     ViewModeState.hpp
     ViewModeEvents.hpp
     ViewModeController.hpp
