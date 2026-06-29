@@ -59,6 +59,18 @@ class TracktionEngineWrapper : public AudioEngine,
     TracktionEngineWrapper();
     ~TracktionEngineWrapper();
 
+    /**
+     * @brief Force the wrapper to skip UI/timer-backed runtime helpers.
+     *
+     * Intended for console tools and e2e tests that boot the engine without a GUI.
+     * The MAGDA_HEADLESS environment variable provides the same behavior.
+     */
+    void setForceHeadless(bool forceHeadless) {
+        forceHeadless_ = forceHeadless;
+    }
+
+    bool isHeadlessRuntime() const;
+
     // Initialize the engine
     bool initialize() override;
     void shutdown() override;
@@ -553,6 +565,7 @@ class TracktionEngineWrapper : public AudioEngine,
     double lastPosition_ = 0.0;  // Previous frame's position (for loop detection)
     bool justStarted_ = false;   // True for one frame after play starts
     bool justLooped_ = false;    // True for one frame after loop
+    bool forceHeadless_ = false;
 
     // Device change tracking
     int lastKnownDeviceCount_ = 0;

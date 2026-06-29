@@ -1,3 +1,5 @@
+#include <cstdlib>
+
 #include "../api/magda_api_live.hpp"
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
@@ -29,6 +31,24 @@ TracktionEngineWrapper::~TracktionEngineWrapper() {
     shutdown();
 }
 
+bool TracktionEngineWrapper::isHeadlessRuntime() const {
+    if (forceHeadless_)
+        return true;
+
+    if (auto* value = std::getenv("MAGDA_HEADLESS")) {
+        juce::String flag(value);
+        flag = flag.trim().toLowerCase();
+        if (flag.isNotEmpty() && flag != "0" && flag != "false" && flag != "off" && flag != "no") {
+            return true;
+        }
+    }
+
+    auto osType = juce::SystemStats::getOperatingSystemType();
+    bool isMacOS = (osType & juce::SystemStats::MacOSX) != 0;
+    bool isWindows = (osType & juce::SystemStats::Windows) != 0;
+    return std::getenv("DISPLAY") == nullptr && !isMacOS && !isWindows;
+}
+
 void TracktionEngineWrapper::initializePluginFormats() {
     // Register ToneGeneratorPlugin (not registered by default)
     engine_->getPluginManager().createBuiltInType<tracktion::ToneGeneratorPlugin>();
@@ -54,7 +74,7 @@ void TracktionEngineWrapper::initializePluginFormats() {
 
     // Auto-detect newly installed plugins (if enabled). The splash screen
     // wants a flat string; format the phase here.
-    if (Config::getInstance().getScanPluginsOnStartup()) {
+    if (!isHeadlessRuntime() && Config::getInstance().getScanPluginsOnStartup()) {
         auto splashStatus = onPluginScanStatus;
         detectNewPlugins(
             [splashStatus](IncrementalScanPhase phase, const juce::String& currentPlugin) {
@@ -341,12 +361,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Create SessionClipScheduler and PluginWindowManager only when NOT in headless CI
     // Both extend juce::Timer which creates GUI infrastructure and leaks in tests
     // Check: Skip if DISPLAY env var not set (Linux headless) or if explicitly disabled
-    auto osType = juce::SystemStats::getOperatingSystemType();
-    bool isMacOS = (osType & juce::SystemStats::MacOSX) != 0;
-    bool isWindows = (osType & juce::SystemStats::Windows) != 0;
-    bool isHeadless = (std::getenv("DISPLAY") == nullptr && !isMacOS && !isWindows);
-
-    if (!isHeadless) {
+    if (!isHeadlessRuntime()) {
         sessionScheduler_ = std::make_unique<SessionClipScheduler>(
             *audioBridge_, *currentEdit_, audioBridge_->getSessionAudioMonitor());
         // Install the session monitor plugin up-front so the audio-thread
@@ -479,20 +494,24 @@ bool TracktionEngineWrapper::initialize() {
         initializePluginFormats();
         juce::Logger::writeToLog("[Init] initializePluginFormats() done");
 
-        // Initialize device manager with preferred settings
-        juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
-        initializeDeviceManager();
-        juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
+        if (!isHeadlessRuntime()) {
+            // Initialize device manager with preferred settings
+            juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
+            initializeDeviceManager();
+            juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
 
-        // Configure audio devices if user has preferences
-        juce::Logger::writeToLog("[Init] configureAudioDevices()...");
-        configureAudioDevices();
-        juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+            // Configure audio devices if user has preferences
+            juce::Logger::writeToLog("[Init] configureAudioDevices()...");
+            configureAudioDevices();
+            juce::Logger::writeToLog("[Init] configureAudioDevices() done");
 
-        // Setup MIDI devices
-        juce::Logger::writeToLog("[Init] setupMidiDevices()...");
-        setupMidiDevices();
-        juce::Logger::writeToLog("[Init] setupMidiDevices() done");
+            // Setup MIDI devices
+            juce::Logger::writeToLog("[Init] setupMidiDevices()...");
+            setupMidiDevices();
+            juce::Logger::writeToLog("[Init] setupMidiDevices() done");
+        } else {
+            juce::Logger::writeToLog("[Init] Headless mode: skipping audio/MIDI device startup");
+        }
 
         // Create Edit and bridges
         juce::Logger::writeToLog("[Init] createEditAndBridges()...");
