@@ -33,6 +33,7 @@ execute_process(
     COMMAND "${MAGDA_CLI}" exec "${project_file}"
             set-tempo 96
             add-track audio Lead
+            add-internal-instrument 1 4osc 4OSC
             add-midi-clip 1 0 4
             add-midi-note 1 0.13 60 1.87 111
             quantize-notes 1 0.25 both all
@@ -77,7 +78,7 @@ if(NOT EXISTS "${wav_file}")
 endif()
 
 file(SIZE "${wav_file}" wav_size)
-if(wav_size LESS 44)
+if(wav_size LESS 100000)
     message(FATAL_ERROR "Rendered WAV is too small: ${wav_size} bytes")
 endif()
 

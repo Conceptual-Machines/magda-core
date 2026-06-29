@@ -8,4 +8,8 @@ const ProjectInfo& ProjectApiLive::getCurrentProjectInfo() const {
     return ProjectManager::getInstance().getCurrentProjectInfo();
 }
 
+void ProjectApiLive::setTempo(double bpm) {
+    ProjectManager::getInstance().setTempo(bpm);
+}
+
 }  // namespace magda

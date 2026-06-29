@@ -7,11 +7,11 @@
 // clang-format on
 
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <vector>
 
@@ -29,29 +29,7 @@ namespace {
 
 namespace te = tracktion;
 
-void printUsage(std::ostream& out) {
-    out << "magda-cli " << MAGDA_VERSION << "\n"
-        << "\n"
-        << "Usage:\n"
-        << "  magda-cli boot\n"
-        << "  magda-cli init <out.mgd>\n"
-        << "  magda-cli run <project.mgd> [--out <out.mgd>]\n"
-        << "  magda-cli run <project.mgd> --cmds <cmds.txt> [--out <out.mgd>] [--dump-json]\n"
-        << "  magda-cli exec <project.mgd> <commands...> [--out <out.mgd>] [--dump-json]\n"
-        << "  magda-cli render <project.mgd> --wav <out.wav> [--from <time>] [--to <time>]\n"
-        << "\n"
-        << "Commands:\n"
-        << "  set-tempo <bpm>\n"
-        << "  add-track <audio|group|aux|chord> [name]\n"
-        << "  delete-track <track-id>\n"
-        << "  add-midi-clip <track-id> <start-beats> <length-beats>\n"
-        << "  delete-clip <clip-id>\n"
-        << "  add-midi-note <clip-id> <start-beats> <note> <length-beats> [velocity]\n"
-        << "  quantize-notes <clip-id> <grid-beats> <start|length|both> <all|note-index...>\n"
-        << "  slice-notes <clip-id> <subdivisions> <all|note-index...>\n"
-        << "  transpose-midi-clip <clip-id> <semitones>\n"
-        << "  dump --json\n";
-}
+void printUsage(std::ostream& out);
 
 juce::File fileFromArg(const juce::String& path) {
     if (juce::File::isAbsolutePath(path))
@@ -98,17 +76,29 @@ bool restoreProjectTiming(magda::TracktionEngineWrapper& engine, const magda::Pr
 }
 
 std::optional<double> parseDouble(const juce::String& text) {
+    const auto input = text.trim().toStdString();
+    if (input.empty())
+        return std::nullopt;
+
     double value = 0.0;
-    if (std::istringstream{text.toStdString()} >> value)
-        return value;
-    return std::nullopt;
+    char trailing = 0;
+    std::istringstream stream(input);
+    if (!(stream >> value) || (stream >> trailing) || !std::isfinite(value))
+        return std::nullopt;
+    return value;
 }
 
 std::optional<int> parseInt(const juce::String& text) {
+    const auto input = text.trim().toStdString();
+    if (input.empty())
+        return std::nullopt;
+
     int value = 0;
-    if (std::istringstream{text.toStdString()} >> value)
-        return value;
-    return std::nullopt;
+    char trailing = 0;
+    std::istringstream stream(input);
+    if (!(stream >> value) || (stream >> trailing))
+        return std::nullopt;
+    return value;
 }
 
 std::optional<int> parsePositiveInt(const juce::String& text) {
@@ -213,31 +203,49 @@ class CommandDispatcher {
   public:
     explicit CommandDispatcher(magda::TracktionEngineWrapper& engine) : engine_(engine) {}
 
+    struct CommandSpec {
+        const char* name;
+        const char* usage;
+        CommandResult (CommandDispatcher::*handler)(const juce::StringArray&, size_t&);
+        bool showInUsage = true;
+    };
+
+    static const std::vector<CommandSpec>& commandSpecs() {
+        static const std::vector<CommandSpec> specs = {
+            {"set-tempo", "set-tempo <bpm>", &CommandDispatcher::setTempo},
+            {"add-track", "add-track <audio|group|aux|chord> [name]", &CommandDispatcher::addTrack},
+            {"add-internal-instrument", "add-internal-instrument <track-id> <plugin-id> [name]",
+             &CommandDispatcher::addInternalInstrument},
+            {"delete-track", "delete-track <track-id>", &CommandDispatcher::deleteTrack},
+            {"add-midi-clip", "add-midi-clip <track-id> <start-beats> <length-beats>",
+             &CommandDispatcher::addMidiClip},
+            {"add-clip", "add-midi-clip <track-id> <start-beats> <length-beats>",
+             &CommandDispatcher::addMidiClip, false},
+            {"delete-clip", "delete-clip <clip-id>", &CommandDispatcher::deleteClip},
+            {"add-midi-note",
+             "add-midi-note <clip-id> <start-beats> <note> <length-beats> "
+             "[velocity]",
+             &CommandDispatcher::addMidiNote},
+            {"quantize-notes",
+             "quantize-notes <clip-id> <grid-beats> <start|length|both> <all|note-index...>",
+             &CommandDispatcher::quantizeNotes},
+            {"slice-notes", "slice-notes <clip-id> <subdivisions> <all|note-index...>",
+             &CommandDispatcher::sliceNotes},
+            {"transpose-midi-clip", "transpose-midi-clip <clip-id> <semitones>",
+             &CommandDispatcher::transposeMidiClip},
+            {"dump", "dump --json", &CommandDispatcher::dump},
+        };
+        return specs;
+    }
+
     CommandResult execute(const juce::StringArray& tokens, size_t& index) {
         if (index >= static_cast<size_t>(tokens.size()))
             return {};
 
         const auto command = tokens[static_cast<int>(index++)];
-        if (command == "set-tempo")
-            return setTempo(tokens, index);
-        if (command == "add-track")
-            return addTrack(tokens, index);
-        if (command == "delete-track")
-            return deleteTrack(tokens, index);
-        if (command == "add-midi-clip" || command == "add-clip")
-            return addMidiClip(tokens, index);
-        if (command == "delete-clip")
-            return deleteClip(tokens, index);
-        if (command == "add-midi-note")
-            return addMidiNote(tokens, index);
-        if (command == "quantize-notes")
-            return quantizeNotes(tokens, index);
-        if (command == "slice-notes")
-            return sliceNotes(tokens, index);
-        if (command == "transpose-midi-clip")
-            return transposeMidiClip(tokens, index);
-        if (command == "dump")
-            return dump(tokens, index);
+        for (const auto& spec : commandSpecs())
+            if (command == spec.name)
+                return (this->*spec.handler)(tokens, index);
 
         return fail("Unknown command: " + command);
     }
@@ -255,7 +263,7 @@ class CommandDispatcher {
             return fail("set-tempo requires a positive numeric bpm");
 
         engine_.setTempo(*bpm);
-        magda::ProjectManager::getInstance().setTempo(*bpm);
+        engine_.getMagdaApi().project().setTempo(*bpm);
         return {};
     }
 
@@ -283,6 +291,36 @@ class CommandDispatcher {
         if (!trackId)
             return fail(lastParseError_);
         engine_.getMagdaApi().tracks().deleteTrack(*trackId);
+        return {};
+    }
+
+    CommandResult addInternalInstrument(const juce::StringArray& tokens, size_t& index) {
+        auto trackId = takeInt(tokens, index, "add-internal-instrument requires <track-id>");
+        if (!trackId)
+            return fail(lastParseError_);
+        if (index >= static_cast<size_t>(tokens.size()))
+            return fail("add-internal-instrument requires <plugin-id>");
+
+        const auto pluginId = tokens[static_cast<int>(index++)];
+        auto name = pluginId;
+        if (index < static_cast<size_t>(tokens.size()) &&
+            !isCommand(tokens[static_cast<int>(index)]))
+            name = tokens[static_cast<int>(index++)];
+
+        magda::DeviceInfo device;
+        device.name = name;
+        device.manufacturer = "MAGDA";
+        device.pluginId = pluginId;
+        device.uniqueId = pluginId;
+        device.fileOrIdentifier = pluginId;
+        device.isInstrument = true;
+        device.deviceType = magda::DeviceType::Instrument;
+        device.format = magda::PluginFormat::Internal;
+
+        const auto deviceId = engine_.getMagdaApi().tracks().addDeviceToTrack(*trackId, device);
+        if (deviceId == magda::INVALID_DEVICE_ID)
+            return fail("Failed to add internal instrument");
+        std::cout << "device " << deviceId << "\n";
         return {};
     }
 
@@ -332,7 +370,7 @@ class CommandDispatcher {
             auto parsedVelocity = parseInt(tokens[static_cast<int>(index)]);
             if (!parsedVelocity)
                 return fail("add-midi-note velocity must be an integer");
-            velocity = *parsedVelocity;
+            velocity = juce::jlimit(0, 127, *parsedVelocity);
             ++index;
         }
 
@@ -406,11 +444,10 @@ class CommandDispatcher {
     }
 
     static bool isCommand(const juce::String& token) {
-        static const std::set<juce::String> commands = {
-            "set-tempo",   "add-track",           "delete-track",  "add-midi-clip",
-            "add-clip",    "delete-clip",         "add-midi-note", "quantize-notes",
-            "slice-notes", "transpose-midi-clip", "dump"};
-        return commands.count(token) > 0 || token.startsWith("--");
+        for (const auto& spec : commandSpecs())
+            if (token == spec.name)
+                return true;
+        return token.startsWith("--");
     }
 
     static std::optional<magda::MidiNoteQuantizeMode> parseQuantizeMode(const juce::String& token) {
@@ -488,6 +525,24 @@ class CommandDispatcher {
     magda::TracktionEngineWrapper& engine_;
     juce::String lastParseError_;
 };
+
+void printUsage(std::ostream& out) {
+    out << "magda-cli " << MAGDA_VERSION << "\n"
+        << "\n"
+        << "Usage:\n"
+        << "  magda-cli boot\n"
+        << "  magda-cli init <out.mgd>\n"
+        << "  magda-cli run <project.mgd> [--out <out.mgd>]\n"
+        << "  magda-cli run <project.mgd> --cmds <cmds.txt> [--out <out.mgd>] [--dump-json]\n"
+        << "  magda-cli exec <project.mgd> <commands...> [--out <out.mgd>] [--dump-json]\n"
+        << "  magda-cli render <project.mgd> --wav <out.wav> [--from <time>] [--to <time>]\n"
+        << "\n"
+        << "Commands:\n";
+
+    for (const auto& spec : CommandDispatcher::commandSpecs())
+        if (spec.showInUsage)
+            out << "  " << spec.usage << "\n";
+}
 
 struct RunOptions {
     juce::File input;

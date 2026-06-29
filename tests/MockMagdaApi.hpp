@@ -477,6 +477,9 @@ class MockProjectApi : public ProjectApi {
     const ProjectInfo& getCurrentProjectInfo() const override {
         return info;
     }
+    void setTempo(double bpm) override {
+        info.tempo = bpm;
+    }
 };
 
 class MockFocusedApi : public FocusedApi {

@@ -43,10 +43,7 @@ bool TracktionEngineWrapper::isHeadlessRuntime() const {
         }
     }
 
-    auto osType = juce::SystemStats::getOperatingSystemType();
-    bool isMacOS = (osType & juce::SystemStats::MacOSX) != 0;
-    bool isWindows = (osType & juce::SystemStats::Windows) != 0;
-    return std::getenv("DISPLAY") == nullptr && !isMacOS && !isWindows;
+    return false;
 }
 
 void TracktionEngineWrapper::initializePluginFormats() {

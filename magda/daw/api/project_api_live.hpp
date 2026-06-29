@@ -8,6 +8,7 @@ namespace magda {
 class ProjectApiLive : public ProjectApi {
   public:
     const ProjectInfo& getCurrentProjectInfo() const override;
+    void setTempo(double bpm) override;
 };
 
 }  // namespace magda
