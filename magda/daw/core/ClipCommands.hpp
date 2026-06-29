@@ -568,6 +568,15 @@ class BounceInPlaceCommand : public UndoableCommand {
     ClipId newClipId_ = INVALID_CLIP_ID;
     juce::File renderedFile_;
     bool success_ = false;
+    juce::String errorMessage_;
+
+  public:
+    // Non-empty when the bounce failed for a reason worth showing the user
+    // (e.g. the bounces directory or disk is not writable). Empty on success
+    // or plain user cancellation. The UI caller surfaces this.
+    juce::String getErrorMessage() const {
+        return errorMessage_;
+    }
 };
 
 /**
@@ -603,6 +612,15 @@ class BounceToNewTrackCommand : public UndoableCommand {
     TrackId newTrackId_ = INVALID_TRACK_ID;
     juce::File renderedFile_;
     bool success_ = false;
+    juce::String errorMessage_;
+
+  public:
+    // Non-empty when the bounce failed for a reason worth showing the user
+    // (e.g. the bounces directory or disk is not writable). Empty on success
+    // or plain user cancellation. The UI caller surfaces this.
+    juce::String getErrorMessage() const {
+        return errorMessage_;
+    }
 };
 
 /**
