@@ -520,7 +520,11 @@ jobs:
         rm -rf build
 
   build-windows:
-    runs-on: windows-latest-8core
+    # Built on the self-hosted runner (magda-luca). A Windows release already
+    # requires this machine for sign-windows (SimplySign's interactive OTP), so
+    # building here too adds no new dependency, skips the hosted larger-runner
+    # queue/cost, and keeps the unsigned build + signing on one box.
+    runs-on: [self-hosted, Windows, magda-luca]
     env:
       NSIS_VERSION: "3.10"
       VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
