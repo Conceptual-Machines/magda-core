@@ -1624,6 +1624,9 @@ BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper
     : clipId_(clipId), engine_(engine) {}
 
 void BounceInPlaceCommand::execute() {
+    // Reset per-run so a stale failure message can't leak into a later
+    // success/cancel (redo re-invokes execute() on the same object).
+    errorMessage_.clear();
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || !clip->isMidi() || !engine_) {
@@ -1840,6 +1843,9 @@ BounceToNewTrackCommand::BounceToNewTrackCommand(ClipId clipId, TracktionEngineW
     : clipId_(clipId), engine_(engine) {}
 
 void BounceToNewTrackCommand::execute() {
+    // Reset per-run so a stale failure message can't leak into a later
+    // success/cancel (redo re-invokes execute() on the same object).
+    errorMessage_.clear();
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || !engine_) {
