@@ -463,6 +463,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // app-level Lua controller wiring.
     auto live = std::make_unique<MagdaApiLive>();
     live->setMidiBridge(midiBridge_.get());
+    live->setProjectTempoWriter([this](double bpm) { setTempo(bpm); });
     live->setEditAccessor([this]() -> tracktion::Edit* { return currentEdit_.get(); });
     magdaApi_ = std::move(live);
 

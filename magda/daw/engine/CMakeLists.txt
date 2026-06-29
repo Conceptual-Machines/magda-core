@@ -5,6 +5,7 @@
 target_sources(magda_daw PRIVATE
     TempoLaneBridge.cpp
     TempoLaneSync.cpp
+    OfflineRenderHelper.cpp
     TracktionEngineWrapper.cpp
     TracktionEngineWrapperInit.cpp
     TracktionEngineWrapperDevices.cpp
@@ -21,6 +22,7 @@ target_sources(magda_daw PRIVATE
     PluginWindowManager.cpp
     # Headers (listed for IDE visibility)
     AudioEngine.hpp
+    OfflineRenderHelper.hpp
     TracktionEngineWrapper.hpp
     MagdaUIBehaviour.hpp
 )

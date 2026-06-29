@@ -64,6 +64,11 @@ class MagdaApiLive : public MagdaApi {
         midi_.setDefaultOutputPort(port);
     }
 
+    /** Wire tempo writes through the owning engine before ProjectInfo is updated. */
+    void setProjectTempoWriter(std::function<void(double)> writer) {
+        project_.setEngineTempoWriter(std::move(writer));
+    }
+
     /** Wire the current-Edit accessor into the live TransportApi. */
     void setEditAccessor(TransportApiLive::EditGetter g) {
         transport_.setEditGetter(std::move(g));

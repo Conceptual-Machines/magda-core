@@ -20,6 +20,7 @@
 #include "api/project_api.hpp"
 #include "api/track_api.hpp"
 #include "audio/AudioBridge.hpp"
+#include "engine/OfflineRenderHelper.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectInfo.hpp"
 #include "project/ProjectManager.hpp"
@@ -262,7 +263,6 @@ class CommandDispatcher {
         if (!bpm || *bpm <= 0.0)
             return fail("set-tempo requires a positive numeric bpm");
 
-        engine_.setTempo(*bpm);
         engine_.getMagdaApi().project().setTempo(*bpm);
         return {};
     }
@@ -651,26 +651,15 @@ bool renderWav(magda::TracktionEngineWrapper& engine, const RenderOptions& optio
     }
 
     auto& transport = edit->getTransport();
-    if (transport.isPlaying())
-        transport.stop(false, false);
-
     te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
-    te::freePlaybackContextIfNotRecording(transport);
-
-    for (auto* track : te::getAudioTracks(*edit))
-        for (auto* plugin : track->pluginList)
-            if (!plugin->isEnabled())
-                plugin->setEnabled(true);
-
-    if (auto* bridge = engine.getAudioBridge())
-        bridge->getPluginManager().prepareForRendering();
+    magda::prepareEditForOfflineRender(*edit);
+    magda::preparePluginsForOfflineRender(engine);
 
     struct RenderGuard {
         magda::TracktionEngineWrapper& engine;
         te::Edit& edit;
         ~RenderGuard() {
-            if (auto* bridge = engine.getAudioBridge())
-                bridge->getPluginManager().restoreAfterRendering();
+            magda::restorePluginsAfterOfflineRender(engine);
             edit.getTransport().ensureContextAllocated();
             engine.setOfflineRenderActive(false);
         }
@@ -678,19 +667,19 @@ bool renderWav(magda::TracktionEngineWrapper& engine, const RenderOptions& optio
 
     engine.setOfflineRenderActive(true);
 
-    te::Renderer::Parameters params(*edit);
-    params.destFile = options.wavOutput;
-    params.audioFormat = engine.getEngine()->getAudioFileFormatManager().getWavFormat();
-    params.bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth);
-    params.sampleRateForAudio = options.sampleRate.value_or(projectInfo.sampleRate);
-    params.blockSizeForAudio = 512;
-    params.shouldNormalise = false;
-    params.useMasterPlugins = true;
-    params.usePlugins = true;
-    params.checkNodesForAudio = false;
-    params.realTimeRender = false;
-    params.time = te::TimeRange(te::TimePosition::fromSeconds(startSeconds),
-                                te::TimePosition::fromSeconds(endSeconds));
+    auto params = magda::makeOfflineRenderParameters(
+        *edit, {.destFile = options.wavOutput,
+                .audioFormat = engine.getEngine()->getAudioFileFormatManager().getWavFormat(),
+                .bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth),
+                .sampleRate = options.sampleRate.value_or(projectInfo.sampleRate),
+                .blockSize = 512,
+                .shouldNormalise = false,
+                .useMasterPlugins = true,
+                .usePlugins = true,
+                .checkNodesForAudio = false,
+                .realTimeRender = false,
+                .time = te::TimeRange(te::TimePosition::fromSeconds(startSeconds),
+                                      te::TimePosition::fromSeconds(endSeconds))});
 
     std::atomic<float> progress{0.0f};
     te::Renderer::RenderTask task("MAGDA CLI Render", params, &progress, nullptr);
