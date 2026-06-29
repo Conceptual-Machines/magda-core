@@ -203,12 +203,18 @@ class DrumGridPlugin : public te::Plugin {
   private:
     // Immutable, audio-thread-readable view of one chain. Holds owning Plugin::Ptr
     // copies so the graph stays alive for the duration of a process block even if
-    // the message thread is concurrently rebuilding chains_. `chain` is a raw,
-    // non-owning back-pointer used only for control/meter reads; its lifetime is
-    // guaranteed by rebuildAudioSnapshot() retiring the previous snapshot before
-    // any Chain is freed.
+    // the message thread is concurrently rebuilding chains_. Note-range / remap
+    // values are copied in (the audio thread must not read those mutable plain-int
+    // Chain fields directly — they can be edited on the message thread). `chain` is
+    // a raw, non-owning back-pointer used only for CachedValue control reads
+    // (level/pan/mute/solo/bus, audio-thread-safe by design) and per-pad metering;
+    // its lifetime is guaranteed by rebuildAudioSnapshot() retiring the previous
+    // snapshot before any Chain is freed.
     struct AudioChainEntry {
         Chain* chain = nullptr;
+        int lowNote = 0;
+        int highNote = 0;
+        int rootNote = 0;
         std::vector<te::Plugin::Ptr> plugins;
         std::vector<float> gains;
     };
