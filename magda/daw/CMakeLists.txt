@@ -369,10 +369,19 @@ target_sources(magda_plugin_scanner PRIVATE
     engine/plugin_scanner_main.cpp
 )
 
+# Headless CLI for e2e project round-trips.
+juce_add_console_app(magda_cli
+    VERSION "${MAGDA_BUNDLE_VERSION}"
+    COMPANY_NAME "Conceptual Machines"
+    PRODUCT_NAME "MAGDA CLI"
+    BUNDLE_ID "com.MAGDA.MAGDACLI"
+)
+
 # =============================================================================
 # Per-subdirectory sources
 # =============================================================================
 
+add_subdirectory(cli)
 add_subdirectory(core)
 add_subdirectory(audio)
 add_subdirectory(engine)
@@ -557,6 +566,38 @@ target_include_directories(magda_plugin_scanner
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
+
+target_link_libraries(magda_cli
+    PRIVATE
+    magda_daw
+    juce::juce_core
+    juce::juce_events
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    tracktion::tracktion_engine
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+)
+
+target_compile_definitions(magda_cli
+    PRIVATE
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=1
+    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    JUCE_WEB_BROWSER=0
+    $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+)
+
+target_include_directories(magda_cli
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/project
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+
+if(APPLE)
+    target_link_options(magda_cli PRIVATE "-Wl,-exported_symbol,_main")
+endif()
 
 # On MSVC Release builds, generate a PDB for crash symbolization.
 # /Zi is applied here (not globally) so llama.cpp and other third-party targets

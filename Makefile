@@ -34,6 +34,7 @@ ifeq ($(UNAME_S),Darwin)
     APP_BINARY_TSAN    := $(BUILD_DIR_TSAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
     APP_BUNDLE_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app
     APP_BUNDLE_RELEASE := $(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app
+    CLI_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_cli_artefacts/Debug/magda_cli
     LAUNCH             := open
 else
     APP_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
@@ -43,6 +44,7 @@ else
     APP_BINARY_TSAN    := $(BUILD_DIR_TSAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
     APP_BUNDLE_DEBUG   := $(APP_BINARY_DEBUG)
     APP_BUNDLE_RELEASE := $(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA
+    CLI_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_cli_artefacts/Debug/magda_cli
     LAUNCH             :=
 endif
 
@@ -171,6 +173,21 @@ run: debug
 run-console: debug
 	@echo "🎵 Running MAGDA DAW (console mode)..."
 	"$(APP_BINARY_DEBUG)"
+
+.PHONY: cli
+cli:
+	@echo "🔨 Building magda-cli (Debug)..."
+	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
+		echo "📝 Configuring project..."; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+	fi
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_cli
+
+.PHONY: cli-boot
+cli-boot: cli
+	@echo "🎛️  Booting magda-cli headless..."
+	"$(CLI_BINARY_DEBUG)" boot
 
 .PHONY: run-console-cpu
 run-console-cpu: debug-cpu

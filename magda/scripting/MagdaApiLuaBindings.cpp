@@ -26,6 +26,7 @@ extern "C" {
 #include <lua.h>
 }
 
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -177,6 +178,28 @@ template <typename T> std::unordered_set<T> readIntSet(lua_State* L, int idx) {
             luaL_error(L, "expected integer at index %d", static_cast<int>(i));
         }
         out.insert(static_cast<T>(lua_tointeger(L, -1)));
+        lua_pop(L, 1);
+    }
+    return out;
+}
+
+std::vector<size_t> readSizeVector(lua_State* L, int idx) {
+    luaL_checktype(L, idx, LUA_TTABLE);
+    std::vector<size_t> out;
+    lua_Integer n = luaL_len(L, idx);
+    out.reserve(static_cast<size_t>(n));
+    for (lua_Integer i = 1; i <= n; ++i) {
+        lua_rawgeti(L, idx, i);
+        if (!lua_isinteger(L, -1)) {
+            lua_pop(L, 1);
+            luaL_error(L, "expected integer at index %d", static_cast<int>(i));
+        }
+        auto value = lua_tointeger(L, -1);
+        if (value < 0) {
+            lua_pop(L, 1);
+            luaL_error(L, "expected non-negative integer at index %d", static_cast<int>(i));
+        }
+        out.push_back(static_cast<size_t>(value));
         lua_pop(L, 1);
     }
     return out;
@@ -435,6 +458,57 @@ int lua_clips_set_groove(lua_State* L) {
     const char* tmpl = luaL_checkstring(L, 2);
     api->clips().setGrooveTemplate(id, juce::String::fromUTF8(tmpl));
     return 0;
+}
+
+int lua_clips_add_midi_note(lua_State* L) {
+    auto* api = getApi(L);
+    auto id = static_cast<ClipId>(luaL_checkinteger(L, 1));
+    double start = luaL_checknumber(L, 2);
+    int note = static_cast<int>(luaL_checkinteger(L, 3));
+    double length = luaL_checknumber(L, 4);
+    int velocity = static_cast<int>(luaL_optinteger(L, 5, 100));
+    lua_pushboolean(L, api->clips().addMidiNote(id, start, note, length, velocity));
+    return 1;
+}
+
+std::optional<MidiNoteQuantizeMode> luaQuantizeMode(lua_State* L, int idx) {
+    auto mode = juce::String::fromUTF8(luaL_checkstring(L, idx)).trim().toLowerCase();
+    if (mode == "start")
+        return MidiNoteQuantizeMode::StartOnly;
+    if (mode == "length")
+        return MidiNoteQuantizeMode::LengthOnly;
+    if (mode == "both" || mode == "start_and_length" || mode == "start-and-length")
+        return MidiNoteQuantizeMode::StartAndLength;
+    return std::nullopt;
+}
+
+int lua_clips_quantize_notes(lua_State* L) {
+    auto* api = getApi(L);
+    auto id = static_cast<ClipId>(luaL_checkinteger(L, 1));
+    double grid = luaL_checknumber(L, 2);
+    auto mode = luaQuantizeMode(L, 3);
+    if (!mode)
+        return luaL_error(L, "quantize mode must be start, length, or both");
+    auto indices = readSizeVector(L, 4);
+    lua_pushboolean(L, api->clips().quantizeMidiNotes(id, indices, grid, *mode));
+    return 1;
+}
+
+int lua_clips_slice_notes(lua_State* L) {
+    auto* api = getApi(L);
+    auto id = static_cast<ClipId>(luaL_checkinteger(L, 1));
+    int subdivisions = static_cast<int>(luaL_checkinteger(L, 2));
+    auto indices = readSizeVector(L, 3);
+    lua_pushboolean(L, api->clips().sliceMidiNotes(id, indices, subdivisions));
+    return 1;
+}
+
+int lua_clips_transpose_midi_clip(lua_State* L) {
+    auto* api = getApi(L);
+    auto id = static_cast<ClipId>(luaL_checkinteger(L, 1));
+    int semitones = static_cast<int>(luaL_checkinteger(L, 2));
+    lua_pushboolean(L, api->clips().transposeMidiClip(id, semitones));
+    return 1;
 }
 
 // magda.clips.colour(clipId) -> {r=, g=, b=} with each component already
@@ -863,6 +937,10 @@ const FnReg kClipFns[] = {
     {"list_arrangement", lua_clips_list_arrangement},
     {"set_name", lua_clips_set_name},
     {"set_groove", lua_clips_set_groove},
+    {"add_midi_note", lua_clips_add_midi_note},
+    {"quantize_notes", lua_clips_quantize_notes},
+    {"slice_notes", lua_clips_slice_notes},
+    {"transpose_midi_clip", lua_clips_transpose_midi_clip},
     {"colour", lua_clips_colour},
     {nullptr, nullptr},
 };
