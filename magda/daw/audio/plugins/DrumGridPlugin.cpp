@@ -1,5 +1,9 @@
 #include "plugins/DrumGridPlugin.hpp"
 
+#include <memory>
+#include <thread>
+#include <vector>
+
 #include "core/TrackManager.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
@@ -35,13 +39,6 @@ void initialisePluginIfNeeded(te::Plugin& plugin, double sampleRate, int blockSi
     initInfo.sampleRate = sampleRate;
     initInfo.blockSizeSamples = blockSize;
     plugin.baseClassInitialise(initInfo);
-}
-
-void deinitialiseChainPlugins(DrumGridPlugin::Chain& chain) {
-    for (auto& plugin : chain.plugins) {
-        if (plugin != nullptr && !plugin->baseClassNeedsInitialising())
-            plugin->baseClassDeinitialise();
-    }
 }
 
 }  // namespace
@@ -128,6 +125,10 @@ void DrumGridPlugin::initialise(const te::PluginInitialisationInfo& info) {
                 p->baseClassInitialise(info);
         }
     }
+
+    // Publish the initial snapshot now that the child plugins are initialised, so
+    // the audio thread has a valid graph to read on the first block.
+    rebuildAudioSnapshot();
 }
 
 void DrumGridPlugin::deinitialise() {
@@ -149,6 +150,34 @@ void DrumGridPlugin::reset() {
 }
 
 //==============================================================================
+void DrumGridPlugin::rebuildAudioSnapshot() {
+    // Build a fresh immutable snapshot from the current message-thread model.
+    auto snapshot = std::make_shared<AudioSnapshot>();
+    snapshot->reserve(chains_.size());
+    for (auto& chain : chains_) {
+        AudioChainEntry entry;
+        entry.chain = chain.get();
+        entry.plugins = chain->plugins;  // copy owning Plugin::Ptrs
+        entry.gains = chain->pluginGains;
+        snapshot->push_back(std::move(entry));
+    }
+
+    // Publish atomically, then wait until the audio thread has released the
+    // previous snapshot. The audio thread holds at most one transient copy,
+    // dropped at the end of its current block, so this returns within ~one block.
+    // The spin cap means a stopped/non-running audio device (which never grabbed a
+    // copy, so use_count is already 1) can never wedge the message thread.
+    JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
+    std::shared_ptr<const AudioSnapshot> previous = std::atomic_exchange_explicit(
+        &audioSnapshot_, std::shared_ptr<const AudioSnapshot>(std::move(snapshot)),
+        std::memory_order_acq_rel);
+    JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+    if (previous) {
+        for (int spins = 0; previous.use_count() > 1 && spins < 200000; ++spins)
+            std::this_thread::yield();
+    }
+}
+
 void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
     if (!rc.destBuffer || !rc.bufferForMidiMessages)
         return;
@@ -162,27 +191,43 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
 
     outputBuffer.clear(rc.bufferStartSample, numSamples);
 
+    // Read the immutable published snapshot — never chains_ directly. The
+    // shared_ptr copy keeps every chain + plugin alive for the whole block even
+    // if the message thread swaps in a new snapshot mid-block (see
+    // rebuildAudioSnapshot()).
+    JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
+    const std::shared_ptr<const AudioSnapshot> snapshot =
+        std::atomic_load_explicit(&audioSnapshot_, std::memory_order_acquire);
+    JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+    if (!snapshot)
+        return;
+
     bool anySoloed = false;
-    for (const auto& chain : chains_) {
-        if (!chain->plugins.empty() && chain->solo.get()) {
+    for (const auto& entry : *snapshot) {
+        if (!entry.plugins.empty() && entry.chain->solo.get()) {
             anySoloed = true;
             break;
         }
     }
 
-    for (auto& chain : chains_) {
-        if (chain->plugins.empty() || chain->mute.get() || chain->bypassed.get())
+    for (const auto& entry : *snapshot) {
+        if (entry.plugins.empty() || entry.chain->mute.get() || entry.chain->bypassed.get())
             continue;
-        if (anySoloed && !chain->solo.get())
+        if (anySoloed && !entry.chain->solo.get())
             continue;
 
-        processChain(*chain, outputBuffer, inputMidi, numSamples, numChannels, rc);
+        processChain(entry, outputBuffer, inputMidi, numSamples, numChannels, rc);
     }
 }
 
-void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& outputBuffer,
+void DrumGridPlugin::processChain(const AudioChainEntry& entry,
+                                  juce::AudioBuffer<float>& outputBuffer,
                                   const te::MidiMessageArray& inputMidi, int numSamples,
                                   int numChannels, const te::PluginRenderContext& rc) {
+    const Chain& chain = *entry.chain;  // controls / note range / metering keys
+    const auto& plugins = entry.plugins;
+    const auto& pluginGains = entry.gains;
+
     // Filter MIDI to this chain's note range and remap
     chainMidi_.clear();
     chainMidi_.isAllNotesOff = inputMidi.isAllNotesOff;
@@ -205,8 +250,8 @@ void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& output
         }
     }
 
-    if (chainMidi_.isEmpty() && chain.plugins[0] != nullptr &&
-        !chain.plugins[0]->producesAudioWhenNoAudioInput())
+    if (chainMidi_.isEmpty() && plugins[0] != nullptr &&
+        !plugins[0]->producesAudioWhenNoAudioInput())
         return;
 
     // Run plugins on a stereo scratch buffer (pre-allocated in initialise()).
@@ -225,15 +270,15 @@ void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& output
 
     int padIdx = padIndexFor(chain);
 
-    for (int pi = 0; pi < static_cast<int>(chain.plugins.size()); ++pi) {
-        auto& p = chain.plugins[static_cast<size_t>(pi)];
+    for (int pi = 0; pi < static_cast<int>(plugins.size()); ++pi) {
+        const auto& p = plugins[static_cast<size_t>(pi)];
         if (p != nullptr) {
             p->updateParameterStreams(rc.editTime.getStart());
             p->applyToBufferWithAutomation(chainRc);
         }
 
-        float pluginGain = (pi < static_cast<int>(chain.pluginGains.size()))
-                               ? chain.pluginGains[static_cast<size_t>(pi)]
+        float pluginGain = (pi < static_cast<int>(pluginGains.size()))
+                               ? pluginGains[static_cast<size_t>(pi)]
                                : 1.0f;
         if (pluginGain != 1.0f)
             scratchBuffer_.applyGain(0, numSamples, pluginGain);
@@ -331,6 +376,7 @@ int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce
 
     syncParamFromChain(idx);
     chains_.push_back(std::move(chain));
+    rebuildAudioSnapshot();
 
     assignBusOutputs();
     notifyGraphRebuildNeeded();
@@ -339,17 +385,26 @@ int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce
 }
 
 void DrumGridPlugin::removeChain(int chainIndex) {
+    // Detach the Chain from the model first, but keep it (and its plugins) alive
+    // until the audio thread has been republished onto a snapshot without it.
+    std::unique_ptr<Chain> removed;
     for (auto it = chains_.begin(); it != chains_.end(); ++it) {
         if ((*it)->index == chainIndex) {
-            // Deinit plugins before removing
-            for (auto& p : (*it)->plugins) {
-                if (p != nullptr && !p->baseClassNeedsInitialising())
-                    p->baseClassDeinitialise();
-            }
+            removed = std::move(*it);
             chains_.erase(it);
             break;
         }
     }
+
+    rebuildAudioSnapshot();  // audio thread can no longer reach `removed`
+
+    if (removed) {
+        for (auto& p : removed->plugins)
+            if (p != nullptr && !p->baseClassNeedsInitialising())
+                p->baseClassDeinitialise();
+    }
+    // removed (and its plugins) destruct here on the message thread.
+
     removeChainFromState(chainIndex);
     assignBusOutputs();
     notifyGraphRebuildNeeded();
@@ -479,28 +534,42 @@ void DrumGridPlugin::loadSampleToPad(int padIndex, const juce::File& file) {
     sampler->loadSample(file);
     sampler->setRootNote(midiNote);
 
-    // Deinit old plugins
-    deinitialiseChainPlugins(*chain);
-    chain->plugins.clear();
-    chain->pluginGains.clear();
+    installSinglePadPlugin(*chain, plugin, file.getFileNameWithoutExtension());
+}
 
-    chain->name = file.getFileNameWithoutExtension();
-    chain->plugins.push_back(plugin);
+void DrumGridPlugin::installSinglePadPlugin(Chain& chain, te::Plugin::Ptr plugin,
+                                            const juce::String& name) {
+    if (plugin == nullptr)
+        return;
 
-    // Assign a stable DeviceId for macro/mod linking
+    // Assign a stable DeviceId for macro/mod linking.
     plugin->state.setProperty(pluginDeviceIdProp,
                               magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
 
-    // Init new plugin if we're already initialized
+    // Initialise BEFORE the plugin can become visible to the audio thread.
     initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
 
-    auto chainTree = findChainTree(chain->index);
-    if (chainTree.isValid()) {
-        chainTree.setProperty(chainNameId, chain->name, nullptr);
+    // Swap on the message-thread model, holding the old plugins aside.
+    std::vector<te::Plugin::Ptr> oldPlugins = std::move(chain.plugins);
+    chain.plugins.clear();
+    chain.pluginGains.clear();
+    chain.name = name;
+    chain.plugins.push_back(plugin);
+
+    if (auto chainTree = findChainTree(chain.index); chainTree.isValid()) {
+        chainTree.setProperty(chainNameId, chain.name, nullptr);
         while (chainTree.getChildWithName(te::IDs::PLUGIN).isValid())
             chainTree.removeChild(chainTree.getChildWithName(te::IDs::PLUGIN), nullptr);
         chainTree.addChild(plugin->state, -1, nullptr);
     }
+
+    // Publish the new graph and wait for the audio thread to drop the old snapshot
+    // before deinitialising/freeing the replaced plugins.
+    rebuildAudioSnapshot();
+    for (auto& p : oldPlugins)
+        if (p != nullptr && !p->baseClassNeedsInitialising())
+            p->baseClassDeinitialise();
+    // oldPlugins destruct here on the message thread.
 
     assignBusOutputs();
     notifyGraphRebuildNeeded();
@@ -519,32 +588,7 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
     if (!plugin)
         return;
 
-    // Deinit old plugins
-    deinitialiseChainPlugins(*chain);
-    chain->plugins.clear();
-    chain->pluginGains.clear();
-
-    chain->name = desc.name;
-    chain->plugins.push_back(plugin);
-
-    // Assign a stable DeviceId for macro/mod linking
-    plugin->state.setProperty(pluginDeviceIdProp,
-                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
-
-    // Init new plugin if we're already initialized
-    initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
-
-    auto chainTree = findChainTree(chain->index);
-    if (chainTree.isValid()) {
-        chainTree.setProperty(chainNameId, chain->name, nullptr);
-        while (chainTree.getChildWithName(te::IDs::PLUGIN).isValid())
-            chainTree.removeChild(chainTree.getChildWithName(te::IDs::PLUGIN), nullptr);
-        chainTree.addChild(plugin->state, -1, nullptr);
-    }
-
-    assignBusOutputs();
-    notifyGraphRebuildNeeded();
-    notifyChainsChanged();
+    installSinglePadPlugin(*chain, plugin, desc.name);
 }
 
 void DrumGridPlugin::loadInternalPluginToPad(int padIndex, const juce::String& pluginId) {
@@ -564,29 +608,7 @@ void DrumGridPlugin::loadInternalPluginToPad(int padIndex, const juce::String& p
     if (!plugin)
         return;
 
-    deinitialiseChainPlugins(*chain);
-    chain->plugins.clear();
-    chain->pluginGains.clear();
-
-    chain->name = plugin->getName();
-    chain->plugins.push_back(plugin);
-
-    plugin->state.setProperty(pluginDeviceIdProp,
-                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
-
-    initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
-
-    auto chainTree = findChainTree(chain->index);
-    if (chainTree.isValid()) {
-        chainTree.setProperty(chainNameId, chain->name, nullptr);
-        while (chainTree.getChildWithName(te::IDs::PLUGIN).isValid())
-            chainTree.removeChild(chainTree.getChildWithName(te::IDs::PLUGIN), nullptr);
-        chainTree.addChild(plugin->state, -1, nullptr);
-    }
-
-    assignBusOutputs();
-    notifyGraphRebuildNeeded();
-    notifyChainsChanged();
+    installSinglePadPlugin(*chain, plugin, plugin->getName());
 }
 
 void DrumGridPlugin::swapPadChains(int padIndexA, int padIndexB) {
@@ -713,6 +735,7 @@ void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescript
         }
     }
 
+    rebuildAudioSnapshot();
     notifyGraphRebuildNeeded();
 }
 
@@ -761,6 +784,7 @@ void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String
         }
     }
 
+    rebuildAudioSnapshot();
     notifyGraphRebuildNeeded();
 }
 
@@ -785,12 +809,19 @@ void DrumGridPlugin::removePluginFromChain(int chainIndex, int pluginIndex) {
         }
     }
 
-    auto& pluginToRemove = chain->plugins[static_cast<size_t>(pluginIndex)];
-    if (pluginToRemove != nullptr && !pluginToRemove->baseClassNeedsInitialising())
-        pluginToRemove->baseClassDeinitialise();
+    // Detach from the model first; defer deinit/free until the audio thread has
+    // moved onto the new snapshot.
+    te::Plugin::Ptr removed = chain->plugins[static_cast<size_t>(pluginIndex)];
     chain->plugins.erase(chain->plugins.begin() + pluginIndex);
     if (pluginIndex < static_cast<int>(chain->pluginGains.size()))
         chain->pluginGains.erase(chain->pluginGains.begin() + pluginIndex);
+
+    rebuildAudioSnapshot();
+
+    if (removed != nullptr && !removed->baseClassNeedsInitialising())
+        removed->baseClassDeinitialise();
+    // removed destructs here on the message thread.
+
     notifyGraphRebuildNeeded();
 }
 
@@ -829,6 +860,7 @@ void DrumGridPlugin::movePluginInChain(int chainIndex, int fromIndex, int toInde
         }
     }
 
+    rebuildAudioSnapshot();
     notifyGraphRebuildNeeded();
 }
 
@@ -926,6 +958,7 @@ void DrumGridPlugin::setChainPluginGain(int chainIndex, int pluginIndex, float g
     if (pluginIndex >= static_cast<int>(chain->pluginGains.size()))
         chain->pluginGains.resize(static_cast<size_t>(pluginIndex + 1), 1.0f);
     chain->pluginGains[static_cast<size_t>(pluginIndex)] = gainLinear;
+    rebuildAudioSnapshot();  // gains are carried in the snapshot the audio thread reads
 }
 
 float DrumGridPlugin::getChainPluginGain(int chainIndex, int pluginIndex) const {
@@ -1120,6 +1153,7 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     }
 
     assignBusOutputs();
+    rebuildAudioSnapshot();  // publish the restored chains to the audio thread
 }
 
 //==============================================================================

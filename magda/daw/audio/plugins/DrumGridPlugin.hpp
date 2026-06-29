@@ -4,6 +4,8 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
+#include <vector>
 
 namespace magda::daw::audio {
 
@@ -199,9 +201,36 @@ class DrumGridPlugin : public te::Plugin {
     te::Plugin* getPadPlugin(int padIndex, int pluginIndex) const;
 
   private:
-    void processChain(Chain& chain, juce::AudioBuffer<float>& outputBuffer,
+    // Immutable, audio-thread-readable view of one chain. Holds owning Plugin::Ptr
+    // copies so the graph stays alive for the duration of a process block even if
+    // the message thread is concurrently rebuilding chains_. `chain` is a raw,
+    // non-owning back-pointer used only for control/meter reads; its lifetime is
+    // guaranteed by rebuildAudioSnapshot() retiring the previous snapshot before
+    // any Chain is freed.
+    struct AudioChainEntry {
+        Chain* chain = nullptr;
+        std::vector<te::Plugin::Ptr> plugins;
+        std::vector<float> gains;
+    };
+    using AudioSnapshot = std::vector<AudioChainEntry>;
+
+    void processChain(const AudioChainEntry& entry, juce::AudioBuffer<float>& outputBuffer,
                       const te::MidiMessageArray& inputMidi, int numSamples, int numChannels,
                       const te::PluginRenderContext& rc);
+
+    // Rebuild + atomically publish audioSnapshot_ from chains_, then block (briefly,
+    // on the message thread) until the audio thread has released the previous
+    // snapshot. After this returns it is safe to deinitialise/free any plugins or
+    // Chain objects that were removed from chains_ — the audio thread can no longer
+    // reach them. This is the RCU-style swap that makes chain edits race-free
+    // without locking or glitching the audio thread.
+    void rebuildAudioSnapshot();
+
+    // Replace a pad chain's entire plugin list with a single freshly-created
+    // plugin, race-free: initialises the new plugin, publishes the new snapshot,
+    // and only then deinitialises/frees the old plugins (after the audio thread
+    // has let go of them). Used by the loadXxxToPad() entry points.
+    void installSinglePadPlugin(Chain& chain, te::Plugin::Ptr plugin, const juce::String& name);
 
     // AutomatableParameters for per-pad level and pan (macro/mod targets)
     // Fixed indexing: padIndex * 2 = level, padIndex * 2 + 1 = pan
@@ -215,6 +244,14 @@ class DrumGridPlugin : public te::Plugin {
     void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
 
     std::vector<std::unique_ptr<Chain>> chains_;
+
+    // Published, immutable snapshot the audio thread reads instead of chains_.
+    // Written only by rebuildAudioSnapshot() (message thread), loaded by
+    // applyToBuffer() (audio thread). Accessed through the std::atomic_*(shared_ptr*)
+    // free functions for a lock-free acquire/release handoff (this toolchain's
+    // libc++ lacks the std::atomic<std::shared_ptr> specialisation).
+    std::shared_ptr<const AudioSnapshot> audioSnapshot_;
+
     int nextChainIndex_ = 0;
     std::array<std::atomic<bool>, maxPads> padTriggered_{};
     std::array<ChainMeterData, maxPads> chainMeters_{};
