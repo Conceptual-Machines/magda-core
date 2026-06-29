@@ -150,6 +150,10 @@ class BasicDeviceUiContext final : public DeviceUiContext {
         telemetrySources_[source->telemetryKey()] = std::move(source);
     }
 
+    void clearTelemetrySource(const juce::String& key) {
+        telemetrySources_.erase(key);
+    }
+
     void invalidate() {
         if (lifetimeToken_ != nullptr)
             lifetimeToken_->invalidate();
