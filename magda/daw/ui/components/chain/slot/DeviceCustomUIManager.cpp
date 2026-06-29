@@ -274,11 +274,51 @@ bool pluginDescriptionMatchesDrop(const juce::PluginDescription& desc, const juc
             (desc.createIdentifierString() == uniqueId || juce::String(desc.uniqueId) == uniqueId));
 }
 
+class CallbackDeviceParameterController final : public magda::DeviceParameterController {
+  public:
+    CallbackDeviceParameterController(magda::DeviceInfo device,
+                                      std::function<void(int, float)> onParameterChanged)
+        : device_(std::move(device)), onParameterChanged_(std::move(onParameterChanged)) {}
+
+    std::vector<magda::ParameterInfo> parameters() const override {
+        return device_.parameters;
+    }
+
+    const magda::ParameterInfo* findParameterByIndex(int paramIndex) const override {
+        return device_.findParameterByIndex(paramIndex);
+    }
+
+    void setParameterNormalised(int paramIndex, float value) override {
+        if (onParameterChanged_)
+            onParameterChanged_(paramIndex, value);
+    }
+
+    void setDevice(magda::DeviceInfo device) {
+        device_ = std::move(device);
+    }
+
+  private:
+    magda::DeviceInfo device_;
+    std::function<void(int, float)> onParameterChanged_;
+};
+
+void writeParameterChange(const DeviceCustomUIManager::Callbacks& callbacks, int paramIndex,
+                          float value) {
+    if (callbacks.deviceUiContext != nullptr) {
+        if (auto* parameters = callbacks.deviceUiContext->parameters()) {
+            parameters->setParameterNormalised(paramIndex, value);
+            return;
+        }
+    }
+
+    if (callbacks.onParameterChanged)
+        callbacks.onParameterChanged(paramIndex, value);
+}
+
 template <typename Ui>
 void forwardParameterChanges(Ui& ui, const DeviceCustomUIManager::Callbacks& callbacks) {
     ui.onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-        if (cb.onParameterChanged)
-            cb.onParameterChanged(paramIndex, value);
+        writeParameterChange(cb, paramIndex, value);
     };
 }
 
@@ -659,8 +699,7 @@ bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
 
     samplerUI_ = std::make_unique<SamplerUI>();
     samplerUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-        if (cb.onParameterChanged)
-            cb.onParameterChanged(paramIndex, value);
+        writeParameterChange(cb, paramIndex, value);
     };
 
     samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
@@ -834,8 +873,7 @@ bool DeviceCustomUIManager::createFourOscUI(const magda::DeviceInfo& device,
 
     fourOscUI_ = std::make_unique<FourOscUI>();
     fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-        if (cb.onParameterChanged)
-            cb.onParameterChanged(paramIndex, value);
+        writeParameterChange(cb, paramIndex, value);
     };
     fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
         auto plugin = getLivePlugin();
@@ -1046,8 +1084,7 @@ bool DeviceCustomUIManager::createImpulseResponseUI(const magda::DeviceInfo& dev
 
     impulseResponseUI_ = std::make_unique<ImpulseResponseUI>();
     impulseResponseUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-        if (cb.onParameterChanged)
-            cb.onParameterChanged(paramIndex, value);
+        writeParameterChange(cb, paramIndex, value);
     };
 
     // Helper to load an IR file into the plugin
@@ -1672,20 +1709,27 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                    dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get())) {
         basicContext->setDevice(device);
     }
+    if (auto* basicContext = dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get())) {
+        basicContext->setParameterController(std::make_shared<CallbackDeviceParameterController>(
+            device, callbacks.onParameterChanged));
+    }
+
+    auto uiCallbacks = callbacks;
+    uiCallbacks.deviceUiContext = deviceUiContext_;
 
     if (device.pluginId.containsIgnoreCase("tone")) {
-        createToneGeneratorUI(device, *parent, callbacks);
-    } else if (createSamplerUI(device, *parent, callbacks)) {
+        createToneGeneratorUI(device, *parent, uiCallbacks);
+    } else if (createSamplerUI(device, *parent, uiCallbacks)) {
         // handled by helper
-    } else if (createDrumGridUI(device, *parent, callbacks)) {
+    } else if (createDrumGridUI(device, *parent, uiCallbacks)) {
         // handled by helper
-    } else if (createFourOscUI(device, *parent, callbacks)) {
+    } else if (createFourOscUI(device, *parent, uiCallbacks)) {
         // handled by helper
-    } else if (createCustomInstrumentUI(device, *parent, callbacks)) {
+    } else if (createCustomInstrumentUI(device, *parent, uiCallbacks)) {
         // handled by helper
-    } else if (createSimpleEffectUI(device, *parent, callbacks)) {
+    } else if (createSimpleEffectUI(device, *parent, uiCallbacks)) {
         // handled by helper
-    } else if (createImpulseResponseUI(device, *parent, callbacks)) {
+    } else if (createImpulseResponseUI(device, *parent, uiCallbacks)) {
         // handled by helper
     } else if (!createMidiUtilityUI(device, *parent)) {
         createAnalyzerUI(device, *parent);
@@ -1753,6 +1797,13 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
 // =============================================================================
 
 void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
+    if (deviceUiContext_ != nullptr) {
+        if (auto* controller =
+                dynamic_cast<CallbackDeviceParameterController*>(deviceUiContext_->parameters())) {
+            controller->setDevice(device);
+        }
+    }
+
     if (toneGeneratorUI_ && device.pluginId.containsIgnoreCase("tone")) {
         float frequency = 440.0f;
         float level = -12.0f;
