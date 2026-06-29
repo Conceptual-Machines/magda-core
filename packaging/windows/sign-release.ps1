@@ -112,8 +112,13 @@ Write-Host "stage    : $StageDir"
 # The cert only appears once SimplySign Desktop is logged in. With -WaitMinutes
 # > 0 the script parks and polls so a release job can be dispatched before you
 # log in: it proceeds the instant the virtual smart card shows up.
+# Search only CurrentUser\My - that is exactly where `signtool sign /sha1`
+# looks without /sm, and where SimplySign Desktop places the cloud cert.
+# Including LocalMachine\My here would let the pre-check pass on a cert that
+# signtool can't actually use, turning a clear "not logged in" message into a
+# confusing later failure.
 function Get-SigningCert {
-    Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+    Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue |
         Where-Object { $_.Thumbprint -eq $Thumbprint } |
         Select-Object -First 1
 }
