@@ -45,21 +45,21 @@ void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
     if (auto* strumUI = customUI.getStrumUI()) {
         if (auto* strum = dynamic_cast<daw::audio::MidiStrumPlugin*>(plugin.get())) {
             strumUI->setPlugin(strum);
-            customUI.setStrumPlugin(strum);
+            customUI.bindStrumPlugin(strum);
         }
     }
 
     if (auto* stepSequencerUI = customUI.getStepSequencerUI()) {
         if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
             stepSequencerUI->setPlugin(seq);
-            customUI.setStepSeqPlugin(seq);
+            customUI.bindStepSequencerPlugin(seq);
         }
     }
 
     if (auto* polyStepSequencerUI = customUI.getPolyStepSequencerUI()) {
         if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
             polyStepSequencerUI->setPlugin(seq);
-            customUI.setPolyStepSeqPlugin(seq);
+            customUI.bindPolyStepSequencerPlugin(seq);
         }
     }
 }
