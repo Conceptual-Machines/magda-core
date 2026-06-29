@@ -62,6 +62,14 @@ class DeviceStateController {
     virtual void setStateValue(const juce::Identifier& key, const juce::var& value) = 0;
 };
 
+class DeviceCommandController {
+  public:
+    virtual ~DeviceCommandController() = default;
+
+    virtual juce::var executeCommand(const juce::Identifier& command,
+                                     const juce::var& arguments = {}) = 0;
+};
+
 /**
  * Stable surface passed to MAGDA-native device UIs.
  *
@@ -80,6 +88,7 @@ class DeviceUiContext {
 
     virtual DeviceParameterController* parameters() const = 0;
     virtual DeviceStateController* state() const = 0;
+    virtual DeviceCommandController* commands() const = 0;
     virtual DeviceTelemetrySource* telemetry(const juce::String& key) const = 0;
 };
 
@@ -119,6 +128,10 @@ class BasicDeviceUiContext final : public DeviceUiContext {
         return stateController_.get();
     }
 
+    DeviceCommandController* commands() const override {
+        return commandController_.get();
+    }
+
     DeviceTelemetrySource* telemetry(const juce::String& key) const override {
         auto it = telemetrySources_.find(key);
         return it != telemetrySources_.end() ? it->second.get() : nullptr;
@@ -144,6 +157,10 @@ class BasicDeviceUiContext final : public DeviceUiContext {
         stateController_ = std::move(controller);
     }
 
+    void setCommandController(std::shared_ptr<DeviceCommandController> controller) {
+        commandController_ = std::move(controller);
+    }
+
     void setTelemetrySource(std::shared_ptr<DeviceTelemetrySource> source) {
         if (source == nullptr)
             return;
@@ -165,6 +182,7 @@ class BasicDeviceUiContext final : public DeviceUiContext {
     DeviceUiLifetimeTokenPtr lifetimeToken_;
     std::shared_ptr<DeviceParameterController> parameterController_;
     std::shared_ptr<DeviceStateController> stateController_;
+    std::shared_ptr<DeviceCommandController> commandController_;
     std::map<juce::String, std::shared_ptr<DeviceTelemetrySource>> telemetrySources_;
 };
 
