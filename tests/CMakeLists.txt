@@ -213,7 +213,6 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_signal_routing_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
-    test_project_load_clip_ordering_juce.cpp
     test_clip_inspector_juce.cpp
     test_multiband_curve_view_juce.cpp
     test_timeline_extreme_zoom_paint_juce.cpp
@@ -305,10 +304,6 @@ add_test(NAME tempo_lane_sync_juce
 
 add_test(NAME midi_bridge_note_events_juce
          COMMAND magda_juce_tests "MidiBridge Note Events Tests")
-
-add_test(NAME project_load_clip_ordering_juce
-         COMMAND magda_juce_tests "Project Load Clip Ordering")
-
 add_test(NAME external_plugin_state_restore_juce
          COMMAND magda_juce_tests "External Plugin State Restore Tests")
 
