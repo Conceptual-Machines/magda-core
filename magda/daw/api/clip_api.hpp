@@ -8,6 +8,8 @@
 
 namespace magda {
 
+enum class MidiNoteQuantizeMode { StartOnly, LengthOnly, StartAndLength };
+
 /// Abstract view onto ClipManager — what the agent layer reads and writes.
 class ClipApi {
   public:
@@ -23,6 +25,15 @@ class ClipApi {
 
     virtual void setClipName(ClipId clipId, const juce::String& name) = 0;
     virtual void setGrooveTemplate(ClipId clipId, const juce::String& templateName) = 0;
+
+    virtual bool addMidiNote(ClipId clipId, double startBeat, int noteNumber, double lengthBeats,
+                             int velocity) = 0;
+    virtual bool quantizeMidiNotes(
+        ClipId clipId, const std::vector<size_t>& noteIndices, double gridResolution,
+        MidiNoteQuantizeMode mode = MidiNoteQuantizeMode::StartAndLength) = 0;
+    virtual bool sliceMidiNotes(ClipId clipId, const std::vector<size_t>& noteIndices,
+                                int subdivisions) = 0;
+    virtual bool transposeMidiClip(ClipId clipId, int semitones) = 0;
 
     /**
      * @brief Cached transient times for an audio clip's source file.

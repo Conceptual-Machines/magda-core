@@ -34,6 +34,10 @@ execute_process(
             set-tempo 96
             add-track audio Lead
             add-midi-clip 1 0 4
+            add-midi-note 1 0.13 60 1.87 111
+            quantize-notes 1 0.25 both all
+            slice-notes 1 2 all
+            transpose-midi-clip 1 12
             dump --json
             --out "${mutated_request}"
     RESULT_VARIABLE exec_result
@@ -50,7 +54,11 @@ endif()
 string(FIND "${exec_stdout}" "\"tempo\": 96" tempo_pos)
 string(FIND "${exec_stdout}" "\"name\": \"Lead\"" track_pos)
 string(FIND "${exec_stdout}" "\"lengthBeats\": 4" clip_pos)
-if(tempo_pos EQUAL -1 OR track_pos EQUAL -1 OR clip_pos EQUAL -1)
+string(FIND "${exec_stdout}" "\"note\": 72" note_pos)
+string(FIND "${exec_stdout}" "\"velocity\": 111" velocity_pos)
+string(FIND "${exec_stdout}" "\"lengthBeats\": 0.875" sliced_length_pos)
+if(tempo_pos EQUAL -1 OR track_pos EQUAL -1 OR clip_pos EQUAL -1 OR note_pos EQUAL -1
+   OR velocity_pos EQUAL -1 OR sliced_length_pos EQUAL -1)
     file(WRITE "${json_file}" "${exec_stdout}")
     message(FATAL_ERROR "magda-cli JSON state did not match expected markers; wrote ${json_file}")
 endif()

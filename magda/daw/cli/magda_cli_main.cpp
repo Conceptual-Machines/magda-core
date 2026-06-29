@@ -46,6 +46,10 @@ void printUsage(std::ostream& out) {
         << "  delete-track <track-id>\n"
         << "  add-midi-clip <track-id> <start-beats> <length-beats>\n"
         << "  delete-clip <clip-id>\n"
+        << "  add-midi-note <clip-id> <start-beats> <note> <length-beats> [velocity]\n"
+        << "  quantize-notes <clip-id> <grid-beats> <start|length|both> <all|note-index...>\n"
+        << "  slice-notes <clip-id> <subdivisions> <all|note-index...>\n"
+        << "  transpose-midi-clip <clip-id> <semitones>\n"
         << "  dump --json\n";
 }
 
@@ -224,6 +228,14 @@ class CommandDispatcher {
             return addMidiClip(tokens, index);
         if (command == "delete-clip")
             return deleteClip(tokens, index);
+        if (command == "add-midi-note")
+            return addMidiNote(tokens, index);
+        if (command == "quantize-notes")
+            return quantizeNotes(tokens, index);
+        if (command == "slice-notes")
+            return sliceNotes(tokens, index);
+        if (command == "transpose-midi-clip")
+            return transposeMidiClip(tokens, index);
         if (command == "dump")
             return dump(tokens, index);
 
@@ -300,6 +312,90 @@ class CommandDispatcher {
         return {};
     }
 
+    CommandResult addMidiNote(const juce::StringArray& tokens, size_t& index) {
+        auto clipId = takeInt(tokens, index, "add-midi-note requires <clip-id>");
+        if (!clipId)
+            return fail(lastParseError_);
+        auto start = takeDouble(tokens, index, "add-midi-note requires <start-beats>");
+        if (!start)
+            return fail(lastParseError_);
+        auto noteNumber = takeInt(tokens, index, "add-midi-note requires <note>");
+        if (!noteNumber)
+            return fail(lastParseError_);
+        auto length = takeDouble(tokens, index, "add-midi-note requires <length-beats>");
+        if (!length)
+            return fail(lastParseError_);
+
+        int velocity = 100;
+        if (index < static_cast<size_t>(tokens.size()) &&
+            !isCommand(tokens[static_cast<int>(index)])) {
+            auto parsedVelocity = parseInt(tokens[static_cast<int>(index)]);
+            if (!parsedVelocity)
+                return fail("add-midi-note velocity must be an integer");
+            velocity = *parsedVelocity;
+            ++index;
+        }
+
+        if (!engine_.getMagdaApi().clips().addMidiNote(*clipId, *start, *noteNumber, *length,
+                                                       velocity))
+            return fail("Failed to add MIDI note");
+        std::cout << "note\n";
+        return {};
+    }
+
+    CommandResult quantizeNotes(const juce::StringArray& tokens, size_t& index) {
+        auto clipId = takeInt(tokens, index, "quantize-notes requires <clip-id>");
+        if (!clipId)
+            return fail(lastParseError_);
+        auto grid = takeDouble(tokens, index, "quantize-notes requires <grid-beats>");
+        if (!grid)
+            return fail(lastParseError_);
+        if (index >= static_cast<size_t>(tokens.size()))
+            return fail("quantize-notes requires <start|length|both>");
+
+        auto mode = parseQuantizeMode(tokens[static_cast<int>(index++)]);
+        if (!mode)
+            return fail("quantize-notes mode must be start, length, or both");
+
+        auto indices = takeNoteIndices(tokens, index, *clipId, "quantize-notes");
+        if (indices.empty())
+            return fail("quantize-notes requires at least one note index or all");
+
+        if (!engine_.getMagdaApi().clips().quantizeMidiNotes(*clipId, indices, *grid, *mode))
+            return fail("Failed to quantize MIDI notes");
+        return {};
+    }
+
+    CommandResult sliceNotes(const juce::StringArray& tokens, size_t& index) {
+        auto clipId = takeInt(tokens, index, "slice-notes requires <clip-id>");
+        if (!clipId)
+            return fail(lastParseError_);
+        auto subdivisions = takeInt(tokens, index, "slice-notes requires <subdivisions>");
+        if (!subdivisions)
+            return fail(lastParseError_);
+
+        auto indices = takeNoteIndices(tokens, index, *clipId, "slice-notes");
+        if (indices.empty())
+            return fail("slice-notes requires at least one note index or all");
+
+        if (!engine_.getMagdaApi().clips().sliceMidiNotes(*clipId, indices, *subdivisions))
+            return fail("Failed to slice MIDI notes");
+        return {};
+    }
+
+    CommandResult transposeMidiClip(const juce::StringArray& tokens, size_t& index) {
+        auto clipId = takeInt(tokens, index, "transpose-midi-clip requires <clip-id>");
+        if (!clipId)
+            return fail(lastParseError_);
+        auto semitones = takeInt(tokens, index, "transpose-midi-clip requires <semitones>");
+        if (!semitones)
+            return fail(lastParseError_);
+
+        if (!engine_.getMagdaApi().clips().transposeMidiClip(*clipId, *semitones))
+            return fail("Failed to transpose MIDI clip");
+        return {};
+    }
+
     CommandResult dump(const juce::StringArray& tokens, size_t& index) {
         if (index >= static_cast<size_t>(tokens.size()) ||
             tokens[static_cast<int>(index)] != "--json")
@@ -311,9 +407,54 @@ class CommandDispatcher {
 
     static bool isCommand(const juce::String& token) {
         static const std::set<juce::String> commands = {
-            "set-tempo", "add-track",   "delete-track", "add-midi-clip",
-            "add-clip",  "delete-clip", "dump"};
+            "set-tempo",   "add-track",           "delete-track",  "add-midi-clip",
+            "add-clip",    "delete-clip",         "add-midi-note", "quantize-notes",
+            "slice-notes", "transpose-midi-clip", "dump"};
         return commands.count(token) > 0 || token.startsWith("--");
+    }
+
+    static std::optional<magda::MidiNoteQuantizeMode> parseQuantizeMode(const juce::String& token) {
+        auto normalized = token.trim().toLowerCase();
+        if (normalized == "start")
+            return magda::MidiNoteQuantizeMode::StartOnly;
+        if (normalized == "length")
+            return magda::MidiNoteQuantizeMode::LengthOnly;
+        if (normalized == "both" || normalized == "start-and-length")
+            return magda::MidiNoteQuantizeMode::StartAndLength;
+        return std::nullopt;
+    }
+
+    std::vector<size_t> takeNoteIndices(const juce::StringArray& tokens, size_t& index,
+                                        magda::ClipId clipId, const juce::String& commandName) {
+        std::vector<size_t> indices;
+        if (index >= static_cast<size_t>(tokens.size()) ||
+            isCommand(tokens[static_cast<int>(index)])) {
+            lastParseError_ = commandName + " requires <all|note-index...>";
+            return indices;
+        }
+
+        if (tokens[static_cast<int>(index)] == "all") {
+            ++index;
+            if (auto* clip = engine_.getMagdaApi().clips().getClip(clipId)) {
+                indices.reserve(clip->midiNotes.size());
+                for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+                    indices.push_back(i);
+            }
+            return indices;
+        }
+
+        while (index < static_cast<size_t>(tokens.size()) &&
+               !isCommand(tokens[static_cast<int>(index)])) {
+            auto parsed = parseInt(tokens[static_cast<int>(index)]);
+            if (!parsed || *parsed < 0) {
+                lastParseError_ = commandName + " note indices must be non-negative integers";
+                indices.clear();
+                return indices;
+            }
+            indices.push_back(static_cast<size_t>(*parsed));
+            ++index;
+        }
+        return indices;
     }
 
     std::optional<int> takeInt(const juce::StringArray& tokens, size_t& index,
