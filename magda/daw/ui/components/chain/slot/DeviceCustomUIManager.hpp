@@ -181,35 +181,15 @@ class DeviceCustomUIManager {
         return deviceUiContext_;
     }
 
-    // -------------------------------------------------------------------------
-    // Accessors used outside createCustomUI / updateCustomUI
-    // -------------------------------------------------------------------------
-
-    // Plugin raw pointers (needed by DeviceSlotComponent::timerCallback and setNodePath)
-    daw::audio::ArpeggiatorPlugin* getArpPlugin() const {
-        return arpPlugin_;
-    }
-    daw::audio::MidiStrumPlugin* getStrumPlugin() const {
-        return strumPlugin_;
-    }
-    daw::audio::StepSequencerPlugin* getStepSeqPlugin() const {
-        return stepSeqPlugin_;
-    }
-    daw::audio::PolyStepSequencerPlugin* getPolyStepSeqPlugin() const {
-        return polyStepSeqPlugin_;
-    }
-    daw::audio::MidiChordEnginePlugin* getChordPlugin() const {
-        return chordPlugin_;
-    }
-
-    // Allow timerCallback to write stepSeqPlugin_ after setNodePath resolution
-    void setStepSeqPlugin(daw::audio::StepSequencerPlugin* p) {
+    // MIDI utility binding refreshes. Concrete plugin pointers stay inside the
+    // manager so slot/header code does not depend on plugin lifetime.
+    void bindStepSequencerPlugin(daw::audio::StepSequencerPlugin* p) {
         stepSeqPlugin_ = p;
     }
-    void setPolyStepSeqPlugin(daw::audio::PolyStepSequencerPlugin* p) {
+    void bindPolyStepSequencerPlugin(daw::audio::PolyStepSequencerPlugin* p) {
         polyStepSeqPlugin_ = p;
     }
-    void setStrumPlugin(daw::audio::MidiStrumPlugin* p) {
+    void bindStrumPlugin(daw::audio::MidiStrumPlugin* p) {
         strumPlugin_ = p;
     }
 
