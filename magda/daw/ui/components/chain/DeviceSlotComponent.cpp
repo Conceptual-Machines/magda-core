@@ -180,6 +180,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         // Capture values by copy before 'this' is destroyed.
         auto pathToDelete = nodePath_;
         auto callback = onDeviceDeleted;
+        detachInlineUiFromLivePlugin();
         juce::MessageManager::callAsync([pathToDelete, callback]() {
             // Top-level devices use undoable command; nested devices fall back to direct removal
             if (pathToDelete.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
@@ -545,6 +546,7 @@ DeviceSlotComponent::~DeviceSlotComponent() {
     magda::AutomationManager::getInstance().removeListener(this);
     magda::GainStagingManager::getInstance().removeListener(this);
     stopTimer();
+    detachInlineUiFromLivePlugin();
 }
 
 void DeviceSlotComponent::timerCallback() {
@@ -1564,6 +1566,14 @@ void DeviceSlotComponent::createCustomUI() {
     }
 
     applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
+}
+
+void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
+    if (compiledPanel_ != nullptr)
+        compiledPanel_->bindPlugin(nullptr);
+    if (faustUI_ != nullptr)
+        faustUI_->setPlugin(nullptr);
+    customUI_.detachFromLivePlugin();
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {

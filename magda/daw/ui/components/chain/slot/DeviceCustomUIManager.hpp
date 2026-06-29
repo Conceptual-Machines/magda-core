@@ -211,6 +211,10 @@ class DeviceCustomUIManager {
     // Tracktion plugin. Safe to call before the plugin exists.
     void refreshLivePluginBindings();
 
+    // Invalidate the current UI context and clear live plugin bindings before
+    // the owning slot is destroyed, removed, or rebound to another plugin.
+    void detachFromLivePlugin();
+
     // Pending tab index (set before fourOscUI_ is created, consumed in create())
     static constexpr int NO_PENDING_TAB = -1;
     int pendingCustomUITabIndex_ = NO_PENDING_TAB;

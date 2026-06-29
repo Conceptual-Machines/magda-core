@@ -174,6 +174,10 @@ class BasicDeviceUiContext final : public DeviceUiContext {
     void invalidate() {
         if (lifetimeToken_ != nullptr)
             lifetimeToken_->invalidate();
+        parameterController_.reset();
+        stateController_.reset();
+        commandController_.reset();
+        telemetrySources_.clear();
     }
 
   private:

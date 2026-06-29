@@ -327,6 +327,8 @@ class CallbackDeviceCommandController final : public magda::DeviceCommandControl
 void writeParameterChange(const DeviceCustomUIManager::Callbacks& callbacks, int paramIndex,
                           float value) {
     if (callbacks.deviceUiContext != nullptr) {
+        if (!callbacks.deviceUiContext->isValid())
+            return;
         if (auto* parameters = callbacks.deviceUiContext->parameters()) {
             parameters->setParameterNormalised(paramIndex, value);
             return;
@@ -340,6 +342,8 @@ void writeParameterChange(const DeviceCustomUIManager::Callbacks& callbacks, int
 juce::var executeDeviceCommand(const DeviceCustomUIManager::Callbacks& callbacks,
                                const juce::Identifier& command, const juce::var& arguments = {}) {
     if (callbacks.deviceUiContext != nullptr) {
+        if (!callbacks.deviceUiContext->isValid())
+            return {};
         if (auto* commands = callbacks.deviceUiContext->commands())
             return commands->executeCommand(command, arguments);
     }
@@ -407,9 +411,7 @@ magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
 
 DeviceCustomUIManager::DeviceCustomUIManager() = default;
 DeviceCustomUIManager::~DeviceCustomUIManager() {
-    if (auto* basicContext = dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get())) {
-        basicContext->invalidate();
-    }
+    detachFromLivePlugin();
 }
 
 // =============================================================================
@@ -1844,6 +1846,35 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
             inst = dynamic_cast<daw::audio::compiled::MagdaCompiledPolyInstrument*>(plugin.get());
         struckUI_->setLivePlugin(inst);
     }
+}
+
+void DeviceCustomUIManager::detachFromLivePlugin() {
+    livePluginProvider_ = {};
+    devicePath_ = {};
+
+    if (oscilloscopeUI_ != nullptr)
+        oscilloscopeUI_->setTelemetrySource(nullptr);
+    if (spectrumAnalyzerUI_ != nullptr) {
+        spectrumAnalyzerUI_->setTelemetrySource(nullptr);
+        spectrumAnalyzerUI_->setTrackId(magda::INVALID_TRACK_ID);
+    }
+    if (levelsUI_ != nullptr)
+        levelsUI_->setTelemetrySource(nullptr);
+    if (nimbusUI_ != nullptr)
+        nimbusUI_->setTelemetrySource(nullptr);
+    if (faustInstrumentUI_ != nullptr)
+        faustInstrumentUI_->setPlugin(nullptr);
+    if (struckUI_ != nullptr)
+        struckUI_->setLivePlugin(nullptr);
+
+    arpPlugin_ = nullptr;
+    strumPlugin_ = nullptr;
+    stepSeqPlugin_ = nullptr;
+    polyStepSeqPlugin_ = nullptr;
+    chordPlugin_ = nullptr;
+
+    if (auto* basicContext = dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get()))
+        basicContext->invalidate();
 }
 
 void DeviceCustomUIManager::bindAnalyzerPlugins() {
