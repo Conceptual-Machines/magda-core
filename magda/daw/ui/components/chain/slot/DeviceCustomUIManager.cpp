@@ -85,6 +85,7 @@ const juce::Identifier kSamplerSetLoopEnabled{"samplerSetLoopEnabled"};
 const juce::Identifier kSamplerSetRootNote{"samplerSetRootNote"};
 const juce::Identifier kSamplerGetPlaybackPosition{"samplerGetPlaybackPosition"};
 const juce::Identifier kSamplerLoadSample{"samplerLoadSample"};
+const juce::Identifier kImpulseResponseLoadFile{"impulseResponseLoadFile"};
 
 struct RolePrompt {
     const char* roleId;
@@ -1087,43 +1088,9 @@ bool DeviceCustomUIManager::createImpulseResponseUI(const magda::DeviceInfo& dev
         writeParameterChange(cb, paramIndex, value);
     };
 
-    // Helper to load an IR file into the plugin
-    auto loadIR = [this](const juce::File& file) {
-        if (!file.existsAsFile()) {
-            DBG("IR load: file does not exist: " << file.getFullPathName());
-            return;
-        }
-
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (!audioEngine) {
-            DBG("IR load: no audio engine");
-            return;
-        }
-        auto* bridge = audioEngine->getAudioBridge();
-        if (!bridge) {
-            DBG("IR load: no audio bridge");
-            return;
-        }
-        auto plugin = getLivePlugin();
-        if (!plugin) {
-            DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
-            return;
-        }
-        auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
-        if (!ir) {
-            DBG("IR load: plugin is not ImpulseResponsePlugin, type: " << plugin->getName());
-            return;
-        }
-        if (ir->loadImpulseResponse(file)) {
-            ir->name = file.getFileNameWithoutExtension();
-            if (impulseResponseUI_)
-                impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
-
-            // Capture plugin state so the IR persists in the project
-            bridge->getPluginManager().capturePluginState(devicePath_);
-        } else {
-            DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
-        }
+    // Helper to load an IR file through the device command surface.
+    auto loadIR = [cb = callbacks](const juce::File& file) {
+        executeDeviceCommand(cb, kImpulseResponseLoadFile, file.getFullPathName());
     };
 
     impulseResponseUI_->onLoadIRRequested = [loadIR]() {
@@ -1772,6 +1739,49 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
                                                         sampler->getSampleLengthSeconds());
                         }
                     }
+                    return true;
+                }
+
+                if (command == kImpulseResponseLoadFile) {
+                    const juce::File file(arguments.toString());
+                    if (!file.existsAsFile()) {
+                        DBG("IR load: file does not exist: " << file.getFullPathName());
+                        return false;
+                    }
+
+                    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+                    if (audioEngine == nullptr) {
+                        DBG("IR load: no audio engine");
+                        return false;
+                    }
+                    auto* bridge = audioEngine->getAudioBridge();
+                    if (bridge == nullptr) {
+                        DBG("IR load: no audio bridge");
+                        return false;
+                    }
+                    auto plugin = getLivePlugin();
+                    if (!plugin) {
+                        DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
+                        return false;
+                    }
+                    auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
+                    if (ir == nullptr) {
+                        DBG("IR load: plugin is not ImpulseResponsePlugin, type: "
+                            << plugin->getName());
+                        return false;
+                    }
+                    if (!ir->loadImpulseResponse(file)) {
+                        DBG("IR load: loadImpulseResponse returned false for: "
+                            << file.getFullPathName());
+                        return false;
+                    }
+
+                    ir->name = file.getFileNameWithoutExtension();
+                    if (impulseResponseUI_ != nullptr)
+                        impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
+
+                    // Capture plugin state so the IR persists in the project.
+                    bridge->getPluginManager().capturePluginState(devicePath_);
                     return true;
                 }
 
