@@ -73,6 +73,7 @@
 #include "media_db/RobertaTokenizer.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
 #include "project/ProjectManager.hpp"
+#include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
@@ -664,6 +665,34 @@ std::optional<bool> DeviceCustomUIManager::toggleSequencerStepRecording(bool pol
     return static_cast<bool>(commands->executeCommand(setCommand, enabled))
                ? std::optional<bool>{enabled}
                : std::nullopt;
+}
+
+void DeviceCustomUIManager::copySequencerPatternToClipboard(bool polyphonic) {
+    auto plugin = getLivePlugin();
+    if (polyphonic) {
+        if (auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get()))
+            copyPolyStepSequencerPatternToClipboard(*sequencer);
+        return;
+    }
+
+    if (auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get()))
+        copyStepSequencerPatternToClipboard(*sequencer);
+}
+
+bool DeviceCustomUIManager::handleSequencerPatternExternalDrag(bool polyphonic,
+                                                               juce::Component* exportButton,
+                                                               juce::Component* dragOwner,
+                                                               const juce::MouseEvent& event) {
+    auto plugin = getLivePlugin();
+    if (polyphonic) {
+        return handlePolyStepSequencerPatternExternalDrag(
+            dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get()), exportButton,
+            dragOwner, event);
+    }
+
+    return handleStepSequencerPatternExternalDrag(
+        dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get()), exportButton, dragOwner,
+        event);
 }
 
 // =============================================================================
