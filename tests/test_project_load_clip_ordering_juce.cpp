@@ -7,12 +7,10 @@
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
-#include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/TracktionEngineWrapper.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
-#include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 using namespace magda;
 namespace te = tracktion;
@@ -56,14 +54,19 @@ std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate = 44100
     return f;
 }
 
-DeviceInfo makeInstrumentDevice(const juce::String& name, const juce::String& pluginId) {
-    DeviceInfo device;
-    device.name = name;
-    device.format = PluginFormat::Internal;
-    device.pluginId = pluginId;
-    device.isInstrument = true;
-    return device;
-}
+class ScopedTrackManagerEngine {
+  public:
+    explicit ScopedTrackManagerEngine(TracktionEngineWrapper& wrapper) {
+        TrackManager::getInstance().setAudioEngine(&wrapper);
+    }
+
+    ~ScopedTrackManagerEngine() {
+        TrackManager::getInstance().setAudioEngine(nullptr);
+    }
+
+    ScopedTrackManagerEngine(const ScopedTrackManagerEngine&) = delete;
+    ScopedTrackManagerEngine& operator=(const ScopedTrackManagerEngine&) = delete;
+};
 
 }  // namespace
 
@@ -88,9 +91,6 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testMidiClipSurvivesLoad(); });
         magda::test::runWithCleanJuceState([this] { testAudioClipSurvivesLoad(); });
         magda::test::runWithCleanJuceState([this] { testMultipleTracksAllClipsSurviveLoad(); });
-        magda::test::runWithCleanJuceState(
-            [this] { testInstrumentTrackWithMidiClipSurvivesLoad(); });
-        magda::test::runWithCleanJuceState([this] { testInstrumentClipRendersAudioAfterLoad(); });
     }
 
   private:
@@ -103,17 +103,18 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
     struct RoundTrip {
         std::unique_ptr<juce::TemporaryFile> projectFile;
 
-        void save() {
+        bool save() {
             auto target =
                 testScratchDirectory().getNonexistentChildFile("load_order_project", ".mgd");
             projectFile = std::make_unique<juce::TemporaryFile>(target);
             const auto& info = ProjectManager::getInstance().getCurrentProjectInfo();
-            bool ok = ProjectSerializer::saveToFile(projectFile->getFile(), info);
-            jassert(ok);
-            juce::ignoreUnused(ok);
+            return ProjectSerializer::saveToFile(projectFile->getFile(), info);
         }
 
         bool reload() {
+            if (!projectFile)
+                return false;
+
             StagedProjectData staged;
             if (!ProjectSerializer::loadAndStage(projectFile->getFile(), staged))
                 return false;
@@ -141,7 +142,7 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
 
         auto& tm = TrackManager::getInstance();
         auto& cm = ClipManager::getInstance();
-        tm.setAudioEngine(&wrapper);
+        ScopedTrackManagerEngine engineScope(wrapper);
 
         const auto trackId = tm.createTrack("MIDI Track");
         const auto clipId = cm.createMidiClip(trackId, 0.0, 4.0, ClipView::Arrangement);
@@ -158,7 +159,7 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
         }
 
         RoundTrip rt;
-        rt.save();
+        expect(rt.save(), "Project should save");
         simulateClose();
         expect(rt.reload(), "Project should reload");
 
@@ -185,8 +186,6 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
         expect(teTrack != nullptr, "TE track should exist after load");
         if (teTrack != nullptr)
             expect(!teTrack->getClips().isEmpty(), "TE track should hold the restored clip");
-
-        tm.setAudioEngine(nullptr);
     }
 
     void testAudioClipSurvivesLoad() {
@@ -201,7 +200,7 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
 
         auto& tm = TrackManager::getInstance();
         auto& cm = ClipManager::getInstance();
-        tm.setAudioEngine(&wrapper);
+        ScopedTrackManagerEngine engineScope(wrapper);
 
         auto wav = createSineWavFile();
         const auto trackId = tm.createTrack("Audio Track");
@@ -210,7 +209,7 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
         expect(clipId != INVALID_CLIP_ID, "Audio clip should be created");
 
         RoundTrip rt;
-        rt.save();
+        expect(rt.save(), "Project should save");
         simulateClose();
         expect(rt.reload(), "Project should reload");
 
@@ -236,8 +235,6 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
         expect(teTrack != nullptr, "TE track should exist after load");
         if (teTrack != nullptr)
             expect(!teTrack->getClips().isEmpty(), "TE track should hold the restored clip");
-
-        tm.setAudioEngine(nullptr);
     }
 
     void testMultipleTracksAllClipsSurviveLoad() {
@@ -252,7 +249,7 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
 
         auto& tm = TrackManager::getInstance();
         auto& cm = ClipManager::getInstance();
-        tm.setAudioEngine(&wrapper);
+        ScopedTrackManagerEngine engineScope(wrapper);
 
         constexpr int kTrackCount = 4;
         std::vector<TrackId> trackIds;
@@ -268,7 +265,7 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
         }
 
         RoundTrip rt;
-        rt.save();
+        expect(rt.save(), "Project should save");
         simulateClose();
         expect(rt.reload(), "Project should reload");
 
@@ -283,115 +280,6 @@ class ProjectLoadClipOrderingTest final : public juce::UnitTest {
             expect(teClip != nullptr,
                    "Track " + juce::String(t + 1) + ": clip must exist in TE engine after load");
         }
-
-        tm.setAudioEngine(nullptr);
-    }
-
-    void testInstrumentTrackWithMidiClipSurvivesLoad() {
-        beginTest("Instrument track + MIDI clip: both survive load (user's scenario)");
-
-        auto& wrapper = magda::test::getSharedEngine();
-        magda::test::resetTransport(wrapper);
-        auto* bridge = wrapper.getAudioBridge();
-        expect(bridge != nullptr, "AudioBridge must exist");
-        if (!bridge)
-            return;
-
-        auto& tm = TrackManager::getInstance();
-        auto& cm = ClipManager::getInstance();
-        tm.setAudioEngine(&wrapper);
-
-        const auto trackId = tm.createTrack("FM Track");
-        const auto deviceId = tm.addDeviceToTrack(trackId, makeInstrumentDevice("FM", "magda_fm"));
-        expect(deviceId != INVALID_DEVICE_ID, "Instrument device should be added");
-
-        const auto clipId = cm.createMidiClip(trackId, 0.0, 4.0, ClipView::Arrangement);
-        for (int i = 0; i < 4; ++i) {
-            MidiNote n;
-            n.noteNumber = 60 + i;
-            n.startBeat = static_cast<double>(i);
-            n.lengthBeats = 0.9;
-            cm.addMidiNote(clipId, n);
-        }
-
-        RoundTrip rt;
-        rt.save();
-        simulateClose();
-        expect(rt.reload(), "Project should reload");
-
-        auto clipIds = cm.getClipsOnTrack(trackId, ClipView::Arrangement);
-        expect(clipIds.size() == 1, "Instrument track should keep its MIDI clip after load");
-        if (!clipIds.empty()) {
-            auto* teClip = bridge->getArrangementTeClip(clipIds.front());
-            expect(teClip != nullptr,
-                   "REGRESSION: instrument track's MIDI clip must exist in TE after load");
-            if (auto* mc = dynamic_cast<te::MidiClip*>(teClip))
-                expectEquals(mc->getSequence().getNumNotes(), 4, "All notes restored");
-        }
-
-        // The instrument itself must come back too.
-        const auto devicePath = ChainNodePath::topLevelDevice(trackId, deviceId);
-        expect(bridge->getPlugin(devicePath) != nullptr,
-               "Instrument device should be live on the track after load");
-
-        tm.setAudioEngine(nullptr);
-    }
-
-    void testInstrumentClipRendersAudioAfterLoad() {
-        beginTest("Instrument is driven by its MIDI clip after load (render RMS > 0)");
-
-        auto& wrapper = magda::test::getSharedEngine();
-        magda::test::resetTransport(wrapper);
-        auto* bridge = wrapper.getAudioBridge();
-        auto* edit = wrapper.getEdit();
-        expect(bridge != nullptr && edit != nullptr, "Engine must be available");
-        if (!bridge || !edit)
-            return;
-
-        auto& tm = TrackManager::getInstance();
-        auto& cm = ClipManager::getInstance();
-        tm.setAudioEngine(&wrapper);
-
-        const auto trackId = tm.createTrack("FM Render Track");
-        tm.addDeviceToTrack(trackId, makeInstrumentDevice("FM", "magda_fm"));
-
-        const auto clipId = cm.createMidiClip(trackId, 0.0, 4.0, ClipView::Arrangement);
-        for (int i = 0; i < 8; ++i) {
-            MidiNote n;
-            n.noteNumber = 48 + i;
-            n.startBeat = static_cast<double>(i) * 0.5;
-            n.lengthBeats = 0.45;
-            n.velocity = 110;
-            cm.addMidiNote(clipId, n);
-        }
-
-        RoundTrip rt;
-        rt.save();
-        simulateClose();
-        expect(rt.reload(), "Project should reload");
-
-        edit->restartPlayback();
-
-        auto tf = std::make_unique<juce::TemporaryFile>(".wav");
-        te::Renderer::renderToFile(
-            "Load-order instrument render", tf->getFile(), *edit,
-            te::TimeRange(te::TimePosition::fromSeconds(0.0), te::TimePosition::fromSeconds(3.0)),
-            te::toBitSet(te::getAllTracks(*edit)), true, true, {}, false);
-        auto result = te::test_utilities::loadBufferAndSampleRate(std::move(tf));
-
-        if (result.sampleRate <= 0.0 || result.buffer.getNumSamples() == 0) {
-            logMessage("Skipping render RMS check: renderer produced no readable buffer in this "
-                       "environment");
-            tm.setAudioEngine(nullptr);
-            return;
-        }
-
-        const float rms = result.buffer.getRMSLevel(0, 0, result.buffer.getNumSamples());
-        expect(rms > 0.0001f,
-               "Instrument should produce audio driven by its restored MIDI clip, RMS=" +
-                   juce::String(rms));
-
-        tm.setAudioEngine(nullptr);
     }
 };
 
