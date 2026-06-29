@@ -261,22 +261,25 @@ add_library(faust::libfaust ALIAS staticlib)
 # error. Define `_MBCS` for Faust's staticlib AND the `faust` executable
 # (both compile compatibility.cpp) so they take the narrow branch
 # upstream Faust expects on Windows; other targets are untouched.
+# The Faust compiler library is vendored third-party code (~390 TUs) that
+# leans on implicit numeric conversions and variable shadowing, flooding the
+# build with benign warnings: MSVC C4244/C4267/C4305, GCC/Clang -Wshadow /
+# -Wunused-* / -Wcast-function-type, etc. None are actionable in code we don't
+# own, and the diagnostic volume slows the build, so silence warnings on both
+# Faust targets. MSVC additionally needs _MBCS (see above).
 if(MSVC)
-    # The Faust compiler library is vendored third-party code (~390 TUs) that
-    # leans on implicit numeric conversions, so MSVC floods the build with
-    # benign C4244/C4267/C4305 conversion warnings whose formatting + log I/O
-    # measurably slow it. Not our code and not actionable, so silence them on
-    # both Faust targets alongside the _MBCS define.
-    set(_faust_msvc_quiet /wd4244 /wd4267 /wd4305)
-    if(TARGET staticlib)
-        target_compile_definitions(staticlib PRIVATE _MBCS)
-        target_compile_options(staticlib PRIVATE ${_faust_msvc_quiet})
-    endif()
-    if(TARGET faust)
-        target_compile_definitions(faust PRIVATE _MBCS)
-        target_compile_options(faust PRIVATE ${_faust_msvc_quiet})
-    endif()
+    set(_faust_quiet /wd4244 /wd4267 /wd4305)
+else()
+    set(_faust_quiet -w)
 endif()
+foreach(_faust_target staticlib faust)
+    if(TARGET ${_faust_target})
+        target_compile_options(${_faust_target} PRIVATE ${_faust_quiet})
+        if(MSVC)
+            target_compile_definitions(${_faust_target} PRIVATE _MBCS)
+        endif()
+    endif()
+endforeach()
 
 # ----------------------------------------------------------------------------
 # magda_compile_faust_dsp(<dsp_file> <class_name> <out_var>)
@@ -432,6 +435,10 @@ if(MSVC)
         ${MI_ROOT}/clouds/resources.cc
         TARGET_DIRECTORY magda_mutable
         PROPERTIES COMPILE_OPTIONS "/Od")
+else()
+    # Same vendored-DSP rationale on GCC/Clang: shadowing + unused-var warnings
+    # from stmlib headers and dsp/*.cc that we won't fix. Silence them.
+    target_compile_options(magda_mutable PRIVATE -w)
 endif()
 set_target_properties(magda_mutable PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(magda::mutable ALIAS magda_mutable)
