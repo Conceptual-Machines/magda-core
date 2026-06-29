@@ -2,6 +2,11 @@
 #include <juce_events/juce_events.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+// clang-format off
+#include <tracktion_engine/tracktion_engine.h>
+// clang-format on
+
+#include <atomic>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -14,6 +19,7 @@
 #include "api/magda_api.hpp"
 #include "api/project_api.hpp"
 #include "api/track_api.hpp"
+#include "audio/AudioBridge.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectInfo.hpp"
 #include "project/ProjectManager.hpp"
@@ -21,14 +27,18 @@
 
 namespace {
 
+namespace te = tracktion;
+
 void printUsage(std::ostream& out) {
     out << "magda-cli " << MAGDA_VERSION << "\n"
         << "\n"
         << "Usage:\n"
         << "  magda-cli boot\n"
+        << "  magda-cli init <out.mgd>\n"
         << "  magda-cli run <project.mgd> [--out <out.mgd>]\n"
         << "  magda-cli run <project.mgd> --cmds <cmds.txt> [--out <out.mgd>] [--dump-json]\n"
         << "  magda-cli exec <project.mgd> <commands...> [--out <out.mgd>] [--dump-json]\n"
+        << "  magda-cli render <project.mgd> --wav <out.wav> [--from <time>] [--to <time>]\n"
         << "\n"
         << "Commands:\n"
         << "  set-tempo <bpm>\n"
@@ -93,6 +103,13 @@ std::optional<double> parseDouble(const juce::String& text) {
 std::optional<int> parseInt(const juce::String& text) {
     int value = 0;
     if (std::istringstream{text.toStdString()} >> value)
+        return value;
+    return std::nullopt;
+}
+
+std::optional<int> parsePositiveInt(const juce::String& text) {
+    auto value = parseInt(text);
+    if (value && *value > 0)
         return value;
     return std::nullopt;
 }
@@ -340,6 +357,15 @@ struct RunOptions {
     juce::StringArray execTokens;
 };
 
+struct RenderOptions {
+    juce::File input;
+    juce::File wavOutput;
+    std::optional<double> fromSeconds;
+    std::optional<double> toSeconds;
+    std::optional<double> sampleRate;
+    std::optional<int> bitDepth;
+};
+
 bool loadProjectForCli(const juce::File& input, HeadlessEngineSession& session) {
     auto& projectManager = magda::ProjectManager::getInstance();
     if (!projectManager.loadProject(input, [&session](const magda::ProjectInfo& info) {
@@ -348,6 +374,154 @@ bool loadProjectForCli(const juce::File& input, HeadlessEngineSession& session) 
         std::cerr << "Failed to load project: " << projectManager.getLastError() << "\n";
         return false;
     }
+    return true;
+}
+
+std::optional<double> parseRenderTime(const juce::String& text, const magda::ProjectInfo& info) {
+    auto token = text.trim().toLowerCase();
+    if (token.endsWith("bars")) {
+        auto bars = parseDouble(token.dropLastCharacters(4));
+        if (!bars)
+            return std::nullopt;
+        const double beats = *bars * info.timeSignatureNumerator;
+        return beats * 60.0 / info.tempo;
+    }
+    if (token.endsWith("bar")) {
+        auto bars = parseDouble(token.dropLastCharacters(3));
+        if (!bars)
+            return std::nullopt;
+        const double beats = *bars * info.timeSignatureNumerator;
+        return beats * 60.0 / info.tempo;
+    }
+    if (token.endsWith("beats")) {
+        auto beats = parseDouble(token.dropLastCharacters(5));
+        if (!beats)
+            return std::nullopt;
+        return *beats * 60.0 / info.tempo;
+    }
+    if (token.endsWith("beat")) {
+        auto beats = parseDouble(token.dropLastCharacters(4));
+        if (!beats)
+            return std::nullopt;
+        return *beats * 60.0 / info.tempo;
+    }
+    if (token.endsWith("s"))
+        token = token.dropLastCharacters(1);
+    return parseDouble(token);
+}
+
+double defaultRenderEndSeconds(te::Edit& edit, const magda::ProjectInfo& info) {
+    const auto editLength = edit.getLength().inSeconds();
+    if (editLength > 0.0)
+        return editLength;
+
+    const double beats = static_cast<double>(info.timelineLengthBars) * info.timeSignatureNumerator;
+    const double seconds = beats * 60.0 / info.tempo;
+    return juce::jmax(1.0, seconds);
+}
+
+bool prepareOutputFile(const juce::File& file) {
+    if (!file.getParentDirectory().createDirectory()) {
+        std::cerr << "Failed to create output directory: "
+                  << file.getParentDirectory().getFullPathName() << "\n";
+        return false;
+    }
+
+    if (file.exists() && !file.deleteFile()) {
+        std::cerr << "Failed to replace output file: " << file.getFullPathName() << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool renderWav(magda::TracktionEngineWrapper& engine, const RenderOptions& options) {
+    auto* edit = engine.getEdit();
+    if (edit == nullptr) {
+        std::cerr << "No edit is loaded for rendering\n";
+        return false;
+    }
+
+    if (!prepareOutputFile(options.wavOutput))
+        return false;
+
+    const auto& projectInfo = magda::ProjectManager::getInstance().getCurrentProjectInfo();
+    const double startSeconds = options.fromSeconds.value_or(0.0);
+    const double endSeconds =
+        options.toSeconds.value_or(defaultRenderEndSeconds(*edit, projectInfo));
+    if (startSeconds < 0.0 || endSeconds <= startSeconds) {
+        std::cerr << "Render range must have --to greater than --from\n";
+        return false;
+    }
+
+    auto& transport = edit->getTransport();
+    if (transport.isPlaying())
+        transport.stop(false, false);
+
+    te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
+    te::freePlaybackContextIfNotRecording(transport);
+
+    for (auto* track : te::getAudioTracks(*edit))
+        for (auto* plugin : track->pluginList)
+            if (!plugin->isEnabled())
+                plugin->setEnabled(true);
+
+    if (auto* bridge = engine.getAudioBridge())
+        bridge->getPluginManager().prepareForRendering();
+
+    struct RenderGuard {
+        magda::TracktionEngineWrapper& engine;
+        te::Edit& edit;
+        ~RenderGuard() {
+            if (auto* bridge = engine.getAudioBridge())
+                bridge->getPluginManager().restoreAfterRendering();
+            edit.getTransport().ensureContextAllocated();
+            engine.setOfflineRenderActive(false);
+        }
+    } guard{engine, *edit};
+
+    engine.setOfflineRenderActive(true);
+
+    te::Renderer::Parameters params(*edit);
+    params.destFile = options.wavOutput;
+    params.audioFormat = engine.getEngine()->getAudioFileFormatManager().getWavFormat();
+    params.bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth);
+    params.sampleRateForAudio = options.sampleRate.value_or(projectInfo.sampleRate);
+    params.blockSizeForAudio = 512;
+    params.shouldNormalise = false;
+    params.useMasterPlugins = true;
+    params.usePlugins = true;
+    params.checkNodesForAudio = false;
+    params.realTimeRender = false;
+    params.time = te::TimeRange(te::TimePosition::fromSeconds(startSeconds),
+                                te::TimePosition::fromSeconds(endSeconds));
+
+    std::atomic<float> progress{0.0f};
+    te::Renderer::RenderTask task("MAGDA CLI Render", params, &progress, nullptr);
+    for (;;) {
+        const auto status = task.runJob();
+        if (status == juce::ThreadPoolJob::jobHasFinished)
+            break;
+        if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
+            juce::Thread::sleep(1);
+            continue;
+        }
+
+        std::cerr << "Render failed\n";
+        return false;
+    }
+
+    if (task.errorMessage.isNotEmpty()) {
+        std::cerr << "Render failed: " << task.errorMessage << "\n";
+        return false;
+    }
+    if (!options.wavOutput.existsAsFile() || options.wavOutput.getSize() <= 0) {
+        std::cerr << "Render did not produce a WAV file: " << options.wavOutput.getFullPathName()
+                  << "\n";
+        return false;
+    }
+
+    std::cout << "Rendered " << options.wavOutput.getFullPathName() << "\n";
     return true;
 }
 
@@ -418,6 +592,30 @@ int runCli(const RunOptions& options) {
     return 0;
 }
 
+int initProject(const juce::StringArray& args) {
+    if (args.size() != 2) {
+        printUsage(std::cerr);
+        return 2;
+    }
+
+    HeadlessEngineSession session;
+    if (!session.initialize()) {
+        std::cerr << session.error() << "\n";
+        return 1;
+    }
+
+    if (!magda::ProjectManager::getInstance().newProject()) {
+        std::cerr << "Failed to create project: "
+                  << magda::ProjectManager::getInstance().getLastError() << "\n";
+        return 1;
+    }
+
+    if (!saveProjectForCli(fileFromArg(args[1])))
+        return 1;
+
+    return 0;
+}
+
 int runRoundTrip(const juce::StringArray& args) {
     if (args.size() < 2) {
         printUsage(std::cerr);
@@ -451,6 +649,95 @@ int runRoundTrip(const juce::StringArray& args) {
     }
 
     return runCli(options);
+}
+
+int renderProject(const juce::StringArray& args) {
+    if (args.size() < 4) {
+        printUsage(std::cerr);
+        return 2;
+    }
+
+    RenderOptions options;
+    options.input = fileFromArg(args[1]);
+
+    juce::String fromToken;
+    juce::String toToken;
+    for (int i = 2; i < args.size(); ++i) {
+        if (args[i] == "--wav") {
+            if (++i >= args.size()) {
+                printUsage(std::cerr);
+                return 2;
+            }
+            options.wavOutput = fileFromArg(args[i]);
+        } else if (args[i] == "--from") {
+            if (++i >= args.size()) {
+                printUsage(std::cerr);
+                return 2;
+            }
+            fromToken = args[i];
+        } else if (args[i] == "--to") {
+            if (++i >= args.size()) {
+                printUsage(std::cerr);
+                return 2;
+            }
+            toToken = args[i];
+        } else if (args[i] == "--sample-rate") {
+            if (++i >= args.size()) {
+                printUsage(std::cerr);
+                return 2;
+            }
+            options.sampleRate = parseDouble(args[i]);
+            if (!options.sampleRate || *options.sampleRate <= 0.0) {
+                std::cerr << "--sample-rate requires a positive number\n";
+                return 2;
+            }
+        } else if (args[i] == "--bit-depth") {
+            if (++i >= args.size()) {
+                printUsage(std::cerr);
+                return 2;
+            }
+            options.bitDepth = parsePositiveInt(args[i]);
+            if (!options.bitDepth) {
+                std::cerr << "--bit-depth requires a positive integer\n";
+                return 2;
+            }
+        } else {
+            printUsage(std::cerr);
+            return 2;
+        }
+    }
+
+    if (options.wavOutput.getFullPathName().isEmpty()) {
+        std::cerr << "render requires --wav <out.wav>\n";
+        return 2;
+    }
+
+    HeadlessEngineSession session;
+    if (!session.initialize()) {
+        std::cerr << session.error() << "\n";
+        return 1;
+    }
+
+    if (!loadProjectForCli(options.input, session))
+        return 1;
+
+    const auto& info = magda::ProjectManager::getInstance().getCurrentProjectInfo();
+    if (fromToken.isNotEmpty()) {
+        options.fromSeconds = parseRenderTime(fromToken, info);
+        if (!options.fromSeconds) {
+            std::cerr << "Invalid --from time: " << fromToken << "\n";
+            return 2;
+        }
+    }
+    if (toToken.isNotEmpty()) {
+        options.toSeconds = parseRenderTime(toToken, info);
+        if (!options.toSeconds) {
+            std::cerr << "Invalid --to time: " << toToken << "\n";
+            return 2;
+        }
+    }
+
+    return renderWav(session.engine(), options) ? 0 : 1;
 }
 
 int execCommands(const juce::StringArray& args) {
@@ -515,10 +802,14 @@ int main(int argc, char* argv[]) {
 
     if (command == "boot")
         return bootOnly();
+    if (command == "init")
+        return initProject(args);
     if (command == "run")
         return runRoundTrip(args);
     if (command == "exec")
         return execCommands(args);
+    if (command == "render")
+        return renderProject(args);
 
     std::cerr << "Unknown command: " << command << "\n";
     printUsage(std::cerr);

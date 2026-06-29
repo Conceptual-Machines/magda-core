@@ -183,6 +183,14 @@ target_compile_definitions(magda_tests
 # Add the test to CTest
 add_test(NAME magda_unit_tests COMMAND magda_tests)
 
+add_test(
+    NAME magda_cli_headless_e2e
+    COMMAND ${CMAKE_COMMAND}
+        -DMAGDA_CLI=$<TARGET_FILE:magda_cli>
+        -DMAGDA_CLI_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/magda_cli_headless_e2e
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/magda_cli_headless_e2e.cmake
+)
+
 # For Catch2 test discovery (optional - automatically discovers individual test cases)
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.10")
     include(Catch)
