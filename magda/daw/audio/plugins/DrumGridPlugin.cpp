@@ -157,25 +157,32 @@ void DrumGridPlugin::rebuildAudioSnapshot() {
     for (auto& chain : chains_) {
         AudioChainEntry entry;
         entry.chain = chain.get();
-        entry.plugins = chain->plugins;  // copy owning Plugin::Ptrs
+        entry.lowNote = chain->lowNote;    // copy note-range so the audio thread never
+        entry.highNote = chain->highNote;  // reads these mutable plain-int Chain fields
+        entry.rootNote = chain->rootNote;  // directly (data-race free)
+        entry.plugins = chain->plugins;    // copy owning Plugin::Ptrs
         entry.gains = chain->pluginGains;
         snapshot->push_back(std::move(entry));
     }
 
-    // Publish atomically, then wait until the audio thread has released the
-    // previous snapshot. The audio thread holds at most one transient copy,
-    // dropped at the end of its current block, so this returns within ~one block.
-    // The spin cap means a stopped/non-running audio device (which never grabbed a
-    // copy, so use_count is already 1) can never wedge the message thread.
+    // Publish atomically, then wait until the audio thread has fully released the
+    // previous snapshot before returning. This is a hard guarantee, not a
+    // best-effort wait: callers free/deinitialise removed plugins and chains
+    // immediately after this returns, so exiting early while the audio thread
+    // still held `previous` would reintroduce the use-after-free.
+    //
+    // The wait is bounded in every real case: the audio thread holds at most one
+    // transient copy of the snapshot, dropped at the end of its current block, and
+    // it only ever loads the newly-published snapshot afterwards. If the audio
+    // device is stopped/not running it never grabbed a copy, so use_count() is
+    // already 1 and we don't spin at all.
     JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
     std::shared_ptr<const AudioSnapshot> previous = std::atomic_exchange_explicit(
         &audioSnapshot_, std::shared_ptr<const AudioSnapshot>(std::move(snapshot)),
         std::memory_order_acq_rel);
     JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-    if (previous) {
-        for (int spins = 0; previous.use_count() > 1 && spins < 200000; ++spins)
-            std::this_thread::yield();
-    }
+    while (previous.use_count() > 1)
+        std::this_thread::yield();
 }
 
 void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
@@ -224,9 +231,13 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
                                   juce::AudioBuffer<float>& outputBuffer,
                                   const te::MidiMessageArray& inputMidi, int numSamples,
                                   int numChannels, const te::PluginRenderContext& rc) {
-    const Chain& chain = *entry.chain;  // controls / note range / metering keys
+    const Chain& chain = *entry.chain;  // CachedValue control reads + metering keys only
     const auto& plugins = entry.plugins;
     const auto& pluginGains = entry.gains;
+    // Note-range / remap come from the snapshot, never the mutable Chain (see
+    // AudioChainEntry): the message thread can edit these concurrently.
+    const int lowNote = entry.lowNote;
+    const int rootNote = entry.rootNote;
 
     // Filter MIDI to this chain's note range and remap
     chainMidi_.clear();
@@ -235,14 +246,14 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
     for (auto& msg : inputMidi) {
         if (msg.isNoteOnOrOff()) {
             int note = msg.getNoteNumber();
-            if (note >= chain.lowNote && note <= chain.highNote) {
+            if (note >= lowNote && note <= entry.highNote) {
                 if (msg.isNoteOn()) {
                     int padIdx = note - baseNote;
                     if (padIdx >= 0 && padIdx < maxPads)
                         setPadTriggered(padIdx);
                 }
                 auto remapped = msg;
-                remapped.setNoteNumber(chain.rootNote + (note - chain.lowNote));
+                remapped.setNoteNumber(rootNote + (note - lowNote));
                 chainMidi_.add(remapped);
             }
         } else {
@@ -268,7 +279,8 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
         &scratchBuffer_, juce::AudioChannelSet::canonicalChannelSet(scratchChannels), 0, numSamples,
         &chainMidi_, 0.0, rc.editTime, rc.isPlaying, rc.isScrubbing, rc.isRendering, false);
 
-    int padIdx = padIndexFor(chain);
+    int padIdx =
+        (lowNote - baseNote >= 0 && lowNote - baseNote < maxPads) ? lowNote - baseNote : -1;
 
     for (int pi = 0; pi < static_cast<int>(plugins.size()); ++pi) {
         const auto& p = plugins[static_cast<size_t>(pi)];
@@ -504,6 +516,8 @@ void DrumGridPlugin::setChainNoteRange(int chainIndex, int lowNote, int highNote
         chainTree.setProperty(highNoteId, chain->highNote, nullptr);
         chainTree.setProperty(rootNoteId, chain->rootNote, nullptr);
     }
+
+    rebuildAudioSnapshot();  // note-range is carried in the snapshot the audio thread reads
 }
 
 //==============================================================================
@@ -667,6 +681,7 @@ void DrumGridPlugin::swapPadChains(int padIndexA, int padIndexB) {
         }
     }
 
+    rebuildAudioSnapshot();  // publish the swapped note-ranges to the audio thread
     notifyGraphRebuildNeeded();
 }
 
