@@ -188,6 +188,14 @@ add_subdirectory(third_party/llama.cpp)
 # llama.cpp doesn't need C++20; building as C++17 avoids MSVC char8_t errors
 if(MSVC)
     set_target_properties(llama PROPERTIES CXX_STANDARD 17)
+    # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,
+    # double->float, etc.), so MSVC emits ~750 benign C4244/C4267/C4305
+    # warnings from src/ and src/models/. Not our code, not actionable, and the
+    # diagnostic volume slows the build; silence them on the llama target.
+    # C4101 = unreferenced local variable (also upstream, also benign).
+    if(TARGET llama)
+        target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
+    endif()
 endif()
 
 # Faust — runtime DSP compilation. Free tier uses the interpreter backend (no
