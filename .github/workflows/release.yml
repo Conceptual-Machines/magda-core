@@ -520,7 +520,19 @@ jobs:
         rm -rf build
 
   build-windows:
-    runs-on: windows-latest-8core
+    # Builds AND signs on the self-hosted runner (magda-luca). Signing uses the
+    # Certum cloud cert via SimplySign, which needs an interactive OTP each
+    # session, so it can only run in this machine's logged-in desktop session -
+    # never on a GitHub-hosted runner. Building here too (rather than on a hosted
+    # larger runner) adds no new dependency, skips the hosted queue/cost, and
+    # keeps build + sign in one job with no artifact round-trip.
+    #
+    # Tag pushes only: signing requires the interactive SimplySign login, so a
+    # workflow_dispatch run (which regenerates artifacts and never publishes)
+    # would otherwise stall on the login wait. create-release is already
+    # tag-gated, so nothing downstream is affected.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: [self-hosted, Windows, magda-luca]
     env:
       NSIS_VERSION: "3.10"
       VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
@@ -547,16 +559,40 @@ jobs:
       with:
         arch: x64
 
-    - name: Setup pinned vcpkg
+    # vcpkg + its binary cache. On the self-hosted runner both persist on the
+    # machine across runs: a fixed clone we re-checkout (not re-clone), and a
+    # fixed binary cache dir, so libxml2 is restored from cache instead of being
+    # recompiled (that ~10 min build only happens on the very first run / after a
+    # pin bump). On GitHub-hosted runners the VM is ephemeral, so clone into
+    # RUNNER_TEMP and let actions/cache carry the binary cache between runs.
+    - name: Setup vcpkg
       shell: powershell
       run: |
-        $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
-        git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
+        if ($env:RUNNER_ENVIRONMENT -eq 'self-hosted') {
+          $vcpkgRoot = 'C:\vcpkg-ci'
+          $binCache  = 'C:\vcpkg-bincache'
+        } else {
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
+          $binCache  = Join-Path $env:GITHUB_WORKSPACE '.vcpkg-binary-cache'
+        }
+        if (-not (Test-Path "$vcpkgRoot\.git")) {
+          git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
+        }
+        # Fetch only when the pinned commit isn't already present (i.e. a pin bump).
+        git -C $vcpkgRoot cat-file -e "$($env:VCPKG_COMMIT)^{commit}"
+        if ($LASTEXITCODE -ne 0) { git -C $vcpkgRoot fetch origin }
         git -C $vcpkgRoot checkout $env:VCPKG_COMMIT
-        & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
+          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        }
+        New-Item -ItemType Directory -Force -Path $binCache | Out-Null
         "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "VCPKG_DEFAULT_BINARY_CACHE=$binCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Cache vcpkg packages
+      # Only needed on ephemeral GitHub-hosted runners; the self-hosted binary
+      # cache persists locally and needs no upload/download round-trip.
+      if: runner.environment == 'github-hosted'
       uses: actions/cache@v5
       with:
         path: .vcpkg-binary-cache
@@ -566,10 +602,7 @@ jobs:
 
     - name: Install libxml2
       shell: powershell
-      env:
-        VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-binary-cache
       run: |
-        New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
         & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows
 
     # Ninja is shipped with the Visual Studio install on windows-latest, so
@@ -703,7 +736,7 @@ jobs:
           Write-Warning "MAGDA.pdb not found - crash symbolization unavailable for this release"
         }
 
-    - name: Create installer
+    - name: Stage, sign, and build installer
       shell: powershell
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -797,63 +830,24 @@ jobs:
           Write-Output "Staged $dir/ for installer"
         }
 
-        & $env:MAKENSIS /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
+        # Sign the two exes, build the installer from them, sign the installer,
+        # verify the chain, then write the renamed signed installer + .sha256
+        # into $stage. Parks up to 30 min waiting for SimplySign login (email +
+        # phone OTP) - log in any time before then. This is why the Windows
+        # release runs on the self-hosted runner in the interactive desktop
+        # session: that is where SimplySign Desktop holds the cloud cert.
+        & "packaging\windows\sign-release.ps1" `
+          -StageDir $stage `
+          -Version $env:VERSION `
+          -Makensis $env:MAKENSIS `
+          -WaitMinutes 30
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
-        Move-Item "$stage\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName
-
-        Write-Output "Installer created: $installerName"
+        Move-Item "$stage\$installerName" $installerName -Force
+        Move-Item "$stage\$installerName.sha256" "$installerName.sha256" -Force
+        Write-Output "Signed installer: $installerName"
         Get-ChildItem $installerName
-
-    - name: Generate checksum
-      shell: powershell
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        $installer = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
-        $hash = Get-FileHash -Algorithm SHA256 $installer
-        "$($hash.Hash)  $installer" | Out-File -Encoding utf8 "$installer.sha256"
-        Get-Content "$installer.sha256"
-
-    - name: Create MuseHub source bundle
-      # pwsh (PowerShell 7), NOT Windows PowerShell 5.1: 5.1's Compress-Archive
-      # writes ZIP entry names with backslash separators, which violates the ZIP
-      # spec (forward slashes required) and breaks the nested controllers/, lang/
-      # etc. trees on extraction. pwsh's Compress-Archive emits forward slashes.
-      shell: pwsh
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        # The installer staging dir already holds the exact inputs the .nsi
-        # consumes (unsigned exes, ONNX DLLs, icon, lang/, controllers/). The
-        # MuseHub bundle is that staging dir plus the build wrapper, a version
-        # marker, and the README, zipped for the partner to sign and build.
-        $stage = Join-Path $env:RUNNER_TEMP "magda-installer-stage"
-        if (-not (Test-Path "$stage\magda-installer.nsi")) {
-          Write-Error "installer staging missing at $stage - did the Create installer step run?"
-          exit 1
-        }
-
-        Copy-Item "packaging\windows\musehub\build-installer.ps1" "$stage\"
-        Copy-Item "packaging\windows\musehub\README.md" "$stage\"
-        Set-Content -Path "$stage\version.txt" -Value $env:VERSION -NoNewline -Encoding ascii
-
-        # Belt-and-braces: never ship a built installer inside the source bundle
-        # (the Create installer step already moved it out of the stage).
-        Get-ChildItem $stage -Filter "*Setup.exe" | Remove-Item -Force -ErrorAction SilentlyContinue
-
-        $zip = "MAGDA-$env:VERSION-MuseHub-Source.zip"
-        if (Test-Path $zip) { Remove-Item -Force $zip }
-        $items = Get-ChildItem -Path $stage
-        Compress-Archive -Path $items.FullName -DestinationPath $zip
-        Write-Output "MuseHub source bundle created: $zip"
-        Get-ChildItem $zip
-
-        $hash = Get-FileHash -Algorithm SHA256 $zip
-        # ASCII (not utf8): Windows PowerShell 5.1's utf8 writes a BOM that
-        # breaks `sha256sum -c` parsing of the first line.
-        "$($hash.Hash)  $zip" | Out-File -Encoding ascii "$zip.sha256"
-        Get-Content "$zip.sha256"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v7
@@ -863,8 +857,6 @@ jobs:
           MAGDA-*-Windows-x86_64-Setup.exe
           MAGDA-*-Windows-x86_64-Setup.exe.sha256
           MAGDA-*-Windows-x86_64.pdb
-          MAGDA-*-MuseHub-Source.zip
-          MAGDA-*-MuseHub-Source.zip.sha256
 
     - name: Clean up
       if: always()

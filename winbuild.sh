@@ -24,6 +24,13 @@ EXE="${BUILD_DIR}/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.exe"
 # build. VCPKG_ROOT must be the native Windows path (e.g. C:/vcpkg) since the
 # native cmake.exe can't read an MSYS /c/... path.
 VCPKG_ROOT="${VCPKG_ROOT:-C:/vcpkg}"
+# Share vcpkg's binary cache with the CI builds on this machine. The self-hosted
+# runner uses the same MSVC, so the same vcpkg ABI hash applies and the built
+# libxml2 binary is reused: whichever runs first - a CI/release job or a local
+# build - warms the cache for the other, so libxml2 is compiled once, not per
+# build tree. Override by exporting VCPKG_DEFAULT_BINARY_CACHE beforehand.
+export VCPKG_DEFAULT_BINARY_CACHE="${VCPKG_DEFAULT_BINARY_CACHE:-C:/vcpkg-bincache}"
+mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
 CMAKE_ARGS=(
   -G Ninja
   -DCMAKE_BUILD_TYPE=Debug
