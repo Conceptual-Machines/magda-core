@@ -873,6 +873,126 @@ jobs:
         Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force (Join-Path $env:RUNNER_TEMP "magda-installer-stage") -ErrorAction SilentlyContinue
 
+  sign-windows:
+    # Code-sign the Windows installer with the Certum cloud cert via SimplySign.
+    # SimplySign needs an interactive OTP from the phone app each session, so
+    # this MUST run on the self-hosted runner (magda-luca) inside the logged-in
+    # desktop session where SimplySign Desktop holds the cert - never on a
+    # GitHub-hosted runner. Tag pushes only: a workflow_dispatch run regenerates
+    # build artifacts and must not require a manual signing login.
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: [self-hosted, Windows, magda-luca]
+    env:
+      NSIS_VERSION: "3.10"
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: false
+        lfs: false
+
+    - name: Extract version
+      id: version
+      shell: powershell
+      run: |
+        $version = "${{ github.ref_name }}".TrimStart("v")
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        Write-Output "Version: $version"
+
+    - name: Download Windows build artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: windows-x86_64-release
+        path: dist
+
+    # NSIS is needed to rebuild the installer from the freshly-signed exes
+    # (signing the outer installer alone would leave the inner exes unsigned).
+    # Provision it exactly as build-windows does: the vendored zip on this
+    # repo's vendor/nsis-X.Y release tag, hash-pinned.
+    - name: Provision NSIS
+      id: nsis
+      shell: powershell
+      env:
+        NSIS_SHA256: "fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110"
+      run: |
+        $nsisDir = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION"
+        $makensis = Join-Path $nsisDir "nsis-$env:NSIS_VERSION\makensis.exe"
+        if (-not (Test-Path $makensis)) {
+          $zip = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION.zip"
+          $url = "https://github.com/${env:GITHUB_REPOSITORY}/releases/download/vendor/nsis-$env:NSIS_VERSION/nsis-$env:NSIS_VERSION.zip"
+          $downloaded = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Write-Output "Downloading NSIS $env:NSIS_VERSION (attempt $attempt/3)"
+              Invoke-WebRequest -Uri $url -OutFile $zip
+              if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 1MB)) { $downloaded = $true; break }
+            } catch {
+              Write-Output "Download attempt $attempt failed: $($_.Exception.Message)"
+            }
+            if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
+          }
+          if (-not $downloaded) { Write-Error "NSIS download failed after 3 attempts"; exit 1 }
+
+          $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $env:NSIS_SHA256.ToLower()) {
+            Write-Error "NSIS zip hash mismatch - expected $($env:NSIS_SHA256.ToLower()), got $actual"
+            exit 1
+          }
+          Expand-Archive -Path $zip -DestinationPath $nsisDir -Force
+        }
+        if (-not (Test-Path $makensis)) { Write-Error "makensis.exe missing at $makensis"; exit 1 }
+        echo "makensis=$makensis" >> $env:GITHUB_OUTPUT
+        Write-Output "Resolved makensis: $makensis"
+
+    - name: Unpack installer source bundle
+      id: stage
+      shell: powershell
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # The MuseHub source bundle is the installer staging dir (signed-in-place
+        # exes + .nsi + DLLs + lang/ + controllers/ + version.txt) zipped. Unpack
+        # it and sign-release.ps1 consumes it directly.
+        $bundle = "dist\MAGDA-$env:VERSION-MuseHub-Source.zip"
+        if (-not (Test-Path $bundle)) { Write-Error "Source bundle not found at $bundle"; exit 1 }
+        $stage = Join-Path $env:RUNNER_TEMP "magda-sign-stage"
+        if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+        New-Item -ItemType Directory -Path $stage | Out-Null
+        Expand-Archive -Path $bundle -DestinationPath $stage -Force
+        echo "dir=$stage" >> $env:GITHUB_OUTPUT
+        Write-Output "Staged installer inputs at $stage"
+
+    - name: Sign and build installer
+      shell: powershell
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # Parks and polls up to 30 min for SimplySign login, then signs the two
+        # exes, rebuilds the installer, signs it, verifies, and renames to the
+        # published asset name. Log into SimplySign Desktop (email + phone OTP)
+        # any time before the wait expires.
+        & "packaging\windows\sign-release.ps1" `
+          -StageDir "${{ steps.stage.outputs.dir }}" `
+          -Version $env:VERSION `
+          -Makensis "${{ steps.nsis.outputs.makensis }}" `
+          -WaitMinutes 30
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Upload signed installer
+      uses: actions/upload-artifact@v7
+      with:
+        name: windows-x86_64-signed
+        path: |
+          ${{ steps.stage.outputs.dir }}\MAGDA-*-Windows-x86_64-Setup.exe
+          ${{ steps.stage.outputs.dir }}\MAGDA-*-Windows-x86_64-Setup.exe.sha256
+
+    - name: Clean up
+      if: always()
+      shell: powershell
+      run: |
+        Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force (Join-Path $env:RUNNER_TEMP "magda-sign-stage") -ErrorAction SilentlyContinue
+
   build-linux:
     runs-on: ubuntu-latest
     steps:
@@ -1095,13 +1215,14 @@ jobs:
         startsWith(github.ref, 'refs/tags/v') &&
         needs.build-macos.result == 'success' &&
         needs.build-windows.result == 'success' &&
+        needs.sign-windows.result == 'success' &&
         needs.build-linux.result == 'success' &&
         (
           needs.build-macos-x86_64.result == 'success' ||
           needs.build-macos-x86_64.result == 'skipped'
         )
       }}
-    needs: [build-macos, build-macos-x86_64, build-windows, build-linux]
+    needs: [build-macos, build-macos-x86_64, build-windows, sign-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1152,8 +1273,8 @@ jobs:
         files: |
           macos-release/MAGDA-*-macOS-arm64.dmg
           macos-release/MAGDA-*-macOS-arm64.dmg.sha256
-          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
-          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
+          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe
+          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe.sha256
           windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb
           linux-release/*
 
@@ -1173,7 +1294,7 @@ jobs:
           macos-release/MAGDA-*-macOS-arm64.dmg.sha256
           macos-x86_64-release/MAGDA-*-macOS-x86_64.dmg
           macos-x86_64-release/MAGDA-*-macOS-x86_64.dmg.sha256
-          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
-          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
+          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe
+          windows-x86_64-signed/MAGDA-*-Windows-x86_64-Setup.exe.sha256
           windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb
           linux-release/*
