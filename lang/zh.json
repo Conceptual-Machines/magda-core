@@ -114,7 +114,7 @@
     "freeze": "冻结轨道",
     "unfreeze": "解冻轨道",
     "duplicate": "复制轨道",
-    "duplicate_no_content": "复制无内容轨道",
+    "duplicate_no_content": "复制无内容的轨道",
     "duplicate_content_only": "仅复制轨道内容",
     "delete": "删除轨道",
     "show_io_routing": "显示 I/O 路由",
@@ -146,6 +146,8 @@
     "clips": "片段",
     "clip_count.one": "{0} 个片段",
     "clip_count.other": "{0} 个片段",
+    "automated": "已自动化",
+    "automated_empty": "没有已自动化的参数",
     "latency": "延迟"
   },
   "dialogs": {
