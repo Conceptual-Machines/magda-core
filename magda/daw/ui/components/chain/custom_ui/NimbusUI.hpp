@@ -8,11 +8,8 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "custom_ui/TelemetrySources.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
-
-namespace magda::daw::audio {
-class MutableCloudsPlugin;
-}
 
 namespace magda::daw::ui {
 
@@ -39,8 +36,8 @@ class NimbusUI : public juce::Component, private juce::Timer {
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
-    // Bind the live plugin so the grain-buffer view shows the real input.
-    void setPlugin(daw::audio::MutableCloudsPlugin* plugin);
+    // Bind live telemetry so the grain-buffer view shows the real input.
+    void setTelemetrySource(std::shared_ptr<NimbusTelemetrySource> telemetry);
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
@@ -78,7 +75,7 @@ class NimbusUI : public juce::Component, private juce::Timer {
 
     std::array<Control, kNumParams> controls_;
 
-    daw::audio::MutableCloudsPlugin* plugin_ = nullptr;
+    std::shared_ptr<NimbusTelemetrySource> telemetry_;
     int curMode_ = 0;
     bool freeze_ = false;
     float animPhase_ = 0.0f;

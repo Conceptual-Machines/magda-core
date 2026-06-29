@@ -54,6 +54,7 @@
 #include "custom_ui/OscilloscopeUI.hpp"
 #include "custom_ui/PhaserUI.hpp"
 #include "custom_ui/PitchShiftUI.hpp"
+#include "custom_ui/PluginTelemetrySources.hpp"
 #include "custom_ui/PolyStepSequencerUI.hpp"
 #include "custom_ui/PolySynthUI.hpp"
 #include "custom_ui/ReverbUI.hpp"
@@ -1775,21 +1776,60 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr && levelsUI_ == nullptr &&
         nimbusUI_ == nullptr)
         return;
+
+    auto publishTelemetrySource = [this](std::shared_ptr<magda::DeviceTelemetrySource> source,
+                                         const juce::String& key) {
+        auto* basicContext = dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get());
+        if (basicContext == nullptr)
+            return;
+        if (source != nullptr)
+            basicContext->setTelemetrySource(std::move(source));
+        else
+            basicContext->clearTelemetrySource(key);
+    };
+
     auto plugin = getLivePlugin();
-    if (oscilloscopeUI_ != nullptr)
-        if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()))
-            oscilloscopeUI_->setPlugin(scope);
-    if (spectrumAnalyzerUI_ != nullptr)
-        if (auto* sa = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
-            spectrumAnalyzerUI_->setPlugin(sa);
-            spectrumAnalyzerUI_->setTrackId(devicePath_.trackId);  // enables masking overlay
+    if (oscilloscopeUI_ != nullptr) {
+        std::shared_ptr<OscilloscopeTelemetrySource> source;
+        if (dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()) != nullptr) {
+            source = std::make_shared<OscilloscopePluginTelemetrySource>(plugin);
+            publishTelemetrySource(source, OscilloscopeTelemetrySource::kKey);
+        } else {
+            publishTelemetrySource(nullptr, OscilloscopeTelemetrySource::kKey);
         }
-    if (levelsUI_ != nullptr)
-        if (auto* lv = dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()))
-            levelsUI_->setPlugin(lv);
-    if (nimbusUI_ != nullptr)
-        if (auto* cl = dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin.get()))
-            nimbusUI_->setPlugin(cl);
+        oscilloscopeUI_->setTelemetrySource(std::move(source));
+    }
+    if (spectrumAnalyzerUI_ != nullptr) {
+        std::shared_ptr<SpectrumTelemetrySource> source;
+        if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()) != nullptr) {
+            source = std::make_shared<SpectrumPluginTelemetrySource>(plugin);
+            publishTelemetrySource(source, SpectrumTelemetrySource::kKey);
+        } else {
+            publishTelemetrySource(nullptr, SpectrumTelemetrySource::kKey);
+        }
+        spectrumAnalyzerUI_->setTelemetrySource(std::move(source));
+        spectrumAnalyzerUI_->setTrackId(devicePath_.trackId);  // enables masking overlay
+    }
+    if (levelsUI_ != nullptr) {
+        std::shared_ptr<LevelsTelemetrySource> source;
+        if (dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()) != nullptr) {
+            source = std::make_shared<LevelsPluginTelemetrySource>(plugin);
+            publishTelemetrySource(source, LevelsTelemetrySource::kKey);
+        } else {
+            publishTelemetrySource(nullptr, LevelsTelemetrySource::kKey);
+        }
+        levelsUI_->setTelemetrySource(std::move(source));
+    }
+    if (nimbusUI_ != nullptr) {
+        std::shared_ptr<NimbusTelemetrySource> source;
+        if (dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin.get()) != nullptr) {
+            source = std::make_shared<NimbusPluginTelemetrySource>(plugin);
+            publishTelemetrySource(source, NimbusTelemetrySource::kKey);
+        } else {
+            publishTelemetrySource(nullptr, NimbusTelemetrySource::kKey);
+        }
+        nimbusUI_->setTelemetrySource(std::move(source));
+    }
 }
 
 // =============================================================================

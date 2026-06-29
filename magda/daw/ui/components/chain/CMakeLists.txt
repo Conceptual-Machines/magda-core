@@ -200,6 +200,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FourOscUI.hpp
     custom_ui/HaloUI.hpp
     custom_ui/NimbusUI.hpp
+    custom_ui/PluginTelemetrySources.hpp
     custom_ui/ArpeggiatorUI.hpp
     custom_ui/StrumUI.hpp
     custom_ui/StepSequencerUI.hpp
@@ -207,6 +208,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/LevelsUI.hpp
     custom_ui/OscilloscopeUI.hpp
     custom_ui/SpectrumAnalyzerUI.hpp
+    custom_ui/TelemetrySources.hpp
     modulation/DeviceLinkCallbacks.hpp
     modulation/ModulationOwnerPath.hpp
     modulation/MacroKnobComponent.hpp

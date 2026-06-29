@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "audio/analysis/MaskingDetector.hpp"
-#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "core/TypeIds.hpp"
+#include "custom_ui/TelemetrySources.hpp"
 
 namespace magda {
 class SvgButton;
@@ -33,7 +33,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     SpectrumAnalyzerUI();
     ~SpectrumAnalyzerUI() override;
 
-    void setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin);
+    void setTelemetrySource(std::shared_ptr<SpectrumTelemetrySource> telemetry);
 
     // The track this Spectrum device lives on. Enables the inter-track masking
     // overlay (#1400): a dropdown picks another track, whose spectrum is drawn
@@ -93,7 +93,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     float controlsFadeTargetAlpha_ = 1.0f;
     double controlsFadeStartMs_ = 0.0;
     bool persistGlobalDefaults_ = true;
-    daw::audio::SpectrumAnalyzerPlugin* plugin_ = nullptr;
+    std::shared_ptr<SpectrumTelemetrySource> telemetry_;
 
     int fftOrder_ = 11;
     int fftSize_ = 1 << 11;
@@ -150,7 +150,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     // Floating full-size analyzer, lazily created on first pop-out. Owned here,
     // so it dies with this component. popoutUI_ is a non-owning view for
-    // forwarding setPlugin.
+    // forwarding telemetry.
     std::unique_ptr<AnalyzerWindow> popoutWindow_;
     SpectrumAnalyzerUI* popoutUI_ = nullptr;
 

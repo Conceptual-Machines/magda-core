@@ -47,13 +47,14 @@ template <typename Range> int nearestId(const Range& options, float value) {
 
 // Snapshot the plugin's current settings as the global last-used spectrum
 // default (config.json), so the next freshly-created spectrum adopts them.
-void persistSpectrumDefaults(daw::audio::SpectrumAnalyzerPlugin* p, bool enabled) {
-    if (p == nullptr || !enabled)
+void persistSpectrumDefaults(const std::shared_ptr<SpectrumTelemetrySource>& telemetry,
+                             bool enabled) {
+    if (telemetry == nullptr || !enabled)
         return;
     Config::SpectrumDefaults d;
-    d.fftOrder = p->getFftOrder();
-    d.slopeDbPerOct = p->getSlopeDbPerOct();
-    d.smoothing = p->getSmoothing();
+    d.fftOrder = telemetry->fftOrder();
+    d.slopeDbPerOct = telemetry->slopeDbPerOct();
+    d.smoothing = telemetry->smoothing();
     Config::getInstance().setSpectrumDefaults(d);
     Config::getInstance().save();
 }
@@ -81,10 +82,10 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     fftCombo_.addItem("4096", 2);
     fftCombo_.onChange = [this] {
         const int order = fftCombo_.getSelectedId() == 2 ? 12 : 11;
-        if (plugin_ != nullptr)
-            plugin_->setFftOrder(order);
+        if (telemetry_ != nullptr)
+            telemetry_->setFftOrder(order);
         rebuildFft(order);
-        persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
+        persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
     };
     styleCombo(fftCombo_);
 
@@ -97,9 +98,9 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
         const int idx = slopeCombo_.getSelectedId() - 1;
         if (idx >= 0 && idx < static_cast<int>(std::size(kSlopeOptions))) {
             slopeDbPerOct_ = kSlopeOptions[static_cast<size_t>(idx)];
-            if (plugin_ != nullptr)
-                plugin_->setSlopeDbPerOct(slopeDbPerOct_);
-            persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
+            if (telemetry_ != nullptr)
+                telemetry_->setSlopeDbPerOct(slopeDbPerOct_);
+            persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
         }
     };
     styleCombo(slopeCombo_);
@@ -112,9 +113,9 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
         const int idx = speedCombo_.getSelectedId() - 1;
         if (idx >= 0 && idx < static_cast<int>(std::size(kSpeedOptions))) {
             smoothing_ = kSpeedOptions[static_cast<size_t>(idx)];
-            if (plugin_ != nullptr)
-                plugin_->setSmoothing(smoothing_);
-            persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
+            if (telemetry_ != nullptr)
+                telemetry_->setSmoothing(smoothing_);
+            persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
         }
     };
     styleCombo(speedCombo_);
@@ -123,9 +124,9 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
-        if (plugin_ != nullptr)
-            plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
-        persistSpectrumDefaults(plugin_, persistGlobalDefaults_);
+        if (telemetry_ != nullptr)
+            telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
     };
     styleCombo(colourCombo_);
 
@@ -185,24 +186,24 @@ void SpectrumAnalyzerUI::rebuildFft(int order) {
     overlaySmoothedDb_.assign(static_cast<size_t>(numBins_), kMinDb);
 }
 
-void SpectrumAnalyzerUI::setPlugin(daw::audio::SpectrumAnalyzerPlugin* plugin) {
-    if (plugin_ == plugin)
+void SpectrumAnalyzerUI::setTelemetrySource(std::shared_ptr<SpectrumTelemetrySource> telemetry) {
+    if (telemetry_ == telemetry)
         return;
 
-    plugin_ = plugin;
+    telemetry_ = std::move(telemetry);
     lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
-        popoutUI_->setPlugin(plugin);  // keep the popped-out window live
-    if (plugin_ == nullptr)
+        popoutUI_->setTelemetrySource(telemetry_);  // keep the popped-out window live
+    if (telemetry_ == nullptr)
         return;
 
-    slopeDbPerOct_ = plugin_->getSlopeDbPerOct();
-    smoothing_ = plugin_->getSmoothing();
-    fftCombo_.setSelectedId(plugin_->getFftOrder() >= 12 ? 2 : 1, juce::dontSendNotification);
+    slopeDbPerOct_ = telemetry_->slopeDbPerOct();
+    smoothing_ = telemetry_->smoothing();
+    fftCombo_.setSelectedId(telemetry_->fftOrder() >= 12 ? 2 : 1, juce::dontSendNotification);
     slopeCombo_.setSelectedId(nearestId(kSlopeOptions, slopeDbPerOct_), juce::dontSendNotification);
     speedCombo_.setSelectedId(nearestId(kSpeedOptions, smoothing_), juce::dontSendNotification);
-    colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
-    rebuildFft(plugin_->getFftOrder());
+    colourCombo_.setSelectedId(telemetry_->traceColourIndex() + 1, juce::dontSendNotification);
+    rebuildFft(telemetry_->fftOrder());
 }
 
 void SpectrumAnalyzerUI::setTrackId(magda::TrackId trackId) {
@@ -527,7 +528,7 @@ void SpectrumAnalyzerUI::openPopout() {
         auto content = std::make_unique<SpectrumAnalyzerUI>();  // full-size (not compact)
         popoutUI_ = content.get();
         popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
-        popoutUI_->setPlugin(plugin_);
+        popoutUI_->setTelemetrySource(telemetry_);
         popoutUI_->setTrackId(trackId_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Spectrum Analyzer", std::move(content));
         popoutWindow_->onClose = [this]() {
@@ -558,20 +559,20 @@ void SpectrumAnalyzerUI::timerCallback() {
         needsRepaint = true;
     }
 
-    if (plugin_ == nullptr || fft_ == nullptr) {
+    if (telemetry_ == nullptr || fft_ == nullptr) {
         if (needsRepaint)
             repaint();
         return;
     }
 
-    const auto writePosition = plugin_->getTapBuffer().writePosition();
+    const auto writePosition = telemetry_->writePosition();
     if (writePosition == lastTapWritePosition_) {
         if (needsRepaint)
             repaint();
         return;
     }
 
-    lastTapWritePosition_ = plugin_->getTapBuffer().readLatest(readBuf_.data(), fftSize_);
+    lastTapWritePosition_ = telemetry_->readLatest(readBuf_.data(), fftSize_);
     if (lastTapWritePosition_ == 0) {
         repaint();
         return;
@@ -583,7 +584,7 @@ void SpectrumAnalyzerUI::timerCallback() {
     fft_->performFrequencyOnlyForwardTransform(fftData_.data());
 
     const float norm = 2.0f / static_cast<float>(fftSize_);
-    const double sr = plugin_->getSampleRate();
+    const double sr = telemetry_->sampleRate();
     const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
     for (int i = 0; i < numBins_; ++i) {
         const float mag = fftData_[static_cast<size_t>(i)] * norm;
@@ -691,7 +692,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // this track's trace (see pollOverlayData), so it matches in resolution
         // and smoothing. Drawn in a neutral colour, secondary to this track.
         if (overlayValid_ && !overlaySmoothedDb_.empty()) {
-            const double sr = (plugin_ != nullptr) ? plugin_->getSampleRate() : 44100.0;
+            const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
             const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
             juce::Path op;
             bool started = false;
@@ -734,7 +735,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         return;
     }
 
-    const double sr = (plugin_ != nullptr) ? plugin_->getSampleRate() : 44100.0;
+    const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
     const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
 
     auto buildPath = [&](const std::vector<float>& db) {
@@ -754,7 +755,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     };
 
     const juce::Colour trace =
-        analyzerTraceColour(plugin_ != nullptr ? plugin_->getTraceColourIndex() : 0);
+        analyzerTraceColour(telemetry_ != nullptr ? telemetry_->traceColourIndex() : 0);
     g.setColour(trace.withAlpha(0.4f));  // peak-hold
     g.strokePath(buildPath(peakDb_), juce::PathStrokeType(1.0f));
     g.setColour(trace);  // live spectrum
