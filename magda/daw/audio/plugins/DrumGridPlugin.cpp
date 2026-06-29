@@ -1,7 +1,6 @@
 #include "plugins/DrumGridPlugin.hpp"
 
 #include <memory>
-#include <thread>
 #include <vector>
 
 #include "core/TrackManager.hpp"
@@ -107,6 +106,11 @@ DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info
 }
 
 DrumGridPlugin::~DrumGridPlugin() {
+    // Stop the reaper before any members are torn down so timerCallback() can't
+    // run mid-destruction. The audio thread is already stopped (deinitialise()),
+    // so everything still retired is safe to deinit/free now.
+    stopTimer();
+    drainRetired();
     notifyListenersOfDeletion();
 }
 
@@ -128,7 +132,7 @@ void DrumGridPlugin::initialise(const te::PluginInitialisationInfo& info) {
 
     // Publish the initial snapshot now that the child plugins are initialised, so
     // the audio thread has a valid graph to read on the first block.
-    rebuildAudioSnapshot();
+    publishSnapshot();
 }
 
 void DrumGridPlugin::deinitialise() {
@@ -150,32 +154,76 @@ void DrumGridPlugin::reset() {
 }
 
 //==============================================================================
-void DrumGridPlugin::rebuildAudioSnapshot() {
+void DrumGridPlugin::publishSnapshot(std::vector<te::Plugin::Ptr> reapPlugins,
+                                     std::vector<std::unique_ptr<Chain>> reapChains) {
     // Build a fresh immutable snapshot from the current message-thread model.
     auto snapshot = std::make_shared<AudioSnapshot>();
     snapshot->reserve(chains_.size());
     for (auto& chain : chains_) {
         AudioChainEntry entry;
         entry.chain = chain.get();
-        entry.plugins = chain->plugins;  // copy owning Plugin::Ptrs
+        entry.lowNote = chain->lowNote;    // copy note-range so the audio thread never
+        entry.highNote = chain->highNote;  // reads these mutable plain-int Chain fields
+        entry.rootNote = chain->rootNote;  // directly (data-race free)
+        entry.plugins = chain->plugins;    // copy owning Plugin::Ptrs
         entry.gains = chain->pluginGains;
         snapshot->push_back(std::move(entry));
     }
 
-    // Publish atomically, then wait until the audio thread has released the
-    // previous snapshot. The audio thread holds at most one transient copy,
-    // dropped at the end of its current block, so this returns within ~one block.
-    // The spin cap means a stopped/non-running audio device (which never grabbed a
-    // copy, so use_count is already 1) can never wedge the message thread.
+    // Publish atomically and hand the previous snapshot to the retirement queue.
+    // We never block here: the publishing thread returns immediately, and the
+    // retired snapshot (plus any plugins/chains removed by this edit, which it
+    // still references) is freed later by drainRetired() once the audio thread has
+    // released it. This keeps removed objects alive until the audio thread can no
+    // longer reach them, without a busy-spin that could hard-hang the message
+    // thread if the audio callback ever stalls.
     JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
     std::shared_ptr<const AudioSnapshot> previous = std::atomic_exchange_explicit(
         &audioSnapshot_, std::shared_ptr<const AudioSnapshot>(std::move(snapshot)),
         std::memory_order_acq_rel);
     JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-    if (previous) {
-        for (int spins = 0; previous.use_count() > 1 && spins < 200000; ++spins)
-            std::this_thread::yield();
+
+    retired_.push_back({std::move(previous), std::move(reapPlugins), std::move(reapChains)});
+
+    drainRetired();  // reap anything already safe
+    if (!retired_.empty() && !isTimerRunning())
+        startTimerHz(30);  // ensure pending items get reaped even without further edits
+}
+
+void DrumGridPlugin::drainRetired() {
+    auto deinit = [](const te::Plugin::Ptr& p) {
+        if (p != nullptr && !p->baseClassNeedsInitialising())
+            p->baseClassDeinitialise();
+    };
+
+    for (auto it = retired_.begin(); it != retired_.end();) {
+        // A null guard means there was no prior published snapshot (first publish):
+        // nothing the audio thread could be holding, so it is immediately safe.
+        const bool released = (it->guard == nullptr) || (it->guard.use_count() == 1);
+        if (!released) {
+            ++it;
+            continue;
+        }
+
+        // Audio thread has let go of the snapshot that referenced these — deinit on
+        // the message thread, then drop (freeing them here, never under the audio
+        // callback).
+        for (auto& p : it->reapPlugins)
+            deinit(p);
+        for (auto& c : it->reapChains)
+            if (c != nullptr)
+                for (auto& p : c->plugins)
+                    deinit(p);
+
+        it = retired_.erase(it);
     }
+
+    if (retired_.empty() && isTimerRunning())
+        stopTimer();
+}
+
+void DrumGridPlugin::timerCallback() {
+    drainRetired();
 }
 
 void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
@@ -194,7 +242,7 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
     // Read the immutable published snapshot — never chains_ directly. The
     // shared_ptr copy keeps every chain + plugin alive for the whole block even
     // if the message thread swaps in a new snapshot mid-block (see
-    // rebuildAudioSnapshot()).
+    // publishSnapshot()).
     JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
     const std::shared_ptr<const AudioSnapshot> snapshot =
         std::atomic_load_explicit(&audioSnapshot_, std::memory_order_acquire);
@@ -224,9 +272,13 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
                                   juce::AudioBuffer<float>& outputBuffer,
                                   const te::MidiMessageArray& inputMidi, int numSamples,
                                   int numChannels, const te::PluginRenderContext& rc) {
-    const Chain& chain = *entry.chain;  // controls / note range / metering keys
+    const Chain& chain = *entry.chain;  // CachedValue control reads + metering keys only
     const auto& plugins = entry.plugins;
     const auto& pluginGains = entry.gains;
+    // Note-range / remap come from the snapshot, never the mutable Chain (see
+    // AudioChainEntry): the message thread can edit these concurrently.
+    const int lowNote = entry.lowNote;
+    const int rootNote = entry.rootNote;
 
     // Filter MIDI to this chain's note range and remap
     chainMidi_.clear();
@@ -235,14 +287,14 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
     for (auto& msg : inputMidi) {
         if (msg.isNoteOnOrOff()) {
             int note = msg.getNoteNumber();
-            if (note >= chain.lowNote && note <= chain.highNote) {
+            if (note >= lowNote && note <= entry.highNote) {
                 if (msg.isNoteOn()) {
                     int padIdx = note - baseNote;
                     if (padIdx >= 0 && padIdx < maxPads)
                         setPadTriggered(padIdx);
                 }
                 auto remapped = msg;
-                remapped.setNoteNumber(chain.rootNote + (note - chain.lowNote));
+                remapped.setNoteNumber(rootNote + (note - lowNote));
                 chainMidi_.add(remapped);
             }
         } else {
@@ -268,7 +320,8 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
         &scratchBuffer_, juce::AudioChannelSet::canonicalChannelSet(scratchChannels), 0, numSamples,
         &chainMidi_, 0.0, rc.editTime, rc.isPlaying, rc.isScrubbing, rc.isRendering, false);
 
-    int padIdx = padIndexFor(chain);
+    int padIdx =
+        (lowNote - baseNote >= 0 && lowNote - baseNote < maxPads) ? lowNote - baseNote : -1;
 
     for (int pi = 0; pi < static_cast<int>(plugins.size()); ++pi) {
         const auto& p = plugins[static_cast<size_t>(pi)];
@@ -376,7 +429,7 @@ int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce
 
     syncParamFromChain(idx);
     chains_.push_back(std::move(chain));
-    rebuildAudioSnapshot();
+    publishSnapshot();
 
     assignBusOutputs();
     notifyGraphRebuildNeeded();
@@ -396,14 +449,13 @@ void DrumGridPlugin::removeChain(int chainIndex) {
         }
     }
 
-    rebuildAudioSnapshot();  // audio thread can no longer reach `removed`
-
-    if (removed) {
-        for (auto& p : removed->plugins)
-            if (p != nullptr && !p->baseClassNeedsInitialising())
-                p->baseClassDeinitialise();
-    }
-    // removed (and its plugins) destruct here on the message thread.
+    // Hand the removed chain to the retirement queue; it (and its plugins) is freed
+    // by drainRetired() once the audio thread releases the snapshot that still
+    // referenced its raw Chain*.
+    std::vector<std::unique_ptr<Chain>> reapChains;
+    if (removed)
+        reapChains.push_back(std::move(removed));
+    publishSnapshot({}, std::move(reapChains));
 
     removeChainFromState(chainIndex);
     assignBusOutputs();
@@ -504,6 +556,8 @@ void DrumGridPlugin::setChainNoteRange(int chainIndex, int lowNote, int highNote
         chainTree.setProperty(highNoteId, chain->highNote, nullptr);
         chainTree.setProperty(rootNoteId, chain->rootNote, nullptr);
     }
+
+    publishSnapshot();  // note-range is carried in the snapshot the audio thread reads
 }
 
 //==============================================================================
@@ -563,13 +617,10 @@ void DrumGridPlugin::installSinglePadPlugin(Chain& chain, te::Plugin::Ptr plugin
         chainTree.addChild(plugin->state, -1, nullptr);
     }
 
-    // Publish the new graph and wait for the audio thread to drop the old snapshot
-    // before deinitialising/freeing the replaced plugins.
-    rebuildAudioSnapshot();
-    for (auto& p : oldPlugins)
-        if (p != nullptr && !p->baseClassNeedsInitialising())
-            p->baseClassDeinitialise();
-    // oldPlugins destruct here on the message thread.
+    // Publish the new graph and hand the replaced plugins to the retirement queue;
+    // they are deinitialised/freed by drainRetired() once the audio thread releases
+    // the snapshot that still referenced them.
+    publishSnapshot(std::move(oldPlugins));
 
     assignBusOutputs();
     notifyGraphRebuildNeeded();
@@ -667,6 +718,7 @@ void DrumGridPlugin::swapPadChains(int padIndexA, int padIndexB) {
         }
     }
 
+    publishSnapshot();  // publish the swapped note-ranges to the audio thread
     notifyGraphRebuildNeeded();
 }
 
@@ -735,7 +787,7 @@ void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescript
         }
     }
 
-    rebuildAudioSnapshot();
+    publishSnapshot();
     notifyGraphRebuildNeeded();
 }
 
@@ -784,7 +836,7 @@ void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String
         }
     }
 
-    rebuildAudioSnapshot();
+    publishSnapshot();
     notifyGraphRebuildNeeded();
 }
 
@@ -816,11 +868,10 @@ void DrumGridPlugin::removePluginFromChain(int chainIndex, int pluginIndex) {
     if (pluginIndex < static_cast<int>(chain->pluginGains.size()))
         chain->pluginGains.erase(chain->pluginGains.begin() + pluginIndex);
 
-    rebuildAudioSnapshot();
-
-    if (removed != nullptr && !removed->baseClassNeedsInitialising())
-        removed->baseClassDeinitialise();
-    // removed destructs here on the message thread.
+    // Defer deinit/free of the removed plugin to drainRetired().
+    std::vector<te::Plugin::Ptr> reap;
+    reap.push_back(std::move(removed));
+    publishSnapshot(std::move(reap));
 
     notifyGraphRebuildNeeded();
 }
@@ -860,7 +911,7 @@ void DrumGridPlugin::movePluginInChain(int chainIndex, int fromIndex, int toInde
         }
     }
 
-    rebuildAudioSnapshot();
+    publishSnapshot();
     notifyGraphRebuildNeeded();
 }
 
@@ -958,7 +1009,7 @@ void DrumGridPlugin::setChainPluginGain(int chainIndex, int pluginIndex, float g
     if (pluginIndex >= static_cast<int>(chain->pluginGains.size()))
         chain->pluginGains.resize(static_cast<size_t>(pluginIndex + 1), 1.0f);
     chain->pluginGains[static_cast<size_t>(pluginIndex)] = gainLinear;
-    rebuildAudioSnapshot();  // gains are carried in the snapshot the audio thread reads
+    publishSnapshot();  // gains are carried in the snapshot the audio thread reads
 }
 
 float DrumGridPlugin::getChainPluginGain(int chainIndex, int pluginIndex) const {
@@ -1153,7 +1204,7 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     }
 
     assignBusOutputs();
-    rebuildAudioSnapshot();  // publish the restored chains to the audio thread
+    publishSnapshot();  // publish the restored chains to the audio thread
 }
 
 //==============================================================================

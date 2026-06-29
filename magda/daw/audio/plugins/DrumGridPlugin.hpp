@@ -19,7 +19,7 @@ namespace te = tracktion::engine;
  * plugin chain (instrument + FX). All chain outputs are mixed internally to a
  * single stereo output that flows to the track's mixer channel.
  */
-class DrumGridPlugin : public te::Plugin {
+class DrumGridPlugin : public te::Plugin, private juce::Timer {
   public:
     DrumGridPlugin(const te::PluginCreationInfo&);
     ~DrumGridPlugin() override;
@@ -203,12 +203,18 @@ class DrumGridPlugin : public te::Plugin {
   private:
     // Immutable, audio-thread-readable view of one chain. Holds owning Plugin::Ptr
     // copies so the graph stays alive for the duration of a process block even if
-    // the message thread is concurrently rebuilding chains_. `chain` is a raw,
-    // non-owning back-pointer used only for control/meter reads; its lifetime is
-    // guaranteed by rebuildAudioSnapshot() retiring the previous snapshot before
-    // any Chain is freed.
+    // the message thread is concurrently rebuilding chains_. Note-range / remap
+    // values are copied in (the audio thread must not read those mutable plain-int
+    // Chain fields directly — they can be edited on the message thread). `chain` is
+    // a raw, non-owning back-pointer used only for CachedValue control reads
+    // (level/pan/mute/solo/bus, audio-thread-safe by design) and per-pad metering;
+    // its lifetime is guaranteed by publishSnapshot() retiring the previous
+    // snapshot before any Chain is freed.
     struct AudioChainEntry {
         Chain* chain = nullptr;
+        int lowNote = 0;
+        int highNote = 0;
+        int rootNote = 0;
         std::vector<te::Plugin::Ptr> plugins;
         std::vector<float> gains;
     };
@@ -218,13 +224,32 @@ class DrumGridPlugin : public te::Plugin {
                       const te::MidiMessageArray& inputMidi, int numSamples, int numChannels,
                       const te::PluginRenderContext& rc);
 
-    // Rebuild + atomically publish audioSnapshot_ from chains_, then block (briefly,
-    // on the message thread) until the audio thread has released the previous
-    // snapshot. After this returns it is safe to deinitialise/free any plugins or
-    // Chain objects that were removed from chains_ — the audio thread can no longer
-    // reach them. This is the RCU-style swap that makes chain edits race-free
-    // without locking or glitching the audio thread.
-    void rebuildAudioSnapshot();
+    // A snapshot retired by a publish, kept alive (along with anything that must
+    // outlive the audio thread's use of it) until the audio thread has released it.
+    // Reaped on the message thread by drainRetired() — never freed under the audio
+    // thread, and the publishing thread never blocks waiting for it.
+    struct RetiredSnapshot {
+        std::shared_ptr<const AudioSnapshot> guard;      // the previous published snapshot
+        std::vector<te::Plugin::Ptr> reapPlugins;        // plugins removed by this publish
+        std::vector<std::unique_ptr<Chain>> reapChains;  // chains removed by this publish
+    };
+
+    // Rebuild + atomically publish audioSnapshot_ from chains_ (RCU-style swap that
+    // makes chain edits race-free without locking or glitching the audio thread).
+    // Anything removed from chains_ by the caller is handed over via reapPlugins /
+    // reapChains; it is deinitialised and freed later by drainRetired(), once the
+    // audio thread has let go of the snapshot that still referenced it. The caller
+    // must NOT free those objects itself — this method does not block.
+    void publishSnapshot(std::vector<te::Plugin::Ptr> reapPlugins = {},
+                         std::vector<std::unique_ptr<Chain>> reapChains = {});
+
+    // Free retired snapshots (and their reap payloads) whose audio-thread references
+    // have been released (use_count() == 1). Runs on the message thread, both
+    // opportunistically from publishSnapshot() and from the reaper timer.
+    void drainRetired();
+
+    // juce::Timer — drives drainRetired() while anything is pending retirement.
+    void timerCallback() override;
 
     // Replace a pad chain's entire plugin list with a single freshly-created
     // plugin, race-free: initialises the new plugin, publishes the new snapshot,
@@ -246,11 +271,15 @@ class DrumGridPlugin : public te::Plugin {
     std::vector<std::unique_ptr<Chain>> chains_;
 
     // Published, immutable snapshot the audio thread reads instead of chains_.
-    // Written only by rebuildAudioSnapshot() (message thread), loaded by
+    // Written only by publishSnapshot() (message thread), loaded by
     // applyToBuffer() (audio thread). Accessed through the std::atomic_*(shared_ptr*)
     // free functions for a lock-free acquire/release handoff (this toolchain's
     // libc++ lacks the std::atomic<std::shared_ptr> specialisation).
     std::shared_ptr<const AudioSnapshot> audioSnapshot_;
+
+    // Snapshots (and the plugins/chains they kept alive) awaiting message-thread
+    // reaping once the audio thread releases them. Only touched on the message thread.
+    std::vector<RetiredSnapshot> retired_;
 
     int nextChainIndex_ = 0;
     std::array<std::atomic<bool>, maxPads> padTriggered_{};
