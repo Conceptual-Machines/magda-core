@@ -4,6 +4,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -214,6 +215,9 @@ class DeviceCustomUIManager {
     // Invalidate the current UI context and clear live plugin bindings before
     // the owning slot is destroyed, removed, or rebound to another plugin.
     void detachFromLivePlugin();
+
+    bool randomizeSequencerPattern(bool polyphonic);
+    std::optional<bool> toggleSequencerStepRecording(bool polyphonic);
 
     // Pending tab index (set before fourOscUI_ is created, consumed in create())
     static constexpr int NO_PENDING_TAB = -1;

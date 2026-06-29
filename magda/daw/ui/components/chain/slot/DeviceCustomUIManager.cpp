@@ -86,6 +86,12 @@ const juce::Identifier kSamplerSetRootNote{"samplerSetRootNote"};
 const juce::Identifier kSamplerGetPlaybackPosition{"samplerGetPlaybackPosition"};
 const juce::Identifier kSamplerLoadSample{"samplerLoadSample"};
 const juce::Identifier kImpulseResponseLoadFile{"impulseResponseLoadFile"};
+const juce::Identifier kStepSequencerRandomizePattern{"stepSequencerRandomizePattern"};
+const juce::Identifier kPolyStepSequencerRandomizePattern{"polyStepSequencerRandomizePattern"};
+const juce::Identifier kStepSequencerGetStepRecording{"stepSequencerGetStepRecording"};
+const juce::Identifier kPolyStepSequencerGetStepRecording{"polyStepSequencerGetStepRecording"};
+const juce::Identifier kStepSequencerSetStepRecording{"stepSequencerSetStepRecording"};
+const juce::Identifier kPolyStepSequencerSetStepRecording{"polyStepSequencerSetStepRecording"};
 
 struct RolePrompt {
     const char* roleId;
@@ -631,6 +637,33 @@ tracktion::engine::Plugin::Ptr DeviceCustomUIManager::getLivePlugin() const {
     }
 
     return {};
+}
+
+bool DeviceCustomUIManager::randomizeSequencerPattern(bool polyphonic) {
+    if (deviceUiContext_ == nullptr || !deviceUiContext_->isValid())
+        return false;
+    auto* commands = deviceUiContext_->commands();
+    if (commands == nullptr)
+        return false;
+    return static_cast<bool>(commands->executeCommand(
+        polyphonic ? kPolyStepSequencerRandomizePattern : kStepSequencerRandomizePattern));
+}
+
+std::optional<bool> DeviceCustomUIManager::toggleSequencerStepRecording(bool polyphonic) {
+    if (deviceUiContext_ == nullptr || !deviceUiContext_->isValid())
+        return std::nullopt;
+    auto* commands = deviceUiContext_->commands();
+    if (commands == nullptr)
+        return std::nullopt;
+
+    const auto getCommand =
+        polyphonic ? kPolyStepSequencerGetStepRecording : kStepSequencerGetStepRecording;
+    const auto setCommand =
+        polyphonic ? kPolyStepSequencerSetStepRecording : kStepSequencerSetStepRecording;
+    const bool enabled = !static_cast<bool>(commands->executeCommand(getCommand));
+    return static_cast<bool>(commands->executeCommand(setCommand, enabled))
+               ? std::optional<bool>{enabled}
+               : std::nullopt;
 }
 
 // =============================================================================
@@ -1784,6 +1817,45 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
                     // Capture plugin state so the IR persists in the project.
                     bridge->getPluginManager().capturePluginState(devicePath_);
+                    return true;
+                }
+
+                if (command == kStepSequencerRandomizePattern ||
+                    command == kStepSequencerGetStepRecording ||
+                    command == kStepSequencerSetStepRecording) {
+                    auto plugin = getLivePlugin();
+                    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
+                    if (sequencer == nullptr)
+                        return false;
+
+                    if (command == kStepSequencerRandomizePattern) {
+                        sequencer->randomizePattern();
+                        return true;
+                    }
+                    if (command == kStepSequencerGetStepRecording)
+                        return sequencer->isStepRecording();
+
+                    sequencer->setStepRecording(static_cast<bool>(arguments));
+                    return true;
+                }
+
+                if (command == kPolyStepSequencerRandomizePattern ||
+                    command == kPolyStepSequencerGetStepRecording ||
+                    command == kPolyStepSequencerSetStepRecording) {
+                    auto plugin = getLivePlugin();
+                    auto* sequencer =
+                        dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
+                    if (sequencer == nullptr)
+                        return false;
+
+                    if (command == kPolyStepSequencerRandomizePattern) {
+                        sequencer->randomizePattern();
+                        return true;
+                    }
+                    if (command == kPolyStepSequencerGetStepRecording)
+                        return sequencer->isStepRecording();
+
+                    sequencer->setStepRecording(static_cast<bool>(arguments));
                     return true;
                 }
 
