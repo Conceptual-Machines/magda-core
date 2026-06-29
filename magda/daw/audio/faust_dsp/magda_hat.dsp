@@ -19,14 +19,18 @@ gate = button("gate");
 ringLvl    = hslider("Ring [idx:0]",       0.6,  0.0, 1.0,  0.001);
 ringPitch  = hslider("Pitch [idx:1]",      540,  200, 2000, 1);
 spread     = hslider("Spread [idx:2]",     1.0,  0.5, 2.0,  0.001);
-ringDec    = hslider("Ring Decay [idx:3]", 300,  10,  2000, 1) * 0.001;
+ringDec    = hslider("Ring Decay [idx:3]", 10,   0.01, 2000, 0.01) * 0.001;
 // Noise
 noiseLvl   = hslider("Noise [idx:4]",       0.5,  0.0, 1.0,   0.001);
-tone       = hslider("Tone [idx:5]",        8000, 800, 18000, 1);
+hpFreq     = hslider("HP Freq [idx:5]",     8000, 800, 18000, 1);
 noiseDec   = hslider("Noise Decay [idx:6]", 100,  5,   2000,  1) * 0.001;
 // Decay curves
 ringCurve  = hslider("Ring Curve [idx:7]",  0,   -50,  50,    1);
 noiseCurve = hslider("Noise Curve [idx:8]", 0,   -50,  50,    1);
+// Noise high-pass shaping: resonance turns the fixed Butterworth HP into a
+// resonant high-pass, Sat adds a touch of saturation. Both 0..1, 0 = neutral.
+hpReso     = hslider("HP Reso [idx:9]",     0.0,  0.0, 1.0,   0.001);
+noiseSat   = hslider("Sat [idx:10]",        0.0,  0.0, 1.0,   0.001);
 
 // ============================================================================
 // Voice: metallic Ring + Noise sizzle.
@@ -43,10 +47,15 @@ partial(i) = os.osc(ringPitch * ba.take(i + 1, ratios)) * ba.take(i + 1, gains) 
              pow(en.ar(0.001, ringDec * (1.0 - 0.5 * (i / N)), gate), ringCurveExp);
 ring = par(i, N, partial(i)) :> _ : *(ringLvl);
 
-// High-passed noise sizzle with its own curve-shaped decay.
+// High-passed noise sizzle with its own curve-shaped decay. HP Reso maps 0..1 ->
+// Q 0.5..10 on a resonant high-pass; Sat is a dry/wet blend into tanh (identity
+// at 0, normalized drive at 1) so a little adds grit without changing level.
 noiseCurveExp = pow(8.0, -noiseCurve / 50.0);
-noise = (no.noise : fi.highpass(3, tone)) * pow(en.ar(0.001, noiseDec, gate), noiseCurveExp) *
-        noiseLvl;
+hpQ  = 0.5 + hpReso * 9.5;
+satK = 4.0;
+sat(x) = (1.0 - noiseSat) * x + noiseSat * (ma.tanh(x * satK) / ma.tanh(satK));
+noise = ((no.noise : fi.resonhp(hpFreq, hpQ, 1.0)) : sat) *
+        pow(en.ar(0.001, noiseDec, gate), noiseCurveExp) * noiseLvl;
 
 voice   = ma.tanh(ring + noise) * gain;
 process = voice <: _, _;

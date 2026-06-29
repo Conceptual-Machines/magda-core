@@ -61,9 +61,11 @@ Two independent layers: a metallic additive **Ring** and a high-passed **Noise**
 | **Ring** | 0 to 1 | 0.6 | Metallic ring level |
 | **Pitch** | 200 to 2000 Hz | 540 | Ring fundamental |
 | **Spread** | 0.5 to 2 | 1 | Ring dissonance (1 nominal, above spreads, below is more harmonic) |
-| **Ring Decay** | 10 to 2000 ms | 300 | Ring decay |
+| **Ring Decay** | 0.01 to 2000 ms | 10 | Ring decay |
 | **Noise** | 0 to 1 | 0.5 | Noise sizzle level |
-| **Tone** | 800 to 18000 Hz | 8000 | Noise high-pass cutoff |
+| **HP Freq** | 800 to 18000 Hz | 8000 | Noise high-pass cutoff |
+| **HP Reso** | 0 to 1 | 0 | Noise high-pass resonance |
+| **Sat** | 0 to 1 | 0 | Noise saturation |
 | **Noise Decay** | 5 to 2000 ms | 100 | Noise decay |
 | **Ring Curve** / **Noise Curve** | -50 to 50 | 0 | Per-layer decay shape |
 
