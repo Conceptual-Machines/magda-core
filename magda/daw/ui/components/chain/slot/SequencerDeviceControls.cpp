@@ -1,7 +1,5 @@
 #include "slot/SequencerDeviceControls.hpp"
 
-#include "audio/plugins/PolyStepSequencerPlugin.hpp"
-#include "audio/plugins/StepSequencerPlugin.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 
 namespace magda::daw::ui {
@@ -9,6 +7,19 @@ namespace magda::daw::ui {
 namespace {
 
 constexpr int kMaxSequencerSteps = 32;
+
+void applyStepRecordingState(const DeviceCustomUIManager& customUI, bool polyphonic,
+                             SequencerDeviceHeaderState& state) {
+    int position = 0;
+    int maxSteps = kMaxSequencerSteps;
+    state.available = true;
+    state.recording = customUI.getSequencerStepRecordingState(polyphonic, position, maxSteps);
+    if (state.recording) {
+        state.stepRecording.active = true;
+        state.stepRecording.position = position;
+        state.stepRecording.maxSteps = juce::jlimit(1, kMaxSequencerSteps, maxSteps);
+    }
+}
 
 }  // namespace
 
@@ -21,36 +32,12 @@ SequencerDeviceHeaderState getSequencerDeviceHeaderState(const DeviceSlotTraits&
     SequencerDeviceHeaderState state;
 
     if (traits.isPolyStepSequencer) {
-        auto* plugin = customUI.getPolyStepSeqPlugin();
-        if (plugin == nullptr)
-            return state;
-
-        state.available = true;
-        state.recording = plugin->isStepRecording();
-        if (state.recording) {
-            state.stepRecording.active = true;
-            state.stepRecording.position =
-                plugin->stepRecordPosition_.load(std::memory_order_relaxed);
-            state.stepRecording.maxSteps =
-                juce::jlimit(1, kMaxSequencerSteps, plugin->numSteps.get());
-        }
+        applyStepRecordingState(customUI, true, state);
         return state;
     }
 
     if (traits.isStepSequencer) {
-        auto* plugin = customUI.getStepSeqPlugin();
-        if (plugin == nullptr)
-            return state;
-
-        state.available = true;
-        state.recording = plugin->isStepRecording();
-        if (state.recording) {
-            state.stepRecording.active = true;
-            state.stepRecording.position =
-                plugin->stepRecordPosition_.load(std::memory_order_relaxed);
-            state.stepRecording.maxSteps =
-                juce::jlimit(1, kMaxSequencerSteps, plugin->numSteps.get());
-        }
+        applyStepRecordingState(customUI, false, state);
     }
 
     return state;

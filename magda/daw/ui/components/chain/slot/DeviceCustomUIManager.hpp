@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -54,6 +55,14 @@ class SamplerUI;
 class StepSequencerUI;
 class StrumUI;
 class ToneGeneratorUI;
+
+}  // namespace magda::daw::ui
+
+namespace magda {
+class MidiNoteStrip;
+}
+
+namespace magda::daw::ui {
 
 /**
  * @brief Manages all custom UI instances for a DeviceSlotComponent.
@@ -222,6 +231,14 @@ class DeviceCustomUIManager {
     bool handleSequencerPatternExternalDrag(bool polyphonic, juce::Component* exportButton,
                                             juce::Component* dragOwner,
                                             const juce::MouseEvent& event);
+    bool getSequencerStepRecordingState(bool polyphonic, int& position, int& maxSteps) const;
+    void refreshArpeggiatorMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshStrumMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshStepSequencerMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshPolyStepSequencerMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshChordEngineMidiActivity(magda::MidiNoteStrip& strip,
+                                        std::array<int, 32>& lastChordNotes,
+                                        int& lastChordCount) const;
 
     // Pending tab index (set before fourOscUI_ is created, consumed in create())
     static constexpr int NO_PENDING_TAB = -1;

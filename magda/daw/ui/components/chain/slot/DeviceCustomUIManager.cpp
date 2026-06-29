@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <mutex>
@@ -75,6 +76,7 @@
 #include "project/ProjectManager.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/mixer/MidiNoteStrip.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
 
@@ -279,6 +281,22 @@ bool isMidiFxPlugin(const PluginBrowserInfo& plugin) {
 
 bool isMidiFxPlugin(const juce::PluginDescription& desc) {
     return desc.category.equalsIgnoreCase("MIDI");
+}
+
+template <typename Plugin>
+void refreshSingleNoteStripFromPlugin(Plugin* plugin, magda::MidiNoteStrip& strip, int& lastNote) {
+    if (plugin == nullptr)
+        return;
+
+    const int note = plugin->midiOutNote_.load(std::memory_order_relaxed);
+    const int vel = plugin->midiOutVelocity_.load(std::memory_order_relaxed);
+    if (note != lastNote) {
+        if (lastNote >= 0)
+            strip.clearNote(lastNote);
+        lastNote = note;
+    }
+    if (note >= 0)
+        strip.setNote(note, vel);
 }
 
 bool pluginDescriptionMatchesDrop(const juce::PluginDescription& desc, const juce::String& fileOrId,
@@ -693,6 +711,64 @@ bool DeviceCustomUIManager::handleSequencerPatternExternalDrag(bool polyphonic,
     return handleStepSequencerPatternExternalDrag(
         dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get()), exportButton, dragOwner,
         event);
+}
+
+bool DeviceCustomUIManager::getSequencerStepRecordingState(bool polyphonic, int& position,
+                                                           int& maxSteps) const {
+    auto plugin = getLivePlugin();
+    if (polyphonic) {
+        auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
+        if (sequencer == nullptr || !sequencer->isStepRecording())
+            return false;
+        position = sequencer->stepRecordPosition_.load(std::memory_order_relaxed);
+        maxSteps = juce::jlimit(1, 32, static_cast<int>(sequencer->numSteps.get()));
+        return true;
+    }
+
+    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
+    if (sequencer == nullptr || !sequencer->isStepRecording())
+        return false;
+    position = sequencer->stepRecordPosition_.load(std::memory_order_relaxed);
+    maxSteps = juce::jlimit(1, 32, static_cast<int>(sequencer->numSteps.get()));
+    return true;
+}
+
+void DeviceCustomUIManager::refreshArpeggiatorMidiActivity(magda::MidiNoteStrip& strip,
+                                                           int& lastNote) const {
+    refreshSingleNoteStripFromPlugin(arpPlugin_, strip, lastNote);
+}
+
+void DeviceCustomUIManager::refreshStrumMidiActivity(magda::MidiNoteStrip& strip,
+                                                     int& lastNote) const {
+    refreshSingleNoteStripFromPlugin(strumPlugin_, strip, lastNote);
+}
+
+void DeviceCustomUIManager::refreshStepSequencerMidiActivity(magda::MidiNoteStrip& strip,
+                                                             int& lastNote) const {
+    refreshSingleNoteStripFromPlugin(stepSeqPlugin_, strip, lastNote);
+}
+
+void DeviceCustomUIManager::refreshPolyStepSequencerMidiActivity(magda::MidiNoteStrip& strip,
+                                                                 int& lastNote) const {
+    refreshSingleNoteStripFromPlugin(polyStepSeqPlugin_, strip, lastNote);
+}
+
+void DeviceCustomUIManager::refreshChordEngineMidiActivity(magda::MidiNoteStrip& strip,
+                                                           std::array<int, 32>& lastChordNotes,
+                                                           int& lastChordCount) const {
+    if (chordPlugin_ == nullptr)
+        return;
+
+    const int count = chordPlugin_->getHeldNoteCount();
+    for (int i = 0; i < lastChordCount; ++i)
+        strip.clearNote(lastChordNotes[static_cast<size_t>(i)]);
+
+    for (int i = 0; i < count && i < static_cast<int>(lastChordNotes.size()); ++i) {
+        const int note = chordPlugin_->getHeldNote(i);
+        lastChordNotes[static_cast<size_t>(i)] = note;
+        strip.setNote(note, 100);
+    }
+    lastChordCount = count;
 }
 
 // =============================================================================
