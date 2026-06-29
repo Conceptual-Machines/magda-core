@@ -81,6 +81,11 @@ namespace magda::daw::ui {
 
 namespace {
 
+const juce::Identifier kSamplerSetLoopEnabled{"samplerSetLoopEnabled"};
+const juce::Identifier kSamplerSetRootNote{"samplerSetRootNote"};
+const juce::Identifier kSamplerGetPlaybackPosition{"samplerGetPlaybackPosition"};
+const juce::Identifier kSamplerLoadSample{"samplerLoadSample"};
+
 struct RolePrompt {
     const char* roleId;
     const char* prompt;
@@ -303,6 +308,21 @@ class CallbackDeviceParameterController final : public magda::DeviceParameterCon
     std::function<void(int, float)> onParameterChanged_;
 };
 
+class CallbackDeviceCommandController final : public magda::DeviceCommandController {
+  public:
+    explicit CallbackDeviceCommandController(
+        std::function<juce::var(const juce::Identifier&, const juce::var&)> execute)
+        : execute_(std::move(execute)) {}
+
+    juce::var executeCommand(const juce::Identifier& command,
+                             const juce::var& arguments = {}) override {
+        return execute_ ? execute_(command, arguments) : juce::var{};
+    }
+
+  private:
+    std::function<juce::var(const juce::Identifier&, const juce::var&)> execute_;
+};
+
 void writeParameterChange(const DeviceCustomUIManager::Callbacks& callbacks, int paramIndex,
                           float value) {
     if (callbacks.deviceUiContext != nullptr) {
@@ -314,6 +334,16 @@ void writeParameterChange(const DeviceCustomUIManager::Callbacks& callbacks, int
 
     if (callbacks.onParameterChanged)
         callbacks.onParameterChanged(paramIndex, value);
+}
+
+juce::var executeDeviceCommand(const DeviceCustomUIManager::Callbacks& callbacks,
+                               const juce::Identifier& command, const juce::var& arguments = {}) {
+    if (callbacks.deviceUiContext != nullptr) {
+        if (auto* commands = callbacks.deviceUiContext->commands())
+            return commands->executeCommand(command, arguments);
+    }
+
+    return {};
 }
 
 template <typename Ui>
@@ -703,52 +733,21 @@ bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
         writeParameterChange(cb, paramIndex, value);
     };
 
-    samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
-        auto plugin = getLivePlugin();
-        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-            sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
-            sampler->loopEnabledValue = enabled;
-        }
+    samplerUI_->onLoopEnabledChanged = [cb = callbacks](bool enabled) {
+        executeDeviceCommand(cb, kSamplerSetLoopEnabled, enabled);
     };
 
-    samplerUI_->onRootNoteChanged = [this](int note) {
-        auto plugin = getLivePlugin();
-        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-            sampler->setRootNote(note);
-        }
+    samplerUI_->onRootNoteChanged = [cb = callbacks](int note) {
+        executeDeviceCommand(cb, kSamplerSetRootNote, note);
     };
 
-    samplerUI_->getPlaybackPosition = [this]() -> double {
-        auto plugin = getLivePlugin();
-        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-            return sampler->getPlaybackPosition();
-        }
-        return 0.0;
+    samplerUI_->getPlaybackPosition = [cb = callbacks]() -> double {
+        return static_cast<double>(executeDeviceCommand(cb, kSamplerGetPlaybackPosition));
     };
 
     // Shared logic for loading a sample file and refreshing the UI
-    auto loadFile = [this](const juce::File& file) {
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (!audioEngine)
-            return;
-        auto* bridge = audioEngine->getAudioBridge();
-        if (!bridge)
-            return;
-        if (bridge->loadSamplerSample(devicePath_, file)) {
-            auto plugin = getLivePlugin();
-            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                samplerUI_->updateParameters(
-                    sampler->attackValue.get(), sampler->decayValue.get(),
-                    sampler->sustainValue.get(), sampler->releaseValue.get(),
-                    sampler->pitchValue.get(), sampler->fineValue.get(), sampler->levelValue.get(),
-                    sampler->sampleStartValue.get(), sampler->sampleEndValue.get(),
-                    sampler->loopEnabledValue.get(), sampler->loopStartValue.get(),
-                    sampler->loopEndValue.get(), sampler->velAmountValue.get(),
-                    file.getFileNameWithoutExtension());
-                samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                            sampler->getSampleLengthSeconds());
-            }
-        }
+    auto loadFile = [cb = callbacks](const juce::File& file) {
+        executeDeviceCommand(cb, kSamplerLoadSample, file.getFullPathName());
     };
 
     samplerUI_->onLoadSampleRequested = [loadFile]() {
@@ -1713,6 +1712,71 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
     if (auto* basicContext = dynamic_cast<magda::BasicDeviceUiContext*>(deviceUiContext_.get())) {
         basicContext->setParameterController(std::make_shared<CallbackDeviceParameterController>(
             device, callbacks.onParameterChanged));
+        basicContext->setCommandController(std::make_shared<CallbackDeviceCommandController>(
+            [this](const juce::Identifier& command, const juce::var& arguments) -> juce::var {
+                if (command == kSamplerSetLoopEnabled) {
+                    auto plugin = getLivePlugin();
+                    if (auto* sampler =
+                            dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                        const bool enabled = static_cast<bool>(arguments);
+                        sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
+                        sampler->loopEnabledValue = enabled;
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (command == kSamplerSetRootNote) {
+                    auto plugin = getLivePlugin();
+                    if (auto* sampler =
+                            dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                        sampler->setRootNote(static_cast<int>(arguments));
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (command == kSamplerGetPlaybackPosition) {
+                    auto plugin = getLivePlugin();
+                    if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get()))
+                        return sampler->getPlaybackPosition();
+                    return 0.0;
+                }
+
+                if (command == kSamplerLoadSample) {
+                    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+                    if (audioEngine == nullptr)
+                        return false;
+                    auto* bridge = audioEngine->getAudioBridge();
+                    if (bridge == nullptr)
+                        return false;
+
+                    const juce::File file(arguments.toString());
+                    if (!file.existsAsFile() || !bridge->loadSamplerSample(devicePath_, file))
+                        return false;
+
+                    auto plugin = getLivePlugin();
+                    if (auto* sampler =
+                            dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                        if (samplerUI_ != nullptr) {
+                            samplerUI_->updateParameters(
+                                sampler->attackValue.get(), sampler->decayValue.get(),
+                                sampler->sustainValue.get(), sampler->releaseValue.get(),
+                                sampler->pitchValue.get(), sampler->fineValue.get(),
+                                sampler->levelValue.get(), sampler->sampleStartValue.get(),
+                                sampler->sampleEndValue.get(), sampler->loopEnabledValue.get(),
+                                sampler->loopStartValue.get(), sampler->loopEndValue.get(),
+                                sampler->velAmountValue.get(), file.getFileNameWithoutExtension());
+                            samplerUI_->setWaveformData(sampler->getWaveform(),
+                                                        sampler->getSampleRate(),
+                                                        sampler->getSampleLengthSeconds());
+                        }
+                    }
+                    return true;
+                }
+
+                return {};
+            }));
     }
 
     auto uiCallbacks = callbacks;
