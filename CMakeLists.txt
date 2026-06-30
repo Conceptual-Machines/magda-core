@@ -188,6 +188,14 @@ add_subdirectory(third_party/llama.cpp)
 # llama.cpp doesn't need C++20; building as C++17 avoids MSVC char8_t errors
 if(MSVC)
     set_target_properties(llama PROPERTIES CXX_STANDARD 17)
+    # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,
+    # double->float, etc.), so MSVC emits ~750 benign C4244/C4267/C4305
+    # warnings from src/ and src/models/. Not our code, not actionable, and the
+    # diagnostic volume slows the build; silence them on the llama target.
+    # C4101 = unreferenced local variable (also upstream, also benign).
+    if(TARGET llama)
+        target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
+    endif()
 endif()
 
 # Faust — runtime DSP compilation. Free tier uses the interpreter backend (no
@@ -253,14 +261,25 @@ add_library(faust::libfaust ALIAS staticlib)
 # error. Define `_MBCS` for Faust's staticlib AND the `faust` executable
 # (both compile compatibility.cpp) so they take the narrow branch
 # upstream Faust expects on Windows; other targets are untouched.
+# The Faust compiler library is vendored third-party code (~390 TUs) that
+# leans on implicit numeric conversions and variable shadowing, flooding the
+# build with benign warnings: MSVC C4244/C4267/C4305, GCC/Clang -Wshadow /
+# -Wunused-* / -Wcast-function-type, etc. None are actionable in code we don't
+# own, and the diagnostic volume slows the build, so silence warnings on both
+# Faust targets. MSVC additionally needs _MBCS (see above).
 if(MSVC)
-    if(TARGET staticlib)
-        target_compile_definitions(staticlib PRIVATE _MBCS)
-    endif()
-    if(TARGET faust)
-        target_compile_definitions(faust PRIVATE _MBCS)
-    endif()
+    set(_faust_quiet /wd4244 /wd4267 /wd4305)
+else()
+    set(_faust_quiet -w)
 endif()
+foreach(_faust_target staticlib faust)
+    if(TARGET ${_faust_target})
+        target_compile_options(${_faust_target} PRIVATE ${_faust_quiet})
+        if(MSVC)
+            target_compile_definitions(${_faust_target} PRIVATE _MBCS)
+        endif()
+    endif()
+endforeach()
 
 # ----------------------------------------------------------------------------
 # magda_compile_faust_dsp(<dsp_file> <class_name> <out_var>)
@@ -391,6 +410,35 @@ target_include_directories(magda_mutable PUBLIC ${MI_ROOT})
 target_compile_definitions(magda_mutable PUBLIC TEST)
 if(MSVC)
     target_compile_definitions(magda_mutable PUBLIC _USE_MATH_DEFINES)
+
+    # This is vendored Mutable Instruments DSP. It leans on implicit numeric
+    # conversions throughout (double literals -> float, size_t -> int32, etc.),
+    # so MSVC emits a flood of benign conversion warnings across stmlib headers
+    # and every dsp/*.cc - tens of thousands of them, whose formatting + log
+    # I/O measurably slow the build. We don't own this code and these are not
+    # actionable, so silence them for the whole target:
+    #   C4305 - truncation double -> float (the literal tables, the worst spam)
+    #   C4244 - conversion, possible loss of data
+    #   C4267 - size_t -> smaller int conversion
+    target_compile_options(magda_mutable PRIVATE /wd4305 /wd4244 /wd4267)
+
+    # The generated resources.cc files are giant brace-initialised const float
+    # lookup tables (elements/resources.cc alone is ~44k lines of FP literals).
+    # MSVC's optimiser is pathologically slow constant-folding huge static
+    # initialiser lists, so /O2 burns minutes on data it can't optimise. Disable
+    # optimisation for just these TUs: pure tables, zero runtime cost.
+    # TARGET_DIRECTORY scopes the per-file flag to magda_mutable (supported since
+    # CMake 3.18; verified the flag actually lands).
+    set_source_files_properties(
+        ${MI_ROOT}/elements/resources.cc
+        ${MI_ROOT}/rings/resources.cc
+        ${MI_ROOT}/clouds/resources.cc
+        TARGET_DIRECTORY magda_mutable
+        PROPERTIES COMPILE_OPTIONS "/Od")
+else()
+    # Same vendored-DSP rationale on GCC/Clang: shadowing + unused-var warnings
+    # from stmlib headers and dsp/*.cc that we won't fix. Silence them.
+    target_compile_options(magda_mutable PRIVATE -w)
 endif()
 set_target_properties(magda_mutable PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(magda::mutable ALIAS magda_mutable)
