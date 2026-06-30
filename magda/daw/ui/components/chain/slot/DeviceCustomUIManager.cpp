@@ -686,6 +686,9 @@ std::optional<bool> DeviceCustomUIManager::toggleSequencerStepRecording(bool pol
 }
 
 void DeviceCustomUIManager::copySequencerPatternToClipboard(bool polyphonic) {
+    // Clipboard/export gestures are UI-specific operations that need the concrete
+    // plugin helpers rather than the generic command surface used for state
+    // mutations.
     auto plugin = getLivePlugin();
     if (polyphonic) {
         if (auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get()))
@@ -715,10 +718,23 @@ bool DeviceCustomUIManager::handleSequencerPatternExternalDrag(bool polyphonic,
 
 bool DeviceCustomUIManager::getSequencerStepRecordingState(bool polyphonic, int& position,
                                                            int& maxSteps) const {
+    const auto getCommand =
+        polyphonic ? kPolyStepSequencerGetStepRecording : kStepSequencerGetStepRecording;
+    bool commandHandled = false;
+    if (deviceUiContext_ != nullptr && deviceUiContext_->isValid()) {
+        if (auto* commands = deviceUiContext_->commands()) {
+            commandHandled = true;
+            if (!static_cast<bool>(commands->executeCommand(getCommand)))
+                return false;
+        }
+    }
+
+    // Position and range are display-only details that are not part of the
+    // command mutation surface.
     auto plugin = getLivePlugin();
     if (polyphonic) {
         auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-        if (sequencer == nullptr || !sequencer->isStepRecording())
+        if (sequencer == nullptr || (!commandHandled && !sequencer->isStepRecording()))
             return false;
         position = sequencer->stepRecordPosition_.load(std::memory_order_relaxed);
         maxSteps = juce::jlimit(1, 32, static_cast<int>(sequencer->numSteps.get()));
@@ -726,7 +742,7 @@ bool DeviceCustomUIManager::getSequencerStepRecordingState(bool polyphonic, int&
     }
 
     auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
-    if (sequencer == nullptr || !sequencer->isStepRecording())
+    if (sequencer == nullptr || (!commandHandled && !sequencer->isStepRecording()))
         return false;
     position = sequencer->stepRecordPosition_.load(std::memory_order_relaxed);
     maxSteps = juce::jlimit(1, 32, static_cast<int>(sequencer->numSteps.get()));
@@ -1803,6 +1819,157 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     return true;
 }
 
+juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& command,
+                                                       const juce::var& arguments) {
+    auto plugin = getLivePlugin();
+    auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get());
+
+    if (command == kSamplerSetLoopEnabled) {
+        if (sampler == nullptr)
+            return false;
+        const bool enabled = static_cast<bool>(arguments);
+        sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
+        sampler->loopEnabledValue = enabled;
+        return true;
+    }
+
+    if (command == kSamplerSetRootNote) {
+        if (sampler == nullptr)
+            return false;
+        sampler->setRootNote(static_cast<int>(arguments));
+        return true;
+    }
+
+    if (command == kSamplerGetPlaybackPosition)
+        return sampler != nullptr ? juce::var{sampler->getPlaybackPosition()} : juce::var{0.0};
+
+    if (command != kSamplerLoadSample)
+        return {};
+
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (audioEngine == nullptr)
+        return false;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (bridge == nullptr)
+        return false;
+
+    const juce::File file(arguments.toString());
+    if (!file.existsAsFile() || !bridge->loadSamplerSample(devicePath_, file))
+        return false;
+
+    plugin = getLivePlugin();
+    sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get());
+    if (sampler != nullptr && samplerUI_ != nullptr) {
+        samplerUI_->updateParameters(
+            sampler->attackValue.get(), sampler->decayValue.get(), sampler->sustainValue.get(),
+            sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
+            sampler->levelValue.get(), sampler->sampleStartValue.get(),
+            sampler->sampleEndValue.get(), sampler->loopEnabledValue.get(),
+            sampler->loopStartValue.get(), sampler->loopEndValue.get(),
+            sampler->velAmountValue.get(), file.getFileNameWithoutExtension());
+        samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                    sampler->getSampleLengthSeconds());
+    }
+    return true;
+}
+
+bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& arguments) {
+    const juce::File file(arguments.toString());
+    if (!file.existsAsFile()) {
+        DBG("IR load: file does not exist: " << file.getFullPathName());
+        return false;
+    }
+
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (audioEngine == nullptr) {
+        DBG("IR load: no audio engine");
+        return false;
+    }
+    auto* bridge = audioEngine->getAudioBridge();
+    if (bridge == nullptr) {
+        DBG("IR load: no audio bridge");
+        return false;
+    }
+    auto plugin = getLivePlugin();
+    if (!plugin) {
+        DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
+        return false;
+    }
+    auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
+    if (ir == nullptr) {
+        DBG("IR load: plugin is not ImpulseResponsePlugin, type: " << plugin->getName());
+        return false;
+    }
+    if (!ir->loadImpulseResponse(file)) {
+        DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
+        return false;
+    }
+
+    ir->name = file.getFileNameWithoutExtension();
+    if (impulseResponseUI_ != nullptr)
+        impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
+
+    // Capture plugin state so the IR persists in the project.
+    bridge->getPluginManager().capturePluginState(devicePath_);
+    return true;
+}
+
+juce::var DeviceCustomUIManager::executeSequencerCommand(const juce::Identifier& command,
+                                                         const juce::var& arguments,
+                                                         bool polyphonic) {
+    auto plugin = getLivePlugin();
+    if (polyphonic) {
+        auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
+        if (sequencer == nullptr)
+            return false;
+
+        if (command == kPolyStepSequencerRandomizePattern) {
+            sequencer->randomizePattern();
+            return true;
+        }
+        if (command == kPolyStepSequencerGetStepRecording)
+            return sequencer->isStepRecording();
+
+        sequencer->setStepRecording(static_cast<bool>(arguments));
+        return true;
+    }
+
+    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
+    if (sequencer == nullptr)
+        return false;
+
+    if (command == kStepSequencerRandomizePattern) {
+        sequencer->randomizePattern();
+        return true;
+    }
+    if (command == kStepSequencerGetStepRecording)
+        return sequencer->isStepRecording();
+
+    sequencer->setStepRecording(static_cast<bool>(arguments));
+    return true;
+}
+
+juce::var DeviceCustomUIManager::executeCustomUiCommand(const juce::Identifier& command,
+                                                        const juce::var& arguments) {
+    if (command == kSamplerSetLoopEnabled || command == kSamplerSetRootNote ||
+        command == kSamplerGetPlaybackPosition || command == kSamplerLoadSample)
+        return executeSamplerCommand(command, arguments);
+
+    if (command == kImpulseResponseLoadFile)
+        return executeImpulseResponseLoadCommand(arguments);
+
+    if (command == kStepSequencerRandomizePattern || command == kStepSequencerGetStepRecording ||
+        command == kStepSequencerSetStepRecording)
+        return executeSequencerCommand(command, arguments, false);
+
+    if (command == kPolyStepSequencerRandomizePattern ||
+        command == kPolyStepSequencerGetStepRecording ||
+        command == kPolyStepSequencerSetStepRecording)
+        return executeSequencerCommand(command, arguments, true);
+
+    return {};
+}
+
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
     livePluginProvider_ = callbacks.getLivePlugin;
@@ -1821,150 +1988,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
             device, callbacks.onParameterChanged));
         basicContext->setCommandController(std::make_shared<CallbackDeviceCommandController>(
             [this](const juce::Identifier& command, const juce::var& arguments) -> juce::var {
-                if (command == kSamplerSetLoopEnabled) {
-                    auto plugin = getLivePlugin();
-                    if (auto* sampler =
-                            dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                        const bool enabled = static_cast<bool>(arguments);
-                        sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
-                        sampler->loopEnabledValue = enabled;
-                        return true;
-                    }
-                    return false;
-                }
-
-                if (command == kSamplerSetRootNote) {
-                    auto plugin = getLivePlugin();
-                    if (auto* sampler =
-                            dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                        sampler->setRootNote(static_cast<int>(arguments));
-                        return true;
-                    }
-                    return false;
-                }
-
-                if (command == kSamplerGetPlaybackPosition) {
-                    auto plugin = getLivePlugin();
-                    if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get()))
-                        return sampler->getPlaybackPosition();
-                    return 0.0;
-                }
-
-                if (command == kSamplerLoadSample) {
-                    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-                    if (audioEngine == nullptr)
-                        return false;
-                    auto* bridge = audioEngine->getAudioBridge();
-                    if (bridge == nullptr)
-                        return false;
-
-                    const juce::File file(arguments.toString());
-                    if (!file.existsAsFile() || !bridge->loadSamplerSample(devicePath_, file))
-                        return false;
-
-                    auto plugin = getLivePlugin();
-                    if (auto* sampler =
-                            dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                        if (samplerUI_ != nullptr) {
-                            samplerUI_->updateParameters(
-                                sampler->attackValue.get(), sampler->decayValue.get(),
-                                sampler->sustainValue.get(), sampler->releaseValue.get(),
-                                sampler->pitchValue.get(), sampler->fineValue.get(),
-                                sampler->levelValue.get(), sampler->sampleStartValue.get(),
-                                sampler->sampleEndValue.get(), sampler->loopEnabledValue.get(),
-                                sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-                                sampler->velAmountValue.get(), file.getFileNameWithoutExtension());
-                            samplerUI_->setWaveformData(sampler->getWaveform(),
-                                                        sampler->getSampleRate(),
-                                                        sampler->getSampleLengthSeconds());
-                        }
-                    }
-                    return true;
-                }
-
-                if (command == kImpulseResponseLoadFile) {
-                    const juce::File file(arguments.toString());
-                    if (!file.existsAsFile()) {
-                        DBG("IR load: file does not exist: " << file.getFullPathName());
-                        return false;
-                    }
-
-                    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-                    if (audioEngine == nullptr) {
-                        DBG("IR load: no audio engine");
-                        return false;
-                    }
-                    auto* bridge = audioEngine->getAudioBridge();
-                    if (bridge == nullptr) {
-                        DBG("IR load: no audio bridge");
-                        return false;
-                    }
-                    auto plugin = getLivePlugin();
-                    if (!plugin) {
-                        DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
-                        return false;
-                    }
-                    auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
-                    if (ir == nullptr) {
-                        DBG("IR load: plugin is not ImpulseResponsePlugin, type: "
-                            << plugin->getName());
-                        return false;
-                    }
-                    if (!ir->loadImpulseResponse(file)) {
-                        DBG("IR load: loadImpulseResponse returned false for: "
-                            << file.getFullPathName());
-                        return false;
-                    }
-
-                    ir->name = file.getFileNameWithoutExtension();
-                    if (impulseResponseUI_ != nullptr)
-                        impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
-
-                    // Capture plugin state so the IR persists in the project.
-                    bridge->getPluginManager().capturePluginState(devicePath_);
-                    return true;
-                }
-
-                if (command == kStepSequencerRandomizePattern ||
-                    command == kStepSequencerGetStepRecording ||
-                    command == kStepSequencerSetStepRecording) {
-                    auto plugin = getLivePlugin();
-                    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
-                    if (sequencer == nullptr)
-                        return false;
-
-                    if (command == kStepSequencerRandomizePattern) {
-                        sequencer->randomizePattern();
-                        return true;
-                    }
-                    if (command == kStepSequencerGetStepRecording)
-                        return sequencer->isStepRecording();
-
-                    sequencer->setStepRecording(static_cast<bool>(arguments));
-                    return true;
-                }
-
-                if (command == kPolyStepSequencerRandomizePattern ||
-                    command == kPolyStepSequencerGetStepRecording ||
-                    command == kPolyStepSequencerSetStepRecording) {
-                    auto plugin = getLivePlugin();
-                    auto* sequencer =
-                        dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-                    if (sequencer == nullptr)
-                        return false;
-
-                    if (command == kPolyStepSequencerRandomizePattern) {
-                        sequencer->randomizePattern();
-                        return true;
-                    }
-                    if (command == kPolyStepSequencerGetStepRecording)
-                        return sequencer->isStepRecording();
-
-                    sequencer->setStepRecording(static_cast<bool>(arguments));
-                    return true;
-                }
-
-                return {};
+                return executeCustomUiCommand(command, arguments);
             }));
     }
 

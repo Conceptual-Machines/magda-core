@@ -1007,34 +1007,47 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr;
 
     if (miniOscilloscopeUI_) {
-        std::shared_ptr<daw::ui::OscilloscopeTelemetrySource> source;
+        te::Plugin::Ptr pluginPtr;
         DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
             id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
-            if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr =
-                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-                if (dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get()) != nullptr)
-                    source =
-                        std::make_shared<daw::ui::OscilloscopePluginTelemetrySource>(pluginPtr);
-            }
+            if (id != INVALID_DEVICE_ID)
+                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
-        miniOscilloscopeUI_->setTelemetrySource(std::move(source));
+
+        if (dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get()) == nullptr)
+            pluginPtr = nullptr;
+
+        if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
+            miniOscilloscopeTelemetryPlugin_ = pluginPtr.get();
+            miniOscilloscopeTelemetry_ =
+                pluginPtr != nullptr
+                    ? std::make_shared<daw::ui::OscilloscopePluginTelemetrySource>(pluginPtr)
+                    : nullptr;
+        }
+        miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
     }
 
     if (miniSpectrumUI_) {
-        std::shared_ptr<daw::ui::SpectrumTelemetrySource> source;
+        te::Plugin::Ptr pluginPtr;
         DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
             id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
-            if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr =
-                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-                if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get()) != nullptr)
-                    source = std::make_shared<daw::ui::SpectrumPluginTelemetrySource>(pluginPtr);
-            }
+            if (id != INVALID_DEVICE_ID)
+                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
-        miniSpectrumUI_->setTelemetrySource(std::move(source));
+
+        if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get()) == nullptr)
+            pluginPtr = nullptr;
+
+        if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {
+            miniSpectrumTelemetryPlugin_ = pluginPtr.get();
+            miniSpectrumTelemetry_ =
+                pluginPtr != nullptr
+                    ? std::make_shared<daw::ui::SpectrumPluginTelemetrySource>(pluginPtr)
+                    : nullptr;
+        }
+        miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
     }
 }
 

@@ -276,6 +276,11 @@ class DeviceCustomUIManager {
                               const Callbacks& callbacks);
     bool createImpulseResponseUI(const magda::DeviceInfo& device, juce::Component& parent,
                                  const Callbacks& callbacks);
+    juce::var executeCustomUiCommand(const juce::Identifier& command, const juce::var& arguments);
+    juce::var executeSamplerCommand(const juce::Identifier& command, const juce::var& arguments);
+    bool executeImpulseResponseLoadCommand(const juce::var& arguments);
+    juce::var executeSequencerCommand(const juce::Identifier& command, const juce::var& arguments,
+                                      bool polyphonic);
 
     // Path of the device this manager is bound to. Used by every internal
     // plugin lookup; the bare device.id is no longer sufficient under
