@@ -493,17 +493,35 @@ jobs:
       run: |
         & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows
 
+    # ccache for MSVC. The Debug build uses /Z7 (embedded debug info, no shared
+    # PDB), which is what makes MSVC objects cacheable - /Zi could not be cached
+    # and broke the earlier sccache attempt. Mirrors the Linux job.
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
+        max-size: 3G
+        variant: ccache
+
     - name: Configure CMake (Debug)
       run: |
         cmake -B build-debug -G Ninja `
           -DCMAKE_BUILD_TYPE=Debug `
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
           -DMAGDA_BUILD_TESTS=ON `
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache `
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows
 
     - name: Build (Debug)
       run: cmake --build build-debug --config Debug
+
+    - name: Show ccache statistics
+      if: always()
+      run: ccache -s
 
     - name: Run tests
       timeout-minutes: 5
