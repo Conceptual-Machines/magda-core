@@ -39,6 +39,7 @@ class ImpulseResponseUI;
 class LevelsUI;
 class LinkableTextSlider;
 class OscilloscopeUI;
+class OscilloscopeTelemetrySource;
 class PhaserUI;
 class PolyStepSequencerUI;
 class PolySynthUI;
@@ -49,12 +50,15 @@ class NimbusUI;
 class DrumVoiceUI;
 class StruckInstrumentUI;
 class SpectrumAnalyzerUI;
+class SpectrumTelemetrySource;
 class PitchShiftUI;
 class ReverbUI;
 class SamplerUI;
 class StepSequencerUI;
 class StrumUI;
 class ToneGeneratorUI;
+class LevelsTelemetrySource;
+class NimbusTelemetrySource;
 
 }  // namespace magda::daw::ui
 
@@ -279,6 +283,11 @@ class DeviceCustomUIManager {
     magda::ChainNodePath devicePath_;
     std::shared_ptr<magda::DeviceUiContext> deviceUiContext_;
     std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
+    tracktion::engine::Plugin* telemetryPlugin_ = nullptr;
+    std::shared_ptr<OscilloscopeTelemetrySource> oscilloscopeTelemetry_;
+    std::shared_ptr<SpectrumTelemetrySource> spectrumTelemetry_;
+    std::shared_ptr<LevelsTelemetrySource> levelsTelemetry_;
+    std::shared_ptr<NimbusTelemetrySource> nimbusTelemetry_;
 
     // Custom UI unique_ptrs
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;

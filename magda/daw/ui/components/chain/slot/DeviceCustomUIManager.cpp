@@ -2028,6 +2028,11 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
 void DeviceCustomUIManager::detachFromLivePlugin() {
     livePluginProvider_ = {};
     devicePath_ = {};
+    telemetryPlugin_ = nullptr;
+    oscilloscopeTelemetry_.reset();
+    spectrumTelemetry_.reset();
+    levelsTelemetry_.reset();
+    nimbusTelemetry_.reset();
 
     if (oscilloscopeUI_ != nullptr)
         oscilloscopeUI_->setTelemetrySource(nullptr);
@@ -2071,10 +2076,21 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     };
 
     auto plugin = getLivePlugin();
+    if (plugin.get() != telemetryPlugin_) {
+        telemetryPlugin_ = plugin.get();
+        oscilloscopeTelemetry_.reset();
+        spectrumTelemetry_.reset();
+        levelsTelemetry_.reset();
+        nimbusTelemetry_.reset();
+    }
+
     if (oscilloscopeUI_ != nullptr) {
         std::shared_ptr<OscilloscopeTelemetrySource> source;
         if (dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()) != nullptr) {
-            source = std::make_shared<OscilloscopePluginTelemetrySource>(plugin);
+            if (oscilloscopeTelemetry_ == nullptr)
+                oscilloscopeTelemetry_ =
+                    std::make_shared<OscilloscopePluginTelemetrySource>(plugin);
+            source = oscilloscopeTelemetry_;
             publishTelemetrySource(source, OscilloscopeTelemetrySource::kKey);
         } else {
             publishTelemetrySource(nullptr, OscilloscopeTelemetrySource::kKey);
@@ -2084,7 +2100,9 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     if (spectrumAnalyzerUI_ != nullptr) {
         std::shared_ptr<SpectrumTelemetrySource> source;
         if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()) != nullptr) {
-            source = std::make_shared<SpectrumPluginTelemetrySource>(plugin);
+            if (spectrumTelemetry_ == nullptr)
+                spectrumTelemetry_ = std::make_shared<SpectrumPluginTelemetrySource>(plugin);
+            source = spectrumTelemetry_;
             publishTelemetrySource(source, SpectrumTelemetrySource::kKey);
         } else {
             publishTelemetrySource(nullptr, SpectrumTelemetrySource::kKey);
@@ -2095,7 +2113,9 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     if (levelsUI_ != nullptr) {
         std::shared_ptr<LevelsTelemetrySource> source;
         if (dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()) != nullptr) {
-            source = std::make_shared<LevelsPluginTelemetrySource>(plugin);
+            if (levelsTelemetry_ == nullptr)
+                levelsTelemetry_ = std::make_shared<LevelsPluginTelemetrySource>(plugin);
+            source = levelsTelemetry_;
             publishTelemetrySource(source, LevelsTelemetrySource::kKey);
         } else {
             publishTelemetrySource(nullptr, LevelsTelemetrySource::kKey);
@@ -2105,7 +2125,9 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     if (nimbusUI_ != nullptr) {
         std::shared_ptr<NimbusTelemetrySource> source;
         if (dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin.get()) != nullptr) {
-            source = std::make_shared<NimbusPluginTelemetrySource>(plugin);
+            if (nimbusTelemetry_ == nullptr)
+                nimbusTelemetry_ = std::make_shared<NimbusPluginTelemetrySource>(plugin);
+            source = nimbusTelemetry_;
             publishTelemetrySource(source, NimbusTelemetrySource::kKey);
         } else {
             publishTelemetrySource(nullptr, NimbusTelemetrySource::kKey);
