@@ -48,7 +48,7 @@ class CustomChannelSelector : public juce::Component {
  * Dialog for configuring audio and MIDI device settings.
  * Uses custom channel selectors for fine-grained control.
  */
-class AudioSettingsDialog : public juce::Component {
+class AudioSettingsDialog : public juce::Component, private juce::ChangeListener {
   public:
     explicit AudioSettingsDialog(juce::AudioDeviceManager* deviceManager,
                                  tracktion::DeviceManager* teDeviceManager = nullptr);
@@ -56,6 +56,10 @@ class AudioSettingsDialog : public juce::Component {
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+
+    // Re-list the device combos when the driver type or device changes (e.g. the
+    // user picks a different driver in the AudioDeviceSelectorComponent).
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     // Static method to show as modal dialog
     static void showDialog(juce::Component* parent, juce::AudioDeviceManager* deviceManager,
