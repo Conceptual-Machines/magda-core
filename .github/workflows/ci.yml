@@ -90,6 +90,12 @@ jobs:
         key: ${{ runner.os }}-ccache-${{ github.sha }}
         restore-keys: |
           ${{ runner.os }}-ccache-
+        # Default cap is 500 MB, far too small for this project (llama + ggml +
+        # faust + onnx + JUCE + TE). It filled and thrashed, giving an ~8% hit
+        # rate and recompiling ~92% of TUs every run. 3G holds the whole build
+        # (~1.5G compressed) with headroom, so warm runs are mostly cache hits,
+        # and stays under the 10G repo cache budget shared with the other caches.
+        max-size: 3G
 
     - name: Cache CMake build directory
       uses: actions/cache@v6
@@ -114,7 +120,7 @@ jobs:
     - name: Build
       run: |
         echo "Building with $(nproc) cores..."
-        cmake --build build --config Debug -j$(nproc) -- -v
+        cmake --build build --config Debug -j$(nproc)
 
     - name: Check build artifacts
       run: |
@@ -366,7 +372,19 @@ jobs:
 
     - name: Clean up build directories
       if: always()
-      run: rm -rf build-debug build-release
+      run: |
+        # On the persistent self-hosted macOS runner, a plain `rm -rf` on the
+        # fresh build dirs intermittently fails with "Directory not empty":
+        # Spotlight (mdworker) indexes the just-built .app bundles and recreates
+        # an entry between rm's unlink pass and its final rmdir (a TOCTOU race
+        # ephemeral GitHub-hosted runners never hit). Rename aside first - an
+        # atomic mv, so nothing can write into the new path - then delete, and
+        # never let housekeeping fail an otherwise-green build.
+        for d in build-debug build-release; do
+          [ -e "$d" ] && mv "$d" "$d.trash.$$" 2>/dev/null || true
+        done
+        rm -rf build-debug build-release build-*.trash.* 2>/dev/null || true
+        exit 0
 
     - name: Build summary
       if: success()
@@ -441,16 +459,40 @@ jobs:
       with:
         arch: x64
 
-    - name: Setup pinned vcpkg
+    # vcpkg + its binary cache. On the self-hosted runner both persist on the
+    # machine across runs: a fixed clone we re-checkout (not re-clone), and a
+    # fixed binary cache dir, so libxml2 is restored from cache instead of being
+    # recompiled (that ~10 min build only happens on the very first run / after a
+    # pin bump). On GitHub-hosted runners the VM is ephemeral, so clone into
+    # RUNNER_TEMP and let actions/cache carry the binary cache between runs.
+    - name: Setup vcpkg
       shell: powershell
       run: |
-        $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
-        git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
+        if ($env:RUNNER_ENVIRONMENT -eq 'self-hosted') {
+          $vcpkgRoot = 'C:\vcpkg-ci'
+          $binCache  = 'C:\vcpkg-bincache'
+        } else {
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
+          $binCache  = Join-Path $env:GITHUB_WORKSPACE '.vcpkg-binary-cache'
+        }
+        if (-not (Test-Path "$vcpkgRoot\.git")) {
+          git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
+        }
+        # Fetch only when the pinned commit isn't already present (i.e. a pin bump).
+        git -C $vcpkgRoot cat-file -e "$($env:VCPKG_COMMIT)^{commit}"
+        if ($LASTEXITCODE -ne 0) { git -C $vcpkgRoot fetch origin }
         git -C $vcpkgRoot checkout $env:VCPKG_COMMIT
-        & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        if (-not (Test-Path "$vcpkgRoot\vcpkg.exe")) {
+          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+        }
+        New-Item -ItemType Directory -Force -Path $binCache | Out-Null
         "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "VCPKG_DEFAULT_BINARY_CACHE=$binCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Cache vcpkg packages
+      # Only needed on ephemeral GitHub-hosted runners; the self-hosted binary
+      # cache persists locally and needs no upload/download round-trip.
+      if: runner.environment == 'github-hosted'
       uses: actions/cache@v6
       with:
         path: .vcpkg-binary-cache
@@ -460,11 +502,20 @@ jobs:
 
     - name: Install libxml2
       shell: powershell
-      env:
-        VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-binary-cache
       run: |
-        New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
         & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows
+
+    # ccache for MSVC. The Debug build uses /Z7 (embedded debug info, no shared
+    # PDB), which is what makes MSVC objects cacheable - /Zi could not be cached
+    # and broke the earlier sccache attempt. Mirrors the Linux job.
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
+        max-size: 3G
+        variant: ccache
 
     - name: Configure CMake (Debug)
       run: |
@@ -472,11 +523,17 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug `
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
           -DMAGDA_BUILD_TESTS=ON `
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache `
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows
 
     - name: Build (Debug)
       run: cmake --build build-debug --config Debug
+
+    - name: Show ccache statistics
+      if: always()
+      run: ccache -s
 
     - name: Run tests
       timeout-minutes: 5

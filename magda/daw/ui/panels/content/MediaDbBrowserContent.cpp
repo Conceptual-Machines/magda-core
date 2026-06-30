@@ -1119,16 +1119,23 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
 
 MediaDbBrowserContent::~MediaDbBrowserContent() {
     stopTimer();
-    // Drain in-flight indexing jobs. removeAllJobs(true, ...) signals
-    // cancellation and waits up to the timeout for the worker to exit.
+    // Drain in-flight jobs before the pools are freed. A finite timeout is a
+    // use-after-free hazard: these workers run uninterruptible multi-second
+    // operations (ONNX text-encoder load, library indexing), and when one
+    // overruns the timeout removeAllJobs() returns and the unique_ptr frees
+    // the ThreadPool out from under the still-running worker, which then
+    // crashes in ThreadPool::runNextJob. Signal cancellation first so the
+    // workers bail at the next poll point, then drain UNBOUNDED (timeout < 0
+    // waits forever) so the pool is never destroyed while a worker is live.
     if (indexCancel_) {
         indexCancel_->store(true);
     }
+    searchCancel_->store(true);
     if (indexPool_) {
-        indexPool_->removeAllJobs(true, 5000);
+        indexPool_->removeAllJobs(true, -1);
     }
     if (searchPool_) {
-        searchPool_->removeAllJobs(true, 5000);
+        searchPool_->removeAllJobs(true, -1);
     }
     resultsTable_.setModel(nullptr);
     familyFilter_.setLookAndFeel(nullptr);
@@ -1983,10 +1990,11 @@ void MediaDbBrowserContent::runSearch() {
             searchPool_ = std::make_unique<juce::ThreadPool>(1);
         }
         const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-        searchPool_->addJob([self, myGen, seedId, filters, offset, sort]() {
+        auto cancelToken = searchCancel_;
+        searchPool_->addJob([self, myGen, seedId, filters, offset, sort, cancelToken]() {
             std::vector<magda::media::QueryResult> results;
             try {
-                if (self == nullptr) {
+                if (self == nullptr || cancelToken->load()) {
                     return;
                 }
                 auto& bgCtx = magda::media::MediaDbContext::getInstance();
@@ -2050,10 +2058,11 @@ void MediaDbBrowserContent::runSearch() {
     }
 
     const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
-    searchPool_->addJob([self, myGen, text, filters, offset, sort]() {
+    auto cancelToken = searchCancel_;
+    searchPool_->addJob([self, myGen, text, filters, offset, sort, cancelToken]() {
         std::vector<magda::media::QueryResult> results;
         try {
-            if (self == nullptr) {
+            if (self == nullptr || cancelToken->load()) {
                 return;
             }
             // Lazily build a worker-owned SQLite connection on first run
@@ -2203,8 +2212,13 @@ void MediaDbBrowserContent::visibilityChanged() {
             if (!searchPool_) {
                 searchPool_ = std::make_unique<juce::ThreadPool>(1);
             }
-            searchPool_->addJob(
-                []() { magda::media::MediaDbContext::getInstance().preloadModels(); });
+            auto cancelToken = searchCancel_;
+            searchPool_->addJob([cancelToken]() {
+                if (cancelToken->load()) {
+                    return;
+                }
+                magda::media::MediaDbContext::getInstance().preloadModels();
+            });
         }
     }
 }

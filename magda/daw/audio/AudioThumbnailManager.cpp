@@ -543,7 +543,10 @@ void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePa
 void AudioThumbnailManager::shutdown() {
     // Stop any in-flight peak-compute jobs before tearing down state.
     if (backgroundThreadPool_) {
-        backgroundThreadPool_->removeAllJobs(true, 5000);
+        // Drain UNBOUNDED (timeout < 0). A finite timeout that a peak-compute
+        // job overruns would let reset() free the pool out from under the
+        // running worker, crashing it in ThreadPool::runNextJob.
+        backgroundThreadPool_->removeAllJobs(true, -1);
         backgroundThreadPool_.reset();
     }
     pendingPeakComputes_.clear();
