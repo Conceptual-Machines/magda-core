@@ -32,6 +32,14 @@ concurrency:
 
 env:
   VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
+  # Hash the compiler's CONTENT, not its mtime, when keying ccache objects.
+  # ccache defaults to compiler_check=mtime, but ephemeral runners reprovision
+  # the VM every run, so the system compiler gets a fresh mtime each time even
+  # though its bytes are identical. With mtime that invalidates 100% of the
+  # restored cache (0% hits, observed on Linux); content makes the same compiler
+  # version hash identically across runs. Covers Linux and the windows-latest
+  # fallback, which lack the global ccache.conf the self-hosted runner carries.
+  CCACHE_COMPILERCHECK: content
 
 jobs:
   build-and-test-linux:
