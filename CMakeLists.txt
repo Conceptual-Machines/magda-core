@@ -82,13 +82,20 @@ endif()
 
 # Compiler flags
 if(MSVC)
-    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3")
+    # Debug uses /Z7 (debug info embedded in each .obj) rather than /Zi (a
+    # separate, shared compile-time PDB). /Z7 has no shared PDB, so:
+    #   - parallel cl.exe workers never contend on a PDB (no /FS needed), and
+    #   - the .obj is self-contained, which is what makes ccache able to cache
+    #     MSVC Debug builds. /Zi can't be cached (the PDB write is a side effect
+    #     ccache can't replay) - that's what broke the earlier sccache attempt.
+    # Release still ships a real PDB for crash symbolication via per-target /Zi
+    # in magda/daw/CMakeLists.txt, so /FS is scoped to Release only.
+    set(CMAKE_CXX_FLAGS_DEBUG "/Z7 /Od /W3")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
-    # /FS serialises PDB writes across parallel cl.exe workers (required with
-    # /Zi when the build runs with -j >1). Added via add_compile_options so it
-    # composes with CMake's default MSVC init flags (/DWIN32 /_WINDOWS /EHsc etc.)
-    # instead of replacing them like a top-level -DCMAKE_CXX_FLAGS would.
-    add_compile_options(/FS)
+    # /FS serialises PDB writes across parallel cl.exe workers, required with the
+    # Release per-target /Zi. Added via add_compile_options so it composes with
+    # CMake's default MSVC init flags instead of replacing them.
+    add_compile_options($<$<CONFIG:Release>:/FS>)
     # NOMINMAX: stop <windows.h> defining min()/max() macros, which clobber
     # std::min/std::max. The Faust poly instruments (poly-dsp.h) transitively
     # pull in <windows.h>, so without this they fail to compile on MSVC.
