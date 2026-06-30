@@ -33,6 +33,11 @@ if "%INCLUDE%"=="" (
     echo   MSVC %MSVC_VER%, SDK %WINSDK_VER%
 )
 
+REM --- ccache (optional): if on PATH, route cl.exe through it for a big
+REM --- speedup on rebuilds. Safe because Debug uses /Z7 (no shared PDB).
+set "CCACHE_FLAGS="
+where ccache >nul 2>nul && set "CCACHE_FLAGS=-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+
 REM --- Build directories ---
 set "BUILD_DIR=cmake-build-debug"
 set "BUILD_DIR_RELEASE=cmake-build-release"
@@ -61,7 +66,7 @@ echo Building MAGDA DAW (Debug)...
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 if not exist "%BUILD_DIR%\CMakeCache.txt" (
     echo Configuring project...
-    cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON
+    cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON %CCACHE_FLAGS%
 )
 cmake --build "%BUILD_DIR%"
 goto :end
@@ -76,7 +81,7 @@ goto :end
 :configure
 echo Reconfiguring MAGDA DAW (Debug)...
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
-cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON
+cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON %CCACHE_FLAGS%
 goto :end
 
 :test-build
@@ -84,7 +89,7 @@ echo Building tests...
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 if not exist "%BUILD_DIR%\CMakeCache.txt" (
     echo Configuring project with tests enabled...
-    cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON
+    cmake -S . -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON %CCACHE_FLAGS%
 )
 cmake --build "%BUILD_DIR%" --target magda_tests
 goto :end
