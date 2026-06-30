@@ -44,6 +44,7 @@ CommandResponse TracktionEngineWrapper::processCommand(const Command& command) {
 void TracktionEngineWrapper::play() {
     // Block playback while devices are loading to prevent audio glitches
     if (devicesLoading_) {
+        juce::Logger::writeToLog("[ProjectLoad] play() BLOCKED devicesLoading_=true");
         return;
     }
 
@@ -51,6 +52,7 @@ void TracktionEngineWrapper::play() {
     // rebuild the playback context against the in-flight render and corrupt the
     // node graph (NodeRenderContext asserts).
     if (offlineRenderActive_) {
+        juce::Logger::writeToLog("[ProjectLoad] play() BLOCKED offlineRenderActive_=true");
         return;
     }
 
@@ -79,7 +81,12 @@ void TracktionEngineWrapper::play() {
             }
         }
 
+        juce::Logger::writeToLog(juce::String("[ProjectLoad] play() START device=") +
+                                 (device ? device->getName() : juce::String("<none>")) +
+                                 " playing=" + juce::String(device && device->isPlaying() ? 1 : 0));
         transport.play(false);
+    } else {
+        juce::Logger::writeToLog("[ProjectLoad] play() no currentEdit_");
     }
 }
 

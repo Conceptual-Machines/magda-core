@@ -395,6 +395,13 @@ void PluginManager::syncAllPlugins() {
 
     // ── Step 5: Rebuild sidechain LFO cache once at the end ─────────────
     rebuildSidechainLFOCache();
+
+    {
+        juce::ScopedLock lock(pluginLock_);
+        juce::Logger::writeToLog("[ProjectLoad] syncAllPlugins DONE validPaths=" +
+                                 juce::String((int)validDevicePaths.size()) +
+                                 " syncedDevices=" + juce::String((int)syncedDevices_.size()));
+    }
 }
 
 void PluginManager::syncTrackPlugins(TrackId trackId) {

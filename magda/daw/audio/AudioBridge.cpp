@@ -815,6 +815,9 @@ void AudioBridge::syncAll() {
     auto& tm = TrackManager::getInstance();
     const auto& tracks = tm.getTracks();
 
+    juce::Logger::writeToLog("[ProjectLoad] AudioBridge::syncAll START tracks=" +
+                             juce::String((int)tracks.size()));
+
     // Collect MAGDA track IDs for stale-check
     std::unordered_set<TrackId> magdaTrackIds;
     for (const auto& track : tracks) {
@@ -837,6 +840,7 @@ void AudioBridge::syncAll() {
 
     // Diff-based plugin sync: global orphan cleanup + per-track additive sync
     pluginManager_.syncAllPlugins();
+    juce::Logger::writeToLog("[ProjectLoad] AudioBridge::syncAll plugins synced");
 
     // Post-sync: routing, volume, and state (needs TE tracks + plugins to exist)
     for (const auto& track : tracks) {
@@ -862,6 +866,8 @@ void AudioBridge::syncAll() {
 
     // Sync master channel volume/pan to Tracktion Engine
     masterChannelChanged();
+
+    juce::Logger::writeToLog("[ProjectLoad] AudioBridge::syncAll DONE");
 
 #if JUCE_DEBUG
     pluginManager_.validateMappingConsistency();
