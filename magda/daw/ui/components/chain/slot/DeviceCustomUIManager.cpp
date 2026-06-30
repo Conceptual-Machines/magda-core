@@ -360,6 +360,8 @@ void writeParameterChange(const DeviceCustomUIManager::Callbacks& callbacks, int
         }
     }
 
+    // A custom context may be valid but intentionally omit a parameter
+    // controller; keep the slot callback as the fallback write path.
     if (callbacks.onParameterChanged)
         callbacks.onParameterChanged(paramIndex, value);
 }
