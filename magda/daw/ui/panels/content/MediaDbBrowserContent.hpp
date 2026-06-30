@@ -237,6 +237,13 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     // touching the table.
     std::unique_ptr<juce::ThreadPool> searchPool_;
     std::atomic<int> searchGeneration_{0};
+    // Set true on teardown so queued / not-yet-started search jobs bail
+    // immediately instead of making the destructor's drain wait on them.
+    // shared_ptr (not a bare member) so a captured copy outlives the
+    // component. The in-flight ONNX text-encoder load is uninterruptible, so
+    // the destructor still drains unbounded — this just keeps the common case
+    // (queued query behind a running one) from blocking the close.
+    std::shared_ptr<std::atomic_bool> searchCancel_ = std::make_shared<std::atomic_bool>(false);
 
     // Worker-thread-owned SQLite connection. Built lazily on the first
     // search and reused across queries — opening a fresh connection per

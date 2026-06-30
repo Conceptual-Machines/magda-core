@@ -418,8 +418,19 @@ if(WIN32)
     endif()
 endif()
 
-target_link_libraries(magda_daw
-    PUBLIC
+# JUCE / Tracktion modules are JUCE "module" INTERFACE libraries: their unity
+# .cpp lives in INTERFACE_SOURCES, so linking them PUBLIC propagates those
+# sources to every dependent, which then recompiles the entire JUCE+TE stack
+# (measured: juce_core x14, juce_audio_basics x7 across the 7 targets). Compile
+# them ONCE here instead:
+#   - PRIVATE so the sources land only in magda_daw and do not propagate;
+#   - as a STATIC lib, magda_daw still forwards the modules' LINK requirements
+#     (system frameworks, the compiled objects) to final executables, made
+#     explicit via the INTERFACE $<LINK_ONLY:...> entry;
+#   - the compile usage (header search paths + JUCE_MODULE_AVAILABLE_* defines)
+#     is re-exported below without the sources, so dependents still #include
+#     JUCE headers but never recompile the modules.
+set(MAGDA_JUCE_STACK
     juce::juce_core
     juce::juce_cryptography  # SHA-256 verification of downloaded model files
     juce::juce_data_structures
@@ -431,14 +442,34 @@ target_link_libraries(magda_daw
     juce::juce_gui_extra
     tracktion::tracktion_engine
     juce_llm
+)
+target_link_libraries(magda_daw
+    PUBLIC
     MagdaAssets
     magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
-    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
-    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
     PRIVATE
+    ${MAGDA_JUCE_STACK}
     LibXml2::LibXml2
     faust::libfaust
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+    INTERFACE
+    # Carry the modules forward to dependents for LINKING only (frameworks +
+    # the objects already inside magda_daw's archive), never for compiling.
+    $<LINK_ONLY:${MAGDA_JUCE_STACK}>
+    $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>>
+    $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>>
 )
+# Re-export JUCE/TE compile usage (include dirs + defines, NO sources) so
+# dependents can still #include JUCE headers. magda_daw's own resolved
+# INCLUDE_DIRECTORIES / COMPILE_DEFINITIONS already hold the full transitive
+# JUCE closure (CMake resolved it when the modules were linked PRIVATE above),
+# so forward exactly those - this avoids having to enumerate TE's hidden juce
+# module dependencies by hand.
+target_include_directories(magda_daw INTERFACE
+    $<BUILD_INTERFACE:$<TARGET_PROPERTY:magda_daw,INCLUDE_DIRECTORIES>>)
+target_compile_definitions(magda_daw INTERFACE
+    $<TARGET_PROPERTY:magda_daw,COMPILE_DEFINITIONS>)
 
 target_compile_definitions(magda_daw
     PUBLIC
@@ -448,6 +479,14 @@ target_compile_definitions(magda_daw
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+    PRIVATE
+    # Tracktion Engine carries a MAGDA test hook (magdaTestEvaluateLoopSessionDecision,
+    # in tracktion_TransportControl.cpp) gated on MAGDA_ENABLE_TEST_HOOKS. TE now
+    # compiles ONCE here instead of being recompiled by magda_juce_tests, so the
+    # hook must be built into magda_daw's archive when tests are enabled, or the
+    # JUCE test exe fails to link it. Off for release (MAGDA_BUILD_TESTS=OFF), so
+    # the hook is never shipped.
+    $<$<BOOL:${MAGDA_BUILD_TESTS}>:MAGDA_ENABLE_TEST_HOOKS=1>
 )
 
 target_link_libraries(magda_daw_app
@@ -456,15 +495,11 @@ target_link_libraries(magda_daw_app
     magda_agents
     magda_scripting
     MagdaAssets
-    juce::juce_gui_basics
-    juce::juce_gui_extra
-    juce::juce_audio_devices
-    juce::juce_audio_formats
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    tracktion::tracktion_engine
-    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
-    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+    # JUCE/TE come transitively from magda_daw: its re-exported INTERFACE gives
+    # the headers + defines to compile this target's own sources, and its
+    # $<LINK_ONLY:...> forwards the modules' frameworks + the objects already in
+    # magda_daw's archive. Linking the juce:: modules here directly would just
+    # recompile the whole stack again (the duplication this refactor removes).
 )
 
 target_compile_definitions(magda_daw_app
