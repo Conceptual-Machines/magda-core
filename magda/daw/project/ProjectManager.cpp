@@ -233,20 +233,14 @@ bool ProjectManager::loadProject(const juce::File& file,
         }
     }
 
-    juce::Logger::writeToLog("[ProjectLoad] loadProject START file=" + fileToLoad.getFileName());
-
     // Stage first (file I/O + parse + validate)
     StagedProjectData staged;
     if (!ProjectSerializer::loadAndStage(fileToLoad, staged)) {
         DBG("Failed to load project: " + ProjectSerializer::getLastError());
-        juce::Logger::writeToLog("[ProjectLoad] loadAndStage FAILED: " +
-                                 ProjectSerializer::getLastError());
         lastError_ = "The project file could not be opened. It may be corrupted or from an "
                      "incompatible version.";
         return false;
     }
-    juce::Logger::writeToLog("[ProjectLoad] staged ok, tracks=" +
-                             juce::String((int)staged.tracks.size()));
 
     resetTransportForProjectBoundary();
 
@@ -256,9 +250,7 @@ bool ProjectManager::loadProject(const juce::File& file,
         onBeforeCommit(staged.info);
 
     // Commit staged data to singleton managers
-    juce::Logger::writeToLog("[ProjectLoad] commitStaged START");
     ProjectSerializer::commitStaged(staged);
-    juce::Logger::writeToLog("[ProjectLoad] commitStaged DONE");
 
     // Update state — always use the original file as the canonical project file
     currentProject_ = staged.info;

@@ -111,7 +111,6 @@ void TracktionEngineWrapper::notifyDeviceLoadingComplete(const juce::String& mes
     // Mark devices as no longer loading after first change notification
     if (devicesLoading_) {
         devicesLoading_ = false;
-        juce::Logger::writeToLog("[ProjectLoad] devicesLoading_ -> false (" + message + ")");
         DBG("Device initialization complete: " << message);
 
         if (onDevicesLoadingChanged) {

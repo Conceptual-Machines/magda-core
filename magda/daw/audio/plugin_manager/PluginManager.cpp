@@ -576,32 +576,18 @@ void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plug
     auto& tm = TrackManager::getInstance();
     auto* devInfo = tm.getDeviceInChainByPath(devicePath);
     if (!devInfo || devInfo->pluginState.isEmpty()) {
-        juce::Logger::writeToLog("[ProjectLoad] restorePluginState SKIP (no saved state) path=" +
-                                 devicePath.toString());
         return;
     }
 
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
         ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
-        juce::Logger::writeToLog(
-            "[ProjectLoad] restorePluginState external path=" + devicePath.toString() +
-            " stateLen=" + juce::String(devInfo->pluginState.length()));
     } else {
         // Internal plugin: restore from saved XML ValueTree
         if (auto xml = juce::parseXML(devInfo->pluginState)) {
             auto savedState = juce::ValueTree::fromXml(*xml);
             if (savedState.isValid()) {
                 plugin->restorePluginStateFromValueTree(savedState);
-                juce::Logger::writeToLog("[ProjectLoad] restorePluginState internal OK path=" +
-                                         devicePath.toString());
-            } else {
-                juce::Logger::writeToLog(
-                    "[ProjectLoad] restorePluginState internal INVALID tree path=" +
-                    devicePath.toString());
             }
-        } else {
-            juce::Logger::writeToLog("[ProjectLoad] restorePluginState internal PARSE FAIL path=" +
-                                     devicePath.toString());
         }
     }
 }
