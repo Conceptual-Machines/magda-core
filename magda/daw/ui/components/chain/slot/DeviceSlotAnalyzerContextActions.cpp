@@ -9,6 +9,7 @@
 #include "core/UndoManager.hpp"
 #include "custom_ui/AnalyzerWindow.hpp"
 #include "custom_ui/OscilloscopeUI.hpp"
+#include "custom_ui/PluginTelemetrySources.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -38,13 +39,13 @@ void toggleDeviceSlotAnalyzerWindow(std::unique_ptr<AnalyzerWindow>& analyzerWin
 
     auto plugin = bridge->getPlugin(nodePath);
     std::unique_ptr<juce::Component> content;
-    if (auto* scope = dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get())) {
+    if (dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()) != nullptr) {
         auto ui = std::make_unique<OscilloscopeUI>();
-        ui->setPlugin(scope);
+        ui->setTelemetrySource(std::make_shared<OscilloscopePluginTelemetrySource>(plugin));
         content = std::move(ui);
-    } else if (auto* spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get())) {
+    } else if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()) != nullptr) {
         auto ui = std::make_unique<SpectrumAnalyzerUI>();
-        ui->setPlugin(spec);
+        ui->setTelemetrySource(std::make_shared<SpectrumPluginTelemetrySource>(plugin));
         ui->setTrackId(nodePath.trackId);  // enables the masking overlay in the external window
         content = std::move(ui);
     }

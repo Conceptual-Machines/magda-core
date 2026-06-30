@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "audio/plugins/LevelsPlugin.hpp"
+#include "custom_ui/TelemetrySources.hpp"
 
 namespace magda::daw::ui {
 
@@ -19,7 +19,7 @@ class LevelsUI : public juce::Component, private juce::Timer {
     LevelsUI();
     ~LevelsUI() override;
 
-    void setPlugin(daw::audio::LevelsPlugin* plugin);
+    void setTelemetrySource(std::shared_ptr<LevelsTelemetrySource> telemetry);
 
     void paint(juce::Graphics& g) override;
     void visibilityChanged() override;
@@ -29,7 +29,7 @@ class LevelsUI : public juce::Component, private juce::Timer {
     void timerCallback() override;
     void updateActiveState();  // start/stop the timer and gate plugin measurement
 
-    daw::audio::LevelsPlugin* plugin_ = nullptr;
+    std::shared_ptr<LevelsTelemetrySource> telemetry_;
     daw::audio::TrackMeasurementSnapshot snapshot_;
 
     static constexpr int kTimerHz = 30;

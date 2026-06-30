@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-#include "audio/plugins/OscilloscopePlugin.hpp"
+#include "custom_ui/TelemetrySources.hpp"
 
 namespace magda {
 class SvgButton;
@@ -28,7 +28,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     OscilloscopeUI();
     ~OscilloscopeUI() override;
 
-    void setPlugin(daw::audio::OscilloscopePlugin* plugin);
+    void setTelemetrySource(std::shared_ptr<OscilloscopeTelemetrySource> telemetry);
 
     // Compact mode hides the time/colour control row and uses the full
     // bounds for the waveform — used by the mini visualizer on the mixer.
@@ -78,7 +78,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     float controlsFadeTargetAlpha_ = 1.0f;
     double controlsFadeStartMs_ = 0.0;
     bool persistGlobalDefaults_ = true;
-    daw::audio::OscilloscopePlugin* plugin_ = nullptr;
+    std::shared_ptr<OscilloscopeTelemetrySource> telemetry_;
 
     // window_ holds the whole tap ring; each frame we read readCount_ samples
     // (the drawn span plus trigger-search headroom) from the latest history.
@@ -105,7 +105,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
     // Floating full-size analyzer, lazily created on first pop-out. Owned here,
     // so it dies with this component (well before app/JUCE shutdown). popoutUI_
-    // is a non-owning view into the window's content so setPlugin can forward.
+    // is a non-owning view into the window's content so telemetry can forward.
     std::unique_ptr<AnalyzerWindow> popoutWindow_;
     OscilloscopeUI* popoutUI_ = nullptr;
 

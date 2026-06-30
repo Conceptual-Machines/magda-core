@@ -46,18 +46,18 @@ OscilloscopeUI::OscilloscopeUI() {
                           DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
     timeSlider_.onValueChange = [this] {
         updateTimeReadout();
-        if (plugin_ != nullptr) {
-            plugin_->setTimebaseMs(static_cast<float>(timeSlider_.getValue()));
+        if (telemetry_ != nullptr) {
+            telemetry_->setTimebaseMs(static_cast<float>(timeSlider_.getValue()));
             applyTimebase();
             repaint();
         }
     };
     // Persist as the global last-used default on release (not per drag tick).
     timeSlider_.onDragEnd = [this] {
-        if (plugin_ == nullptr || !persistGlobalDefaults_)
+        if (telemetry_ == nullptr || !persistGlobalDefaults_)
             return;
         auto d = Config::getInstance().getOscilloscopeDefaults();
-        d.timebaseMs = plugin_->getTimebaseMs();
+        d.timebaseMs = telemetry_->timebaseMs();
         Config::getInstance().setOscilloscopeDefaults(d);
         Config::getInstance().save();
     };
@@ -84,9 +84,9 @@ OscilloscopeUI::OscilloscopeUI() {
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
-        if (plugin_ == nullptr)
+        if (telemetry_ == nullptr)
             return;
-        plugin_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
     };
     addAndMakeVisible(colourCombo_);
 
@@ -105,20 +105,20 @@ OscilloscopeUI::~OscilloscopeUI() {
     colourCombo_.setLookAndFeel(nullptr);
 }
 
-void OscilloscopeUI::setPlugin(daw::audio::OscilloscopePlugin* plugin) {
-    if (plugin_ == plugin)
+void OscilloscopeUI::setTelemetrySource(std::shared_ptr<OscilloscopeTelemetrySource> telemetry) {
+    if (telemetry_ == telemetry)
         return;
 
-    plugin_ = plugin;
+    telemetry_ = std::move(telemetry);
     lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
-        popoutUI_->setPlugin(plugin);  // keep the popped-out window live
-    if (plugin_ == nullptr)
+        popoutUI_->setTelemetrySource(telemetry_);  // keep the popped-out window live
+    if (telemetry_ == nullptr)
         return;
-    timeSlider_.setValue(plugin_->getTimebaseMs(), juce::dontSendNotification);
+    timeSlider_.setValue(telemetry_->timebaseMs(), juce::dontSendNotification);
     updateTimeReadout();
     applyTimebase();
-    colourCombo_.setSelectedId(plugin_->getTraceColourIndex() + 1, juce::dontSendNotification);
+    colourCombo_.setSelectedId(telemetry_->traceColourIndex() + 1, juce::dontSendNotification);
 }
 
 void OscilloscopeUI::visibilityChanged() {
@@ -236,8 +236,8 @@ void OscilloscopeUI::updateTimeReadout() {
 }
 
 void OscilloscopeUI::applyTimebase() {
-    const double sr = (plugin_ != nullptr) ? plugin_->getSampleRate() : 44100.0;
-    const float ms = (plugin_ != nullptr) ? plugin_->getTimebaseMs() : 10.0f;
+    const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
+    const float ms = (telemetry_ != nullptr) ? telemetry_->timebaseMs() : 10.0f;
     const int samples = static_cast<int>(static_cast<double>(ms) * 0.001 * sr);
     displaySamples_ = juce::jlimit(64, kMaxWindow - kTriggerSearch, samples);
     readCount_ = juce::jmin(displaySamples_ + kTriggerSearch, kMaxWindow);
@@ -298,7 +298,7 @@ void OscilloscopeUI::openPopout() {
         auto content = std::make_unique<OscilloscopeUI>();  // full-size (not compact)
         popoutUI_ = content.get();
         popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
-        popoutUI_->setPlugin(plugin_);
+        popoutUI_->setTelemetrySource(telemetry_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Oscilloscope", std::move(content));
         popoutWindow_->onClose = [this]() {
             if (popoutButton_)
@@ -319,10 +319,10 @@ void OscilloscopeUI::timerCallback() {
     if (!isShowing())
         return;
 
-    if (plugin_ != nullptr) {
-        const auto writePosition = plugin_->getTapBuffer().writePosition();
+    if (telemetry_ != nullptr) {
+        const auto writePosition = telemetry_->writePosition();
         if (writePosition != lastTapWritePosition_) {
-            lastTapWritePosition_ = plugin_->getTapBuffer().readLatest(window_.data(), readCount_);
+            lastTapWritePosition_ = telemetry_->readLatest(window_.data(), readCount_);
             needsRepaint = true;
         }
     }
@@ -389,7 +389,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         }
     }
 
-    g.setColour(analyzerTraceColour(plugin_ != nullptr ? plugin_->getTraceColourIndex() : 0));
+    g.setColour(analyzerTraceColour(telemetry_ != nullptr ? telemetry_->traceColourIndex() : 0));
 
     const float w = area.getWidth();
     const int cols = juce::jmax(1, static_cast<int>(w));
