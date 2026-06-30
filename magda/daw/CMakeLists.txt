@@ -470,6 +470,14 @@ target_compile_definitions(magda_daw
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+    PRIVATE
+    # Tracktion Engine carries a MAGDA test hook (magdaTestEvaluateLoopSessionDecision,
+    # in tracktion_TransportControl.cpp) gated on MAGDA_ENABLE_TEST_HOOKS. TE now
+    # compiles ONCE here instead of being recompiled by magda_juce_tests, so the
+    # hook must be built into magda_daw's archive when tests are enabled, or the
+    # JUCE test exe fails to link it. Off for release (MAGDA_BUILD_TESTS=OFF), so
+    # the hook is never shipped.
+    $<$<BOOL:${MAGDA_BUILD_TESTS}>:MAGDA_ENABLE_TEST_HOOKS=1>
 )
 
 target_link_libraries(magda_daw_app
