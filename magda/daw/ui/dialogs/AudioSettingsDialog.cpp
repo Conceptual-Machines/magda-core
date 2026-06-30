@@ -1,5 +1,6 @@
 #include "AudioSettingsDialog.hpp"
 
+#include "../../audio/AudioDriverUtils.hpp"
 #include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
@@ -484,19 +485,12 @@ void AudioSettingsDialog::populateDeviceLists() {
     inputDeviceComboBox_.clear();
     outputDeviceComboBox_.clear();
 
-    // List devices from the ACTIVE driver type, not getAvailableDeviceTypes()[0].
-    // On macOS there is only one type (CoreAudio) so the two are identical, but on
-    // Windows there are several (Windows Audio, DirectSound, ASIO). Using [0] meant
-    // the combos always listed Windows-Audio device names even when the user had
-    // selected a different driver in the AudioDeviceSelectorComponent, so applying
-    // a selection failed with "No such device".
-    auto* deviceType = deviceManager_->getCurrentDeviceTypeObject();
-    if (deviceType == nullptr) {
-        auto& deviceTypes = deviceManager_->getAvailableDeviceTypes();
-        if (deviceTypes.isEmpty())
-            return;
-        deviceType = deviceTypes[0];
-    }
+    // List devices from the ACTIVE driver type (see activeDeviceTypeFor): using
+    // getAvailableDeviceTypes()[0] listed the wrong driver's devices once a
+    // non-first driver was selected, failing with "No such device".
+    auto* deviceType = activeDeviceTypeFor(*deviceManager_);
+    if (deviceType == nullptr)
+        return;
     deviceType->scanForDevices();
 
     auto inputDevices = deviceType->getDeviceNames(true);    // Get input devices
