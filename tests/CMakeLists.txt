@@ -158,8 +158,8 @@ target_link_libraries(magda_tests
     magda_agents
     magda_scripting
     Catch2::Catch2WithMain
-    juce::juce_core
-    juce::juce_gui_basics
+    # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
+    # there; direct links would recompile the JUCE stack into this target.
 )
 
 # Include directories
@@ -250,9 +250,8 @@ target_link_libraries(magda_juce_tests
     PRIVATE
     magda_daw
     magda_agents
-    juce::juce_core
-    juce::juce_events
-    juce::juce_gui_basics
+    # JUCE (core/events/gui_basics) comes transitively from magda_daw, compiled
+    # once there; direct links would recompile the JUCE stack into this target.
     # Linux: juce_gui_extra is pulled in transitively via magda_daw's
     # JUCE_MODULE_AVAILABLE flags (so its .cpp gets compiled into this
     # target). Its compilation requires GTK / WebKit headers — expose

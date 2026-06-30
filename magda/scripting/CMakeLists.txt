@@ -101,7 +101,8 @@ add_library(magda_scripting STATIC ${MAGDA_SCRIPTING_SOURCES})
 target_link_libraries(magda_scripting
     PUBLIC
     lua_static
-    juce::juce_core
+    # juce_core comes transitively from magda_daw (compiled once there); a
+    # direct link would recompile the JUCE stack into this target again.
     # MagdaApi headers live under magda/daw/api/. The bindings need the
     # full DAW types (TrackInfo, ClipInfo, ProjectInfo). Long-term these
     # types could be split into a thin "magda_api_types" lib so scripting
