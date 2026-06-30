@@ -62,6 +62,9 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-juce-ccache-
           ${{ runner.os }}-ccache-
+        # Default 500 MB cap thrashes on this project; hold the whole build.
+        # Kept under the 10G repo cache budget shared with the other caches.
+        max-size: 3G
 
     - name: Configure CMake
       run: |
