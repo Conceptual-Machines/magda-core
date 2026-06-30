@@ -677,7 +677,12 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             return;
         }
         auto cmd = std::make_unique<BounceInPlaceCommand>(clipId, engine);
+        // executeCommand always retains the command (undo stack), so reading
+        // its error message back afterwards is safe.
+        auto* cmdPtr = cmd.get();
         UndoManager::getInstance().executeCommand(std::move(cmd));
+        if (auto err = cmdPtr->getErrorMessage(); err.isNotEmpty())
+            daw::ui::Toast::showGlobal(err, 5000);
     };
 
     mainView->onBounceToNewTrackRequested = [this](ClipId clipId) {
@@ -687,19 +692,31 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             return;
         }
 
+        // Runs one bounce and returns its error message (empty on success).
+        // executeCommand retains the command, so the raw pointer stays valid.
+        auto runBounce = [](ClipId cid, TracktionEngineWrapper* eng) -> juce::String {
+            auto cmd = std::make_unique<BounceToNewTrackCommand>(cid, eng);
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return cmdPtr->getErrorMessage();
+        };
+
         auto selectedClips = SelectionManager::getInstance().getSelectedClips();
+        juce::String error;
         if (selectedClips.size() > 1) {
             // Multi-clip bounce: one new track per selected clip, single undo step.
             UndoManager::getInstance().beginCompoundOperation("Bounce Clips To New Tracks");
             for (auto cid : selectedClips) {
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<BounceToNewTrackCommand>(cid, engine));
+                auto e = runBounce(cid, engine);
+                if (error.isEmpty())
+                    error = e;  // surface the first failure
             }
             UndoManager::getInstance().endCompoundOperation();
         } else {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<BounceToNewTrackCommand>(clipId, engine));
+            error = runBounce(clipId, engine);
         }
+        if (error.isNotEmpty())
+            daw::ui::Toast::showGlobal(error, 5000);
     };
 
     juce::Logger::writeToLog("[MainComponent] Setting up resize handles, view mode, callbacks...");
