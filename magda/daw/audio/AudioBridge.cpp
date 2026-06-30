@@ -29,6 +29,39 @@ bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
     return false;
 }
 
+te::WaveInputDevice* getLiveWaveInputDevice(te::Engine& engine,
+                                            te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
+}
+
+te::WaveInputDevice* getLiveTrackWaveInputDevice(
+    const std::map<TrackId, te::AudioTrack*>& trackMapping,
+    te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (const auto& [trackId, track] : trackMapping) {
+        juce::ignoreUnused(trackId);
+        if (!track)
+            continue;
+        auto* waveInput = &track->getWaveInputDevice();
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
+}
+
 MeterData readMeterClient(te::LevelMeasurer::Client& client) {
     MeterData data;
 
@@ -939,7 +972,10 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
                 continue;
 
             for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                if (!inputDeviceInstance || inputDeviceInstance->owner.isMidi())
+                auto* inputOwner = getLiveWaveInputDevice(engine_, inputDeviceInstance);
+                if (!inputOwner)
+                    inputOwner = getLiveTrackWaveInputDevice(trackMapping, inputDeviceInstance);
+                if (!inputOwner)
                     continue;
 
                 if (!inputHasTarget(*inputDeviceInstance, track->itemID))
@@ -948,7 +984,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
                 if (!inputDeviceInstance->isLivePlayEnabled(*track))
                     continue;
 
-                desired[trackId] = &inputDeviceInstance->owner.levelMeasurer;
+                desired[trackId] = &inputOwner->levelMeasurer;
                 break;
             }
         }

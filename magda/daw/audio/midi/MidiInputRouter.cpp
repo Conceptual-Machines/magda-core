@@ -25,6 +25,37 @@ te::InputDevice::MonitorMode toTeMonitorMode(InputMonitorMode mode) {
     }
 }
 
+te::MidiInputDevice* getLiveMidiInputDevice(te::Engine& engine,
+                                            te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (const auto& midiInput : engine.getDeviceManager().getMidiInDevices()) {
+        if (midiInput && midiInput.get() == owner)
+            return midiInput.get();
+    }
+
+    return nullptr;
+}
+
+te::InputDevice* getLiveInputDevice(te::Engine& engine,
+                                    te::InputDeviceInstance* inputDeviceInstance) {
+    if (auto* midiInput = getLiveMidiInputDevice(engine, inputDeviceInstance))
+        return midiInput;
+
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
+}
+
 }  // namespace
 
 MidiInputRouter::MidiInputRouter(te::Engine& engine, te::Edit& edit,
@@ -116,7 +147,7 @@ void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
     auto& tm = TrackManager::getInstance();
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        if (auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+        if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
             if (!isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()))
                 continue;
 
@@ -149,7 +180,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
 
     if (midiDeviceId.isEmpty()) {
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) [[maybe_unused]]
+            if (getLiveMidiInputDevice(engine_, inputDeviceInstance)) [[maybe_unused]]
                 auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
         }
     } else if (midiDeviceId == "all") {
@@ -161,8 +192,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
             teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            if (auto* midiDevice =
-                    dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+            if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
@@ -290,7 +320,7 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
     const auto teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner);
+        auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance);
         if (!midiDevice || !shouldUseDevice(*midiDevice))
             continue;
 
@@ -390,11 +420,11 @@ juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
 
     juce::StringArray midiInputs;
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+        if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
             auto targets = inputDeviceInstance->getTargets();
             for (auto targetID : targets) {
                 if (targetID == track->itemID)
-                    midiInputs.add(inputDeviceInstance->owner.getName());
+                    midiInputs.add(midiDevice->getName());
             }
         }
     }
@@ -513,7 +543,8 @@ void MidiInputRouter::resyncAllInputMonitors() {
         else if (anyAuto)
             teMode = te::InputDevice::MonitorMode::automatic;
 
-        inputDeviceInstance->owner.setMonitorMode(teMode);
+        if (auto* inputDevice = getLiveInputDevice(engine_, inputDeviceInstance))
+            inputDevice->setMonitorMode(teMode);
     }
 }
 

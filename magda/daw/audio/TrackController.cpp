@@ -26,6 +26,55 @@ bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
     return false;
 }
 
+te::MidiInputDevice* getLiveMidiInputDevice(te::Engine& engine,
+                                            te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (const auto& midiInput : engine.getDeviceManager().getMidiInDevices()) {
+        if (midiInput && midiInput.get() == owner)
+            return midiInput.get();
+    }
+
+    return nullptr;
+}
+
+te::WaveInputDevice* getLiveWaveInputDevice(te::Engine& engine,
+                                            te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
+}
+
+te::WaveInputDevice* getLiveTrackWaveInputDevice(
+    const std::map<TrackId, te::AudioTrack*>& trackMapping,
+    te::InputDeviceInstance* inputDeviceInstance, TrackId* sourceTrackId = nullptr) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (const auto& [magdaId, teTrack] : trackMapping) {
+        if (!teTrack)
+            continue;
+        auto* waveInput = &teTrack->getWaveInputDevice();
+        if (waveInput == owner) {
+            if (sourceTrackId)
+                *sourceTrackId = magdaId;
+            return waveInput;
+        }
+    }
+
+    return nullptr;
+}
+
 }  // namespace
 
 TrackController::TrackController(te::Engine& engine, te::Edit& edit)
@@ -307,13 +356,20 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
             if (deviceId == "default") {
                 // Use first available audio (non-MIDI) input device
                 for (auto* input : allInputs) {
-                    if (dynamic_cast<te::MidiInputDevice*>(&input->owner))
+                    if (getLiveMidiInputDevice(engine_, input))
+                        continue;
+                    auto* owner = getLiveWaveInputDevice(engine_, input);
+                    if (!owner) {
+                        juce::ScopedLock lock(trackLock_);
+                        owner = getLiveTrackWaveInputDevice(trackMapping_, input);
+                    }
+                    if (!owner)
                         continue;
                     auto result = input->setTarget(track->itemID, false, nullptr);
                     if (result.has_value()) {
                         (*result)->recordEnabled = false;  // Don't auto-enable recording
                         juce::Logger::writeToLog("[AudioInput] routed default '" +
-                                                 input->owner.getName() + "' to track");
+                                                 owner->getName() + "' to track");
                         break;
                     }
                 }
@@ -325,10 +381,16 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
                 // Find specific device by name and route it
                 bool found = false;
                 for (auto* inputDeviceInstance : allInputs) {
-                    juce::Logger::writeToLog("[AudioInput] checking device '" +
-                                             inputDeviceInstance->owner.getName() + "' against '" +
-                                             resolvedName + "'");
-                    if (inputDeviceInstance->owner.getName() == resolvedName) {
+                    auto* owner = getLiveWaveInputDevice(engine_, inputDeviceInstance);
+                    if (!owner) {
+                        juce::ScopedLock lock(trackLock_);
+                        owner = getLiveTrackWaveInputDevice(trackMapping_, inputDeviceInstance);
+                    }
+                    if (!owner)
+                        continue;
+                    juce::Logger::writeToLog("[AudioInput] checking device '" + owner->getName() +
+                                             "' against '" + resolvedName + "'");
+                    if (owner->getName() == resolvedName) {
                         auto result = inputDeviceInstance->setTarget(track->itemID, false, nullptr);
                         if (result.has_value()) {
                             (*result)->recordEnabled = false;
@@ -373,7 +435,14 @@ bool TrackController::setSessionSlotAudioRecordingTarget(TrackId trackId, int sc
     const auto teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr)
+        if (getLiveMidiInputDevice(engine_, inputDeviceInstance) != nullptr)
+            continue;
+        auto* owner = getLiveWaveInputDevice(engine_, inputDeviceInstance);
+        if (!owner) {
+            juce::ScopedLock lock(trackLock_);
+            owner = getLiveTrackWaveInputDevice(trackMapping_, inputDeviceInstance);
+        }
+        if (!owner)
             continue;
 
         const bool hasTrackTarget = inputHasTarget(*inputDeviceInstance, track->itemID);
@@ -383,10 +452,10 @@ bool TrackController::setSessionSlotAudioRecordingTarget(TrackId trackId, int sc
             if (!hasTrackTarget)
                 continue;
 
-            if (!inputDeviceInstance->owner.isEnabled())
-                inputDeviceInstance->owner.setEnabled(true);
+            if (!owner->isEnabled())
+                owner->setEnabled(true);
 
-            inputDeviceInstance->owner.setMonitorMode(teMonitorMode);
+            owner->setMonitorMode(teMonitorMode);
 
             if (!hasSlotTarget) {
                 auto result = inputDeviceInstance->setTarget(slot->itemID, false, nullptr);
@@ -428,26 +497,25 @@ juce::String TrackController::getTrackAudioInput(TrackId trackId) const {
         auto allInputs = playbackContext->getAllInputs();
         for (int i = 0; i < allInputs.size(); ++i) {
             auto* inputDeviceInstance = allInputs[i];
+            auto* waveInput = getLiveWaveInputDevice(engine_, inputDeviceInstance);
+            TrackId sourceTrackId = INVALID_TRACK_ID;
+            if (!waveInput) {
+                juce::ScopedLock lock(trackLock_);
+                waveInput =
+                    getLiveTrackWaveInputDevice(trackMapping_, inputDeviceInstance, &sourceTrackId);
+            }
+            if (!waveInput)
+                continue;
             auto targets = inputDeviceInstance->getTargets();
             for (auto targetID : targets) {
                 if (targetID == track->itemID) {
-                    // Check if this is a track-as-input (resampling) device
-                    if (inputDeviceInstance->owner.isTrackDevice() &&
-                        inputDeviceInstance->owner.getDeviceType() ==
-                            te::InputDevice::trackWaveDevice) {
-                        // Find the source MAGDA TrackId for this track input device
-                        juce::ScopedLock lock(trackLock_);
-                        for (const auto& [magdaId, teTrack] : trackMapping_) {
-                            if (&teTrack->getWaveInputDevice() == &inputDeviceInstance->owner) {
-                                return "track:" + juce::String(magdaId);
-                            }
-                        }
-                    }
+                    if (sourceTrackId != INVALID_TRACK_ID)
+                        return "track:" + juce::String(sourceTrackId);
                     // Return "default" if this is the first input (for round-trip consistency)
                     if (i == 0) {
                         return "default";
                     }
-                    return inputDeviceInstance->owner.getName();
+                    return waveInput->getName();
                 }
             }
         }
