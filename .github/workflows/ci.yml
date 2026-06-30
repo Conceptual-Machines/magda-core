@@ -372,7 +372,19 @@ jobs:
 
     - name: Clean up build directories
       if: always()
-      run: rm -rf build-debug build-release
+      run: |
+        # On the persistent self-hosted macOS runner, a plain `rm -rf` on the
+        # fresh build dirs intermittently fails with "Directory not empty":
+        # Spotlight (mdworker) indexes the just-built .app bundles and recreates
+        # an entry between rm's unlink pass and its final rmdir (a TOCTOU race
+        # ephemeral GitHub-hosted runners never hit). Rename aside first - an
+        # atomic mv, so nothing can write into the new path - then delete, and
+        # never let housekeeping fail an otherwise-green build.
+        for d in build-debug build-release; do
+          [ -e "$d" ] && mv "$d" "$d.trash.$$" 2>/dev/null || true
+        done
+        rm -rf build-debug build-release build-*.trash.* 2>/dev/null || true
+        exit 0
 
     - name: Build summary
       if: success()
