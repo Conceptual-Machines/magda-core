@@ -1624,6 +1624,9 @@ BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper
     : clipId_(clipId), engine_(engine) {}
 
 void BounceInPlaceCommand::execute() {
+    // Reset per-run so a stale failure message can't leak into a later
+    // success/cancel (redo re-invokes execute() on the same object).
+    errorMessage_.clear();
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || !clip->isMidi() || !engine_) {
@@ -1655,18 +1658,26 @@ void BounceInPlaceCommand::execute() {
         return;
     }
 
-    // Determine output file path
-    auto configFolder = Config::getInstance().getRenderFolder();
-    juce::File bouncesDir;
-    if (!configFolder.empty()) {
-        bouncesDir = juce::File(configFolder);
-    } else {
-        auto projBouncesDir = ProjectManager::getInstance().getBouncesDirectory();
-        bouncesDir = projBouncesDir != juce::File()
-                         ? projBouncesDir
-                         : edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
+    // Determine output file path — always the project's bounces directory.
+    // A bounce file is referenced by a clip inside the project, so it must live
+    // in the project media tree (so save/collect/move keeps it). It must NOT
+    // honour Config::getRenderFolder(): that is the global Export-to-file
+    // folder, and letting it hijack bounce output drops the file outside the
+    // project (e.g. on the Desktop) where the project can't track it.
+    auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
+    if (bouncesDir == juce::File())
+        bouncesDir = edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
+    // Verify the destination is actually writable before handing the renderer a
+    // dead destFile. On a read-only / unavailable project media tree the render
+    // would otherwise fail with only a DBG line and no bounced clip, leaving the
+    // user with nothing and no explanation. Bail with a visible error instead.
+    // Safe to return here: the transport hasn't been touched yet.
+    if (bouncesDir.createDirectory().failed() || !bouncesDir.hasWriteAccess()) {
+        errorMessage_ =
+            "Bounce failed: can't write to the bounces folder:\n" + bouncesDir.getFullPathName();
+        juce::Logger::writeToLog(errorMessage_);
+        return;
     }
-    bouncesDir.createDirectory();
 
     {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
@@ -1766,8 +1777,12 @@ void BounceInPlaceCommand::execute() {
     }
 
     if (userCancelled || !progressWindow.wasSuccessful()) {
-        if (!userCancelled)
-            DBG("BounceInPlaceCommand: render failed");
+        if (!userCancelled) {
+            errorMessage_ = "Bounce failed: couldn't write the audio file "
+                            "(the disk may be full or unwritable):\n" +
+                            renderedFile_.getFullPathName();
+            juce::Logger::writeToLog(errorMessage_);
+        }
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
         restoreTransport();
@@ -1828,6 +1843,9 @@ BounceToNewTrackCommand::BounceToNewTrackCommand(ClipId clipId, TracktionEngineW
     : clipId_(clipId), engine_(engine) {}
 
 void BounceToNewTrackCommand::execute() {
+    // Reset per-run so a stale failure message can't leak into a later
+    // success/cancel (redo re-invokes execute() on the same object).
+    errorMessage_.clear();
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || !engine_) {
@@ -1849,18 +1867,26 @@ void BounceToNewTrackCommand::execute() {
         return;
     }
 
-    // Determine output file path
-    auto configFolder = Config::getInstance().getRenderFolder();
-    juce::File bouncesDir;
-    if (!configFolder.empty()) {
-        bouncesDir = juce::File(configFolder);
-    } else {
-        auto projBouncesDir = ProjectManager::getInstance().getBouncesDirectory();
-        bouncesDir = projBouncesDir != juce::File()
-                         ? projBouncesDir
-                         : edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
+    // Determine output file path — always the project's bounces directory.
+    // A bounce file is referenced by a clip inside the project, so it must live
+    // in the project media tree (so save/collect/move keeps it). It must NOT
+    // honour Config::getRenderFolder(): that is the global Export-to-file
+    // folder, and letting it hijack bounce output drops the file outside the
+    // project (e.g. on the Desktop) where the project can't track it.
+    auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
+    if (bouncesDir == juce::File())
+        bouncesDir = edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
+    // Verify the destination is actually writable before handing the renderer a
+    // dead destFile. On a read-only / unavailable project media tree the render
+    // would otherwise fail with only a DBG line and no bounced clip, leaving the
+    // user with nothing and no explanation. Bail with a visible error instead.
+    // Safe to return here: the transport hasn't been touched yet.
+    if (bouncesDir.createDirectory().failed() || !bouncesDir.hasWriteAccess()) {
+        errorMessage_ =
+            "Bounce failed: can't write to the bounces folder:\n" + bouncesDir.getFullPathName();
+        juce::Logger::writeToLog(errorMessage_);
+        return;
     }
-    bouncesDir.createDirectory();
 
     {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
@@ -1935,8 +1961,12 @@ void BounceToNewTrackCommand::execute() {
     bool userCancelled = !progressWindow.runThread();
 
     if (userCancelled || !progressWindow.wasSuccessful()) {
-        if (!userCancelled)
-            DBG("BounceToNewTrackCommand: render failed");
+        if (!userCancelled) {
+            errorMessage_ = "Bounce failed: couldn't write the audio file "
+                            "(the disk may be full or unwritable):\n" +
+                            renderedFile_.getFullPathName();
+            juce::Logger::writeToLog(errorMessage_);
+        }
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
         restoreTransport();
