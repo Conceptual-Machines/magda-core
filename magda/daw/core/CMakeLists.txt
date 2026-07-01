@@ -9,6 +9,7 @@ target_sources(magda_daw PRIVATE
     UpdateChecker.cpp
     ViewModeController.cpp
     ConsoleRouting.cpp
+    LLMClientProvider.cpp
     MixAnalysisService.cpp
     SessionViewState.cpp
     TrackManager.cpp
@@ -75,6 +76,7 @@ target_sources(magda_daw PRIVATE
     ViewModeState.hpp
     ViewModeEvents.hpp
     ViewModeController.hpp
+    LLMClientProvider.hpp
     SessionViewState.hpp
     TrackInfo.hpp
     TrackManager.hpp
