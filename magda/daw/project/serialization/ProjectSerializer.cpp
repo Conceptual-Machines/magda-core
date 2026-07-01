@@ -614,6 +614,21 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
         clipManager.clearAllClips();
         automationManager.clearAll();
 
+        // Tear down the previous project's tracks OUTSIDE the restore batch, so
+        // clearAllTracks()'s notifyTracksChanged() fires immediately and runs
+        // AudioBridge::syncAll() against an empty track set. That removes the old
+        // TE AudioTracks and their synced plugins. If the clear is coalesced into
+        // the restore batch below, syncAll only ever sees the FINAL state, so the
+        // additive, path-keyed plugin sync finds Track[N] > Device[M] still
+        // present -- track/device IDs reset to 1 every project, so the paths
+        // collide across projects -- and skips recreating the plugin (it only
+        // creates devices whose path is absent). The device then becomes a dead
+        // husk: no editor, no processing. This is the "open A, open B, open A
+        // again -> VST has no UI and does nothing" bug. clearAllTracks fires a
+        // single teardown notification, so it does not reintroduce the O(N^2)
+        // fan-out the restore batch guards against.
+        trackManager.clearAllTracks();
+
         // Restore tracks in their own batch that closes BEFORE clips are
         // restored. Closing the track batch fires notifyTracksChanged() ->
         // AudioBridge::syncAll(), which is what actually creates the TE
@@ -624,7 +639,6 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
         // left arrangement clips out of the engine on load -> instruments silent.
         {
             TrackManager::BatchScope trackBatch;
-            trackManager.clearAllTracks();
 
             for (auto& track : stagedTracks) {
                 trackManager.restoreTrack(track);
