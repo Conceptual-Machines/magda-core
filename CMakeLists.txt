@@ -90,6 +90,11 @@ if(MSVC)
     #     ccache can't replay) - that's what broke the earlier sccache attempt.
     # Release still ships a real PDB for crash symbolication via per-target /Zi
     # in magda/daw/CMakeLists.txt, so /FS is scoped to Release only.
+    # Override BOTH languages: C dependencies built via FetchContent (lua) still
+    # default to /Zi, which reintroduces the shared compile-time PDB this switch
+    # exists to remove. ccache can't replay the PDB side effect, so /Zi C objects
+    # race on mspdbsrv under -j and fail with "C1090 PDB API call failed".
+    set(CMAKE_C_FLAGS_DEBUG "/Z7 /Od /W3")
     set(CMAKE_CXX_FLAGS_DEBUG "/Z7 /Od /W3")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
     # /FS serialises PDB writes across parallel cl.exe workers, required with the

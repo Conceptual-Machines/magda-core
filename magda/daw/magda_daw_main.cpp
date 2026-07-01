@@ -10,6 +10,7 @@
 #include <string>
 
 #include "../../magda/agents/llama_model_manager.hpp"
+#include "../../magda/agents/llm_client_factory.hpp"
 #include "../../magda/agents/llm_presets.hpp"
 #include "api/magda_api_live.hpp"
 #include "audio/AudioBridge.hpp"
@@ -147,6 +148,7 @@ class MagdaDAWApplication : public JUCEApplication {
         //    cannot move with the data dir override (chicken-and-egg: we
         //    have to read it to know where to redirect to).
         magda::Config::getInstance().load();
+        magda::registerLocalLLMClientProvider();
 
         //    Phase 2: re-resolve now that Config has provided any persisted
         //    path overrides.

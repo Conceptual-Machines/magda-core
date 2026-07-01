@@ -9,9 +9,9 @@
 #include <string>
 #include <thread>
 
-#include "../../agents/llm_client_factory.hpp"
 #include "AppPaths.hpp"
 #include "Config.hpp"
+#include "LLMClientProvider.hpp"
 #include "TechnicalText.hpp"
 
 namespace magda {

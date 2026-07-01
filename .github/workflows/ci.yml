@@ -32,6 +32,14 @@ concurrency:
 
 env:
   VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
+  # Hash the compiler's CONTENT, not its mtime, when keying ccache objects.
+  # ccache defaults to compiler_check=mtime, but ephemeral runners reprovision
+  # the VM every run, so the system compiler gets a fresh mtime each time even
+  # though its bytes are identical. With mtime that invalidates 100% of the
+  # restored cache (0% hits, observed on Linux); content makes the same compiler
+  # version hash identically across runs. Covers Linux and the windows-latest
+  # fallback, which lack the global ccache.conf the self-hosted runner carries.
+  CCACHE_COMPILERCHECK: content
 
 jobs:
   build-and-test-linux:
@@ -87,9 +95,9 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        key: ${{ runner.os }}-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-ccache-
+          ${{ runner.os }}-ccache-content-
         # Default cap is 500 MB, far too small for this project (llama + ggml +
         # faust + onnx + JUCE + TE). It filled and thrashed, giving an ~8% hit
         # rate and recompiling ~92% of TUs every run. 3G holds the whole build
@@ -511,9 +519,9 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        key: ${{ runner.os }}-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-ccache-
+          ${{ runner.os }}-ccache-content-
         max-size: 3G
         variant: ccache
 
@@ -546,12 +554,15 @@ jobs:
           exit 1
         }
 
-    # Release configure/build/verify only run on push to main. Feature-branch
-    # pushes get Debug coverage; the Release link check happens once per merge,
-    # before any tag is cut. release.yml still does the full Release build
-    # end-to-end on tag push.
+    # Release configure/build/verify only run on push to main, and only on the
+    # self-hosted runner (magda-luca). Feature-branch pushes get Debug coverage;
+    # the Release link check happens once per merge, before any tag is cut. We
+    # gate it off windows-latest because that fallback runner is much weaker - a
+    # full Release build there would dominate the run. release.yml still does the
+    # full Release build end-to-end on tag push, so nothing is lost when the
+    # fallback skips it.
     - name: Configure CMake (Release)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
       run: |
         cmake -B build-release -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
@@ -560,11 +571,11 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows
 
     - name: Build (Release)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
       run: cmake --build build-release --config Release
 
     - name: Verify executable
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
       run: |
         $exe = Get-ChildItem -Path build-release -Recurse -Filter "MAGDA.exe" | Select-Object -First 1
         if ($exe) {

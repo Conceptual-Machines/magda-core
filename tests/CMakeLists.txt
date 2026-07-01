@@ -251,6 +251,7 @@ target_sources(magda_juce_tests PRIVATE
     test_arrangement_transport_loop_juce.cpp
     test_external_plugin_state_restore_juce.cpp
     test_chord_progression_converter_juce.cpp
+    test_audio_driver_type_selection_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 
@@ -258,7 +259,6 @@ target_sources(magda_juce_tests PRIVATE
 target_link_libraries(magda_juce_tests
     PRIVATE
     magda_daw
-    magda_agents
     # JUCE (core/events/gui_basics) comes transitively from magda_daw, compiled
     # once there; direct links would recompile the JUCE stack into this target.
     # Linux: juce_gui_extra is pulled in transitively via magda_daw's
