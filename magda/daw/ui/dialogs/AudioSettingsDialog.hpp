@@ -48,7 +48,9 @@ class CustomChannelSelector : public juce::Component {
  * Dialog for configuring audio and MIDI device settings.
  * Uses custom channel selectors for fine-grained control.
  */
-class AudioSettingsDialog : public juce::Component, private juce::ChangeListener {
+class AudioSettingsDialog : public juce::Component,
+                            private juce::ChangeListener,
+                            private juce::ComboBox::Listener {
   public:
     explicit AudioSettingsDialog(juce::AudioDeviceManager* deviceManager,
                                  tracktion::DeviceManager* teDeviceManager = nullptr);
@@ -60,6 +62,7 @@ class AudioSettingsDialog : public juce::Component, private juce::ChangeListener
     // Re-list the device combos when the driver type or device changes (e.g. the
     // user picks a different driver in the AudioDeviceSelectorComponent).
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
 
     // Static method to show as modal dialog
     static void showDialog(juce::Component* parent, juce::AudioDeviceManager* deviceManager,
@@ -67,6 +70,11 @@ class AudioSettingsDialog : public juce::Component, private juce::ChangeListener
 
   private:
     void populateDeviceLists();
+    void updateDevicePickerMode();
+    void attachDriverTypeComboListener();
+    void detachDriverTypeComboListener();
+    void showDeviceRefreshIndicator(bool flushRepaint);
+    void hideDeviceRefreshIndicator();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
     void enableAllChannelsOnCurrentDevice();
@@ -80,12 +88,16 @@ class AudioSettingsDialog : public juce::Component, private juce::ChangeListener
     juce::ComboBox inputDeviceComboBox_;
     juce::Label outputDeviceLabel_;
     juce::ComboBox outputDeviceComboBox_;
+    double deviceRefreshProgress_ = -1.0;
+    juce::ProgressBar deviceRefreshSpinner_;
+    juce::Label deviceRefreshLabel_;
     juce::ToggleButton setAsPreferredCheckbox_;
 
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;
     juce::AudioDeviceManager* deviceManager_;
     tracktion::DeviceManager* teDeviceManager_;
+    juce::ComboBox* driverTypeComboBox_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)
 };

@@ -24,4 +24,22 @@ inline juce::AudioIODeviceType* activeDeviceTypeFor(juce::AudioDeviceManager& de
     return types.isEmpty() ? nullptr : types.getFirst();
 }
 
+inline bool isSingleDeviceDriver(juce::AudioDeviceManager& deviceManager) {
+    auto* type = activeDeviceTypeFor(deviceManager);
+    return type != nullptr && !type->hasSeparateInputsAndOutputs();
+}
+
+inline void applySelectedAudioDeviceName(juce::AudioDeviceManager::AudioDeviceSetup& setup,
+                                         const juce::String& selectedDeviceName,
+                                         bool selectedInputDevice, bool singleDeviceDriver) {
+    if (singleDeviceDriver) {
+        setup.inputDeviceName = selectedDeviceName;
+        setup.outputDeviceName = selectedDeviceName;
+    } else if (selectedInputDevice) {
+        setup.inputDeviceName = selectedDeviceName;
+    } else {
+        setup.outputDeviceName = selectedDeviceName;
+    }
+}
+
 }  // namespace magda

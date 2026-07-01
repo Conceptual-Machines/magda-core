@@ -12,6 +12,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Match CI's Linux ccache behavior: hosted runners give the same compiler a
+  # fresh mtime each run, so compiler_check=mtime invalidates restored objects.
+  CCACHE_COMPILERCHECK: content
+
 jobs:
   analyze:
     name: Analyze C++ Code
@@ -69,9 +74,9 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-codeql-ccache-${{ github.sha }}
+        key: ${{ runner.os }}-codeql-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-codeql-ccache-
+          ${{ runner.os }}-codeql-ccache-content-
 
     # Build the project for CodeQL analysis
     - name: Configure CMake
