@@ -19,6 +19,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Hash the compiler's CONTENT, not its mtime, when keying ccache objects.
+  # GitHub-hosted Linux runners reprovision the compiler on each run, so mtime
+  # changes even when the compiler bytes are identical. With ccache's default
+  # compiler_check=mtime, restored caches were 100% misses.
+  CCACHE_COMPILERCHECK: content
+
 jobs:
   juce-tests-linux:
     runs-on: ubuntu-latest
