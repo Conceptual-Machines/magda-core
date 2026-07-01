@@ -72,6 +72,36 @@ jobs:
         # Kept under the 10G repo cache budget shared with the other caches.
         max-size: 3G
 
+    # Faust/Mutable prebuilt artifacts (#1669): magda_juce_tests links magda_daw
+    # for its JUCE UI/audio-driver coverage, not for Faust/Mutable DSP, but it
+    # inherits their full source builds anyway. Cache the final build outputs
+    # (fixed, submodule-relative paths - see the top-level CMakeLists.txt) keyed
+    # on the exact submodule revision + compiler + backend/build-type, with no
+    # restore-keys fallback: an approximate match could silently restore an
+    # artifact built with a different ABI, which is worse than a rebuild.
+    - name: Determine Faust/Mutable artifact cache keys
+      id: dsp-cache-keys
+      run: |
+        echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache prebuilt Faust artifact
+      id: faust-cache
+      uses: actions/cache@v6
+      with:
+        path: |
+          third_party/faust/build/bin
+          third_party/faust/build/lib
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug
+
+    - name: Cache prebuilt Mutable artifact
+      id: mutable-cache
+      uses: actions/cache@v6
+      with:
+        path: third_party/eurorack/build/lib
+        key: ${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug
+
     - name: Configure CMake
       run: |
         cmake -B build-juce -G Ninja \
@@ -79,7 +109,9 @@ jobs:
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
           -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
+          ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
     - name: Build JUCE tests
       run: cmake --build build-juce --target magda_juce_tests --config Debug -j$(nproc)
