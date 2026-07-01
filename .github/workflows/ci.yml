@@ -364,15 +364,62 @@ jobs:
     - name: Init submodules
       run: git submodule update --init --recursive
 
+    # Faust/Mutable prebuilt artifacts (#1669), self-hosted variant. This
+    # runner's workspace persistence isn't reliable to depend on for these
+    # (checkout may clean untracked/ignored files), so - like the vcpkg
+    # binary cache above in the Windows job - stash the artifact in a fixed
+    # directory outside the git workspace, keyed on submodule revision +
+    # compiler + backend + build type, and reuse it directly as
+    # MAGDA_*_PREBUILT_DIR rather than round-tripping through actions/cache.
+    - name: Prepare prebuilt Faust/Mutable artifact cache (self-hosted)
+      id: dsp-prebuilt
+      run: |
+        FAUST_SHA=$(git -C third_party/faust rev-parse HEAD)
+        EURORACK_SHA=$(git -C third_party/eurorack rev-parse HEAD)
+        COMPILER=$(cc --version | head -n1 | shasum | cut -c1-12)
+        CACHE_ROOT="$HOME/magda-ci-cache"
+
+        FAUST_DEBUG_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-interp-debug"
+        FAUST_RELEASE_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-interp-release"
+        MUTABLE_DEBUG_DIR="$CACHE_ROOT/mutable-artifact-${EURORACK_SHA}-${COMPILER}-debug"
+        MUTABLE_RELEASE_DIR="$CACHE_ROOT/mutable-artifact-${EURORACK_SHA}-${COMPILER}-release"
+
+        echo "faust_debug_dir=$FAUST_DEBUG_DIR" >> "$GITHUB_OUTPUT"
+        echo "faust_release_dir=$FAUST_RELEASE_DIR" >> "$GITHUB_OUTPUT"
+        echo "mutable_debug_dir=$MUTABLE_DEBUG_DIR" >> "$GITHUB_OUTPUT"
+        echo "mutable_release_dir=$MUTABLE_RELEASE_DIR" >> "$GITHUB_OUTPUT"
+
+        { [ -d "$FAUST_DEBUG_DIR/lib" ] && [ -d "$FAUST_DEBUG_DIR/bin" ] && echo "faust_debug_hit=true" >> "$GITHUB_OUTPUT"; } || true
+        { [ -d "$FAUST_RELEASE_DIR/lib" ] && [ -d "$FAUST_RELEASE_DIR/bin" ] && echo "faust_release_hit=true" >> "$GITHUB_OUTPUT"; } || true
+        { [ -d "$MUTABLE_DEBUG_DIR/lib" ] && echo "mutable_debug_hit=true" >> "$GITHUB_OUTPUT"; } || true
+        { [ -d "$MUTABLE_RELEASE_DIR/lib" ] && echo "mutable_release_hit=true" >> "$GITHUB_OUTPUT"; } || true
+
     - name: Configure CMake (Debug)
       run: |
         cmake -B build-debug -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-          -DMAGDA_BUILD_TESTS=ON
+          -DMAGDA_BUILD_TESTS=ON \
+          ${{ steps.dsp-prebuilt.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_debug_dir) || '' }} \
+          ${{ steps.dsp-prebuilt.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_debug_dir) || '' }}
 
     - name: Build (Debug)
       run: cmake --build build-debug --config Debug
+
+    # Populate the persistent artifact cache from this run's source build so
+    # the next run on this runner can skip it. No-op on a cache hit (nothing
+    # to refresh) or if the source build didn't happen to produce them.
+    - name: Populate prebuilt Faust/Mutable cache (Debug)
+      run: |
+        if [ "${{ steps.dsp-prebuilt.outputs.faust_debug_hit }}" != "true" ] && [ -d third_party/faust/build/bin ] && [ -d third_party/faust/build/lib ]; then
+          mkdir -p "${{ steps.dsp-prebuilt.outputs.faust_debug_dir }}"
+          cp -R third_party/faust/build/bin "${{ steps.dsp-prebuilt.outputs.faust_debug_dir }}/"
+          cp -R third_party/faust/build/lib "${{ steps.dsp-prebuilt.outputs.faust_debug_dir }}/"
+        fi
+        if [ "${{ steps.dsp-prebuilt.outputs.mutable_debug_hit }}" != "true" ] && [ -d third_party/eurorack/build/lib ]; then
+          mkdir -p "${{ steps.dsp-prebuilt.outputs.mutable_debug_dir }}"
+          cp -R third_party/eurorack/build/lib "${{ steps.dsp-prebuilt.outputs.mutable_debug_dir }}/"
+        fi
 
     - name: Run tests
       run: |
@@ -394,10 +441,24 @@ jobs:
       run: |
         cmake -B build-release -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DMAGDA_BUILD_TESTS=OFF
+          -DMAGDA_BUILD_TESTS=OFF \
+          ${{ steps.dsp-prebuilt.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_release_dir) || '' }} \
+          ${{ steps.dsp-prebuilt.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_release_dir) || '' }}
 
     - name: Build (Release)
       run: cmake --build build-release --config Release
+
+    - name: Populate prebuilt Faust/Mutable cache (Release)
+      run: |
+        if [ "${{ steps.dsp-prebuilt.outputs.faust_release_hit }}" != "true" ] && [ -d third_party/faust/build/bin ] && [ -d third_party/faust/build/lib ]; then
+          mkdir -p "${{ steps.dsp-prebuilt.outputs.faust_release_dir }}"
+          cp -R third_party/faust/build/bin "${{ steps.dsp-prebuilt.outputs.faust_release_dir }}/"
+          cp -R third_party/faust/build/lib "${{ steps.dsp-prebuilt.outputs.faust_release_dir }}/"
+        fi
+        if [ "${{ steps.dsp-prebuilt.outputs.mutable_release_hit }}" != "true" ] && [ -d third_party/eurorack/build/lib ]; then
+          mkdir -p "${{ steps.dsp-prebuilt.outputs.mutable_release_dir }}"
+          cp -R third_party/eurorack/build/lib "${{ steps.dsp-prebuilt.outputs.mutable_release_dir }}/"
+        fi
 
     - name: Verify app bundle
       run: |
@@ -557,6 +618,62 @@ jobs:
         max-size: 3G
         variant: ccache
 
+    - name: Determine Faust/Mutable artifact cache keys
+      id: dsp-cache-keys
+      shell: powershell
+      run: |
+        $faustSha = (git -C third_party/faust rev-parse HEAD).Trim()
+        $eurorackSha = (git -C third_party/eurorack rev-parse HEAD).Trim()
+        $compiler = if ($env:VCToolsVersion) { $env:VCToolsVersion } else { "unknown" }
+        echo "faust_sha=$faustSha" >> $env:GITHUB_OUTPUT
+        echo "eurorack_sha=$eurorackSha" >> $env:GITHUB_OUTPUT
+        echo "compiler=$compiler" >> $env:GITHUB_OUTPUT
+
+    # Faust/Mutable prebuilt artifacts (#1669). Same self-hosted-vs-hosted
+    # split as the vcpkg binary cache above: a fixed local dir on the
+    # persistent self-hosted runner (no upload/download round-trip needed),
+    # actions/cache on the ephemeral windows-latest fallback. Release only
+    # ever runs on self-hosted (see its `if:` below), so it only needs the
+    # self-hosted branch's dirs.
+    - name: Prepare prebuilt Faust/Mutable artifact cache (self-hosted)
+      if: runner.environment == 'self-hosted'
+      id: dsp-prebuilt-self
+      shell: powershell
+      run: |
+        $cacheRoot = 'C:\magda-ci-cache'
+        $faustDebugDir = "$cacheRoot\faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug"
+        $faustReleaseDir = "$cacheRoot\faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release"
+        $mutableDebugDir = "$cacheRoot\mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug"
+        $mutableReleaseDir = "$cacheRoot\mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-release"
+
+        echo "faust_debug_dir=$faustDebugDir" >> $env:GITHUB_OUTPUT
+        echo "faust_release_dir=$faustReleaseDir" >> $env:GITHUB_OUTPUT
+        echo "mutable_debug_dir=$mutableDebugDir" >> $env:GITHUB_OUTPUT
+        echo "mutable_release_dir=$mutableReleaseDir" >> $env:GITHUB_OUTPUT
+
+        if ((Test-Path "$faustDebugDir\lib") -and (Test-Path "$faustDebugDir\bin")) { echo "faust_debug_hit=true" >> $env:GITHUB_OUTPUT }
+        if ((Test-Path "$faustReleaseDir\lib") -and (Test-Path "$faustReleaseDir\bin")) { echo "faust_release_hit=true" >> $env:GITHUB_OUTPUT }
+        if (Test-Path "$mutableDebugDir\lib") { echo "mutable_debug_hit=true" >> $env:GITHUB_OUTPUT }
+        if (Test-Path "$mutableReleaseDir\lib") { echo "mutable_release_hit=true" >> $env:GITHUB_OUTPUT }
+
+    - name: Cache prebuilt Faust artifact (github-hosted)
+      if: runner.environment == 'github-hosted'
+      id: faust-cache-hosted
+      uses: actions/cache@v6
+      with:
+        path: |
+          third_party/faust/build/bin
+          third_party/faust/build/lib
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug
+
+    - name: Cache prebuilt Mutable artifact (github-hosted)
+      if: runner.environment == 'github-hosted'
+      id: mutable-cache-hosted
+      uses: actions/cache@v6
+      with:
+        path: third_party/eurorack/build/lib
+        key: ${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug
+
     - name: Configure CMake (Debug)
       run: |
         cmake -B build-debug -G Ninja `
@@ -566,10 +683,26 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache `
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DVCPKG_TARGET_TRIPLET=x64-windows `
+          ${{ (steps.dsp-prebuilt-self.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_debug_dir)) || (steps.faust-cache-hosted.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace)) || '' }} `
+          ${{ (steps.dsp-prebuilt-self.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.mutable_debug_dir)) || (steps.mutable-cache-hosted.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace)) || '' }}
 
     - name: Build (Debug)
       run: cmake --build build-debug --config Debug
+
+    - name: Populate prebuilt Faust/Mutable cache (Debug, self-hosted)
+      if: runner.environment == 'self-hosted'
+      shell: powershell
+      run: |
+        if ("${{ steps.dsp-prebuilt-self.outputs.faust_debug_hit }}" -ne "true" -and (Test-Path "third_party\faust\build\bin") -and (Test-Path "third_party\faust\build\lib")) {
+          New-Item -ItemType Directory -Force -Path "${{ steps.dsp-prebuilt-self.outputs.faust_debug_dir }}" | Out-Null
+          Copy-Item -Recurse -Force "third_party\faust\build\bin" "${{ steps.dsp-prebuilt-self.outputs.faust_debug_dir }}\"
+          Copy-Item -Recurse -Force "third_party\faust\build\lib" "${{ steps.dsp-prebuilt-self.outputs.faust_debug_dir }}\"
+        }
+        if ("${{ steps.dsp-prebuilt-self.outputs.mutable_debug_hit }}" -ne "true" -and (Test-Path "third_party\eurorack\build\lib")) {
+          New-Item -ItemType Directory -Force -Path "${{ steps.dsp-prebuilt-self.outputs.mutable_debug_dir }}" | Out-Null
+          Copy-Item -Recurse -Force "third_party\eurorack\build\lib" "${{ steps.dsp-prebuilt-self.outputs.mutable_debug_dir }}\"
+        }
 
     - name: Show ccache statistics
       if: always()
@@ -600,11 +733,27 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release `
           -DMAGDA_BUILD_TESTS=OFF `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DVCPKG_TARGET_TRIPLET=x64-windows `
+          ${{ steps.dsp-prebuilt-self.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_release_dir) || '' }} `
+          ${{ steps.dsp-prebuilt-self.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.mutable_release_dir) || '' }}
 
     - name: Build (Release)
       if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
       run: cmake --build build-release --config Release
+
+    - name: Populate prebuilt Faust/Mutable cache (Release, self-hosted)
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
+      shell: powershell
+      run: |
+        if ("${{ steps.dsp-prebuilt-self.outputs.faust_release_hit }}" -ne "true" -and (Test-Path "third_party\faust\build\bin") -and (Test-Path "third_party\faust\build\lib")) {
+          New-Item -ItemType Directory -Force -Path "${{ steps.dsp-prebuilt-self.outputs.faust_release_dir }}" | Out-Null
+          Copy-Item -Recurse -Force "third_party\faust\build\bin" "${{ steps.dsp-prebuilt-self.outputs.faust_release_dir }}\"
+          Copy-Item -Recurse -Force "third_party\faust\build\lib" "${{ steps.dsp-prebuilt-self.outputs.faust_release_dir }}\"
+        }
+        if ("${{ steps.dsp-prebuilt-self.outputs.mutable_release_hit }}" -ne "true" -and (Test-Path "third_party\eurorack\build\lib")) {
+          New-Item -ItemType Directory -Force -Path "${{ steps.dsp-prebuilt-self.outputs.mutable_release_dir }}" | Out-Null
+          Copy-Item -Recurse -Force "third_party\eurorack\build\lib" "${{ steps.dsp-prebuilt-self.outputs.mutable_release_dir }}\"
+        }
 
     - name: Verify executable
       if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
