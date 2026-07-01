@@ -67,6 +67,7 @@ class AudioSettingsDialog : public juce::Component, private juce::ChangeListener
 
   private:
     void populateDeviceLists();
+    void updateDevicePickerMode();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
     void enableAllChannelsOnCurrentDevice();
