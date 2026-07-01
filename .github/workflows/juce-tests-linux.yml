@@ -65,10 +65,9 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-juce-ccache-${{ github.sha }}
+        key: ${{ runner.os }}-juce-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-juce-ccache-
-          ${{ runner.os }}-ccache-
+          ${{ runner.os }}-juce-ccache-content-
         # Default 500 MB cap thrashes on this project; hold the whole build.
         # Kept under the 10G repo cache budget shared with the other caches.
         max-size: 3G

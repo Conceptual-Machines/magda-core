@@ -74,9 +74,9 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-codeql-ccache-${{ github.sha }}
+        key: ${{ runner.os }}-codeql-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-codeql-ccache-
+          ${{ runner.os }}-codeql-ccache-content-
 
     # Build the project for CodeQL analysis
     - name: Configure CMake

@@ -95,9 +95,9 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        key: ${{ runner.os }}-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-ccache-
+          ${{ runner.os }}-ccache-content-
         # Default cap is 500 MB, far too small for this project (llama + ggml +
         # faust + onnx + JUCE + TE). It filled and thrashed, giving an ~8% hit
         # rate and recompiling ~92% of TUs every run. 3G holds the whole build
@@ -519,9 +519,9 @@ jobs:
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        key: ${{ runner.os }}-ccache-content-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-ccache-
+          ${{ runner.os }}-ccache-content-
         max-size: 3G
         variant: ccache
 
