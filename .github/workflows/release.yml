@@ -44,6 +44,34 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Version: $VERSION"
 
+    # Faust/Mutable prebuilt artifacts (#1669): this job is GitHub-hosted and
+    # ephemeral (no persistent runner state), so cache the same way ci.yml's
+    # Linux jobs do. Keyed on submodule revision + arch (arm64 here) since
+    # this and the x86_64 job are separate builds; compiler id is folded in
+    # as a cheap extra guard against a runner-image bump changing ABI.
+    - name: Determine Faust/Mutable artifact cache keys
+      id: dsp-cache-keys
+      run: |
+        echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache prebuilt Faust artifact
+      id: faust-cache
+      uses: actions/cache@v6
+      with:
+        path: |
+          third_party/faust/build/bin
+          third_party/faust/build/lib
+        key: ${{ runner.os }}-arm64-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release
+
+    - name: Cache prebuilt Mutable artifact
+      id: mutable-cache
+      uses: actions/cache@v6
+      with:
+        path: third_party/eurorack/build/lib
+        key: ${{ runner.os }}-arm64-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-release
+
     - name: Configure CMake (arm64)
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -55,7 +83,9 @@ jobs:
           -DMAGDA_BUILD_TESTS=OFF \
           -DMAGDA_FULL_VERSION="$VERSION" \
           -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+          ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
+          ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
     - name: Build
       run: cmake --build build --config Release -j $(sysctl -n hw.ncpu)
@@ -303,6 +333,32 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Version: $VERSION"
 
+    # Faust/Mutable prebuilt artifacts (#1669): GitHub-hosted/ephemeral, so
+    # cache like ci.yml's Linux jobs. Keyed with "x86_64" since this and the
+    # arm64 job above are separate builds and must not share an artifact.
+    - name: Determine Faust/Mutable artifact cache keys
+      id: dsp-cache-keys
+      run: |
+        echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache prebuilt Faust artifact
+      id: faust-cache
+      uses: actions/cache@v6
+      with:
+        path: |
+          third_party/faust/build/bin
+          third_party/faust/build/lib
+        key: ${{ runner.os }}-x86_64-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release
+
+    - name: Cache prebuilt Mutable artifact
+      id: mutable-cache
+      uses: actions/cache@v6
+      with:
+        path: third_party/eurorack/build/lib
+        key: ${{ runner.os }}-x86_64-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-release
+
     - name: Configure CMake (x86_64)
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -314,7 +370,9 @@ jobs:
           -DMAGDA_BUILD_TESTS=OFF \
           -DMAGDA_FULL_VERSION="$VERSION" \
           -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+          ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
+          ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
     - name: Build
       run: cmake --build build --config Release -j $(sysctl -n hw.ncpu)
@@ -686,6 +744,31 @@ jobs:
         Write-Output "NSIS on PATH: $bin"
         Write-Output "Resolved makensis: $makensis"
 
+    # Faust/Mutable prebuilt artifacts (#1669). This job only ever runs on
+    # the self-hosted runner (magda-luca), so use the same fixed local-dir
+    # scheme as ci.yml's self-hosted Windows Release branch - if that job
+    # already populated it on this machine, this run gets an instant hit.
+    - name: Prepare prebuilt Faust/Mutable artifact cache
+      id: dsp-prebuilt
+      shell: powershell
+      run: |
+        # actions/checkout registers the top-level repo as a git safe.directory
+        # automatically, but not nested submodule paths, and this self-hosted
+        # runner checks out under a different Windows account than the one
+        # running this step - see ci.yml's identical fix (#1669 CI failure).
+        git config --global --add safe.directory "*"
+        $faustSha = (git -C third_party/faust rev-parse HEAD).Trim()
+        $eurorackSha = (git -C third_party/eurorack rev-parse HEAD).Trim()
+        $compiler = if ($env:VCToolsVersion) { $env:VCToolsVersion } else { "unknown" }
+        $faustDir = "C:\magda-ci-cache\faust-artifact-$faustSha-$compiler-interp-release"
+        $mutableDir = "C:\magda-ci-cache\mutable-artifact-$eurorackSha-$compiler-release"
+
+        echo "faust_dir=$faustDir" >> $env:GITHUB_OUTPUT
+        echo "mutable_dir=$mutableDir" >> $env:GITHUB_OUTPUT
+
+        if ((Test-Path "$faustDir\lib") -and (Test-Path "$faustDir\bin")) { echo "faust_hit=true" >> $env:GITHUB_OUTPUT }
+        if (Test-Path "$mutableDir\lib") { echo "mutable_hit=true" >> $env:GITHUB_OUTPUT }
+
     - name: Configure CMake
       shell: powershell
       env:
@@ -703,11 +786,26 @@ jobs:
           -DMAGDA_BUILD_TESTS=OFF `
           -DMAGDA_FULL_VERSION="$env:VERSION" `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DVCPKG_TARGET_TRIPLET=x64-windows `
+          ${{ steps.dsp-prebuilt.outputs.faust_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.faust_dir) || '' }} `
+          ${{ steps.dsp-prebuilt.outputs.mutable_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt.outputs.mutable_dir) || '' }}
 
     - name: Build
       shell: powershell
       run: cmake --build build --config Release
+
+    - name: Populate prebuilt Faust/Mutable cache
+      shell: powershell
+      run: |
+        if ("${{ steps.dsp-prebuilt.outputs.faust_hit }}" -ne "true" -and (Test-Path "third_party\faust\build\bin") -and (Test-Path "third_party\faust\build\lib")) {
+          New-Item -ItemType Directory -Force -Path "${{ steps.dsp-prebuilt.outputs.faust_dir }}" | Out-Null
+          Copy-Item -Recurse -Force "third_party\faust\build\bin" "${{ steps.dsp-prebuilt.outputs.faust_dir }}\"
+          Copy-Item -Recurse -Force "third_party\faust\build\lib" "${{ steps.dsp-prebuilt.outputs.faust_dir }}\"
+        }
+        if ("${{ steps.dsp-prebuilt.outputs.mutable_hit }}" -ne "true" -and (Test-Path "third_party\eurorack\build\lib")) {
+          New-Item -ItemType Directory -Force -Path "${{ steps.dsp-prebuilt.outputs.mutable_dir }}" | Out-Null
+          Copy-Item -Recurse -Force "third_party\eurorack\build\lib" "${{ steps.dsp-prebuilt.outputs.mutable_dir }}\"
+        }
 
     - name: Locate MAGDA.exe
       id: locate
@@ -925,6 +1023,32 @@ jobs:
         fi
         sccache --version
 
+    # Faust/Mutable prebuilt artifacts (#1669): GitHub-hosted/ephemeral, so
+    # cache like ci.yml's Linux jobs. "-release" keeps this separate from
+    # ci.yml/juce-tests-linux.yml's Debug-keyed artifact.
+    - name: Determine Faust/Mutable artifact cache keys
+      id: dsp-cache-keys
+      run: |
+        echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache prebuilt Faust artifact
+      id: faust-cache
+      uses: actions/cache@v6
+      with:
+        path: |
+          third_party/faust/build/bin
+          third_party/faust/build/lib
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release
+
+    - name: Cache prebuilt Mutable artifact
+      id: mutable-cache
+      uses: actions/cache@v6
+      with:
+        path: third_party/eurorack/build/lib
+        key: ${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-release
+
     - name: Configure CMake
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -935,7 +1059,9 @@ jobs:
           -DMAGDA_BUILD_TESTS=OFF \
           -DMAGDA_FULL_VERSION="$VERSION" \
           -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+          ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
+          ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
     - name: Build
       run: cmake --build build --config Release -j $(nproc)

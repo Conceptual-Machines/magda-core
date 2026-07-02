@@ -634,11 +634,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                     const double bpm =
                         mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
-                    const TrackId targetTrack = clipManager.clipboardRequiresTargetTrack()
-                                                    ? resolvePasteTargetTrack(viewMode)
-                                                    : INVALID_TRACK_ID;
-                    if (clipManager.clipboardRequiresTargetTrack() &&
-                        targetTrack == INVALID_TRACK_ID) {
+                    const TrackId targetTrack = resolvePasteTargetTrack(viewMode);
+                    if (targetTrack == INVALID_TRACK_ID) {
                         return true;
                     }
 

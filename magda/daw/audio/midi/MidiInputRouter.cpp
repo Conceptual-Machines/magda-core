@@ -1,8 +1,8 @@
 #include "midi/MidiInputRouter.hpp"
 
 #include <functional>
+#include <unordered_set>
 
-#include "../../core/ClipManager.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
 #include "TrackController.hpp"
@@ -23,6 +23,37 @@ te::InputDevice::MonitorMode toTeMonitorMode(InputMonitorMode mode) {
         default:
             return te::InputDevice::MonitorMode::off;
     }
+}
+
+te::MidiInputDevice* getLiveMidiInputDevice(te::Engine& engine,
+                                            te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (const auto& midiInput : engine.getDeviceManager().getMidiInDevices()) {
+        if (midiInput && midiInput.get() == owner)
+            return midiInput.get();
+    }
+
+    return nullptr;
+}
+
+te::InputDevice* getLiveInputDevice(te::Engine& engine,
+                                    te::InputDeviceInstance* inputDeviceInstance) {
+    if (auto* midiInput = getLiveMidiInputDevice(engine, inputDeviceInstance))
+        return midiInput;
+
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
 }
 
 }  // namespace
@@ -116,7 +147,7 @@ void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
     auto& tm = TrackManager::getInstance();
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        if (auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+        if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
             if (!isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()))
                 continue;
 
@@ -149,7 +180,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
 
     if (midiDeviceId.isEmpty()) {
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) [[maybe_unused]]
+            if (getLiveMidiInputDevice(engine_, inputDeviceInstance)) [[maybe_unused]]
                 auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
         }
     } else if (midiDeviceId == "all") {
@@ -161,8 +192,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
             teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            if (auto* midiDevice =
-                    dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+            if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
@@ -290,7 +320,7 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
     const auto teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner);
+        auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance);
         if (!midiDevice || !shouldUseDevice(*midiDevice))
             continue;
 
@@ -367,7 +397,7 @@ void MidiInputRouter::setSurfaceOnlyMidiInputPort(const juce::String& midiDevice
     }
 
     removeSurfaceOnlyMidiInputTargets();
-    updateForSelection();
+    updateMidiInputRouting();
 }
 
 void MidiInputRouter::clearSurfaceOnlyMidiInputPorts() {
@@ -376,7 +406,7 @@ void MidiInputRouter::clearSurfaceOnlyMidiInputPorts() {
         surfaceOnlyMidiInputPorts_.clear();
     }
 
-    updateForSelection();
+    updateMidiInputRouting();
 }
 
 juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
@@ -390,11 +420,11 @@ juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
 
     juce::StringArray midiInputs;
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+        if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
             auto targets = inputDeviceInstance->getTargets();
             for (auto targetID : targets) {
                 if (targetID == track->itemID)
-                    midiInputs.add(inputDeviceInstance->owner.getName());
+                    midiInputs.add(midiDevice->getName());
             }
         }
     }
@@ -407,31 +437,33 @@ juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
     return "all";
 }
 
-void MidiInputRouter::updateForSelection() {
+void MidiInputRouter::updateMidiInputRouting() {
     auto& tm = TrackManager::getInstance();
-    auto selectedTrackId = tm.getSelectedTrack();
 
-    TrackId midiTrackId = selectedTrackId;
-    if (midiTrackId != INVALID_TRACK_ID) {
-        const auto* selectedTrack = tm.getTrack(midiTrackId);
-        if (selectedTrack && selectedTrack->type == TrackType::MultiOut &&
-            selectedTrack->hasParent()) {
-            midiTrackId = selectedTrack->parentId;
-        }
-    }
-    if (midiTrackId == INVALID_TRACK_ID) {
-        auto selectedClipId = ClipManager::getInstance().getSelectedClip();
-        if (selectedClipId != INVALID_CLIP_ID) {
-            if (auto* clip = ClipManager::getInstance().getClip(selectedClipId))
-                midiTrackId = clip->trackId;
-        }
+    // A track receives live MIDI input purely from its own input-monitor state
+    // (In/Auto) or because it is record-armed. Selection does NOT gate this: a
+    // monitored track keeps listening whether or not it is the selected track.
+    // MultiOut child tracks forward their MIDI to the parent that hosts the
+    // instrument, so their want is expressed against the parent id.
+    std::unordered_set<TrackId> midiTargets;
+    for (const auto& track : tm.getTracks()) {
+        if (track.type == TrackType::Aux)
+            continue;
+
+        if (!track.receivesLiveMidiInput())
+            continue;
+
+        TrackId target = track.id;
+        if (track.type == TrackType::MultiOut && track.hasParent())
+            target = track.parentId;
+        midiTargets.insert(target);
     }
 
     for (const auto& track : tm.getTracks()) {
         if (track.type == TrackType::Aux)
             continue;
 
-        bool shouldReceiveMidi = (track.id == midiTrackId) || track.recordArmed;
+        bool shouldReceiveMidi = midiTargets.count(track.id) > 0;
 
         std::function<bool(const std::vector<ChainElement>&)> checkElements;
         checkElements = [&](const std::vector<ChainElement>& elements) -> bool {
@@ -513,7 +545,8 @@ void MidiInputRouter::resyncAllInputMonitors() {
         else if (anyAuto)
             teMode = te::InputDevice::MonitorMode::automatic;
 
-        inputDeviceInstance->owner.setMonitorMode(teMode);
+        if (auto* inputDevice = getLiveInputDevice(engine_, inputDeviceInstance))
+            inputDevice->setMonitorMode(teMode);
     }
 }
 
@@ -557,7 +590,7 @@ void MidiInputRouter::handlePlaybackContextTick() {
     if (currentContext != lastPlaybackContext_) {
         lastPlaybackContext_ = currentContext;
         if (currentContext != nullptr)
-            updateForSelection();
+            updateMidiInputRouting();
     }
 }
 

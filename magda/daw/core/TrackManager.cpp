@@ -352,7 +352,7 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
             midiBridge->startMonitoring(trackId);
         }
         // Don't auto-route MIDI at the TE level for every new track.
-        // AudioBridge::updateMidiRoutingForSelection() will handle this
+        // AudioBridge::updateMidiInputRouting() will handle this
         // based on whether the track is selected or record-armed.
     }
 
@@ -1386,7 +1386,7 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
     // Only set up MidiBridge monitoring; TE-level MIDI routing is handled by
-    // AudioBridge::updateMidiRoutingForSelection() based on selection/arm state.
+    // AudioBridge::updateMidiInputRouting() based on selection/arm state.
     if (audioEngine_) {
         for (const auto& track : tracks_) {
             if (!track.midiInputDevice.isEmpty() && track.type != TrackType::Aux) {

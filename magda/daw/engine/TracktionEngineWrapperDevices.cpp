@@ -41,7 +41,7 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
 
     int inputsBefore = static_cast<int>(ctx->getAllInputs().size());
 
-    // Count current available devices to detect additions
+    // Count current available devices to detect additions/removals
     int totalDevices = static_cast<int>(dm.getMidiInDevices().size()) +
                        static_cast<int>(dm.getWaveInputDevices().size()) +
                        static_cast<int>(dm.getWaveOutputDevices().size());
@@ -53,7 +53,7 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
 
     bool deviceChanged = (!currentDeviceName.isEmpty() && lastKnownAudioDeviceName_.isNotEmpty() &&
                           currentDeviceName != lastKnownAudioDeviceName_);
-    bool devicesAdded = (totalDevices > lastKnownDeviceCount_);
+    bool deviceCountChanged = (totalDevices != lastKnownDeviceCount_);
 
     if (deviceChanged) {
         DBG("Audio device changed: " << lastKnownAudioDeviceName_ << " -> " << currentDeviceName);
@@ -88,7 +88,7 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
         }
     }
 
-    if (devicesAdded || deviceChanged) {
+    if (deviceCountChanged || deviceChanged) {
         ctx->reallocate();
         int inputsAfter = static_cast<int>(ctx->getAllInputs().size());
         DBG("Device change: Reallocated playback context (inputs: " << inputsBefore << " -> "

@@ -29,6 +29,39 @@ bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
     return false;
 }
 
+te::WaveInputDevice* getLiveWaveInputDevice(te::Engine& engine,
+                                            te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
+}
+
+te::WaveInputDevice* getLiveTrackWaveInputDevice(
+    const std::map<TrackId, te::AudioTrack*>& trackMapping,
+    te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (const auto& [trackId, track] : trackMapping) {
+        juce::ignoreUnused(trackId);
+        if (!track)
+            continue;
+        auto* waveInput = &track->getWaveInputDevice();
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
+}
+
 MeterData readMeterClient(te::LevelMeasurer::Client& client) {
     MeterData data;
 
@@ -74,7 +107,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
 
     // Re-establish MIDI routing and input monitor state after graph reallocate
     clipSynchronizer_.onGraphReallocated = [this]() {
-        updateMidiRoutingForSelection();
+        updateMidiInputRouting();
         resyncAllInputMonitors();
     };
 
@@ -300,7 +333,7 @@ void AudioBridge::trackPropertyChanged(int trackId) {
 
             // Update MIDI routing when record arm changes
             // (armed tracks should receive MIDI even when not selected)
-            updateMidiRoutingForSelection();
+            updateMidiInputRouting();
 
             syncRecordArmedToTE(trackId);
         }
@@ -312,11 +345,11 @@ void AudioBridge::trackPropertyChanged(int trackId) {
 
 void AudioBridge::trackSelectionChanged(TrackId newTrackId) {
     juce::ignoreUnused(newTrackId);
-    updateMidiRoutingForSelection();
+    updateMidiInputRouting();
 }
 
-void AudioBridge::updateMidiRoutingForSelection() {
-    midiInputRouter_.updateForSelection();
+void AudioBridge::updateMidiInputRouting() {
+    midiInputRouter_.updateMidiInputRouting();
 }
 
 void AudioBridge::resyncAllInputMonitors() {
@@ -383,7 +416,7 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     MAGDA_ADSR_AUDIO_LOG("follower-bridge monitor-refresh-done trackId=" << trackId);
 
     // Re-check MIDI routing in case trigger mode changed to/from MIDI
-    updateMidiRoutingForSelection();
+    updateMidiInputRouting();
     MAGDA_ADSR_AUDIO_LOG("follower-bridge midi-refresh-done trackId=" << trackId);
 }
 
@@ -870,7 +903,7 @@ void AudioBridge::syncAll() {
 
 void AudioBridge::syncTrackPlugins(TrackId trackId) {
     pluginManager_.syncTrackPlugins(trackId);
-    updateMidiRoutingForSelection();
+    updateMidiInputRouting();
 }
 
 void AudioBridge::ensureTrackMapping(TrackId trackId) {
@@ -939,7 +972,10 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
                 continue;
 
             for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                if (!inputDeviceInstance || inputDeviceInstance->owner.isMidi())
+                auto* inputOwner = getLiveWaveInputDevice(engine_, inputDeviceInstance);
+                if (!inputOwner)
+                    inputOwner = getLiveTrackWaveInputDevice(trackMapping, inputDeviceInstance);
+                if (!inputOwner)
                     continue;
 
                 if (!inputHasTarget(*inputDeviceInstance, track->itemID))
@@ -948,7 +984,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
                 if (!inputDeviceInstance->isLivePlayEnabled(*track))
                     continue;
 
-                desired[trackId] = &inputDeviceInstance->owner.levelMeasurer;
+                desired[trackId] = &inputOwner->levelMeasurer;
                 break;
             }
         }

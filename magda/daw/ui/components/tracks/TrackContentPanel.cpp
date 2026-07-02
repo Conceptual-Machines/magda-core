@@ -1773,11 +1773,19 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
                 // Only select track if no clips are currently selected
                 // (selectTrack triggers SelectionManager which clears clip selection)
+                int trackIndex = getTrackIndexAtY(event.y);
                 if (SelectionManager::getInstance().getSelectedClipCount() == 0) {
-                    int trackIndex = getTrackIndexAtY(event.y);
                     if (trackIndex >= 0) {
                         selectTrack(trackIndex);
                     }
+                } else if (trackIndex >= 0 && trackIndex != selectedTrackIndex) {
+                    // Clips remain selected (e.g. positioning the cursor to split them), but
+                    // the edit cursor should still visually move to the clicked lane.
+                    int oldIndex = selectedTrackIndex;
+                    selectedTrackIndex = trackIndex;
+                    if (oldIndex >= 0 && oldIndex < static_cast<int>(trackLanes.size()))
+                        repaintVisiblePortion(getTrackLaneArea(oldIndex));
+                    repaintVisiblePortion(getTrackLaneArea(trackIndex));
                 }
 
                 // Dispatch edit cursor change through controller (separate from playhead)
@@ -2010,11 +2018,8 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             }
             case 2: {  // Paste
                 const double bpm = safeThis ? safeThis->getTempo() : 120.0;
-                const TrackId targetTrackId =
-                    ClipManager::getInstance().clipboardRequiresTargetTrack() ? trackId
-                                                                              : INVALID_TRACK_ID;
                 auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{startTime * bpm / 60.0},
-                                                              targetTrackId);
+                                                              trackId);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 

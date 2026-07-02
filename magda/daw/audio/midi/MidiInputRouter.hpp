@@ -27,7 +27,7 @@ class MidiInputRouter {
     void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
     void clearSurfaceOnlyMidiInputPorts();
 
-    void updateForSelection();
+    void updateMidiInputRouting();
     void resyncAllInputMonitors();
     void onMidiDevicesAvailable();
     void applyPendingRoutes();
