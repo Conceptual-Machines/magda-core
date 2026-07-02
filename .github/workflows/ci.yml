@@ -622,6 +622,14 @@ jobs:
       id: dsp-cache-keys
       shell: powershell
       run: |
+        # actions/checkout registers the top-level repo as a git safe.directory
+        # automatically, but not nested submodule paths. On this self-hosted
+        # runner the checkout and this step run under different Windows
+        # accounts, so `git -C third_party/faust ...` below would otherwise
+        # fail with "detected dubious ownership". Wildcard avoids hardcoding
+        # a workspace path that differs between the self-hosted runner and
+        # the windows-latest fallback.
+        git config --global --add safe.directory "*"
         $faustSha = (git -C third_party/faust rev-parse HEAD).Trim()
         $eurorackSha = (git -C third_party/eurorack rev-parse HEAD).Trim()
         $compiler = if ($env:VCToolsVersion) { $env:VCToolsVersion } else { "unknown" }
