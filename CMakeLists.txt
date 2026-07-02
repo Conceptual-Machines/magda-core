@@ -90,6 +90,11 @@ if(MSVC)
     #     ccache can't replay) - that's what broke the earlier sccache attempt.
     # Release still ships a real PDB for crash symbolication via per-target /Zi
     # in magda/daw/CMakeLists.txt, so /FS is scoped to Release only.
+    # Override BOTH languages: C dependencies built via FetchContent (lua) still
+    # default to /Zi, which reintroduces the shared compile-time PDB this switch
+    # exists to remove. ccache can't replay the PDB side effect, so /Zi C objects
+    # race on mspdbsrv under -j and fail with "C1090 PDB API call failed".
+    set(CMAKE_C_FLAGS_DEBUG "/Z7 /Od /W3")
     set(CMAKE_CXX_FLAGS_DEBUG "/Z7 /Od /W3")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
     # /FS serialises PDB writes across parallel cl.exe workers, required with the
@@ -211,82 +216,100 @@ endif()
 set(MAGDA_FAUST_BACKEND "interp" CACHE STRING "Faust backend: interp or llvm")
 set_property(CACHE MAGDA_FAUST_BACKEND PROPERTY STRINGS "interp" "llvm")
 
-set(INCLUDE_EXECUTABLE ON CACHE BOOL "" FORCE)
-set(INCLUDE_STATIC ON CACHE BOOL "" FORCE)
-set(INCLUDE_DYNAMIC OFF CACHE BOOL "" FORCE)
-set(INCLUDE_OSC OFF CACHE BOOL "" FORCE)
-set(INCLUDE_HTTP OFF CACHE BOOL "" FORCE)
-set(INCLUDE_ITP OFF CACHE BOOL "" FORCE)
-set(INCLUDE_EMCC OFF CACHE BOOL "" FORCE)
-set(INCLUDE_WASM_GLUE OFF CACHE BOOL "" FORCE)
-set(INCLUDE_WASMTIME OFF CACHE BOOL "" FORCE)
-# Default all backends OFF; flip the one we want below.
-set(C_BACKEND       OFF CACHE STRING "" FORCE)
-# CPP backend powers `faust -lang cpp …` for build-time DSP → native
-# plugin compilation (see #1214). The `COMPILER` token enables the
-# backend in the standalone `faust` executable; we don't need STATIC /
-# DYNAMIC because libfaust isn't asked to emit C++ at runtime.
-set(CPP_BACKEND     "COMPILER" CACHE STRING "" FORCE)
-set(CMAJOR_BACKEND  OFF CACHE STRING "" FORCE)
-set(CSHARP_BACKEND  OFF CACHE STRING "" FORCE)
-set(DLANG_BACKEND   OFF CACHE STRING "" FORCE)
-set(FIR_BACKEND     OFF CACHE STRING "" FORCE)
-set(JAVA_BACKEND    OFF CACHE STRING "" FORCE)
-set(JAX_BACKEND     OFF CACHE STRING "" FORCE)
-set(JULIA_BACKEND   OFF CACHE STRING "" FORCE)
-set(JSFX_BACKEND    OFF CACHE STRING "" FORCE)
-set(OLDCPP_BACKEND  OFF CACHE STRING "" FORCE)
-set(RUST_BACKEND    OFF CACHE STRING "" FORCE)
-set(TEMPLATE_BACKEND OFF CACHE STRING "" FORCE)
-set(VHDL_BACKEND    OFF CACHE STRING "" FORCE)
-set(WASM_BACKEND    OFF CACHE STRING "" FORCE)
-set(INTERP_BACKEND  OFF CACHE STRING "" FORCE)
+# Building Faust from source compiles ~390 TUs of the Faust compiler itself
+# and dominates cold-build time (#1669). Faust changes rarely (pinned
+# submodule), so CI builds it once and caches third_party/faust/build/{bin,lib}
+# (fixed output paths regardless of our own CMAKE_BINARY_DIR - see
+# third_party/faust/build/CMakeLists.txt) across runs, then points this at
+# that cache instead of rebuilding from source every time.
+set(MAGDA_FAUST_PREBUILT_DIR "" CACHE PATH
+    "Directory containing a prebuilt Faust artifact (bin/faust + lib/libfaust); builds from source when empty/missing")
 
-if(MAGDA_FAUST_BACKEND STREQUAL "llvm")
-    set(LLVM_BACKEND "STATIC" CACHE STRING "" FORCE)
-    set(INTERP_COMP_BACKEND OFF CACHE STRING "" FORCE)
+if(MAGDA_FAUST_PREBUILT_DIR AND EXISTS "${MAGDA_FAUST_PREBUILT_DIR}/lib" AND EXISTS "${MAGDA_FAUST_PREBUILT_DIR}/bin")
+    message(STATUS "Using prebuilt Faust artifact: ${MAGDA_FAUST_PREBUILT_DIR}")
+    add_subdirectory(third_party/faust-prebuilt)
 else()
-    set(LLVM_BACKEND OFF CACHE STRING "" FORCE)
-    # INTERP_COMP includes both interpreter VM + compile-from-source path —
-    # what createInterpreterDSPFactoryFromString() needs.
-    set(INTERP_COMP_BACKEND "STATIC" CACHE STRING "" FORCE)
-endif()
-add_subdirectory(third_party/faust/build third_party/faust EXCLUDE_FROM_ALL)
-# Faust's static lib target is named `staticlib`. Re-expose under a clearer
-# alias so call sites read sensibly.
-add_library(faust::libfaust ALIAS staticlib)
-
-# Faust's compiler/tlib/compatibility.cpp picks one of two implementations
-# of `chdir` / `mkdir` / `getcwd` / `getFaustPathname` via:
-#   #if defined(_MBCS) || __MINGW32__   // narrow:  char  buffers + CreateDirectoryA
-#   #else                               // wide:    wchar buffers + CreateDirectory macro
-#
-# When the build defines neither `_MBCS` nor `UNICODE` (CMake's MSVC
-# default with `CharacterSet=NotSet`) the file picks the wide branch,
-# but the Win32 `CreateDirectory` macro resolves to `CreateDirectoryA`
-# (the char* version) — a wchar_t* / char* mismatch and a C2664 build
-# error. Define `_MBCS` for Faust's staticlib AND the `faust` executable
-# (both compile compatibility.cpp) so they take the narrow branch
-# upstream Faust expects on Windows; other targets are untouched.
-# The Faust compiler library is vendored third-party code (~390 TUs) that
-# leans on implicit numeric conversions and variable shadowing, flooding the
-# build with benign warnings: MSVC C4244/C4267/C4305, GCC/Clang -Wshadow /
-# -Wunused-* / -Wcast-function-type, etc. None are actionable in code we don't
-# own, and the diagnostic volume slows the build, so silence warnings on both
-# Faust targets. MSVC additionally needs _MBCS (see above).
-if(MSVC)
-    set(_faust_quiet /wd4244 /wd4267 /wd4305)
-else()
-    set(_faust_quiet -w)
-endif()
-foreach(_faust_target staticlib faust)
-    if(TARGET ${_faust_target})
-        target_compile_options(${_faust_target} PRIVATE ${_faust_quiet})
-        if(MSVC)
-            target_compile_definitions(${_faust_target} PRIVATE _MBCS)
-        endif()
+    if(MAGDA_FAUST_PREBUILT_DIR)
+        message(WARNING "MAGDA_FAUST_PREBUILT_DIR set but artifact missing under it; building Faust from source")
     endif()
-endforeach()
+
+    set(INCLUDE_EXECUTABLE ON CACHE BOOL "" FORCE)
+    set(INCLUDE_STATIC ON CACHE BOOL "" FORCE)
+    set(INCLUDE_DYNAMIC OFF CACHE BOOL "" FORCE)
+    set(INCLUDE_OSC OFF CACHE BOOL "" FORCE)
+    set(INCLUDE_HTTP OFF CACHE BOOL "" FORCE)
+    set(INCLUDE_ITP OFF CACHE BOOL "" FORCE)
+    set(INCLUDE_EMCC OFF CACHE BOOL "" FORCE)
+    set(INCLUDE_WASM_GLUE OFF CACHE BOOL "" FORCE)
+    set(INCLUDE_WASMTIME OFF CACHE BOOL "" FORCE)
+    # Default all backends OFF; flip the one we want below.
+    set(C_BACKEND       OFF CACHE STRING "" FORCE)
+    # CPP backend powers `faust -lang cpp …` for build-time DSP → native
+    # plugin compilation (see #1214). The `COMPILER` token enables the
+    # backend in the standalone `faust` executable; we don't need STATIC /
+    # DYNAMIC because libfaust isn't asked to emit C++ at runtime.
+    set(CPP_BACKEND     "COMPILER" CACHE STRING "" FORCE)
+    set(CMAJOR_BACKEND  OFF CACHE STRING "" FORCE)
+    set(CSHARP_BACKEND  OFF CACHE STRING "" FORCE)
+    set(DLANG_BACKEND   OFF CACHE STRING "" FORCE)
+    set(FIR_BACKEND     OFF CACHE STRING "" FORCE)
+    set(JAVA_BACKEND    OFF CACHE STRING "" FORCE)
+    set(JAX_BACKEND     OFF CACHE STRING "" FORCE)
+    set(JULIA_BACKEND   OFF CACHE STRING "" FORCE)
+    set(JSFX_BACKEND    OFF CACHE STRING "" FORCE)
+    set(OLDCPP_BACKEND  OFF CACHE STRING "" FORCE)
+    set(RUST_BACKEND    OFF CACHE STRING "" FORCE)
+    set(TEMPLATE_BACKEND OFF CACHE STRING "" FORCE)
+    set(VHDL_BACKEND    OFF CACHE STRING "" FORCE)
+    set(WASM_BACKEND    OFF CACHE STRING "" FORCE)
+    set(INTERP_BACKEND  OFF CACHE STRING "" FORCE)
+
+    if(MAGDA_FAUST_BACKEND STREQUAL "llvm")
+        set(LLVM_BACKEND "STATIC" CACHE STRING "" FORCE)
+        set(INTERP_COMP_BACKEND OFF CACHE STRING "" FORCE)
+    else()
+        set(LLVM_BACKEND OFF CACHE STRING "" FORCE)
+        # INTERP_COMP includes both interpreter VM + compile-from-source path —
+        # what createInterpreterDSPFactoryFromString() needs.
+        set(INTERP_COMP_BACKEND "STATIC" CACHE STRING "" FORCE)
+    endif()
+    add_subdirectory(third_party/faust/build third_party/faust EXCLUDE_FROM_ALL)
+    # Faust's static lib target is named `staticlib`. Re-expose under a clearer
+    # alias so call sites read sensibly.
+    add_library(faust::libfaust ALIAS staticlib)
+
+    # Faust's compiler/tlib/compatibility.cpp picks one of two implementations
+    # of `chdir` / `mkdir` / `getcwd` / `getFaustPathname` via:
+    #   #if defined(_MBCS) || __MINGW32__   // narrow:  char  buffers + CreateDirectoryA
+    #   #else                               // wide:    wchar buffers + CreateDirectory macro
+    #
+    # When the build defines neither `_MBCS` nor `UNICODE` (CMake's MSVC
+    # default with `CharacterSet=NotSet`) the file picks the wide branch,
+    # but the Win32 `CreateDirectory` macro resolves to `CreateDirectoryA`
+    # (the char* version) — a wchar_t* / char* mismatch and a C2664 build
+    # error. Define `_MBCS` for Faust's staticlib AND the `faust` executable
+    # (both compile compatibility.cpp) so they take the narrow branch
+    # upstream Faust expects on Windows; other targets are untouched.
+    # The Faust compiler library is vendored third-party code (~390 TUs) that
+    # leans on implicit numeric conversions and variable shadowing, flooding the
+    # build with benign warnings: MSVC C4244/C4267/C4305, GCC/Clang -Wshadow /
+    # -Wunused-* / -Wcast-function-type, etc. None are actionable in code we don't
+    # own, and the diagnostic volume slows the build, so silence warnings on both
+    # Faust targets. MSVC additionally needs _MBCS (see above).
+    if(MSVC)
+        set(_faust_quiet /wd4244 /wd4267 /wd4305)
+    else()
+        set(_faust_quiet -w)
+    endif()
+    foreach(_faust_target staticlib faust)
+        if(TARGET ${_faust_target})
+            target_compile_options(${_faust_target} PRIVATE ${_faust_quiet})
+            if(MSVC)
+                target_compile_definitions(${_faust_target} PRIVATE _MBCS)
+            endif()
+        endif()
+    endforeach()
+endif()
 
 # ----------------------------------------------------------------------------
 # magda_compile_faust_dsp(<dsp_file> <class_name> <out_var>)
@@ -316,7 +339,7 @@ function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
                 -single
                 -o "${GENERATED_CPP}"
                 "${DSP_FILE}"
-        DEPENDS "${DSP_FILE}" faust
+        DEPENDS "${DSP_FILE}" $<TARGET_FILE:faust>
         COMMENT "faust → cpp: ${DSP_NAME}.dsp → ${CLASS_NAME}"
         VERBATIM
     )
@@ -399,56 +422,76 @@ endif()
 # the results are numerically equivalent. TEST is PUBLIC so any consumer that
 # includes these headers gets the same portable path (magda-core uses no bare
 # TEST macro of its own, so there is no collision).
-set(MI_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eurorack)
-file(GLOB MI_SOURCES CONFIGURE_DEPENDS
-    ${MI_ROOT}/elements/dsp/*.cc
-    ${MI_ROOT}/elements/resources.cc
-    ${MI_ROOT}/rings/dsp/*.cc
-    ${MI_ROOT}/rings/resources.cc
-    ${MI_ROOT}/clouds/dsp/*.cc
-    ${MI_ROOT}/clouds/dsp/pvoc/*.cc
-    ${MI_ROOT}/clouds/resources.cc
-    ${MI_ROOT}/stmlib/utils/random.cc
-    ${MI_ROOT}/stmlib/dsp/atan.cc
-    ${MI_ROOT}/stmlib/dsp/units.cc
-)
-add_library(magda_mutable STATIC ${MI_SOURCES})
-target_include_directories(magda_mutable PUBLIC ${MI_ROOT})
-target_compile_definitions(magda_mutable PUBLIC TEST)
-if(MSVC)
-    target_compile_definitions(magda_mutable PUBLIC _USE_MATH_DEFINES)
+#
+# Same prebuilt/source-fallback shape as Faust above (#1669): smaller win
+# (~19 TUs) but the same mechanism, so CI can skip rebuilding this too.
+set(MAGDA_MUTABLE_PREBUILT_DIR "" CACHE PATH
+    "Directory containing a prebuilt magda_mutable artifact (lib/libmagda_mutable); builds from source when empty/missing")
 
-    # This is vendored Mutable Instruments DSP. It leans on implicit numeric
-    # conversions throughout (double literals -> float, size_t -> int32, etc.),
-    # so MSVC emits a flood of benign conversion warnings across stmlib headers
-    # and every dsp/*.cc - tens of thousands of them, whose formatting + log
-    # I/O measurably slow the build. We don't own this code and these are not
-    # actionable, so silence them for the whole target:
-    #   C4305 - truncation double -> float (the literal tables, the worst spam)
-    #   C4244 - conversion, possible loss of data
-    #   C4267 - size_t -> smaller int conversion
-    target_compile_options(magda_mutable PRIVATE /wd4305 /wd4244 /wd4267)
-
-    # The generated resources.cc files are giant brace-initialised const float
-    # lookup tables (elements/resources.cc alone is ~44k lines of FP literals).
-    # MSVC's optimiser is pathologically slow constant-folding huge static
-    # initialiser lists, so /O2 burns minutes on data it can't optimise. Disable
-    # optimisation for just these TUs: pure tables, zero runtime cost.
-    # TARGET_DIRECTORY scopes the per-file flag to magda_mutable (supported since
-    # CMake 3.18; verified the flag actually lands).
-    set_source_files_properties(
-        ${MI_ROOT}/elements/resources.cc
-        ${MI_ROOT}/rings/resources.cc
-        ${MI_ROOT}/clouds/resources.cc
-        TARGET_DIRECTORY magda_mutable
-        PROPERTIES COMPILE_OPTIONS "/Od")
+if(MAGDA_MUTABLE_PREBUILT_DIR AND EXISTS "${MAGDA_MUTABLE_PREBUILT_DIR}/lib")
+    message(STATUS "Using prebuilt Mutable artifact: ${MAGDA_MUTABLE_PREBUILT_DIR}")
+    add_subdirectory(third_party/mutable-prebuilt)
 else()
-    # Same vendored-DSP rationale on GCC/Clang: shadowing + unused-var warnings
-    # from stmlib headers and dsp/*.cc that we won't fix. Silence them.
-    target_compile_options(magda_mutable PRIVATE -w)
+    if(MAGDA_MUTABLE_PREBUILT_DIR)
+        message(WARNING "MAGDA_MUTABLE_PREBUILT_DIR set but artifact missing under it; building Mutable from source")
+    endif()
+
+    set(MI_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eurorack)
+    file(GLOB MI_SOURCES CONFIGURE_DEPENDS
+        ${MI_ROOT}/elements/dsp/*.cc
+        ${MI_ROOT}/elements/resources.cc
+        ${MI_ROOT}/rings/dsp/*.cc
+        ${MI_ROOT}/rings/resources.cc
+        ${MI_ROOT}/clouds/dsp/*.cc
+        ${MI_ROOT}/clouds/dsp/pvoc/*.cc
+        ${MI_ROOT}/clouds/resources.cc
+        ${MI_ROOT}/stmlib/utils/random.cc
+        ${MI_ROOT}/stmlib/dsp/atan.cc
+        ${MI_ROOT}/stmlib/dsp/units.cc
+    )
+    add_library(magda_mutable STATIC ${MI_SOURCES})
+    target_include_directories(magda_mutable PUBLIC ${MI_ROOT})
+    target_compile_definitions(magda_mutable PUBLIC TEST)
+    if(MSVC)
+        target_compile_definitions(magda_mutable PUBLIC _USE_MATH_DEFINES)
+
+        # This is vendored Mutable Instruments DSP. It leans on implicit numeric
+        # conversions throughout (double literals -> float, size_t -> int32, etc.),
+        # so MSVC emits a flood of benign conversion warnings across stmlib headers
+        # and every dsp/*.cc - tens of thousands of them, whose formatting + log
+        # I/O measurably slow the build. We don't own this code and these are not
+        # actionable, so silence them for the whole target:
+        #   C4305 - truncation double -> float (the literal tables, the worst spam)
+        #   C4244 - conversion, possible loss of data
+        #   C4267 - size_t -> smaller int conversion
+        target_compile_options(magda_mutable PRIVATE /wd4305 /wd4244 /wd4267)
+
+        # The generated resources.cc files are giant brace-initialised const float
+        # lookup tables (elements/resources.cc alone is ~44k lines of FP literals).
+        # MSVC's optimiser is pathologically slow constant-folding huge static
+        # initialiser lists, so /O2 burns minutes on data it can't optimise. Disable
+        # optimisation for just these TUs: pure tables, zero runtime cost.
+        # TARGET_DIRECTORY scopes the per-file flag to magda_mutable (supported since
+        # CMake 3.18; verified the flag actually lands).
+        set_source_files_properties(
+            ${MI_ROOT}/elements/resources.cc
+            ${MI_ROOT}/rings/resources.cc
+            ${MI_ROOT}/clouds/resources.cc
+            TARGET_DIRECTORY magda_mutable
+            PROPERTIES COMPILE_OPTIONS "/Od")
+    else()
+        # Same vendored-DSP rationale on GCC/Clang: shadowing + unused-var warnings
+        # from stmlib headers and dsp/*.cc that we won't fix. Silence them.
+        target_compile_options(magda_mutable PRIVATE -w)
+    endif()
+    set_target_properties(magda_mutable PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+        # Fixed, submodule-relative output location (mirrors Faust's own
+        # build/lib) so CI can cache it regardless of which build dir it
+        # was compiled in (#1669).
+        ARCHIVE_OUTPUT_DIRECTORY "${MI_ROOT}/build/lib")
+    add_library(magda::mutable ALIAS magda_mutable)
 endif()
-set_target_properties(magda_mutable PROPERTIES POSITION_INDEPENDENT_CODE ON)
-add_library(magda::mutable ALIAS magda_mutable)
 
 # Product-based subdirectories
 add_subdirectory(magda/daw)
