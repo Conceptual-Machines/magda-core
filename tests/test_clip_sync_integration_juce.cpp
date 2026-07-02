@@ -79,6 +79,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce();
         testPropertyChangeCreatesMissingReversedArrangementClipSynchronously();
         testBatchSessionSlotCreationReallocatesOnce();
+        testSessionClipMoveToTrackClearsVacatedSlot();
         testMoveClip();
         testResizeFromRight();
         testResizeFromLeft();
@@ -476,6 +477,40 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (canObserveReallocation)
             expectEquals(reallocationCount, 1,
                          "Batch-created session slots should share one graph reallocation");
+    }
+
+    void testSessionClipMoveToTrackClearsVacatedSlot() {
+        beginTest("Moving a session clip to another track clears the vacated slot's TE clip");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        const TrackId secondTrackId = 2;
+        f.trackController->ensureTrackMapping(secondTrackId, "Second Track");
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+        cm.setClipSceneIndex(clipId, 0);
+
+        expect(f.clipSync->getSessionTeClip(clipId) != nullptr,
+               "Clip should be synced into the original track's slot before the move");
+
+        cm.moveClipToTrack(clipId, secondTrackId);
+
+        expect(f.clipSync->getSessionTeClip(clipId) != nullptr,
+               "Clip should be synced into the destination track's slot after the move");
+
+        auto* oldTrack = f.trackController->getAudioTrack(f.trackId);
+        expect(oldTrack != nullptr);
+        if (!oldTrack)
+            return;
+        auto oldSlots = oldTrack->getClipSlotList().getClipSlots();
+        expect(!oldSlots.isEmpty());
+        if (oldSlots.isEmpty())
+            return;
+        expect(oldSlots[0]->getClip() == nullptr,
+               "Vacated slot on the original track should no longer hold a TE clip");
     }
 
     void testMoveClip() {
