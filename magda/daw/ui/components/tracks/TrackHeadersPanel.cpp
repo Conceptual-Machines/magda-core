@@ -1925,17 +1925,19 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 
     // Group indicator color strip on outer edge
     if (header.isGroup) {
-        g.setColour(header.trackColour.withAlpha(0.95f));
+        g.setColour(deriveTrackSwatch(header.trackColour));
         int stripX = headersOnRight_ ? bgArea.getRight() - 3 : bgArea.getX();
         g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
     }
 
-    // Track colour tinted name row — stretches to 0dB mark
+    // Track colour name row — stretches to 0dB mark. Opaque swatch at a
+    // fixed lightness/chroma (only hue varies) so every track reads at the
+    // same visual energy, instead of a low-alpha tint over the dark panel.
     float zeroDbFrac = 1.0f - dbToMeterPos(0.0f);
     int nameRowHeight = juce::jmax(22, static_cast<int>(bgArea.getHeight() * zeroDbFrac));
     if (!header.isMaster && header.trackColour != juce::Colour(0xFF444444)) {
         auto nameRowArea = bgArea.withHeight(nameRowHeight);
-        g.setColour(header.trackColour.withAlpha(0.5f));
+        g.setColour(deriveTrackSwatch(header.trackColour));
         g.fillRect(nameRowArea);
     }
 
