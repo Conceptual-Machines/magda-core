@@ -2002,6 +2002,9 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     menu.addItem(6, "Duplicate Selected Clips With Automation", !isFrozen && hasSelectedClips);
     menu.addItem(7, "Duplicate Selected Clips Without Automation", !isFrozen && hasSelectedClips);
     menu.addItem(4, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
+    menu.addSeparator();
+    menu.addItem(8, "Insert Time", !isFrozen && hasTimeSelection);
+    menu.addItem(9, "Duplicate Time Range", !isFrozen && hasTimeSelection);
     menu.addItem(3, "Select All");
 
     auto safeThis = juce::Component::SafePointer<TrackContentPanel>(this);
@@ -2087,6 +2090,14 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             case 6:  // Duplicate Selected Clips With Automation
                 if (safeThis)
                     safeThis->duplicateSelectedArrangementClips(true);
+                break;
+            case 8:  // Insert Time (ripple)
+                if (safeThis && safeThis->onInsertTimeRequested)
+                    safeThis->onInsertTimeRequested();
+                break;
+            case 9:  // Duplicate Time Range (ripple)
+                if (safeThis && safeThis->onDuplicateTimeRangeRequested)
+                    safeThis->onDuplicateTimeRangeRequested();
                 break;
         }
     });
@@ -2450,6 +2461,14 @@ void TrackContentPanel::rebuildClipComponents() {
         clipComp->onRenderTimeSelectionRequested = [this]() {
             if (onRenderTimeSelectionRequested)
                 onRenderTimeSelectionRequested();
+        };
+        clipComp->onInsertTimeRequested = [this]() {
+            if (onInsertTimeRequested)
+                onInsertTimeRequested();
+        };
+        clipComp->onDuplicateTimeRangeRequested = [this]() {
+            if (onDuplicateTimeRangeRequested)
+                onDuplicateTimeRangeRequested();
         };
         clipComp->onBounceInPlaceRequested = [this](ClipId id) {
             if (onBounceInPlaceRequested)

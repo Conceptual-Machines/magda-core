@@ -185,6 +185,8 @@ class TrackContentPanel : public juce::Component,
         onPlayheadPositionBeatsChanged;                    // Called when playhead is set via click
     std::function<void(ClipId)> onClipRenderRequested;     // Render clip to new file
     std::function<void()> onRenderTimeSelectionRequested;  // Render time selection
+    std::function<void()> onInsertTimeRequested;           // Ripple-insert empty time
+    std::function<void()> onDuplicateTimeRangeRequested;   // Ripple-duplicate time range
     std::function<void(ClipId)> onBounceInPlaceRequested;  // Bounce MIDI clip in place
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
     // Fires while a clip is being dragged/resized. The transparent grid overlay

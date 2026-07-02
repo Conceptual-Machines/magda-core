@@ -41,6 +41,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onJoinClips;
         std::function<void()> onRenderClip;
         std::function<void()> onRenderTimeSelection;
+        std::function<void()> onInsertTime;
+        std::function<void()> onDuplicateTimeRange;
         std::function<void()> onSelectAll;
         std::function<void()> onPreferences;
 
@@ -179,6 +181,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         JoinClips,
         RenderClip,
         RenderTimeSelection,
+        InsertTime = 222,
+        DuplicateTimeRange,
         SelectAll = 225,
         Preferences = 299,
 

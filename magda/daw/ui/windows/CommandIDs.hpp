@@ -28,7 +28,9 @@ enum {
     toggleClipLoop = 0x100D,       // Cmd+L: toggle loop on/off for selected clip
     duplicateClipWithAutomation = 0x100E,
     duplicateClipWithoutAutomation = 0x100F,
-    escapeAction = 0x1010,  // Esc: exit link mode / clear edit cursor
+    escapeAction = 0x1010,        // Esc: exit link mode / clear edit cursor
+    insertTime = 0x1011,          // Insert empty time at the selection, ripple later content right
+    duplicateTimeRange = 0x1012,  // Ripple-duplicate the time selection after itself
 
     // Transport menu
     play = 0x2000,  // Space: toggles play/stop (perform() already toggles)

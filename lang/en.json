@@ -35,6 +35,8 @@
     "edit.join_clips": "Join Clips",
     "edit.render_clip": "Render Selected Clip(s)",
     "edit.render_time_selection": "Render Time Selection",
+    "edit.insert_time": "Insert Time",
+    "edit.duplicate_time_range": "Duplicate Time Range",
     "edit.select_all": "Select All",
     "settings.preferences": "Preferences",
     "settings.ai": "AI Settings",

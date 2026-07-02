@@ -560,6 +560,14 @@ void MainWindow::setupMenuCallbacks() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
     };
 
+    callbacks.onInsertTime = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::insertTime, false);
+    };
+
+    callbacks.onDuplicateTimeRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::duplicateTimeRange, false);
+    };
+
     callbacks.onSelectAll = [this]() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::selectAll, false);
     };

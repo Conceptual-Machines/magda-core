@@ -103,7 +103,8 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
         duplicateClipWithoutAutomation, deleteCmd, selectAll, splitOrTrim, joinClips, renderClip,
-        renderTimeSelection, setLoopFromClip, toggleClipLoop, escapeAction,
+        renderTimeSelection, setLoopFromClip, toggleClipLoop, escapeAction, insertTime,
+        duplicateTimeRange,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -174,6 +175,23 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress(juce::KeyPress::deleteKey, 0);
             result.addDefaultKeypress(juce::KeyPress::backspaceKey, 0);
             break;
+
+        case insertTime:
+        case duplicateTimeRange: {
+            const bool timeSelectionActive =
+                mainView &&
+                mainView->getTimelineController().getState().selection.isVisuallyActive();
+            if (commandID == insertTime)
+                result.setInfo("Insert Time",
+                               "Insert empty time at the selection, rippling later content right",
+                               "Edit", 0);
+            else
+                result.setInfo("Duplicate Time Range",
+                               "Duplicate the time selection and ripple later content right",
+                               "Edit", 0);
+            result.setActive(timeSelectionActive);
+            break;
+        }
 
         case selectAll:
             result.setInfo("Select All", "Select all clips", "Edit", 0);
@@ -924,6 +942,94 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     selectionManager.clearSelection();
                 }
                 return true;
+            }
+            return true;
+        }
+
+        case insertTime: {
+            // Ripple-insert empty time (beats): open a gap the size of the
+            // selection at its start, pushing the selection and everything after
+            // it right.
+            if (!hasActiveTimeSelection())
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const auto& sel = state.selection;
+            auto trackIds = resolveTimeSelectionTrackIds();
+            const double bpm = state.tempo.bpm;
+            const double startBeat = sel.startBeats;
+            const double durationBeats = sel.endBeats - sel.startBeats;
+            if (durationBeats <= 0.0)
+                return true;
+            std::vector<AutomationLaneId> laneIds(sel.automationLaneIds.begin(),
+                                                  sel.automationLaneIds.end());
+
+            UndoManager::getInstance().beginCompoundOperation("Insert Time");
+            if (!sel.automationOnly) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<InsertTimeCommand>(startBeat, durationBeats, trackIds, bpm));
+            }
+            auto automationCmd = std::make_unique<InsertTimeAutomationCommand>(
+                startBeat, durationBeats, trackIds, laneIds);
+            if (automationCmd->canShiftPoints())
+                UndoManager::getInstance().executeCommand(std::move(automationCmd));
+            UndoManager::getInstance().endCompoundOperation();
+            return true;
+        }
+
+        case duplicateTimeRange: {
+            // Ripple-duplicate (beats): copy the range, open a same-size gap at
+            // its end, and paste the copy into that gap so later content shifts
+            // right instead of being overwritten.
+            if (!hasActiveTimeSelection())
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const auto& sel = state.selection;
+            auto trackIds = resolveTimeSelectionTrackIds();
+            const double bpm = state.tempo.bpm;
+            const double startBeat = sel.startBeats;
+            const double endBeat = sel.endBeats;
+            const double durationBeats = endBeat - startBeat;
+            if (durationBeats <= 0.0)
+                return true;
+            std::vector<AutomationLaneId> laneIds(sel.automationLaneIds.begin(),
+                                                  sel.automationLaneIds.end());
+
+            // Capture the source content before mutating the arrangement.
+            if (!sel.automationOnly)
+                clipManager.copyBeatRangeToClipboard(startBeat, endBeat, trackIds, bpm);
+            else
+                clipManager.clearClipboard();
+            const bool hasClips = !sel.automationOnly && clipManager.hasClipsInClipboard();
+
+            auto automationDupCmd = std::make_unique<DuplicateAutomationTimeSelectionCommand>(
+                startBeat, endBeat, trackIds, endBeat, laneIds);
+            const bool hasAutomation = automationDupCmd->canDuplicatePoints();
+
+            UndoManager::getInstance().beginCompoundOperation("Duplicate Time Range");
+            // 1. Ripple later content right to make room after the range.
+            if (!sel.automationOnly) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<InsertTimeCommand>(endBeat, durationBeats, trackIds, bpm));
+            }
+            auto automationShiftCmd = std::make_unique<InsertTimeAutomationCommand>(
+                endBeat, durationBeats, trackIds, laneIds);
+            if (automationShiftCmd->canShiftPoints())
+                UndoManager::getInstance().executeCommand(std::move(automationShiftCmd));
+            // 2. Drop the copied content into the gap.
+            if (hasClips) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<PasteClipCommand>(BeatPosition{endBeat}));
+            }
+            if (hasAutomation)
+                UndoManager::getInstance().executeCommand(std::move(automationDupCmd));
+            UndoManager::getInstance().endCompoundOperation();
+
+            if (hasClips || hasAutomation) {
+                // Move the time selection onto the duplicated region (beats-native).
+                selectionManager.clearSelection();
+                mainView->getTimelineController().dispatch(
+                    SetTimeSelectionBeatsEvent{endBeat, endBeat + durationBeats, sel.trackIndices,
+                                               sel.automationOnly, sel.automationLaneIds});
             }
             return true;
         }

@@ -93,6 +93,8 @@ class ClipComponent : public juce::Component,
     std::function<void(ClipId, double)> onClipSplit;       // clipId, splitTime (Alt+click)
     std::function<void(ClipId)> onClipRenderRequested;     // clipId (render clip to new file)
     std::function<void()> onRenderTimeSelectionRequested;  // render time selection
+    std::function<void()> onInsertTimeRequested;           // ripple-insert empty time
+    std::function<void()> onDuplicateTimeRangeRequested;   // ripple-duplicate time range
     std::function<void(ClipId)> onBounceInPlaceRequested;  // bounce MIDI clip in place (synth only)
     std::function<void(ClipId)>
         onBounceToNewTrackRequested;               // bounce clip to new track (full chain)

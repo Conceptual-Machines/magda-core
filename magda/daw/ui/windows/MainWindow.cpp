@@ -669,6 +669,14 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
     };
 
+    // Wire ripple time-editing callbacks
+    mainView->onInsertTimeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::insertTime, false);
+    };
+    mainView->onDuplicateTimeRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::duplicateTimeRange, false);
+    };
+
     // Wire bounce callbacks
     mainView->onBounceInPlaceRequested = [this](ClipId clipId) {
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());

@@ -879,16 +879,15 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     newClip.name = original->name + " Copy";
 
     if (newClip.view == ClipView::Arrangement) {
-        // Beats are authoritative for clip positioning. Compute the new
-        // position fully in beats, then derive seconds at the boundary.
-        // The previous code only did this for MIDI; the audio path left the
-        // duplicate's startBeats equal to the original's, so any later
-        // beats-driven re-derivation snapped the duplicate back on top of
-        // the original.
-        double bpm = currentProjectTempoOrDefault();
-        double clipLengthBeats = original->placement.lengthBeats;
-        newClip.setPlacementBeats(original->placement.startBeat + clipLengthBeats, clipLengthBeats);
-        newClip.deriveTimesFromBeats(bpm);
+        // Beats are authoritative for clip positioning: place the duplicate one
+        // clip-length after the original, fully in beats. setBeatPlacement
+        // derives the seconds cache at the boundary. (The old audio path left the
+        // duplicate's startBeats equal to the original's, so a later beats-driven
+        // re-derivation snapped it back on top of the original.)
+        const double bpm = currentProjectTempoOrDefault();
+        const double clipLengthBeats = original->placement.lengthBeats;
+        ClipOperations::setBeatPlacement(newClip, original->placement.startBeat + clipLengthBeats,
+                                         clipLengthBeats, bpm);
     } else {
         // Session clips always loop
         const double bpm = currentProjectTempoOrDefault();
@@ -2803,14 +2802,12 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
         return;
     }
 
-    // Find the earliest start time to use as reference
-    clipboardReferenceTime_ = std::numeric_limits<double>::max();
-    const double bpm = currentProjectTempoOrDefault();
+    // Find the earliest start beat to use as the paste reference anchor.
+    clipboardReferenceBeat_ = std::numeric_limits<double>::max();
     for (auto clipId : clipIds) {
         const auto* clip = getClip(clipId);
         if (clip) {
-            clipboardReferenceTime_ =
-                std::min(clipboardReferenceTime_, clip->getTimelineStart(bpm));
+            clipboardReferenceBeat_ = std::min(clipboardReferenceBeat_, clip->placement.startBeat);
         }
     }
 
@@ -2825,12 +2822,12 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
     DBG("CLIPBOARD: Copied " << clipboard_.size() << " clip(s)");
 }
 
-void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
+void ClipManager::copyBeatRangeToClipboard(double startBeat, double endBeat,
                                            const std::vector<TrackId>& trackIds, double tempoBPM) {
     clipboard_.clear();
-    clipboardReferenceTime_ = startTime;
+    clipboardReferenceBeat_ = startBeat;
 
-    if (startTime >= endTime)
+    if (startBeat >= endBeat)
         return;
 
     for (const auto& [id, clip] : clips_) {
@@ -2842,31 +2839,31 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
                 continue;
         }
 
-        // Check overlap against beat-authoritative timeline placement. The seconds fields are
-        // transitional caches and can be stale after beat-mode edits or BPM changes.
-        double clipStart = clip.getTimelineStart(tempoBPM);
-        double clipLength = clip.getTimelineLength(tempoBPM);
-        double clipEnd = clipStart + clipLength;
-        if (clipStart >= endTime || clipEnd <= startTime)
+        // Overlap against beat-authoritative timeline placement.
+        const double clipStartBeat = clip.placement.startBeat;
+        const double clipEndBeat = clip.placement.endBeat();
+        if (clipStartBeat >= endBeat || clipEndBeat <= startBeat)
             continue;
 
-        double overlapStart = std::max(clipStart, startTime);
-        double overlapEnd = std::min(clipEnd, endTime);
+        const double overlapStartBeat = std::max(clipStartBeat, startBeat);
+        const double overlapEndBeat = std::min(clipEndBeat, endBeat);
 
         ClipInfo trimmed = clip;
-        ClipOperations::setTimelinePlacement(trimmed, overlapStart, overlapEnd - overlapStart,
-                                             tempoBPM);
+        ClipOperations::setBeatPlacement(trimmed, overlapStartBeat,
+                                         overlapEndBeat - overlapStartBeat, tempoBPM);
 
         if (clip.isAudio()) {
-            // Adjust offset for the trimmed start position
-            double trimFromLeft = overlapStart - clipStart;
-            if (clip.audio().interpretation.bpm > 0.0 && tempoBPM > 0.0) {
-                // autoTempo: work in beats, derive seconds
-                double deltaBeats = trimFromLeft * tempoBPM / 60.0;
-                trimmed.offsetBeats = clip.offsetBeats + deltaBeats;
+            // Advance the source read position by the trimmed-off beats.
+            const double trimFromLeftBeats = overlapStartBeat - clipStartBeat;
+            if (clip.audio().interpretation.bpm > 0.0) {
+                // autoTempo: beats are authoritative, derive source seconds.
+                trimmed.offsetBeats = clip.offsetBeats + trimFromLeftBeats;
                 trimmed.offset = trimmed.offsetBeats * 60.0 / clip.audio().interpretation.bpm;
-            } else {
-                trimmed.offset = clip.offset + trimFromLeft * clip.speedRatio;
+            } else if (isValidBpm(tempoBPM)) {
+                // Non-autoTempo: source offset is seconds. Convert the beat trim
+                // to timeline seconds, then to source seconds via speedRatio.
+                const double trimFromLeftSeconds = trimFromLeftBeats * 60.0 / tempoBPM;
+                trimmed.offset = clip.offset + trimFromLeftSeconds * clip.speedRatio;
             }
             // Sync loop fields for non-looped clips
             if (!trimmed.loopEnabled) {
@@ -2880,17 +2877,15 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
                 trimmed.loopLength = trimmed.timelineToSource(trimmed.getTimelineLength(tempoBPM));
             }
         } else if (clip.isMidi() && !clip.midiNotes.empty()) {
-            // Filter MIDI notes to those within the overlap range
-            double bps = tempoBPM / 60.0;
-            // Notes are in beats relative to clip start. Convert overlap bounds to beats.
-            double overlapStartBeat = (overlapStart - clipStart) * bps;
-            double overlapEndBeat = (overlapEnd - clipStart) * bps;
+            // Notes are in beats relative to clip start; re-base to the overlap.
+            const double overlapStartRelBeat = overlapStartBeat - clipStartBeat;
+            const double overlapEndRelBeat = overlapEndBeat - clipStartBeat;
 
             std::vector<MidiNote> filteredNotes;
             for (const auto& note : clip.midiNotes) {
-                if (note.startBeat >= overlapStartBeat && note.startBeat < overlapEndBeat) {
+                if (note.startBeat >= overlapStartRelBeat && note.startBeat < overlapEndRelBeat) {
                     MidiNote adjusted = note;
-                    adjusted.startBeat -= overlapStartBeat;
+                    adjusted.startBeat -= overlapStartRelBeat;
                     filteredNotes.push_back(adjusted);
                 }
             }
@@ -2901,25 +2896,33 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
     }
 }
 
-std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId,
-                                                    ClipView targetView, int targetSceneIndex) {
+void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
+                                           const std::vector<TrackId>& trackIds, double tempoBPM) {
+    // Seconds shim: convert the range to beats and delegate to the
+    // beats-authoritative implementation.
+    const double bpm = isValidBpm(tempoBPM) ? tempoBPM : currentProjectTempoOrDefault();
+    copyBeatRangeToClipboard(startTime * bpm / 60.0, endTime * bpm / 60.0, trackIds, bpm);
+}
+
+std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, TrackId targetTrackId,
+                                                         ClipView targetView,
+                                                         int targetSceneIndex) {
     std::vector<ClipId> newClips;
 
     if (clipboard_.empty()) {
         return newClips;
     }
 
-    // Calculate offset from reference time to paste time
-    const double bpm = currentProjectTempoOrDefault();
-    double timeOffset = pasteTime - clipboardReferenceTime_;
+    // Clipboard positions are beat-domain; maintain relative positions in beats.
+    const double beatOffset = pasteBeat - clipboardReferenceBeat_;
 
     // Track which scene slots have been used during this paste (for multi-clip session paste)
     std::unordered_map<TrackId, int> trackSceneMap;
 
     for (const auto& clipData : clipboard_) {
-        // Calculate new start time maintaining relative position
-        double newStartTime = clipData.getTimelineStart(bpm) + timeOffset;
-        double clipLength = clipData.getTimelineLength(bpm);
+        // Calculate new start beat maintaining relative position
+        const double newStartBeat = clipData.placement.startBeat + beatOffset;
+        const double clipLengthBeats = clipData.placement.lengthBeats;
 
         // Determine target track
         TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
@@ -2931,14 +2934,14 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
         ClipId newClipId = INVALID_CLIP_ID;
         if (clipData.isAudio()) {
             if (clipData.audio().source.filePath.isNotEmpty()) {
-                newClipId = createAudioClip(newTrackId, newStartTime, clipLength,
-                                            clipData.audio().source.filePath, targetView, 0.0,
-                                            ClipOverlapPolicy::ResolveOverlaps);
+                newClipId = createAudioClipBeats(newTrackId, newStartBeat, clipLengthBeats,
+                                                 clipData.audio().source.filePath, targetView, 0.0,
+                                                 ClipOverlapPolicy::ResolveOverlaps);
             }
         } else {
             // For MIDI clips, create empty then copy notes
-            newClipId = createMidiClip(newTrackId, newStartTime, clipLength, targetView,
-                                       ClipOverlapPolicy::ResolveOverlaps);
+            newClipId = createMidiClipBeats(newTrackId, newStartBeat, clipLengthBeats, targetView,
+                                            ClipOverlapPolicy::ResolveOverlaps);
         }
 
         if (newClipId != INVALID_CLIP_ID) {
@@ -3092,6 +3095,15 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
     return newClips;
 }
 
+std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId targetTrackId,
+                                                    ClipView targetView, int targetSceneIndex) {
+    // Seconds shim: convert the paste position to beats and delegate to the
+    // beats-authoritative implementation.
+    const double bpm = currentProjectTempoOrDefault();
+    const double pasteBeat = isValidBpm(bpm) ? pasteTime * bpm / 60.0 : 0.0;
+    return pasteFromClipboardBeats(pasteBeat, targetTrackId, targetView, targetSceneIndex);
+}
+
 void ClipManager::cutToClipboard(const std::unordered_set<ClipId>& clipIds) {
     // Copy to clipboard
     copyToClipboard(clipIds);
@@ -3113,13 +3125,13 @@ bool ClipManager::clipboardRequiresTargetTrack() const {
 
 void ClipManager::clearClipboard() {
     clipboard_.clear();
-    clipboardReferenceTime_ = 0.0;
+    clipboardReferenceBeat_ = 0.0;
 }
 
 void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String name,
                                        double lengthBeats) {
     clipboard_.clear();
-    clipboardReferenceTime_ = 0.0;
+    clipboardReferenceBeat_ = 0.0;
 
     if (notes.empty()) {
         return;

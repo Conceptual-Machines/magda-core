@@ -261,6 +261,57 @@ TEST_CASE("DuplicateAutomationTimeSelectionCommand duplicates visible absolute l
     REQUIRE(findPointAt(mgr.getLane(volumeLaneId), 7.0) == nullptr);
 }
 
+TEST_CASE("InsertTimeAutomationCommand shifts points at/after the insert beat right",
+          "[automation][commands][insert]") {
+    resetState();
+    auto trackId = makeTrack("T");
+    auto otherTrackId = makeTrack("Other");
+    auto& mgr = AutomationManager::getInstance();
+
+    auto laneId = mgr.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
+    auto otherLaneId = mgr.createLane(volumeTarget(otherTrackId), AutomationLaneType::Absolute);
+    REQUIRE(laneId != INVALID_AUTOMATION_LANE_ID);
+    REQUIRE(otherLaneId != INVALID_AUTOMATION_LANE_ID);
+
+    mgr.addPoint(laneId, 1.0, 0.25, AutomationCurveType::Linear);
+    mgr.addPoint(laneId, 2.5, 0.75, AutomationCurveType::Linear);
+    mgr.addPoint(laneId, 3.0, 0.5, AutomationCurveType::Linear);
+    mgr.addPoint(otherLaneId, 2.5, 0.9, AutomationCurveType::Linear);
+
+    // Insert 2 beats at beat 2 on trackId only.
+    InsertTimeAutomationCommand cmd(2.0, 2.0, {trackId});
+    REQUIRE(cmd.canShiftPoints());
+
+    cmd.execute();
+
+    auto* lane = mgr.getLane(laneId);
+    REQUIRE(lane != nullptr);
+    // createLane seeds a default point, so the count (default + 3 added) is
+    // unchanged by a move: points are repositioned, never added or removed.
+    const size_t pointCount = lane->absolutePoints.size();
+    REQUIRE(findPointAt(lane, 1.0) != nullptr);  // before insert beat: untouched
+    REQUIRE(findPointAt(lane, 2.5) == nullptr);  // shifted away
+    REQUIRE(findPointAt(lane, 3.0) == nullptr);  // shifted away
+    auto* shiftedA = findPointAt(lane, 4.5);
+    REQUIRE(shiftedA != nullptr);
+    REQUIRE(shiftedA->value == Catch::Approx(0.75));
+    auto* shiftedB = findPointAt(lane, 5.0);
+    REQUIRE(shiftedB != nullptr);
+    REQUIRE(shiftedB->value == Catch::Approx(0.5));
+    REQUIRE(lane->absolutePoints.size() == pointCount);
+
+    // Other track is unaffected by the track filter.
+    REQUIRE(findPointAt(mgr.getLane(otherLaneId), 2.5) != nullptr);
+
+    cmd.undo();
+    lane = mgr.getLane(laneId);
+    REQUIRE(findPointAt(lane, 1.0) != nullptr);
+    REQUIRE(findPointAt(lane, 2.5) != nullptr);
+    REQUIRE(findPointAt(lane, 3.0) != nullptr);
+    REQUIRE(findPointAt(lane, 4.5) == nullptr);
+    REQUIRE(findPointAt(lane, 5.0) == nullptr);
+}
+
 TEST_CASE("A Linear segment's shaper handle bends the evaluated value", "[automation][singleton]") {
     // Regression: the shaper bends a Linear segment via bezier handles, but
     // value evaluation used to read only the tension scalar -> the curve was

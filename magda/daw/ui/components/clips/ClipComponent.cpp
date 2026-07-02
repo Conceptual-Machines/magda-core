@@ -3321,6 +3321,9 @@ void ClipComponent::showContextMenu() {
             hasTimeSelection = state.selection.isActive() && !state.selection.visuallyHidden;
         }
         menu.addItem(10, "Render Time Selection", hasTimeSelection);
+        menu.addSeparator();
+        menu.addItem(30, "Insert Time", hasTimeSelection);
+        menu.addItem(31, "Duplicate Time Range", hasTimeSelection);
     }
 
     // Bounce operations (not for chord progressions)
@@ -3663,6 +3666,20 @@ void ClipComponent::showContextMenu() {
             case 10: {  // Render Time Selection
                 if (onRenderTimeSelectionRequested) {
                     onRenderTimeSelectionRequested();
+                }
+                break;
+            }
+
+            case 30: {  // Insert Time (ripple)
+                if (onInsertTimeRequested) {
+                    onInsertTimeRequested();
+                }
+                break;
+            }
+
+            case 31: {  // Duplicate Time Range (ripple)
+                if (onDuplicateTimeRangeRequested) {
+                    onDuplicateTimeRangeRequested();
                 }
                 break;
             }

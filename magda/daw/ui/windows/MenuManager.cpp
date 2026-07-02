@@ -186,6 +186,13 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                              keyHint(CommandIDs::renderTimeSelection),
                          true, false);
             menu.addSeparator();
+            menu.addItem(InsertTime, tr("menu.edit.insert_time") + keyHint(CommandIDs::insertTime),
+                         true, false);
+            menu.addItem(DuplicateTimeRange,
+                         tr("menu.edit.duplicate_time_range") +
+                             keyHint(CommandIDs::duplicateTimeRange),
+                         true, false);
+            menu.addSeparator();
             menu.addItem(SelectAll, tr("menu.edit.select_all") + keyHint(CommandIDs::selectAll),
                          true, false);
 #if !JUCE_MAC
@@ -414,6 +421,14 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case RenderTimeSelection:
             if (callbacks_.onRenderTimeSelection)
                 callbacks_.onRenderTimeSelection();
+            break;
+        case InsertTime:
+            if (callbacks_.onInsertTime)
+                callbacks_.onInsertTime();
+            break;
+        case DuplicateTimeRange:
+            if (callbacks_.onDuplicateTimeRange)
+                callbacks_.onDuplicateTimeRange();
             break;
         case SelectAll:
             if (callbacks_.onSelectAll)

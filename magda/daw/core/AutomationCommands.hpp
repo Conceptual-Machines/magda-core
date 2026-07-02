@@ -308,4 +308,46 @@ class DuplicateAutomationTimeSelectionCommand : public UndoableCommand {
     std::vector<InsertedPoint> insertedPoints_;
 };
 
+/**
+ * @brief Shift absolute automation points right to open (or, on undo, close) a
+ *        gap of empty time. Companion to InsertTimeCommand.
+ *
+ * Every absolute point at or after `insertBeat` on matching visible lanes is
+ * moved right by `durationBeats`. Empty trackIds considers all tracks; laneIds
+ * narrows to specific lanes.
+ */
+class InsertTimeAutomationCommand : public UndoableCommand {
+  public:
+    InsertTimeAutomationCommand(double insertBeat, double durationBeats,
+                                std::vector<TrackId> trackIds = {},
+                                std::vector<AutomationLaneId> laneIds = {})
+        : insertBeat_(insertBeat),
+          durationBeats_(durationBeats),
+          trackIds_(std::move(trackIds)),
+          laneIds_(std::move(laneIds)) {}
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Insert Time (Automation)";
+    }
+    bool canShiftPoints() const;
+
+  private:
+    struct ShiftedPoint {
+        AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
+        AutomationPointId pointId = INVALID_AUTOMATION_POINT_ID;
+        double oldBeat = 0.0;
+        double value = 0.0;
+    };
+
+    bool shouldShiftLane(const AutomationLaneInfo& lane) const;
+
+    double insertBeat_ = 0.0;
+    double durationBeats_ = 0.0;
+    std::vector<TrackId> trackIds_;
+    std::vector<AutomationLaneId> laneIds_;
+    std::vector<ShiftedPoint> shiftedPoints_;
+};
+
 }  // namespace magda

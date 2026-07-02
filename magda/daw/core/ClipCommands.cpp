@@ -80,11 +80,6 @@ double resolveTimelineBpm(double tempo) {
     return currentProjectBpm();
 }
 
-double beatsToTimelineSeconds(double beats, double tempo) {
-    const double bpm = resolveTimelineBpm(tempo);
-    return beats * 60.0 / bpm;
-}
-
 /**
  * Progress window for offline rendering that runs on a background thread
  * while pumping the message loop (via runThread()) so the UI stays responsive.
@@ -635,8 +630,8 @@ void PasteClipCommand::execute() {
         sessionSnapshot_ = clipManager.getSessionClips();
     }
 
-    pastedClipIds_ = clipManager.pasteFromClipboard(beatsToTimelineSeconds(pasteBeat_, tempo_),
-                                                    targetTrackId_, targetView_, targetSceneIndex_);
+    pastedClipIds_ = clipManager.pasteFromClipboardBeats(pasteBeat_, targetTrackId_, targetView_,
+                                                         targetSceneIndex_);
     executed_ = true;
 }
 
@@ -1336,164 +1331,6 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
 }
 
 // ============================================================================
-// RippleDeleteTimeSelectionCommand
-// ============================================================================
-
-RippleDeleteTimeSelectionCommand::RippleDeleteTimeSelectionCommand(
-    double startTime, double endTime, const std::vector<TrackId>& trackIds, double tempo)
-    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds), tempo_(tempo) {}
-
-void RippleDeleteTimeSelectionCommand::execute() {
-    auto& clipManager = ClipManager::getInstance();
-
-    // Snapshot all arrangement clips for reliable undo
-    snapshot_ = clipManager.getArrangementClips();
-
-    double duration = endTime_ - startTime_;
-    if (duration <= 0.0)
-        return;
-    const double bpm = resolveTimelineBpm(tempo_);
-
-    // Helper: check if a clip's track is affected
-    auto isAffectedTrack = [this](TrackId trackId) {
-        if (trackIds_.empty())
-            return true;
-        return std::find(trackIds_.begin(), trackIds_.end(), trackId) != trackIds_.end();
-    };
-
-    // Collect clips to delete (fully inside selection)
-    std::vector<ClipId> clipsToDelete;
-    // Clips trimmed or shifted in place. forceNotifyClipsChanged() only
-    // reconciles add/remove/move topology, so these need an explicit property
-    // notification or the engine keeps their original length/position even
-    // though the UI updates.
-    std::vector<ClipId> clipsToResync;
-
-    // Process overlapping clips on affected tracks
-    // We need to work on a copy of clip IDs since we'll be modifying clips
-    auto allClips = clipManager.getArrangementClips();
-    for (const auto& clip : allClips) {
-        if (!isAffectedTrack(clip.trackId))
-            continue;
-
-        const double clipStart = clip.getTimelineStart(bpm);
-        const double clipEnd = clip.getTimelineEnd(bpm);
-
-        // No overlap
-        if (clipStart >= endTime_ || clipEnd <= startTime_)
-            continue;
-
-        // Looped clips: just adjust boundaries, don't split/delete notes
-        if (trimLoopedClip(clipManager, clip, startTime_, endTime_, true, duration, clipsToDelete,
-                           clipsToResync, tempo_))
-            continue;
-
-        bool startsBeforeSel = clipStart < startTime_;
-        bool endsAfterSel = clipEnd > endTime_;
-
-        if (startsBeforeSel && endsAfterSel) {
-            // Clip spans both boundaries: split at startTime_, split again at endTime_,
-            // delete the middle piece. This preserves both the left and right portions.
-            ClipId rightId = clipManager.splitClip(clip.id, startTime_, tempo_);
-            if (rightId != INVALID_CLIP_ID) {
-                // Split the right portion at endTime_ to isolate the middle
-                ClipId tailId = clipManager.splitClip(rightId, endTime_, tempo_);
-                // Delete the middle piece (between startTime_ and endTime_)
-                clipsToDelete.push_back(rightId);
-                // The tail (after endTime_) needs to be shifted left by duration
-                if (tailId != INVALID_CLIP_ID) {
-                    auto* tailClip = clipManager.getClip(tailId);
-                    if (tailClip) {
-                        ClipOperations::setTimelinePlacement(*tailClip, startTime_,
-                                                             tailClip->getTimelineLength(bpm), bpm);
-                        clipsToResync.push_back(tailId);
-                    }
-                }
-            }
-        } else if (startsBeforeSel) {
-            // Clip spans left boundary only: trim right edge to startTime_
-            double newLength = startTime_ - clipStart;
-            auto* liveClip = clipManager.getClip(clip.id);
-            if (liveClip) {
-                ClipOperations::setTimelinePlacement(*liveClip, liveClip->getTimelineStart(bpm),
-                                                     newLength, bpm);
-                clipsToResync.push_back(clip.id);
-            }
-        } else if (endsAfterSel) {
-            // Clip spans right boundary only: split at endTime_, shift right portion left
-            ClipId tailId = clipManager.splitClip(clip.id, endTime_, tempo_);
-            // Delete the left portion (starts inside selection)
-            clipsToDelete.push_back(clip.id);
-            // Shift the tail left to fill the gap
-            if (tailId != INVALID_CLIP_ID) {
-                auto* tailClip = clipManager.getClip(tailId);
-                if (tailClip) {
-                    ClipOperations::setTimelinePlacement(*tailClip, startTime_,
-                                                         tailClip->getTimelineLength(bpm), bpm);
-                    clipsToResync.push_back(tailId);
-                }
-            }
-        } else {
-            // Fully inside selection: delete
-            clipsToDelete.push_back(clip.id);
-        }
-    }
-
-    // Delete fully-inside clips
-    for (auto clipId : clipsToDelete) {
-        clipManager.deleteClip(clipId);
-    }
-
-    // Shift all clips on affected tracks that start at or after endTime_ left by duration
-    for (auto& clip : clipManager.getArrangementClips()) {
-        if (!isAffectedTrack(clip.trackId))
-            continue;
-
-        // Use non-const access
-        auto* liveClip = clipManager.getClip(clip.id);
-        if (liveClip && liveClip->getTimelineStart(bpm) >= endTime_) {
-            ClipOperations::setTimelinePlacement(*liveClip,
-                                                 liveClip->getTimelineStart(bpm) - duration,
-                                                 liveClip->getTimelineLength(bpm), bpm);
-            clipsToResync.push_back(clip.id);
-        }
-    }
-
-    clipManager.forceNotifyClipsChanged();
-    clipManager.forceNotifyMultipleClipPropertiesChanged(clipsToResync);
-    executed_ = true;
-}
-
-void RippleDeleteTimeSelectionCommand::undo() {
-    if (!executed_)
-        return;
-
-    auto& clipManager = ClipManager::getInstance();
-
-    // Delete all current arrangement clips
-    auto currentClips = clipManager.getArrangementClips();
-    for (const auto& clip : currentClips) {
-        clipManager.deleteClip(clip.id);
-    }
-
-    // Restore from snapshot
-    for (const auto& clip : snapshot_) {
-        clipManager.restoreClip(clip);
-    }
-
-    clipManager.forceNotifyClipsChanged();
-    // Topology sync alone leaves trimmed/shifted clips that kept their engine
-    // mapping at their post-delete placement; push every restored placement
-    // back to the engine (unchanged clips are cheap no-ops).
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
-    executed_ = false;
-}
-
-// ============================================================================
 // DeleteTimeSelectionCommand (no ripple)
 // ============================================================================
 
@@ -1608,6 +1445,122 @@ void DeleteTimeSelectionCommand::undo() {
     // Re-trimmed/kept clips keep their engine mapping, so forceNotifyClipsChanged
     // (topology only) won't restore their length/position. Push every restored
     // clip's placement back to the engine; unchanged clips are cheap no-ops.
+    std::vector<ClipId> restoredIds;
+    restoredIds.reserve(snapshot_.size());
+    for (const auto& clip : snapshot_)
+        restoredIds.push_back(clip.id);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    executed_ = false;
+}
+
+// ============================================================================
+// InsertTimeCommand (ripple insert empty space, beats-native)
+// ============================================================================
+
+InsertTimeCommand::InsertTimeCommand(double insertBeat, double durationBeats,
+                                     const std::vector<TrackId>& trackIds, double tempo)
+    : insertBeat_(insertBeat), durationBeats_(durationBeats), trackIds_(trackIds), tempo_(tempo) {}
+
+void InsertTimeCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Snapshot all arrangement clips for reliable undo
+    snapshot_ = clipManager.getArrangementClips();
+
+    if (durationBeats_ <= 0.0)
+        return;
+    // Timeline placement is beat-domain, so the ripple is a pure beat delta.
+    // bpm is only needed at the seconds-cache boundary inside setBeatPlacement.
+    const double bpm = resolveTimelineBpm(tempo_);
+    constexpr double epsilon = 1.0e-9;
+
+    auto isAffectedTrack = [this](TrackId trackId) {
+        if (trackIds_.empty())
+            return true;
+        return std::find(trackIds_.begin(), trackIds_.end(), trackId) != trackIds_.end();
+    };
+
+    // Clips shifted/grown/split in place. forceNotifyClipsChanged() only
+    // reconciles add/remove/move topology, so these need an explicit property
+    // notification or the engine keeps their original placement.
+    std::vector<ClipId> clipsToResync;
+
+    // Work on a copy of the clip list since we split/shift live clips as we go.
+    auto allClips = clipManager.getArrangementClips();
+    for (const auto& clip : allClips) {
+        if (!isAffectedTrack(clip.trackId))
+            continue;
+
+        const double clipStartBeat = clip.placement.startBeat;
+        const double clipEndBeat = clip.placement.endBeat();
+
+        // Entirely before the insert point: untouched.
+        if (clipEndBeat <= insertBeat_ + epsilon)
+            continue;
+
+        if (clipStartBeat >= insertBeat_ - epsilon) {
+            // Entirely at/after the insert point: shift right by durationBeats.
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip) {
+                ClipOperations::setBeatPlacement(*liveClip,
+                                                 liveClip->placement.startBeat + durationBeats_,
+                                                 liveClip->placement.lengthBeats, bpm);
+                clipsToResync.push_back(clip.id);
+            }
+            continue;
+        }
+
+        // Clip spans the insert point (clipStartBeat < insertBeat_ < clipEndBeat).
+        if (clip.loopEnabled) {
+            // Looped clip: grow its length by durationBeats so the loop plays
+            // through the inserted gap rather than being cut.
+            auto* liveClip = clipManager.getClip(clip.id);
+            if (liveClip) {
+                ClipOperations::setBeatPlacement(*liveClip, liveClip->placement.startBeat,
+                                                 liveClip->placement.lengthBeats + durationBeats_,
+                                                 bpm);
+                clipsToResync.push_back(clip.id);
+            }
+            continue;
+        }
+
+        // Non-looped clip: split at the insert beat and push the tail right.
+        ClipId tailId = clipManager.splitClipAtBeat(clip.id, insertBeat_, bpm);
+        if (tailId != INVALID_CLIP_ID) {
+            auto* tailClip = clipManager.getClip(tailId);
+            if (tailClip) {
+                ClipOperations::setBeatPlacement(*tailClip, insertBeat_ + durationBeats_,
+                                                 tailClip->placement.lengthBeats, bpm);
+                clipsToResync.push_back(tailId);
+            }
+        }
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyMultipleClipPropertiesChanged(clipsToResync);
+    executed_ = true;
+}
+
+void InsertTimeCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Delete all current arrangement clips
+    auto currentClips = clipManager.getArrangementClips();
+    for (const auto& clip : currentClips) {
+        clipManager.deleteClip(clip.id);
+    }
+
+    // Restore from snapshot
+    for (const auto& clip : snapshot_) {
+        clipManager.restoreClip(clip);
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    // Push every restored placement back to the engine so shifted/split clips
+    // return to their pre-insert positions; unchanged clips are cheap no-ops.
     std::vector<ClipId> restoredIds;
     restoredIds.reserve(snapshot_.size());
     for (const auto& clip : snapshot_)

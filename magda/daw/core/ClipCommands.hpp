@@ -483,33 +483,6 @@ class RenderTimeSelectionCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for ripple-deleting a time selection
- *
- * Removes content within the time range and shifts subsequent clips left.
- * Uses full arrangement snapshot for reliable undo.
- */
-class RippleDeleteTimeSelectionCommand : public UndoableCommand {
-  public:
-    RippleDeleteTimeSelectionCommand(double startTime, double endTime,
-                                     const std::vector<TrackId>& trackIds, double tempo = 120.0);
-
-    juce::String getDescription() const override {
-        return "Ripple Delete Time Selection";
-    }
-
-    void execute() override;
-    void undo() override;
-
-  private:
-    double startTime_;
-    double endTime_;
-    std::vector<TrackId> trackIds_;
-    double tempo_;
-    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
-    bool executed_ = false;
-};
-
-/**
  * @brief Command for deleting content within a time selection (no ripple)
  *
  * Removes/trims clips that overlap the time range but does NOT shift
@@ -533,6 +506,36 @@ class DeleteTimeSelectionCommand : public UndoableCommand {
     std::vector<TrackId> trackIds_;
     double tempo_;
     std::vector<ClipInfo> snapshot_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for inserting empty time (ripple insert), beats-native
+ *
+ * Opens a gap of `durationBeats` at `insertBeat`, shifting every later clip on
+ * affected tracks right to make room. Clips spanning the insert point are split
+ * (or, if looped, grown). All timeline placement is beat-domain, so the shift is
+ * a pure beat delta via setBeatPlacement. Uses a full arrangement snapshot for
+ * reliable undo. Empty trackIds means all tracks.
+ */
+class InsertTimeCommand : public UndoableCommand {
+  public:
+    InsertTimeCommand(double insertBeat, double durationBeats, const std::vector<TrackId>& trackIds,
+                      double tempo = 120.0);
+
+    juce::String getDescription() const override {
+        return "Insert Time";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    double insertBeat_;
+    double durationBeats_;
+    std::vector<TrackId> trackIds_;
+    double tempo_;
+    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
     bool executed_ = false;
 };
 

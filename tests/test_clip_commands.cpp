@@ -1036,6 +1036,108 @@ TEST_CASE("DeleteTimeSelectionCommand - looped trim keeps beat placement in sync
 }
 
 // ============================================================================
+// InsertTimeCommand (ripple insert, beats-native)
+// ============================================================================
+// At 120 BPM: 1 second = 2 beats. Helpers create clips in seconds, so the
+// beat placements below are 2x the seconds passed to createAudio().
+
+TEST_CASE("InsertTimeCommand - shifts later clip right",
+          "[clip][command][time-selection][insert]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 2.0, 1.0);  // beats [4, 6]
+
+    // Insert 2 beats at beat 2: the clip starts after the insert point, so it
+    // shifts right by 2 beats to [6, 8].
+    InsertTimeCommand cmd(2.0, 2.0, {track}, 120.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->placement.startBeat == Catch::Approx(6.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(2.0));
+
+    cmd.undo();
+    clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->placement.startBeat == Catch::Approx(4.0));
+}
+
+TEST_CASE("InsertTimeCommand - splits clip spanning the insert beat",
+          "[clip][command][time-selection][insert]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 2.0);  // beats [0, 4]
+
+    // Insert 2 beats at beat 2: the clip spans the insert point, so it splits
+    // into a head [0, 2] (keeps clipId) and a tail pushed right to [4, 6].
+    InsertTimeCommand cmd(2.0, 2.0, {track}, 120.0);
+    cmd.execute();
+
+    auto* head = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(head != nullptr);
+    REQUIRE(head->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(head->placement.lengthBeats == Catch::Approx(2.0));
+
+    auto clips = ClipManager::getInstance().getArrangementClips();
+    REQUIRE(clips.size() == 2);
+    const ClipInfo* tail = nullptr;
+    for (const auto& c : clips)
+        if (c.id != clipId)
+            tail = &c;
+    REQUIRE(tail != nullptr);
+    REQUIRE(tail->placement.startBeat == Catch::Approx(4.0));
+    REQUIRE(tail->placement.lengthBeats == Catch::Approx(2.0));
+
+    cmd.undo();
+    clips = ClipManager::getInstance().getArrangementClips();
+    REQUIRE(clips.size() == 1);
+    auto* restored = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(restored->placement.lengthBeats == Catch::Approx(4.0));
+}
+
+TEST_CASE("InsertTimeCommand - looped clip spanning insert beat grows",
+          "[clip][command][time-selection][insert][loop]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 2.0);  // beats [0, 4]
+
+    auto* before = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(before != nullptr);
+    before->loopEnabled = true;
+    before->loopLength = 2.0;
+
+    // Looped clip spanning the insert beat grows by the inserted duration
+    // instead of splitting.
+    InsertTimeCommand cmd(2.0, 2.0, {track}, 120.0);
+    cmd.execute();
+
+    auto clips = ClipManager::getInstance().getArrangementClips();
+    REQUIRE(clips.size() == 1);
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(6.0));
+}
+
+TEST_CASE("InsertTimeCommand - clip entirely before insert beat is untouched",
+          "[clip][command][time-selection][insert]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 1.0);  // beats [0, 2]
+
+    InsertTimeCommand cmd(4.0, 2.0, {track}, 120.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(2.0));
+}
+
+// ============================================================================
 // CreateClipCommand
 // ============================================================================
 
