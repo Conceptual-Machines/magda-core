@@ -1,11 +1,50 @@
 #include "AudioSettingsDialog.hpp"
 
+#include "../../audio/AudioDriverUtils.hpp"
 #include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 
 namespace magda {
+
+namespace {
+
+bool comboItemsMatchDriverTypes(const juce::ComboBox& comboBox,
+                                juce::AudioDeviceManager& deviceManager) {
+    auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
+    if (comboBox.getNumItems() != deviceTypes.size())
+        return false;
+
+    for (int i = 0; i < deviceTypes.size(); ++i) {
+        auto* type = deviceTypes.getUnchecked(i);
+        if (type == nullptr || comboBox.getItemText(i) != type->getTypeName())
+            return false;
+    }
+
+    return true;
+}
+
+juce::ComboBox* findDriverTypeComboBox(juce::Component& root,
+                                       juce::AudioDeviceManager& deviceManager) {
+    for (int i = 0; i < root.getNumChildComponents(); ++i) {
+        auto* child = root.getChildComponent(i);
+        if (child == nullptr)
+            continue;
+
+        if (auto* comboBox = dynamic_cast<juce::ComboBox*>(child);
+            comboBox != nullptr && comboItemsMatchDriverTypes(*comboBox, deviceManager)) {
+            return comboBox;
+        }
+
+        if (auto* nested = findDriverTypeComboBox(*child, deviceManager))
+            return nested;
+    }
+
+    return nullptr;
+}
+
+}  // namespace
 
 // ============================================================================
 // CustomChannelSelector Implementation
@@ -321,7 +360,9 @@ void CustomChannelSelector::resized() {
 
 AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager,
                                          tracktion::DeviceManager* teDeviceManager)
-    : deviceManager_(deviceManager), teDeviceManager_(teDeviceManager) {
+    : deviceRefreshSpinner_(deviceRefreshProgress_),
+      deviceManager_(deviceManager),
+      teDeviceManager_(teDeviceManager) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     // Input device selection dropdown
@@ -339,6 +380,23 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
 
     outputDeviceComboBox_.onChange = [this]() { onOutputDeviceSelected(); };
     addAndMakeVisible(outputDeviceComboBox_);
+
+    deviceRefreshSpinner_.setStyle(juce::ProgressBar::Style::circular);
+    deviceRefreshSpinner_.setPercentageDisplay(false);
+    deviceRefreshSpinner_.setColour(juce::ProgressBar::backgroundColourId,
+                                    juce::Colours::white.withAlpha(0.12f));
+    deviceRefreshSpinner_.setColour(juce::ProgressBar::foregroundColourId,
+                                    juce::Colour(0xff4a90d9));
+    deviceRefreshSpinner_.setTooltip("Refreshing audio devices");
+    addAndMakeVisible(deviceRefreshSpinner_);
+    deviceRefreshSpinner_.setVisible(false);
+
+    deviceRefreshLabel_.setText("Refreshing devices...", juce::dontSendNotification);
+    deviceRefreshLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    deviceRefreshLabel_.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.72f));
+    deviceRefreshLabel_.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(deviceRefreshLabel_);
+    deviceRefreshLabel_.setVisible(false);
 
     populateDeviceLists();
 
@@ -367,6 +425,11 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
         false   // hideAdvancedOptionsWithButton
     );
     addAndMakeVisible(*deviceSelector_);
+    attachDriverTypeComboListener();
+
+    // Refresh the device combos whenever the driver type / device changes via the
+    // selector above, so they keep listing devices for the active driver.
+    deviceManager_->addChangeListener(this);
 
     // Create custom channel selectors for inputs and outputs
     inputChannelSelector_ =
@@ -405,7 +468,34 @@ AudioSettingsDialog::AudioSettingsDialog(juce::AudioDeviceManager* deviceManager
 }
 
 AudioSettingsDialog::~AudioSettingsDialog() {
+    detachDriverTypeComboListener();
+    deviceManager_->removeChangeListener(this);
     setLookAndFeel(nullptr);
+}
+
+void AudioSettingsDialog::comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) {
+    if (comboBoxThatHasChanged == driverTypeComboBox_)
+        showDeviceRefreshIndicator(true);
+}
+
+void AudioSettingsDialog::changeListenerCallback(juce::ChangeBroadcaster* source) {
+    if (source != deviceManager_)
+        return;
+
+    // The active driver / device may have changed (e.g. user switched to ASIO in
+    // the selector). Re-list the combos against the now-current driver type.
+    showDeviceRefreshIndicator(true);
+    populateDeviceLists();
+    resized();
+
+    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
+        juce::String labelText = "Current Device: " + device->getName();
+        labelText += " (" + juce::String(device->getInputChannelNames().size()) + " in, ";
+        labelText += juce::String(device->getOutputChannelNames().size()) + " out)";
+        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    }
+
+    hideDeviceRefreshIndicator();
 }
 
 void AudioSettingsDialog::paint(juce::Graphics& g) {
@@ -416,7 +506,18 @@ void AudioSettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
     // Device name label at top
-    deviceNameLabel_.setBounds(bounds.removeFromTop(30));
+    auto deviceNameArea = bounds.removeFromTop(30);
+    if (deviceRefreshSpinner_.isVisible()) {
+        auto refreshArea = deviceNameArea.removeFromRight(170);
+        deviceRefreshSpinner_.setBounds(
+            refreshArea.removeFromRight(22).withSizeKeepingCentre(18, 18));
+        refreshArea.removeFromRight(6);
+        deviceRefreshLabel_.setBounds(refreshArea);
+    } else {
+        deviceRefreshSpinner_.setBounds({});
+        deviceRefreshLabel_.setBounds({});
+    }
+    deviceNameLabel_.setBounds(deviceNameArea);
     bounds.removeFromTop(10);  // spacing
 
     // Input device selection dropdown
@@ -426,12 +527,14 @@ void AudioSettingsDialog::resized() {
     inputDeviceComboBox_.setBounds(inputDeviceArea);
     bounds.removeFromTop(5);  // spacing
 
-    // Output device selection dropdown
-    auto outputDeviceArea = bounds.removeFromTop(28);
-    outputDeviceLabel_.setBounds(outputDeviceArea.removeFromLeft(120));
-    outputDeviceArea.removeFromLeft(10);  // spacing
-    outputDeviceComboBox_.setBounds(outputDeviceArea);
-    bounds.removeFromTop(5);  // spacing
+    if (outputDeviceComboBox_.isVisible()) {
+        // Output device selection dropdown
+        auto outputDeviceArea = bounds.removeFromTop(28);
+        outputDeviceLabel_.setBounds(outputDeviceArea.removeFromLeft(120));
+        outputDeviceArea.removeFromLeft(10);  // spacing
+        outputDeviceComboBox_.setBounds(outputDeviceArea);
+        bounds.removeFromTop(5);  // spacing
+    }
 
     // "Set as preferred" checkbox
     setAsPreferredCheckbox_.setBounds(bounds.removeFromTop(24));
@@ -462,40 +565,98 @@ void AudioSettingsDialog::resized() {
 void AudioSettingsDialog::populateDeviceLists() {
     inputDeviceComboBox_.clear();
     outputDeviceComboBox_.clear();
+    updateDevicePickerMode();
 
-    auto& deviceTypes = deviceManager_->getAvailableDeviceTypes();
-    if (deviceTypes.isEmpty())
+    // List devices from the ACTIVE driver type (see activeDeviceTypeFor): using
+    // getAvailableDeviceTypes()[0] listed the wrong driver's devices once a
+    // non-first driver was selected, failing with "No such device".
+    auto* deviceType = activeDeviceTypeFor(*deviceManager_);
+    if (deviceType == nullptr)
         return;
-
-    // Get first device type (CoreAudio on macOS)
-    auto* deviceType = deviceTypes[0];
     deviceType->scanForDevices();
 
-    auto inputDevices = deviceType->getDeviceNames(true);    // Get input devices
-    auto outputDevices = deviceType->getDeviceNames(false);  // Get output devices
+    const bool singleDeviceDriver = isSingleDeviceDriver(*deviceManager_);
+    auto inputDevices =
+        singleDeviceDriver ? deviceType->getDeviceNames() : deviceType->getDeviceNames(true);
+    auto outputDevices =
+        singleDeviceDriver ? juce::StringArray() : deviceType->getDeviceNames(false);
 
     // Populate input device dropdown
     for (int i = 0; i < inputDevices.size(); ++i) {
         inputDeviceComboBox_.addItem(inputDevices[i], i + 1);
     }
 
-    // Populate output device dropdown
-    for (int i = 0; i < outputDevices.size(); ++i) {
-        outputDeviceComboBox_.addItem(outputDevices[i], i + 1);
+    if (!singleDeviceDriver) {
+        // Populate output device dropdown
+        for (int i = 0; i < outputDevices.size(); ++i) {
+            outputDeviceComboBox_.addItem(outputDevices[i], i + 1);
+        }
     }
 
     // Select current devices
     auto setup = deviceManager_->getAudioDeviceSetup();
 
     int inputIndex = inputDevices.indexOf(setup.inputDeviceName);
+    if (singleDeviceDriver && inputIndex < 0)
+        inputIndex = inputDevices.indexOf(setup.outputDeviceName);
     if (inputIndex >= 0) {
         inputDeviceComboBox_.setSelectedId(inputIndex + 1, juce::dontSendNotification);
     }
 
-    int outputIndex = outputDevices.indexOf(setup.outputDeviceName);
-    if (outputIndex >= 0) {
-        outputDeviceComboBox_.setSelectedId(outputIndex + 1, juce::dontSendNotification);
+    if (!singleDeviceDriver) {
+        int outputIndex = outputDevices.indexOf(setup.outputDeviceName);
+        if (outputIndex >= 0) {
+            outputDeviceComboBox_.setSelectedId(outputIndex + 1, juce::dontSendNotification);
+        }
     }
+}
+
+void AudioSettingsDialog::updateDevicePickerMode() {
+    const bool singleDeviceDriver = isSingleDeviceDriver(*deviceManager_);
+
+    inputDeviceLabel_.setText(singleDeviceDriver ? "Device:" : "Input Device:",
+                              juce::dontSendNotification);
+    outputDeviceLabel_.setVisible(!singleDeviceDriver);
+    outputDeviceComboBox_.setVisible(!singleDeviceDriver);
+}
+
+void AudioSettingsDialog::attachDriverTypeComboListener() {
+    detachDriverTypeComboListener();
+
+    if (deviceSelector_ == nullptr)
+        return;
+
+    driverTypeComboBox_ = findDriverTypeComboBox(*deviceSelector_, *deviceManager_);
+    if (driverTypeComboBox_ != nullptr)
+        driverTypeComboBox_->addListener(this);
+}
+
+void AudioSettingsDialog::detachDriverTypeComboListener() {
+    if (driverTypeComboBox_ != nullptr) {
+        driverTypeComboBox_->removeListener(this);
+        driverTypeComboBox_ = nullptr;
+    }
+}
+
+void AudioSettingsDialog::showDeviceRefreshIndicator(bool flushRepaint) {
+    if (!deviceRefreshSpinner_.isVisible()) {
+        deviceRefreshSpinner_.setVisible(true);
+        deviceRefreshLabel_.setVisible(true);
+        resized();
+    }
+
+    deviceRefreshSpinner_.toFront(false);
+    deviceRefreshLabel_.toFront(false);
+    repaint();
+
+    if (flushRepaint)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+}
+
+void AudioSettingsDialog::hideDeviceRefreshIndicator() {
+    deviceRefreshSpinner_.setVisible(false);
+    deviceRefreshLabel_.setVisible(false);
+    resized();
 }
 
 void AudioSettingsDialog::onInputDeviceSelected() {
@@ -504,12 +665,12 @@ void AudioSettingsDialog::onInputDeviceSelected() {
         return;
 
     juce::String selectedDeviceName = inputDeviceComboBox_.getItemText(selectedId - 1);
+    const bool singleDeviceDriver = isSingleDeviceDriver(*deviceManager_);
 
     // Get current setup
     auto setup = deviceManager_->getAudioDeviceSetup();
 
-    // Change input device
-    setup.inputDeviceName = selectedDeviceName;
+    applySelectedAudioDeviceName(setup, selectedDeviceName, true, singleDeviceDriver);
     setup.useDefaultInputChannels = true;
     setup.useDefaultOutputChannels = true;
 
@@ -518,7 +679,7 @@ void AudioSettingsDialog::onInputDeviceSelected() {
 
     // If it fails (e.g. CoreAudio can't aggregate different input+output devices),
     // retry with the new device as BOTH input and output.
-    if (!result.isEmpty() && setup.outputDeviceName != selectedDeviceName) {
+    if (!singleDeviceDriver && !result.isEmpty() && setup.outputDeviceName != selectedDeviceName) {
         setup.outputDeviceName = selectedDeviceName;
         result = deviceManager_->setAudioDeviceSetup(setup, true);
 
@@ -544,10 +705,12 @@ void AudioSettingsDialog::onInputDeviceSelected() {
         }
         juce::AlertWindow::showMessageBoxAsync(
             juce::AlertWindow::WarningIcon, "Audio Device Error",
-            "Could not switch to \"" + selectedDeviceName +
-                "\".\n\nThe device may be unavailable or incompatible with the "
-                "current output device.\n\nError: " +
-                result);
+            singleDeviceDriver
+                ? "Could not open \"" + selectedDeviceName + "\".\n\nError: " + result
+                : "Could not switch to \"" + selectedDeviceName +
+                      "\".\n\nThe device may be unavailable or incompatible with the "
+                      "current output device.\n\nError: " +
+                      result);
         return;
     }
 
@@ -577,6 +740,9 @@ void AudioSettingsDialog::onInputDeviceSelected() {
 }
 
 void AudioSettingsDialog::onOutputDeviceSelected() {
+    if (isSingleDeviceDriver(*deviceManager_))
+        return;
+
     int selectedId = outputDeviceComboBox_.getSelectedId();
     if (selectedId == 0)
         return;
@@ -586,8 +752,7 @@ void AudioSettingsDialog::onOutputDeviceSelected() {
     // Get current setup
     auto setup = deviceManager_->getAudioDeviceSetup();
 
-    // Change output device
-    setup.outputDeviceName = selectedDeviceName;
+    applySelectedAudioDeviceName(setup, selectedDeviceName, false, false);
     setup.useDefaultOutputChannels = true;
     setup.useDefaultInputChannels = true;
 
@@ -707,13 +872,20 @@ void AudioSettingsDialog::savePreferencesIfNeeded() {
 
     // Save to Config
     auto& config = magda::Config::getInstance();
-    config.setPreferredInputDevice(setup.inputDeviceName.toStdString());
-    config.setPreferredOutputDevice(setup.outputDeviceName.toStdString());
+    juce::String preferredInputDevice = setup.inputDeviceName;
+    juce::String preferredOutputDevice = setup.outputDeviceName;
+    if (isSingleDeviceDriver(*deviceManager_)) {
+        preferredInputDevice =
+            setup.inputDeviceName.isNotEmpty() ? setup.inputDeviceName : setup.outputDeviceName;
+        preferredOutputDevice = preferredInputDevice;
+    }
+    config.setPreferredInputDevice(preferredInputDevice.toStdString());
+    config.setPreferredOutputDevice(preferredOutputDevice.toStdString());
     config.setPreferredInputChannels(inputChannelCount);
     config.setPreferredOutputChannels(outputChannelCount);
 
-    DBG("Saved preferred devices: Input=" << setup.inputDeviceName << " (" << inputChannelCount
-                                          << " ch), Output=" << setup.outputDeviceName << " ("
+    DBG("Saved preferred devices: Input=" << preferredInputDevice << " (" << inputChannelCount
+                                          << " ch), Output=" << preferredOutputDevice << " ("
                                           << outputChannelCount << " ch)");
 }
 

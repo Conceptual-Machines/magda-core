@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "../../magda/agents/llama_model_manager.hpp"
+#include "core/LLMClientProvider.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 // Global engine instance
@@ -44,8 +44,7 @@ void magda_shutdown() {
             g_engine.reset();
         }
 
-        // Unload embedded model if loaded
-        magda::LlamaModelManager::getInstance().unloadModel();
+        magda::shutdownLLMClientProvider();
 
         DBG("MAGDA shutdown complete.");
 

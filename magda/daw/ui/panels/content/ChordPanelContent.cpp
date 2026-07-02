@@ -1,10 +1,10 @@
 #include "ChordPanelContent.hpp"
 
-#include "../../../../agents/llm_client_factory.hpp"
 #include "BinaryData.h"
 #include "core/ChordProgressionContext.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/LLMClientProvider.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/TrackManager.hpp"
 #include "music/ChordEngine.hpp"
