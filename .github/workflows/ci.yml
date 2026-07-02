@@ -695,8 +695,14 @@ jobs:
           ${{ (steps.dsp-prebuilt-self.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_debug_dir)) || (steps.faust-cache-hosted.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace)) || '' }} `
           ${{ (steps.dsp-prebuilt-self.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.mutable_debug_dir)) || (steps.mutable-cache-hosted.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace)) || '' }}
 
+    # Scoped to magda_tests only: this job doesn't otherwise need
+    # magda_daw_app built during the Debug pass, and the Release pass below
+    # already builds + verifies the full app on self-hosted, so no app-build
+    # coverage is lost. Windows is the slow platform here (no ccache hits
+    # can help what never gets compiled), so this is worth it; macOS is fast
+    # enough already that the same scoping wasn't applied there.
     - name: Build (Debug)
-      run: cmake --build build-debug --config Debug
+      run: cmake --build build-debug --config Debug --target magda_tests
 
     - name: Populate prebuilt Faust/Mutable cache (Debug, self-hosted)
       if: runner.environment == 'self-hosted'
