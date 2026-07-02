@@ -249,7 +249,7 @@ void ClipSynchronizer::clipsChanged() {
 
     // Sync session clips to ClipSlots
     const auto& sessionClips = clipManager.getSessionClips();
-    bool sessionClipsSynced = false;
+    bool sessionClipsSynced = removeVacatedSessionSlots(sessionClips);
     for (const auto& clip : sessionClips) {
         if (syncSessionClipToSlot(clip.id)) {
             sessionClipsSynced = true;
@@ -564,6 +564,37 @@ std::optional<std::string> ClipSynchronizer::getArrangementEngineId(ClipId clipI
 // =============================================================================
 // Session Clip Operations
 // =============================================================================
+
+bool ClipSynchronizer::removeVacatedSessionSlots(const std::vector<ClipInfo>& sessionClips) {
+    std::set<std::pair<TrackId, int>> currentSlots;
+    for (const auto& clip : sessionClips) {
+        if (clip.sceneIndex >= 0)
+            currentSlots.insert({clip.trackId, clip.sceneIndex});
+    }
+
+    bool removedAny = false;
+    for (const auto& slotKey : lastKnownSessionSlots_) {
+        if (currentSlots.count(slotKey) > 0)
+            continue;
+
+        auto* audioTrack = trackController_.getAudioTrack(slotKey.first);
+        if (!audioTrack)
+            continue;
+
+        auto slots = audioTrack->getClipSlotList().getClipSlots();
+        if (slotKey.second >= static_cast<int>(slots.size()))
+            continue;
+
+        auto* slot = slots[slotKey.second];
+        if (auto* teClip = slot ? slot->getClip() : nullptr) {
+            teClip->removeFromParent();
+            removedAny = true;
+        }
+    }
+
+    lastKnownSessionSlots_ = std::move(currentSlots);
+    return removedAny;
+}
 
 bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
     namespace te = tracktion;
