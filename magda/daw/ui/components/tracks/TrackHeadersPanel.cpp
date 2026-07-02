@@ -545,14 +545,12 @@ void TrackHeadersPanel::timerCallback() {
         if (counter != header->lastMidiCounter) {
             header->lastMidiCounter = counter;
 
-            // Only show activity when monitoring is active AND the track
-            // is actually receiving MIDI (selected or record-armed)
+            // Only show activity when the track is actually receiving MIDI.
+            // Same predicate as the TE-level routing (MidiInputRouter): monitor
+            // enabled or record-armed - never gated on selection.
             bool showActivity = false;
             if (auto* trackInfo = TrackManager::getInstance().getTrack(header->trackId)) {
-                bool receivingMidi =
-                    trackInfo->recordArmed ||
-                    SelectionManager::getInstance().getSelectedTrack() == header->trackId;
-                if (receivingMidi) {
+                if (trackInfo->receivesLiveMidiInput()) {
                     switch (trackInfo->inputMonitor) {
                         case InputMonitorMode::In:
                             showActivity = true;

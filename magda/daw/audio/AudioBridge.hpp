@@ -882,7 +882,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     mutable juce::CriticalSection
         mappingLock_;  // Protects mapping updates (mutable for const getters)
 
-    void updateMidiRoutingForSelection();
+    void updateMidiInputRouting();
     void resyncAllInputMonitors();
 
     void applyPendingMidiRoutes();
