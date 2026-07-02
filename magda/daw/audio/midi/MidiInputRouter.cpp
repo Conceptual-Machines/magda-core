@@ -1,8 +1,8 @@
 #include "midi/MidiInputRouter.hpp"
 
 #include <functional>
+#include <unordered_set>
 
-#include "../../core/ClipManager.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
 #include "TrackController.hpp"
@@ -397,7 +397,7 @@ void MidiInputRouter::setSurfaceOnlyMidiInputPort(const juce::String& midiDevice
     }
 
     removeSurfaceOnlyMidiInputTargets();
-    updateForSelection();
+    updateMidiInputRouting();
 }
 
 void MidiInputRouter::clearSurfaceOnlyMidiInputPorts() {
@@ -406,7 +406,7 @@ void MidiInputRouter::clearSurfaceOnlyMidiInputPorts() {
         surfaceOnlyMidiInputPorts_.clear();
     }
 
-    updateForSelection();
+    updateMidiInputRouting();
 }
 
 juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
@@ -437,31 +437,33 @@ juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
     return "all";
 }
 
-void MidiInputRouter::updateForSelection() {
+void MidiInputRouter::updateMidiInputRouting() {
     auto& tm = TrackManager::getInstance();
-    auto selectedTrackId = tm.getSelectedTrack();
 
-    TrackId midiTrackId = selectedTrackId;
-    if (midiTrackId != INVALID_TRACK_ID) {
-        const auto* selectedTrack = tm.getTrack(midiTrackId);
-        if (selectedTrack && selectedTrack->type == TrackType::MultiOut &&
-            selectedTrack->hasParent()) {
-            midiTrackId = selectedTrack->parentId;
-        }
-    }
-    if (midiTrackId == INVALID_TRACK_ID) {
-        auto selectedClipId = ClipManager::getInstance().getSelectedClip();
-        if (selectedClipId != INVALID_CLIP_ID) {
-            if (auto* clip = ClipManager::getInstance().getClip(selectedClipId))
-                midiTrackId = clip->trackId;
-        }
+    // A track receives live MIDI input purely from its own input-monitor state
+    // (In/Auto) or because it is record-armed. Selection does NOT gate this: a
+    // monitored track keeps listening whether or not it is the selected track.
+    // MultiOut child tracks forward their MIDI to the parent that hosts the
+    // instrument, so their want is expressed against the parent id.
+    std::unordered_set<TrackId> midiTargets;
+    for (const auto& track : tm.getTracks()) {
+        if (track.type == TrackType::Aux)
+            continue;
+
+        if (!track.receivesLiveMidiInput())
+            continue;
+
+        TrackId target = track.id;
+        if (track.type == TrackType::MultiOut && track.hasParent())
+            target = track.parentId;
+        midiTargets.insert(target);
     }
 
     for (const auto& track : tm.getTracks()) {
         if (track.type == TrackType::Aux)
             continue;
 
-        bool shouldReceiveMidi = (track.id == midiTrackId) || track.recordArmed;
+        bool shouldReceiveMidi = midiTargets.count(track.id) > 0;
 
         std::function<bool(const std::vector<ChainElement>&)> checkElements;
         checkElements = [&](const std::vector<ChainElement>& elements) -> bool {
@@ -588,7 +590,7 @@ void MidiInputRouter::handlePlaybackContextTick() {
     if (currentContext != lastPlaybackContext_) {
         lastPlaybackContext_ = currentContext;
         if (currentContext != nullptr)
-            updateForSelection();
+            updateMidiInputRouting();
     }
 }
 
