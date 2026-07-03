@@ -560,6 +560,45 @@ void MainWindow::setupMenuCallbacks() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
     };
 
+    callbacks.onInsertTime = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::insertTime, false);
+    };
+
+    callbacks.onDuplicateTimeRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::duplicateTimeRange, false);
+    };
+
+    callbacks.onDuplicateLoopRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::duplicateLoopRange, false);
+    };
+
+    callbacks.onSplitAllTracksAtCursor = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::splitAllTracksAtCursor,
+                                                          false);
+    };
+
+    callbacks.onCopyTimeRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::copyTimeRange, false);
+    };
+    callbacks.onCutTimeRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::cutTimeRange, false);
+    };
+    callbacks.onDeleteTimeRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::deleteTimeRange, false);
+    };
+    callbacks.onCopyLoopRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::copyLoopRange, false);
+    };
+    callbacks.onCutLoopRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::cutLoopRange, false);
+    };
+    callbacks.onDeleteLoopRange = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::deleteLoopRange, false);
+    };
+    callbacks.onPasteRipple = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::pasteRipple, false);
+    };
+
     callbacks.onSelectAll = [this]() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::selectAll, false);
     };

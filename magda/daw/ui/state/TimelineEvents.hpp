@@ -5,6 +5,7 @@
 #include <set>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "TimelineState.hpp"
 
@@ -519,6 +520,15 @@ struct RemoveMarkerEvent {
 };
 
 /**
+ * @brief Replace the entire marker list (used by ripple edits for atomic,
+ *        undoable marker moves). The controller re-sorts and refreshes
+ *        nextMarkerId from the supplied markers.
+ */
+struct SetMarkersEvent {
+    std::vector<TimelineMarker> markers;
+};
+
+/**
  * @brief Select an existing marker, or clear selection with 0
  */
 struct SelectMarkerEvent {
@@ -597,8 +607,8 @@ using TimelineEvent = std::variant<
     AddSectionBeatsEvent, AddSectionEvent, RemoveSectionEvent, MoveSectionBeatsEvent,
     MoveSectionEvent, ResizeSectionBeatsEvent, ResizeSectionEvent, SelectSectionEvent,
     // Marker events
-    AddMarkerBeatsEvent, AddMarkerEvent, UpdateMarkerEvent, RemoveMarkerEvent, SelectMarkerEvent,
-    GoToMarkerEvent, GoToNextMarkerEvent, GoToPreviousMarkerEvent,
+    AddMarkerBeatsEvent, AddMarkerEvent, UpdateMarkerEvent, RemoveMarkerEvent, SetMarkersEvent,
+    SelectMarkerEvent, GoToMarkerEvent, GoToNextMarkerEvent, GoToPreviousMarkerEvent,
     // Viewport events
     ViewportResizedEvent, SetTimelineLengthBeatsEvent, SetTimelineLengthEvent>;
 

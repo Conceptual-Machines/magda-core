@@ -9,6 +9,7 @@
 #include "../../core/TrackPropertyCommands.hpp"
 #include "../../core/UIScale.hpp"
 #include "../../core/UndoManager.hpp"
+#include "../state/MarkerRippleCommand.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../views/MainView.hpp"
@@ -103,7 +104,9 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
         duplicateClipWithoutAutomation, deleteCmd, selectAll, splitOrTrim, joinClips, renderClip,
-        renderTimeSelection, setLoopFromClip, toggleClipLoop, escapeAction,
+        renderTimeSelection, setLoopFromClip, toggleClipLoop, escapeAction, insertTime,
+        duplicateTimeRange, duplicateLoopRange, splitAllTracksAtCursor, copyTimeRange, cutTimeRange,
+        deleteTimeRange, copyLoopRange, cutLoopRange, deleteLoopRange, pasteRipple,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -174,6 +177,88 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress(juce::KeyPress::deleteKey, 0);
             result.addDefaultKeypress(juce::KeyPress::backspaceKey, 0);
             break;
+
+        case insertTime:
+        case duplicateTimeRange: {
+            const bool timeSelectionActive =
+                mainView &&
+                mainView->getTimelineController().getState().selection.isVisuallyActive();
+            if (commandID == insertTime)
+                result.setInfo("Insert Time",
+                               "Insert empty time at the selection, rippling later content right",
+                               "Edit", 0);
+            else
+                result.setInfo("Duplicate Time Range",
+                               "Duplicate the time selection and ripple later content right",
+                               "Edit", 0);
+            result.setActive(timeSelectionActive);
+            break;
+        }
+
+        case duplicateLoopRange: {
+            const bool loopValid =
+                mainView && mainView->getTimelineController().getState().loop.isValid();
+            result.setInfo("Duplicate Loop Range",
+                           "Trim clips at both loop ends, then ripple-duplicate the loop on all "
+                           "tracks",
+                           "Edit", 0);
+            result.setActive(loopValid);
+            break;
+        }
+
+        case splitAllTracksAtCursor: {
+            const bool hasCursor =
+                mainView && mainView->getTimelineController().getState().editCursorPosition >= 0.0;
+            result.setInfo("Split All Tracks at Cursor",
+                           "Split every clip crossing the edit cursor on all tracks", "Edit", 0);
+            result.setActive(hasCursor);
+            break;
+        }
+
+        case copyTimeRange:
+        case cutTimeRange:
+        case deleteTimeRange: {
+            const bool timeSelectionActive =
+                mainView &&
+                mainView->getTimelineController().getState().selection.isVisuallyActive();
+            if (commandID == copyTimeRange)
+                result.setInfo("Copy Time Range", "Copy the time selection's content", "Edit", 0);
+            else if (commandID == cutTimeRange)
+                result.setInfo("Cut Time Range", "Copy the time selection, then ripple-delete it",
+                               "Edit", 0);
+            else
+                result.setInfo("Delete Time Range",
+                               "Ripple-delete the time selection and close the gap", "Edit", 0);
+            result.setActive(timeSelectionActive);
+            break;
+        }
+
+        case copyLoopRange:
+        case cutLoopRange:
+        case deleteLoopRange: {
+            const bool loopValid =
+                mainView && mainView->getTimelineController().getState().loop.isValid();
+            if (commandID == copyLoopRange)
+                result.setInfo("Copy Loop Range", "Copy the loop region on all tracks", "Edit", 0);
+            else if (commandID == cutLoopRange)
+                result.setInfo("Cut Loop Range",
+                               "Copy the loop region, then ripple-delete it (all tracks)", "Edit",
+                               0);
+            else
+                result.setInfo("Delete Loop Range",
+                               "Ripple-delete the loop region and close the gap (all tracks)",
+                               "Edit", 0);
+            result.setActive(loopValid);
+            break;
+        }
+
+        case pasteRipple: {
+            const bool hasClips = ClipManager::getInstance().hasClipsInClipboard();
+            result.setInfo("Paste (Ripple)", "Ripple-insert the clipboard span, then paste into it",
+                           "Edit", 0);
+            result.setActive(hasClips);
+            break;
+        }
 
         case selectAll:
             result.setInfo("Select All", "Select all clips", "Edit", 0);
@@ -925,6 +1010,283 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
                 return true;
             }
+            return true;
+        }
+
+        case insertTime: {
+            // Ripple-insert empty time (beats): open a gap the size of the
+            // selection at its start, pushing the selection and everything after
+            // it right.
+            if (!hasActiveTimeSelection())
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const auto& sel = state.selection;
+            auto trackIds = resolveTimeSelectionTrackIds();
+            const double bpm = state.tempo.bpm;
+            const double startBeat = sel.startBeats;
+            const double durationBeats = sel.endBeats - sel.startBeats;
+            if (durationBeats <= 0.0)
+                return true;
+            std::vector<AutomationLaneId> laneIds(sel.automationLaneIds.begin(),
+                                                  sel.automationLaneIds.end());
+
+            UndoManager::getInstance().beginCompoundOperation("Insert Time");
+            if (!sel.automationOnly) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<InsertTimeCommand>(startBeat, durationBeats, trackIds, bpm));
+            }
+            auto automationCmd = std::make_unique<InsertTimeAutomationCommand>(
+                startBeat, durationBeats, trackIds, laneIds);
+            if (automationCmd->canShiftPoints())
+                UndoManager::getInstance().executeCommand(std::move(automationCmd));
+            // Markers are global, so only ripple them when the op spans all tracks.
+            if (!sel.automationOnly && sel.isAllTracks())
+                UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
+                    RippleMarkersCommand::Mode::Insert, startBeat, sel.endBeats));
+            UndoManager::getInstance().endCompoundOperation();
+            return true;
+        }
+
+        case duplicateTimeRange: {
+            // Ripple-duplicate (beats): copy the range, open a same-size gap at
+            // its end, and paste the copy into that gap so later content shifts
+            // right instead of being overwritten.
+            if (!hasActiveTimeSelection())
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const auto& sel = state.selection;
+            auto trackIds = resolveTimeSelectionTrackIds();
+            const double bpm = state.tempo.bpm;
+            const double startBeat = sel.startBeats;
+            const double endBeat = sel.endBeats;
+            const double durationBeats = endBeat - startBeat;
+            if (durationBeats <= 0.0)
+                return true;
+            std::vector<AutomationLaneId> laneIds(sel.automationLaneIds.begin(),
+                                                  sel.automationLaneIds.end());
+
+            // Capture the source content before mutating the arrangement.
+            if (!sel.automationOnly)
+                clipManager.copyBeatRangeToClipboard(startBeat, endBeat, trackIds, bpm);
+            else
+                clipManager.clearClipboard();
+            const bool hasClips = !sel.automationOnly && clipManager.hasClipsInClipboard();
+
+            auto automationDupCmd = std::make_unique<DuplicateAutomationTimeSelectionCommand>(
+                startBeat, endBeat, trackIds, endBeat, laneIds);
+            const bool hasAutomation = automationDupCmd->canDuplicatePoints();
+
+            UndoManager::getInstance().beginCompoundOperation("Duplicate Time Range");
+            // 1. Ripple later content right to make room after the range.
+            if (!sel.automationOnly) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<InsertTimeCommand>(endBeat, durationBeats, trackIds, bpm));
+            }
+            auto automationShiftCmd = std::make_unique<InsertTimeAutomationCommand>(
+                endBeat, durationBeats, trackIds, laneIds);
+            if (automationShiftCmd->canShiftPoints())
+                UndoManager::getInstance().executeCommand(std::move(automationShiftCmd));
+            // 2. Drop the copied content into the gap.
+            if (hasClips) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<PasteClipCommand>(BeatPosition{endBeat}));
+            }
+            if (hasAutomation)
+                UndoManager::getInstance().executeCommand(std::move(automationDupCmd));
+            // Markers are global: only ripple/copy them for all-track duplicates.
+            if (!sel.automationOnly && sel.isAllTracks())
+                UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
+                    RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
+            UndoManager::getInstance().endCompoundOperation();
+
+            if (hasClips || hasAutomation) {
+                // Move the time selection onto the duplicated region (beats-native).
+                selectionManager.clearSelection();
+                mainView->getTimelineController().dispatch(
+                    SetTimeSelectionBeatsEvent{endBeat, endBeat + durationBeats, sel.trackIndices,
+                                               sel.automationOnly, sel.automationLaneIds});
+            }
+            return true;
+        }
+
+        case duplicateLoopRange: {
+            // Companion to Duplicate Time Range, driven by the transport loop and
+            // always global (all tracks). Trims clips at both loop boundaries so
+            // the loop is a self-contained region, then ripple-duplicates it.
+            if (!mainView)
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const auto& loop = state.loop;
+            if (!loop.isValid())
+                return true;
+            const double bpm = state.tempo.bpm;
+            const double startBeat = loop.startBeats;
+            const double endBeat = loop.endBeats;
+            const double durationBeats = endBeat - startBeat;
+            if (durationBeats <= 0.0)
+                return true;
+
+            const std::vector<TrackId> allTracks;          // empty = all tracks
+            const std::vector<AutomationLaneId> allLanes;  // empty = all lanes
+
+            UndoManager::getInstance().beginCompoundOperation("Duplicate Loop Range");
+
+            // 1. Trim clips at both loop boundaries (all tracks).
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SplitClipsAtBeatCommand>(startBeat, allTracks, bpm));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SplitClipsAtBeatCommand>(endBeat, allTracks, bpm));
+
+            // 2. Copy the loop range across all tracks.
+            clipManager.copyBeatRangeToClipboard(startBeat, endBeat, allTracks, bpm);
+            const bool hasClips = clipManager.hasClipsInClipboard();
+
+            // 3. Ripple later content right, then paste the copy into the gap.
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<InsertTimeCommand>(endBeat, durationBeats, allTracks, bpm));
+            auto autoShift = std::make_unique<InsertTimeAutomationCommand>(endBeat, durationBeats,
+                                                                           allTracks, allLanes);
+            if (autoShift->canShiftPoints())
+                UndoManager::getInstance().executeCommand(std::move(autoShift));
+            if (hasClips)
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<PasteClipCommand>(BeatPosition{endBeat}));
+            auto autoDup = std::make_unique<DuplicateAutomationTimeSelectionCommand>(
+                startBeat, endBeat, allTracks, endBeat, allLanes);
+            if (autoDup->canDuplicatePoints())
+                UndoManager::getInstance().executeCommand(std::move(autoDup));
+            // Loop ops are global, so markers always ripple.
+            UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
+                RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
+
+            UndoManager::getInstance().endCompoundOperation();
+
+            // Update the loop so playback reflects the duplication. Config chooses
+            // whether it grows to cover the original plus the copy, or advances
+            // onto just the copy. Either way the loop end moves to the copy's end.
+            const bool loopGrows = Config::getInstance().getDuplicateLoopGrows();
+            mainView->getTimelineController().dispatch(
+                SetLoopRegionBeatsEvent{loopGrows ? startBeat : endBeat, endBeat + durationBeats});
+            return true;
+        }
+
+        case splitAllTracksAtCursor: {
+            if (!mainView)
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            if (state.editCursorPosition < 0.0)
+                return true;
+            const double bpm = state.tempo.bpm;
+            const double cursorBeat = state.editCursorPosition * bpm / 60.0;
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SplitClipsAtBeatCommand>(cursorBeat, std::vector<TrackId>{}, bpm));
+            return true;
+        }
+
+        case copyTimeRange:
+        case cutTimeRange:
+        case deleteTimeRange: {
+            if (!hasActiveTimeSelection())
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const auto& sel = state.selection;
+            const double bpm = state.tempo.bpm;
+            const double startBeat = sel.startBeats;
+            const double endBeat = sel.endBeats;
+            if (endBeat - startBeat <= 0.0)
+                return true;
+            auto trackIds = resolveTimeSelectionTrackIds();
+
+            if (info.commandID == copyTimeRange) {
+                clipManager.copyBeatRangeToClipboard(startBeat, endBeat, trackIds, bpm);
+                return true;
+            }
+            // Cut = copy then ripple-delete; Delete = ripple-delete only.
+            if (info.commandID == cutTimeRange)
+                clipManager.copyBeatRangeToClipboard(startBeat, endBeat, trackIds, bpm);
+            // Markers are global: only ripple them when the op spans all tracks.
+            const bool rippleMarkers = sel.isAllTracks();
+            if (rippleMarkers)
+                UndoManager::getInstance().beginCompoundOperation(
+                    info.commandID == cutTimeRange ? "Cut Time Range" : "Delete Time Range");
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<RippleDeleteRangeCommand>(startBeat, endBeat, trackIds, bpm));
+            if (rippleMarkers) {
+                UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
+                    RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
+                UndoManager::getInstance().endCompoundOperation();
+            }
+            // Collapse the selection to the deletion point.
+            selectionManager.clearSelection();
+            auto& tc = mainView->getTimelineController();
+            tc.dispatch(SetEditCursorEvent{startBeat});
+            tc.dispatch(ClearTimeSelectionEvent{});
+            return true;
+        }
+
+        case copyLoopRange:
+        case cutLoopRange:
+        case deleteLoopRange: {
+            if (!mainView)
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const auto& loop = state.loop;
+            if (!loop.isValid())
+                return true;
+            const double bpm = state.tempo.bpm;
+            const double startBeat = loop.startBeats;
+            const double endBeat = loop.endBeats;
+            if (endBeat - startBeat <= 0.0)
+                return true;
+            const std::vector<TrackId> allTracks;  // loop ops are global
+
+            if (info.commandID == copyLoopRange) {
+                clipManager.copyBeatRangeToClipboard(startBeat, endBeat, allTracks, bpm);
+                return true;
+            }
+            if (info.commandID == cutLoopRange)
+                clipManager.copyBeatRangeToClipboard(startBeat, endBeat, allTracks, bpm);
+            // Loop ops are global, so markers always ripple (one undo step).
+            UndoManager::getInstance().beginCompoundOperation(
+                info.commandID == cutLoopRange ? "Cut Loop Range" : "Delete Loop Range");
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<RippleDeleteRangeCommand>(startBeat, endBeat, allTracks, bpm));
+            UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
+                RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
+            UndoManager::getInstance().endCompoundOperation();
+            return true;
+        }
+
+        case pasteRipple: {
+            if (!mainView || !clipManager.hasClipsInClipboard())
+                return true;
+            const auto& state = mainView->getTimelineController().getState();
+            const double bpm = state.tempo.bpm;
+            // Target position: time selection start, else edit cursor, else loop start.
+            double targetBeat = -1.0;
+            if (state.selection.isVisuallyActive())
+                targetBeat = state.selection.startBeats;
+            else if (state.editCursorPosition >= 0.0)
+                targetBeat = state.editCursorPosition * bpm / 60.0;
+            else if (state.loop.isValid())
+                targetBeat = state.loop.startBeats;
+            if (targetBeat < 0.0)
+                return true;
+            const double span = clipManager.getClipboardBeatSpan();
+            if (span <= 0.0)
+                return true;
+
+            // Ripple-insert room on all tracks (pasted clips keep their own
+            // tracks), then paste the clipboard into the gap.
+            UndoManager::getInstance().beginCompoundOperation("Paste (Ripple)");
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<InsertTimeCommand>(targetBeat, span, std::vector<TrackId>{}, bpm));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<PasteClipCommand>(BeatPosition{targetBeat}));
+            // Paste ripples all tracks, so markers shift too.
+            UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
+                RippleMarkersCommand::Mode::Insert, targetBeat, targetBeat + span));
+            UndoManager::getInstance().endCompoundOperation();
             return true;
         }
 

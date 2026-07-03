@@ -565,19 +565,44 @@ class ClipManager {
     void copyToClipboard(const std::unordered_set<ClipId>& clipIds);
 
     /**
-     * @brief Copy the overlapping portions of clips within a time range to clipboard
-     * @param startTime Start of time range
-     * @param endTime End of time range
+     * @brief Copy the overlapping portions of clips within a beat range to
+     *        clipboard — beats-authoritative entry point.
+     *
+     * Clipboard positions are beat-domain; overlap, trimming and the paste
+     * reference anchor are all computed in beats. bpm is used only to derive
+     * source-domain seconds (audio offset/loop) at the boundary.
+     * @param startBeat Start of range (beats)
+     * @param endBeat End of range (beats)
      * @param trackIds Tracks to copy from (empty = all arrangement tracks)
+     */
+    void copyBeatRangeToClipboard(double startBeat, double endBeat,
+                                  const std::vector<TrackId>& trackIds, double tempoBPM = 120.0);
+
+    /**
+     * @brief Copy a time range to clipboard from timeline seconds.
+     *
+     * Thin shim around copyBeatRangeToClipboard for callers whose natural unit
+     * is still seconds (bridge/UI sites carrying the transitional seconds cache).
      */
     void copyTimeRangeToClipboard(double startTime, double endTime,
                                   const std::vector<TrackId>& trackIds, double tempoBPM = 120.0);
 
     /**
-     * @brief Paste clips from clipboard
-     * @param pasteTime Timeline position to paste at
+     * @brief Paste clips from clipboard at a beat position — beats-authoritative.
+     * @param pasteBeat Timeline position to paste at (beats)
      * @param targetTrackId Track to paste on (INVALID_TRACK_ID = use original tracks)
      * @return IDs of the newly created clips
+     */
+    std::vector<ClipId> pasteFromClipboardBeats(double pasteBeat,
+                                                TrackId targetTrackId = INVALID_TRACK_ID,
+                                                ClipView targetView = ClipView::Arrangement,
+                                                int targetSceneIndex = -1);
+
+    /**
+     * @brief Paste clips from clipboard at a timeline-seconds position.
+     *
+     * Thin shim around pasteFromClipboardBeats for seconds-domain callers.
+     * @param pasteTime Timeline position to paste at (seconds)
      */
     std::vector<ClipId> pasteFromClipboard(double pasteTime,
                                            TrackId targetTrackId = INVALID_TRACK_ID,
@@ -594,6 +619,12 @@ class ClipManager {
      * @brief Check if clipboard has clips
      */
     bool hasClipsInClipboard() const;
+
+    /**
+     * @brief Beat span of the clipboard contents (max clip end - reference anchor).
+     *        0 if the clipboard is empty. Used to size a ripple-insert on paste.
+     */
+    double getClipboardBeatSpan() const;
 
     /**
      * @brief True when clipboard clips have no source track and paste must supply one.
@@ -770,7 +801,7 @@ class ClipManager {
 
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;
-    double clipboardReferenceTime_ = 0.0;  // For maintaining relative positions
+    double clipboardReferenceBeat_ = 0.0;  // Beats; anchor for maintaining relative paste positions
 
     // Note clipboard storage
     std::vector<MidiNote> noteClipboard_;

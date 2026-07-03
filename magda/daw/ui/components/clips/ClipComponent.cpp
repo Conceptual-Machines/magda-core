@@ -3316,11 +3316,20 @@ void ClipComponent::showContextMenu() {
     // Render Time Selection - always available (not for chord progressions)
     if (!isChord) {
         bool hasTimeSelection = false;
+        bool hasLoop = false;
+        bool hasCursor = false;
         if (parentPanel_ && parentPanel_->getTimelineController()) {
             const auto& state = parentPanel_->getTimelineController()->getState();
             hasTimeSelection = state.selection.isActive() && !state.selection.visuallyHidden;
+            hasLoop = state.loop.isValid();
+            hasCursor = state.editCursorPosition >= 0.0;
         }
         menu.addItem(10, "Render Time Selection", hasTimeSelection);
+        menu.addSeparator();
+        menu.addItem(30, "Insert Time", hasTimeSelection);
+        menu.addItem(31, "Duplicate Time Range", hasTimeSelection);
+        menu.addItem(32, "Duplicate Loop Range", hasLoop);
+        menu.addItem(33, "Split All Tracks at Cursor", hasCursor);
     }
 
     // Bounce operations (not for chord progressions)
@@ -3663,6 +3672,34 @@ void ClipComponent::showContextMenu() {
             case 10: {  // Render Time Selection
                 if (onRenderTimeSelectionRequested) {
                     onRenderTimeSelectionRequested();
+                }
+                break;
+            }
+
+            case 30: {  // Insert Time (ripple)
+                if (onInsertTimeRequested) {
+                    onInsertTimeRequested();
+                }
+                break;
+            }
+
+            case 31: {  // Duplicate Time Range (ripple)
+                if (onDuplicateTimeRangeRequested) {
+                    onDuplicateTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 32: {  // Duplicate Loop Range (ripple, all tracks)
+                if (onDuplicateLoopRangeRequested) {
+                    onDuplicateLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 33: {  // Split All Tracks at Cursor
+                if (onSplitAllTracksAtCursorRequested) {
+                    onSplitAllTracksAtCursorRequested();
                 }
                 break;
             }

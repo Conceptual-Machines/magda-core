@@ -483,33 +483,6 @@ class RenderTimeSelectionCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for ripple-deleting a time selection
- *
- * Removes content within the time range and shifts subsequent clips left.
- * Uses full arrangement snapshot for reliable undo.
- */
-class RippleDeleteTimeSelectionCommand : public UndoableCommand {
-  public:
-    RippleDeleteTimeSelectionCommand(double startTime, double endTime,
-                                     const std::vector<TrackId>& trackIds, double tempo = 120.0);
-
-    juce::String getDescription() const override {
-        return "Ripple Delete Time Selection";
-    }
-
-    void execute() override;
-    void undo() override;
-
-  private:
-    double startTime_;
-    double endTime_;
-    std::vector<TrackId> trackIds_;
-    double tempo_;
-    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
-    bool executed_ = false;
-};
-
-/**
  * @brief Command for deleting content within a time selection (no ripple)
  *
  * Removes/trims clips that overlap the time range but does NOT shift
@@ -533,6 +506,100 @@ class DeleteTimeSelectionCommand : public UndoableCommand {
     std::vector<TrackId> trackIds_;
     double tempo_;
     std::vector<ClipInfo> snapshot_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for inserting empty time (ripple insert), beats-native
+ *
+ * Opens a gap of `durationBeats` at `insertBeat`, shifting every later clip on
+ * affected tracks right to make room. Clips spanning the insert point are split
+ * (or, if looped, grown). All timeline placement is beat-domain, so the shift is
+ * a pure beat delta via setBeatPlacement. Uses a full arrangement snapshot for
+ * reliable undo. Empty trackIds means all tracks.
+ */
+class InsertTimeCommand : public UndoableCommand {
+  public:
+    InsertTimeCommand(double insertBeat, double durationBeats, const std::vector<TrackId>& trackIds,
+                      double tempo = 120.0);
+
+    juce::String getDescription() const override {
+        return "Insert Time";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    double insertBeat_;
+    double durationBeats_;
+    std::vector<TrackId> trackIds_;
+    double tempo_;
+    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for splitting every clip that crosses a beat, beats-native
+ *
+ * Splits all arrangement clips on affected tracks that strictly span
+ * `splitBeat`, leaving a clean cut at that beat. Clips already starting or
+ * ending exactly on the beat are left untouched. Empty trackIds means all
+ * tracks. Uses a full arrangement snapshot for reliable undo.
+ */
+class SplitClipsAtBeatCommand : public UndoableCommand {
+  public:
+    SplitClipsAtBeatCommand(double splitBeat, const std::vector<TrackId>& trackIds,
+                            double tempo = 120.0);
+
+    juce::String getDescription() const override {
+        return "Split Clips at Beat";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    // IDs of the right-hand clips created by the splits (valid after execute()).
+    const std::vector<ClipId>& getCreatedClipIds() const {
+        return createdClipIds_;
+    }
+
+  private:
+    double splitBeat_;
+    std::vector<TrackId> trackIds_;
+    double tempo_;
+    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
+    std::vector<ClipId> createdClipIds_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for ripple-deleting a beat range, beats-native
+ *
+ * Removes all content in [startBeat, endBeat] on affected tracks and shifts
+ * every later clip left by the range length to close the gap. The inverse of
+ * InsertTimeCommand. Clips spanning a boundary are split/trimmed; looped clips
+ * shrink instead of splitting. Empty trackIds means all tracks. Uses a full
+ * arrangement snapshot for reliable undo.
+ */
+class RippleDeleteRangeCommand : public UndoableCommand {
+  public:
+    RippleDeleteRangeCommand(double startBeat, double endBeat, const std::vector<TrackId>& trackIds,
+                             double tempo = 120.0);
+
+    juce::String getDescription() const override {
+        return "Delete Time Range";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    double startBeat_;
+    double endBeat_;
+    std::vector<TrackId> trackIds_;
+    double tempo_;
+    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
     bool executed_ = false;
 };
 

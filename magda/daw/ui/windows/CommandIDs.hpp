@@ -28,7 +28,19 @@ enum {
     toggleClipLoop = 0x100D,       // Cmd+L: toggle loop on/off for selected clip
     duplicateClipWithAutomation = 0x100E,
     duplicateClipWithoutAutomation = 0x100F,
-    escapeAction = 0x1010,  // Esc: exit link mode / clear edit cursor
+    escapeAction = 0x1010,        // Esc: exit link mode / clear edit cursor
+    insertTime = 0x1011,          // Insert empty time at the selection, ripple later content right
+    duplicateTimeRange = 0x1012,  // Ripple-duplicate the time selection after itself
+    duplicateLoopRange =
+        0x1013,  // Trim both loop ends, then ripple-duplicate the loop (all tracks)
+    splitAllTracksAtCursor = 0x1014,  // Split every clip crossing the edit cursor, all tracks
+    copyTimeRange = 0x1015,           // Copy the time selection's content to the clipboard
+    cutTimeRange = 0x1016,            // Copy the time selection, then ripple-delete it
+    deleteTimeRange = 0x1017,         // Ripple-delete the time selection (close the gap)
+    copyLoopRange = 0x1018,           // Copy the loop region's content (all tracks)
+    cutLoopRange = 0x1019,            // Copy the loop region, then ripple-delete it (all tracks)
+    deleteLoopRange = 0x101A,         // Ripple-delete the loop region (all tracks)
+    pasteRipple = 0x101B,             // Ripple-insert the clipboard span, then paste into it
 
     // Transport menu
     play = 0x2000,  // Space: toggles play/stop (perform() already toggles)

@@ -176,6 +176,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addSeparator();
             menu.addItem(SplitOrTrim, tr("menu.edit.split_trim") + keyHint(CommandIDs::splitOrTrim),
                          true, false);
+            menu.addItem(SplitAllTracksAtCursor,
+                         tr("menu.edit.split_all_tracks") +
+                             keyHint(CommandIDs::splitAllTracksAtCursor),
+                         true, false);
             menu.addItem(JoinClips, tr("menu.edit.join_clips") + keyHint(CommandIDs::joinClips),
                          hasSelection_, false);
             menu.addSeparator();
@@ -185,6 +189,46 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          tr("menu.edit.render_time_selection") +
                              keyHint(CommandIDs::renderTimeSelection),
                          true, false);
+            menu.addSeparator();
+            menu.addItem(InsertTime, tr("menu.edit.insert_time") + keyHint(CommandIDs::insertTime),
+                         true, false);
+            menu.addItem(DuplicateTimeRange,
+                         tr("menu.edit.duplicate_time_range") +
+                             keyHint(CommandIDs::duplicateTimeRange),
+                         true, false);
+            menu.addItem(DuplicateLoopRange,
+                         tr("menu.edit.duplicate_loop_range") +
+                             keyHint(CommandIDs::duplicateLoopRange),
+                         true, false);
+
+            juce::PopupMenu rangeMenu;
+            rangeMenu.addItem(CopyTimeRange,
+                              tr("menu.edit.copy_time_range") + keyHint(CommandIDs::copyTimeRange),
+                              true, false);
+            rangeMenu.addItem(CutTimeRange,
+                              tr("menu.edit.cut_time_range") + keyHint(CommandIDs::cutTimeRange),
+                              true, false);
+            rangeMenu.addItem(DeleteTimeRange,
+                              tr("menu.edit.delete_time_range") +
+                                  keyHint(CommandIDs::deleteTimeRange),
+                              true, false);
+            rangeMenu.addSeparator();
+            rangeMenu.addItem(CopyLoopRange,
+                              tr("menu.edit.copy_loop_range") + keyHint(CommandIDs::copyLoopRange),
+                              true, false);
+            rangeMenu.addItem(CutLoopRange,
+                              tr("menu.edit.cut_loop_range") + keyHint(CommandIDs::cutLoopRange),
+                              true, false);
+            rangeMenu.addItem(DeleteLoopRange,
+                              tr("menu.edit.delete_loop_range") +
+                                  keyHint(CommandIDs::deleteLoopRange),
+                              true, false);
+            rangeMenu.addSeparator();
+            rangeMenu.addItem(PasteRipple,
+                              tr("menu.edit.paste_ripple") + keyHint(CommandIDs::pasteRipple), true,
+                              false);
+            menu.addSubMenu(tr("menu.edit.range_editing"), rangeMenu);
+
             menu.addSeparator();
             menu.addItem(SelectAll, tr("menu.edit.select_all") + keyHint(CommandIDs::selectAll),
                          true, false);
@@ -414,6 +458,50 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case RenderTimeSelection:
             if (callbacks_.onRenderTimeSelection)
                 callbacks_.onRenderTimeSelection();
+            break;
+        case InsertTime:
+            if (callbacks_.onInsertTime)
+                callbacks_.onInsertTime();
+            break;
+        case DuplicateTimeRange:
+            if (callbacks_.onDuplicateTimeRange)
+                callbacks_.onDuplicateTimeRange();
+            break;
+        case DuplicateLoopRange:
+            if (callbacks_.onDuplicateLoopRange)
+                callbacks_.onDuplicateLoopRange();
+            break;
+        case SplitAllTracksAtCursor:
+            if (callbacks_.onSplitAllTracksAtCursor)
+                callbacks_.onSplitAllTracksAtCursor();
+            break;
+        case CopyTimeRange:
+            if (callbacks_.onCopyTimeRange)
+                callbacks_.onCopyTimeRange();
+            break;
+        case CutTimeRange:
+            if (callbacks_.onCutTimeRange)
+                callbacks_.onCutTimeRange();
+            break;
+        case DeleteTimeRange:
+            if (callbacks_.onDeleteTimeRange)
+                callbacks_.onDeleteTimeRange();
+            break;
+        case CopyLoopRange:
+            if (callbacks_.onCopyLoopRange)
+                callbacks_.onCopyLoopRange();
+            break;
+        case CutLoopRange:
+            if (callbacks_.onCutLoopRange)
+                callbacks_.onCutLoopRange();
+            break;
+        case DeleteLoopRange:
+            if (callbacks_.onDeleteLoopRange)
+                callbacks_.onDeleteLoopRange();
+            break;
+        case PasteRipple:
+            if (callbacks_.onPasteRipple)
+                callbacks_.onPasteRipple();
             break;
         case SelectAll:
             if (callbacks_.onSelectAll)

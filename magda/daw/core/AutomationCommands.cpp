@@ -336,4 +336,82 @@ void DuplicateAutomationTimeSelectionCommand::undo() {
     insertedPoints_.clear();
 }
 
+// ============================================================================
+// InsertTimeAutomationCommand
+// ============================================================================
+
+bool InsertTimeAutomationCommand::shouldShiftLane(const AutomationLaneInfo& lane) const {
+    if (!lane.visible || !lane.isAbsolute())
+        return false;
+    if (!laneIds_.empty()) {
+        return std::find(laneIds_.begin(), laneIds_.end(), lane.id) != laneIds_.end();
+    }
+    if (trackIds_.empty())
+        return true;
+    return std::find(trackIds_.begin(), trackIds_.end(), lane.target.devicePath.trackId) !=
+           trackIds_.end();
+}
+
+bool InsertTimeAutomationCommand::canShiftPoints() const {
+    if (durationBeats_ <= 0.0)
+        return false;
+
+    constexpr double epsilon = 1.0e-9;
+    const auto& mgr = AutomationManager::getInstance();
+    for (const auto& lane : mgr.getLanes()) {
+        if (!shouldShiftLane(lane))
+            continue;
+        for (const auto& point : lane.absolutePoints) {
+            if (point.beatPosition >= insertBeat_ - epsilon)
+                return true;
+        }
+    }
+    return false;
+}
+
+void InsertTimeAutomationCommand::execute() {
+    shiftedPoints_.clear();
+
+    if (durationBeats_ <= 0.0)
+        return;
+
+    constexpr double epsilon = 1.0e-9;
+    auto& mgr = AutomationManager::getInstance();
+
+    for (const auto& lane : mgr.getLanes()) {
+        if (!shouldShiftLane(lane))
+            continue;
+        for (const auto& point : lane.absolutePoints) {
+            if (point.beatPosition >= insertBeat_ - epsilon)
+                shiftedPoints_.push_back({lane.id, point.id, point.beatPosition, point.value});
+        }
+    }
+
+    if (shiftedPoints_.empty())
+        return;
+
+    // Move the rightmost points first so each destination beat is always empty
+    // (every shifted point moves right by the same amount).
+    std::sort(shiftedPoints_.begin(), shiftedPoints_.end(),
+              [](const ShiftedPoint& a, const ShiftedPoint& b) { return a.oldBeat > b.oldBeat; });
+
+    AutomationManager::BatchScope batch;
+    for (const auto& sp : shiftedPoints_) {
+        mgr.movePoint(sp.laneId, sp.pointId, sp.oldBeat + durationBeats_, sp.value);
+    }
+}
+
+void InsertTimeAutomationCommand::undo() {
+    if (shiftedPoints_.empty())
+        return;
+
+    auto& mgr = AutomationManager::getInstance();
+    AutomationManager::BatchScope batch;
+    // Move leftmost first so each original beat is empty as we restore it.
+    for (auto it = shiftedPoints_.rbegin(); it != shiftedPoints_.rend(); ++it) {
+        mgr.movePoint(it->laneId, it->pointId, it->oldBeat, it->value);
+    }
+    shiftedPoints_.clear();
+}
+
 }  // namespace magda

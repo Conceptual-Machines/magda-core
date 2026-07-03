@@ -258,6 +258,7 @@ class TimelineController {
     ChangeFlags handleEvent(const AddMarkerEvent& e);
     ChangeFlags handleEvent(const UpdateMarkerEvent& e);
     ChangeFlags handleEvent(const RemoveMarkerEvent& e);
+    ChangeFlags handleEvent(const SetMarkersEvent& e);
     ChangeFlags handleEvent(const SelectMarkerEvent& e);
     ChangeFlags handleEvent(const GoToMarkerEvent& e);
     ChangeFlags handleEvent(const GoToNextMarkerEvent& e);
