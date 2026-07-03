@@ -189,6 +189,13 @@ class TrackContentPanel : public juce::Component,
     std::function<void()> onDuplicateTimeRangeRequested;   // Ripple-duplicate time range
     std::function<void()> onDuplicateLoopRangeRequested;   // Ripple-duplicate the loop region
     std::function<void()> onSplitAllTracksAtCursorRequested;  // Split all clips at edit cursor
+    std::function<void()> onCopyTimeRangeRequested;           // Copy the time selection's content
+    std::function<void()> onCutTimeRangeRequested;     // Copy time selection, then ripple-delete
+    std::function<void()> onDeleteTimeRangeRequested;  // Ripple-delete the time selection
+    std::function<void()> onCopyLoopRangeRequested;    // Copy the loop region (all tracks)
+    std::function<void()> onCutLoopRangeRequested;     // Copy loop region, then ripple-delete
+    std::function<void()> onDeleteLoopRangeRequested;  // Ripple-delete the loop region
+    std::function<void()> onPasteRippleRequested;      // Ripple-insert clipboard span, then paste
     std::function<void(ClipId)> onBounceInPlaceRequested;     // Bounce MIDI clip in place
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
     // Fires while a clip is being dragged/resized. The transparent grid overlay

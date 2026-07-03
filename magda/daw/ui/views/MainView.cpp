@@ -2260,6 +2260,34 @@ void MainView::setupSelectionCallbacks() {
         if (onSplitAllTracksAtCursorRequested)
             onSplitAllTracksAtCursorRequested();
     };
+    trackContentPanel->onCopyTimeRangeRequested = [this]() {
+        if (onCopyTimeRangeRequested)
+            onCopyTimeRangeRequested();
+    };
+    trackContentPanel->onCutTimeRangeRequested = [this]() {
+        if (onCutTimeRangeRequested)
+            onCutTimeRangeRequested();
+    };
+    trackContentPanel->onDeleteTimeRangeRequested = [this]() {
+        if (onDeleteTimeRangeRequested)
+            onDeleteTimeRangeRequested();
+    };
+    trackContentPanel->onCopyLoopRangeRequested = [this]() {
+        if (onCopyLoopRangeRequested)
+            onCopyLoopRangeRequested();
+    };
+    trackContentPanel->onCutLoopRangeRequested = [this]() {
+        if (onCutLoopRangeRequested)
+            onCutLoopRangeRequested();
+    };
+    trackContentPanel->onDeleteLoopRangeRequested = [this]() {
+        if (onDeleteLoopRangeRequested)
+            onDeleteLoopRangeRequested();
+    };
+    trackContentPanel->onPasteRippleRequested = [this]() {
+        if (onPasteRippleRequested)
+            onPasteRippleRequested();
+    };
     trackContentPanel->onBounceInPlaceRequested = [this](ClipId id) {
         if (onBounceInPlaceRequested)
             onBounceInPlaceRequested(id);

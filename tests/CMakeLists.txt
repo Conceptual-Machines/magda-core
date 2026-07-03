@@ -20,6 +20,7 @@ set(TEST_SOURCES
     test_rack_audio.cpp
     test_modulation.cpp
     test_control_target.cpp
+    test_tempo_sequence_ripple_math.cpp
     test_chain_fingerprint.cpp
     test_chain_routing_model.cpp
     test_post_fx_chain.cpp
@@ -252,6 +253,7 @@ target_sources(magda_juce_tests PRIVATE
     test_external_plugin_state_restore_juce.cpp
     test_chord_progression_converter_juce.cpp
     test_audio_driver_type_selection_juce.cpp
+    test_tempo_sequence_ripple_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 

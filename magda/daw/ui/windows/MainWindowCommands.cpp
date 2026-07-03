@@ -19,6 +19,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
+#include "engine/TempoSequenceRippleCommand.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -89,6 +90,18 @@ TrackId resolvePasteTargetTrack(ViewMode mode) {
     }
 
     return INVALID_TRACK_ID;
+}
+
+// Ripple the global tempo/time-sig/pitch sequences to match a time-range clip
+// edit. These are edit-wide, so callers gate this to all-tracks (global) ops.
+// Must be enqueued AFTER the clip-shifting commands in the compound op so the
+// remapper snapshot sees clips at their final beats.
+void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleCommand::Mode mode,
+                         double startBeat, double endBeat) {
+    if (auto* eng = dynamic_cast<TracktionEngineWrapper*>(audioEngine))
+        if (auto* ed = eng->getEdit())
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<TempoSequenceRippleCommand>(*ed, mode, startBeat, endBeat));
 }
 
 }  // namespace
@@ -1039,10 +1052,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 startBeat, durationBeats, trackIds, laneIds);
             if (automationCmd->canShiftPoints())
                 UndoManager::getInstance().executeCommand(std::move(automationCmd));
-            // Markers are global, so only ripple them when the op spans all tracks.
-            if (!sel.automationOnly && sel.isAllTracks())
+            // Markers and tempo/pitch are global, so only ripple them when the
+            // op spans all tracks.
+            if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Insert, startBeat, sel.endBeats));
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Insert,
+                                    startBeat, sel.endBeats);
+            }
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1093,10 +1110,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             if (hasAutomation)
                 UndoManager::getInstance().executeCommand(std::move(automationDupCmd));
-            // Markers are global: only ripple/copy them for all-track duplicates.
-            if (!sel.automationOnly && sel.isAllTracks())
+            // Markers and tempo/pitch are global: only ripple/copy them for
+            // all-track duplicates.
+            if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Duplicate,
+                                    startBeat, endBeat);
+            }
             UndoManager::getInstance().endCompoundOperation();
 
             if (hasClips || hasAutomation) {
@@ -1155,9 +1176,11 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 startBeat, endBeat, allTracks, endBeat, allLanes);
             if (autoDup->canDuplicatePoints())
                 UndoManager::getInstance().executeCommand(std::move(autoDup));
-            // Loop ops are global, so markers always ripple.
+            // Loop ops are global, so markers and tempo/pitch always ripple.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Duplicate,
+                                startBeat, endBeat);
 
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1214,6 +1237,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (rippleMarkers) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Delete,
+                                    startBeat, endBeat);
                 UndoManager::getInstance().endCompoundOperation();
             }
             // Collapse the selection to the deletion point.
@@ -1246,13 +1271,16 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             if (info.commandID == cutLoopRange)
                 clipManager.copyBeatRangeToClipboard(startBeat, endBeat, allTracks, bpm);
-            // Loop ops are global, so markers always ripple (one undo step).
+            // Loop ops are global, so markers and tempo/pitch always ripple
+            // (one undo step).
             UndoManager::getInstance().beginCompoundOperation(
                 info.commandID == cutLoopRange ? "Cut Loop Range" : "Delete Loop Range");
             UndoManager::getInstance().executeCommand(
                 std::make_unique<RippleDeleteRangeCommand>(startBeat, endBeat, allTracks, bpm));
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Delete,
+                                startBeat, endBeat);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1283,9 +1311,11 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 std::make_unique<InsertTimeCommand>(targetBeat, span, std::vector<TrackId>{}, bpm));
             UndoManager::getInstance().executeCommand(
                 std::make_unique<PasteClipCommand>(BeatPosition{targetBeat}));
-            // Paste ripples all tracks, so markers shift too.
+            // Paste ripples all tracks, so markers and tempo/pitch shift too.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Insert, targetBeat, targetBeat + span));
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Insert,
+                                targetBeat, targetBeat + span);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
