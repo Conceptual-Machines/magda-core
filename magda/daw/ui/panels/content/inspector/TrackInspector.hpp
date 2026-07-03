@@ -92,6 +92,9 @@ class TrackInspector : public BaseInspector,
     std::unique_ptr<SvgButton> soloButton_;
     std::unique_ptr<SvgButton> recordButton_;
     MonitorControl monitorButton_;
+    std::unique_ptr<SvgButton>
+        automationIndicator_;               // Purple when track has automation; toggles section
+    bool automatedSectionExpanded_ = true;  // Automated section shown when it has automation
     std::unique_ptr<magda::DraggableValueLabel> gainLabel_;
     std::unique_ptr<magda::DraggableValueLabel> panLabel_;
 
