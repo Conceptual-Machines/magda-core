@@ -87,6 +87,8 @@ class MainView : public juce::Component,
     std::function<void()> onRenderTimeSelectionRequested;     // Render time selection
     std::function<void()> onInsertTimeRequested;              // Ripple-insert empty time
     std::function<void()> onDuplicateTimeRangeRequested;      // Ripple-duplicate time range
+    std::function<void()> onDuplicateLoopRangeRequested;      // Ripple-duplicate the loop region
+    std::function<void()> onSplitAllTracksAtCursorRequested;  // Split all clips at edit cursor
     std::function<void(ClipId)> onBounceInPlaceRequested;     // Bounce MIDI clip in place
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
 

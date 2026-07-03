@@ -736,6 +736,15 @@ class Config {
         confirmTrackDelete = confirm;
     }
 
+    // Duplicate Loop Range behaviour: true grows the loop to cover the original
+    // plus the new copy; false advances the loop onto just the new copy.
+    bool getDuplicateLoopGrows() const {
+        return duplicateLoopGrows;
+    }
+    void setDuplicateLoopGrows(bool grows) {
+        duplicateLoopGrows = grows;
+    }
+
     // Tooltip Configuration
     bool getShowTooltips() const {
         return showTooltips;
@@ -1037,6 +1046,9 @@ class Config {
 
     // Track deletion settings
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track
+
+    // Duplicate Loop Range: grow the loop over the copy (true) or advance onto it (false)
+    bool duplicateLoopGrows = true;
 
     // Tooltip settings
     bool showTooltips = true;  // Enabled by default — disable via config

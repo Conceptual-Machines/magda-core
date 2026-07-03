@@ -1171,6 +1171,25 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveMark
     return ChangeFlags::Markers;
 }
 
+TimelineController::ChangeFlags TimelineController::handleEvent(const SetMarkersEvent& e) {
+    state.markers = e.markers;
+    std::sort(state.markers.begin(), state.markers.end(),
+              [](const TimelineMarker& a, const TimelineMarker& b) {
+                  return a.positionBeats < b.positionBeats;
+              });
+    // Keep nextMarkerId ahead of every restored id so later adds don't collide.
+    state.nextMarkerId = 1;
+    for (const auto& marker : state.markers)
+        state.nextMarkerId = juce::jmax(state.nextMarkerId, marker.id + 1);
+    // Drop a stale selection that no longer points at a live marker.
+    if (state.selectedMarkerId != 0 &&
+        std::none_of(state.markers.begin(), state.markers.end(),
+                     [&](const TimelineMarker& m) { return m.id == state.selectedMarkerId; }))
+        state.selectedMarkerId = 0;
+    ProjectManager::getInstance().markDirty();
+    return ChangeFlags::Markers;
+}
+
 TimelineController::ChangeFlags TimelineController::handleEvent(const SelectMarkerEvent& e) {
     if (e.markerId != 0) {
         auto it =

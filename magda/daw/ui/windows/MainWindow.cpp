@@ -676,6 +676,12 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mainView->onDuplicateTimeRangeRequested = [this]() {
         getCommandManager().invokeDirectly(CommandIDs::duplicateTimeRange, false);
     };
+    mainView->onDuplicateLoopRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::duplicateLoopRange, false);
+    };
+    mainView->onSplitAllTracksAtCursorRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::splitAllTracksAtCursor, false);
+    };
 
     // Wire bounce callbacks
     mainView->onBounceInPlaceRequested = [this](ClipId clipId) {

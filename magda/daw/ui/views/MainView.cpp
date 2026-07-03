@@ -2252,6 +2252,14 @@ void MainView::setupSelectionCallbacks() {
         if (onDuplicateTimeRangeRequested)
             onDuplicateTimeRangeRequested();
     };
+    trackContentPanel->onDuplicateLoopRangeRequested = [this]() {
+        if (onDuplicateLoopRangeRequested)
+            onDuplicateLoopRangeRequested();
+    };
+    trackContentPanel->onSplitAllTracksAtCursorRequested = [this]() {
+        if (onSplitAllTracksAtCursorRequested)
+            onSplitAllTracksAtCursorRequested();
+    };
     trackContentPanel->onBounceInPlaceRequested = [this](ClipId id) {
         if (onBounceInPlaceRequested)
             onBounceInPlaceRequested(id);

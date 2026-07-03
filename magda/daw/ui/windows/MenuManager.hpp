@@ -43,6 +43,15 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onRenderTimeSelection;
         std::function<void()> onInsertTime;
         std::function<void()> onDuplicateTimeRange;
+        std::function<void()> onDuplicateLoopRange;
+        std::function<void()> onSplitAllTracksAtCursor;
+        std::function<void()> onCopyTimeRange;
+        std::function<void()> onCutTimeRange;
+        std::function<void()> onDeleteTimeRange;
+        std::function<void()> onCopyLoopRange;
+        std::function<void()> onCutLoopRange;
+        std::function<void()> onDeleteLoopRange;
+        std::function<void()> onPasteRipple;
         std::function<void()> onSelectAll;
         std::function<void()> onPreferences;
 
@@ -183,7 +192,16 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         RenderTimeSelection,
         InsertTime = 222,
         DuplicateTimeRange,
+        DuplicateLoopRange,
         SelectAll = 225,
+        SplitAllTracksAtCursor = 226,
+        CopyTimeRange = 227,
+        CutTimeRange,
+        DeleteTimeRange,
+        CopyLoopRange,
+        CutLoopRange,
+        DeleteLoopRange,
+        PasteRipple,
         Preferences = 299,
 
         // Settings menu (800-899)

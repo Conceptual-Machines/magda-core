@@ -1570,6 +1570,239 @@ void InsertTimeCommand::undo() {
 }
 
 // ============================================================================
+// SplitClipsAtBeatCommand
+// ============================================================================
+
+SplitClipsAtBeatCommand::SplitClipsAtBeatCommand(double splitBeat,
+                                                 const std::vector<TrackId>& trackIds, double tempo)
+    : splitBeat_(splitBeat), trackIds_(trackIds), tempo_(tempo) {}
+
+void SplitClipsAtBeatCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    // Snapshot all arrangement clips for reliable undo
+    snapshot_ = clipManager.getArrangementClips();
+    createdClipIds_.clear();
+
+    const double bpm = resolveTimelineBpm(tempo_);
+    constexpr double epsilon = 1.0e-9;
+
+    auto isAffectedTrack = [this](TrackId trackId) {
+        if (trackIds_.empty())
+            return true;
+        return std::find(trackIds_.begin(), trackIds_.end(), trackId) != trackIds_.end();
+    };
+
+    // Collect the clips to split first: splitClipAtBeat adds a new clip, so we
+    // must not iterate the live list while mutating it.
+    std::vector<ClipId> clipsToSplit;
+    for (const auto& clip : clipManager.getArrangementClips()) {
+        if (!isAffectedTrack(clip.trackId))
+            continue;
+        // Only clips that strictly straddle the beat need a cut.
+        if (clip.placement.startBeat < splitBeat_ - epsilon &&
+            clip.placement.endBeat() > splitBeat_ + epsilon)
+            clipsToSplit.push_back(clip.id);
+    }
+
+    for (auto clipId : clipsToSplit) {
+        ClipId rightId = clipManager.splitClipAtBeat(clipId, splitBeat_, bpm);
+        if (rightId != INVALID_CLIP_ID)
+            createdClipIds_.push_back(rightId);
+    }
+
+    executed_ = true;
+}
+
+void SplitClipsAtBeatCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    // Delete all current arrangement clips
+    auto currentClips = clipManager.getArrangementClips();
+    for (const auto& clip : currentClips) {
+        clipManager.deleteClip(clip.id);
+    }
+
+    // Restore from snapshot
+    for (const auto& clip : snapshot_) {
+        clipManager.restoreClip(clip);
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    // Re-merged clips keep their engine mapping, so push every restored
+    // placement back to the engine; unchanged clips are cheap no-ops.
+    std::vector<ClipId> restoredIds;
+    restoredIds.reserve(snapshot_.size());
+    for (const auto& clip : snapshot_)
+        restoredIds.push_back(clip.id);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    createdClipIds_.clear();
+    executed_ = false;
+}
+
+// ============================================================================
+// RippleDeleteRangeCommand
+// ============================================================================
+
+RippleDeleteRangeCommand::RippleDeleteRangeCommand(double startBeat, double endBeat,
+                                                   const std::vector<TrackId>& trackIds,
+                                                   double tempo)
+    : startBeat_(startBeat), endBeat_(endBeat), trackIds_(trackIds), tempo_(tempo) {}
+
+void RippleDeleteRangeCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+
+    snapshot_ = clipManager.getArrangementClips();
+
+    const double duration = endBeat_ - startBeat_;
+    if (duration <= 0.0)
+        return;
+    const double bpm = resolveTimelineBpm(tempo_);
+    constexpr double eps = 1.0e-9;
+
+    auto isAffectedTrack = [this](TrackId trackId) {
+        if (trackIds_.empty())
+            return true;
+        return std::find(trackIds_.begin(), trackIds_.end(), trackId) != trackIds_.end();
+    };
+
+    std::vector<ClipId> clipsToDelete;
+    std::vector<ClipId> clipsToResync;
+
+    auto allClips = clipManager.getArrangementClips();
+    for (const auto& clip : allClips) {
+        if (!isAffectedTrack(clip.trackId))
+            continue;
+
+        const double clipStart = clip.placement.startBeat;
+        const double clipEnd = clip.placement.endBeat();
+
+        // Entirely before the range: untouched. Entirely after: handled by the
+        // ripple pass below.
+        if (clipEnd <= startBeat_ + eps || clipStart >= endBeat_ - eps)
+            continue;
+
+        const bool spansStart = clipStart < startBeat_ - eps;
+        const bool spansEnd = clipEnd > endBeat_ + eps;
+
+        if (clip.loopEnabled) {
+            // Looped clips adjust their bounds instead of splitting.
+            auto* live = clipManager.getClip(clip.id);
+            if (!live)
+                continue;
+            if (spansStart && spansEnd) {
+                ClipOperations::setBeatPlacement(*live, clipStart, (clipEnd - clipStart) - duration,
+                                                 bpm);
+                clipsToResync.push_back(clip.id);
+            } else if (spansStart) {
+                ClipOperations::setBeatPlacement(*live, clipStart, startBeat_ - clipStart, bpm);
+                clipsToResync.push_back(clip.id);
+            } else if (spansEnd) {
+                ClipOperations::setBeatPlacement(*live, startBeat_, clipEnd - endBeat_, bpm);
+                if (clip.isMidi()) {
+                    const double trimBeats = endBeat_ - clipStart;
+                    const double loopLenBeats = clip.loopLengthBeats > 0.0
+                                                    ? clip.loopLengthBeats
+                                                    : clip.placement.lengthBeats;
+                    if (loopLenBeats > 0.0) {
+                        double phase = std::fmod(clip.midiOffset + trimBeats, loopLenBeats);
+                        if (phase < 0.0)
+                            phase += loopLenBeats;
+                        live->midiOffset = phase;
+                    }
+                }
+                clipsToResync.push_back(clip.id);
+            } else {
+                clipsToDelete.push_back(clip.id);
+            }
+            continue;
+        }
+
+        if (spansStart && spansEnd) {
+            // Split at both boundaries, drop the middle, pull the tail left.
+            ClipId rightId = clipManager.splitClipAtBeat(clip.id, startBeat_, bpm);
+            if (rightId != INVALID_CLIP_ID) {
+                ClipId tailId = clipManager.splitClipAtBeat(rightId, endBeat_, bpm);
+                clipsToDelete.push_back(rightId);
+                if (tailId != INVALID_CLIP_ID) {
+                    auto* tail = clipManager.getClip(tailId);
+                    if (tail) {
+                        ClipOperations::setBeatPlacement(*tail, startBeat_,
+                                                         tail->placement.lengthBeats, bpm);
+                        clipsToResync.push_back(tailId);
+                    }
+                }
+            }
+        } else if (spansStart) {
+            auto* live = clipManager.getClip(clip.id);
+            if (live) {
+                ClipOperations::setBeatPlacement(*live, clipStart, startBeat_ - clipStart, bpm);
+                clipsToResync.push_back(clip.id);
+            }
+        } else if (spansEnd) {
+            ClipId tailId = clipManager.splitClipAtBeat(clip.id, endBeat_, bpm);
+            clipsToDelete.push_back(clip.id);
+            if (tailId != INVALID_CLIP_ID) {
+                auto* tail = clipManager.getClip(tailId);
+                if (tail) {
+                    ClipOperations::setBeatPlacement(*tail, startBeat_, tail->placement.lengthBeats,
+                                                     bpm);
+                    clipsToResync.push_back(tailId);
+                }
+            }
+        } else {
+            clipsToDelete.push_back(clip.id);
+        }
+    }
+
+    for (auto clipId : clipsToDelete)
+        clipManager.deleteClip(clipId);
+
+    // Ripple pass: shift clips at/after the range end left to close the gap.
+    for (auto& clip : clipManager.getArrangementClips()) {
+        if (!isAffectedTrack(clip.trackId))
+            continue;
+        auto* live = clipManager.getClip(clip.id);
+        if (live && live->placement.startBeat >= endBeat_ - eps) {
+            ClipOperations::setBeatPlacement(*live, live->placement.startBeat - duration,
+                                             live->placement.lengthBeats, bpm);
+            clipsToResync.push_back(clip.id);
+        }
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    clipManager.forceNotifyMultipleClipPropertiesChanged(clipsToResync);
+    executed_ = true;
+}
+
+void RippleDeleteRangeCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+
+    auto currentClips = clipManager.getArrangementClips();
+    for (const auto& clip : currentClips) {
+        clipManager.deleteClip(clip.id);
+    }
+
+    for (const auto& clip : snapshot_) {
+        clipManager.restoreClip(clip);
+    }
+
+    clipManager.forceNotifyClipsChanged();
+    std::vector<ClipId> restoredIds;
+    restoredIds.reserve(snapshot_.size());
+    for (const auto& clip : snapshot_)
+        restoredIds.push_back(clip.id);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    executed_ = false;
+}
+
+// ============================================================================
 // BounceInPlaceCommand
 // ============================================================================
 

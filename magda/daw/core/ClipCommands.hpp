@@ -540,6 +540,70 @@ class InsertTimeCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for splitting every clip that crosses a beat, beats-native
+ *
+ * Splits all arrangement clips on affected tracks that strictly span
+ * `splitBeat`, leaving a clean cut at that beat. Clips already starting or
+ * ending exactly on the beat are left untouched. Empty trackIds means all
+ * tracks. Uses a full arrangement snapshot for reliable undo.
+ */
+class SplitClipsAtBeatCommand : public UndoableCommand {
+  public:
+    SplitClipsAtBeatCommand(double splitBeat, const std::vector<TrackId>& trackIds,
+                            double tempo = 120.0);
+
+    juce::String getDescription() const override {
+        return "Split Clips at Beat";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    // IDs of the right-hand clips created by the splits (valid after execute()).
+    const std::vector<ClipId>& getCreatedClipIds() const {
+        return createdClipIds_;
+    }
+
+  private:
+    double splitBeat_;
+    std::vector<TrackId> trackIds_;
+    double tempo_;
+    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
+    std::vector<ClipId> createdClipIds_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Command for ripple-deleting a beat range, beats-native
+ *
+ * Removes all content in [startBeat, endBeat] on affected tracks and shifts
+ * every later clip left by the range length to close the gap. The inverse of
+ * InsertTimeCommand. Clips spanning a boundary are split/trimmed; looped clips
+ * shrink instead of splitting. Empty trackIds means all tracks. Uses a full
+ * arrangement snapshot for reliable undo.
+ */
+class RippleDeleteRangeCommand : public UndoableCommand {
+  public:
+    RippleDeleteRangeCommand(double startBeat, double endBeat, const std::vector<TrackId>& trackIds,
+                             double tempo = 120.0);
+
+    juce::String getDescription() const override {
+        return "Delete Time Range";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    double startBeat_;
+    double endBeat_;
+    std::vector<TrackId> trackIds_;
+    double tempo_;
+    std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for bouncing a MIDI clip in place (synth only, no FX)
  *
  * Renders the clip through just the instrument plugin (bypassing all FX)

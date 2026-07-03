@@ -621,6 +621,12 @@ class ClipManager {
     bool hasClipsInClipboard() const;
 
     /**
+     * @brief Beat span of the clipboard contents (max clip end - reference anchor).
+     *        0 if the clipboard is empty. Used to size a ripple-insert on paste.
+     */
+    double getClipboardBeatSpan() const;
+
+    /**
      * @brief True when clipboard clips have no source track and paste must supply one.
      */
     bool clipboardRequiresTargetTrack() const;

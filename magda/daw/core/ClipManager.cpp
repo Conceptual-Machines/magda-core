@@ -3118,6 +3118,13 @@ bool ClipManager::hasClipsInClipboard() const {
     return !clipboard_.empty();
 }
 
+double ClipManager::getClipboardBeatSpan() const {
+    double maxEnd = clipboardReferenceBeat_;
+    for (const auto& clip : clipboard_)
+        maxEnd = std::max(maxEnd, clip.placement.endBeat());
+    return std::max(0.0, maxEnd - clipboardReferenceBeat_);
+}
+
 bool ClipManager::clipboardRequiresTargetTrack() const {
     return std::any_of(clipboard_.begin(), clipboard_.end(),
                        [](const auto& clip) { return clip.trackId == INVALID_TRACK_ID; });

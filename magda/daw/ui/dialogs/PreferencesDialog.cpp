@@ -176,6 +176,7 @@ class GeneralPage : public juce::Component {
         setupToggle(*this, autoMonitorToggle, tr("preferences.toggle.auto_monitor"));
         setupToggle(*this, openMacrosOnSelectToggle,
                     tr("preferences.toggle.open_macros_on_select"));
+        setupToggle(*this, duplicateLoopGrowsToggle, tr("preferences.toggle.duplicate_loop_grows"));
         setupToggle(*this, showTooltipsToggle, tr("preferences.toggle.show_tooltips"));
         setupToggle(*this, openPluginWindowOnDropToggle,
                     tr("preferences.toggle.open_plugin_window_on_drop"));
@@ -276,6 +277,8 @@ class GeneralPage : public juce::Component {
                                          juce::dontSendNotification);
         openMacrosOnSelectToggle.setToggleState(config.getOpenMacrosOnSelect(),
                                                 juce::dontSendNotification);
+        duplicateLoopGrowsToggle.setToggleState(config.getDuplicateLoopGrows(),
+                                                juce::dontSendNotification);
         showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
         openPluginWindowOnDropToggle.setToggleState(config.getOpenPluginWindowOnDrop(),
                                                     juce::dontSendNotification);
@@ -327,6 +330,7 @@ class GeneralPage : public juce::Component {
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());
+        config.setDuplicateLoopGrows(duplicateLoopGrowsToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
         config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
@@ -449,6 +453,8 @@ class GeneralPage : public juce::Component {
         bounds.removeFromTop(4);
         openMacrosOnSelectToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
+        duplicateLoopGrowsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
         showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         openPluginWindowOnDropToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
@@ -537,6 +543,8 @@ class GeneralPage : public juce::Component {
         autoMonitorToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         openMacrosOnSelectToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        duplicateLoopGrowsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         showTooltipsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
@@ -642,6 +650,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
+    juce::ToggleButton duplicateLoopGrowsToggle;
     juce::ToggleButton showTooltipsToggle;
     juce::ToggleButton openPluginWindowOnDropToggle;
     juce::ToggleButton chordPreviewDefaultToggle;

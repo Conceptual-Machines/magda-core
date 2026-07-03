@@ -1989,9 +1989,13 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     // "Duplicate Time Selection" only makes sense when an active, visible
     // time selection exists. Same gate Cmd+D uses in MainWindowCommands.
     bool hasTimeSelection = false;
+    bool hasLoop = false;
+    bool hasCursor = false;
     if (timelineController) {
-        const auto& sel = timelineController->getState().selection;
-        hasTimeSelection = sel.isVisuallyActive() && !sel.automationOnly;
+        const auto& state = timelineController->getState();
+        hasTimeSelection = state.selection.isVisuallyActive() && !state.selection.automationOnly;
+        hasLoop = state.loop.isValid();
+        hasCursor = state.editCursorPosition >= 0.0;
     }
 
     juce::PopupMenu menu;
@@ -2005,6 +2009,9 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     menu.addSeparator();
     menu.addItem(8, "Insert Time", !isFrozen && hasTimeSelection);
     menu.addItem(9, "Duplicate Time Range", !isFrozen && hasTimeSelection);
+    menu.addItem(10, "Duplicate Loop Range", !isFrozen && hasLoop);
+    menu.addSeparator();
+    menu.addItem(11, "Split All Tracks at Cursor", !isFrozen && hasCursor);
     menu.addItem(3, "Select All");
 
     auto safeThis = juce::Component::SafePointer<TrackContentPanel>(this);
@@ -2098,6 +2105,14 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             case 9:  // Duplicate Time Range (ripple)
                 if (safeThis && safeThis->onDuplicateTimeRangeRequested)
                     safeThis->onDuplicateTimeRangeRequested();
+                break;
+            case 10:  // Duplicate Loop Range (ripple, all tracks)
+                if (safeThis && safeThis->onDuplicateLoopRangeRequested)
+                    safeThis->onDuplicateLoopRangeRequested();
+                break;
+            case 11:  // Split All Tracks at Cursor
+                if (safeThis && safeThis->onSplitAllTracksAtCursorRequested)
+                    safeThis->onSplitAllTracksAtCursorRequested();
                 break;
         }
     });
@@ -2469,6 +2484,14 @@ void TrackContentPanel::rebuildClipComponents() {
         clipComp->onDuplicateTimeRangeRequested = [this]() {
             if (onDuplicateTimeRangeRequested)
                 onDuplicateTimeRangeRequested();
+        };
+        clipComp->onDuplicateLoopRangeRequested = [this]() {
+            if (onDuplicateLoopRangeRequested)
+                onDuplicateLoopRangeRequested();
+        };
+        clipComp->onSplitAllTracksAtCursorRequested = [this]() {
+            if (onSplitAllTracksAtCursorRequested)
+                onSplitAllTracksAtCursorRequested();
         };
         clipComp->onBounceInPlaceRequested = [this](ClipId id) {
             if (onBounceInPlaceRequested)

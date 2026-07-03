@@ -90,6 +90,7 @@ void Config::save() {
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("localizedUIFontScale", localizedUIFontScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
+    root->setProperty("duplicateLoopGrows", duplicateLoopGrows);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
@@ -407,6 +408,7 @@ void Config::load() {
     else
         localizedUIFontScale = defaultLocalizedUIFontScaleForLanguage(juce::String(language));
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
+    duplicateLoopGrows = getBool("duplicateLoopGrows", duplicateLoopGrows);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
