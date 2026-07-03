@@ -791,14 +791,14 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Draw directly — no offscreen cache.  AudioThumbnail is already a
     // pre-computed waveform cache (512 samples/point) so drawing from it is fast.
-    auto bgColour = clip.colour.darker(0.3f);
+    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     if (clip.audio().source.filePath.isNotEmpty())
         paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
-                             1.0f);
+    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
+                             CORNER_RADIUS, 1.0f);
 
     // Fade overlays
     if (clip.fadeIn > 0.0 || clip.fadeOut > 0.0) {
@@ -816,14 +816,14 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     if (visibleBounds.isEmpty())
         return;
 
-    auto bgColour = clip.colour.darker(0.3f);
+    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     paintMidiNotes(g, clip, noteArea, juce::Colours::black);
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
-                             1.0f);
+    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
+                             CORNER_RADIUS, 1.0f);
 }
 
 void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
@@ -970,7 +970,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
     // Translucent base so the timeline shows through (track-map style) rather
     // than a solid pastel card. Selection makes the clip body read as the track
     // colour while keeping the black selected header separate.
-    auto bgColour = clip.colour.withAlpha(selected ? 0.24f : 0.16f);
+    auto bgColour = deriveTrackSwatch(clip.colour, selected ? 0.24f : 0.16f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
@@ -1048,8 +1048,8 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
-                             1.0f);
+    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
+                             CORNER_RADIUS, 1.0f);
 }
 
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
@@ -1060,7 +1060,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     // This replaces the old white selection rectangle so it can't fight overlay
     // UI (e.g. controller scene-view rectangles).
     const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
-    const auto headerColour = selected ? juce::Colours::black : clip.colour;
+    const auto headerColour = selected ? juce::Colours::black : deriveTrackSwatch(clip.colour);
     const auto headerForeground =
         selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
 

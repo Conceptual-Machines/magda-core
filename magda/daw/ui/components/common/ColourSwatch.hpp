@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include "../../themes/DarkTheme.hpp"
+
 namespace magda {
 
 /**
@@ -37,9 +39,13 @@ class ColourSwatch : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds().toFloat().reduced(1.0f);
         if (hasColour_) {
-            g.setColour(colour_);
+            // Show the derived swatch (same hue, normalized lightness/chroma)
+            // rather than the raw stored colour, so the picker matches what
+            // actually renders on the track header/clips.
+            const auto swatchColour = deriveTrackSwatch(colour_);
+            g.setColour(swatchColour);
             g.fillRoundedRectangle(bounds, 3.0f);
-            g.setColour(colour_.brighter(0.3f));
+            g.setColour(swatchColour.brighter(0.3f));
             g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
         } else {
             // No colour — draw an empty outlined rectangle

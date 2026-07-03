@@ -42,9 +42,9 @@ class TrackContentPanel : public juce::Component,
                           public ViewModeListener,
                           private juce::Timer {
   public:
-    static constexpr int DEFAULT_TRACK_HEIGHT = 80;
-    static constexpr int MIN_TRACK_HEIGHT = 40;
-    static constexpr int MAX_TRACK_HEIGHT = 200;
+    static constexpr int DEFAULT_TRACK_HEIGHT = 83;
+    static constexpr int MIN_TRACK_HEIGHT = 56;
+    static constexpr int MAX_TRACK_HEIGHT = 220;
 
     TrackContentPanel();
     ~TrackContentPanel() override;

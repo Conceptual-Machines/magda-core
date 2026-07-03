@@ -1166,14 +1166,13 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         const int stripHeight = 4;
         const int labelRowBottom = stripHeight + 26;
         if (selected) {
-            // Selected: black strip + black label background
+            // Selected: black label background behind the strip.
             g.setColour(juce::Colours::black);
             g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
-        } else {
-            // Thin colour bar only — label sits on the regular panel background
-            g.setColour(trackColour_);
-            g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
         }
+        // Thin colour bar always shown, including when selected.
+        g.setColour(trackColour_);
+        g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(0, labelRowBottom, ownBounds.getWidth() - 1, 1);
     }

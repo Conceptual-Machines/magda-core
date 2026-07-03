@@ -219,7 +219,7 @@ TrackInspector::TrackInspector() {
     soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_->setIconPadding(7.0f);
+    soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
     soloButton_->setInactiveIconOpacity(0.58f);
     soloButton_->setClickingTogglesState(true);
     soloButton_->onClick = [this]() {
@@ -238,7 +238,7 @@ TrackInspector::TrackInspector() {
     recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton_->setIconPadding(7.0f);
+    recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
     recordButton_->setInactiveIconOpacity(0.58f);
     recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
@@ -266,6 +266,23 @@ TrackInspector::TrackInspector() {
     };
     monitorButton_.setInactiveIconOpacity(0.58f);
     addAndMakeVisible(monitorButton_);
+
+    // Automation indicator — mirrors the arrange track-header automation button.
+    // Lights purple when the track has automation, and clicking it collapses /
+    // expands the "Automated" section below.
+    automationIndicator_ = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
+                                                       BinaryData::automation_svgSize);
+    automationIndicator_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    automationIndicator_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationIndicator_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationIndicator_->setIconPadding(2.5f);
+    automationIndicator_->onClick = [this]() {
+        automatedSectionExpanded_ = !automatedSectionExpanded_;
+        updateAutomatedParametersSummary();
+        resized();
+        repaint();
+    };
+    addChildComponent(*automationIndicator_);
 
     // Gain label (TCP style - draggable dB display)
     gainLabel_ =
@@ -538,15 +555,22 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.clear();
     const int separatorPadding = 6;
 
+    // Colour swatch / pan / automation share one width and right edge so they
+    // form a clean right-aligned column. The M/S/R/monitor icons match the
+    // arrange track-header buttons: 26 wide x 18 tall (rectangular, not square).
+    constexpr int rightColW = 24;
+    constexpr int iconW = 26;
+    constexpr int iconH = 18;
+
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
     auto nameRow = bounds.removeFromTop(24);
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
-        // Mirror the volume row's mute button (22x22 within a 36px right area)
-        // so the glyph lines up with it.
-        masterGlyph_->setBounds(nameRow.removeFromRight(36).withSizeKeepingCentre(22, 22));
+        // Right-align the glyph flush to the row edge in a 22px cell, matching
+        // the volume row's speaker mute button below it so the two line up.
+        masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
     } else {
-        colourSwatch_->setBounds(nameRow.removeFromRight(24));
+        colourSwatch_->setBounds(nameRow.removeFromRight(rightColW));
     }
     nameRow.removeFromRight(4);
     trackNameValue_.setBounds(nameRow);
@@ -557,17 +581,8 @@ void TrackInspector::resized() {
     const int selectorGap = 4;
 
     constexpr int controlRowHeight = 22;
-    constexpr int buttonSize = 22;
+    constexpr int buttonSize = 22;  // master speaker button
     constexpr int buttonGap = 4;
-    constexpr int panWidth = 42;
-    const int buttonCount =
-        (muteButton_->isVisible() || speakerButton_->isVisible() || chordSpeakerButton_->isVisible()
-             ? 1
-             : 0) +
-        (soloButton_->isVisible() ? 1 : 0) + (recordButton_->isVisible() ? 1 : 0) +
-        (monitorButton_.isVisible() ? 1 : 0);
-    const int controlWidth =
-        std::max(buttonSize, buttonCount * buttonSize + std::max(0, buttonCount - 1) * buttonGap);
 
     auto mixRow = bounds.removeFromTop(controlRowHeight);
     if (speakerButton_->isVisible()) {
@@ -575,33 +590,78 @@ void TrackInspector::resized() {
         mixRow.removeFromRight(buttonGap);
         gainLabel_->setBounds(mixRow);
         speakerButton_->setBounds(speakerArea);
+        automationIndicator_->setVisible(false);  // master has no button row here
+        bounds.removeFromTop(separatorPadding);
+        sectionSeparatorYs_.push_back(bounds.getY());
+        bounds.removeFromTop(separatorPadding);
+    } else if (chordSpeakerButton_->isVisible()) {
+        // Chord track: volume + the single 3-state chord-audition control.
+        chordSpeakerButton_->setBounds(
+            mixRow.removeFromRight(iconW).withSizeKeepingCentre(iconW, iconH));
+        mixRow.removeFromRight(buttonGap);
+        gainLabel_->setBounds(mixRow);
+        automationIndicator_->setVisible(false);
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
         bounds.removeFromTop(separatorPadding);
     } else {
-        gainLabel_->setBounds(mixRow.removeFromLeft(std::min(controlWidth, mixRow.getWidth())));
-        if (panLabel_->isVisible() && mixRow.getWidth() > buttonGap + panWidth) {
-            mixRow.removeFromLeft(buttonGap);
-            panLabel_->setBounds(mixRow.removeFromLeft(panWidth));
-        }
+        // Responsive: everything on one row when it fits (volume stretches,
+        // controls fixed to its right); when too narrow it reflows to two rows
+        // (volume + pan on top, the button group below) — nothing is hidden.
+        const auto* trk = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        const bool recMon =
+            trk && trk->type != magda::TrackType::Aux && trk->type != magda::TrackType::MultiOut;
+        const int numButtons = recMon ? 4 : 2;  // mute, solo [, record, monitor]
 
-        bounds.removeFromTop(4);
-        auto buttonRow = bounds.removeFromTop(buttonSize);
-        if (chordSpeakerButton_->isVisible()) {
-            chordSpeakerButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
+        auto placeCentred = [](juce::Component* c, juce::Rectangle<int> cell, int w, int h) {
+            c->setBounds(cell.withSizeKeepingCentre(w, h));
+            c->setVisible(true);
+        };
+
+        // Width of the fixed cluster right of the fader on a single row:
+        // buttons + pan + automation, each preceded by a gap.
+        const int clusterW = numButtons * (buttonGap + iconW) + 2 * (buttonGap + rightColW);
+        constexpr int minVolW = 56;  // keep the fader readable ("-12.3")
+        const bool oneRow = mixRow.getWidth() - clusterW >= minVolW;
+
+        if (oneRow) {
+            gainLabel_->setBounds(mixRow.removeFromLeft(mixRow.getWidth() - clusterW));
+            gainLabel_->setVisible(true);
+            auto place = [&](juce::Component* c, int w, int h) {
+                mixRow.removeFromLeft(buttonGap);
+                placeCentred(c, mixRow.removeFromLeft(w), w, h);
+            };
+            place(panLabel_.get(), rightColW, controlRowHeight);
+            place(muteButton_.get(), iconW, iconH);
+            place(soloButton_.get(), iconW, iconH);
+            if (recMon) {
+                place(recordButton_.get(), iconW, iconH);
+                place(&monitorButton_, iconW, iconH);
+            }
+            place(automationIndicator_.get(), rightColW, iconH);
         } else {
-            muteButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-            buttonRow.removeFromLeft(buttonGap);
-            if (soloButton_->isVisible()) {
-                soloButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-                buttonRow.removeFromLeft(buttonGap);
+            // Row 1: volume stretches, pan pinned right.
+            panLabel_->setBounds(mixRow.removeFromRight(rightColW));
+            panLabel_->setVisible(true);
+            mixRow.removeFromRight(buttonGap);
+            gainLabel_->setBounds(mixRow);
+            gainLabel_->setVisible(true);
+
+            // Row 2: button group left, automation pinned right.
+            bounds.removeFromTop(4);
+            auto btnRow = bounds.removeFromTop(iconH);
+            placeCentred(automationIndicator_.get(), btnRow.removeFromRight(rightColW), rightColW,
+                         iconH);
+            auto placeL = [&](juce::Component* c, int w, int h) {
+                placeCentred(c, btnRow.removeFromLeft(w), w, h);
+                btnRow.removeFromLeft(buttonGap);
+            };
+            placeL(muteButton_.get(), iconW, iconH);
+            placeL(soloButton_.get(), iconW, iconH);
+            if (recMon) {
+                placeL(recordButton_.get(), iconW, iconH);
+                placeL(&monitorButton_, iconW, iconH);
             }
-            if (recordButton_->isVisible()) {
-                recordButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-                buttonRow.removeFromLeft(buttonGap);
-            }
-            if (monitorButton_.isVisible())
-                monitorButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
         }
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
@@ -926,6 +986,8 @@ void TrackInspector::automationLanePropertyChanged(magda::AutomationLaneId laneI
 
 void TrackInspector::updateAutomatedParametersSummary() {
     if (isMultiTrackMode_ || selectedTrackId_ == magda::INVALID_TRACK_ID) {
+        if (automationIndicator_)
+            automationIndicator_->setActive(false);
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
         return;
@@ -944,7 +1006,14 @@ void TrackInspector::updateAutomatedParametersSummary() {
             names.addIfNotAlreadyThere(lane->getDisplayName());
     }
 
-    if (names.isEmpty()) {
+    // Automation button lights purple whenever the track has automation.
+    const bool hasAutomation = !names.isEmpty();
+    if (automationIndicator_)
+        automationIndicator_->setActive(hasAutomation);
+
+    // The "Automated" section is shown only when there's automation and the
+    // button hasn't collapsed it.
+    if (!hasAutomation || !automatedSectionExpanded_) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
         return;

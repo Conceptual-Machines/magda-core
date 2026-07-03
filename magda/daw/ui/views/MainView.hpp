@@ -190,6 +190,13 @@ class MainView : public juce::Component,
     static constexpr int MIN_MASTER_STRIP_HEIGHT = 84;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
 
+    // Track-height density presets (the S / M / L gutter buttons). Medium is
+    // pinned to the default track height so a freshly created track and the
+    // Medium preset land at the same size.
+    static constexpr int COMPACT_TRACK_HEIGHT = 61;
+    static constexpr int MEDIUM_TRACK_HEIGHT = TrackHeadersPanel::DEFAULT_TRACK_HEIGHT;
+    static constexpr int SPACIOUS_TRACK_HEIGHT = 126;
+
     // Cached state from controller for quick access
     // These are updated when TimelineStateListener callbacks are called
     double horizontalZoom = 1.0;  // Pixels per beat
