@@ -542,9 +542,9 @@ void TrackInspector::resized() {
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
     auto nameRow = bounds.removeFromTop(24);
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
-        // Mirror the volume row's mute button (22x22 within a 36px right area)
-        // so the glyph lines up with it.
-        masterGlyph_->setBounds(nameRow.removeFromRight(36).withSizeKeepingCentre(22, 22));
+        // Right-align the glyph flush to the row edge in a 22px cell, matching
+        // the volume row's speaker mute button below it so the two line up.
+        masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
     } else {
         colourSwatch_->setBounds(nameRow.removeFromRight(24));
     }

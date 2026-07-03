@@ -430,6 +430,26 @@ class TrackHeaderButton : public juce::TextButton {
             onHeaderMouseUp(event);
         juce::TextButton::mouseUp(event);
     }
+
+    // Track colour drawn as a thin strip along the top, matching the mixer
+    // channel strip. The session is column-oriented, so the accent sits on top
+    // rather than on a side edge.
+    void setTrackColour(juce::Colour c) {
+        if (trackColour_ != c) {
+            trackColour_ = c;
+            repaint();
+        }
+    }
+
+    void paintOverChildren(juce::Graphics& g) override {
+        // Colour strip stays visible in every state, including when selected.
+        g.setColour(trackColour_);
+        g.fillRect(0, 0, getWidth(), kColourStripHeight);
+    }
+
+  private:
+    static constexpr int kColourStripHeight = 4;
+    juce::Colour trackColour_;
 };
 
 /// Compact dB scale labels for session view mini strips.

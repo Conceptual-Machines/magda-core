@@ -1298,9 +1298,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
 
-        // Track colour bar at top (3px)
+        // Track colour bar at top (4px, matching the mixer channel strip)
         g.setColour(trackColour_);
-        g.fillRect(bounds.removeFromTop(3));
+        g.fillRect(bounds.removeFromTop(4));
     }
 
     void setShowRecordMonitor(bool show) {
@@ -1311,7 +1311,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
     void resized() override {
         auto bounds = getLocalBounds();
-        bounds.removeFromTop(3);  // colour bar
+        bounds.removeFromTop(4);  // colour bar
 
         // Button rows at bottom
         auto msRow = bounds.removeFromBottom(18);
@@ -1869,7 +1869,9 @@ void SessionView::rebuildTracks() {
                                     : juce::String(juce::CharPointer_UTF8("\xe2\x96\xbc ")))  // ▼
                          + track->name;
         }
-        header->setColour(juce::TextButton::buttonColourId, track->colour.withAlpha(0.5f));
+        header->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+        header->setTrackColour(track->colour);
 
         header->setButtonText(headerText);
         header->setColour(juce::TextButton::textColourOffId,
@@ -3064,7 +3066,7 @@ void SessionView::updateHeaderSelectionVisuals() {
 
     for (size_t i = 0; i < visibleTrackIds_.size() && i < trackHeaders.size(); ++i) {
         bool isSelected = sel.isTrackSelected(visibleTrackIds_[i]);
-        auto* header = trackHeaders[i].get();
+        auto* header = static_cast<TrackHeaderButton*>(trackHeaders[i].get());
 
         // Get track info for proper coloring
         const auto* track = TrackManager::getInstance().getTrack(visibleTrackIds_[i]);
@@ -3076,8 +3078,9 @@ void SessionView::updateHeaderSelectionVisuals() {
             header->setColour(juce::TextButton::buttonColourId, juce::Colours::black);
             header->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         } else {
-            // Unselected: track colour background
-            header->setColour(juce::TextButton::buttonColourId, track->colour.withAlpha(0.5f));
+            // Unselected: dark header, track colour carried by the top strip
+            header->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
             header->setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         }
