@@ -124,6 +124,10 @@ constexpr int TH_DD_GAP = 6;      // gap between the two routing dropdowns
 constexpr int TH_BTN_MAX = 26;    // M/S/R button width
 constexpr int TH_PAN_W = 26;      // pan + automation width (right-aligned pair)
 constexpr int TH_MONITOR_W = 26;  // monitor button width, matching M/S/R
+// Compact name strip: holds the 18px label row with a little padding. Fixed
+// (no longer tied to the 0dB meter fraction, which the old colour bar used) so
+// the controls below get the rest of the track height at every size.
+constexpr int TH_NAME_STRIP_H = 24;
 
 float gainToDb(float gain) {
     return level_meter_scale::gainToDb(gain);
@@ -163,8 +167,8 @@ class MidiActivityIndicator : public juce::Component {
         float dotY = bounds.getY() + 2.0f;  // Small padding from top
         auto dotBounds = juce::Rectangle<float>(dotX, dotY, dotSize, dotSize);
 
-        // Inactive state: visible cyan dot (dimmed)
-        g.setColour(juce::Colour(0xFF00AACC).withAlpha(0.4f));
+        // Inactive state: neutral dimmed dot
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.4f));
         g.fillEllipse(dotBounds);
 
         // Active state: bright cyan glow
@@ -249,7 +253,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     nameLabel->setEditable(true);
     nameLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    nameLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
+    nameLabel->setFont(FontManager::getInstance().getUIFontBold(12.0f));
 
     // Track mute: speaker toggle (matching the master/inspector speaker instead
     // of the "M" text button). audible = gray speaker (master_on), muted =
@@ -1930,20 +1934,38 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
     }
 
-    // Track colour name row — stretches to 0dB mark. Opaque swatch at a
-    // fixed lightness/chroma (only hue varies) so every track reads at the
-    // same visual energy, instead of a low-alpha tint over the dark panel.
-    float zeroDbFrac = 1.0f - dbToMeterPos(0.0f);
-    int nameRowHeight = juce::jmax(22, static_cast<int>(bgArea.getHeight() * zeroDbFrac));
-    if (!header.isMaster && header.trackColour != juce::Colour(0xFF444444)) {
-        auto nameRowArea = bgArea.withHeight(nameRowHeight);
-        g.setColour(deriveTrackSwatch(header.trackColour));
-        g.fillRect(nameRowArea);
+    // Track colour spine — the name row is a dark elevated band (one step
+    // above the track background) with a colour stripe running the full header
+    // height on the outer edge. The stripe carries the track identity while the
+    // band stays dark, so the name reads as high-contrast white.
+    const int nameBandHeight = TH_NAME_STRIP_H;
+    if (!header.isMaster) {
+        // Dark elevated header band behind the name.
+        auto nameBandArea = bgArea.withHeight(nameBandHeight);
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        g.fillRect(nameBandArea);
+
+        // Colour spine on the outer (left, or right when swapped) edge,
+        // spanning the name band, vertically inset with rounded caps so it
+        // reads as an accent stripe rather than a hard border.
+        if (header.trackColour != juce::Colour(0xFF444444)) {
+            const auto swatch = deriveTrackSwatch(header.trackColour);
+            const int spineW = 5;
+            const int spineInset = 2;  // breathing room top/bottom
+            const int spineX =
+                headersOnRight_ ? nameBandArea.getRight() - spineW : nameBandArea.getX();
+            juce::Rectangle<float> spine(
+                static_cast<float>(spineX), static_cast<float>(nameBandArea.getY() + spineInset),
+                static_cast<float>(spineW),
+                static_cast<float>(nameBandArea.getHeight() - spineInset * 2));
+            g.setColour(swatch);
+            g.fillRoundedRectangle(spine, spineW * 0.5f);
+        }
     }
 
-    // Separator line at 0dB boundary
+    // Separator line at the bottom of the name strip
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-    g.drawHorizontalLine(bgArea.getY() + nameRowHeight, static_cast<float>(bgArea.getX()),
+    g.drawHorizontalLine(bgArea.getY() + nameBandHeight, static_cast<float>(bgArea.getX()),
                          static_cast<float>(bgArea.getRight()));
 
     // Frozen overlay — dim the track header
@@ -2100,13 +2122,25 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
 
     header.masterPeakLabel->setVisible(false);
 
-    // Compact top-packed layout: volume/pan row, then the button row.
+    // Compact top-packed layout: volume/pan row, then the button row. The
+    // button row is only laid out when the control area is tall enough to hold
+    // it below the volume row; on the compact (Small) preset it's dropped so
+    // only the volume fader row shows.
     const int rowPadding = gapOverride >= 0 ? gapOverride : 5;  // 5px between rows
     auto volPanRow = area.removeFromTop(rh);
     layoutVolPanRow(header, inner.removeFrom(volPanRow, areaWidth));
-    area.removeFromTop(rowPadding);
-    auto btnRow = area.removeFromTop(rh);
-    layoutButtonRow(header, inner.removeFrom(btnRow, areaWidth));
+    if (area.getHeight() >= rowPadding + rh) {
+        area.removeFromTop(rowPadding);
+        auto btnRow = area.removeFromTop(rh);
+        layoutButtonRow(header, inner.removeFrom(btnRow, areaWidth));
+    } else {
+        // Not enough room for a full button row — hide it rather than squeeze.
+        header.muteButton->setVisible(false);
+        header.soloButton->setVisible(false);
+        header.recordButton->setVisible(false);
+        header.monitorButton->setVisible(false);
+        header.automationButton->setVisible(false);
+    }
 }
 
 // Volume (fills left) + pan (right-aligned) within the given inner row rect.
@@ -2337,9 +2371,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
         if (!headerArea.isEmpty()) {
             const int trackHeight = headerArea.getHeight();
 
-            // Split at 0dB: top = name/header area, bottom = controls
-            float zeroDbFrac = 1.0f - dbToMeterPos(0.0f);
-            int nameRowHeight = juce::jmax(22, static_cast<int>(trackHeight * zeroDbFrac));
+            // Compact name strip on top, controls fill the rest.
+            const int nameRowHeight = TH_NAME_STRIP_H;
             header.nameRowBottomY = headerArea.getY() + nameRowHeight;
 
             auto workArea = headerArea.reduced(4);
@@ -2381,6 +2414,10 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 } else {
                     header.collapseButton->setVisible(false);
                 }
+                // Indent the text clear of the colour spine on the outer edge
+                // (drawn in paintTrackHeader) with a little left padding.
+                if (!header.isGroup)
+                    nameRow.removeFromLeft(12);
                 auto nameArea = nameRow.withTrimmedRight(nameRow.getWidth() / 4);
                 header.nameLabel->setBounds(nameArea);
                 header.nameLabel->setVisible(true);

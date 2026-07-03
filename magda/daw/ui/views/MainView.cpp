@@ -437,17 +437,17 @@ void MainView::setupComponents() {
     // density_large.svg (2 rows = spacious)
     setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::density_small_svg,
                       BinaryData::density_small_svgSize);
-    trackSmallButton->onClick = [this]() { setAllTrackHeights(47); };
+    trackSmallButton->onClick = [this]() { setAllTrackHeights(COMPACT_TRACK_HEIGHT); };
     trackSmallButton->setTooltip("Compact track height");
 
     setupCornerButton(trackMediumButton, "TrackMedium", BinaryData::density_medium_svg,
                       BinaryData::density_medium_svgSize);
-    trackMediumButton->onClick = [this]() { setAllTrackHeights(78); };
+    trackMediumButton->onClick = [this]() { setAllTrackHeights(MEDIUM_TRACK_HEIGHT); };
     trackMediumButton->setTooltip("Medium track height");
 
     setupCornerButton(trackLargeButton, "TrackLarge", BinaryData::density_large_svg,
                       BinaryData::density_large_svgSize);
-    trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
+    trackLargeButton->onClick = [this]() { setAllTrackHeights(SPACIOUS_TRACK_HEIGHT); };
     trackLargeButton->setTooltip("Large track height");
 
     setupCornerButton(ioToggleButton, "IOToggle", BinaryData::inputoutput_svg,
