@@ -234,6 +234,14 @@ struct SetTimeSelectionBeatsEvent {
           automationOnly(automationOnlyIn),
           automationLaneIds(std::move(automationLaneIdsIn)) {}
 
+    // A full-height selection spanning every track (empty trackIndices). This is
+    // the range source for the ripple/insert/duplicate/delete time-range ops:
+    // it time-selects all clips in [startBeats, endBeats). Used by the ruler
+    // strip drag beneath the loop marker area (see TimelineComponent).
+    static SetTimeSelectionBeatsEvent allTracks(double startBeats, double endBeats) {
+        return SetTimeSelectionBeatsEvent{startBeats, endBeats, /*trackIndices*/ {}};
+    }
+
     double startBeats;
     double endBeats;
     std::set<int> trackIndices;  // Empty = all tracks

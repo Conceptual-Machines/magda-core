@@ -389,7 +389,9 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     // the zoom/playhead-click area.
     bool inSectionsArea = event.y >= chordHeight && event.y <= arrangementBottom;
     bool inTimeRulerArea = event.y > arrangementBottom && event.y < rows.playheadTop;
-    bool inTimeSelectionZone = event.y >= rows.playheadTop && event.y <= timeRulerEnd;
+    // The strip beneath the loop marker area: dragging here selects a time range
+    // across ALL tracks (all clips) via onRulerTimeSelectionChanged.
+    bool inAllTracksSelectionStrip = event.y >= rows.playheadTop && event.y <= timeRulerEnd;
 
     // Check for loop marker dragging — only within the loop row.
     if (event.y >= rows.loopTop && event.y < rows.loopBottom) {
@@ -397,8 +399,8 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
             return;
     }
 
-    // Zone 1a: Lower ruler area (near tick labels) - start time selection
-    if (inTimeSelectionZone) {
+    // Zone 1a: the all-tracks selection strip - start a full-height time selection
+    if (inAllTracksSelectionStrip) {
         isDraggingTimeSelection = true;
         double startBeats = pixelToBeats(event.x);
         startBeats = juce::jlimit(0.0, getTimelineLengthBeats(), startBeats);
@@ -508,8 +510,8 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             timeSelectionEndBeats = currentBeats;
         }
 
-        if (onTimeSelectionBeatsChanged) {
-            onTimeSelectionBeatsChanged(timeSelectionStartBeats, timeSelectionEndBeats);
+        if (onRulerTimeSelectionChanged) {
+            onRulerTimeSelectionChanged(timeSelectionStartBeats, timeSelectionEndBeats);
         }
         repaint();
         return;
@@ -676,8 +678,8 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
             // Clear the selection
             timeSelectionStartBeats = -1.0;
             timeSelectionEndBeats = -1.0;
-            if (onTimeSelectionBeatsChanged) {
-                onTimeSelectionBeatsChanged(-1.0, -1.0);
+            if (onRulerTimeSelectionChanged) {
+                onRulerTimeSelectionChanged(-1.0, -1.0);
             }
             // Move playhead to click position
             double clickBeats = pixelToBeats(event.x);
