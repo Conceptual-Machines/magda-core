@@ -219,7 +219,7 @@ TrackInspector::TrackInspector() {
     soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_->setIconPadding(7.0f);
+    soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
     soloButton_->setInactiveIconOpacity(0.58f);
     soloButton_->setClickingTogglesState(true);
     soloButton_->onClick = [this]() {
@@ -238,7 +238,7 @@ TrackInspector::TrackInspector() {
     recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton_->setIconPadding(7.0f);
+    recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
     recordButton_->setInactiveIconOpacity(0.58f);
     recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
@@ -594,38 +594,74 @@ void TrackInspector::resized() {
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
         bounds.removeFromTop(separatorPadding);
+    } else if (chordSpeakerButton_->isVisible()) {
+        // Chord track: volume + the single 3-state chord-audition control.
+        chordSpeakerButton_->setBounds(
+            mixRow.removeFromRight(iconW).withSizeKeepingCentre(iconW, iconH));
+        mixRow.removeFromRight(buttonGap);
+        gainLabel_->setBounds(mixRow);
+        automationIndicator_->setVisible(false);
+        bounds.removeFromTop(separatorPadding);
+        sectionSeparatorYs_.push_back(bounds.getY());
+        bounds.removeFromTop(separatorPadding);
     } else {
-        // Pan flush right, aligned under the colour swatch (same width).
-        if (panLabel_->isVisible())
-            panLabel_->setBounds(mixRow.removeFromRight(rightColW));
-        // Volume: fixed width equal to the M/S/R/monitor group below it (four
-        // icons + three gaps) so the fader lines up with the button row.
-        const int volW = 4 * iconW + 3 * buttonGap;
-        gainLabel_->setBounds(mixRow.removeFromLeft(std::min(volW, mixRow.getWidth())));
+        // Responsive: everything on one row when it fits (volume stretches,
+        // controls fixed to its right); when too narrow it reflows to two rows
+        // (volume + pan on top, the button group below) — nothing is hidden.
+        const auto* trk = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        const bool recMon =
+            trk && trk->type != magda::TrackType::Aux && trk->type != magda::TrackType::MultiOut;
+        const int numButtons = recMon ? 4 : 2;  // mute, solo [, record, monitor]
 
-        bounds.removeFromTop(4);
-        auto buttonRow = bounds.removeFromTop(iconH);
+        auto placeCentred = [](juce::Component* c, juce::Rectangle<int> cell, int w, int h) {
+            c->setBounds(cell.withSizeKeepingCentre(w, h));
+            c->setVisible(true);
+        };
 
-        // Automation indicator flush right, aligned under pan (same width).
-        automationIndicator_->setBounds(buttonRow.removeFromRight(rightColW));
-        automationIndicator_->setVisible(true);
+        // Width of the fixed cluster right of the fader on a single row:
+        // buttons + pan + automation, each preceded by a gap.
+        const int clusterW = numButtons * (buttonGap + iconW) + 2 * (buttonGap + rightColW);
+        constexpr int minVolW = 56;  // keep the fader readable ("-12.3")
+        const bool oneRow = mixRow.getWidth() - clusterW >= minVolW;
 
-        // M/S/R/monitor icons — left group, arrange track-header button size.
-        if (chordSpeakerButton_->isVisible()) {
-            chordSpeakerButton_->setBounds(buttonRow.removeFromLeft(iconW));
+        if (oneRow) {
+            gainLabel_->setBounds(mixRow.removeFromLeft(mixRow.getWidth() - clusterW));
+            gainLabel_->setVisible(true);
+            auto place = [&](juce::Component* c, int w, int h) {
+                mixRow.removeFromLeft(buttonGap);
+                placeCentred(c, mixRow.removeFromLeft(w), w, h);
+            };
+            place(panLabel_.get(), rightColW, controlRowHeight);
+            place(muteButton_.get(), iconW, iconH);
+            place(soloButton_.get(), iconW, iconH);
+            if (recMon) {
+                place(recordButton_.get(), iconW, iconH);
+                place(&monitorButton_, iconW, iconH);
+            }
+            place(automationIndicator_.get(), rightColW, iconH);
         } else {
-            muteButton_->setBounds(buttonRow.removeFromLeft(iconW));
-            buttonRow.removeFromLeft(buttonGap);
-            if (soloButton_->isVisible()) {
-                soloButton_->setBounds(buttonRow.removeFromLeft(iconW));
-                buttonRow.removeFromLeft(buttonGap);
+            // Row 1: volume stretches, pan pinned right.
+            panLabel_->setBounds(mixRow.removeFromRight(rightColW));
+            panLabel_->setVisible(true);
+            mixRow.removeFromRight(buttonGap);
+            gainLabel_->setBounds(mixRow);
+            gainLabel_->setVisible(true);
+
+            // Row 2: button group left, automation pinned right.
+            bounds.removeFromTop(4);
+            auto btnRow = bounds.removeFromTop(iconH);
+            placeCentred(automationIndicator_.get(), btnRow.removeFromRight(rightColW), rightColW,
+                         iconH);
+            auto placeL = [&](juce::Component* c, int w, int h) {
+                placeCentred(c, btnRow.removeFromLeft(w), w, h);
+                btnRow.removeFromLeft(buttonGap);
+            };
+            placeL(muteButton_.get(), iconW, iconH);
+            placeL(soloButton_.get(), iconW, iconH);
+            if (recMon) {
+                placeL(recordButton_.get(), iconW, iconH);
+                placeL(&monitorButton_, iconW, iconH);
             }
-            if (recordButton_->isVisible()) {
-                recordButton_->setBounds(buttonRow.removeFromLeft(iconW));
-                buttonRow.removeFromLeft(buttonGap);
-            }
-            if (monitorButton_.isVisible())
-                monitorButton_.setBounds(buttonRow.removeFromLeft(iconW));
         }
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
