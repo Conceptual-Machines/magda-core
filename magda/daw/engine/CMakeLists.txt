@@ -5,6 +5,7 @@
 target_sources(magda_daw PRIVATE
     TempoLaneBridge.cpp
     TempoLaneSync.cpp
+    TempoSequenceRippleCommand.cpp
     OfflineRenderHelper.cpp
     TracktionEngineWrapper.cpp
     TracktionEngineWrapperInit.cpp
