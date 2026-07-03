@@ -479,13 +479,13 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
             }
         }
 
-        // Upper half: zoom (crosshair), Lower half: time selection (I-beam)
-        int rulerMidpoint = layout.getRulerZoneSplitY();
-
-        if (event.y < rulerMidpoint) {
-            setMouseCursor(CursorManager::getInstance().getZoomCursor());
-        } else {
+        // The bottom playhead row is the time-selection zone; everything above it
+        // zooms. Use the SAME boundary as mouseDown (rows.playheadTop) so the
+        // I-beam never appears over an area where a drag actually zooms.
+        if (event.y >= rows.playheadTop) {
             setMouseCursor(juce::MouseCursor::IBeamCursor);
+        } else {
+            setMouseCursor(CursorManager::getInstance().getZoomCursor());
         }
     }
 }

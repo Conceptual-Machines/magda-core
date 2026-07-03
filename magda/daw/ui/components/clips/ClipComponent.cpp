@@ -3330,6 +3330,20 @@ void ClipComponent::showContextMenu() {
         menu.addItem(31, "Duplicate Time Range", hasTimeSelection);
         menu.addItem(32, "Duplicate Loop Range", hasLoop);
         menu.addItem(33, "Split All Tracks at Cursor", hasCursor);
+
+        // Range Editing submenu mirrors the Edit menu's Copy/Cut/Delete/Paste-Ripple set.
+        const bool hasClipboard = ClipManager::getInstance().hasClipsInClipboard();
+        juce::PopupMenu rangeMenu;
+        rangeMenu.addItem(34, "Copy Time Range", hasTimeSelection);
+        rangeMenu.addItem(35, "Cut Time Range", hasTimeSelection);
+        rangeMenu.addItem(36, "Delete Time Range", hasTimeSelection);
+        rangeMenu.addSeparator();
+        rangeMenu.addItem(37, "Copy Loop Range", hasLoop);
+        rangeMenu.addItem(38, "Cut Loop Range", hasLoop);
+        rangeMenu.addItem(39, "Delete Loop Range", hasLoop);
+        rangeMenu.addSeparator();
+        rangeMenu.addItem(40, "Paste (Ripple)", hasClipboard);
+        menu.addSubMenu("Range Editing", rangeMenu);
     }
 
     // Bounce operations (not for chord progressions)
@@ -3700,6 +3714,55 @@ void ClipComponent::showContextMenu() {
             case 33: {  // Split All Tracks at Cursor
                 if (onSplitAllTracksAtCursorRequested) {
                     onSplitAllTracksAtCursorRequested();
+                }
+                break;
+            }
+
+            case 34: {  // Copy Time Range
+                if (onCopyTimeRangeRequested) {
+                    onCopyTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 35: {  // Cut Time Range
+                if (onCutTimeRangeRequested) {
+                    onCutTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 36: {  // Delete Time Range
+                if (onDeleteTimeRangeRequested) {
+                    onDeleteTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 37: {  // Copy Loop Range
+                if (onCopyLoopRangeRequested) {
+                    onCopyLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 38: {  // Cut Loop Range
+                if (onCutLoopRangeRequested) {
+                    onCutLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 39: {  // Delete Loop Range
+                if (onDeleteLoopRangeRequested) {
+                    onDeleteLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 40: {  // Paste (Ripple)
+                if (onPasteRippleRequested) {
+                    onPasteRippleRequested();
                 }
                 break;
             }

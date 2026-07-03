@@ -97,6 +97,13 @@ class ClipComponent : public juce::Component,
     std::function<void()> onDuplicateTimeRangeRequested;      // ripple-duplicate time range
     std::function<void()> onDuplicateLoopRangeRequested;      // ripple-duplicate the loop region
     std::function<void()> onSplitAllTracksAtCursorRequested;  // split all clips at edit cursor
+    std::function<void()> onCopyTimeRangeRequested;           // copy the time selection's content
+    std::function<void()> onCutTimeRangeRequested;     // copy time selection, then ripple-delete
+    std::function<void()> onDeleteTimeRangeRequested;  // ripple-delete the time selection
+    std::function<void()> onCopyLoopRangeRequested;    // copy the loop region (all tracks)
+    std::function<void()> onCutLoopRangeRequested;     // copy loop region, then ripple-delete
+    std::function<void()> onDeleteLoopRangeRequested;  // ripple-delete the loop region
+    std::function<void()> onPasteRippleRequested;      // ripple-insert clipboard span, then paste
     std::function<void(ClipId)> onBounceInPlaceRequested;  // bounce MIDI clip in place (synth only)
     std::function<void(ClipId)>
         onBounceToNewTrackRequested;               // bounce clip to new track (full chain)

@@ -2010,6 +2010,20 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     menu.addItem(8, "Insert Time", !isFrozen && hasTimeSelection);
     menu.addItem(9, "Duplicate Time Range", !isFrozen && hasTimeSelection);
     menu.addItem(10, "Duplicate Loop Range", !isFrozen && hasLoop);
+
+    // Range Editing submenu mirrors the Edit menu's Copy/Cut/Delete/Paste-Ripple set.
+    juce::PopupMenu rangeMenu;
+    rangeMenu.addItem(12, "Copy Time Range", hasTimeSelection);
+    rangeMenu.addItem(13, "Cut Time Range", !isFrozen && hasTimeSelection);
+    rangeMenu.addItem(14, "Delete Time Range", !isFrozen && hasTimeSelection);
+    rangeMenu.addSeparator();
+    rangeMenu.addItem(15, "Copy Loop Range", hasLoop);
+    rangeMenu.addItem(16, "Cut Loop Range", !isFrozen && hasLoop);
+    rangeMenu.addItem(17, "Delete Loop Range", !isFrozen && hasLoop);
+    rangeMenu.addSeparator();
+    rangeMenu.addItem(18, "Paste (Ripple)", !isFrozen && hasClipboard);
+    menu.addSubMenu("Range Editing", rangeMenu);
+
     menu.addSeparator();
     menu.addItem(11, "Split All Tracks at Cursor", !isFrozen && hasCursor);
     menu.addItem(3, "Select All");
@@ -2113,6 +2127,34 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             case 11:  // Split All Tracks at Cursor
                 if (safeThis && safeThis->onSplitAllTracksAtCursorRequested)
                     safeThis->onSplitAllTracksAtCursorRequested();
+                break;
+            case 12:  // Copy Time Range
+                if (safeThis && safeThis->onCopyTimeRangeRequested)
+                    safeThis->onCopyTimeRangeRequested();
+                break;
+            case 13:  // Cut Time Range
+                if (safeThis && safeThis->onCutTimeRangeRequested)
+                    safeThis->onCutTimeRangeRequested();
+                break;
+            case 14:  // Delete Time Range
+                if (safeThis && safeThis->onDeleteTimeRangeRequested)
+                    safeThis->onDeleteTimeRangeRequested();
+                break;
+            case 15:  // Copy Loop Range
+                if (safeThis && safeThis->onCopyLoopRangeRequested)
+                    safeThis->onCopyLoopRangeRequested();
+                break;
+            case 16:  // Cut Loop Range
+                if (safeThis && safeThis->onCutLoopRangeRequested)
+                    safeThis->onCutLoopRangeRequested();
+                break;
+            case 17:  // Delete Loop Range
+                if (safeThis && safeThis->onDeleteLoopRangeRequested)
+                    safeThis->onDeleteLoopRangeRequested();
+                break;
+            case 18:  // Paste (Ripple)
+                if (safeThis && safeThis->onPasteRippleRequested)
+                    safeThis->onPasteRippleRequested();
                 break;
         }
     });
@@ -2492,6 +2534,34 @@ void TrackContentPanel::rebuildClipComponents() {
         clipComp->onSplitAllTracksAtCursorRequested = [this]() {
             if (onSplitAllTracksAtCursorRequested)
                 onSplitAllTracksAtCursorRequested();
+        };
+        clipComp->onCopyTimeRangeRequested = [this]() {
+            if (onCopyTimeRangeRequested)
+                onCopyTimeRangeRequested();
+        };
+        clipComp->onCutTimeRangeRequested = [this]() {
+            if (onCutTimeRangeRequested)
+                onCutTimeRangeRequested();
+        };
+        clipComp->onDeleteTimeRangeRequested = [this]() {
+            if (onDeleteTimeRangeRequested)
+                onDeleteTimeRangeRequested();
+        };
+        clipComp->onCopyLoopRangeRequested = [this]() {
+            if (onCopyLoopRangeRequested)
+                onCopyLoopRangeRequested();
+        };
+        clipComp->onCutLoopRangeRequested = [this]() {
+            if (onCutLoopRangeRequested)
+                onCutLoopRangeRequested();
+        };
+        clipComp->onDeleteLoopRangeRequested = [this]() {
+            if (onDeleteLoopRangeRequested)
+                onDeleteLoopRangeRequested();
+        };
+        clipComp->onPasteRippleRequested = [this]() {
+            if (onPasteRippleRequested)
+                onPasteRippleRequested();
         };
         clipComp->onBounceInPlaceRequested = [this](ClipId id) {
             if (onBounceInPlaceRequested)
