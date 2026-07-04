@@ -224,6 +224,14 @@ struct TrackInfo {
         return parentId == INVALID_TRACK_ID;
     }
 
+    // True for tracks that take external audio/MIDI input and can be recorded /
+    // monitored. Aux send buses and Group summing tracks only pass signal from
+    // elsewhere, so they never take external input. Single source of truth for
+    // the input/record/monitor guards across TrackManager and MidiInputRouter.
+    bool takesExternalInput() const {
+        return type != TrackType::Aux && type != TrackType::Group;
+    }
+
     // MIDI input helpers
     //
     // Single source of truth for "does this track listen to live MIDI input".

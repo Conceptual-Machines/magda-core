@@ -329,16 +329,11 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
 
-    // Aux buses and Group summing tracks take no external input, so they never
-    // receive MIDI; every other track listens to all inputs.
-    if (type == TrackType::Aux) {
+    // Aux buses need a bus index. Aux and Group take no external input, so they
+    // never receive MIDI; every other track listens to all inputs.
+    if (type == TrackType::Aux)
         track.auxBusIndex = nextAuxBusIndex_++;
-        track.midiInputDevice = "";  // Aux tracks don't receive MIDI
-    } else if (type == TrackType::Group) {
-        track.midiInputDevice = "";  // Group summing tracks don't receive MIDI
-    } else {
-        track.midiInputDevice = "all";  // MIDI listens to all inputs
-    }
+    track.midiInputDevice = track.takesExternalInput() ? "all" : "";
 
     TrackId trackId = track.id;
     tracks_.push_back(track);
@@ -347,18 +342,10 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     DBG("Created track: " << track.name << " (id=" << trackId << ", type=" << getTrackTypeName(type)
                           << ")");
 
-    // Initialize MIDI routing for this track if audioEngine is available.
-    // Aux buses and Group summing tracks never receive MIDI; other tracks rely
-    // on selection-based routing.
-    if (audioEngine_ && type != TrackType::Aux && type != TrackType::Group) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            midiBridge->setTrackMidiInput(trackId, "all");
-            midiBridge->startMonitoring(trackId);
-        }
-        // Don't auto-route MIDI at the TE level for every new track.
-        // AudioBridge::updateMidiInputRouting() will handle this
-        // based on whether the track is selected or record-armed.
-    }
+    // Register for MIDI input monitoring (no-op for input-less tracks). TE-level
+    // routing is left to AudioBridge::updateMidiInputRouting() based on
+    // selection / record-arm.
+    startMidiMonitoring(track, "all");
 
     // The chord track ships with a Chord Engine (the authoring/suggestion UI
     // the chord panel binds to) followed by a default instrument, so chord
@@ -769,6 +756,18 @@ void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId de
     }
 }
 
+void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::String& deviceId) {
+    // Input-less tracks (Aux, Group) never receive MIDI. TE-level routing is
+    // owned by AudioBridge::updateMidiInputRouting(); this only wires the
+    // MidiBridge activity monitor.
+    if (!audioEngine_ || !track.takesExternalInput())
+        return;
+    if (auto* midiBridge = audioEngine_->getMidiBridge()) {
+        midiBridge->setTrackMidiInput(track.id, deviceId);
+        midiBridge->startMonitoring(track.id);
+    }
+}
+
 void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
     // Check if a track with this ID already exists
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
@@ -781,11 +780,12 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
 
     tracks_.push_back(trackInfo);
 
-    // Group summing tracks take no external input. Projects saved before this
-    // invariant existed can carry MIDI/audio input, monitoring, or record-arm on
-    // a group (createTrack used to seed every non-Aux track with "all"), so
-    // sanitize on restore rather than let stale on-disk state reintroduce it.
-    if (tracks_.back().type == TrackType::Group) {
+    // Input-less tracks (Aux, Group) take no external input. Projects saved
+    // before this invariant existed can carry MIDI/audio input, monitoring, or
+    // record-arm on them (createTrack used to seed every non-Aux track with
+    // "all"), so sanitize on restore rather than let stale on-disk state
+    // reintroduce it.
+    if (!tracks_.back().takesExternalInput()) {
         auto& restored = tracks_.back();
         restored.recordArmed = false;
         restored.inputMonitor = InputMonitorMode::Off;
@@ -808,14 +808,8 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
         }
     }
 
-    // Set up MidiBridge monitoring for restored track (same as createTrack).
-    // Aux buses and Group summing tracks never receive MIDI.
-    if (audioEngine_ && trackInfo.type != TrackType::Aux && trackInfo.type != TrackType::Group) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            midiBridge->setTrackMidiInput(trackInfo.id, "all");
-            midiBridge->startMonitoring(trackInfo.id);
-        }
-    }
+    // Register for MIDI input monitoring (no-op for input-less tracks).
+    startMidiMonitoring(trackInfo, "all");
 
     notifyTracksChanged();
     DBG("Restored track: " << trackInfo.name << " (id=" << trackInfo.id << ")");
@@ -956,13 +950,8 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
         }
     }
 
-    // Set up MIDI monitoring (same as createTrack)
-    if (audioEngine_ && newTrack.type != TrackType::Aux) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            midiBridge->setTrackMidiInput(newId, newTrack.midiInputDevice);
-            midiBridge->startMonitoring(newId);
-        }
-    }
+    // Register for MIDI input monitoring (no-op for input-less tracks).
+    startMidiMonitoring(newTrack, newTrack.midiInputDevice);
 
     notifyTracksChanged();
     DBG("Duplicated track: " << newTrack.name << " (id=" << newId << ")");
@@ -1324,9 +1313,9 @@ void TrackManager::setTrackSoloed(TrackId trackId, bool soloed) {
 
 void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
     if (auto* track = getTrack(trackId)) {
-        // Group summing tracks have no clip lane to record into, so they can't
-        // be record-armed.
-        if (track->type == TrackType::Group)
+        // Input-less tracks (Aux, Group) have no clip lane to record into, so
+        // they can't be record-armed.
+        if (!track->takesExternalInput())
             return;
         track->recordArmed = armed;
         notifyTrackPropertyChanged(trackId);
@@ -1335,9 +1324,9 @@ void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
 
 void TrackManager::setTrackInputMonitor(TrackId trackId, InputMonitorMode mode) {
     if (auto* track = getTrack(trackId)) {
-        // Group summing tracks take no external input, so input monitoring does
-        // not apply to them.
-        if (track->type == TrackType::Group)
+        // Input-less tracks (Aux, Group) take no external input, so input
+        // monitoring does not apply to them.
+        if (!track->takesExternalInput())
             return;
         track->inputMonitor = mode;
         notifyTrackPropertyChanged(trackId);
@@ -1414,15 +1403,8 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
     // AudioBridge::updateMidiInputRouting() based on selection/arm state.
     if (audioEngine_) {
         for (const auto& track : tracks_) {
-            if (!track.midiInputDevice.isEmpty() && track.type != TrackType::Aux &&
-                track.type != TrackType::Group) {
-                if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-                    midiBridge->setTrackMidiInput(track.id, track.midiInputDevice);
-                    midiBridge->startMonitoring(track.id);
-                }
-                DBG("Synced MIDI monitoring for track " << track.id << ": "
-                                                        << track.midiInputDevice);
-            }
+            if (!track.midiInputDevice.isEmpty())
+                startMidiMonitoring(track, track.midiInputDevice);
         }
     }
 }
@@ -1457,9 +1439,9 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
         return;
     }
 
-    // Aux buses and Group summing tracks never receive external MIDI
-    if (track->type == TrackType::Aux || track->type == TrackType::Group) {
-        DBG("Cannot set MIDI input on aux/group track " << trackId);
+    // Input-less tracks (Aux, Group) never receive external MIDI
+    if (!track->takesExternalInput()) {
+        DBG("Cannot set MIDI input on input-less track " << trackId);
         return;
     }
 
@@ -1535,9 +1517,9 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
         return;
     }
 
-    // Group summing tracks take no external input.
-    if (track->type == TrackType::Group) {
-        DBG("Cannot set audio input on group track " << trackId);
+    // Input-less tracks (Aux, Group) take no external input.
+    if (!track->takesExternalInput()) {
+        DBG("Cannot set audio input on input-less track " << trackId);
         return;
     }
 
