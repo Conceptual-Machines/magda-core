@@ -23,6 +23,7 @@ struct ArrangementClipSyncPlan {
 ArrangementClipSyncPlan buildArrangementClipSyncPlan(tracktion::Edit& edit,
                                                      TrackController& trackController,
                                                      const std::vector<ClipInfo>& arrangementClips,
+                                                     const std::vector<ClipInfo>& sessionClips,
                                                      const ClipEngineIdMap& clipIds);
 
 }  // namespace magda

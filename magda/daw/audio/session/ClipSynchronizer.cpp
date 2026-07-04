@@ -232,9 +232,10 @@ void ClipSynchronizer::clipsChanged() {
 
     // Only sync arrangement clips - session clips are managed by SessionClipScheduler
     const auto& arrangementClips = clipManager.getArrangementClips();
+    const auto& sessionClips = clipManager.getSessionClips();
 
-    auto arrangementPlan =
-        buildArrangementClipSyncPlan(edit_, trackController_, arrangementClips, clipIds_);
+    auto arrangementPlan = buildArrangementClipSyncPlan(edit_, trackController_, arrangementClips,
+                                                        sessionClips, clipIds_);
 
     // Remove deleted clips from engine
     for (ClipId clipId : arrangementPlan.clipsToRemove) {
@@ -248,8 +249,7 @@ void ClipSynchronizer::clipsChanged() {
     }
 
     // Sync session clips to ClipSlots
-    const auto& sessionClips = clipManager.getSessionClips();
-    bool sessionClipsSynced = removeVacatedSessionSlots(sessionClips);
+    bool sessionClipsSynced = false;
     for (const auto& clip : sessionClips) {
         if (syncSessionClipToSlot(clip.id)) {
             sessionClipsSynced = true;
@@ -512,6 +512,14 @@ void ClipSynchronizer::removeTeClipByEngineId(const std::string& engineId) {
                 return;
             }
         }
+
+        for (auto* slot : track->getClipSlotList().getClipSlots()) {
+            auto* slotClip = slot ? slot->getClip() : nullptr;
+            if (slotClip && slotClip->itemID.toString().toStdString() == engineId) {
+                slotClip->removeFromParent();
+                return;
+            }
+        }
     }
 }
 
@@ -523,24 +531,9 @@ void ClipSynchronizer::removeClipFromEngine(ClipId clipId) {
         return;
     }
 
-    // Find the clip in Tracktion Engine and remove it
-    // We need to find which track contains this clip
-    for (auto* track : tracktion::getAudioTracks(edit_)) {
-        for (auto* clip : track->getClips()) {
-            if (clip->itemID.toString().toStdString() == *engineId) {
-                // Found the clip - remove it
-                clip->removeFromParent();
-
-                // Remove from mappings
-                clipIds_.erase(clipId);
-
-                DBG("removeClipFromEngine: Removed clip " << clipId);
-                return;
-            }
-        }
-    }
-
-    DBG("removeClipFromEngine: Clip not found in Tracktion Engine: " << *engineId);
+    removeTeClipByEngineId(*engineId);
+    clipIds_.erase(clipId);
+    DBG("removeClipFromEngine: Removed clip " << clipId);
 }
 
 te::Clip* ClipSynchronizer::getArrangementTeClip(ClipId clipId) const {
@@ -564,37 +557,6 @@ std::optional<std::string> ClipSynchronizer::getArrangementEngineId(ClipId clipI
 // =============================================================================
 // Session Clip Operations
 // =============================================================================
-
-bool ClipSynchronizer::removeVacatedSessionSlots(const std::vector<ClipInfo>& sessionClips) {
-    std::set<std::pair<TrackId, int>> currentSlots;
-    for (const auto& clip : sessionClips) {
-        if (clip.sceneIndex >= 0)
-            currentSlots.insert({clip.trackId, clip.sceneIndex});
-    }
-
-    bool removedAny = false;
-    for (const auto& slotKey : lastKnownSessionSlots_) {
-        if (currentSlots.count(slotKey) > 0)
-            continue;
-
-        auto* audioTrack = trackController_.getAudioTrack(slotKey.first);
-        if (!audioTrack)
-            continue;
-
-        auto slots = audioTrack->getClipSlotList().getClipSlots();
-        if (slotKey.second >= static_cast<int>(slots.size()))
-            continue;
-
-        auto* slot = slots[slotKey.second];
-        if (auto* teClip = slot ? slot->getClip() : nullptr) {
-            teClip->removeFromParent();
-            removedAny = true;
-        }
-    }
-
-    lastKnownSessionSlots_ = std::move(currentSlots);
-    return removedAny;
-}
 
 bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
     namespace te = tracktion;
@@ -631,6 +593,22 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
     if (!slot)
         return false;
 
+    bool needsGraphReallocation = false;
+    if (auto engineId = clipIds_.getEngineId(clipId)) {
+        auto* mappedClip = getSessionTeClip(clipId);
+        if (mappedClip) {
+            if (mappedClip != slot->getClip()) {
+                removeTeClipByEngineId(*engineId);
+                clipIds_.erase(clipId);
+                needsGraphReallocation = true;
+            }
+        } else {
+            removeTeClipByEngineId(*engineId);
+            clipIds_.erase(clipId);
+            needsGraphReallocation = true;
+        }
+    }
+
     // If the source file changed under an existing audio slot clip (e.g. Save As
     // migrated temp project media), recreate it so TE follows ClipManager.
     if (auto* existingSlotClip = slot->getClip()) {
@@ -640,23 +618,25 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
                 if (auto* existingAudioClip = dynamic_cast<te::WaveAudioClip*>(existingSlotClip)) {
                     if (existingAudioClip->getOriginalFile() != desiredAudioFile) {
                         existingAudioClip->removeFromParent();
+                        clipIds_.erase(clipId);
+                        needsGraphReallocation = true;
                     } else {
-                        return false;
+                        return needsGraphReallocation;
                     }
                 } else {
-                    return false;
+                    return needsGraphReallocation;
                 }
             } else {
-                return false;
+                return needsGraphReallocation;
             }
         } else {
-            return false;
+            return needsGraphReallocation;
         }
     }
 
     // If slot still has a clip, skip (already synced)
     if (slot->getClip() != nullptr)
-        return false;
+        return needsGraphReallocation;
 
     // Create the TE clip directly in the slot (NOT on the track then moved).
     // TE's free functions insertWaveClip(ClipOwner&, ...) and insertMIDIClip(ClipOwner&, ...)
@@ -688,6 +668,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
         audioClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
+        clipIds_.set(clipId, audioClipPtr->itemID.toString().toStdString());
 
         // Populate source file metadata from TE's loopInfo. For a freshly
         // imported session clip, loopLengthBeats starts as a sentinel and is
@@ -844,6 +825,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         auto* midiClipPtr = clipRef.get();
         midiClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
+        clipIds_.set(clipId, midiClipPtr->itemID.toString().toStdString());
 
         // Force offset to 0 — note shifting is handled manually below
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
@@ -909,13 +891,14 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         return true;
     }
 
-    return false;
+    return needsGraphReallocation;
 }
 
 void ClipSynchronizer::removeSessionClipFromSlot(ClipId clipId) {
     auto* teClip = getSessionTeClip(clipId);
     if (teClip)
         teClip->removeFromParent();
+    clipIds_.erase(clipId);
 }
 
 void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
@@ -1090,25 +1073,18 @@ void ClipSynchronizer::stopSessionClip(ClipId clipId) {
 }
 
 te::Clip* ClipSynchronizer::getSessionTeClip(ClipId clipId) {
-    auto& cm = ClipManager::getInstance();
-    const auto* clip = cm.getClip(clipId);
-    if (!clip || clip->view != ClipView::Session || clip->sceneIndex < 0) {
+    auto engineId = clipIds_.getEngineId(clipId);
+    if (!engineId)
         return nullptr;
+
+    for (auto* track : tracktion::getAudioTracks(edit_)) {
+        for (auto* slot : track->getClipSlotList().getClipSlots()) {
+            auto* teClip = slot ? slot->getClip() : nullptr;
+            if (teClip && teClip->itemID.toString().toStdString() == *engineId)
+                return teClip;
+        }
     }
-
-    auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
-    if (!audioTrack) {
-        return nullptr;
-    }
-
-    auto slots = audioTrack->getClipSlotList().getClipSlots();
-
-    if (clip->sceneIndex >= static_cast<int>(slots.size())) {
-        return nullptr;
-    }
-
-    auto* slot = slots[clip->sceneIndex];
-    return slot ? slot->getClip() : nullptr;
+    return nullptr;
 }
 
 // =============================================================================

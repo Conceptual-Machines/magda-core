@@ -80,6 +80,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPropertyChangeCreatesMissingReversedArrangementClipSynchronously();
         testBatchSessionSlotCreationReallocatesOnce();
         testSessionClipMoveToTrackClearsVacatedSlot();
+        testSessionClipMovePreservesEngineIdentity();
+        testSessionClipDeleteRemovesMappedSlotClip();
         testMoveClip();
         testResizeFromRight();
         testResizeFromLeft();
@@ -178,6 +180,19 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         te::MidiClip* getTeMidiClip(ClipId clipId) const {
             auto* teClip = clipSync->getArrangementTeClip(clipId);
             return dynamic_cast<te::MidiClip*>(teClip);
+        }
+
+        te::Clip* getSessionSlotClip(TrackId slotTrackId, int sceneIndex) const {
+            auto* audioTrack = trackController->getAudioTrack(slotTrackId);
+            if (!audioTrack)
+                return nullptr;
+
+            auto slots = audioTrack->getClipSlotList().getClipSlots();
+            if (sceneIndex < 0 || sceneIndex >= static_cast<int>(slots.size()))
+                return nullptr;
+
+            auto* slot = slots[sceneIndex];
+            return slot ? slot->getClip() : nullptr;
         }
 
         te::test_utilities::BufferAndSampleRate renderToSeconds(double endSeconds) const {
@@ -511,6 +526,66 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
         expect(oldSlots[0]->getClip() == nullptr,
                "Vacated slot on the original track should no longer hold a TE clip");
+    }
+
+    void testSessionClipMovePreservesEngineIdentity() {
+        beginTest("Moving a session clip recreates it by engine identity, not slot position");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        const TrackId secondTrackId = 2;
+        f.trackController->ensureTrackMapping(secondTrackId, "Second Track");
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+        cm.setClipSceneIndex(clipId, 0);
+
+        auto* originalTeClip = f.clipSync->getSessionTeClip(clipId);
+        expect(originalTeClip != nullptr, "Original session clip should be mapped");
+        if (!originalTeClip)
+            return;
+
+        const auto originalEngineId = originalTeClip->itemID;
+
+        cm.moveClipToTrack(clipId, secondTrackId);
+
+        auto* movedTeClip = f.clipSync->getSessionTeClip(clipId);
+        expect(movedTeClip != nullptr, "Moved session clip should still resolve by clip id");
+        if (!movedTeClip)
+            return;
+
+        expect(movedTeClip->itemID != originalEngineId,
+               "Moved session clip should receive a fresh mapped TE identity");
+        expect(f.getSessionSlotClip(f.trackId, 0) == nullptr,
+               "Old slot should not retain the original mapped TE clip");
+        expect(f.getSessionSlotClip(secondTrackId, 0) == movedTeClip,
+               "Destination slot should hold the mapped TE clip");
+    }
+
+    void testSessionClipDeleteRemovesMappedSlotClip() {
+        beginTest("Deleting a session clip removes its mapped TE slot clip");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+        cm.setClipSceneIndex(clipId, 0);
+
+        auto* teClip = f.clipSync->getSessionTeClip(clipId);
+        expect(teClip != nullptr, "Session clip should be mapped before deletion");
+        expect(f.getSessionSlotClip(f.trackId, 0) == teClip,
+               "Slot should hold the mapped TE clip before deletion");
+
+        cm.deleteClip(clipId);
+
+        expect(f.getSessionSlotClip(f.trackId, 0) == nullptr,
+               "Deleted session clip should not leave a TE clip in its old slot");
+        expect(f.clipSync->getSessionTeClip(clipId) == nullptr,
+               "Deleted session clip mapping should be cleared");
     }
 
     void testMoveClip() {
