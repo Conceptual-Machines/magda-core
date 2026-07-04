@@ -232,9 +232,20 @@ void ClipSynchronizer::clipsChanged() {
 
     // Only sync arrangement clips - session clips are managed by SessionClipScheduler
     const auto& arrangementClips = clipManager.getArrangementClips();
+    const auto& sessionClips = clipManager.getSessionClips();
 
-    auto arrangementPlan =
-        buildArrangementClipSyncPlan(edit_, trackController_, arrangementClips, clipIds_);
+    std::unordered_set<ClipId> currentArrangementClipIds;
+    currentArrangementClipIds.reserve(arrangementClips.size());
+    for (const auto& clip : arrangementClips)
+        currentArrangementClipIds.insert(clip.id);
+
+    std::unordered_set<ClipId> currentSessionClipIds;
+    currentSessionClipIds.reserve(sessionClips.size());
+    for (const auto& clip : sessionClips)
+        currentSessionClipIds.insert(clip.id);
+
+    auto arrangementPlan = buildArrangementClipSyncPlan(edit_, trackController_, arrangementClips,
+                                                        sessionClips, clipIds_);
 
     // Remove deleted clips from engine
     for (ClipId clipId : arrangementPlan.clipsToRemove) {
@@ -248,16 +259,11 @@ void ClipSynchronizer::clipsChanged() {
     }
 
     // Sync session clips to ClipSlots
-    const auto& sessionClips = clipManager.getSessionClips();
     bool sessionClipsSynced = false;
-    std::unordered_set<ClipId> currentSessionClipIds;
-    currentSessionClipIds.reserve(sessionClips.size());
-    for (const auto& clip : sessionClips)
-        currentSessionClipIds.insert(clip.id);
-
     for (const auto& entry : clipIds_.snapshot()) {
         const auto clipId = entry.first;
-        if (currentSessionClipIds.find(clipId) != currentSessionClipIds.end())
+        if (currentSessionClipIds.find(clipId) != currentSessionClipIds.end() ||
+            currentArrangementClipIds.find(clipId) != currentArrangementClipIds.end())
             continue;
 
         if (auto* teClip = getSessionTeClip(clipId)) {
