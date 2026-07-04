@@ -339,6 +339,16 @@ TEST_CASE("Audio and Instrument tracks accept instruments", "[group_track][instr
         auto id = fixture.tm().addDeviceToTrack(trackId, instrument);
         REQUIRE(id == INVALID_DEVICE_ID);
     }
+
+    SECTION("Aux track rejects instrument in a rack chain") {
+        auto trackId = fixture.tm().createTrack("Aux", TrackType::Aux);
+        auto rackId = fixture.tm().addRackToTrack(trackId, "FX Rack");
+        auto* rack = fixture.tm().getRack(trackId, rackId);
+        REQUIRE(rack != nullptr);
+        auto chainId = rack->chains[0].id;
+        REQUIRE(fixture.tm().addDeviceToChain(trackId, rackId, chainId, instrument) ==
+                INVALID_DEVICE_ID);
+    }
 }
 
 // ============================================================================

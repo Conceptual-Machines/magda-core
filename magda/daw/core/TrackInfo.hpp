@@ -232,6 +232,14 @@ struct TrackInfo {
         return type != TrackType::Aux && type != TrackType::Group;
     }
 
+    // True for tracks that can host an instrument device. Aux/Group summing
+    // buses and the Master track only process signal from elsewhere, so they
+    // never host instruments. Single source of truth for the instrument-add
+    // guards across TrackManager (track and rack-chain add paths).
+    bool canHostInstrument() const {
+        return type != TrackType::Aux && type != TrackType::Group && type != TrackType::Master;
+    }
+
     // MIDI input helpers
     //
     // Single source of truth for "does this track listen to live MIDI input".

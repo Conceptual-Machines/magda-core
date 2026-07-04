@@ -1729,9 +1729,7 @@ void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
-             track->type == TrackType::Master) &&
-            device.isInstrument) {
+        if (!track->canHostInstrument() && device.isInstrument) {
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
@@ -1754,9 +1752,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
-             track->type == TrackType::Master) &&
-            device.isInstrument) {
+        if (!track->canHostInstrument() && device.isInstrument) {
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
