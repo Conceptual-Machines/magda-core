@@ -781,6 +781,18 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
 
     tracks_.push_back(trackInfo);
 
+    // Group summing tracks take no external input. Projects saved before this
+    // invariant existed can carry MIDI/audio input, monitoring, or record-arm on
+    // a group (createTrack used to seed every non-Aux track with "all"), so
+    // sanitize on restore rather than let stale on-disk state reintroduce it.
+    if (tracks_.back().type == TrackType::Group) {
+        auto& restored = tracks_.back();
+        restored.recordArmed = false;
+        restored.inputMonitor = InputMonitorMode::Off;
+        restored.midiInputDevice = "";
+        restored.audioInputDevice = "";
+    }
+
     // Ensure nextTrackId_ is beyond any restored track IDs
     if (trackInfo.id >= nextTrackId_) {
         nextTrackId_ = trackInfo.id + 1;
@@ -1402,7 +1414,8 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
     // AudioBridge::updateMidiInputRouting() based on selection/arm state.
     if (audioEngine_) {
         for (const auto& track : tracks_) {
-            if (!track.midiInputDevice.isEmpty() && track.type != TrackType::Aux) {
+            if (!track.midiInputDevice.isEmpty() && track.type != TrackType::Aux &&
+                track.type != TrackType::Group) {
                 if (auto* midiBridge = audioEngine_->getMidiBridge()) {
                     midiBridge->setTrackMidiInput(track.id, track.midiInputDevice);
                     midiBridge->startMonitoring(track.id);

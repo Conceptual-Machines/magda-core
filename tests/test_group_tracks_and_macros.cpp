@@ -173,6 +173,31 @@ TEST_CASE("Group track takes no external input", "[group_track][input]") {
     }
 }
 
+TEST_CASE("Restoring a group track sanitizes stale input state", "[group_track][input]") {
+    GroupMacroTestFixture fixture;
+
+    // Simulate a project saved before the no-input invariant: a group carrying
+    // MIDI/audio input, monitoring, and record-arm.
+    TrackInfo info;
+    info.id = 100;
+    info.name = "Old Bus";
+    info.type = TrackType::Group;
+    info.midiInputDevice = "all";
+    info.audioInputDevice = "some-device";
+    info.inputMonitor = InputMonitorMode::In;
+    info.recordArmed = true;
+
+    fixture.tm().restoreTrack(info);
+
+    auto* g = fixture.tm().getTrack(100);
+    REQUIRE(g != nullptr);
+    REQUIRE(g->type == TrackType::Group);
+    REQUIRE(g->midiInputDevice.isEmpty());
+    REQUIRE(g->audioInputDevice.isEmpty());
+    REQUIRE(g->inputMonitor == InputMonitorMode::Off);
+    REQUIRE_FALSE(g->recordArmed);
+}
+
 TEST_CASE("Group track rejects instruments inside rack chains", "[group_track][instrument][rack]") {
     GroupMacroTestFixture fixture;
 
