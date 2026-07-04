@@ -179,7 +179,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         if (editPos >= clipStart && editPos <= clipEnd) {
             int editX = arrangementToSourceX(editPos);
             if (editX >= 0 && editX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                 juce::Path triangle;
                 triangle.addTriangle(static_cast<float>(editX - 5), 0.0f,
                                      static_cast<float>(editX + 5), 0.0f, static_cast<float>(editX),
@@ -198,7 +198,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                     displayPositionToX(di.sessionPlayheadToDisplayPosition(sessionPos));
 
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -223,7 +223,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 double sourcePos = di.loopRegionStartSource + wrapped;
                 int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -232,7 +232,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
             int playX = arrangementToSourceX(playPos);
             if (playX >= 0 && playX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                 g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                            static_cast<float>(getHeight()), 1.5f);
             }

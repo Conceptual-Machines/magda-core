@@ -666,7 +666,7 @@ class DrumGridClipGrid : public juce::Component,
                 int playheadX = beatToPixel(displayBeat);
 
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
                 }
             }

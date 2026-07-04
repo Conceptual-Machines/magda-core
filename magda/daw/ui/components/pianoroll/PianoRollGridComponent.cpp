@@ -328,7 +328,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     {
         int playheadX = 0;
         if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }
