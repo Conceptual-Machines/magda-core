@@ -22,6 +22,7 @@ target_sources(magda_daw PRIVATE
     MidiChordMarkers.cpp
     MidiFileWriter.cpp
     SelectionManager.cpp
+    PasteTargetResolver.cpp
     GestureRouter.cpp
     AutomationInfo.cpp
     AutomationManager.cpp
@@ -93,6 +94,7 @@ target_sources(magda_daw PRIVATE
     SessionLaunchService.hpp
     MidiFileWriter.hpp
     SelectionManager.hpp
+    PasteTargetResolver.hpp
     LinkModeManager.hpp
     GainStagingManager.hpp
     UndoManager.hpp

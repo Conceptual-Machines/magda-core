@@ -28,6 +28,7 @@
 #include "core/ClipPropertyCommands.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
@@ -3449,11 +3450,17 @@ void ClipComponent::showContextMenu() {
                         }
                     }
                     const double bpm = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                    TrackId targetTrackId = INVALID_TRACK_ID;
+                    TrackId contextTrackId = INVALID_TRACK_ID;
                     if (const auto* contextClip = clipManager.getClip(clipId_))
-                        targetTrackId = contextClip->trackId;
+                        contextTrackId = contextClip->trackId;
+                    const auto target =
+                        resolvePasteTarget(ViewModeController::getInstance().getViewMode(),
+                                           PasteTrackMode::PinToResolvedTrack,
+                                           PasteInvocation::fromContextTrack(contextTrackId));
+                    if (!target.ok)
+                        break;
                     auto cmd = std::make_unique<PasteClipCommand>(
-                        BeatPosition{pasteTime * bpm / 60.0}, targetTrackId);
+                        BeatPosition{pasteTime * bpm / 60.0}, target.trackId);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     const auto& pastedIds = cmdPtr->getPastedClipIds();

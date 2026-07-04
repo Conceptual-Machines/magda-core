@@ -2919,6 +2919,11 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
     // Track which scene slots have been used during this paste (for multi-clip session paste)
     std::unordered_map<TrackId, int> trackSceneMap;
 
+    // Clips that resolve to no track at all. A real paste entry point always
+    // supplies a target via resolvePasteTarget(), so a non-zero count here means
+    // a caller skipped that resolver (the #1670 class of bug). Surfaced below.
+    int droppedForNoTrack = 0;
+
     for (const auto& clipData : clipboard_) {
         // Calculate new start beat maintaining relative position
         const double newStartBeat = clipData.placement.startBeat + beatOffset;
@@ -2927,6 +2932,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
         // Determine target track
         TrackId newTrackId = (targetTrackId != INVALID_TRACK_ID) ? targetTrackId : clipData.trackId;
         if (newTrackId == INVALID_TRACK_ID) {
+            ++droppedForNoTrack;
             continue;
         }
 
@@ -3087,6 +3093,13 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
 
             newClips.push_back(newClipId);
         }
+    }
+
+    if (droppedForNoTrack > 0) {
+        DBG("CLIPBOARD: pasteFromClipboardBeats dropped "
+            << droppedForNoTrack
+            << " clip(s) with no target track (no explicit target and no source track). "
+               "The paste entry point should resolve a target via resolvePasteTarget().");
     }
 
     if (!newClips.empty())

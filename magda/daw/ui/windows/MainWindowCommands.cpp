@@ -3,6 +3,7 @@
 #include "../../core/ClipManager.hpp"
 #include "../../core/Config.hpp"
 #include "../../core/MidiNoteCommands.hpp"
+#include "../../core/PasteTargetResolver.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackCommands.hpp"
 #include "../../core/TrackManager.hpp"
@@ -64,32 +65,6 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
                            double bpm) {
     return timelineStartSeconds(clip, bpm) < endSeconds &&
            timelineEndSeconds(clip, bpm) > startSeconds;
-}
-
-TrackId resolvePasteTargetTrack(ViewMode mode) {
-    auto& selectionManager = SelectionManager::getInstance();
-    auto& trackManager = TrackManager::getInstance();
-
-    const auto selectedTrack = selectionManager.getSelectedTrack();
-    const auto* selectedTrackInfo =
-        selectedTrack != INVALID_TRACK_ID ? trackManager.getTrack(selectedTrack) : nullptr;
-    if (selectedTrackInfo != nullptr) {
-        return selectedTrack;
-    }
-
-    auto visibleTracks = trackManager.getVisibleTracks(mode);
-    if (!visibleTracks.empty()) {
-        return visibleTracks.front();
-    }
-
-    if (mode != ViewMode::Arrange) {
-        visibleTracks = trackManager.getVisibleTracks(ViewMode::Arrange);
-        if (!visibleTracks.empty()) {
-            return visibleTracks.front();
-        }
-    }
-
-    return INVALID_TRACK_ID;
 }
 
 // Ripple the global tempo/time-sig/pitch sequences to match a time-range clip
@@ -691,10 +666,13 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                 if (viewMode == ViewMode::Live) {
                     // Session view: paste into first empty slot on selected track
-                    TrackId targetTrack = resolvePasteTargetTrack(viewMode);
-                    if (targetTrack == INVALID_TRACK_ID) {
+                    const auto target =
+                        resolvePasteTarget(viewMode, PasteTrackMode::PinToResolvedTrack,
+                                           PasteInvocation::fromSelection());
+                    if (!target.ok) {
                         return true;
                     }
+                    const TrackId targetTrack = target.trackId;
 
                     // Find first empty scene slot on the target track
                     int targetScene = 0;
@@ -732,10 +710,13 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                     const double bpm =
                         mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
-                    const TrackId targetTrack = resolvePasteTargetTrack(viewMode);
-                    if (targetTrack == INVALID_TRACK_ID) {
+                    const auto target =
+                        resolvePasteTarget(viewMode, PasteTrackMode::PinToResolvedTrack,
+                                           PasteInvocation::fromSelection());
+                    if (!target.ok) {
                         return true;
                     }
+                    const TrackId targetTrack = target.trackId;
 
                     auto cmd = std::make_unique<PasteClipCommand>(
                         BeatPosition{pasteTime * bpm / 60.0}, targetTrack, ClipView::Arrangement);
@@ -1306,11 +1287,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
             // Ripple-insert room on all tracks (pasted clips keep their own
             // tracks), then paste the clipboard into the gap.
+            const auto rippleTarget = resolvePasteTarget(
+                ViewModeController::getInstance().getViewMode(),
+                PasteTrackMode::PreserveOriginalTracks, PasteInvocation::fromSelection());
             UndoManager::getInstance().beginCompoundOperation("Paste (Ripple)");
             UndoManager::getInstance().executeCommand(
                 std::make_unique<InsertTimeCommand>(targetBeat, span, std::vector<TrackId>{}, bpm));
             UndoManager::getInstance().executeCommand(
-                std::make_unique<PasteClipCommand>(BeatPosition{targetBeat}));
+                std::make_unique<PasteClipCommand>(BeatPosition{targetBeat}, rippleTarget.trackId));
             // Paste ripples all tracks, so markers and tempo/pitch shift too.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Insert, targetBeat, targetBeat + span));
