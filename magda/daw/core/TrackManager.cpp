@@ -1409,18 +1409,6 @@ bool TrackManager::isAnyTrackInSessionMode() const {
     return false;
 }
 
-void TrackManager::setTrackType(TrackId trackId, TrackType type) {
-    if (auto* track = getTrack(trackId)) {
-        // Don't allow changing type if track has children (group tracks)
-        if (track->hasChildren() && type != TrackType::Group) {
-            DBG("Cannot change type of group track with children");
-            return;
-        }
-        track->type = type;
-        notifyTrackPropertyChanged(trackId);
-    }
-}
-
 void TrackManager::setTrackMixerChannelWidth(TrackId trackId, int width) {
     if (auto* track = getTrack(trackId)) {
         const int clamped = juce::jlimit(0, 180, width);

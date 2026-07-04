@@ -291,7 +291,6 @@ class TrackManager {
     void setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode);
     void setAllTracksPlaybackMode(TrackPlaybackMode mode);
     bool isAnyTrackInSessionMode() const;
-    void setTrackType(TrackId trackId, TrackType type);
     void setTrackMixerChannelWidth(TrackId trackId, int width);
     void setTrackMixerFaderTopInset(TrackId trackId, int inset);
 
