@@ -44,6 +44,9 @@ env:
 jobs:
   build-and-test-linux:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # assume the sccache S3 role via OIDC
+      contents: read
     # Skip C++ build/test when explicitly requested or when only non-C++ files changed
     if: |
       github.event_name != 'workflow_dispatch' ||
@@ -92,18 +95,31 @@ jobs:
           xvfb
         cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
 
-    - name: Setup ccache
-      uses: hendrikmuhs/ccache-action@v1.2
+    # Compile cache: sccache backed by S3 (see infra/sccache). Replaces the
+    # actions/cache-backed ccache, which was branch-scoped and shared the 10 GB
+    # per-repo cache budget, so ephemeral Linux runs were almost always cold.
+    # The S3 bucket is shared across runs/branches and uncapped, so warm hits
+    # actually survive. The linux prefix is shared with the JUCE-tests job so
+    # their common translation units hit each other's objects.
+    - name: Configure AWS credentials (sccache S3, OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        key: ${{ runner.os }}-ccache-content-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-content-
-        # Default cap is 500 MB, far too small for this project (llama + ggml +
-        # faust + onnx + JUCE + TE). It filled and thrashed, giving an ~8% hit
-        # rate and recompiling ~92% of TUs every run. 3G holds the whole build
-        # (~1.5G compressed) with headroom, so warm runs are mostly cache hits,
-        # and stays under the 10G repo cache budget shared with the other caches.
-        max-size: 3G
+        role-to-assume: ${{ secrets.AWS_SCCACHE_ROLE_ARN }}
+        aws-region: eu-west-2
+
+    - name: Setup sccache
+      env:
+        SCCACHE_BUCKET_SECRET: ${{ secrets.SCCACHE_BUCKET }}
+      run: |
+        SCCACHE_VERSION=v0.8.1
+        curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar xz
+        sudo mv sccache-*/sccache /usr/local/bin/sccache
+        sccache --version
+        {
+          echo "SCCACHE_BUCKET=${SCCACHE_BUCKET_SECRET}"
+          echo "SCCACHE_REGION=eu-west-2"
+          echo "SCCACHE_S3_KEY_PREFIX=linux"
+        } >> "$GITHUB_ENV"
 
     - name: Cache CMake build directory
       uses: actions/cache@v6
@@ -152,8 +168,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
           ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
           ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
@@ -181,8 +197,8 @@ jobs:
           exit 1
         fi
 
-    - name: Show ccache statistics
-      run: ccache -s
+    - name: Show sccache statistics
+      run: sccache --show-stats
 
     - name: Test summary
       if: success()
