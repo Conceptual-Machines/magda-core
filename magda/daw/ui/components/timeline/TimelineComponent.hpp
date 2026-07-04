@@ -226,8 +226,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void drawPlayhead(juce::Graphics& g);
     void drawArrangementSections(juce::Graphics& g);
     void drawSection(juce::Graphics& g, const ArrangementSection& section, bool isSelected) const;
-    void drawLoopMarkers(juce::Graphics& g);      // Draws shaded region (background)
-    void drawLoopMarkerFlags(juce::Graphics& g);  // Draws triangular flags (foreground)
+    void drawLoopMarkerFlags(juce::Graphics& g);  // Draws the loop strip (rail + endpoint caps)
     void drawTimeSelection(juce::Graphics& g);
     void drawMarkerGuides(juce::Graphics& g);
     // Draws a bar-number label, masking the dashed marker guide behind it with

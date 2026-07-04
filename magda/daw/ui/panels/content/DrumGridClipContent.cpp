@@ -586,22 +586,8 @@ class DrumGridClipGrid : public juce::Component,
                 g.fillRect(clipEndX, 0, bounds.getWidth() - clipEndX, numRows * rowHeight_);
         }
 
-        // Draw loop region markers
-        if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-            int loopStartX = beatToPixel(clipBeatToDisplayBeat(loopOffsetBeats_));
-            int loopEndX = beatToPixel(clipBeatToDisplayBeat(loopOffsetBeats_ + loopLengthBeats_));
-
-            juce::Colour loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
-
-            if (loopStartX >= 0 && loopStartX <= bounds.getWidth()) {
-                g.setColour(loopColour);
-                g.fillRect(loopStartX - 1, 0, 2, numRows * rowHeight_);
-            }
-            if (loopEndX >= 0 && loopEndX <= bounds.getWidth()) {
-                g.setColour(loopColour);
-                g.fillRect(loopEndX - 1, 0, 2, numRows * rowHeight_);
-            }
-        }
+        // Loop boundaries are shown by the endpoint caps in the ruler strip
+        // above; no full-height loop lines are drawn over the grid content.
 
         // Draw content offset marker (yellow vertical line)
         if (clipId_ != magda::INVALID_CLIP_ID) {

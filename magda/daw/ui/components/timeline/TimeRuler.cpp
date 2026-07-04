@@ -6,6 +6,7 @@
 #include "DarkTheme.hpp"
 #include "FontManager.hpp"
 #include "LayoutConfig.hpp"
+#include "LoopStripRenderer.hpp"
 #include "TimelineState.hpp"
 #include "core/TempoUtils.hpp"
 
@@ -784,7 +785,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         }
     }
 
-    // Draw loop region strip between labels and ticks
+    // Draw loop region strip between labels and ticks. Uses the shared
+    // LoopStripRenderer so it matches the arrangement and every clip editor.
     if (loopEnabled && loopLength > 0.0) {
         double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
         double loopEndTime = loopStartTime + loopLength;
@@ -792,68 +794,10 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int loopStartX = timeToPixel(loopStartTime);
         int loopEndX = timeToPixel(loopEndTime);
 
-        auto markerColour = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
-                                       : DarkTheme::getColour(DarkTheme::TEXT_DISABLED);
-
         if (loopEndX >= 0 && loopStartX <= width) {
-            int tickAreaTop = height - tickHeightMajor();
-            int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
-
-            // Fill the loop strip region with vertical gradient (above tick area)
-            auto flagFill = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
-                                       : juce::Colour(0xFF808080);
-            g.setGradientFill(
-                juce::ColourGradient(flagFill.withAlpha(0.45f), 0.0f, static_cast<float>(stripTop),
-                                     flagFill.withAlpha(0.1f), 0.0f,
-                                     static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), false));
-            g.fillRect(loopStartX, stripTop, loopEndX - loopStartX, LOOP_STRIP_HEIGHT);
-
-            // Connecting lines at top and bottom of strip
-            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
-            g.fillRect(loopStartX, stripTop, loopEndX - loopStartX, 2);
-            g.fillRect(loopStartX, stripTop + LOOP_STRIP_HEIGHT - 1, loopEndX - loopStartX, 1);
-
-            // 2px vertical marker lines spanning the strip
-            if (loopStartX >= 0 && loopStartX <= width) {
-                g.fillRect(loopStartX - 1, stripTop, 2, LOOP_STRIP_HEIGHT);
-            }
-            if (loopEndX >= 0 && loopEndX <= width) {
-                g.fillRect(loopEndX - 1, stripTop, 2, LOOP_STRIP_HEIGHT);
-            }
-
-            // Border ticks extending into the tick area
-            if (loopStartX >= 0 && loopStartX <= width) {
-                g.fillRect(loopStartX - 1, tickAreaTop, 2, tickHeightMajor());
-            }
-            if (loopEndX >= 0 && loopEndX <= width) {
-                g.fillRect(loopEndX - 1, tickAreaTop, 2, tickHeightMajor());
-            }
-
-            // Triangular flags — size adapts to zoom
-            int flagTop = stripTop + 1;
-            int loopPixelWidth = loopEndX - loopStartX;
-            int maxFlagW = juce::jmax(4, loopPixelWidth / 2);
-            int flagH = juce::jlimit(6, LOOP_STRIP_HEIGHT - 2, maxFlagW);
-            int flagW = juce::jlimit(4, 8, maxFlagW);
-
-            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
-            if (loopStartX >= 0 && loopStartX <= width) {
-                juce::Path startFlag;
-                startFlag.addTriangle(static_cast<float>(loopStartX), static_cast<float>(flagTop),
-                                      static_cast<float>(loopStartX),
-                                      static_cast<float>(flagTop + flagH),
-                                      static_cast<float>(loopStartX + flagW),
-                                      static_cast<float>(flagTop + flagH / 2));
-                g.fillPath(startFlag);
-            }
-            if (loopEndX >= 0 && loopEndX <= width) {
-                juce::Path endFlag;
-                endFlag.addTriangle(
-                    static_cast<float>(loopEndX), static_cast<float>(flagTop),
-                    static_cast<float>(loopEndX), static_cast<float>(flagTop + flagH),
-                    static_cast<float>(loopEndX - flagW), static_cast<float>(flagTop + flagH / 2));
-                g.fillPath(endFlag);
-            }
+            const int stripTop = height - tickHeightMajor() - LOOP_STRIP_HEIGHT;
+            LoopStripRenderer::draw(g, static_cast<float>(loopStartX), static_cast<float>(loopEndX),
+                                    stripTop, LOOP_STRIP_HEIGHT, width, loopActive);
         }
     }
 
