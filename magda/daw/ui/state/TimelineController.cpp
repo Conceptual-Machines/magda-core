@@ -517,8 +517,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
     ProjectManager::getInstance().setLoopSettings(state.loop.enabled, state.loop.startBeats,
                                                   state.loop.endBeats);
 
-    // Hide selection visually but keep data for transport display
-    state.selection.hideVisually();
+    // Keep the time-range selection visible alongside the new loop; the loop
+    // (green, its own row) and the selection (blue) read as distinct.
 
     // Notify audio engine of loop region change
     for (auto* listener : audioEngineListeners) {

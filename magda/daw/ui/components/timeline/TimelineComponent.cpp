@@ -1587,21 +1587,27 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.38f));
     g.fillRoundedRectangle(selectionArea.toFloat(), static_cast<float>(height) / 2.0f);
 
-    // Brighter rectangular handles at the range edges. These are the endpoint
-    // markers and double as the drag handles (see hitTimeSelectionEdge).
-    // Rectangles (rather than triangles) sit cleanly under the playhead's
-    // triangle instead of competing with it.
+    // Brighter diamond (rhombus) handles at the range edges. These are the
+    // endpoint markers and double as the drag handles (see hitTimeSelectionEdge).
     const auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT);
-    const float hTop = static_cast<float>(rows.playheadTop);
-    const float hHeight = static_cast<float>(rows.playheadBottom - rows.playheadTop);
-    constexpr float handleW = 4.0f;
+    const float cy = static_cast<float>(rows.playheadTop + rows.playheadBottom) * 0.5f;
+    const float dh = static_cast<float>(rows.playheadBottom - rows.playheadTop);
+    constexpr float dw = 8.0f;
     g.setColour(handleColour);
-    if (isXVisible(g, getWidth(), startX))
-        g.fillRoundedRectangle(static_cast<float>(startX) - handleW / 2.0f, hTop, handleW, hHeight,
-                               1.5f);
-    if (isXVisible(g, getWidth(), endX))
-        g.fillRoundedRectangle(static_cast<float>(endX) - handleW / 2.0f, hTop, handleW, hHeight,
-                               1.5f);
+    const auto diamond = [&](int x) {
+        if (!isXVisible(g, getWidth(), x))
+            return;
+        const float fx = static_cast<float>(x);
+        juce::Path d;
+        d.startNewSubPath(fx, cy - dh / 2.0f);
+        d.lineTo(fx + dw / 2.0f, cy);
+        d.lineTo(fx, cy + dh / 2.0f);
+        d.lineTo(fx - dw / 2.0f, cy);
+        d.closeSubPath();
+        g.fillPath(d);
+    };
+    diamond(startX);
+    diamond(endX);
 }
 
 }  // namespace magda
