@@ -534,12 +534,15 @@ void MainView::setupCallbacks() {
         dispatchArrangementGesture(g);
     };
 
-    // Handle time selection from timeline ruler
-    timeline->onTimeSelectionBeatsChanged = [this](double startBeats, double endBeats) {
+    // Dragging the ruler strip beneath the loop marker area selects a time
+    // range across ALL tracks (every track's clips), which is the range source
+    // the ripple/insert/duplicate/delete time-range ops act on.
+    timeline->onRulerTimeSelectionChanged = [this](double startBeats, double endBeats) {
         if (startBeats < 0 || endBeats < 0) {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
-            timelineController->dispatch(SetTimeSelectionBeatsEvent{startBeats, endBeats, {}});
+            timelineController->dispatch(
+                SetTimeSelectionBeatsEvent::allTracks(startBeats, endBeats));
             // Move playhead to follow the left side of selection
             timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
         }

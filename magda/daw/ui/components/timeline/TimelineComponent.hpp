@@ -150,8 +150,11 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
         onLoopRegionBeatsChanged;  // Callback when loop region changes
     std::function<void(const ResolvedGesture&)>
         onArrangementGesture;  // Wheel gesture resolved via GestureRouter (#21/#26)
-    std::function<void(double, double)>
-        onTimeSelectionBeatsChanged;  // Callback when time selection changes in ruler
+    // Fires when the user drags the ruler strip beneath the loop marker area to
+    // select a time range across ALL tracks (every track's clips). Args are
+    // (startBeats, endBeats), or (-1, -1) to clear. Distinct from the per-track
+    // time selection dragged inside TrackContentPanel.
+    std::function<void(double, double)> onRulerTimeSelectionChanged;
     std::function<void(double, double)>
         onZoomToFitBeatsRequested;  // Callback to zoom to fit a beat range (startBeats, endBeats)
 
