@@ -2179,7 +2179,9 @@ void TrackHeadersPanel::layoutButtonRow(TrackHeader& header, juce::Rectangle<int
     r.removeFromLeft(gap);
     header.soloButton->setBounds(r.removeFromLeft(btnW));
     r.removeFromLeft(gap);
-    if (!header.isMultiOut) {
+    // Groups (like multi-out children) take no external input, so they get no
+    // record or input-monitor buttons.
+    if (!header.isMultiOut && !header.isGroup) {
         header.recordButton->setBounds(r.removeFromLeft(btnW));
         header.recordButton->setVisible(true);
         r.removeFromLeft(gap);
@@ -2278,6 +2280,9 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         const int sendLabelWidth = 28;
         const bool hasSends = !header.sendLabels.empty();
         const bool ioShown = header.showIORouting;
+        // Groups take no external input (they only sum their children), so like
+        // multi-out children they show output routing only - no input row.
+        const bool inputless = header.isMultiOut || header.isGroup;
 
         header.audioColumnLabel->setVisible(false);
         header.midiColumnLabel->setVisible(false);
@@ -2305,7 +2310,7 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         }
 
         // I/O routing rows — pinned to the bottom (output lowest, input above it).
-        if (ioShown && !header.isMultiOut) {
+        if (ioShown && !inputless) {
             auto outputRow = tcpArea.removeFromBottom(contentRowHeight);
             tcpArea.removeFromBottom(rowGap);
             auto inputRow = tcpArea.removeFromBottom(contentRowHeight);
@@ -2314,8 +2319,8 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
             layoutRoutingRow(header, inner.removeFrom(outputRow, outputRow.getWidth()),
                              *header.outputSelector, *header.midiOutputSelector,
                              *header.outputIcon);
-        } else if (ioShown && header.isMultiOut) {
-            // Multi-out child: only audio-out at the bottom, no inputs / MIDI out.
+        } else if (ioShown && inputless) {
+            // Multi-out child or group: only audio-out at the bottom, no inputs / MIDI out.
             auto outputRow = tcpArea.removeFromBottom(contentRowHeight);
             auto row = inner.removeFrom(outputRow, outputRow.getWidth());
             row.removeFromLeft(TH_PAD);
