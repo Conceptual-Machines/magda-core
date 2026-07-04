@@ -15,12 +15,16 @@ PasteTarget resolvePasteTarget(ViewMode mode, PasteTrackMode trackMode,
     auto& trackManager = TrackManager::getInstance();
 
     // A context invocation (right-click on a clip, a track area, or a session
-    // slot) targets that track directly. Fall through to selection-based
-    // resolution only if the context track has since disappeared.
-    if (invocation.kind == PasteInvocation::Kind::ContextClip &&
-        invocation.contextTrackId != INVALID_TRACK_ID &&
-        trackManager.getTrack(invocation.contextTrackId) != nullptr) {
-        return {.trackId = invocation.contextTrackId, .ok = true};
+    // slot) has an explicit target: land on that track, or abort. Never fall
+    // through to the selection. If the context track disappeared between
+    // opening the async menu and running the action, migrating the paste to
+    // whatever is selected is the wrong-track failure this resolver exists to
+    // prevent; a no-op is the safe answer.
+    if (invocation.kind == PasteInvocation::Kind::ContextClip) {
+        if (invocation.contextTrackId != INVALID_TRACK_ID &&
+            trackManager.getTrack(invocation.contextTrackId) != nullptr)
+            return {.trackId = invocation.contextTrackId, .ok = true};
+        return {.trackId = INVALID_TRACK_ID, .ok = false};
     }
 
     // Selection-based: the selected track, else the first visible track in this
