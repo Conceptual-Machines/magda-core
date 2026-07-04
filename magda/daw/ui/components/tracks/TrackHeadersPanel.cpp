@@ -2391,7 +2391,11 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 // arrangement button just to its left. The session button is always
                 // positioned but only paints when the track is in session mode.
                 {
-                    auto midiDotArea = nameRow.removeFromRight(14);
+                    // Center the dot over the right-aligned TH_PAN_W column used by
+                    // the rows below (pan/"C", automation, I/O) so it lines up with
+                    // the button directly beneath it, not the panel's right edge.
+                    nameRow.removeFromRight(TH_PAD_R);
+                    auto midiDotArea = nameRow.removeFromRight(TH_PAN_W);
                     header.midiIndicator->setBounds(midiDotArea.withSizeKeepingCentre(10, 10));
                     header.midiIndicator->setVisible(header.inputSelector &&
                                                      header.inputSelector->isEnabled());
