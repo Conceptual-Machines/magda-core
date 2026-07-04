@@ -2043,7 +2043,6 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
 
 void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
                                                const SideColumn& inner, int gapOverride) {
-    const int gap = 2;
     const int rh = 18;  // row height — volume/pan and button rows share it
     const int areaWidth = area.getWidth();
 
@@ -2053,16 +2052,20 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     // monitoring just rides along with audibility. No pan / record / automation /
     // routing.
     if (header.isChordTrack) {
-        auto row = area.removeFromTop(24);
+        // Match a normal track's volume/pan row exactly: same row height, same
+        // fixed volume width, and the chord audition control in the pan/"C"
+        // column (right-aligned) so it lines up with other tracks.
+        auto row = area.removeFromTop(rh);
         auto content = inner.removeFrom(row, areaWidth);
-        const int iconW = 24;
-        const int volW = std::max(1, content.getWidth() - iconW - gap);
-        header.volumeLabel->setBounds(content.removeFromLeft(volW));
-        header.volumeLabel->setVisible(true);
-        content.removeFromLeft(gap);
-        header.chordAuditionButton->setBounds(content.removeFromLeft(iconW));
+        content.removeFromLeft(TH_PAD);
+        content.removeFromRight(TH_PAD_R);
+        header.chordAuditionButton->setBounds(content.removeFromRight(TH_PAN_W));
         header.chordAuditionButton->setVisible(true);
         header.chordAuditionButton->refresh();
+        const int volGap = 4;
+        const int volW = 3 * TH_BTN_MAX + 3 * volGap + TH_MONITOR_W;
+        header.volumeLabel->setBounds(content.removeFromLeft(volW));
+        header.volumeLabel->setVisible(true);
         header.monitorButton->setVisible(false);
         header.muteButton->setVisible(false);
         header.masterMuteButton->setVisible(false);
