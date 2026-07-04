@@ -654,9 +654,17 @@ void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector, Trac
 void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
-    juce::ignoreUnused(trackId);
+    // If no trackId provided, find it from the existing trackHeaders
+    if (trackId == INVALID_TRACK_ID) {
+        for (const auto& h : trackHeaders) {
+            if (h->midiOutputSelector.get() == selector) {
+                trackId = h->trackId;
+                break;
+            }
+        }
+    }
     RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge(),
-                                                 midiOutputTrackMapping_);
+                                                 midiOutputTrackMapping_, trackId);
 }
 
 void TrackHeadersPanel::refreshInputSelectors() {
@@ -827,26 +835,28 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         // When enabling, don't set anything yet — user picks a device from dropdown
     };
 
-    header.midiOutputSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
-        if (selectedId == 1) {
-            // None
-            TrackManager::getInstance().setTrackMidiOutput(trackId, "");
-        } else if (selectedId >= 200) {
-            // Track destination
-            auto it = midiOutputTrackMapping_.find(selectedId);
-            if (it != midiOutputTrackMapping_.end()) {
-                TrackManager::getInstance().setTrackMidiOutput(trackId,
-                                                               "track:" + juce::String(it->second));
+    // Capture midiOutputTrackMapping_ by value so each header has its own snapshot
+    // (the shared member is rebuilt per-header in populateMidiOutputOptions)
+    header.midiOutputSelector->onSelectionChanged =
+        [trackId, midiBridge, midiOutMapping = midiOutputTrackMapping_](int selectedId) {
+            if (selectedId == 1) {
+                // None
+                TrackManager::getInstance().setTrackMidiOutput(trackId, "");
+            } else if (selectedId >= 200) {
+                // "MIDI To track" — internal routing, mirror of the dest's MIDI input
+                auto it = midiOutMapping.find(selectedId);
+                if (it != midiOutMapping.end()) {
+                    TrackManager::getInstance().routeMidiOutputToTrack(trackId, it->second);
+                }
+            } else if (selectedId >= 10 && midiBridge) {
+                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+                int deviceIndex = selectedId - 10;
+                if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
+                    TrackManager::getInstance().setTrackMidiOutput(trackId,
+                                                                   midiOutputs[deviceIndex].id);
+                }
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
-            int deviceIndex = selectedId - 10;
-            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
-                TrackManager::getInstance().setTrackMidiOutput(trackId,
-                                                               midiOutputs[deviceIndex].id);
-            }
-        }
-    };
+        };
 }
 
 void TrackHeadersPanel::tracksChanged() {

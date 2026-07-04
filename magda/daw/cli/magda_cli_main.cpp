@@ -169,6 +169,9 @@ juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
     obj->setProperty("recordArmed", track.recordArmed);
     obj->setProperty("audioInputDevice", track.audioInputDevice);
     obj->setProperty("midiInputDevice", track.midiInputDevice);
+    obj->setProperty("audioOutputDevice", track.audioOutputDevice);
+    obj->setProperty("midiOutputDevice", track.midiOutputDevice);
+    obj->setProperty("parentId", track.parentId);
 
     juce::Array<juce::var> clips;
     for (auto clipId : api.clips().getClipsOnTrack(track.id)) {
@@ -223,6 +226,10 @@ class CommandDispatcher {
             {"delete-track", "delete-track <track-id>", &CommandDispatcher::deleteTrack},
             {"set-track-input", "set-track-input <track-id> <audio|midi> <track:N|device|all|none>",
              &CommandDispatcher::setTrackInput},
+            {"group-track", "group-track <child-id> <group-id>", &CommandDispatcher::groupTrack},
+            {"ungroup-track", "ungroup-track <child-id>", &CommandDispatcher::ungroupTrack},
+            {"route-midi-to", "route-midi-to <source-id> <dest-id>",
+             &CommandDispatcher::routeMidiTo},
             {"add-midi-clip", "add-midi-clip <track-id> <start-beats> <length-beats>",
              &CommandDispatcher::addMidiClip},
             {"add-clip", "add-midi-clip <track-id> <start-beats> <length-beats>",
@@ -335,6 +342,73 @@ class CommandDispatcher {
 
         std::cout << "input " << *trackId << " " << kind << " "
                   << (value.isEmpty() ? juce::String("none") : value) << "\n";
+        return {};
+    }
+
+    CommandResult groupTrack(const juce::StringArray& tokens, size_t& index) {
+        auto childId = takeInt(tokens, index, "group-track requires <child-id>");
+        if (!childId)
+            return fail(lastParseError_);
+        auto groupId = takeInt(tokens, index, "group-track requires <group-id>");
+        if (!groupId)
+            return fail(lastParseError_);
+
+        // TrackApi has no grouping setters yet, so reach TrackManager directly
+        // (same singleton path as set-track-input).
+        auto& trackManager = magda::TrackManager::getInstance();
+        if (trackManager.getTrack(*childId) == nullptr)
+            return fail("group-track: unknown track " + juce::String(*childId));
+        if (trackManager.getTrack(*groupId) == nullptr)
+            return fail("group-track: unknown track " + juce::String(*groupId));
+
+        trackManager.addTrackToGroup(*childId, *groupId);
+
+        const auto* child = trackManager.getTrack(*childId);
+        if (child == nullptr || child->parentId != *groupId)
+            return fail("group-track rejected: track " + juce::String(*childId) +
+                        " is not a child of track " + juce::String(*groupId));
+
+        std::cout << "group " << *childId << " " << *groupId << "\n";
+        return {};
+    }
+
+    CommandResult ungroupTrack(const juce::StringArray& tokens, size_t& index) {
+        auto childId = takeInt(tokens, index, "ungroup-track requires <child-id>");
+        if (!childId)
+            return fail(lastParseError_);
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        if (trackManager.getTrack(*childId) == nullptr)
+            return fail("ungroup-track: unknown track " + juce::String(*childId));
+
+        trackManager.removeTrackFromGroup(*childId);
+        std::cout << "ungroup " << *childId << "\n";
+        return {};
+    }
+
+    CommandResult routeMidiTo(const juce::StringArray& tokens, size_t& index) {
+        auto sourceId = takeInt(tokens, index, "route-midi-to requires <source-id>");
+        if (!sourceId)
+            return fail(lastParseError_);
+        auto destId = takeInt(tokens, index, "route-midi-to requires <dest-id>");
+        if (!destId)
+            return fail(lastParseError_);
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.routeMidiOutputToTrack(*sourceId, *destId);
+
+        const auto* dest = trackManager.getTrack(*destId);
+        if (dest == nullptr)
+            return fail("route-midi-to: unknown track " + juce::String(*destId));
+
+        // The model rejects self / unknown / cycle silently, so verify the
+        // routing actually landed (mirrors the set-track-input convention).
+        const auto expected = "track:" + juce::String(*sourceId);
+        if (dest->midiInputDevice != expected)
+            return fail("route-midi-to rejected: track " + juce::String(*destId) +
+                        " midi input is \"" + dest->midiInputDevice + "\"");
+
+        std::cout << "midi-to " << *sourceId << " " << *destId << "\n";
         return {};
     }
 

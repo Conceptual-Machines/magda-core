@@ -1793,11 +1793,11 @@ void TrackInspector::populateRoutingSelectors() {
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
         } else if (selectedId >= 200) {
-            // Track destination
+            // "MIDI To track" — internal routing, mirror of the dest's MIDI input
             auto it = midiOutputTrackMapping_.find(selectedId);
             if (it != midiOutputTrackMapping_.end()) {
-                magda::TrackManager::getInstance().setTrackMidiOutput(
-                    selectedTrackId_, "track:" + juce::String(it->second));
+                magda::TrackManager::getInstance().routeMidiOutputToTrack(selectedTrackId_,
+                                                                          it->second);
             }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
@@ -1852,8 +1852,9 @@ void TrackInspector::populateMidiInputOptions() {
 void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
-    magda::RoutingSyncHelper::populateMidiOutputOptions(
-        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), midiOutputTrackMapping_);
+    magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
+                                                        audioEngine_->getMidiBridge(),
+                                                        midiOutputTrackMapping_, selectedTrackId_);
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {

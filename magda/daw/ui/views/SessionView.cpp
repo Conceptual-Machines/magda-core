@@ -981,7 +981,7 @@ class SessionView::MiniIOStrip : public juce::Component {
         RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge, trackId_,
                                                     &midiInputTrackMapping_);
         RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(), midiBridge,
-                                                     midiOutputTrackMapping_);
+                                                     midiOutputTrackMapping_, trackId_);
 
         // Sync current track state into selectors
         updateFromTrack();
@@ -1100,10 +1100,10 @@ class SessionView::MiniIOStrip : public juce::Component {
             if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
             } else if (selectedId >= 200) {
+                // "MIDI To track" — internal routing, mirror of the dest's MIDI input
                 auto it = midiOutputTrackMapping_.find(selectedId);
                 if (it != midiOutputTrackMapping_.end())
-                    TrackManager::getInstance().setTrackMidiOutput(
-                        trackId_, "track:" + juce::String(it->second));
+                    TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiOutputs = midiBridge->getAvailableMidiOutputs();
                 int deviceIndex = selectedId - 10;

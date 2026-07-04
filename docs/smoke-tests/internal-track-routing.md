@@ -47,6 +47,23 @@ device/clip), **B** empty. Audio device active.
       check the selection survives).
 - [ ] Record B in the arrangement → A's MIDI lands as a clip on B.
 
+## 4b. MIDI To (source-side mirror)
+
+- [ ] A's MIDI **output** selector lists other tracks after a separator.
+- [ ] Pick B on A's out selector → B's MIDI input selector shows A
+      (same edge, visible from both ends).
+- [ ] With B listening, pick C on A's out selector → C listens, B is
+      cleared (single destination).
+- [ ] Pick a hardware MIDI out (or None) on A → A's track listeners are
+      cleared.
+- [ ] First selection works on a fresh project (selectors list tracks
+      before any routing exists — regression for the populate bug).
+
+## 4c. Groups
+
+- [ ] Drag a track into a group → its output selector shows the group's
+      name; ungroup → back to Master.
+
 ## 5. Mutual exclusivity + switching
 
 - [ ] Setting a MIDI `track:` input on B clears its audio input, and vice

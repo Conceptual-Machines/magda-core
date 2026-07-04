@@ -1559,11 +1559,72 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
     DBG("TrackManager::setTrackMidiOutput - trackId=" << trackId << " deviceId='" << deviceId
                                                       << "'");
 
+    // The MIDI output selector is one exclusive choice: picking a hardware
+    // device (or None) tears down any internal "MIDI To track" routing.
+    clearMidiTrackListeners(trackId);
+    // Re-fetch: clearMidiTrackListeners triggers notifyTrackPropertyChanged which
+    // may cause listeners to modify the tracks_ vector, invalidating our pointer.
+    track = getTrack(trackId);
+    if (!track)
+        return;
+
     // Update track state
     track->midiOutputDevice = deviceId;
 
     // Notify listeners (AudioBridge forwards to TrackController for TE routing)
     notifyTrackPropertyChanged(trackId);
+}
+
+void TrackManager::routeMidiOutputToTrack(TrackId sourceTrackId, TrackId destTrackId) {
+    DBG("TrackManager::routeMidiOutputToTrack - source=" << sourceTrackId
+                                                         << " dest=" << destTrackId);
+
+    // Validate everything up-front — a rejected route must change nothing.
+    auto* source = getTrack(sourceTrackId);
+    const auto* dest = getTrack(destTrackId);
+    if (!source || !dest) {
+        DBG("  -> Rejected: unknown source or destination track");
+        return;
+    }
+    if (dest->type == TrackType::Aux) {
+        DBG("  -> Rejected: aux tracks don't receive MIDI");
+        return;
+    }
+    // Also rejects self-routing (source == dest counts as a cycle)
+    if (wouldCreateInputRoutingCycle(destTrackId, sourceTrackId)) {
+        DBG("  -> Rejected: routing track " << sourceTrackId << " into track " << destTrackId
+                                            << " would create an input routing cycle");
+        return;
+    }
+
+    // Single destination: clear every other track currently listening to the source
+    clearMidiTrackListeners(sourceTrackId, destTrackId);
+
+    // Route the source into the destination (input-owned edge on the destination)
+    setTrackMidiInput(destTrackId, "track:" + juce::String(sourceTrackId));
+
+    // The MIDI output selector is one exclusive choice — clear the source's
+    // hardware MIDI output. Set the field directly (setTrackMidiOutput would
+    // tear down the listener we just created) and notify so the source's
+    // routing UI re-syncs its mirror view.
+    // Re-fetch: the setters above notify listeners which may mutate tracks_.
+    source = getTrack(sourceTrackId);
+    if (!source)
+        return;
+    source->midiOutputDevice = "";
+    notifyTrackPropertyChanged(sourceTrackId);
+}
+
+void TrackManager::clearMidiTrackListeners(TrackId sourceTrackId, TrackId excludeTrackId) {
+    // Collect ids first: the setter notifies listeners, which may mutate tracks_.
+    const juce::String trackInputId = "track:" + juce::String(sourceTrackId);
+    std::vector<TrackId> listenerIds;
+    for (const auto& t : tracks_) {
+        if (t.id != excludeTrackId && t.midiInputDevice == trackInputId)
+            listenerIds.push_back(t.id);
+    }
+    for (auto listenerId : listenerIds)
+        setTrackMidiInput(listenerId, "");
 }
 
 void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {
