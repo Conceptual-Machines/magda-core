@@ -329,10 +329,13 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
 
-    // Assign aux bus index for Aux tracks; aux tracks never receive MIDI
+    // Aux buses and Group summing tracks take no external input, so they never
+    // receive MIDI; every other track listens to all inputs.
     if (type == TrackType::Aux) {
         track.auxBusIndex = nextAuxBusIndex_++;
         track.midiInputDevice = "";  // Aux tracks don't receive MIDI
+    } else if (type == TrackType::Group) {
+        track.midiInputDevice = "";  // Group summing tracks don't receive MIDI
     } else {
         track.midiInputDevice = "all";  // MIDI listens to all inputs
     }
@@ -344,9 +347,10 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     DBG("Created track: " << track.name << " (id=" << trackId << ", type=" << getTrackTypeName(type)
                           << ")");
 
-    // Initialize MIDI routing for this track if audioEngine is available
-    // Aux tracks never receive MIDI; other tracks rely on selection-based routing
-    if (audioEngine_ && type != TrackType::Aux) {
+    // Initialize MIDI routing for this track if audioEngine is available.
+    // Aux buses and Group summing tracks never receive MIDI; other tracks rely
+    // on selection-based routing.
+    if (audioEngine_ && type != TrackType::Aux && type != TrackType::Group) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {
             midiBridge->setTrackMidiInput(trackId, "all");
             midiBridge->startMonitoring(trackId);
@@ -1307,6 +1311,10 @@ void TrackManager::setTrackSoloed(TrackId trackId, bool soloed) {
 
 void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
     if (auto* track = getTrack(trackId)) {
+        // Group summing tracks have no clip lane to record into, so they can't
+        // be record-armed.
+        if (track->type == TrackType::Group)
+            return;
         track->recordArmed = armed;
         notifyTrackPropertyChanged(trackId);
     }

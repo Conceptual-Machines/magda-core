@@ -138,6 +138,26 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
     }
 }
 
+TEST_CASE("Group track takes no external input", "[group_track][input]") {
+    GroupMacroTestFixture fixture;
+
+    auto groupId = fixture.tm().createGroupTrack("Bus");
+    REQUIRE(groupId != INVALID_TRACK_ID);
+    auto* group = fixture.tm().getTrack(groupId);
+    REQUIRE(group != nullptr);
+    REQUIRE(group->type == TrackType::Group);
+
+    SECTION("is not seeded with a MIDI input") {
+        REQUIRE(group->midiInputDevice.isEmpty());
+    }
+
+    SECTION("cannot be record-armed") {
+        REQUIRE_FALSE(group->recordArmed);
+        fixture.tm().setTrackRecordArmed(groupId, true);
+        REQUIRE_FALSE(fixture.tm().getTrack(groupId)->recordArmed);
+    }
+}
+
 TEST_CASE("Group track rejects instruments inside rack chains", "[group_track][instrument][rack]") {
     GroupMacroTestFixture fixture;
 

@@ -447,7 +447,7 @@ void MidiInputRouter::updateMidiInputRouting() {
     // instrument, so their want is expressed against the parent id.
     std::unordered_set<TrackId> midiTargets;
     for (const auto& track : tm.getTracks()) {
-        if (track.type == TrackType::Aux)
+        if (track.type == TrackType::Aux || track.type == TrackType::Group)
             continue;
 
         if (!track.receivesLiveMidiInput())
@@ -460,7 +460,7 @@ void MidiInputRouter::updateMidiInputRouting() {
     }
 
     for (const auto& track : tm.getTracks()) {
-        if (track.type == TrackType::Aux)
+        if (track.type == TrackType::Aux || track.type == TrackType::Group)
             continue;
 
         bool shouldReceiveMidi = midiTargets.count(track.id) > 0;
