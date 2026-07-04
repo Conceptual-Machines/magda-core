@@ -234,16 +234,6 @@ void ClipSynchronizer::clipsChanged() {
     const auto& arrangementClips = clipManager.getArrangementClips();
     const auto& sessionClips = clipManager.getSessionClips();
 
-    std::unordered_set<ClipId> currentArrangementClipIds;
-    currentArrangementClipIds.reserve(arrangementClips.size());
-    for (const auto& clip : arrangementClips)
-        currentArrangementClipIds.insert(clip.id);
-
-    std::unordered_set<ClipId> currentSessionClipIds;
-    currentSessionClipIds.reserve(sessionClips.size());
-    for (const auto& clip : sessionClips)
-        currentSessionClipIds.insert(clip.id);
-
     auto arrangementPlan = buildArrangementClipSyncPlan(edit_, trackController_, arrangementClips,
                                                         sessionClips, clipIds_);
 
@@ -260,19 +250,6 @@ void ClipSynchronizer::clipsChanged() {
 
     // Sync session clips to ClipSlots
     bool sessionClipsSynced = false;
-    for (const auto& entry : clipIds_.snapshot()) {
-        const auto clipId = entry.first;
-        if (currentSessionClipIds.find(clipId) != currentSessionClipIds.end() ||
-            currentArrangementClipIds.find(clipId) != currentArrangementClipIds.end())
-            continue;
-
-        if (auto* teClip = getSessionTeClip(clipId)) {
-            teClip->removeFromParent();
-            clipIds_.erase(clipId);
-            sessionClipsSynced = true;
-        }
-    }
-
     for (const auto& clip : sessionClips) {
         if (syncSessionClipToSlot(clip.id)) {
             sessionClipsSynced = true;
