@@ -441,6 +441,7 @@ void TracktionEngineWrapper::onTransportStop(double returnPosition) {
     drainRecordingNoteQueue();
     recordingPreviews_.clear();
     recordingNoteQueue_.clear();
+    trackMidiRecordingNoteQueue_.clear();
 
     // Clear dedup maps
     activeRecordingClips_.clear();
@@ -517,6 +518,7 @@ void TracktionEngineWrapper::onTransportStopRecording() {
         drainRecordingNoteQueue();
         recordingPreviews_.clear();
         recordingNoteQueue_.clear();
+        trackMidiRecordingNoteQueue_.clear();
         activeRecordingClips_.clear();
         recordingStartTimes_.clear();
     } else {

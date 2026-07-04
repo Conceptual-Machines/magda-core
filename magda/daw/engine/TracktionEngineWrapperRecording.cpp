@@ -305,33 +305,39 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
 
     int eventsPopped = 0;
     RecordingNoteEvent evt;
-    while (recordingNoteQueue_.pop(evt)) {
-        eventsPopped++;
-        TrackId trackId = evt.trackId;
-        auto it = recordingPreviews_.find(trackId);
-        if (it == recordingPreviews_.end())
-            continue;
+    // Drain both producer queues: MidiBridge's (hardware/QWERTY MIDI) and
+    // MidiInputRouter's (track-routed MIDI). A given track's events only ever
+    // come from one of them, so note on/off pairing is unaffected.
+    for (RecordingNoteQueue* queue : {&recordingNoteQueue_, &trackMidiRecordingNoteQueue_}) {
+        while (queue->pop(evt)) {
+            eventsPopped++;
+            TrackId trackId = evt.trackId;
+            auto it = recordingPreviews_.find(trackId);
+            if (it == recordingPreviews_.end())
+                continue;
 
-        auto& preview = it->second;
-        // Note position relative to the pass start, in beats (tempo-correct).
-        double eventBeat = transportSecondsToBeats(edit, evt.transportSeconds) - preview.startBeat;
+            auto& preview = it->second;
+            // Note position relative to the pass start, in beats (tempo-correct).
+            double eventBeat =
+                transportSecondsToBeats(edit, evt.transportSeconds) - preview.startBeat;
 
-        if (evt.isNoteOn) {
-            MidiNote mn;
-            mn.noteNumber = evt.noteNumber;
-            mn.velocity = evt.velocity;
-            mn.startBeat = eventBeat;
-            mn.lengthBeats = -1.0;  // Sentinel: note still held
-            preview.notes.push_back(mn);
-        } else {
-            // Note-off: find matching open note (same noteNumber, lengthBeats < 0)
-            for (int i = static_cast<int>(preview.notes.size()) - 1; i >= 0; --i) {
-                auto& n = preview.notes[static_cast<size_t>(i)];
-                if (n.noteNumber == evt.noteNumber && n.lengthBeats < 0.0) {
-                    n.lengthBeats = eventBeat - n.startBeat;
-                    if (n.lengthBeats < 0.01)
-                        n.lengthBeats = 0.01;
-                    break;
+            if (evt.isNoteOn) {
+                MidiNote mn;
+                mn.noteNumber = evt.noteNumber;
+                mn.velocity = evt.velocity;
+                mn.startBeat = eventBeat;
+                mn.lengthBeats = -1.0;  // Sentinel: note still held
+                preview.notes.push_back(mn);
+            } else {
+                // Note-off: find matching open note (same noteNumber, lengthBeats < 0)
+                for (int i = static_cast<int>(preview.notes.size()) - 1; i >= 0; --i) {
+                    auto& n = preview.notes[static_cast<size_t>(i)];
+                    if (n.noteNumber == evt.noteNumber && n.lengthBeats < 0.0) {
+                        n.lengthBeats = eventBeat - n.startBeat;
+                        if (n.lengthBeats < 0.01)
+                            n.lengthBeats = 0.01;
+                        break;
+                    }
                 }
             }
         }
@@ -474,8 +480,10 @@ void TracktionEngineWrapper::beginArmedSessionSlotRecordings() {
         ++it;
     }
 
-    if (startedAny)
+    if (startedAny) {
         recordingNoteQueue_.clear();
+        trackMidiRecordingNoteQueue_.clear();
+    }
 }
 
 void TracktionEngineWrapper::createSessionSlotPreview(TrackId trackId, int sceneIndex) {

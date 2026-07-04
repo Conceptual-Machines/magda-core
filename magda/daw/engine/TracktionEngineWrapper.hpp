@@ -605,8 +605,14 @@ class TracktionEngineWrapper : public AudioEngine,
     std::unordered_map<int, double> recordingStartTimes_;
     double intendedRecordPosition_ = 0.0;  // Position before count-in offset
 
-    // Real-time MIDI recording preview (outside ClipManager)
+    // Real-time MIDI recording preview (outside ClipManager).
+    // Two queues because RecordingNoteQueue is single-producer/single-consumer:
+    // recordingNoteQueue_ is fed by MidiBridge (hardware/QWERTY MIDI callback
+    // threads) and trackMidiRecordingNoteQueue_ by MidiInputRouter's TE input
+    // consumers (audio thread) for "track:N"-routed MIDI. Both drain on the
+    // message thread in drainRecordingNoteQueue().
     RecordingNoteQueue recordingNoteQueue_;
+    RecordingNoteQueue trackMidiRecordingNoteQueue_;
     std::atomic<double> transportPositionForMidi_{0.0};
     std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
     void drainRecordingNoteQueue();

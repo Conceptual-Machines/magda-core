@@ -111,6 +111,93 @@ MidiInputRouter::MidiInputRouter(te::Engine& engine, te::Edit& edit,
 
 MidiInputRouter::~MidiInputRouter() {
     cancelPendingUpdate();
+
+    // Unhook preview consumers from any live input instances before the
+    // consumer objects are destroyed. removeConsumer takes the same lock the
+    // audio-thread callback iteration holds, so after this no callback can be
+    // touching them.
+    if (auto* playbackContext = edit_.getCurrentPlaybackContext()) {
+        for (auto* inputDeviceInstance : playbackContext->getAllInputs())
+            for (auto& [sourceTrackId, consumer] : trackMidiPreviewConsumers_)
+                if (consumer)
+                    inputDeviceInstance->removeConsumer(consumer.get());
+    }
+}
+
+void MidiInputRouter::setRecordingQueue(RecordingNoteQueue* queue,
+                                        std::atomic<double>* transportPosition) {
+    recordingQueue_ = queue;
+    transportPositionForMidi_ = transportPosition;
+    for (auto& [sourceTrackId, consumer] : trackMidiPreviewConsumers_)
+        if (consumer)
+            consumer->configure(queue, transportPosition);
+}
+
+TrackId MidiInputRouter::resolveTargetTrackId(te::EditItemID targetID) const {
+    TrackId result = INVALID_TRACK_ID;
+    trackController_.withTrackMapping([&](const auto& mapping) {
+        for (const auto& [magdaId, teTrack] : mapping) {
+            if (!teTrack)
+                continue;
+            if (teTrack->itemID == targetID) {
+                result = magdaId;
+                return;
+            }
+            // Session-slot recording targets the slot, not the track.
+            for (auto* slot : teTrack->getClipSlotList().getClipSlots()) {
+                if (slot && slot->itemID == targetID) {
+                    result = magdaId;
+                    return;
+                }
+            }
+        }
+    });
+    return result;
+}
+
+void MidiInputRouter::syncTrackMidiPreviewConsumers() {
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext)
+        return;
+
+    auto& tm = TrackManager::getInstance();
+
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        TrackId sourceTrackId = INVALID_TRACK_ID;
+        if (!getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance, &sourceTrackId))
+            continue;
+
+        // Preview events are only wanted for armed destinations (mirrors
+        // MidiBridge's recordArmed gate), so un-armed monitoring doesn't fill
+        // the queue with events nobody drains.
+        std::vector<TrackId> armedTargets;
+        for (auto targetID : inputDeviceInstance->getTargets()) {
+            const TrackId destTrackId = resolveTargetTrackId(targetID);
+            if (destTrackId == INVALID_TRACK_ID)
+                continue;
+            const auto* destInfo = tm.getTrack(destTrackId);
+            if (!destInfo || !destInfo->recordArmed)
+                continue;
+            if (std::find(armedTargets.begin(), armedTargets.end(), destTrackId) ==
+                armedTargets.end())
+                armedTargets.push_back(destTrackId);
+        }
+
+        auto& consumer = trackMidiPreviewConsumers_[sourceTrackId];
+        if (!consumer)
+            consumer = std::make_unique<TrackMidiPreviewConsumer>();
+
+        consumer->configure(recordingQueue_, transportPositionForMidi_);
+        consumer->setArmedTargets(armedTargets);
+
+        // addConsumer is idempotent (addIfNotAlreadyThere), so re-adding every
+        // sync keeps registration alive across playback-context/instance
+        // recreation (restartAllTransports, device list rebuilds).
+        if (armedTargets.empty())
+            inputDeviceInstance->removeConsumer(consumer.get());
+        else
+            inputDeviceInstance->addConsumer(consumer.get());
+    }
 }
 
 void MidiInputRouter::requestInputMonitorResync() {
@@ -374,6 +461,8 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
         if (addedRouting && playbackContext->isPlaybackGraphAllocated())
             playbackContext->reallocate();
     }
+
+    syncTrackMidiPreviewConsumers();
 }
 
 bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex,
@@ -485,6 +574,8 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
 
     if (changedRouting && playbackContext->isPlaybackGraphAllocated())
         playbackContext->reallocate();
+
+    syncTrackMidiPreviewConsumers();
 
     return enabled ? armedSlot : true;
 }
@@ -735,6 +826,12 @@ void MidiInputRouter::handlePlaybackContextTick() {
         if (currentContext != nullptr)
             updateMidiInputRouting();
     }
+
+    // Keep track-MIDI preview consumers registered/armed. Runs every tick:
+    // input instances are recreated behind our back (restartAllTransports on
+    // monitor-mode changes, device-list rebuilds) and arm state changes are
+    // not routed through this class, so reconciliation is the robust model.
+    syncTrackMidiPreviewConsumers();
 }
 
 }  // namespace magda
