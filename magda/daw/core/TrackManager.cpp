@@ -796,8 +796,9 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
         }
     }
 
-    // Set up MidiBridge monitoring for restored track (same as createTrack)
-    if (audioEngine_ && trackInfo.type != TrackType::Aux) {
+    // Set up MidiBridge monitoring for restored track (same as createTrack).
+    // Aux buses and Group summing tracks never receive MIDI.
+    if (audioEngine_ && trackInfo.type != TrackType::Aux && trackInfo.type != TrackType::Group) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {
             midiBridge->setTrackMidiInput(trackInfo.id, "all");
             midiBridge->startMonitoring(trackInfo.id);
@@ -1322,6 +1323,10 @@ void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
 
 void TrackManager::setTrackInputMonitor(TrackId trackId, InputMonitorMode mode) {
     if (auto* track = getTrack(trackId)) {
+        // Group summing tracks take no external input, so input monitoring does
+        // not apply to them.
+        if (track->type == TrackType::Group)
+            return;
         track->inputMonitor = mode;
         notifyTrackPropertyChanged(trackId);
     }
@@ -1439,9 +1444,9 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
         return;
     }
 
-    // Aux tracks never receive MIDI
-    if (track->type == TrackType::Aux) {
-        DBG("Cannot set MIDI input on aux track " << trackId);
+    // Aux buses and Group summing tracks never receive external MIDI
+    if (track->type == TrackType::Aux || track->type == TrackType::Group) {
+        DBG("Cannot set MIDI input on aux/group track " << trackId);
         return;
     }
 
@@ -1514,6 +1519,12 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
 void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {
     auto* track = getTrack(trackId);
     if (!track) {
+        return;
+    }
+
+    // Group summing tracks take no external input.
+    if (track->type == TrackType::Group) {
+        DBG("Cannot set audio input on group track " << trackId);
         return;
     }
 

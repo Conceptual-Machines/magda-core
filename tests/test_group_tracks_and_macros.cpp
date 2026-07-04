@@ -156,6 +156,21 @@ TEST_CASE("Group track takes no external input", "[group_track][input]") {
         fixture.tm().setTrackRecordArmed(groupId, true);
         REQUIRE_FALSE(fixture.tm().getTrack(groupId)->recordArmed);
     }
+
+    SECTION("rejects MIDI input assignment") {
+        fixture.tm().setTrackMidiInput(groupId, "all");
+        REQUIRE(fixture.tm().getTrack(groupId)->midiInputDevice.isEmpty());
+    }
+
+    SECTION("rejects audio input assignment") {
+        fixture.tm().setTrackAudioInput(groupId, "some-device");
+        REQUIRE(fixture.tm().getTrack(groupId)->audioInputDevice.isEmpty());
+    }
+
+    SECTION("rejects input monitoring") {
+        fixture.tm().setTrackInputMonitor(groupId, InputMonitorMode::In);
+        REQUIRE(fixture.tm().getTrack(groupId)->inputMonitor == InputMonitorMode::Off);
+    }
 }
 
 TEST_CASE("Group track rejects instruments inside rack chains", "[group_track][instrument][rack]") {
