@@ -138,6 +138,66 @@ TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]")
     }
 }
 
+TEST_CASE("Group track takes no external input", "[group_track][input]") {
+    GroupMacroTestFixture fixture;
+
+    auto groupId = fixture.tm().createGroupTrack("Bus");
+    REQUIRE(groupId != INVALID_TRACK_ID);
+    auto* group = fixture.tm().getTrack(groupId);
+    REQUIRE(group != nullptr);
+    REQUIRE(group->type == TrackType::Group);
+
+    SECTION("is not seeded with a MIDI input") {
+        REQUIRE(group->midiInputDevice.isEmpty());
+    }
+
+    SECTION("cannot be record-armed") {
+        REQUIRE_FALSE(group->recordArmed);
+        fixture.tm().setTrackRecordArmed(groupId, true);
+        REQUIRE_FALSE(fixture.tm().getTrack(groupId)->recordArmed);
+    }
+
+    SECTION("rejects MIDI input assignment") {
+        fixture.tm().setTrackMidiInput(groupId, "all");
+        REQUIRE(fixture.tm().getTrack(groupId)->midiInputDevice.isEmpty());
+    }
+
+    SECTION("rejects audio input assignment") {
+        fixture.tm().setTrackAudioInput(groupId, "some-device");
+        REQUIRE(fixture.tm().getTrack(groupId)->audioInputDevice.isEmpty());
+    }
+
+    SECTION("rejects input monitoring") {
+        fixture.tm().setTrackInputMonitor(groupId, InputMonitorMode::In);
+        REQUIRE(fixture.tm().getTrack(groupId)->inputMonitor == InputMonitorMode::Off);
+    }
+}
+
+TEST_CASE("Restoring a group track sanitizes stale input state", "[group_track][input]") {
+    GroupMacroTestFixture fixture;
+
+    // Simulate a project saved before the no-input invariant: a group carrying
+    // MIDI/audio input, monitoring, and record-arm.
+    TrackInfo info;
+    info.id = 100;
+    info.name = "Old Bus";
+    info.type = TrackType::Group;
+    info.midiInputDevice = "all";
+    info.audioInputDevice = "some-device";
+    info.inputMonitor = InputMonitorMode::In;
+    info.recordArmed = true;
+
+    fixture.tm().restoreTrack(info);
+
+    auto* g = fixture.tm().getTrack(100);
+    REQUIRE(g != nullptr);
+    REQUIRE(g->type == TrackType::Group);
+    REQUIRE(g->midiInputDevice.isEmpty());
+    REQUIRE(g->audioInputDevice.isEmpty());
+    REQUIRE(g->inputMonitor == InputMonitorMode::Off);
+    REQUIRE_FALSE(g->recordArmed);
+}
+
 TEST_CASE("Group track rejects instruments inside rack chains", "[group_track][instrument][rack]") {
     GroupMacroTestFixture fixture;
 
@@ -278,6 +338,16 @@ TEST_CASE("Audio and Instrument tracks accept instruments", "[group_track][instr
         auto trackId = fixture.tm().createTrack("Aux", TrackType::Aux);
         auto id = fixture.tm().addDeviceToTrack(trackId, instrument);
         REQUIRE(id == INVALID_DEVICE_ID);
+    }
+
+    SECTION("Aux track rejects instrument in a rack chain") {
+        auto trackId = fixture.tm().createTrack("Aux", TrackType::Aux);
+        auto rackId = fixture.tm().addRackToTrack(trackId, "FX Rack");
+        auto* rack = fixture.tm().getRack(trackId, rackId);
+        REQUIRE(rack != nullptr);
+        auto chainId = rack->chains[0].id;
+        REQUIRE(fixture.tm().addDeviceToChain(trackId, rackId, chainId, instrument) ==
+                INVALID_DEVICE_ID);
     }
 }
 

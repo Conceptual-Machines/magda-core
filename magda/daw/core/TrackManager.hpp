@@ -831,6 +831,11 @@ class TrackManager {
     TrackManager();
     ~TrackManager() = default;
 
+    // Register a track with MidiBridge for input monitoring. No-op when no audio
+    // engine is attached or the track takes no external input (Aux, Group).
+    // Single place for the create/restore/duplicate/engine-attach wiring.
+    void startMidiMonitoring(const TrackInfo& track, const juce::String& deviceId);
+
     // Mutable resolver — used only by the unified setters in
     // TrackManagerModulation.cpp. Kept private so external callers can't
     // reach in and mutate macros/mods without going through the setter
