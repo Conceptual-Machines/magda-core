@@ -400,7 +400,21 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
 
     // Zone 1a: the all-tracks selection strip - start a full-height time selection
     if (inAllTracksSelectionStrip) {
+        // If an active selection exists and the click lands on an endpoint
+        // handle, resize that edge instead of starting a fresh selection. A
+        // resize is just a drag anchored at the opposite edge, so the existing
+        // mouseDrag machinery handles the rest.
+        bool grabEndEdge = false;
+        if (hitTimeSelectionEdge(event.x, grabEndEdge)) {
+            isDraggingTimeSelection = true;
+            timeSelectionResizing_ = true;  // resize: don't move the playhead
+            timeSelectionDragStartBeats =
+                grabEndEdge ? timeSelectionStartBeats : timeSelectionEndBeats;
+            return;
+        }
+
         isDraggingTimeSelection = true;
+        timeSelectionResizing_ = false;  // fresh selection: snap playhead to start
         double startBeats = pixelToBeats(event.x);
         startBeats = juce::jlimit(0.0, getTimelineLengthBeats(), startBeats);
         if (snapEnabled) {
@@ -484,7 +498,11 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         // zooms. Use the SAME boundary as mouseDown (rows.playheadTop) so the
         // I-beam never appears over an area where a drag actually zooms.
         if (event.y >= rows.playheadTop) {
-            setMouseCursor(juce::MouseCursor::IBeamCursor);
+            bool overEndEdge = false;
+            if (hitTimeSelectionEdge(event.x, overEndEdge))
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            else
+                setMouseCursor(juce::MouseCursor::IBeamCursor);
         } else {
             setMouseCursor(CursorManager::getInstance().getZoomCursor());
         }
@@ -510,7 +528,8 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
         }
 
         if (onRulerTimeSelectionChanged) {
-            onRulerTimeSelectionChanged(timeSelectionStartBeats, timeSelectionEndBeats);
+            onRulerTimeSelectionChanged(timeSelectionStartBeats, timeSelectionEndBeats,
+                                        !timeSelectionResizing_);
         }
         repaint();
         return;
@@ -678,7 +697,7 @@ void TimelineComponent::mouseUp(const juce::MouseEvent& event) {
             timeSelectionStartBeats = -1.0;
             timeSelectionEndBeats = -1.0;
             if (onRulerTimeSelectionChanged) {
-                onRulerTimeSelectionChanged(-1.0, -1.0);
+                onRulerTimeSelectionChanged(-1.0, -1.0, false);
             }
             // Move playhead to click position
             double clickBeats = pixelToBeats(event.x);
@@ -1523,6 +1542,27 @@ void TimelineComponent::clearTimeSelection() {
     repaint();
 }
 
+bool TimelineComponent::hitTimeSelectionEdge(int x, bool& isEndEdge) const {
+    if (timeSelectionStartBeats < 0.0 || timeSelectionEndBeats <= timeSelectionStartBeats)
+        return false;
+
+    const int startX = beatsToPixel(timeSelectionStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    const int endX = beatsToPixel(timeSelectionEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    constexpr int threshold = 6;
+    const int dStart = std::abs(x - startX);
+    const int dEnd = std::abs(x - endX);
+
+    if (dStart <= threshold && dStart <= dEnd) {
+        isEndEdge = false;
+        return true;
+    }
+    if (dEnd <= threshold) {
+        isEndEdge = true;
+        return true;
+    }
+    return false;
+}
+
 void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
     if (timeSelectionStartBeats < 0 || timeSelectionEndBeats < 0 ||
         timeSelectionEndBeats <= timeSelectionStartBeats) {
@@ -1532,9 +1572,9 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
     int startX = beatsToPixel(timeSelectionStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int endX = beatsToPixel(timeSelectionEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
 
-    // Neutral near-white strip in the range row (directly beneath the loop).
-    // Deliberately hue-agnostic so it reads over any clip colour and never
-    // fights the green loop rail above it.
+    // Accent-blue strip in the range row (directly beneath the loop). Blue keeps
+    // the time selection distinct from the near-white playhead and the green loop
+    // rail above it.
     const auto rows = rulerRows();
     const int rowH = rows.playheadBottom - rows.playheadTop;
     const int height = juce::jmax(2, rowH / 3);  // thin bar, vertically centered
@@ -1543,8 +1583,25 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
     if (selectionArea.isEmpty())
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.9f));
+    // Faint tinted bar between the handles, matching the loop rail's ~38% tint.
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.38f));
     g.fillRoundedRectangle(selectionArea.toFloat(), static_cast<float>(height) / 2.0f);
+
+    // Brighter rectangular handles at the range edges. These are the endpoint
+    // markers and double as the drag handles (see hitTimeSelectionEdge).
+    // Rectangles (rather than triangles) sit cleanly under the playhead's
+    // triangle instead of competing with it.
+    const auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT);
+    const float hTop = static_cast<float>(rows.playheadTop);
+    const float hHeight = static_cast<float>(rows.playheadBottom - rows.playheadTop);
+    constexpr float handleW = 4.0f;
+    g.setColour(handleColour);
+    if (isXVisible(g, getWidth(), startX))
+        g.fillRoundedRectangle(static_cast<float>(startX) - handleW / 2.0f, hTop, handleW, hHeight,
+                               1.5f);
+    if (isXVisible(g, getWidth(), endX))
+        g.fillRoundedRectangle(static_cast<float>(endX) - handleW / 2.0f, hTop, handleW, hHeight,
+                               1.5f);
 }
 
 }  // namespace magda

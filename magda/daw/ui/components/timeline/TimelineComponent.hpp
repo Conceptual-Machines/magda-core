@@ -154,7 +154,10 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // select a time range across ALL tracks (every track's clips). Args are
     // (startBeats, endBeats), or (-1, -1) to clear. Distinct from the per-track
     // time selection dragged inside TrackContentPanel.
-    std::function<void(double, double)> onRulerTimeSelectionChanged;
+    // (startBeats, endBeats, movePlayhead). movePlayhead is true only when a new
+    // selection is being created, so resizing an existing edge leaves the
+    // playhead alone.
+    std::function<void(double, double, bool)> onRulerTimeSelectionChanged;
     std::function<void(double, double)>
         onZoomToFitBeatsRequested;  // Callback to zoom to fit a beat range (startBeats, endBeats)
 
@@ -198,6 +201,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     double timeSelectionStartBeats = -1.0;
     double timeSelectionEndBeats = -1.0;
     bool isDraggingTimeSelection = false;
+    bool timeSelectionResizing_ = false;        // true while dragging an existing edge
     double timeSelectionDragStartBeats = -1.0;  // Initial drag position for time selection
 
     bool markerLaneVisible_ = true;     // Gates marker guide-line drawing
@@ -217,6 +221,10 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Helper methods — beats are the native domain
     int beatsToPixel(double beats) const;
     double pixelToBeats(int pixel) const;
+
+    // True if x (component-local) is on a time-selection endpoint handle; sets
+    // isEndEdge to which edge (true = end, false = start).
+    bool hitTimeSelectionEdge(int x, bool& isEndEdge) const;
     double secondsToBeats(double timeInSeconds) const;
     double beatsToSeconds(double beats) const;
     double getTimelineLengthBeats() const;

@@ -6,10 +6,12 @@
 
 namespace magda::LoopStripRenderer {
 
-// Endpoint-weighted loop indicator shared by every ruler (arrangement +
-// clip editors) so the loop looks identical everywhere: a quiet ~38% rail
-// between two bright, softly-glowing endpoint caps, centred vertically in
-// [stripTop, stripTop + stripHeight].
+// Loop indicator shared by every ruler (arrangement + clip editors) so the loop
+// looks identical everywhere: a quiet ~38% rail between two brighter rectangular
+// handles, filling [stripTop, stripTop + stripHeight]. The rectangular handles
+// mirror the time-range selection handles so the two read as the same kind of
+// thing (loop = green, selection = blue), and sit cleanly under the playhead's
+// triangle rather than competing with it.
 //
 // xStart/xEnd are component-local pixel positions; anything outside
 // [0, viewWidth] is skipped. `enabled` selects the bright green look vs. a
@@ -22,36 +24,32 @@ inline void draw(juce::Graphics& g, float xStart, float xEnd, int stripTop, int 
     if (stripHeight <= 0 || xEnd <= xStart)
         return;
 
-    const auto green =
+    const auto base =
         enabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER) : juce::Colour(0xFF808080);
-    const float cy = static_cast<float>(stripTop) + static_cast<float>(stripHeight) / 2.0f;
+    const float top = static_cast<float>(stripTop);
+    const float bottom = static_cast<float>(stripTop + stripHeight);
+    const float mid = (top + bottom) * 0.5f;
     const int railH = juce::jmax(2, stripHeight / 3);
-    const float railTop = cy - static_cast<float>(railH) / 2.0f;
+    const float railTop = mid - static_cast<float>(railH) / 2.0f;
 
     // Quiet rail (clamped to the visible width).
     const float x0 = juce::jmax(0.0f, xStart);
     const float x1 = juce::jmin(static_cast<float>(viewWidth), xEnd);
     if (x1 > x0) {
-        g.setColour(green.withAlpha(0.38f));
+        g.setColour(base.withAlpha(0.38f));
         g.fillRoundedRectangle(x0, railTop, x1 - x0, static_cast<float>(railH),
                                static_cast<float>(railH) / 2.0f);
     }
 
-    // Bright glowing endpoint caps, a touch taller than the rail for weight.
-    const float capH = static_cast<float>(railH) + 3.0f;
-    const float capTop = cy - capH / 2.0f;
-    const auto cap = [&](float x) {
-        if (x < 0.0f || x > static_cast<float>(viewWidth))
-            return;
-        g.setColour(green.withAlpha(0.16f));
-        g.fillRoundedRectangle(x - 5.0f, capTop - 1.0f, 10.0f, capH + 2.0f, 4.0f);
-        g.setColour(green.withAlpha(0.34f));
-        g.fillRoundedRectangle(x - 3.0f, capTop, 6.0f, capH, 3.0f);
-        g.setColour(green.brighter(0.45f));
-        g.fillRoundedRectangle(x - 2.0f, capTop, 4.0f, capH, 2.0f);
-    };
-    cap(xStart);
-    cap(xEnd);
+    // Brighter rectangular handles at the endpoints, matching the time-range
+    // selection handles.
+    const auto handle = base.brighter(0.4f);
+    constexpr float handleW = 4.0f;
+    g.setColour(handle);
+    if (xStart >= 0.0f && xStart <= static_cast<float>(viewWidth))
+        g.fillRoundedRectangle(xStart - handleW / 2.0f, top, handleW, bottom - top, 1.5f);
+    if (xEnd >= 0.0f && xEnd <= static_cast<float>(viewWidth))
+        g.fillRoundedRectangle(xEnd - handleW / 2.0f, top, handleW, bottom - top, 1.5f);
 }
 
 }  // namespace magda::LoopStripRenderer

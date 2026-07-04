@@ -839,7 +839,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int handleX = timeToPixel(playheadHandlePosition_);
         if (handleX >= 0 && handleX <= width) {
             int tickAreaTop = height - tickHeightMajor();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
 
             // Size the triangle to the playhead band (the tick area below the
             // label divider) so it fills that rectangle instead of poking past
@@ -871,7 +871,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             int playheadX = timeToPixel(displayTime);
             if (playheadX >= 0 && playheadX <= width) {
                 int tickAreaTop = height - tickHeightMajor();
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                 g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
             }
         }

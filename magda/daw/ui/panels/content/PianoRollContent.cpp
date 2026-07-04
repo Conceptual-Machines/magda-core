@@ -901,7 +901,7 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
         if (gridComponent_->getPlayheadDisplayX(gridX)) {
             const int contentX = viewport_->getX() + gridX - viewport_->getViewPositionX();
             if (contentX >= chordLaneLeftX() && contentX <= getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                 g.fillRect(contentX - 1, chordRowTop(), 2, chordRowHeight());
             }
         }

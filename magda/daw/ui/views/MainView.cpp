@@ -537,14 +537,17 @@ void MainView::setupCallbacks() {
     // Dragging the ruler strip beneath the loop marker area selects a time
     // range across ALL tracks (every track's clips), which is the range source
     // the ripple/insert/duplicate/delete time-range ops act on.
-    timeline->onRulerTimeSelectionChanged = [this](double startBeats, double endBeats) {
+    timeline->onRulerTimeSelectionChanged = [this](double startBeats, double endBeats,
+                                                   bool movePlayhead) {
         if (startBeats < 0 || endBeats < 0) {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
             timelineController->dispatch(
                 SetTimeSelectionBeatsEvent::allTracks(startBeats, endBeats));
-            // Move playhead to follow the left side of selection
-            timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
+            // Snap the playhead to the selection start only when the selection is
+            // first created; resizing an existing edge leaves the playhead alone.
+            if (movePlayhead)
+                timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
         }
     };
 
@@ -1882,7 +1885,20 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
     // Draw edit cursor (triangle) - always visible. Neutral near-white to match
     // the range strip and stay hue-agnostic over any clip colour.
     if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        // When the playhead sits on top of a time-range handle (it snaps to the
+        // selection start on creation), draw it translucent so the blue handle
+        // shows through instead of being fully covered.
+        float triAlpha = 1.0f;
+        if (state.selection.isVisuallyActive()) {
+            const auto handleX = [&](double beats) {
+                return static_cast<int>(std::round(beats * owner.horizontalZoom)) +
+                       LayoutConfig::TIMELINE_LEFT_PADDING - scrollOffset;
+            };
+            if (std::abs(editX - handleX(state.selection.startBeats)) <= 5 ||
+                std::abs(editX - handleX(state.selection.endBeats)) <= 5)
+                triAlpha = 0.55f;
+        }
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(triAlpha));
         // Fill the playhead row: top edge at y0, tip at the row bottom.
         const float ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
@@ -2476,10 +2492,10 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     g.setColour(juce::Colours::black.withAlpha(0.4f));
     g.fillRectList(dimmed);
 
-    // Crisp neutral (near-white) edges at the selection's vertical boundaries,
-    // hue-agnostic so they line up with the near-white range strip in the ruler
-    // and never fight the clip colours.
-    const auto edgeColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f);
+    // Crisp accent-blue edges at the selection's vertical boundaries, matching
+    // the blue range strip in the ruler and keeping the selection distinct from
+    // the near-white playhead.
+    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.9f);
     g.setColour(edgeColour);
     for (const auto& r : litRects) {
         g.fillRect(r.getX(), r.getY(), 1, r.getHeight());
