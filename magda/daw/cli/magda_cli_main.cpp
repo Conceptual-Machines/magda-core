@@ -20,6 +20,7 @@
 #include "api/project_api.hpp"
 #include "api/track_api.hpp"
 #include "audio/AudioBridge.hpp"
+#include "core/TrackManager.hpp"
 #include "engine/OfflineRenderHelper.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectInfo.hpp"
@@ -166,6 +167,8 @@ juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
     obj->setProperty("muted", track.muted);
     obj->setProperty("soloed", track.soloed);
     obj->setProperty("recordArmed", track.recordArmed);
+    obj->setProperty("audioInputDevice", track.audioInputDevice);
+    obj->setProperty("midiInputDevice", track.midiInputDevice);
 
     juce::Array<juce::var> clips;
     for (auto clipId : api.clips().getClipsOnTrack(track.id)) {
@@ -218,6 +221,8 @@ class CommandDispatcher {
             {"add-internal-instrument", "add-internal-instrument <track-id> <plugin-id> [name]",
              &CommandDispatcher::addInternalInstrument},
             {"delete-track", "delete-track <track-id>", &CommandDispatcher::deleteTrack},
+            {"set-track-input", "set-track-input <track-id> <audio|midi> <track:N|device|all|none>",
+             &CommandDispatcher::setTrackInput},
             {"add-midi-clip", "add-midi-clip <track-id> <start-beats> <length-beats>",
              &CommandDispatcher::addMidiClip},
             {"add-clip", "add-midi-clip <track-id> <start-beats> <length-beats>",
@@ -291,6 +296,45 @@ class CommandDispatcher {
         if (!trackId)
             return fail(lastParseError_);
         engine_.getMagdaApi().tracks().deleteTrack(*trackId);
+        return {};
+    }
+
+    CommandResult setTrackInput(const juce::StringArray& tokens, size_t& index) {
+        auto trackId = takeInt(tokens, index, "set-track-input requires <track-id>");
+        if (!trackId)
+            return fail(lastParseError_);
+        if (index >= static_cast<size_t>(tokens.size()))
+            return fail("set-track-input requires <audio|midi>");
+
+        const auto kind = tokens[static_cast<int>(index++)].trim().toLowerCase();
+        if (kind != "audio" && kind != "midi")
+            return fail("set-track-input kind must be audio or midi");
+        if (index >= static_cast<size_t>(tokens.size()))
+            return fail("set-track-input requires <track:N|device|all|none>");
+
+        auto value = tokens[static_cast<int>(index++)];
+        if (value == "none")
+            value = juce::String();
+
+        // TrackApi has no input-routing setters yet, so reach TrackManager
+        // directly (the same singleton path the CLI uses for ProjectManager).
+        auto& trackManager = magda::TrackManager::getInstance();
+        if (kind == "audio")
+            trackManager.setTrackAudioInput(*trackId, value);
+        else
+            trackManager.setTrackMidiInput(*trackId, value);
+
+        const auto* track = engine_.getMagdaApi().tracks().getTrack(*trackId);
+        if (track == nullptr)
+            return fail("set-track-input: unknown track " + juce::String(*trackId));
+
+        const auto& applied = kind == "audio" ? track->audioInputDevice : track->midiInputDevice;
+        if (applied != value)
+            return fail("set-track-input rejected: track " + juce::String(*trackId) + " " + kind +
+                        " input is \"" + applied + "\"");
+
+        std::cout << "input " << *trackId << " " << kind << " "
+                  << (value.isEmpty() ? juce::String("none") : value) << "\n";
         return {};
     }
 

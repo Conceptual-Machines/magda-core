@@ -273,6 +273,7 @@ class MixerView : public juce::Component,
         std::map<int, TrackId> outputTrackMapping_;
         std::map<int, TrackId> midiOutputTrackMapping_;
         std::map<int, TrackId> inputTrackMapping_;
+        std::map<int, TrackId> midiInputTrackMapping_;
 
         void setupControls();
         void setupRoutingCallbacks();

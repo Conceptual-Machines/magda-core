@@ -635,6 +635,22 @@ void TrackManager::deleteTrack(TrackId trackId) {
             sends.end());
     }
 
+    // Clear internal track-input routing on tracks listening to this track.
+    // Collect ids first: the setters notify listeners, which may mutate tracks_.
+    const juce::String trackInputId = "track:" + juce::String(trackId);
+    std::vector<TrackId> audioInputListeners;
+    std::vector<TrackId> midiInputListeners;
+    for (const auto& t : tracks_) {
+        if (t.audioInputDevice == trackInputId)
+            audioInputListeners.push_back(t.id);
+        if (t.midiInputDevice == trackInputId)
+            midiInputListeners.push_back(t.id);
+    }
+    for (auto listenerId : audioInputListeners)
+        setTrackAudioInput(listenerId, "");
+    for (auto listenerId : midiInputListeners)
+        setTrackMidiInput(listenerId, "");
+
     // Remove the track itself
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
@@ -1207,6 +1223,36 @@ std::vector<TrackId> TrackManager::getAllDescendants(TrackId trackId) const {
     return result;
 }
 
+bool TrackManager::wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const {
+    if (sourceTrackId == destTrackId)
+        return true;
+
+    // Walk the "track:" input chain upstream from the source track. Each track
+    // has at most one track input (audio and MIDI inputs are mutually
+    // exclusive), so this is a simple chain walk; the visited set terminates
+    // the walk on any pre-existing loop.
+    std::unordered_set<TrackId> visited;
+    TrackId current = sourceTrackId;
+    while (visited.insert(current).second) {
+        const auto* track = getTrack(current);
+        if (!track)
+            return false;
+
+        juce::String input;
+        if (track->audioInputDevice.startsWith("track:"))
+            input = track->audioInputDevice;
+        else if (track->midiInputDevice.startsWith("track:"))
+            input = track->midiInputDevice;
+        else
+            return false;
+
+        current = input.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        if (current == destTrackId)
+            return true;
+    }
+    return false;
+}
+
 // ============================================================================
 // Access
 // ============================================================================
@@ -1440,6 +1486,21 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
     DBG("TrackManager::setTrackMidiInput - trackId=" << trackId << " deviceId='" << deviceId
                                                      << "'");
 
+    // Internal track routing: validate "track:" sources before touching the model
+    if (deviceId.startsWith("track:")) {
+        const TrackId sourceId =
+            deviceId.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        if (!getTrack(sourceId)) {
+            DBG("  -> Rejected: source track " << sourceId << " does not exist");
+            return;
+        }
+        if (wouldCreateInputRoutingCycle(trackId, sourceId)) {
+            DBG("  -> Rejected: routing track " << sourceId << " into track " << trackId
+                                                << " would create an input routing cycle");
+            return;
+        }
+    }
+
     // Audio and MIDI input are mutually exclusive — clear audio input when enabling MIDI
     if (!deviceId.isEmpty() && !track->audioInputDevice.isEmpty()) {
         DBG("  -> Clearing audio input (mutually exclusive with MIDI)");
@@ -1463,10 +1524,12 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
         pendingMidiNoteOffs_.erase(trackId);
     }
 
-    // Forward to MidiBridge for MIDI activity monitoring (UI indicators)
+    // Forward to MidiBridge for MIDI activity monitoring (UI indicators).
+    // MidiBridge is a hardware MIDI input callback — "track:" sources are
+    // routed internally via MidiInputRouter, so clear any hardware routing.
     if (audioEngine_) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            if (deviceId.isEmpty()) {
+            if (deviceId.isEmpty() || deviceId.startsWith("track:")) {
                 midiBridge->clearTrackMidiInput(trackId);
                 midiBridge->stopMonitoring(trackId);
             } else {
@@ -1511,6 +1574,21 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
 
     DBG("TrackManager::setTrackAudioInput - trackId=" << trackId << " deviceId='" << deviceId
                                                       << "'");
+
+    // Internal track routing: validate "track:" sources before touching the model
+    if (deviceId.startsWith("track:")) {
+        const TrackId sourceId =
+            deviceId.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        if (!getTrack(sourceId)) {
+            DBG("  -> Rejected: source track " << sourceId << " does not exist");
+            return;
+        }
+        if (wouldCreateInputRoutingCycle(trackId, sourceId)) {
+            DBG("  -> Rejected: routing track " << sourceId << " into track " << trackId
+                                                << " would create an input routing cycle");
+            return;
+        }
+    }
 
     // Audio and MIDI input are mutually exclusive — clear MIDI input when enabling audio
     if (!deviceId.isEmpty() && !track->midiInputDevice.isEmpty()) {

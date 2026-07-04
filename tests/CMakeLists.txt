@@ -66,6 +66,8 @@ set(TEST_SOURCES
     test_string_table.cpp
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
+    # Internal track-to-track routing (issue #1690)
+    test_internal_track_routing.cpp
     test_master_track_serialization.cpp
     test_automation_agent.cpp
     test_mix_analysis_agent.cpp
@@ -219,6 +221,7 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
     test_session_slot_recording_juce.cpp
+    test_input_monitor_track_routing_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_midi_bridge_note_events_juce.cpp

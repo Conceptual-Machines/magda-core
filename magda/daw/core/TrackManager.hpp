@@ -246,6 +246,12 @@ class TrackManager {
     std::vector<TrackId> getChildTracks(TrackId groupId) const;
     std::vector<TrackId> getTopLevelTracks() const;
     std::vector<TrackId> getAllDescendants(TrackId trackId) const;
+    // True if routing sourceTrackId's output into destTrackId's input would
+    // create a cycle: sourceTrackId == destTrackId, or walking the "track:"
+    // input chain from sourceTrackId reaches destTrackId. Each track has at
+    // most one track input (audio and MIDI are mutually exclusive), so this
+    // is a simple chain walk.
+    bool wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const;
 
     /**
      * @brief Preview a MIDI note on a track (for keyboard audition)

@@ -635,10 +635,20 @@ void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
                                                   outputTrackMapping_, enabledOutputChannels);
 }
 
-void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector) {
+void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
-    RoutingSyncHelper::populateMidiInputOptions(selector, audioEngine_->getMidiBridge());
+    // If no trackId provided, find it from the existing trackHeaders
+    if (trackId == INVALID_TRACK_ID) {
+        for (const auto& h : trackHeaders) {
+            if (h->inputSelector.get() == selector) {
+                trackId = h->trackId;
+                break;
+            }
+        }
+    }
+    RoutingSyncHelper::populateMidiInputOptions(selector, audioEngine_->getMidiBridge(), trackId,
+                                                &midiInputTrackMapping_);
 }
 
 void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId) {
@@ -710,42 +720,63 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     };
 
     // MIDI input selector callbacks (mutually exclusive with audio input)
-    header.inputSelector->onEnabledChanged = [this, trackId, midiBridge](bool enabled) {
-        if (enabled) {
-            // Disable audio input (mutually exclusive) — find header by trackId
-            int selectedId = 1;
-            for (auto& h : trackHeaders) {
-                if (h->trackId == trackId) {
-                    h->audioInputSelector->setEnabled(false);
-                    selectedId = h->inputSelector->getSelectedId();
-                    break;
+    // Capture midiInputTrackMapping_ by value so each header has its own snapshot
+    // (the shared member is rebuilt per-header in populateMidiInputOptions)
+    header.inputSelector->onEnabledChanged =
+        [this, trackId, midiBridge, midiInMapping = midiInputTrackMapping_](bool enabled) {
+            if (enabled) {
+                // Disable audio input (mutually exclusive) — find header by trackId
+                int selectedId = 1;
+                for (auto& h : trackHeaders) {
+                    if (h->trackId == trackId) {
+                        h->audioInputSelector->setEnabled(false);
+                        selectedId = h->inputSelector->getSelectedId();
+                        break;
+                    }
                 }
-            }
-            TrackManager::getInstance().setTrackAudioInput(trackId, "");
-            if (selectedId == 1) {
-                TrackManager::getInstance().setTrackMidiInput(trackId, "all");
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
-                int deviceIndex = selectedId - 10;
-                if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
-                    TrackManager::getInstance().setTrackMidiInput(trackId,
-                                                                  midiInputs[deviceIndex].id);
+                TrackManager::getInstance().setTrackAudioInput(trackId, "");
+                if (selectedId == 1) {
+                    TrackManager::getInstance().setTrackMidiInput(trackId, "all");
+                } else if (selectedId >= 200) {
+                    // Preserve existing track input instead of forcing "all"
+                    auto it = midiInMapping.find(selectedId);
+                    if (it != midiInMapping.end()) {
+                        TrackManager::getInstance().setTrackMidiInput(
+                            trackId, "track:" + juce::String(it->second));
+                    } else {
+                        TrackManager::getInstance().setTrackMidiInput(trackId, "all");
+                    }
+                } else if (selectedId >= 10 && midiBridge) {
+                    auto midiInputs = midiBridge->getAvailableMidiInputs();
+                    int deviceIndex = selectedId - 10;
+                    if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
+                        TrackManager::getInstance().setTrackMidiInput(trackId,
+                                                                      midiInputs[deviceIndex].id);
+                    } else {
+                        TrackManager::getInstance().setTrackMidiInput(trackId, "all");
+                    }
                 } else {
                     TrackManager::getInstance().setTrackMidiInput(trackId, "all");
                 }
             } else {
-                TrackManager::getInstance().setTrackMidiInput(trackId, "all");
+                TrackManager::getInstance().setTrackMidiInput(trackId, "");
             }
-        } else {
-            TrackManager::getInstance().setTrackMidiInput(trackId, "");
-        }
-    };
+        };
 
-    header.inputSelector->onSelectionChanged = [trackId, midiBridge](int selectedId) {
+    header.inputSelector->onSelectionChanged = [trackId, midiBridge,
+                                                midiInMapping =
+                                                    midiInputTrackMapping_](int selectedId) {
         if (selectedId == 2) {
             TrackManager::getInstance().setTrackMidiInput(trackId, "");
         } else if (selectedId == 1) {
             TrackManager::getInstance().setTrackMidiInput(trackId, "all");
+        } else if (selectedId >= 200) {
+            // Track-as-input (internal MIDI routing)
+            auto it = midiInMapping.find(selectedId);
+            if (it != midiInMapping.end()) {
+                TrackManager::getInstance().setTrackMidiInput(trackId,
+                                                              "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
@@ -1092,7 +1123,7 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
         device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
-        enabledIn, enabledOut, &inputChannelMapping_, teInputDeviceNames);
+        enabledIn, enabledOut, &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
@@ -1835,7 +1866,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     // Populate all routing selectors
 
     populateAudioInputOptions(header.audioInputSelector.get(), trackId);
-    populateMidiInputOptions(header.inputSelector.get());
+    populateMidiInputOptions(header.inputSelector.get(), trackId);
     populateAudioOutputOptions(header.outputSelector.get(), trackId);
     populateMidiOutputOptions(header.midiOutputSelector.get(), trackId);
 

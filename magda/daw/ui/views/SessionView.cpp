@@ -938,7 +938,7 @@ class SessionView::MiniIOStrip : public juce::Component {
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
             midiOutSelector_.get(), midiBridge, device, trackId_, outputTrackMapping_,
             midiOutputTrackMapping_, &inputTrackMapping_, enabledInputChannels,
-            enabledOutputChannels, nullptr, teInputDeviceNames);
+            enabledOutputChannels, nullptr, teInputDeviceNames, &midiInputTrackMapping_);
     }
 
     TrackId getTrackId() const {
@@ -953,6 +953,7 @@ class SessionView::MiniIOStrip : public juce::Component {
     std::unique_ptr<RoutingSelector> midiInSelector_;
     std::unique_ptr<RoutingSelector> midiOutSelector_;
     std::map<int, TrackId> inputTrackMapping_;
+    std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
 
@@ -977,7 +978,8 @@ class SessionView::MiniIOStrip : public juce::Component {
                                                      nullptr, teInputDeviceNames);
         RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector_.get(), trackId_, device,
                                                       outputTrackMapping_, enabledOutputChannels);
-        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge);
+        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge, trackId_,
+                                                    &midiInputTrackMapping_);
         RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(), midiBridge,
                                                      midiOutputTrackMapping_);
 
@@ -1023,6 +1025,14 @@ class SessionView::MiniIOStrip : public juce::Component {
                 int selectedId = midiInSelector_->getSelectedId();
                 if (selectedId == 1) {
                     TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+                } else if (selectedId >= 200) {
+                    // Preserve existing track input instead of forcing "all"
+                    auto it = midiInputTrackMapping_.find(selectedId);
+                    if (it != midiInputTrackMapping_.end())
+                        TrackManager::getInstance().setTrackMidiInput(
+                            trackId_, "track:" + juce::String(it->second));
+                    else
+                        TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
                 } else if (selectedId >= 10 && midiBridge) {
                     auto midiInputs = midiBridge->getAvailableMidiInputs();
                     int deviceIndex = selectedId - 10;
@@ -1044,6 +1054,12 @@ class SessionView::MiniIOStrip : public juce::Component {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "");
             } else if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+            } else if (selectedId >= 200) {
+                // Track-as-input (internal MIDI routing)
+                auto it = midiInputTrackMapping_.find(selectedId);
+                if (it != midiInputTrackMapping_.end())
+                    TrackManager::getInstance().setTrackMidiInput(
+                        trackId_, "track:" + juce::String(it->second));
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;

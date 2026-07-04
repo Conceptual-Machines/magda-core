@@ -43,6 +43,28 @@ te::WaveInputDevice* getLiveWaveInputDevice(te::Engine& engine,
     return nullptr;
 }
 
+// Measurers whose owning device currently exists: hardware wave input devices
+// (owned by the engine's DeviceManager) and track wave input devices (owned by
+// their source AudioTrack). Only measurers in this set may be dereferenced when
+// unregistering LevelMeasurer clients — anything else may be a stale pointer to
+// a destroyed device.
+std::unordered_set<te::LevelMeasurer*> collectAliveInputMeasurers(
+    te::Engine& engine, const std::map<TrackId, te::AudioTrack*>& trackMapping) {
+    std::unordered_set<te::LevelMeasurer*> alive;
+
+    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices())
+        if (waveInput != nullptr)
+            alive.insert(&waveInput->levelMeasurer);
+
+    for (const auto& [trackId, track] : trackMapping) {
+        juce::ignoreUnused(trackId);
+        if (track != nullptr)
+            alive.insert(&track->getWaveInputDevice().levelMeasurer);
+    }
+
+    return alive;
+}
+
 te::WaveInputDevice* getLiveTrackWaveInputDevice(
     const std::map<TrackId, te::AudioTrack*>& trackMapping,
     te::InputDeviceInstance* inputDeviceInstance) {
@@ -182,7 +204,20 @@ AudioBridge::~AudioBridge() {
             }
         });
 
-        // Unregister live input meter clients
+        // Unregister live input meter clients from any still-alive device
+        // measurers BEFORE destroying the Client objects. Hardware wave input
+        // devices are engine-owned and outlive this bridge; destroying a
+        // registered Client leaves a dangling pointer in the device's
+        // LevelMeasurer that the audio thread writes through.
+        trackController_.withTrackMapping(
+            [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
+                const auto aliveMeasurers = collectAliveInputMeasurers(engine_, trackMapping);
+                for (auto& [trackId, entry] : inputMeterClients_) {
+                    juce::ignoreUnused(trackId);
+                    if (entry.measurer && aliveMeasurers.count(entry.measurer) != 0)
+                        entry.measurer->removeClient(entry.client);
+                }
+            });
         inputMeterClients_.clear();
 
         // Clear baked automation curves BEFORE PluginManager mappings are
@@ -214,6 +249,18 @@ void AudioBridge::resetTestState() {
         }
     });
 
+    // Same invariant as the destructor: unregister from still-alive device
+    // measurers before destroying the Client objects (hardware wave input
+    // devices persist across tests on the shared engine).
+    trackController_.withTrackMapping(
+        [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
+            const auto aliveMeasurers = collectAliveInputMeasurers(engine_, trackMapping);
+            for (auto& [trackId, entry] : inputMeterClients_) {
+                juce::ignoreUnused(trackId);
+                if (entry.measurer && aliveMeasurers.count(entry.measurer) != 0)
+                    entry.measurer->removeClient(entry.client);
+            }
+        });
     inputMeterClients_.clear();
 
     automationPlayback_.clearAllLanes();
@@ -353,7 +400,11 @@ void AudioBridge::updateMidiInputRouting() {
 }
 
 void AudioBridge::resyncAllInputMonitors() {
-    midiInputRouter_.resyncAllInputMonitors();
+    // Coalesced: a burst of monitor changes in one message-loop drain applies
+    // once, and never re-entrantly from trackPropertyChanged / graph
+    // reallocation. A real mode change restarts all transports, so applying
+    // per-notification would stack restarts against the running graph.
+    midiInputRouter_.requestInputMonitorResync();
 }
 
 void AudioBridge::trackDevicesChanged(TrackId trackId) {
@@ -881,6 +932,26 @@ void AudioBridge::syncAll() {
             // Sync audio output routing (group/aux targets now exist from first pass)
             trackController_.setTrackAudioOutput(track.id, track.audioOutputDevice);
 
+            // Restore input routing (source tracks now exist from first pass).
+            // Guarded so the frequent tracksChanged-driven syncAll stays idempotent.
+            // "track:" restores are skipped when the source track has no live TE
+            // track (e.g. mid-teardown) — re-applying them would recreate an
+            // input-device instance that immediately goes stale.
+            auto hasLiveSourceTrack = [this](const juce::String& value) {
+                if (!value.startsWith("track:"))
+                    return true;
+                TrackId sourceId =
+                    value.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+                return trackController_.getAudioTrack(sourceId) != nullptr;
+            };
+            if (track.audioInputDevice.isNotEmpty() && hasLiveSourceTrack(track.audioInputDevice) &&
+                trackController_.getTrackAudioInput(track.id) != track.audioInputDevice)
+                trackController_.setTrackAudioInput(track.id, track.audioInputDevice);
+            if (track.midiInputDevice.startsWith("track:") &&
+                hasLiveSourceTrack(track.midiInputDevice) &&
+                midiInputRouter_.getTrackMidiInput(track.id) != track.midiInputDevice)
+                midiInputRouter_.setTrackMidiInput(track.id, track.midiInputDevice);
+
             // Sync volume/pan
             setTrackVolume(track.id, track.volume);
             setTrackPan(track.id, track.pan);
@@ -990,11 +1061,17 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
         }
     }
 
-    std::unordered_set<te::LevelMeasurer*> liveInputMeasurers;
-    for (auto& [trackId, measurer] : desired) {
-        juce::ignoreUnused(trackId);
-        liveInputMeasurers.insert(measurer);
-    }
+    // A stale measurer pointer may only be dereferenced (for removeClient) if its
+    // owning device still exists, so build the alive set from the devices
+    // themselves: hardware wave inputs live in the DeviceManager, track-as-input
+    // devices are owned by their source AudioTrack. Deriving this set from
+    // `desired` (as this code used to) is wrong: a measurer that is alive but no
+    // longer desired — e.g. its consumer's Monitor was switched Off, flipping
+    // isLivePlayEnabled() — must still get removeClient() before its Client is
+    // destroyed. Skipping that leaves a dangling Client* inside
+    // WaveInputDevice::levelMeasurer, which the audio graph then writes through
+    // on every block (heap corruption / audio-thread livelock, #1690).
+    const auto aliveMeasurers = collectAliveInputMeasurers(engine_, trackMapping);
 
     for (auto& [trackId, measurer] : desired) {
         if (!measurer)
@@ -1007,7 +1084,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
             entry.measurer = measurer;
             measurer->addClient(entry.client);
         } else if (entry.measurer != measurer) {
-            if (entry.measurer && liveInputMeasurers.count(entry.measurer) != 0)
+            if (entry.measurer && aliveMeasurers.count(entry.measurer) != 0)
                 entry.measurer->removeClient(entry.client);
             entry.measurer = measurer;
             measurer->addClient(entry.client);
@@ -1020,7 +1097,7 @@ void AudioBridge::refreshInputMeterClients(const std::map<TrackId, te::AudioTrac
             continue;
         }
 
-        if (it->second.measurer && liveInputMeasurers.count(it->second.measurer) != 0)
+        if (it->second.measurer && aliveMeasurers.count(it->second.measurer) != 0)
             it->second.measurer->removeClient(it->second.client);
         it = inputMeterClients_.erase(it);
     }

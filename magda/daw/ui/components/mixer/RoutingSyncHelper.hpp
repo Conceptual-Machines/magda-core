@@ -116,6 +116,8 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                 continue;
             if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                 continue;
+            if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
+                continue;
             if (t.type == TrackType::Audio || t.type == TrackType::Group ||
                 t.type == TrackType::Aux) {
                 trackOptions.push_back({id, t.name});
@@ -287,7 +289,9 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
     selector->setOptions(options);
 }
 
-inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midiBridge) {
+inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
+                                     TrackId currentTrackId = INVALID_TRACK_ID,
+                                     std::map<int, TrackId>* outMidiInputTrackMapping = nullptr) {
     if (!selector || !midiBridge)
         return;
 
@@ -303,6 +307,33 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
         int id = 10;
         for (const auto& device : midiInputs) {
             options.push_back({id++, device.name});
+        }
+    }
+
+    // Add tracks as MIDI input sources — ID 200+
+    if (currentTrackId != INVALID_TRACK_ID && outMidiInputTrackMapping) {
+        auto& trackManager = TrackManager::getInstance();
+        const auto& allTracks = trackManager.getTracks();
+
+        outMidiInputTrackMapping->clear();
+
+        std::vector<RoutingSelector::RoutingOption> trackOptions;
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.id == currentTrackId)
+                continue;
+            if (t.type != TrackType::Audio)
+                continue;
+            if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
+                continue;
+            trackOptions.push_back({id, t.name});
+            (*outMidiInputTrackMapping)[id] = t.id;
+            ++id;
+        }
+        if (!trackOptions.empty()) {
+            options.push_back({0, "", true});  // separator
+            for (auto& opt : trackOptions)
+                options.push_back(std::move(opt));
         }
     }
 
@@ -340,7 +371,8 @@ inline void syncSelectorsFromTrack(
     std::map<int, TrackId>* inputTrackMapping = nullptr, juce::BigInteger enabledInputChannels = {},
     juce::BigInteger enabledOutputChannels = {},
     std::map<int, juce::String>* inputChannelMapping = nullptr,
-    const std::map<int, juce::String>& teDeviceNames = {}) {
+    const std::map<int, juce::String>& teDeviceNames = {},
+    std::map<int, TrackId>* midiInputTrackMapping = nullptr) {
     bool hasAudioInput = !track.audioInputDevice.isEmpty();
     bool hasMidiInput = !track.midiInputDevice.isEmpty();
 
@@ -398,6 +430,22 @@ inline void syncSelectorsFromTrack(
         } else if (track.midiInputDevice == "all") {
             midiInSelector->setSelectedId(1);  // "All Inputs"
             midiInSelector->setEnabled(true);
+        } else if (track.midiInputDevice.startsWith("track:") && midiInputTrackMapping) {
+            // Track-as-input: re-populate so the internal-track list is current,
+            // then find the matching option ID
+            populateMidiInputOptions(midiInSelector, midiBridge, currentTrackId,
+                                     midiInputTrackMapping);
+            TrackId sourceId =
+                track.midiInputDevice.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+            int selectedId = 2;
+            for (const auto& [oid, tid] : *midiInputTrackMapping) {
+                if (tid == sourceId) {
+                    selectedId = oid;
+                    break;
+                }
+            }
+            midiInSelector->setSelectedId(selectedId);
+            midiInSelector->setEnabled(selectedId != 2);
         } else if (midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int selectedId = 2;
