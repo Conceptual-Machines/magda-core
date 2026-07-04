@@ -1927,11 +1927,13 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(bgArea, 1);
 
-    // Group indicator color strip on outer edge
+    // Group indicator colour strip on the outer edge, full header height. Same
+    // width as the name-band spine below so the two read as one continuous spine.
     if (header.isGroup) {
+        constexpr int groupSpineW = 5;
         g.setColour(deriveTrackSwatch(header.trackColour));
-        int stripX = headersOnRight_ ? bgArea.getRight() - 3 : bgArea.getX();
-        g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
+        int stripX = headersOnRight_ ? bgArea.getRight() - groupSpineW : bgArea.getX();
+        g.fillRect(stripX, bgArea.getY(), groupSpineW, bgArea.getHeight());
     }
 
     // Track colour spine — the name row is a dark elevated band (one step
