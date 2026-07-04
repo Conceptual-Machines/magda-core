@@ -2156,10 +2156,12 @@ void TrackHeadersPanel::layoutVolPanRow(TrackHeader& header, juce::Rectangle<int
     // Pan right-aligned (same width as automation below it).
     header.panLabel->setBounds(r.removeFromRight(TH_PAN_W));
     header.panLabel->setVisible(true);
-    // Volume: fixed width equal to the M S R + monitor group below it, so the two
-    // line up. (Multi-out children only have M S in that group.)
+    // Volume: fixed width equal to the button group below it, so the two line up.
+    // Multi-out children and groups only have M S in that group (no record /
+    // monitor), so their volume field is narrower to match.
+    const bool twoButtonGroup = header.isMultiOut || header.isGroup;
     const int volW =
-        header.isMultiOut ? 2 * TH_BTN_MAX + gap : 3 * TH_BTN_MAX + 3 * gap + TH_MONITOR_W;
+        twoButtonGroup ? 2 * TH_BTN_MAX + gap : 3 * TH_BTN_MAX + 3 * gap + TH_MONITOR_W;
     header.volumeLabel->setBounds(r.removeFromLeft(volW));
     header.volumeLabel->setVisible(true);
 }

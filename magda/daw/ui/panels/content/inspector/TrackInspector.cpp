@@ -609,8 +609,9 @@ void TrackInspector::resized() {
         // controls fixed to its right); when too narrow it reflows to two rows
         // (volume + pan on top, the button group below) — nothing is hidden.
         const auto* trk = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        const bool recMon =
-            trk && trk->type != magda::TrackType::Aux && trk->type != magda::TrackType::MultiOut;
+        const bool recMon = trk && trk->type != magda::TrackType::Aux &&
+                            trk->type != magda::TrackType::MultiOut &&
+                            trk->type != magda::TrackType::Group;
         const int numButtons = recMon ? 4 : 2;  // mute, solo [, record, monitor]
 
         auto placeCentred = [](juce::Component* c, juce::Rectangle<int> cell, int w, int h) {
@@ -1343,6 +1344,7 @@ void TrackInspector::showTrackControls(bool show) {
     bool isAux = false;
     bool isMultiOut = false;
     bool isChord = false;
+    bool isGroup = false;
     if (show && selectedTrackId_ != magda::INVALID_TRACK_ID &&
         selectedTrackId_ != magda::MASTER_TRACK_ID) {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
@@ -1352,6 +1354,8 @@ void TrackInspector::showTrackControls(bool show) {
             isMultiOut = true;
         if (track && track->type == magda::TrackType::Chord)
             isChord = true;
+        if (track && track->type == magda::TrackType::Group)
+            isGroup = true;
     }
     isChordTrack_ = isChord;
 
@@ -1366,16 +1370,19 @@ void TrackInspector::showTrackControls(bool show) {
     speakerButton_->setVisible(isMaster);
     chordSpeakerButton_->setVisible(isChord);
     soloButton_->setVisible(show && !isMaster && !isChord);
-    recordButton_->setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
-    monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
+    // Groups take no external input, so (like multi-out children) they get no
+    // record / monitor and no input rows - only audio output routing.
+    recordButton_->setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord && !isGroup);
+    monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord && !isGroup);
     gainLabel_->setVisible(show);
     panLabel_->setVisible(show && !isMaster && !isChord);
 
     // Routing section — hidden for master and aux. The chord track shows MIDI
-    // I/O only (no audio in/out, since it drives its own instrument).
+    // I/O only (no audio in/out, since it drives its own instrument). Groups show
+    // audio output only (no inputs, no MIDI out).
     bool showRouting = show && !isMaster && !isAux;
-    bool showAudio = showRouting && !isChord && !isMultiOut;
-    bool showMidi = showRouting && !isMultiOut;
+    bool showAudio = showRouting && !isChord && !isMultiOut && !isGroup;
+    bool showMidi = showRouting && !isMultiOut && !isGroup;
     routingSectionLabel_.setVisible(false);
     audioInputSelector_->setVisible(showAudio);
     audioColumnLabel_.setVisible(showAudio);
