@@ -19,6 +19,7 @@
 #include "core/AutomationCommands.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/MidiChordMarkers.hpp"
+#include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackCommands.hpp"
@@ -2042,8 +2043,13 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             }
             case 2: {  // Paste
                 const double bpm = safeThis ? safeThis->getTempo() : 120.0;
+                const auto target = resolvePasteTarget(
+                    ViewModeController::getInstance().getViewMode(),
+                    PasteTrackMode::PinToResolvedTrack, PasteInvocation::fromContextTrack(trackId));
+                if (!target.ok)
+                    break;
                 auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{startTime * bpm / 60.0},
-                                                              trackId);
+                                                              target.trackId);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 

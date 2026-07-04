@@ -29,6 +29,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
+#include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/SessionLaunchService.hpp"
 #include "core/SessionViewState.hpp"
@@ -2602,9 +2603,14 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
     slot.onPasteClip = [this, trackIndex, sceneIndex]() {
         if (!ClipManager::getInstance().hasClipsInClipboard())
             return;
-        TrackId tId = visibleTrackIds_[trackIndex];
-        auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{0.0}, tId, ClipView::Session,
-                                                      sceneIndex);
+        const TrackId tId = visibleTrackIds_[trackIndex];
+        const auto target = resolvePasteTarget(ViewModeController::getInstance().getViewMode(),
+                                               PasteTrackMode::PinToResolvedTrack,
+                                               PasteInvocation::fromContextTrack(tId));
+        if (!target.ok)
+            return;
+        auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{0.0}, target.trackId,
+                                                      ClipView::Session, sceneIndex);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
     slot.onDuplicateClip = [this, trackIndex, sceneIndex]() {
