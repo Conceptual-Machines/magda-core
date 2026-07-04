@@ -2412,6 +2412,9 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.sessionModeButton->toFront(false);
                 }
                 if (header.isGroup) {
+                    // Clear the colour spine on the outer edge before the chevron
+                    // so it doesn't collide with it.
+                    nameRow.removeFromLeft(10);
                     auto btnArea = nameRow.removeFromLeft(COLLAPSE_BUTTON_SIZE);
                     int btnY = btnArea.getCentreY() - COLLAPSE_BUTTON_SIZE / 2;
                     header.collapseButton->setBounds(btnArea.getX(), btnY, COLLAPSE_BUTTON_SIZE,
