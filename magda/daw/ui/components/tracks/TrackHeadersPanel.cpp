@@ -1940,16 +1940,23 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     // band stays dark, so the name reads as high-contrast white.
     const int nameBandHeight = TH_NAME_STRIP_H;
     if (!header.isMaster) {
-        // Dark elevated header band behind the name.
         auto nameBandArea = bgArea.withHeight(nameBandHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        const bool hasColour = header.trackColour != juce::Colour(0xFF444444);
+        const auto swatch = deriveTrackSwatch(header.trackColour);
+
+        // Dark elevated header band behind the name, tinted with a bit of the
+        // track colour so the row carries the track identity (the name still
+        // reads as high-contrast white at this tint strength).
+        auto bandColour = DarkTheme::getColour(DarkTheme::SURFACE_HOVER);
+        if (hasColour)
+            bandColour = bandColour.interpolatedWith(swatch, 0.22f);
+        g.setColour(bandColour);
         g.fillRect(nameBandArea);
 
         // Colour spine on the outer (left, or right when swapped) edge,
         // spanning the name band, vertically inset with rounded caps so it
         // reads as an accent stripe rather than a hard border.
-        if (header.trackColour != juce::Colour(0xFF444444)) {
-            const auto swatch = deriveTrackSwatch(header.trackColour);
+        if (hasColour) {
             const int spineW = 5;
             const int spineInset = 2;  // breathing room top/bottom
             const int spineX =
