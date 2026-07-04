@@ -214,27 +214,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         }
     }
 
-    // Draw loop region markers
-    if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-        double loopStartBeat =
-            relativeMode_ ? loopOffsetBeats_ : (clipStartBeats_ + loopOffsetBeats_);
-        double loopEndBeat = loopStartBeat + loopLengthBeats_;
-
-        int loopStartX = beatToPixel(loopStartBeat);
-        int loopEndX = beatToPixel(loopEndBeat);
-
-        juce::Colour loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
-
-        // Green vertical lines at loop boundaries (2px)
-        if (loopStartX >= 0 && loopStartX <= bounds.getRight()) {
-            g.setColour(loopColour);
-            g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
-        }
-        if (loopEndX >= 0 && loopEndX <= bounds.getRight()) {
-            g.setColour(loopColour);
-            g.fillRect(loopEndX - 1, 0, 2, bounds.getHeight());
-        }
-    }
+    // Loop boundaries are shown by the endpoint caps in the ruler strip above;
+    // no full-height loop lines are drawn over the grid content.
 
     // Draw loop phase marker (yellow vertical line)
     if (clipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID) {
@@ -347,7 +328,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     {
         int playheadX = 0;
         if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
             g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }

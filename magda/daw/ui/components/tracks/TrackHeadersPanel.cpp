@@ -1927,11 +1927,13 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(bgArea, 1);
 
-    // Group indicator color strip on outer edge
+    // Group indicator colour strip on the outer edge, full header height. Same
+    // width as the name-band spine below so the two read as one continuous spine.
     if (header.isGroup) {
+        constexpr int groupSpineW = 5;
         g.setColour(deriveTrackSwatch(header.trackColour));
-        int stripX = headersOnRight_ ? bgArea.getRight() - 3 : bgArea.getX();
-        g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
+        int stripX = headersOnRight_ ? bgArea.getRight() - groupSpineW : bgArea.getX();
+        g.fillRect(stripX, bgArea.getY(), groupSpineW, bgArea.getHeight());
     }
 
     // Track colour spine — the name row is a dark elevated band (one step
@@ -2043,7 +2045,6 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
 
 void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
                                                const SideColumn& inner, int gapOverride) {
-    const int gap = 2;
     const int rh = 18;  // row height — volume/pan and button rows share it
     const int areaWidth = area.getWidth();
 
@@ -2053,16 +2054,20 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     // monitoring just rides along with audibility. No pan / record / automation /
     // routing.
     if (header.isChordTrack) {
-        auto row = area.removeFromTop(24);
+        // Match a normal track's volume/pan row exactly: same row height, same
+        // fixed volume width, and the chord audition control in the pan/"C"
+        // column (right-aligned) so it lines up with other tracks.
+        auto row = area.removeFromTop(rh);
         auto content = inner.removeFrom(row, areaWidth);
-        const int iconW = 24;
-        const int volW = std::max(1, content.getWidth() - iconW - gap);
-        header.volumeLabel->setBounds(content.removeFromLeft(volW));
-        header.volumeLabel->setVisible(true);
-        content.removeFromLeft(gap);
-        header.chordAuditionButton->setBounds(content.removeFromLeft(iconW));
+        content.removeFromLeft(TH_PAD);
+        content.removeFromRight(TH_PAD_R);
+        header.chordAuditionButton->setBounds(content.removeFromRight(TH_PAN_W));
         header.chordAuditionButton->setVisible(true);
         header.chordAuditionButton->refresh();
+        const int volGap = 4;
+        const int volW = 3 * TH_BTN_MAX + 3 * volGap + TH_MONITOR_W;
+        header.volumeLabel->setBounds(content.removeFromLeft(volW));
+        header.volumeLabel->setVisible(true);
         header.monitorButton->setVisible(false);
         header.muteButton->setVisible(false);
         header.masterMuteButton->setVisible(false);
@@ -2174,7 +2179,9 @@ void TrackHeadersPanel::layoutButtonRow(TrackHeader& header, juce::Rectangle<int
     r.removeFromLeft(gap);
     header.soloButton->setBounds(r.removeFromLeft(btnW));
     r.removeFromLeft(gap);
-    if (!header.isMultiOut) {
+    // Groups (like multi-out children) take no external input, so they get no
+    // record or input-monitor buttons.
+    if (!header.isMultiOut && !header.isGroup) {
         header.recordButton->setBounds(r.removeFromLeft(btnW));
         header.recordButton->setVisible(true);
         r.removeFromLeft(gap);
@@ -2273,6 +2280,9 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         const int sendLabelWidth = 28;
         const bool hasSends = !header.sendLabels.empty();
         const bool ioShown = header.showIORouting;
+        // Groups take no external input (they only sum their children), so like
+        // multi-out children they show output routing only - no input row.
+        const bool inputless = header.isMultiOut || header.isGroup;
 
         header.audioColumnLabel->setVisible(false);
         header.midiColumnLabel->setVisible(false);
@@ -2300,7 +2310,7 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         }
 
         // I/O routing rows — pinned to the bottom (output lowest, input above it).
-        if (ioShown && !header.isMultiOut) {
+        if (ioShown && !inputless) {
             auto outputRow = tcpArea.removeFromBottom(contentRowHeight);
             tcpArea.removeFromBottom(rowGap);
             auto inputRow = tcpArea.removeFromBottom(contentRowHeight);
@@ -2309,8 +2319,8 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
             layoutRoutingRow(header, inner.removeFrom(outputRow, outputRow.getWidth()),
                              *header.outputSelector, *header.midiOutputSelector,
                              *header.outputIcon);
-        } else if (ioShown && header.isMultiOut) {
-            // Multi-out child: only audio-out at the bottom, no inputs / MIDI out.
+        } else if (ioShown && inputless) {
+            // Multi-out child or group: only audio-out at the bottom, no inputs / MIDI out.
             auto outputRow = tcpArea.removeFromBottom(contentRowHeight);
             auto row = inner.removeFrom(outputRow, outputRow.getWidth());
             row.removeFromLeft(TH_PAD);
@@ -2391,7 +2401,11 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                 // arrangement button just to its left. The session button is always
                 // positioned but only paints when the track is in session mode.
                 {
-                    auto midiDotArea = nameRow.removeFromRight(14);
+                    // Center the dot over the right-aligned TH_PAN_W column used by
+                    // the rows below (pan/"C", automation, I/O) so it lines up with
+                    // the button directly beneath it, not the panel's right edge.
+                    nameRow.removeFromRight(TH_PAD_R);
+                    auto midiDotArea = nameRow.removeFromRight(TH_PAN_W);
                     header.midiIndicator->setBounds(midiDotArea.withSizeKeepingCentre(10, 10));
                     header.midiIndicator->setVisible(header.inputSelector &&
                                                      header.inputSelector->isEnabled());
@@ -2405,6 +2419,9 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
                     header.sessionModeButton->toFront(false);
                 }
                 if (header.isGroup) {
+                    // Clear the colour spine on the outer edge before the chevron
+                    // so it doesn't collide with it.
+                    nameRow.removeFromLeft(10);
                     auto btnArea = nameRow.removeFromLeft(COLLAPSE_BUTTON_SIZE);
                     int btnY = btnArea.getCentreY() - COLLAPSE_BUTTON_SIZE / 2;
                     header.collapseButton->setBounds(btnArea.getX(), btnY, COLLAPSE_BUTTON_SIZE,

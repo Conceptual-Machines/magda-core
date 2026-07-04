@@ -20,6 +20,7 @@
 #include "content/PostFxPanelContent.hpp"
 #include "content/TrackChainContent.hpp"
 #include "content/WaveformEditorContent.hpp"
+#include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/SelectionManager.hpp"
@@ -483,6 +484,42 @@ void BottomPanel::setupHeaderControls() {
     };
     headerBar_->addChildComponent(snapButton_.get());
 
+    // Loop toggle (dual icon: off/on). Toggles the clip's source loop, the same
+    // clip->loopEnabled the editors render (mirrors the Clip Inspector toggle).
+    loopButton_ =
+        std::make_unique<SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
+    loopButton_->setTooltip("Loop clip");
+    // Borderless icon; recolour its baked #B3B3B3 fill by state. Off = grey
+    // glyph, no fill; engaged = solid blue chip with a white glyph. Matches the
+    // Clip Inspector loop toggle (both drive the same clip loop). Green stays the
+    // ruler's range-marker language.
+    loopButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    loopButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    loopButton_->setActiveColor(juce::Colours::white);
+    loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    loopButton_->setClickingTogglesState(false);  // manual active state
+    loopButton_->onClick = [this]() {
+        const auto clipId = getActiveEditingClipId();
+        if (clipId == INVALID_CLIP_ID)
+            return;
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip == nullptr || clip->autoTempo)
+            return;  // beat mode owns looping; can't toggle here
+
+        const bool newState = !loopButton_->isActive();
+        loopButton_->setActive(newState);
+
+        double bpm = 120.0;
+        if (auto* controller = TimelineController::getCurrent())
+            bpm = controller->getState().tempo.bpm;
+
+        UndoManager::getInstance().executeCommand(std::make_unique<SetClipPropertyCommand>(
+            clipId, "Set Clip Loop", [newState, bpm](auto& manager, ClipId id) {
+                manager.setClipLoopEnabled(id, newState, bpm);
+            }));
+    };
+    headerBar_->addChildComponent(loopButton_.get());
+
     // Note slice button (dual icon: off=grey, on=blue when notes selected)
     sliceButton_ = std::make_unique<SvgButton>(
         "NoteSlice", BinaryData::note_slice_off_svg, BinaryData::note_slice_off_svgSize,
@@ -750,17 +787,12 @@ void BottomPanel::clipSelectionChanged(ClipId /*clipId*/) {
 }
 
 void BottomPanel::clipPropertyChanged(ClipId clipId) {
-    // Re-evaluate ABS/REL button state when clip properties change
-    // (e.g. loop toggled on/off, or session-vs-arrangement view switch)
-    auto* content = getActiveContent();
-    ClipId activeClipId = INVALID_CLIP_ID;
-    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content))
-        activeClipId = midiEditor->getEditingClipId();
-    else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
-        activeClipId = waveEditor->getEditingClipId();
-
-    if (activeClipId == clipId)
+    // Re-evaluate header state when clip properties change (e.g. loop toggled
+    // on/off, or session-vs-arrangement view switch).
+    if (getActiveEditingClipId() == clipId) {
         applyTimeModeToContent();
+        syncLoopButtonState();
+    }
 }
 
 void BottomPanel::tracksChanged() {
@@ -1126,6 +1158,8 @@ void BottomPanel::addMidiControlsToHeader() {
     gridDenominatorLabel_->setVisible(true);
     autoGridButton_->setVisible(true);
     snapButton_->setVisible(true);
+    loopButton_->setVisible(true);
+    syncLoopButtonState();
     if (showEditorTabs_) {
         pianoRollTab_->setVisible(true);
         drumGridTab_->setVisible(true);
@@ -1152,6 +1186,8 @@ void BottomPanel::hideMidiHeaderControls() {
     gridDenominatorLabel_->setVisible(false);
     autoGridButton_->setVisible(false);
     snapButton_->setVisible(false);
+    if (loopButton_)
+        loopButton_->setVisible(false);
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
     sliceButton_->setVisible(false);
@@ -1167,6 +1203,25 @@ void BottomPanel::updateOverlayTracksButtonState() {
         return;
     auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent());
     overlayTracksButton_->setActive(editor != nullptr && editor->hasOverlayTracks());
+}
+
+ClipId BottomPanel::getActiveEditingClipId() const {
+    auto* content = getActiveContent();
+    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content))
+        return midiEditor->getEditingClipId();
+    if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
+        return waveEditor->getEditingClipId();
+    return INVALID_CLIP_ID;
+}
+
+void BottomPanel::syncLoopButtonState() {
+    if (!loopButton_)
+        return;
+    const auto clipId = getActiveEditingClipId();
+    const auto* clip =
+        (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
+    // autoTempo forces looping on; reflect that even though it can't be toggled.
+    loopButton_->setActive(clip != nullptr && (clip->loopEnabled || clip->autoTempo));
 }
 
 void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
@@ -1202,9 +1257,21 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     gridSlashLabel_->setBounds(x, y, 8, h);
     x -= 24;
     gridNumeratorLabel_->setBounds(x, y + vPad, 24, h - vPad * 2);
-    x -= 4;
-    x -= 36;
-    timeModeButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
+    // ABS/REL toggle: only shown for MIDI editors, so only reserve its slot when
+    // visible (otherwise the audio editor would show a gap left of num/den).
+    if (timeModeButton_->isVisible()) {
+        x -= 4;
+        x -= 36;
+        timeModeButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
+    }
+
+    // Loop toggle sits on the far left of the header, centred in the sidebar
+    // column (in every clip editor).
+    if (loopButton_ && loopButton_->isVisible()) {
+        const int sz = h - vPad * 2;
+        loopButton_->setBounds(headerBounds.getX() + (SIDEBAR_WIDTH - sz) / 2, y + (h - sz) / 2, sz,
+                               sz);
+    }
 
     if (showEditorTabs_) {
         int iconSize = h - 8;

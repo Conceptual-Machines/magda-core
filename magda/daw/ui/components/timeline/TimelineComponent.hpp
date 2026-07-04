@@ -154,7 +154,10 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // select a time range across ALL tracks (every track's clips). Args are
     // (startBeats, endBeats), or (-1, -1) to clear. Distinct from the per-track
     // time selection dragged inside TrackContentPanel.
-    std::function<void(double, double)> onRulerTimeSelectionChanged;
+    // (startBeats, endBeats, movePlayhead). movePlayhead is true only when a new
+    // selection is being created, so resizing an existing edge leaves the
+    // playhead alone.
+    std::function<void(double, double, bool)> onRulerTimeSelectionChanged;
     std::function<void(double, double)>
         onZoomToFitBeatsRequested;  // Callback to zoom to fit a beat range (startBeats, endBeats)
 
@@ -198,6 +201,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     double timeSelectionStartBeats = -1.0;
     double timeSelectionEndBeats = -1.0;
     bool isDraggingTimeSelection = false;
+    bool timeSelectionResizing_ = false;        // true while dragging an existing edge
     double timeSelectionDragStartBeats = -1.0;  // Initial drag position for time selection
 
     bool markerLaneVisible_ = true;     // Gates marker guide-line drawing
@@ -217,6 +221,10 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Helper methods — beats are the native domain
     int beatsToPixel(double beats) const;
     double pixelToBeats(int pixel) const;
+
+    // True if x (component-local) is on a time-selection endpoint handle; sets
+    // isEndEdge to which edge (true = end, false = start).
+    bool hitTimeSelectionEdge(int x, bool& isEndEdge) const;
     double secondsToBeats(double timeInSeconds) const;
     double beatsToSeconds(double beats) const;
     double getTimelineLengthBeats() const;
@@ -226,8 +234,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void drawPlayhead(juce::Graphics& g);
     void drawArrangementSections(juce::Graphics& g);
     void drawSection(juce::Graphics& g, const ArrangementSection& section, bool isSelected) const;
-    void drawLoopMarkers(juce::Graphics& g);      // Draws shaded region (background)
-    void drawLoopMarkerFlags(juce::Graphics& g);  // Draws triangular flags (foreground)
+    void drawLoopMarkerFlags(juce::Graphics& g);  // Draws the loop strip (rail + endpoint caps)
     void drawTimeSelection(juce::Graphics& g);
     void drawMarkerGuides(juce::Graphics& g);
     // Draws a bar-number label, masking the dashed marker guide behind it with

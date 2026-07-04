@@ -373,7 +373,7 @@ class TrackHeadersPanel : public juce::Component,
     AutoLaneHeaderButtons* findLaneHeaderButtons(AutomationLaneId laneId);
 
     // Indentation
-    static constexpr int INDENT_WIDTH = 12;
+    static constexpr int INDENT_WIDTH = 8;
     static constexpr int COLLAPSE_BUTTON_SIZE = 10;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackHeadersPanel)

@@ -116,6 +116,12 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void hideMidiHeaderControls();
     void layoutMidiHeaderControls(juce::Rectangle<int> headerBounds);
 
+    // Clip id of the clip currently open in the active editor (MIDI or waveform),
+    // or INVALID_CLIP_ID if the active content isn't a clip editor.
+    ClipId getActiveEditingClipId() const;
+    // Reflect the active clip's source-loop state on the header loop toggle.
+    void syncLoopButtonState();
+
     bool showEditorTabs_ = false;
     bool updatingTabs_ = false;  // Guard against re-entrancy
     static constexpr int SIDEBAR_WIDTH = 32;
@@ -139,6 +145,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
     std::unique_ptr<juce::TextButton> autoGridButton_;
     std::unique_ptr<juce::TextButton> snapButton_;
+    std::unique_ptr<SvgButton> loopButton_;  // toggles the clip's source loop
     std::unique_ptr<SvgButton> sliceButton_;
     std::unique_ptr<SvgButton> bendButton_;
 
