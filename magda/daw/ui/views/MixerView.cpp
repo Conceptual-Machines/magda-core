@@ -395,7 +395,7 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
                 midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
                 midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut, nullptr,
-                teInputDeviceNames);
+                teInputDeviceNames, &midiInputTrackMapping_);
         }
     }
 
@@ -786,9 +786,10 @@ void MixerView::ChannelStrip::setupControls() {
             RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector.get(), trackId_, device,
                                                           outputTrackMapping_,
                                                           enabledOutputChannels);
-            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge);
+            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge, trackId_,
+                                                        &midiInputTrackMapping_);
             RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(), midiBridge,
-                                                         midiOutputTrackMapping_);
+                                                         midiOutputTrackMapping_, trackId_);
         }
 
         setupRoutingCallbacks();
@@ -847,6 +848,15 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
             int selectedId = midiInSelector->getSelectedId();
             if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+            } else if (selectedId >= 200) {
+                // Preserve existing track input instead of forcing "all"
+                auto it = midiInputTrackMapping_.find(selectedId);
+                if (it != midiInputTrackMapping_.end()) {
+                    TrackManager::getInstance().setTrackMidiInput(
+                        trackId_, "track:" + juce::String(it->second));
+                } else {
+                    TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+                }
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
@@ -869,6 +879,13 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
             TrackManager::getInstance().setTrackMidiInput(trackId_, "");
         } else if (selectedId == 1) {
             TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+        } else if (selectedId >= 200) {
+            // Track-as-input (internal MIDI routing)
+            auto it = midiInputTrackMapping_.find(selectedId);
+            if (it != midiInputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackMidiInput(trackId_,
+                                                              "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
@@ -914,10 +931,10 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
         if (selectedId == 1) {
             TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
         } else if (selectedId >= 200) {
+            // "MIDI To track" — internal routing, mirror of the dest's MIDI input
             auto it = midiOutputTrackMapping_.find(selectedId);
             if (it != midiOutputTrackMapping_.end()) {
-                TrackManager::getInstance().setTrackMidiOutput(trackId_,
-                                                               "track:" + juce::String(it->second));
+                TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
             }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();

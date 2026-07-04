@@ -776,6 +776,19 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void onMidiDevicesAvailable();
 
+    /**
+     * @brief Wires the recording-preview queue for track-routed MIDI input.
+     *
+     * Track-sourced MIDI ("track:N") bypasses MidiBridge's hardware MIDI
+     * callback layer, so MidiInputRouter feeds the live recording preview via
+     * TE input-instance consumers. Must be a different queue from MidiBridge's
+     * (the queue is single-producer; this one is fed from the audio thread).
+     */
+    void setTrackMidiRecordingQueue(RecordingNoteQueue* queue,
+                                    std::atomic<double>* transportPosition) {
+        midiInputRouter_.setRecordingQueue(queue, transportPosition);
+    }
+
     // =========================================================================
     // Plugin Window Manager
     // =========================================================================

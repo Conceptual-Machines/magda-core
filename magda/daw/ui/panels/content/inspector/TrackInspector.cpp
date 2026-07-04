@@ -1689,6 +1689,15 @@ void TrackInspector::populateRoutingSelectors() {
             int selectedId = inputSelector_->getSelectedId();
             if (selectedId == 1) {
                 magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+            } else if (selectedId >= 200) {
+                // Preserve existing track input instead of forcing "all"
+                auto it = midiInputTrackMapping_.find(selectedId);
+                if (it != midiInputTrackMapping_.end()) {
+                    magda::TrackManager::getInstance().setTrackMidiInput(
+                        selectedTrackId_, "track:" + juce::String(it->second));
+                } else {
+                    magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+                }
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
@@ -1714,6 +1723,13 @@ void TrackInspector::populateRoutingSelectors() {
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
         } else if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+        } else if (selectedId >= 200) {
+            // Track-as-input (internal MIDI routing)
+            auto it = midiInputTrackMapping_.find(selectedId);
+            if (it != midiInputTrackMapping_.end()) {
+                magda::TrackManager::getInstance().setTrackMidiInput(
+                    selectedTrackId_, "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
@@ -1777,11 +1793,11 @@ void TrackInspector::populateRoutingSelectors() {
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
         } else if (selectedId >= 200) {
-            // Track destination
+            // "MIDI To track" — internal routing, mirror of the dest's MIDI input
             auto it = midiOutputTrackMapping_.find(selectedId);
             if (it != midiOutputTrackMapping_.end()) {
-                magda::TrackManager::getInstance().setTrackMidiOutput(
-                    selectedTrackId_, "track:" + juce::String(it->second));
+                magda::TrackManager::getInstance().routeMidiOutputToTrack(selectedTrackId_,
+                                                                          it->second);
             }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
@@ -1829,14 +1845,16 @@ void TrackInspector::populateMidiInputOptions() {
     if (!inputSelector_ || !audioEngine_)
         return;
     magda::RoutingSyncHelper::populateMidiInputOptions(inputSelector_.get(),
-                                                       audioEngine_->getMidiBridge());
+                                                       audioEngine_->getMidiBridge(),
+                                                       selectedTrackId_, &midiInputTrackMapping_);
 }
 
 void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
-    magda::RoutingSyncHelper::populateMidiOutputOptions(
-        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), midiOutputTrackMapping_);
+    magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
+                                                        audioEngine_->getMidiBridge(),
+                                                        midiOutputTrackMapping_, selectedTrackId_);
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {
@@ -1863,7 +1881,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
         outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut,
-        &inputChannelMapping_, teInputDeviceNames);
+        &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_);
 }
 
 }  // namespace magda::daw::ui

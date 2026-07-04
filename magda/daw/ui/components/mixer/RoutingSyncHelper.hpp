@@ -116,6 +116,8 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                 continue;
             if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                 continue;
+            if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
+                continue;
             if (t.type == TrackType::Audio || t.type == TrackType::Group ||
                 t.type == TrackType::Aux) {
                 trackOptions.push_back({id, t.name});
@@ -287,7 +289,9 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
     selector->setOptions(options);
 }
 
-inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midiBridge) {
+inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
+                                     TrackId currentTrackId = INVALID_TRACK_ID,
+                                     std::map<int, TrackId>* outMidiInputTrackMapping = nullptr) {
     if (!selector || !midiBridge)
         return;
 
@@ -306,11 +310,39 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
         }
     }
 
+    // Add tracks as MIDI input sources — ID 200+
+    if (currentTrackId != INVALID_TRACK_ID && outMidiInputTrackMapping) {
+        auto& trackManager = TrackManager::getInstance();
+        const auto& allTracks = trackManager.getTracks();
+
+        outMidiInputTrackMapping->clear();
+
+        std::vector<RoutingSelector::RoutingOption> trackOptions;
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.id == currentTrackId)
+                continue;
+            if (t.type != TrackType::Audio)
+                continue;
+            if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
+                continue;
+            trackOptions.push_back({id, t.name});
+            (*outMidiInputTrackMapping)[id] = t.id;
+            ++id;
+        }
+        if (!trackOptions.empty()) {
+            options.push_back({0, "", true});  // separator
+            for (auto& opt : trackOptions)
+                options.push_back(std::move(opt));
+        }
+    }
+
     selector->setOptions(options);
 }
 
 inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
-                                      std::map<int, TrackId>& outTrackMapping) {
+                                      std::map<int, TrackId>& outTrackMapping,
+                                      TrackId currentTrackId = INVALID_TRACK_ID) {
     if (!selector || !midiBridge)
         return;
 
@@ -329,6 +361,34 @@ inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* mid
     }
 
     outTrackMapping.clear();
+
+    // Add tracks as MIDI destinations ("MIDI To track") — ID 200+
+    if (currentTrackId != INVALID_TRACK_ID) {
+        auto& trackManager = TrackManager::getInstance();
+        const auto& allTracks = trackManager.getTracks();
+
+        std::vector<RoutingSelector::RoutingOption> trackOptions;
+        int id = 200;
+        for (const auto& t : allTracks) {
+            if (t.id == currentTrackId)
+                continue;
+            if (t.type != TrackType::Audio)
+                continue;
+            // The edge created is candidate ← current (candidate listens to
+            // the current track), so the candidate is the destination here.
+            if (trackManager.wouldCreateInputRoutingCycle(t.id, currentTrackId))
+                continue;
+            trackOptions.push_back({id, t.name});
+            outTrackMapping[id] = t.id;
+            ++id;
+        }
+        if (!trackOptions.empty()) {
+            options.push_back({0, "", true});  // separator
+            for (auto& opt : trackOptions)
+                options.push_back(std::move(opt));
+        }
+    }
+
     selector->setOptions(options);
 }
 
@@ -340,16 +400,19 @@ inline void syncSelectorsFromTrack(
     std::map<int, TrackId>* inputTrackMapping = nullptr, juce::BigInteger enabledInputChannels = {},
     juce::BigInteger enabledOutputChannels = {},
     std::map<int, juce::String>* inputChannelMapping = nullptr,
-    const std::map<int, juce::String>& teDeviceNames = {}) {
+    const std::map<int, juce::String>& teDeviceNames = {},
+    std::map<int, TrackId>* midiInputTrackMapping = nullptr) {
     bool hasAudioInput = !track.audioInputDevice.isEmpty();
     bool hasMidiInput = !track.midiInputDevice.isEmpty();
 
     // Update Audio Input selector
     if (audioInSelector) {
+        // Always re-populate with the current track context so internal-track
+        // options are available before any track input is selected — otherwise
+        // the first "track:" selection could never be made.
+        populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping,
+                                  enabledInputChannels, inputChannelMapping, teDeviceNames);
         if (hasAudioInput) {
-            populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping,
-                                      enabledInputChannels, inputChannelMapping, teDeviceNames);
-
             if (track.audioInputDevice.startsWith("track:") && inputTrackMapping) {
                 // Track-as-input: find the matching option ID
                 TrackId sourceId =
@@ -392,12 +455,26 @@ inline void syncSelectorsFromTrack(
 
     // Update MIDI Input selector
     if (midiInSelector) {
+        // Always re-populate with the current track context (see audio note above).
+        populateMidiInputOptions(midiInSelector, midiBridge, currentTrackId, midiInputTrackMapping);
         if (!hasMidiInput) {
             midiInSelector->setSelectedId(2);  // "None"
             midiInSelector->setEnabled(false);
         } else if (track.midiInputDevice == "all") {
             midiInSelector->setSelectedId(1);  // "All Inputs"
             midiInSelector->setEnabled(true);
+        } else if (track.midiInputDevice.startsWith("track:") && midiInputTrackMapping) {
+            TrackId sourceId =
+                track.midiInputDevice.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+            int selectedId = 2;
+            for (const auto& [oid, tid] : *midiInputTrackMapping) {
+                if (tid == sourceId) {
+                    selectedId = oid;
+                    break;
+                }
+            }
+            midiInSelector->setSelectedId(selectedId);
+            midiInSelector->setEnabled(selectedId != 2);
         } else if (midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int selectedId = 2;
@@ -444,9 +521,37 @@ inline void syncSelectorsFromTrack(
 
     // Update MIDI Output selector
     if (midiOutSelector) {
-        populateMidiOutputOptions(midiOutSelector, midiBridge, midiOutputTrackMapping);
+        // Always re-populate with the current track context (see audio note above).
+        populateMidiOutputOptions(midiOutSelector, midiBridge, midiOutputTrackMapping,
+                                  currentTrackId);
+
+        // Mirror view of internal MIDI routing: if another track listens to
+        // this track ("track:<id>" MIDI input), show that destination on the
+        // out selector. With destination-side fan-out only the first listener
+        // is shown — acceptable.
+        TrackId listenerId = INVALID_TRACK_ID;
+        if (currentTrackId != INVALID_TRACK_ID) {
+            const juce::String trackInputId = "track:" + juce::String(currentTrackId);
+            for (const auto& t : TrackManager::getInstance().getTracks()) {
+                if (t.id != currentTrackId && t.midiInputDevice == trackInputId) {
+                    listenerId = t.id;
+                    break;
+                }
+            }
+        }
+
         juce::String currentMidiOutput = track.midiOutputDevice;
-        if (currentMidiOutput.isEmpty()) {
+        if (listenerId != INVALID_TRACK_ID) {
+            int selectedId = 1;  // "None" fallback
+            for (const auto& [oid, tid] : midiOutputTrackMapping) {
+                if (tid == listenerId) {
+                    selectedId = oid;
+                    break;
+                }
+            }
+            midiOutSelector->setSelectedId(selectedId);
+            midiOutSelector->setEnabled(selectedId != 1);
+        } else if (currentMidiOutput.isEmpty()) {
             midiOutSelector->setSelectedId(1);  // "None"
         } else if (midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();

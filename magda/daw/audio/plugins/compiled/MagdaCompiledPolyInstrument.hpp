@@ -161,6 +161,16 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     // a one-sample gate edge is needed to retrigger (Mono only).
     bool handleMonoNoteOn(int note, int velocity, int mode);
     void handleMonoNoteOff(int note);
+    // Releases EVERY poly voice currently sounding (or legato-targeting) the
+    // given pitch. Used both before a re-trigger (one voice per pitch) and on
+    // note-off. Unlike mydsp_poly::keyOff — which releases only the oldest
+    // matching voice and logs "Playing pitch not found" to stderr when there is
+    // none — this is a silent no-op for unmatched note-offs and self-heals
+    // orphaned voices. Duplicate on/off streams for the same pitch are
+    // legitimate (e.g. a freshly recorded clip playing back merged with the
+    // still-monitored live input that fed it), so unbalanced deliveries must
+    // never strand a sounding voice.
+    void releasePolyVoicesForPitch(int pitch);
 
     std::unique_ptr<::dsp_poly> poly_;
     // Dedicated single voice for Mono/Legato (the poly allocator skips idle
@@ -180,12 +190,12 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
         float gain = 0.0f;
     };
     std::vector<HeldNote> heldNotes_;
-    // Poly-mode sounding pitches. The Faust voice allocator hands out a fresh
-    // voice on every keyOn without checking whether that pitch is already
-    // sounding, so a duplicate note-on (or a dropped note-off) strands a voice
-    // that never gets released. We release any existing voice for a pitch before
-    // re-triggering it, guaranteeing one voice per pitch and no hung notes.
-    std::array<bool, 128> polyHeld_{};
+    // reset() may be called from the message thread (e.g. AudioBridge::
+    // resetSynthsOnTrack after a record pass) while the audio thread is inside
+    // compute()/keyOn()/keyOff(). Walking the Faust voice table from two
+    // threads is a data race, so reset() only raises this flag and the flush
+    // itself runs at the top of the next applyToBuffer() on the audio thread.
+    std::atomic<bool> pendingVoiceFlush_{false};
     int lastVoiceMode_ = 0;
     // Transport play state from the previous block. On the playing->stopped edge
     // we flush all voices: clip playback doesn't send note-offs when the user

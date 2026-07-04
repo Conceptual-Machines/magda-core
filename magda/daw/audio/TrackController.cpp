@@ -149,6 +149,26 @@ void TrackController::removeAudioTrack(TrackId trackId) {
 
     // Delete track from edit (expensive operation, done outside lock)
     if (track) {
+        // te::assignTrackAsInput registers input-device instances in the playback
+        // context without enabling the source track's device, so TE's own cleanup
+        // on deletion (AudioTrack::~AudioTrack / Edit::deleteTrack, both gated on
+        // isEnabled()) never removes them, and EditInputDevices can no longer
+        // resolve the device once the track is gone. Clear any targets and
+        // instances owned by this track's input devices first, otherwise the
+        // context keeps instances whose owner dangles and the next graph rebuild
+        // crashes.
+        auto& waveInputDevice = track->getWaveInputDevice();
+        auto& midiInputDevice = track->getMidiInputDevice();
+        auto& editInputDevices = edit_.getEditInputDevices();
+        for (auto* otherTrack : te::getAudioTracks(edit_)) {
+            editInputDevices.clearInputsOfDevice(*otherTrack, waveInputDevice, nullptr);
+            editInputDevices.clearInputsOfDevice(*otherTrack, midiInputDevice, nullptr);
+        }
+        if (auto* playbackContext = edit_.getCurrentPlaybackContext()) {
+            playbackContext->removeInstanceForDevice(waveInputDevice);
+            playbackContext->removeInstanceForDevice(midiInputDevice);
+        }
+
         edit_.deleteTrack(track);
         DBG("TrackController: Removed Tracktion AudioTrack for MAGDA track " << trackId);
     }
@@ -331,6 +351,20 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
         }
         DBG("  -> Cleared audio input");
     } else if (deviceId.startsWith("track:")) {
+        // Clear existing audio input targets first so switching inputs doesn't
+        // accumulate targets (MIDI targets are left untouched)
+        if (auto* playbackContext = edit_.getCurrentPlaybackContext()) {
+            for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+                if (getLiveMidiInputDevice(engine_, inputDeviceInstance))
+                    continue;
+                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                if (!result) {
+                    DBG("  -> Warning: Could not remove audio input target - "
+                        << result.getErrorMessage());
+                }
+            }
+        }
+
         // Route another track's audio output as input (resampling)
         TrackId sourceTrackId =
             deviceId.fromFirstOccurrenceOf("track:", false, false).getIntValue();
@@ -352,6 +386,18 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
         auto* playbackContext = edit_.getCurrentPlaybackContext();
         if (playbackContext) {
             auto allInputs = playbackContext->getAllInputs();
+
+            // Clear existing audio input targets first so switching inputs doesn't
+            // accumulate targets (MIDI targets are left untouched)
+            for (auto* inputDeviceInstance : allInputs) {
+                if (getLiveMidiInputDevice(engine_, inputDeviceInstance))
+                    continue;
+                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                if (!result) {
+                    DBG("  -> Warning: Could not remove audio input target - "
+                        << result.getErrorMessage());
+                }
+            }
 
             if (deviceId == "default") {
                 // Use first available audio (non-MIDI) input device

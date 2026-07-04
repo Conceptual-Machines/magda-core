@@ -456,6 +456,13 @@ void TracktionEngineWrapper::createEditAndBridges() {
     midiBridge_->setAudioBridge(audioBridge_.get());
     midiBridge_->setRecordingQueue(&recordingNoteQueue_, &transportPositionForMidi_);
 
+    // Track-routed MIDI ("track:N" inputs) bypasses MidiBridge entirely, so the
+    // recording preview for those tracks is fed by MidiInputRouter via TE input
+    // consumers into its own single-producer queue.
+    if (audioBridge_)
+        audioBridge_->setTrackMidiRecordingQueue(&trackMidiRecordingNoteQueue_,
+                                                 &transportPositionForMidi_);
+
     // Register as transport listener for recording callbacks
     currentEdit_->getTransport().addListener(this);
 
