@@ -18,15 +18,16 @@ ArrangementClipSyncPlan buildArrangementClipSyncPlan(tracktion::Edit& edit,
     for (const auto& clip : arrangementClips)
         currentClipIds.insert(clip.id);
 
-    for (const auto& [clipId, engineId] : clipIds.snapshot()) {
-        if (currentClipIds.find(clipId) == currentClipIds.end())
-            plan.clipsToRemove.push_back(clipId);
-    }
-
     std::unordered_map<std::string, tracktion::AudioTrack*> engineIdToParentTrack;
     for (auto* track : tracktion::getAudioTracks(edit)) {
         for (auto* teClip : track->getClips())
             engineIdToParentTrack[teClip->itemID.toString().toStdString()] = track;
+    }
+
+    for (const auto& [clipId, engineId] : clipIds.snapshot()) {
+        if (currentClipIds.find(clipId) == currentClipIds.end() &&
+            engineIdToParentTrack.find(engineId) != engineIdToParentTrack.end())
+            plan.clipsToRemove.push_back(clipId);
     }
 
     for (const auto& clip : arrangementClips) {

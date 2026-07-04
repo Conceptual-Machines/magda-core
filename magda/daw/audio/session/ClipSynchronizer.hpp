@@ -6,7 +6,6 @@
 #include <functional>
 #include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -144,21 +143,6 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * Creates or updates clip in session slot, handles audio and MIDI clips
      */
     bool syncSessionClipToSlot(ClipId clipId);
-
-    /**
-     * @brief Clear TE clips left behind in session slots no MAGDA clip occupies anymore
-     * @param sessionClips Current session clips from ClipManager
-     * @return true if any slot was cleared (requires graph reallocation)
-     *
-     * Session clips are bound to TE ClipSlots positionally by (trackId, sceneIndex)
-     * with no stable engine-id mapping, and syncSessionClipToSlot() only ever
-     * creates into empty slots. When a clip's slot key changes (track/scene move)
-     * or the clip is deleted, nothing else removes the stale TE clip left in the
-     * vacated slot, so it keeps playing through the old track's chain. Diffs the
-     * previous pass's known slots against the current ones and clears the ones
-     * that dropped out.
-     */
-    bool removeVacatedSessionSlots(const std::vector<ClipInfo>& sessionClips);
 
     /**
      * @brief Remove a session clip from its slot
@@ -374,11 +358,6 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
 
     ClipEngineIdMap clipIds_;
     ClipWarpSynchronizer warpSync_;
-
-    // Session slots (trackId, sceneIndex) known to hold a TE clip as of the last
-    // clipsChanged() pass. Diffed each pass to find vacated slots; see
-    // removeVacatedSessionSlots().
-    std::set<std::pair<TrackId, int>> lastKnownSessionSlots_;
 
     // Reverse proxy state (for deferred reallocation)
     ClipId pendingReverseClipId_{INVALID_CLIP_ID};
