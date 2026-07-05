@@ -6,6 +6,7 @@
 #include <map>
 
 #include "PanelContent.hpp"
+#include "SearchTextEditor.hpp"
 #include "core/PluginPreferences.hpp"
 
 namespace magda {
@@ -99,7 +100,7 @@ class PluginBrowserContent : public PanelContent,
 
   private:
     // UI Components
-    juce::TextEditor searchBox_;
+    SearchTextEditor searchBox_;
     juce::TreeView pluginTree_;
     juce::ComboBox viewModeSelector_;
 

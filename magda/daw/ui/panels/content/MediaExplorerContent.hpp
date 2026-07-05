@@ -7,6 +7,7 @@
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "PanelContent.hpp"
+#include "SearchTextEditor.hpp"
 
 namespace magda::daw::ui {
 
@@ -76,7 +77,7 @@ class MediaExplorerContent : public PanelContent,
 
     // Top Bar Components
     juce::ComboBox sourceSelector_;  // Left: Source dropdown (User, Library, etc.)
-    juce::TextEditor searchBox_;     // Center-left: Search
+    SearchTextEditor searchBox_;     // Center-left: Search
     std::unique_ptr<magda::SvgButton> audioFilterButton_;        // Center: Audio type filter
     std::unique_ptr<magda::SvgButton> midiFilterButton_;         // Center: MIDI type filter
     std::unique_ptr<magda::SvgButton> presetFilterButton_;       // Center: Preset type filter

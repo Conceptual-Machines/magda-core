@@ -830,7 +830,11 @@ MediaExplorerContent::MediaExplorerContent() {
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
     searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.45f));
+    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    searchBox_.setSelectAllWhenFocused(true);
     searchBox_.onTextChange = [this]() {
         searchTerm_ = searchBox_.getText();
         stopTimer();
