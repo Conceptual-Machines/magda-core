@@ -16,6 +16,8 @@
 #include "../common/SvgButton.hpp"
 #include "../mixer/InputTypeSelector.hpp"
 #include "../mixer/RoutingSelector.hpp"
+#include "TrackControlsLayout.hpp"
+#include "TrackControlsPolicy.hpp"
 #include "audio/MidiBridge.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -150,6 +152,9 @@ class TrackHeadersPanel : public juce::Component,
         bool isMaster = false;      // Is this the master track?
         bool isChordTrack = false;  // Is this the singleton chord track?
         bool isCollapsed = false;   // Is group collapsed?
+        // Which controls this track type exposes — shared with the inspector
+        // so the two views can't drift. Set from TrackControlsPolicy::forTrack.
+        TrackControlsPolicy policy;
         bool selected = false;
         bool muted = false;
         bool solo = false;
@@ -324,15 +329,16 @@ class TrackHeadersPanel : public juce::Component,
                            const SideColumn& outer);
     void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
                            const SideColumn& inner, int trackHeight);
-    void layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
-                                const SideColumn& inner, int gapOverride = -1);
-    // Single-row content layout helpers (the passed rect is the already-positioned
-    // inner row). Used both for the top-packed compact layouts and the distributed
-    // fully-expanded layout.
-    void layoutVolPanRow(TrackHeader& header, juce::Rectangle<int> row);
-    void layoutButtonRow(TrackHeader& header, juce::Rectangle<int> row);
-    void layoutRoutingRow(TrackHeader& header, juce::Rectangle<int> row, RoutingSelector& audioDd,
-                          RoutingSelector& midiDd, juce::Component& icon);
+    // Master-only compact block: volume + speaker mute, horizontal meter with
+    // the back-to-arrangement button, peak readout.
+    void layoutMasterControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
+                                 const SideColumn& inner);
+    // Hides every control the control-area layout may place, so each layout
+    // pass starts from a clean slate and only shows what fits.
+    void hideControlAreaComponents(TrackHeader& header);
+    // Builds the policy-driven mix cluster (gain/pan/buttons/automation) for
+    // the shared track_controls layout.
+    track_controls::MixControls mixControlsFor(TrackHeader& header) const;
 
     // Automation lane height helpers
     int getTrackTotalHeight(int trackIndex) const;
