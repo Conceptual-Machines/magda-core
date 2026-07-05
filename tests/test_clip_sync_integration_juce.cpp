@@ -1657,6 +1657,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         auto mover =
             cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
 
+        // New audio clips default to auto-crossfade, which would KEEP this
+        // partial overlap as a crossfade (#1499). Pin it off to exercise the
+        // trim path this test covers.
+        cm.setAutoCrossfade(stationary, false);
+        cm.setAutoCrossfade(mover, false);
+
         cm.moveClip(mover, 4.0, 60.0);
 
         const auto* s = cm.getClip(stationary);
@@ -1683,6 +1689,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
         auto victim =
             cm.createAudioClip(f.trackId, 8.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        // New audio clips default to auto-crossfade, which the duplicate would
+        // inherit and use to KEEP this partial overlap as a crossfade (#1499).
+        // Pin the source off (the copy inherits the flag) to exercise the trim
+        // path this test covers.
+        cm.setAutoCrossfade(source, false);
+        cm.setAutoCrossfade(victim, false);
 
         auto copy = cm.duplicateClipAt(source, 6.0, f.trackId, 60.0);
         expect(copy != INVALID_CLIP_ID);
