@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "core/PluginPreferences.hpp"
 #include "engine/PluginExclusions.hpp"
 
 namespace magda {
@@ -76,6 +77,10 @@ class PluginSettingsDialog : public juce::Component {
     juce::TextButton scanNewButton_;
     juce::TextButton viewReportButton_;
     juce::ToggleButton scanOnStartupToggle_;
+#if JUCE_MAC
+    juce::Label formatPreferenceLabel_;
+    juce::ComboBox formatPreferenceSelector_;
+#endif
     juce::ProgressBar scanProgressBar_;
     double scanProgress_ = -1.0;
     juce::Label scanStatusLabel_;

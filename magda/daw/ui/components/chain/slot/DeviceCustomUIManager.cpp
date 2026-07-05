@@ -386,14 +386,7 @@ void forwardParameterChanges(Ui& ui, const DeviceCustomUIManager::Callbacks& cal
 }
 
 magda::PluginFormat pluginFormatFromDescription(const juce::PluginDescription& desc) {
-    if (desc.pluginFormatName.containsIgnoreCase("VST3"))
-        return magda::PluginFormat::VST3;
-    if (desc.pluginFormatName.containsIgnoreCase("AudioUnit") ||
-        desc.pluginFormatName.equalsIgnoreCase("AU"))
-        return magda::PluginFormat::AU;
-    if (desc.pluginFormatName.containsIgnoreCase("VST"))
-        return magda::PluginFormat::VST;
-    return magda::PluginFormat::VST3;
+    return magda::pluginFormatFromName(desc.pluginFormatName);
 }
 
 magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
@@ -1748,8 +1741,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         juce::Array<juce::PluginDescription> externalPlugins;
         if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
                 magda::TrackManager::getInstance().getAudioEngine())) {
-            auto& knownPlugins = engine->getKnownPluginList();
-            externalPlugins = knownPlugins.getTypes();
+            externalPlugins = engine->getPreferredPluginTypes();
         }
 
         if (!externalPlugins.isEmpty()) {

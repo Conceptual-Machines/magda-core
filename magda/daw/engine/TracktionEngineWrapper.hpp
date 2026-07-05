@@ -378,6 +378,13 @@ class TracktionEngineWrapper : public AudioEngine,
     const juce::KnownPluginList& getKnownPluginList() const;
 
     /**
+     * @brief Get plugins for browser/menu presentation, honoring user format
+     * preference on macOS while leaving exact KnownPluginList lookup available
+     * through getKnownPluginList().
+     */
+    juce::Array<juce::PluginDescription> getPreferredPluginTypes() const;
+
+    /**
      * @brief Save the plugin list to persistent storage
      * Called after plugin scanning completes
      */

@@ -364,6 +364,28 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     addAndMakeVisible(scanOnStartupToggle_);
 
+#if JUCE_MAC
+    formatPreferenceLabel_.setText(tr("plugin_settings.label.external_format_preference"),
+                                   juce::dontSendNotification);
+    formatPreferenceLabel_.setColour(juce::Label::textColourId,
+                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    formatPreferenceLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    addAndMakeVisible(formatPreferenceLabel_);
+
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_vst3"), 1);
+    formatPreferenceSelector_.addItem(tr("plugin_settings.option.prefer_au"), 2);
+    formatPreferenceSelector_.setColour(juce::ComboBox::backgroundColourId,
+                                        DarkTheme::getColour(DarkTheme::SURFACE));
+    formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    formatPreferenceSelector_.setColour(juce::ComboBox::outlineColourId,
+                                        DarkTheme::getBorderColour());
+    const auto currentFormatPreference =
+        PluginPreferences::getInstance().externalPluginFormatPreference();
+    formatPreferenceSelector_.setSelectedId(currentFormatPreference == PluginFormat::AU ? 2 : 1,
+                                            juce::dontSendNotification);
+    addAndMakeVisible(formatPreferenceSelector_);
+#endif
+
     scanProgressBar_.setPercentageDisplay(true);
     scanProgressBar_.setVisible(false);
     addAndMakeVisible(scanProgressBar_);
@@ -502,6 +524,12 @@ void PluginSettingsDialog::resized() {
     pluginCountLabel_.setBounds(bounds.removeFromTop(18));
     bounds.removeFromTop(2);
     scanOnStartupToggle_.setBounds(bounds.removeFromTop(22));
+#if JUCE_MAC
+    bounds.removeFromTop(4);
+    auto formatPreferenceRow = bounds.removeFromTop(buttonHeight);
+    formatPreferenceLabel_.setBounds(formatPreferenceRow.removeFromLeft(210));
+    formatPreferenceSelector_.setBounds(formatPreferenceRow.removeFromLeft(160));
+#endif
 
     bounds.removeFromTop(spacing);
 
@@ -546,6 +574,9 @@ void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
     removeSelectedButton_.setEnabled(enabled);
     resetAllButton_.setEnabled(enabled);
     scanOnStartupToggle_.setEnabled(enabled);
+#if JUCE_MAC
+    formatPreferenceSelector_.setEnabled(enabled);
+#endif
     okButton_.setEnabled(enabled);
     cancelButton_.setEnabled(enabled);
 }
@@ -554,6 +585,10 @@ void PluginSettingsDialog::applySettings() {
     Config::getInstance().setCustomPluginPaths(customPaths_);
     Config::getInstance().setScanPluginsOnStartup(scanOnStartupToggle_.getToggleState());
     Config::getInstance().save();
+#if JUCE_MAC
+    PluginPreferences::getInstance().setExternalPluginFormatPreference(
+        formatPreferenceSelector_.getSelectedId() == 2 ? PluginFormat::AU : PluginFormat::VST3);
+#endif
 
     if (engine_) {
         auto* coordinator = engine_->getPluginScanCoordinator();

@@ -1134,6 +1134,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // Register for config changes (e.g. preset changed in settings dialog)
     magda::Config::getInstance().addListener(this);
+    magda::PluginPreferences::getInstance().addListener(this);
 
     // Prefer the engine's MagdaApi (avoids a redundant facade). Fall back
     // to owning one if the engine is unreachable so magdaApi_ is never
@@ -1168,6 +1169,7 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         inputBox_->removeKeyListener(this);
     }
     autocompletePopup_.reset();
+    magda::PluginPreferences::getInstance().removeListener(this);
     magda::Config::getInstance().removeListener(this);
     magda::ProjectManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
@@ -1726,6 +1728,12 @@ void AIChatConsoleContent::viewModeChanged(magda::ViewMode mode, const magda::Au
     updateAnalysisChip();
 }
 
+void AIChatConsoleContent::externalPluginFormatPreferenceChanged(magda::PluginFormat preference) {
+    juce::ignoreUnused(preference);
+    buildAliasList();
+    hideAutocomplete();
+}
+
 // ============================================================================
 // Mix analysis context (#886) — gathered by the mixer's Analyze button, held by
 // MixAnalysisService; the console surfaces it as a chip and uses it as context.
@@ -2110,8 +2118,7 @@ void AIChatConsoleContent::buildAliasList() {
     // External plugins from KnownPluginList
     if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
             magda::TrackManager::getInstance().getAudioEngine())) {
-        auto& knownPlugins = engine->getKnownPluginList();
-        auto types = knownPlugins.getTypes();
+        auto types = engine->getPreferredPluginTypes();
         DBG("AIChatConsole: buildAliasList - KnownPluginList has " << types.size() << " plugins");
         for (const auto& desc : types) {
             auto alias = PluginBrowserInfo::generateAlias(desc.name);

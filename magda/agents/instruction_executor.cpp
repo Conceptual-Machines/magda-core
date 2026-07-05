@@ -390,8 +390,8 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
         if (engine) {
             auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
             if (teWrapper) {
-                const auto& knownPlugins = teWrapper->getKnownPluginList();
-                for (const auto& desc : knownPlugins.getTypes()) {
+                const auto pluginTypes = teWrapper->getPreferredPluginTypes();
+                for (const auto& desc : pluginTypes) {
                     auto alias = pluginNameToAlias(desc.name);
                     if (desc.name.equalsIgnoreCase(op.fxAlias) ||
                         alias.equalsIgnoreCase(op.fxAlias)) {
@@ -679,10 +679,10 @@ bool InstructionExecutor::addFxToTrack(int trackId, const juce::String& fxName) 
         return false;
     }
 
-    const auto& knownPlugins = teWrapper->getKnownPluginList();
+    const auto pluginTypes = teWrapper->getPreferredPluginTypes();
     const juce::PluginDescription* bestMatch = nullptr;
 
-    for (const auto& desc : knownPlugins.getTypes()) {
+    for (const auto& desc : pluginTypes) {
         auto alias = pluginNameToAlias(desc.name);
         if (desc.name.equalsIgnoreCase(fxName) || alias.equalsIgnoreCase(fxName)) {
             bestMatch = &desc;

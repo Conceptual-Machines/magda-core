@@ -365,7 +365,7 @@ void PostFxPanelContent::showAddDeviceMenu() {
     juce::Array<juce::PluginDescription> externalPlugins;
     if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
             magda::TrackManager::getInstance().getAudioEngine())) {
-        externalPlugins = engine->getKnownPluginList().getTypes();
+        externalPlugins = engine->getPreferredPluginTypes();
     }
     if (!externalPlugins.isEmpty()) {
         std::map<juce::String, juce::PopupMenu> byManufacturer;

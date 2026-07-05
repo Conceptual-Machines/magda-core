@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "PanelContent.hpp"
+#include "core/PluginPreferences.hpp"
 
 namespace magda {
 class TracktionEngineWrapper;
@@ -51,13 +52,15 @@ struct PluginBrowserInfo {
  */
 class PluginBrowserContent : public PanelContent,
                              public juce::TreeViewItem,
-                             public juce::ChangeListener {
+                             public juce::ChangeListener,
+                             public magda::PluginPreferences::Listener {
   public:
     PluginBrowserContent();
     ~PluginBrowserContent() override;
 
     // ChangeListener — auto-refresh when KnownPluginList changes (e.g. after scan)
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    void externalPluginFormatPreferenceChanged(magda::PluginFormat preference) override;
 
     PanelContentType getContentType() const override {
         return PanelContentType::PluginBrowser;
