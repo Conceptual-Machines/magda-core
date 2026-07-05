@@ -594,8 +594,11 @@ class MediaFileFilter : public juce::FileFilter {
 
 //==============================================================================
 // SearchResultsComponent - flat list of files matching the search term found
-// anywhere under the current browser root. Scanning runs on a background
-// thread and streams results in batches; a new search cancels the old scan.
+// anywhere under the current browser root. Scanning runs on one persistent
+// background worker; cancellation is non-blocking: starting or cancelling a
+// search just bumps a generation counter, the in-flight scan notices at its
+// next file step and abandons itself, and stale result batches are dropped.
+// The only blocking join is in the destructor.
 //==============================================================================
 class MediaExplorerContent::SearchResultsComponent : public juce::Component,
                                                      public juce::ListBoxModel,
@@ -611,34 +614,36 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
     }
 
     ~SearchResultsComponent() override {
-        stopThread(2000);
+        cancelPendingUpdate();
+        stopThread(2000);  // signalThreadShouldExit + notify wakes the idle wait
     }
 
     void startSearch(const juce::File& root, const juce::String& term,
                      const juce::String& wildcardPattern) {
-        stopThread(2000);
         {
             const juce::ScopedLock sl(lock_);
+            ++generation_;
+            request_ = {root, term.toLowerCase(), wildcardPattern, generation_};
+            hasRequest_ = true;
             pending_.clear();
         }
         results_.clear();
-        root_ = root;
-        term_ = term.toLowerCase();
-        wildcard_ = std::make_unique<juce::WildcardFileFilter>(wildcardPattern, "*", "Media files");
-        done_ = false;
-        truncated_ = false;
+        displayRoot_ = root;
         list_.updateContent();
         repaint();
-        startThread();
+        if (!isThreadRunning())
+            startThread();
+        notify();
     }
 
     void cancel() {
-        stopThread(2000);
-        results_.clear();
         {
             const juce::ScopedLock sl(lock_);
+            ++generation_;  // in-flight scan abandons at its next file step
+            hasRequest_ = false;
             pending_.clear();
         }
+        results_.clear();
         list_.updateContent();
         repaint();
     }
@@ -650,9 +655,14 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getPanelBackgroundColour());
         if (results_.isEmpty()) {
+            bool done = false;
+            {
+                const juce::ScopedLock sl(lock_);
+                done = doneGeneration_ == generation_;
+            }
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(12.0f));
-            g.drawText(done_ ? "No matches" : "Searching...", getLocalBounds(),
+            g.drawText(done ? "No matches" : "Searching...", getLocalBounds(),
                        juce::Justification::centred);
         }
     }
@@ -688,7 +698,7 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
                        juce::roundToInt(glyphs.getBoundingBox(0, -1, false).getWidth()) + 4);
         g.drawText(name, bounds.removeFromLeft(nameWidth), juce::Justification::centredLeft);
 
-        const auto relativeDir = file.getParentDirectory().getRelativePathFrom(root_);
+        const auto relativeDir = file.getParentDirectory().getRelativePathFrom(displayRoot_);
         if (relativeDir.isNotEmpty() && relativeDir != ".") {
             bounds.removeFromLeft(8);
             g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
@@ -713,33 +723,74 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
     }
 
   private:
+    struct Request {
+        juce::File root;
+        juce::String term;  // pre-lowered
+        juce::String pattern;
+        int generation = 0;
+    };
+
     void run() override {
-        int found = 0;
-        for (juce::RangedDirectoryIterator it(root_, true, "*", juce::File::findFiles);
-             it != juce::RangedDirectoryIterator(); ++it) {
-            if (threadShouldExit())
-                return;
-            const auto file = (*it).getFile();
-            if (!file.getFileName().toLowerCase().contains(term_))
+        while (!threadShouldExit()) {
+            Request request;
+            bool haveRequest = false;
+            {
+                const juce::ScopedLock sl(lock_);
+                if (hasRequest_) {
+                    request = request_;
+                    hasRequest_ = false;
+                    haveRequest = true;
+                }
+            }
+            if (!haveRequest) {
+                wait(-1);  // woken by notify() (new request) or stopThread()
                 continue;
-            if (wildcard_ != nullptr && !wildcard_->isFileSuitable(file))
+            }
+            runScan(request);
+        }
+    }
+
+    // True while this request is still the one the UI wants.
+    bool requestIsCurrent(const Request& request) const {
+        const juce::ScopedLock sl(lock_);
+        return request.generation == generation_;
+    }
+
+    void runScan(const Request& request) {
+        const juce::WildcardFileFilter wildcard(request.pattern, "*", "Media files");
+        int found = 0;
+        for (juce::RangedDirectoryIterator it(request.root, true, "*", juce::File::findFiles);
+             it != juce::RangedDirectoryIterator(); ++it) {
+            if (threadShouldExit() || !requestIsCurrent(request))
+                return;  // abandoned - a newer search or cancel superseded it
+            const auto file = (*it).getFile();
+            if (!file.getFileName().toLowerCase().contains(request.term))
+                continue;
+            if (!wildcard.isFileSuitable(file))
                 continue;
             {
                 const juce::ScopedLock sl(lock_);
+                if (request.generation != generation_)
+                    return;
                 pending_.add(file);
             }
             triggerAsyncUpdate();
-            if (++found >= kMaxResults) {
-                truncated_ = true;
+            if (++found >= kMaxResults)
                 break;
-            }
         }
-        done_ = true;
+        {
+            const juce::ScopedLock sl(lock_);
+            if (request.generation == generation_)
+                doneGeneration_ = request.generation;
+        }
         triggerAsyncUpdate();
     }
 
     void handleAsyncUpdate() override {
         {
+            // pending_ only ever holds current-generation entries: the scan
+            // adds under the lock after re-checking the generation, and every
+            // generation bump clears it under the same lock.
             const juce::ScopedLock sl(lock_);
             results_.addArray(pending_);
             pending_.clear();
@@ -753,13 +804,15 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
     MediaExplorerContent& owner_;
     juce::ListBox list_;
     juce::Array<juce::File> results_;
-    juce::Array<juce::File> pending_;
+    juce::File displayRoot_;  // message-thread copy for painting relative paths
+
+    // lock_ guards generation_, request_, hasRequest_, pending_, doneGeneration_.
     juce::CriticalSection lock_;
-    juce::File root_;
-    juce::String term_;
-    std::unique_ptr<juce::WildcardFileFilter> wildcard_;
-    std::atomic<bool> done_{false};
-    std::atomic<bool> truncated_{false};
+    int generation_ = 0;
+    Request request_;
+    bool hasRequest_ = false;
+    juce::Array<juce::File> pending_;
+    int doneGeneration_ = 0;
 };
 
 //==============================================================================
