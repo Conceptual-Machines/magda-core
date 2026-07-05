@@ -266,6 +266,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     // Register as listener for selection changes
     ClipManager::getInstance().addListener(this);
     TrackManager::getInstance().addListener(this);
+    SelectionManager::getInstance().addListener(this);
     PluginPreferences::getInstance().addListener(this);
 
     // Register as TimelineStateListener for grid sync
@@ -293,6 +294,7 @@ BottomPanel::~BottomPanel() {
 
     ClipManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
+    SelectionManager::getInstance().removeListener(this);
     PluginPreferences::getInstance().removeListener(this);
     // TimelineController listener removed automatically by timelineListenerGuard_
 
@@ -786,6 +788,14 @@ void BottomPanel::clipSelectionChanged(ClipId /*clipId*/) {
     syncGridControlsFromContent();
 }
 
+void BottomPanel::selectionTypeChanged(SelectionType /*newType*/) {
+    updateContentBasedOnSelection();
+}
+
+void BottomPanel::multiClipSelectionChanged(const std::unordered_set<ClipId>& /*clipIds*/) {
+    updateContentBasedOnSelection();
+}
+
 void BottomPanel::clipPropertyChanged(ClipId clipId) {
     // Re-evaluate header state when clip properties change (e.g. loop toggled
     // on/off, or session-vs-arrangement view switch).
@@ -975,10 +985,33 @@ void BottomPanel::updateContentBasedOnSelection() {
     ClipId selectedClip = clipManager.getSelectedClip();
     TrackId selectedTrack = trackManager.getSelectedTrack();
 
+    // Multi-clip selection bypasses ClipManager's single selection. An
+    // all-audio multi-selection opens the waveform editor in multi mode: a
+    // placeholder instead of one clip's waveform, plus the properties panel
+    // with its multi-capable controls (fades / AUTO-XFADE, #1499).
+    std::unordered_set<ClipId> multiAudioClips;
+    {
+        auto& sel = SelectionManager::getInstance();
+        if (selectedClip == INVALID_CLIP_ID && sel.getSelectedClipCount() > 1) {
+            bool allAudio = true;
+            for (auto cid : sel.getSelectedClips()) {
+                const auto* c = clipManager.getClip(cid);
+                if (!c || !c->isAudio()) {
+                    allAudio = false;
+                    break;
+                }
+            }
+            if (allAudio)
+                multiAudioClips = sel.getSelectedClips();
+        }
+    }
+
     daw::ui::PanelContentType targetContent = daw::ui::PanelContentType::Empty;
     bool needsTabs = false;
 
-    if (selectedClip != INVALID_CLIP_ID) {
+    if (!multiAudioClips.empty()) {
+        targetContent = daw::ui::PanelContentType::WaveformEditor;
+    } else if (selectedClip != INVALID_CLIP_ID) {
         const auto* clip = clipManager.getClip(selectedClip);
         if (!clip) {
             // Clip data temporarily unavailable (e.g. during track rebuild).
@@ -1094,6 +1127,12 @@ void BottomPanel::updateContentBasedOnSelection() {
                                                 juce::dontSendNotification);
         };
     }
+
+    // Push multi-selection state into the waveform editor and the properties
+    // panel (empty set = single-clip mode, restoring normal behaviour).
+    if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
+        waveEditor->setMultiClipSelection(multiAudioClips);
+    audioPropsPanel_->setMultiSelection(multiAudioClips);
 }
 
 void BottomPanel::setPianoRollFullscreenActive(bool active) {

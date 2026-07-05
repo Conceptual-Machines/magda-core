@@ -96,13 +96,26 @@ void AudioClipPropertiesContent::onDeactivated() {
     magda::ClipManager::getInstance().removeListener(this);
 }
 
+void AudioClipPropertiesContent::setMultiSelection(
+    const std::unordered_set<magda::ClipId>& clipIds) {
+    auto newSet = clipIds.size() > 1 ? clipIds : std::unordered_set<magda::ClipId>{};
+    if (newSet == multiClipIds_)
+        return;
+    multiClipIds_ = std::move(newSet);
+    if (!multiClipIds_.empty())
+        clipId_ = magda::INVALID_CLIP_ID;
+    updateFromClip();
+}
+
 void AudioClipPropertiesContent::clipSelectionChanged(magda::ClipId clipId) {
     clipId_ = clipId;
+    if (clipId != magda::INVALID_CLIP_ID)
+        multiClipIds_.clear();
     updateFromClip();
 }
 
 void AudioClipPropertiesContent::clipPropertyChanged(magda::ClipId clipId) {
-    if (clipId == clipId_)
+    if (clipId == clipId_ || multiClipIds_.count(clipId) > 0)
         updateFromClip();
 }
 
@@ -609,8 +622,12 @@ void AudioClipPropertiesContent::updateFromClip() {
         panValue_->setValue(static_cast<double>(clip->pan), juce::dontSendNotification);
     }
 
-    fadesSection_->setClip(clipId_);
-    takesSection_->setClip(clipId_);
+    const bool isMulti = multiClipIds_.size() > 1;
+    if (isMulti)
+        fadesSection_->setSelectedClips(multiClipIds_);
+    else
+        fadesSection_->setClip(clipId_);
+    takesSection_->setClip(isMulti ? magda::INVALID_CLIP_ID : clipId_);
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && clip->autoTempo;
@@ -641,7 +658,7 @@ void AudioClipPropertiesContent::updateFromClip() {
 void AudioClipPropertiesContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 
-    if (clipId_ == magda::INVALID_CLIP_ID) {
+    if (clipId_ == magda::INVALID_CLIP_ID && multiClipIds_.empty()) {
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
         g.setFont(FontManager::getInstance().getUIFont(13.0f));
         g.drawText("No audio clip selected", getLocalBounds(), juce::Justification::centred);

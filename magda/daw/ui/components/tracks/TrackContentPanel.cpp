@@ -2409,8 +2409,13 @@ void TrackContentPanel::rebuildClipComponents() {
     // Remove all existing clip components
     clipComponents_.clear();
 
-    // Get only arrangement clips (timeline-based)
-    const auto& clips = ClipManager::getInstance().getArrangementClips();
+    // Get only arrangement clips (timeline-based). Sort by start beat so the
+    // child z-order is deterministic: a later clip sits on top of the one it
+    // crossfades into (#1499) instead of following hash-map iteration order.
+    auto clips = ClipManager::getInstance().getArrangementClips();
+    std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
+        return a.placement.startBeat < b.placement.startBeat;
+    });
 
     // Create a component for each clip that belongs to a visible track
     for (const auto& clip : clips) {
@@ -3464,10 +3469,12 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                         static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
                 }
 
+                // Land exactly at the drop point: trim/replace whatever is
+                // beneath instead of shifting the new clip to the next gap.
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::Audio, targetTrackId, BeatPosition{currentTime * tempoBPM / 60.0},
                     BeatDuration{fileDuration * tempoBPM / 60.0}, filePath.toStdString(),
-                    ClipView::Arrangement, tempoBPM);
+                    ClipView::Arrangement, tempoBPM, ClipOverlapPolicy::ResolveOverlaps);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 currentTime += fileDuration + 0.5;
@@ -3559,10 +3566,12 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                         continue;
                 }
 
-                // Create MIDI clip
+                // Create MIDI clip. Land at the drop point even over existing
+                // clips (no-op on freshly created tracks).
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::MIDI, clipTrackId, BeatPosition{dropTime * projectTempo / 60.0},
-                    BeatDuration{clipDuration * projectTempo / 60.0});
+                    BeatDuration{clipDuration * projectTempo / 60.0}, juce::String{},
+                    ClipView::Arrangement, 0.0, ClipOverlapPolicy::ResolveOverlaps);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 

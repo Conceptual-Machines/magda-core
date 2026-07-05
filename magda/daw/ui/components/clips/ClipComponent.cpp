@@ -198,6 +198,10 @@ constexpr int kTakeMenuMaxItems = 64;
 // kept clear of the take-selection range (300..363).
 constexpr int kProgressionTargetBaseId = 400;
 
+// Length of a crossfade created from the context menu (#1499). The handles
+// resize it afterwards; setCrossfadeRegionBeats clamps it into both clips.
+constexpr double kDefaultCrossfadeBeats = 0.5;
+
 juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds,
                                       juce::Rectangle<int> visibleBounds, float radius) {
     juce::Path path;
@@ -801,14 +805,39 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
                              CORNER_RADIUS, 1.0f);
 
-    // Fade overlays
-    if (clip.fadeIn > 0.0 || clip.fadeOut > 0.0) {
+    // Fade overlays (crossfaded edges show the overlap-derived fade, #1499)
+    const auto fades = computeEffectiveFades(clip);
+    if (fades.fadeInSeconds > 0.0 || fades.fadeOutSeconds > 0.0) {
         double pps = (clipDisplayLength > 0.0)
                          ? static_cast<double>(waveformArea.getWidth()) / clipDisplayLength
                          : 0.0;
         if (pps > 0.0)
-            paintFadeOverlays(g, clip, waveformArea, pps);
+            paintFadeOverlays(g, clip, fades, waveformArea, pps);
     }
+}
+
+ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInfo& clip) const {
+    EffectiveFades fades;
+    fades.fadeInSeconds = clip.fadeIn;
+    fades.fadeOutSeconds = clip.fadeOut;
+    if (!clip.isAudio() || clip.view != ClipView::Arrangement)
+        return fades;
+
+    auto& cm = ClipManager::getInstance();
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    if (auto xf = cm.getCrossfadeAtStart(clipId_)) {
+        fades.xfIn = xf;
+        fades.fadeInSeconds = xf->lengthBeats() * 60.0 / tempo;
+    }
+    if (auto xf = cm.getCrossfadeAtEnd(clipId_)) {
+        fades.xfOut = xf;
+        fades.fadeOutSeconds = xf->lengthBeats() * 60.0 / tempo;
+    }
+    return fades;
+}
+
+ClipId ClipComponent::findCrossfadeNeighbour(bool atStart) const {
+    return ClipManager::getInstance().findCrossfadeNeighbour(clipId_, atStart);
 }
 
 void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
@@ -1153,6 +1182,7 @@ void ClipComponent::paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> b
 }
 
 void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
+                                      const EffectiveFades& fades,
                                       juce::Rectangle<int> waveformArea, double pixelsPerSecond) {
     constexpr int NUM_STEPS = 32;
     float areaTop = static_cast<float>(waveformArea.getY());
@@ -1161,9 +1191,29 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
     float areaLeft = static_cast<float>(waveformArea.getX());
     float areaRight = static_cast<float>(waveformArea.getRight());
 
+    // The counterpart curve of a crossfade (the other clip's fade across the
+    // same overlap) — drawn by both components of the pair so the X reads the
+    // same whichever one is on top.
+    auto strokeCounterpartCurve = [&](float regionStartPx, float regionWidthPx, FadeCurve type,
+                                      bool descending) {
+        juce::Path curve;
+        for (int i = 0; i <= NUM_STEPS; ++i) {
+            float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
+            float gain = computeFadeGain(descending ? 1.0f - alpha : alpha, type);
+            float x = regionStartPx + alpha * regionWidthPx;
+            float y = areaTop + (1.0f - gain) * areaHeight;
+            if (i == 0)
+                curve.startNewSubPath(x, y);
+            else
+                curve.lineTo(x, y);
+        }
+        g.setColour(juce::Colours::white.withAlpha(0.35f));
+        g.strokePath(curve, juce::PathStrokeType(1.5f));
+    };
+
     // Fade-in overlay
-    if (clip.fadeIn > 0.0) {
-        float fadeInPx = juce::jmin(static_cast<float>(clip.fadeIn * pixelsPerSecond),
+    if (fades.fadeInSeconds > 0.0) {
+        float fadeInPx = juce::jmin(static_cast<float>(fades.fadeInSeconds * pixelsPerSecond),
                                     static_cast<float>(waveformArea.getWidth()));
         if (fadeInPx > 1.0f) {
             // Build overlay path: darkens area above the fade curve
@@ -1198,12 +1248,20 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             }
             g.setColour(juce::Colours::white.withAlpha(0.6f));
             g.strokePath(curveLine, juce::PathStrokeType(1.5f));
+
+            // Crossfade: overlay the previous clip's fade-out curve (the X)
+            if (fades.xfIn) {
+                auto* other = ClipManager::getInstance().getClip(fades.xfIn->leftClipId);
+                strokeCounterpartCurve(areaLeft, fadeInPx,
+                                       static_cast<FadeCurve>(other ? other->fadeOutType : 1),
+                                       true);
+            }
         }
     }
 
     // Fade-out overlay
-    if (clip.fadeOut > 0.0) {
-        float fadeOutPx = juce::jmin(static_cast<float>(clip.fadeOut * pixelsPerSecond),
+    if (fades.fadeOutSeconds > 0.0) {
+        float fadeOutPx = juce::jmin(static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond),
                                      static_cast<float>(waveformArea.getWidth()));
         if (fadeOutPx > 1.0f) {
             float fadeStart = areaRight - fadeOutPx;
@@ -1245,6 +1303,14 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             }
             g.setColour(juce::Colours::white.withAlpha(0.6f));
             g.strokePath(curveLine, juce::PathStrokeType(1.5f));
+
+            // Crossfade: overlay the next clip's fade-in curve (the X)
+            if (fades.xfOut) {
+                auto* other = ClipManager::getInstance().getClip(fades.xfOut->rightClipId);
+                strokeCounterpartCurve(fadeStart, fadeOutPx,
+                                       static_cast<FadeCurve>(other ? other->fadeInType : 1),
+                                       false);
+            }
         }
     }
 }
@@ -1268,10 +1334,11 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     float waveTop = static_cast<float>(waveformArea.getY());
 
     auto handleColour = juce::Colour(DarkTheme::ACCENT_ORANGE);
+    const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover
     if (hoverFadeIn_) {
-        float fadeInPx = static_cast<float>(clip.fadeIn * pixelsPerSecond);
+        float fadeInPx = static_cast<float>(fades.fadeInSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getX()) + fadeInPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -1279,7 +1346,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
 
     // Fade-out handle: only visible on hover
     if (hoverFadeOut_) {
-        float fadeOutPx = static_cast<float>(clip.fadeOut * pixelsPerSecond);
+        float fadeOutPx = static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getRight()) - fadeOutPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -1630,6 +1697,18 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             repaint();
             return;
         }
+        // Crossfaded start edge: the handle drives the overlap with the
+        // previous clip (moves its end) instead of this clip's own fade-in.
+        if (auto xfIn = computeEffectiveFades(*clip).xfIn) {
+            if (const auto* other = ClipManager::getInstance().getClip(xfIn->leftClipId)) {
+                dragMode_ = DragMode::CrossfadeIn;
+                crossfadeDragPair_ = *xfIn;
+                dragStartClipSnapshot_ = *clip;
+                crossfadeOtherSnapshot_ = *other;
+                repaint();
+                return;
+            }
+        }
         dragMode_ = DragMode::FadeIn;
         dragStartFadeIn_ = clip->fadeIn;
         dragStartClipSnapshot_ = *clip;
@@ -1658,6 +1737,18 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragMode_ = DragMode::None;
             repaint();
             return;
+        }
+        // Crossfaded end edge: the handle drives the overlap with the next
+        // clip (moves its start) instead of this clip's own fade-out.
+        if (auto xfOut = computeEffectiveFades(*clip).xfOut) {
+            if (const auto* other = ClipManager::getInstance().getClip(xfOut->rightClipId)) {
+                dragMode_ = DragMode::CrossfadeOut;
+                crossfadeDragPair_ = *xfOut;
+                dragStartClipSnapshot_ = *clip;
+                crossfadeOtherSnapshot_ = *other;
+                repaint();
+                return;
+            }
         }
         dragMode_ = DragMode::FadeOut;
         dragStartFadeOut_ = clip->fadeOut;
@@ -2188,6 +2279,42 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             break;
         }
 
+        case DragMode::CrossfadeIn: {
+            // This clip's geometry is fixed; the handle moves the previous
+            // clip's end (the overlap end). Overlap start = our start.
+            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            double pps = (dragStartLength_ > 0.0)
+                             ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                             : 0.0;
+            if (pps > 0.0) {
+                double px = juce::jmax(0.0, static_cast<double>(e.x - wfArea.getX()));
+                double newEndBeat = crossfadeDragPair_.startBeat + (px / pps) * tempoBPM / 60.0;
+                ClipManager::getInstance().setCrossfadeRegionBeats(
+                    crossfadeDragPair_.leftClipId, crossfadeDragPair_.rightClipId,
+                    crossfadeDragPair_.startBeat, newEndBeat, tempoBPM);
+                repaint();
+            }
+            break;
+        }
+
+        case DragMode::CrossfadeOut: {
+            // The handle moves the next clip's start (the overlap start).
+            // Overlap end = our end.
+            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            double pps = (dragStartLength_ > 0.0)
+                             ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                             : 0.0;
+            if (pps > 0.0) {
+                double px = juce::jmax(0.0, static_cast<double>(wfArea.getRight() - e.x));
+                double newStartBeat = crossfadeDragPair_.endBeat - (px / pps) * tempoBPM / 60.0;
+                ClipManager::getInstance().setCrossfadeRegionBeats(
+                    crossfadeDragPair_.leftClipId, crossfadeDragPair_.rightClipId, newStartBeat,
+                    crossfadeDragPair_.endBeat, tempoBPM);
+                repaint();
+            }
+            break;
+        }
+
         case DragMode::VolumeDrag: {
             // Convert vertical delta to dB (~1 dB per 2px, up = louder)
             auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
@@ -2596,6 +2723,45 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 break;
             }
 
+            case DragMode::CrossfadeIn:
+            case DragMode::CrossfadeOut: {
+                const bool isIn = savedDragMode == DragMode::CrossfadeIn;
+
+                // Capture the final overlap region from the mouse position
+                double finalStart = crossfadeDragPair_.startBeat;
+                double finalEnd = crossfadeDragPair_.endBeat;
+                auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+                double pps = (dragStartLength_ > 0.0)
+                                 ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                                 : 0.0;
+                if (pps > 0.0) {
+                    if (isIn) {
+                        double px = juce::jmax(0.0, static_cast<double>(e.x - wfArea.getX()));
+                        finalEnd =
+                            crossfadeDragPair_.startBeat + (px / pps) * commitTempoBPM / 60.0;
+                    } else {
+                        double px = juce::jmax(0.0, static_cast<double>(wfArea.getRight() - e.x));
+                        finalStart =
+                            crossfadeDragPair_.endBeat - (px / pps) * commitTempoBPM / 60.0;
+                    }
+                }
+
+                // Restore both clips to pre-drag state so the command captures
+                // it as the undo state, then apply the final region undoably.
+                auto& cm = ClipManager::getInstance();
+                if (auto* c = cm.getClip(clipId_))
+                    *c = dragStartClipSnapshot_;
+                const ClipId otherId =
+                    isIn ? crossfadeDragPair_.leftClipId : crossfadeDragPair_.rightClipId;
+                if (auto* c = cm.getClip(otherId))
+                    *c = crossfadeOtherSnapshot_;
+
+                UndoManager::getInstance().executeCommand(std::make_unique<SetCrossfadeCommand>(
+                    crossfadeDragPair_.leftClipId, crossfadeDragPair_.rightClipId, finalStart,
+                    finalEnd, commitTempoBPM));
+                break;
+            }
+
             case DragMode::VolumeDrag: {
                 // Restore all clips to pre-drag state for correct undo capture
                 auto& cm = ClipManager::getInstance();
@@ -2827,6 +2993,17 @@ void ClipComponent::clipPropertyChanged(ClipId clipId) {
 
     if (clipId == clipId_) {
         repaint();
+        return;
+    }
+
+    // A same-track audio neighbour's geometry drives this clip's crossfade
+    // rendering (#1499): moving it out of (or into) the overlap must refresh
+    // the fade display here, not just on the moved clip.
+    const auto* clip = getClipInfo();
+    if (clip && clip->isAudio()) {
+        const auto* other = ClipManager::getInstance().getClip(clipId);
+        if (other && other->isAudio() && other->trackId == clip->trackId)
+            repaint();
     }
 }
 
@@ -2900,8 +3077,8 @@ bool ClipComponent::isOnFadeInHandle(int x, int y) const {
     if (pps <= 0.0)
         return false;
 
-    float handleX =
-        static_cast<float>(waveformArea.getX()) + static_cast<float>(clip->fadeIn * pps);
+    float handleX = static_cast<float>(waveformArea.getX()) +
+                    static_cast<float>(computeEffectiveFades(*clip).fadeInSeconds * pps);
     return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
 }
 
@@ -2924,8 +3101,8 @@ bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
     if (pps <= 0.0)
         return false;
 
-    float handleX =
-        static_cast<float>(waveformArea.getRight()) - static_cast<float>(clip->fadeOut * pps);
+    float handleX = static_cast<float>(waveformArea.getRight()) -
+                    static_cast<float>(computeEffectiveFades(*clip).fadeOutSeconds * pps);
     return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
 }
 
@@ -3201,6 +3378,31 @@ void ClipComponent::showContextMenu() {
     }
     menu.addItem(8, "Join Clips", canJoin && !isFrozen);
     menu.addSeparator();
+
+    // Crossfades (#1499): create at a butt joint / remove an existing one
+    {
+        bool hasXfadeIn = false;
+        bool hasXfadeOut = false;
+        bool canXfadePrev = false;
+        bool canXfadeNext = false;
+        if (!isMultiSelection && canEdit && clipForMenu && clipForMenu->isAudio()) {
+            hasXfadeIn = clipManager.getCrossfadeAtStart(clipId_).has_value();
+            hasXfadeOut = clipManager.getCrossfadeAtEnd(clipId_).has_value();
+            canXfadePrev = !hasXfadeIn && findCrossfadeNeighbour(true) != INVALID_CLIP_ID;
+            canXfadeNext = !hasXfadeOut && findCrossfadeNeighbour(false) != INVALID_CLIP_ID;
+        }
+        if (canXfadePrev || canXfadeNext || hasXfadeIn || hasXfadeOut) {
+            if (canXfadePrev)
+                menu.addItem(45, "Crossfade with Previous Clip");
+            if (canXfadeNext)
+                menu.addItem(46, "Crossfade with Next Clip");
+            if (hasXfadeIn)
+                menu.addItem(47, "Remove Start Crossfade");
+            if (hasXfadeOut)
+                menu.addItem(48, "Remove End Crossfade");
+            menu.addSeparator();
+        }
+    }
 
     // Delete
     menu.addItem(6, "Delete", canEdit);
@@ -3679,6 +3881,40 @@ void ClipComponent::showContextMenu() {
                         UndoManager::getInstance().endCompoundOperation();
 
                     selectionManager.selectClips({leftId});
+                }
+                break;
+            }
+
+            case 45:    // Crossfade with Previous Clip
+            case 46: {  // Crossfade with Next Clip
+                const bool atStart = result == 45;
+                const ClipId neighbourId = findCrossfadeNeighbour(atStart);
+                const auto* c = clipManager.getClip(clipId_);
+                const auto* neighbour = clipManager.getClip(neighbourId);
+                if (c && neighbour) {
+                    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                    const double centre =
+                        atStart ? (c->placement.startBeat + neighbour->placement.endBeat()) * 0.5
+                                : (neighbour->placement.startBeat + c->placement.endBeat()) * 0.5;
+                    const double half = kDefaultCrossfadeBeats * 0.5;
+                    const ClipId leftId = atStart ? neighbourId : clipId_;
+                    const ClipId rightId = atStart ? clipId_ : neighbourId;
+                    UndoManager::getInstance().executeCommand(std::make_unique<SetCrossfadeCommand>(
+                        leftId, rightId, centre - half, centre + half, tempo));
+                }
+                break;
+            }
+
+            case 47:    // Remove Start Crossfade
+            case 48: {  // Remove End Crossfade
+                auto xf = result == 47 ? clipManager.getCrossfadeAtStart(clipId_)
+                                       : clipManager.getCrossfadeAtEnd(clipId_);
+                if (xf) {
+                    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                    // Butt the joint at the overlap centre
+                    const double centre = (xf->startBeat + xf->endBeat) * 0.5;
+                    UndoManager::getInstance().executeCommand(std::make_unique<SetCrossfadeCommand>(
+                        xf->leftClipId, xf->rightClipId, centre, centre, tempo));
                 }
                 break;
             }

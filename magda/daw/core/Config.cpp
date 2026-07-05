@@ -228,6 +228,7 @@ void Config::save() {
     root->setProperty("stopUpdatesPlayhead", stopUpdatesPlayhead);
     root->setProperty("followPlayhead", followPlayhead);
     root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
+    root->setProperty("autoCrossfadeByDefault", autoCrossfadeByDefault);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -631,6 +632,7 @@ void Config::load() {
     stopUpdatesPlayhead = getBool("stopUpdatesPlayhead", stopUpdatesPlayhead);
     followPlayhead = getBool("followPlayhead", followPlayhead);
     chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
+    autoCrossfadeByDefault = getBool("autoCrossfadeByDefault", autoCrossfadeByDefault);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 

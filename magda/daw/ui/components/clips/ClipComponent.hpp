@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <limits>
+#include <optional>
 
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -129,6 +130,8 @@ class ClipComponent : public juce::Component,
         StretchRight,
         FadeIn,
         FadeOut,
+        CrossfadeIn,   // fade-in handle drives the overlap with the previous clip (#1499)
+        CrossfadeOut,  // fade-out handle drives the overlap with the next clip
         VolumeDrag
     };
     DragMode dragMode_ = DragMode::None;
@@ -190,6 +193,11 @@ class ClipComponent : public juce::Component,
     std::unordered_map<ClipId, ClipInfo>
         dragStartSelectedFadeSnapshots_;  // Original state of other selected clips for fade undo
 
+    // Crossfade drag state (#1499): the pair being edited and the neighbour's
+    // pre-drag snapshot (this clip's snapshot lives in dragStartClipSnapshot_).
+    ClipManager::CrossfadeInfo crossfadeDragPair_{};
+    ClipInfo crossfadeOtherSnapshot_;
+
     // Volume handle state
     bool hoverVolumeHandle_ = false;
     float dragStartVolumeDB_ = 0.0f;
@@ -202,6 +210,21 @@ class ClipComponent : public juce::Component,
     static constexpr int FADE_HANDLE_SIZE = 8;
     static constexpr int FADE_HANDLE_HIT_WIDTH = 14;
 
+    // Effective fades for display/interaction (#1499): a crossfaded edge shows
+    // the overlap-derived fade (what TE actually plays) instead of the stored
+    // fadeIn/fadeOut, which return once the clips are pulled apart.
+    struct EffectiveFades {
+        double fadeInSeconds = 0.0;
+        double fadeOutSeconds = 0.0;
+        std::optional<ClipManager::CrossfadeInfo> xfIn;   // crossfade covering the start edge
+        std::optional<ClipManager::CrossfadeInfo> xfOut;  // crossfade covering the end edge
+    };
+    EffectiveFades computeEffectiveFades(const ClipInfo& clip) const;
+
+    // The audio clip abutting/overlapping this clip's start (previous) or end
+    // (next) that a crossfade could be created with. INVALID_CLIP_ID if none.
+    ClipId findCrossfadeNeighbour(bool atStart) const;
+
     // Painting helpers
     void paintAudioClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintMidiClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
@@ -213,7 +236,7 @@ class ClipComponent : public juce::Component,
     bool isChordClip(const ClipInfo& clip) const;
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
-    void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
+    void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip, const EffectiveFades& fades,
                            juce::Rectangle<int> waveformArea, double pixelsPerSecond);
     void paintFadeHandles(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,

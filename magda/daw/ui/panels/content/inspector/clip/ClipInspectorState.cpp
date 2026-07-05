@@ -202,7 +202,9 @@ void ClipInspector::updateFromSelectedClip() {
 
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
     if (clip) {
-        clipNameValue_.setText(clip->name, juce::dontSendNotification);
+        // Multi-selection has no single meaningful name — show a placeholder
+        // instead of whichever clip happens to be primary.
+        clipNameValue_.setText(isMulti ? "-" : clip->name, juce::dontSendNotification);
 
         // Update colour swatch
         auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());

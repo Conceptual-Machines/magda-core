@@ -371,6 +371,7 @@
     "toggle.duplicate_loop_grows": "Duplicate Loop Range grows the loop (off: advances it)",
     "toggle.open_plugin_window_on_drop": "Open plugin window when added to a chain",
     "toggle.chord_preview_default": "Preview chord track on playback by default",
+    "toggle.auto_crossfade_default": "Auto-crossfade new audio clips",
     "toggle.show_tooltips": "Show tooltips",
     "button.add_colour": "+ Add Colour",
     "button.browse": "Browse",

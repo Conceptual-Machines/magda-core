@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 
 #include "PanelContent.hpp"
 #include "audio/AudioThumbnailManager.hpp"  // TransientCacheListener
@@ -86,6 +87,11 @@ class WaveformEditorContent : public PanelContent,
         return editingClipId_;
     }
 
+    // Multi-clip selection (#1499): the editor shows a placeholder listing the
+    // selected clips instead of one clip's waveform. An empty/single set
+    // restores normal single-clip mode.
+    void setMultiClipSelection(const std::unordered_set<magda::ClipId>& clipIds);
+
     // Waveform editor is always source-relative.
     void setRelativeTimeMode(bool relative);
     bool isRelativeTimeMode() const {
@@ -100,6 +106,9 @@ class WaveformEditorContent : public PanelContent,
 
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
+
+    // Names of the multi-selected clips (empty = single-clip mode)
+    juce::StringArray multiClipNames_;
 
     bool relativeTimeMode_ = true;
 
