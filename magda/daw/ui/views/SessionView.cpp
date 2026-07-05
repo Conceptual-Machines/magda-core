@@ -3096,9 +3096,12 @@ void SessionView::updateHeaderSelectionVisuals() {
             continue;
 
         if (isSelected) {
-            // Selected: white text on black background
-            header->setColour(juce::TextButton::buttonColourId, juce::Colours::black);
-            header->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            // Selected: white text on the lifted selection fill (shared with
+            // the arrange headers / mixer)
+            header->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            header->setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT));
         } else {
             // Unselected: dark header, track colour carried by the top strip
             header->setColour(juce::TextButton::buttonColourId,
@@ -3111,8 +3114,10 @@ void SessionView::updateHeaderSelectionVisuals() {
     if (masterLabel_) {
         bool masterSelected = selectedId == MASTER_TRACK_ID;
         if (masterSelected) {
-            masterLabel_->setColour(juce::TextButton::buttonColourId, juce::Colours::black);
-            masterLabel_->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            masterLabel_->setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            masterLabel_->setColour(juce::TextButton::textColourOffId,
+                                    DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT));
         } else {
             masterLabel_->setColour(juce::TextButton::buttonColourId,
                                     DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));

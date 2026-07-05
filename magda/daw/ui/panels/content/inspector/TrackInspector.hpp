@@ -3,6 +3,8 @@
 #include <map>
 #include <unordered_set>
 
+#include "../../../components/tracks/TrackControlsLayout.hpp"
+#include "../../../components/tracks/TrackControlsPolicy.hpp"
 #include "../../common/ChordAuditionControl.hpp"
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../common/MonitorControl.hpp"
@@ -73,6 +75,10 @@ class TrackInspector : public BaseInspector,
     magda::TrackId selectedTrackId_ = magda::INVALID_TRACK_ID;
     std::unordered_set<magda::TrackId> selectedTrackIds_;  // For multi-track mode
     bool isMultiTrackMode_ = false;
+
+    // Which controls the current selection exposes — shared with the arrange
+    // track headers so the two views can't drift. Set in showTrackControls.
+    magda::TrackControlsPolicy policy_;
 
     // Base values for relative multi-track drag (captured at drag start)
     std::unordered_map<magda::TrackId, float> multiTrackBaseVolumes_;

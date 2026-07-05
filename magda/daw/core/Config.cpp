@@ -191,6 +191,7 @@ void Config::save() {
     root->setProperty("browserFilterAudio", browserFilterAudio);
     root->setProperty("browserFilterMidi", browserFilterMidi);
     root->setProperty("browserFilterPreset", browserFilterPreset);
+    root->setProperty("browserTreeView", browserTreeView);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
@@ -608,6 +609,7 @@ void Config::load() {
     browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);
     browserFilterMidi = getBool("browserFilterMidi", browserFilterMidi);
     browserFilterPreset = getBool("browserFilterPreset", browserFilterPreset);
+    browserTreeView = getBool("browserTreeView", browserTreeView);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);

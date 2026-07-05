@@ -146,8 +146,15 @@ class DarkTheme {
     // Track colors
     // ==========================================================================
     static constexpr auto TRACK_BACKGROUND = E1;  // Track background
-    static constexpr auto TRACK_SELECTED = E2;    // Selected track
-    static constexpr auto TRACK_SEPARATOR = E0;   // Track separator lines (flush with background)
+    static constexpr auto TRACK_SELECTED = E2;    // Selected track (timeline lane tint)
+    // Selected track header/strip fill, shared by the arrange headers, mixer
+    // and session views. Near-white: selection inverts the header instead of
+    // shifting it a step on the dark ramp, so it is unmissable and the dark
+    // control chips gain contrast. Text on it flips to
+    // TRACK_HEADER_SELECTED_TEXT.
+    static constexpr auto TRACK_HEADER_SELECTED = 0xFFB4BCC6;
+    static constexpr auto TRACK_HEADER_SELECTED_TEXT = E0;
+    static constexpr auto TRACK_SEPARATOR = E0;  // Track separator lines (flush with background)
 
     // ==========================================================================
     // Timeline and grid

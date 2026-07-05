@@ -84,6 +84,10 @@ class LevelMeter : public juce::Component, private juce::Timer {
     }
 
     void paint(juce::Graphics& g) override {
+        // Opaque backing so container fills (e.g. the light selected track
+        // header) don't bleed through the bar gap and rounded corners.
+        g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+
         auto effectiveBounds = getLocalBounds().toFloat();
 
         const float gap = 1.0f;

@@ -388,6 +388,14 @@ class Config {
         browserFilterPreset = enabled;
     }
 
+    // Sample browser file view: directory tree instead of a flat list (#1699)
+    bool getBrowserTreeView() const {
+        return browserTreeView;
+    }
+    void setBrowserTreeView(bool enabled) {
+        browserTreeView = enabled;
+    }
+
     // Browser Default Directory
     std::string getBrowserDefaultDirectory() const {
         return browserDefaultDirectory;
@@ -1131,6 +1139,7 @@ class Config {
     bool browserFilterAudio = true;    // Show audio files by default
     bool browserFilterMidi = false;    // Hide MIDI files by default
     bool browserFilterPreset = false;  // Hide MAGDA presets by default
+    bool browserTreeView = false;      // Sample browser: tree view instead of flat list (#1699)
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;

@@ -17,6 +17,7 @@ target_sources(magda_daw_app PRIVATE
     DraggableValueLabel.cpp
     BarsBeatsTicksLabel.cpp
     NoteSlicePopup.hpp
+    MasterSpeakerButton.hpp
     SvgButton.hpp
     IconSelector.hpp
     ZoomControls.hpp
