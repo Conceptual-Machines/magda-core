@@ -329,11 +329,14 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
 
-    // Aux buses need a bus index. Aux and Group take no external input, so they
-    // never receive MIDI; every other track listens to all inputs.
+    // Aux buses need a bus index.
     if (type == TrackType::Aux)
         track.auxBusIndex = nextAuxBusIndex_++;
-    track.midiInputDevice = track.takesExternalInput() ? "all" : "";
+
+    // Seed the default "listen to all inputs" and let the single type-invariant
+    // boundary clear it (plus monitor/record-arm) for input-less tracks.
+    track.midiInputDevice = "all";
+    track.normalizeForType();
 
     TrackId trackId = track.id;
     tracks_.push_back(track);
@@ -796,18 +799,11 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
 
     tracks_.push_back(trackInfo);
 
-    // Input-less tracks (Aux, Group) take no external input. Projects saved
-    // before this invariant existed can carry MIDI/audio input, monitoring, or
-    // record-arm on them (createTrack used to seed every non-Aux track with
-    // "all"), so sanitize on restore rather than let stale on-disk state
-    // reintroduce it.
-    if (!tracks_.back().takesExternalInput()) {
-        auto& restored = tracks_.back();
-        restored.recordArmed = false;
-        restored.inputMonitor = InputMonitorMode::Off;
-        restored.midiInputDevice = "";
-        restored.audioInputDevice = "";
-    }
+    // Projects saved before the input-less-track invariant existed can carry
+    // MIDI/audio input, monitoring, or record-arm on Aux/Group tracks
+    // (createTrack used to seed every non-Aux track with "all"). Normalize on
+    // restore rather than let stale on-disk state reintroduce it.
+    tracks_.back().normalizeForType();
 
     // Ensure nextTrackId_ is beyond any restored track IDs
     if (trackInfo.id >= nextTrackId_) {
