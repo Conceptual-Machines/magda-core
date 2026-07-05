@@ -145,14 +145,31 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
                          juce::Justification::centredLeft, 10);
     }
 
+    // ── Tree expander (tree view mode) ──────────────────────────────────
+
+    void drawTreeviewPlusMinusBox(juce::Graphics& g, const juce::Rectangle<float>& area,
+                                  juce::Colour /*backgroundColour*/, bool isOpen,
+                                  bool isMouseOver) override {
+        // The V4 default colours the chevron by "contrasting" the tree
+        // background, which lands on near-black here — draw a themed one.
+        juce::Path p;
+        p.addTriangle(0.0f, 0.0f, 1.0f, isOpen ? 0.0f : 0.5f, isOpen ? 0.5f : 0.0f, 1.0f);
+        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(isMouseOver ? 1.0f : 0.7f));
+        g.fillPath(p, p.getTransformToScaleToFit(
+                          area.reduced(area.getWidth() / 4.0f, area.getHeight() / 4.0f), true));
+    }
+
     // ── File-browser row ────────────────────────────────────────────────
 
     void drawFileBrowserRow(juce::Graphics& g, int width, int height, const juce::File& file,
-                            const juce::String& filename, juce::Image* icon,
+                            const juce::String& filename, juce::Image* /*osIcon*/,
                             const juce::String& fileSizeDescription,
                             const juce::String& fileTimeDescription, bool isDirectory,
                             bool isItemSelected, int /*itemIndex*/,
                             juce::DirectoryContentsDisplayComponent& dcc) override {
+        // The tree view passes per-file OS icons while the list view doesn't;
+        // ignore them so both views draw identical rows.
+        juce::Image* icon = nullptr;
         auto* fileListComp = dynamic_cast<juce::Component*>(&dcc);
 
         if (isItemSelected)
