@@ -240,6 +240,22 @@ struct TrackInfo {
         return type != TrackType::Aux && type != TrackType::Group && type != TrackType::Master;
     }
 
+    // Enforce the track-type invariants on this struct's own fields. Input-less
+    // tracks (Aux send buses, Group summing tracks) only pass signal from
+    // elsewhere: they take no external audio/MIDI input and so cannot be
+    // monitored or record-armed. This is the single normalization boundary for
+    // those rules. Aggregate entry points that accept or mutate whole track
+    // state (create, restore, deserialize) call it so persistence and importers
+    // stay mechanical and cannot let stale on-disk input state become live.
+    void normalizeForType() {
+        if (!takesExternalInput()) {
+            recordArmed = false;
+            inputMonitor = InputMonitorMode::Off;
+            midiInputDevice = "";
+            audioInputDevice = "";
+        }
+    }
+
     // MIDI input helpers
     //
     // Single source of truth for "does this track listen to live MIDI input".
