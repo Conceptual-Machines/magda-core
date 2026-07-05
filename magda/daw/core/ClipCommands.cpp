@@ -414,14 +414,15 @@ bool DeleteClipCommand::validateState() const {
 
 CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
                                      BeatDuration lengthBeats, const juce::String& audioFilePath,
-                                     ClipView view, double tempo)
+                                     ClipView view, double tempo, ClipOverlapPolicy overlapPolicy)
     : type_(type),
       trackId_(trackId),
       startBeat_(startBeat.value),
       lengthBeats_(lengthBeats.value),
       audioFilePath_(audioFilePath),
       view_(view),
-      tempo_(tempo) {}
+      tempo_(tempo),
+      overlapPolicy_(overlapPolicy) {}
 
 bool CreateClipCommand::canExecute() const {
     return trackId_ != INVALID_TRACK_ID && lengthBeats_ > 0.0;
@@ -438,10 +439,11 @@ void CreateClipCommand::execute() {
     }
 
     if (type_ == ClipType::Audio) {
-        createdClipId_ = clipManager.createAudioClipBeats(trackId_, startBeat_, lengthBeats_,
-                                                          audioFilePath_, view_, tempo_);
+        createdClipId_ = clipManager.createAudioClipBeats(
+            trackId_, startBeat_, lengthBeats_, audioFilePath_, view_, tempo_, overlapPolicy_);
     } else {
-        createdClipId_ = clipManager.createMidiClipBeats(trackId_, startBeat_, lengthBeats_, view_);
+        createdClipId_ = clipManager.createMidiClipBeats(trackId_, startBeat_, lengthBeats_, view_,
+                                                         overlapPolicy_);
     }
 
     executed_ = true;
@@ -867,6 +869,41 @@ void SetFadeCommand::undo() {
         *clip = beforeState_;
         clipManager.forceNotifyClipsChanged();
     }
+}
+
+// ============================================================================
+// SetCrossfadeCommand
+// ============================================================================
+
+SetCrossfadeCommand::SetCrossfadeCommand(ClipId leftId, ClipId rightId, double startBeat,
+                                         double endBeat, double tempo)
+    : leftId_(leftId), rightId_(rightId), startBeat_(startBeat), endBeat_(endBeat), tempo_(tempo) {
+    auto& clipManager = ClipManager::getInstance();
+    const auto* left = clipManager.getClip(leftId_);
+    const auto* right = clipManager.getClip(rightId_);
+    if (left && right) {
+        leftBefore_ = *left;
+        rightBefore_ = *right;
+        captured_ = true;
+    }
+}
+
+void SetCrossfadeCommand::execute() {
+    if (!captured_)
+        return;
+    ClipManager::getInstance().setCrossfadeRegionBeats(leftId_, rightId_, startBeat_, endBeat_,
+                                                       tempo_);
+}
+
+void SetCrossfadeCommand::undo() {
+    if (!captured_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    if (auto* left = clipManager.getClip(leftId_))
+        *left = leftBefore_;
+    if (auto* right = clipManager.getClip(rightId_))
+        *right = rightBefore_;
+    clipManager.forceNotifyClipsChanged();
 }
 
 // ============================================================================

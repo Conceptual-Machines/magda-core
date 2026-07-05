@@ -5,6 +5,7 @@
 #include "../../../../../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
 #include "core/ClipBatchEdit.hpp"
+#include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -178,6 +179,42 @@ void ClipFadesSection::initControls() {
         };
     }
 
+    // Crossfade duration values (#1499): resize the overlap with the
+    // neighbouring clip around the joint centre. Beat-domain — the crossfade
+    // is placement geometry, not a stored seconds fade.
+    auto setupXfadeValue = [this](std::unique_ptr<magda::DraggableValueLabel>& value,
+                                  const char* tooltip, bool atStart) {
+        value =
+            std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Raw);
+        value->setRange(0.0, 64.0, 0.0);
+        value->setSuffix(" b");
+        value->setDecimalPlaces(2);
+        value->setDrawBackground(false);
+        value->setDrawBorder(true);
+        value->setShowFillIndicator(false);
+        value->setTooltip(tooltip);
+        value->onValueChange = [this, atStart]() {
+            const ClipId leftId = atStart ? xfadeInLeftId_ : xfadeOutLeftId_;
+            const ClipId rightId = atStart ? xfadeInRightId_ : xfadeOutRightId_;
+            auto& cm = magda::ClipManager::getInstance();
+            const auto* left = cm.getClip(leftId);
+            const auto* right = cm.getClip(rightId);
+            if (!left || !right)
+                return;
+            const double dur =
+                juce::jmax(0.0, atStart ? xfadeInValue_->getValue() : xfadeOutValue_->getValue());
+            // Joint centre works for both the overlapping and the butted state,
+            // so dragging through 0 and back up keeps working mid-gesture.
+            const double centre = (right->placement.startBeat + left->placement.endBeat()) * 0.5;
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetCrossfadeCommand>(leftId, rightId, centre - dur * 0.5,
+                                                             centre + dur * 0.5));
+        };
+        addChildComponent(*value);
+    };
+    setupXfadeValue(xfadeInValue_, "Crossfade with previous clip (beats)", true);
+    setupXfadeValue(xfadeOutValue_, "Crossfade with next clip (beats)", false);
+
     autoCrossfadeToggle_.setButtonText("AUTO-XFADE");
     autoCrossfadeToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonColourId,
@@ -244,7 +281,13 @@ void ClipFadesSection::setClip(magda::ClipId clipId) {
 }
 
 void ClipFadesSection::setSelectedClips(const std::unordered_set<magda::ClipId>& clipIds) {
-    selectedClipIds_ = clipIds;
+    // Only reassign on a real change. The batch handlers iterate
+    // selectedClipIds_ while each executed command synchronously notifies the
+    // host panel, which calls back into here with the same selection —
+    // reassigning the set mid-iteration invalidates the loop's iterators and
+    // the edit silently stops after the first clip.
+    if (clipIds != selectedClipIds_)
+        selectedClipIds_ = clipIds;
     update();
 }
 
@@ -279,6 +322,48 @@ void ClipFadesSection::update() {
         fadeOutBehaviourButtons_[i]->setVisible(!isSession);
     }
     autoCrossfadeToggle_.setVisible(!isSession);
+
+    // Crossfade rows: single arrangement clip whose edge has a crossfade OR a
+    // crossfade-capable joint (abutting audio neighbour, value 0). Keying the
+    // row off the joint — not the overlap — keeps it alive when the value is
+    // dragged down to 0, and doubles as the creation affordance.
+    hasXfadeIn_ = false;
+    hasXfadeOut_ = false;
+    xfadeInLeftId_ = xfadeInRightId_ = magda::INVALID_CLIP_ID;
+    xfadeOutLeftId_ = xfadeOutRightId_ = magda::INVALID_CLIP_ID;
+    if (!isSession && selectedClipIds_.size() == 1) {
+        auto& cm = magda::ClipManager::getInstance();
+        double xfadeInBeats = 0.0;
+        double xfadeOutBeats = 0.0;
+        if (auto xf = cm.getCrossfadeAtStart(pid)) {
+            hasXfadeIn_ = true;
+            xfadeInLeftId_ = xf->leftClipId;
+            xfadeInRightId_ = xf->rightClipId;
+            xfadeInBeats = xf->lengthBeats();
+        } else if (auto prev = cm.findCrossfadeNeighbour(pid, true);
+                   prev != magda::INVALID_CLIP_ID) {
+            hasXfadeIn_ = true;
+            xfadeInLeftId_ = prev;
+            xfadeInRightId_ = pid;
+        }
+        if (auto xf = cm.getCrossfadeAtEnd(pid)) {
+            hasXfadeOut_ = true;
+            xfadeOutLeftId_ = xf->leftClipId;
+            xfadeOutRightId_ = xf->rightClipId;
+            xfadeOutBeats = xf->lengthBeats();
+        } else if (auto next = cm.findCrossfadeNeighbour(pid, false);
+                   next != magda::INVALID_CLIP_ID) {
+            hasXfadeOut_ = true;
+            xfadeOutLeftId_ = pid;
+            xfadeOutRightId_ = next;
+        }
+        if (hasXfadeIn_ && !xfadeInValue_->isDragging())
+            xfadeInValue_->setValue(xfadeInBeats, juce::dontSendNotification);
+        if (hasXfadeOut_ && !xfadeOutValue_->isDragging())
+            xfadeOutValue_->setValue(xfadeOutBeats, juce::dontSendNotification);
+    }
+    xfadeInValue_->setVisible(hasXfadeIn_);
+    xfadeOutValue_->setVisible(hasXfadeOut_);
 
     // Session controls
     launchFadeLabel_.setVisible(isSession);
@@ -319,6 +404,9 @@ void ClipFadesSection::update() {
                 fadeOutValue_->setTextOverride("-");
             else
                 fadeOutValue_->clearTextOverride();
+            // The toggle acts on (and flips against) the primary clip's state,
+            // so reflect that state — otherwise multi-select clicks look inert.
+            autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
         } else {
             fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
             fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
@@ -348,6 +436,8 @@ void ClipFadesSection::update() {
 bool ClipFadesSection::isAnyValueDragging() const {
     return (fadeInValue_ && fadeInValue_->isDragging()) ||
            (fadeOutValue_ && fadeOutValue_->isDragging()) ||
+           (xfadeInValue_ && xfadeInValue_->isDragging()) ||
+           (xfadeOutValue_ && xfadeOutValue_->isDragging()) ||
            (launchFadeValue_ && launchFadeValue_->isDragging());
 }
 
@@ -367,8 +457,11 @@ int ClipFadesSection::getPreferredHeight() const {
         return SECTION_H + GAP + ROW_H;
     } else {
         // Section label + gap + fadeIn|fadeOut row + gap + type btns + gap + behaviour btns + gap +
-        // AUTO-XFADE
-        return SECTION_H + GAP + ROW_H + GAP + BTN_H + GAP + BTN_H + GAP + ROW_H;
+        // AUTO-XFADE (+ crossfade row when a crossfaded edge exists)
+        int h = SECTION_H + GAP + ROW_H + GAP + BTN_H + GAP + BTN_H + GAP + ROW_H;
+        if (hasXfadeIn_ || hasXfadeOut_)
+            h += GAP + ROW_H;
+        return h;
     }
 }
 
@@ -452,6 +545,18 @@ void ClipFadesSection::resized() {
 
         // AUTO-XFADE full width
         autoCrossfadeToggle_.setBounds(b.removeFromTop(ROW_H).reduced(0, 1));
+
+        // Crossfade row: two columns mirroring fadeIn | fadeOut
+        if (hasXfadeIn_ || hasXfadeOut_) {
+            b.removeFromTop(GAP);
+            auto row = b.removeFromTop(ROW_H);
+            auto left = row.removeFromLeft(halfW);
+            row.removeFromLeft(colGap);
+            if (xfadeInValue_)
+                xfadeInValue_->setBounds(left);
+            if (xfadeOutValue_)
+                xfadeOutValue_->setBounds(row);
+        }
     }
 }
 

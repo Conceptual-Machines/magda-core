@@ -40,6 +40,7 @@ set(TEST_SOURCES
     test_waveform_editor_absolute_mode.cpp
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
+    test_clip_crossfades.cpp
     test_clip_resize_operations.cpp
     test_midi_clip_resize_left.cpp
     test_looped_waveform_tile.cpp

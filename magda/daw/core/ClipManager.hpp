@@ -425,6 +425,64 @@ class ClipManager {
 
     void setLaunchFadeSamples(ClipId clipId, int samples);
 
+    // ========================================================================
+    // Crossfades (#1499)
+    //
+    // A crossfade IS an overlap: two audio arrangement clips on the same track
+    // whose placements partially overlap and whose autoCrossfade flags are set.
+    // Playback fades come from TE's auto-crossfade over the overlap region
+    // (each clip's stored fadeIn/fadeOut returns when the clips are pulled
+    // apart). The geometry is beat-domain and lives in the placements, so it
+    // serializes and round-trips with them — there is no separate duration
+    // field to keep in sync.
+    // ========================================================================
+
+    struct CrossfadeInfo {
+        ClipId leftClipId = INVALID_CLIP_ID;   // earlier clip (fades out)
+        ClipId rightClipId = INVALID_CLIP_ID;  // later clip (fades in)
+        double startBeat = 0.0;                // overlap start (right clip's start)
+        double endBeat = 0.0;                  // overlap end (left clip's end)
+
+        double lengthBeats() const {
+            return endBeat - startBeat;
+        }
+    };
+
+    /// The crossfade covering this clip's start/end edge, if any. Only
+    /// returns a value when the overlap qualifies (both clips audio,
+    /// arrangement, autoCrossfade on, partial overlap).
+    std::optional<CrossfadeInfo> getCrossfadeAtStart(ClipId clipId) const;
+    std::optional<CrossfadeInfo> getCrossfadeAtEnd(ClipId clipId) const;
+
+    /// The audio clip abutting/overlapping this clip's start (previous) or
+    /// end (next) that a crossfade could be created with — regardless of the
+    /// autoCrossfade flags. INVALID_CLIP_ID if none.
+    ClipId findCrossfadeNeighbour(ClipId clipId, bool atStart) const;
+
+    /**
+     * @brief Set the crossfade overlap region between two clips — the core
+     *        beats-authoritative crossfade edit.
+     *
+     * Moves the left clip's right edge to endBeat and the right clip's left
+     * edge to startBeat (content-anchored, via the container resize helpers),
+     * clamped so neither clip swallows the other and neither runs out of
+     * source material. Enables autoCrossfade on both clips when the resulting
+     * overlap is non-empty. startBeat == endBeat butts the joint (removes the
+     * crossfade; the flags stay).
+     *
+     * @return false when the pair is not crossfade-capable (different track,
+     *         non-audio, no joint between them).
+     */
+    bool setCrossfadeRegionBeats(ClipId leftId, ClipId rightId, double startBeat, double endBeat,
+                                 double tempo = 0.0);
+
+    /**
+     * @brief Create/resize a crossfade centred on the joint (current overlap
+     *        centre, or the touch point for abutting clips).
+     *        durationBeats == 0 removes it.
+     */
+    bool setCrossfadeBeats(ClipId leftId, ClipId rightId, double durationBeats, double tempo = 0.0);
+
     // Channels
     void setLeftChannelActive(ClipId clipId, bool active);
     void setRightChannelActive(ClipId clipId, bool active);
@@ -778,6 +836,14 @@ class ClipManager {
 
     double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
                                         double lengthBeats, ClipView view) const;
+
+    // How far (in timeline beats) an audio clip's edge can extend before it
+    // runs out of source material. Left = earlier than its current start
+    // (bounded by the source read offset), right = past its current end
+    // (bounded by the source duration). Unbounded (infinity) for looping
+    // clips and when the source duration is unknown.
+    double availableLeftExtensionBeats(const ClipInfo& clip, double bpm) const;
+    double availableRightExtensionBeats(const ClipInfo& clip, double bpm) const;
 
     // Unified clip storage — ClipView is a property, not storage identity
     std::unordered_map<ClipId, ClipInfo> clips_;

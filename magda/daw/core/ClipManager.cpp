@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <unordered_map>
 
 #include "../project/ProjectManager.hpp"
@@ -268,6 +269,9 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     // AudioThumbnailManager when the field is still zero.
     clip.offset = 0.0;
     clip.speedRatio = 1.0;
+    // New audio clips default to AUTO-XFADE (#1499): overlaps with other
+    // auto-crossfade audio clips play as crossfades instead of trimming.
+    clip.autoCrossfade = Config::getInstance().getAutoCrossfadeByDefault();
 
     const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
 
@@ -2102,6 +2106,235 @@ void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
 }
 
 // ============================================================================
+// Crossfades (#1499)
+// ============================================================================
+
+// Guard margin (beats) keeping a crossfade edge strictly inside the other
+// clip, so an overlap can never degenerate into full containment.
+static constexpr double kCrossfadeEdgeGuardBeats = 1e-3;
+
+std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtStart(ClipId clipId) const {
+    const auto* clip = getClip(clipId);
+    if (!clip || clip->view != ClipView::Arrangement || !clip->isAudio() || !clip->autoCrossfade)
+        return std::nullopt;
+
+    const double startB = clip->placement.startBeat;
+    const double endB = clip->placement.endBeat();
+
+    // The previous clip whose tail reaches furthest into this clip.
+    const ClipInfo* best = nullptr;
+    for (const auto& [cid, other] : clips_) {
+        if (other.id == clipId || other.view != ClipView::Arrangement ||
+            other.trackId != clip->trackId || !other.isAudio() || !other.autoCrossfade)
+            continue;
+        const double oStart = other.placement.startBeat;
+        const double oEnd = other.placement.endBeat();
+        if (oStart < startB && oEnd > startB && oEnd < endB) {
+            if (!best || oEnd > best->placement.endBeat())
+                best = &other;
+        }
+    }
+    if (!best)
+        return std::nullopt;
+    return CrossfadeInfo{best->id, clipId, startB, best->placement.endBeat()};
+}
+
+std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtEnd(ClipId clipId) const {
+    const auto* clip = getClip(clipId);
+    if (!clip || clip->view != ClipView::Arrangement || !clip->isAudio() || !clip->autoCrossfade)
+        return std::nullopt;
+
+    const double startB = clip->placement.startBeat;
+    const double endB = clip->placement.endBeat();
+
+    // The next clip whose head reaches furthest back into this clip.
+    const ClipInfo* best = nullptr;
+    for (const auto& [cid, other] : clips_) {
+        if (other.id == clipId || other.view != ClipView::Arrangement ||
+            other.trackId != clip->trackId || !other.isAudio() || !other.autoCrossfade)
+            continue;
+        const double oStart = other.placement.startBeat;
+        const double oEnd = other.placement.endBeat();
+        if (oStart > startB && oStart < endB && oEnd > endB) {
+            if (!best || oStart < best->placement.startBeat)
+                best = &other;
+        }
+    }
+    if (!best)
+        return std::nullopt;
+    return CrossfadeInfo{clipId, best->id, best->placement.startBeat, endB};
+}
+
+ClipId ClipManager::findCrossfadeNeighbour(ClipId clipId, bool atStart) const {
+    const auto* clip = getClip(clipId);
+    if (!clip || !clip->isAudio() || clip->view != ClipView::Arrangement)
+        return INVALID_CLIP_ID;
+
+    // Butt joints from splits are beat-exact; the tolerance only absorbs float
+    // wiggle, it does not bridge real gaps.
+    constexpr double tolBeats = 1e-4;
+    const double startB = clip->placement.startBeat;
+    const double endB = clip->placement.endBeat();
+
+    ClipId bestId = INVALID_CLIP_ID;
+    double bestEdge = 0.0;
+    for (const auto& [cid, other] : clips_) {
+        if (other.id == clipId || other.view != ClipView::Arrangement ||
+            other.trackId != clip->trackId || !other.isAudio())
+            continue;
+        const double oStart = other.placement.startBeat;
+        const double oEnd = other.placement.endBeat();
+        if (atStart) {
+            // Previous clip: starts before us, ends at/inside our span
+            if (oStart < startB && oEnd >= startB - tolBeats && oEnd < endB) {
+                if (bestId == INVALID_CLIP_ID || oEnd > bestEdge) {
+                    bestId = other.id;
+                    bestEdge = oEnd;
+                }
+            }
+        } else {
+            // Next clip: ends after us, starts at/inside our span
+            if (oEnd > endB && oStart <= endB + tolBeats && oStart > startB) {
+                if (bestId == INVALID_CLIP_ID || oStart < bestEdge) {
+                    bestId = other.id;
+                    bestEdge = oStart;
+                }
+            }
+        }
+    }
+    return bestId;
+}
+
+double ClipManager::availableLeftExtensionBeats(const ClipInfo& clip, double bpm) const {
+    if (!clip.isAudio())
+        return 0.0;
+    if (clip.loopEnabled)
+        return std::numeric_limits<double>::infinity();
+    if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0) {
+        // Under autoTempo, timeline beats consume source beats 1:1.
+        return juce::jmax(0.0, clip.offsetBeats);
+    }
+    const double speed = clip.speedRatio > 0.0 ? clip.speedRatio : 1.0;
+    return (juce::jmax(0.0, clip.offset) / speed) * bpm / 60.0;
+}
+
+double ClipManager::availableRightExtensionBeats(const ClipInfo& clip, double bpm) const {
+    if (!clip.isAudio())
+        return 0.0;
+    if (clip.loopEnabled)
+        return std::numeric_limits<double>::infinity();
+    if (clip.autoTempo && clip.audio().interpretation.bpm > 0.0) {
+        const auto& interp = clip.audio().interpretation;
+        const double totalBeats = interp.totalBeats > 0.0
+                                      ? interp.totalBeats
+                                      : clip.audio().source.durationSeconds * interp.bpm / 60.0;
+        if (totalBeats <= 0.0)
+            return std::numeric_limits<double>::infinity();
+        return juce::jmax(0.0, totalBeats - (clip.offsetBeats + clip.placement.lengthBeats));
+    }
+    const double sourceDuration = clip.audio().source.durationSeconds;
+    if (sourceDuration <= 0.0)
+        return std::numeric_limits<double>::infinity();
+    const double speed = clip.speedRatio > 0.0 ? clip.speedRatio : 1.0;
+    const double sourceEnd = clip.offset + clip.getTimelineLength(bpm) * speed;
+    return (juce::jmax(0.0, sourceDuration - sourceEnd) / speed) * bpm / 60.0;
+}
+
+bool ClipManager::setCrossfadeRegionBeats(ClipId leftId, ClipId rightId, double startBeat,
+                                          double endBeat, double tempo) {
+    auto* left = getClip(leftId);
+    auto* right = getClip(rightId);
+    if (!left || !right || left == right)
+        return false;
+    if (left->trackId != right->trackId)
+        return false;
+    if (left->view != ClipView::Arrangement || right->view != ClipView::Arrangement)
+        return false;
+    if (!left->isAudio() || !right->isAudio())
+        return false;
+    if (endBeat < startBeat)
+        return false;
+
+    if (right->placement.startBeat < left->placement.startBeat)
+        std::swap(left, right);
+
+    const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    const double minLenBeats = ClipInfo::MIN_CLIP_LENGTH * bpm / 60.0;
+
+    const double leftStart = left->placement.startBeat;
+    const double leftEnd = left->placement.endBeat();
+    const double rightStart = right->placement.startBeat;
+    const double rightEnd = right->placement.endBeat();
+
+    // Left clip's new right edge: keep it strictly inside the right clip
+    // (no containment), keep the left clip at least minimum length, and don't
+    // outrun the left clip's source tail.
+    const double maxLeftEnd = juce::jmin(rightEnd - kCrossfadeEdgeGuardBeats,
+                                         leftEnd + availableRightExtensionBeats(*left, bpm));
+    const double minLeftEnd = leftStart + minLenBeats;
+    if (maxLeftEnd < minLeftEnd)
+        return false;
+    const double newEnd = juce::jlimit(minLeftEnd, maxLeftEnd, endBeat);
+
+    // Right clip's new left edge: strictly after the left clip's start, keep
+    // the right clip at least minimum length, and don't read before the start
+    // of its source.
+    const double minRightStart = juce::jmax(leftStart + kCrossfadeEdgeGuardBeats,
+                                            rightStart - availableLeftExtensionBeats(*right, bpm));
+    const double maxRightStart = rightEnd - minLenBeats;
+    if (maxRightStart < minRightStart)
+        return false;
+    const double newStart = juce::jlimit(minRightStart, maxRightStart, startBeat);
+
+    bool leftChanged = std::abs(newEnd - leftEnd) > 1e-9;
+    bool rightChanged = std::abs(newStart - rightStart) > 1e-9;
+
+    if (leftChanged) {
+        // Beat-domain target; the seconds boundary stays confined to the
+        // resize helpers (same convention as resolveOverlaps).
+        ClipOperations::resizeContainerFromRight(*left, (newEnd - leftStart) * 60.0 / bpm, bpm);
+    }
+    if (rightChanged) {
+        ClipOperations::resizeContainerFromLeft(*right, (rightEnd - newStart) * 60.0 / bpm, bpm);
+    }
+
+    // A non-empty overlap is a crossfade: both clips need the flag so TE
+    // fades both edges.
+    if (newEnd - newStart > 0.0) {
+        if (!left->autoCrossfade) {
+            left->autoCrossfade = true;
+            leftChanged = true;
+        }
+        if (!right->autoCrossfade) {
+            right->autoCrossfade = true;
+            rightChanged = true;
+        }
+    }
+
+    if (leftChanged)
+        notifyClipPropertyChanged(left->id);
+    if (rightChanged)
+        notifyClipPropertyChanged(right->id);
+    return true;
+}
+
+bool ClipManager::setCrossfadeBeats(ClipId leftId, ClipId rightId, double durationBeats,
+                                    double tempo) {
+    const auto* left = getClip(leftId);
+    const auto* right = getClip(rightId);
+    if (!left || !right)
+        return false;
+    if (right->placement.startBeat < left->placement.startBeat)
+        std::swap(left, right);
+
+    // Joint centre: middle of the current overlap; for abutting clips this is
+    // simply the touch point.
+    const double centre = (right->placement.startBeat + left->placement.endBeat()) * 0.5;
+    const double half = juce::jmax(0.0, durationBeats) * 0.5;
+    return setCrossfadeRegionBeats(left->id, right->id, centre - half, centre + half, tempo);
+}
+
+// ============================================================================
 // Channels
 // ============================================================================
 
@@ -2531,8 +2764,14 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
     const TrackId trackId = dominant->trackId;
     const double bpm = currentProjectTempoOrDefault();
 
+    // An auto-crossfade audio dominant keeps partial overlaps with other audio
+    // clips as crossfades instead of trimming them (#1499). Capture the flags
+    // up front — the dominant pointer is not safe to use once clips_ mutates.
+    const bool dominantWantsCrossfade = dominant->isAudio() && dominant->autoCrossfade;
+
     // Collect IDs to delete and clips to resize (avoid iterator invalidation)
     std::vector<ClipId> toDelete;
+    std::vector<ClipId> toCrossfade;
 
     struct ResizeOp {
         ClipId id;
@@ -2565,11 +2804,21 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
             // C fully covered by D → delete
             toDelete.push_back(clip.id);
         } else if (cStartB < dStartB && cEndB <= dEndB) {
-            // C overlaps from left → trim right edge to dStartB
-            toResize.push_back({clip.id, dStartB - cStartB, false});
+            // C overlaps from left → keep as crossfade, or trim right edge to
+            // dStartB. Strict cEndB < dEndB: an edge-aligned tail is
+            // containment-like, not a partial overlap to crossfade.
+            if (dominantWantsCrossfade && clip.isAudio() && cEndB < dEndB) {
+                toCrossfade.push_back(clip.id);
+            } else {
+                toResize.push_back({clip.id, dStartB - cStartB, false});
+            }
         } else if (cStartB >= dStartB && cEndB > dEndB) {
-            // C overlaps from right → trim left edge to dEndB
-            toResize.push_back({clip.id, cEndB - dEndB, true});
+            // C overlaps from right → keep as crossfade, or trim left edge to dEndB
+            if (dominantWantsCrossfade && clip.isAudio() && cStartB > dStartB) {
+                toCrossfade.push_back(clip.id);
+            } else {
+                toResize.push_back({clip.id, cEndB - dEndB, true});
+            }
         } else if (cStartB < dStartB && cEndB > dEndB) {
             // C fully contains D → split into left + right, keeping both ends.
             // Previously this only kept the left portion and silently dropped
@@ -2624,6 +2873,17 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
                 ClipOperations::resizeContainerFromRight(*clip, newLengthSeconds, bpm);
             }
             notifyClipPropertyChanged(op.id);
+        }
+    }
+
+    // Kept overlaps become crossfades: the neighbour needs the flag too so TE
+    // fades both sides (the dominant already has it).
+    for (auto id : toCrossfade) {
+        if (auto* clip = getClip(id)) {
+            if (!clip->autoCrossfade) {
+                clip->autoCrossfade = true;
+                notifyClipPropertyChanged(id);
+            }
         }
     }
 }

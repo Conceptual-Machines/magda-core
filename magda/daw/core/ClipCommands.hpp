@@ -190,7 +190,8 @@ class CreateClipCommand : public ValidatedCommand {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
                       BeatDuration lengthBeats, const juce::String& audioFilePath = {},
-                      ClipView view = ClipView::Arrangement, double tempo = 0.0);
+                      ClipView view = ClipView::Arrangement, double tempo = 0.0,
+                      ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     juce::String getDescription() const override {
         return type_ == ClipType::Audio ? "Create Audio Clip" : "Create MIDI Clip";
@@ -212,6 +213,7 @@ class CreateClipCommand : public ValidatedCommand {
     juce::String audioFilePath_;
     ClipView view_;
     double tempo_;
+    ClipOverlapPolicy overlapPolicy_;
     ClipId createdClipId_ = INVALID_CLIP_ID;
     std::vector<ClipInfo> arrangementSnapshot_;
 };
@@ -372,6 +374,50 @@ class SetFadeCommand : public UndoableCommand {
     ClipId clipId_;
     ClipInfo beforeState_;
     ClipInfo afterState_;
+};
+
+/**
+ * @brief Command for creating/resizing/removing a crossfade between two clips
+ *
+ * A crossfade is the overlap region between two adjacent audio clips (#1499);
+ * this command moves both joint edges to the target region via
+ * ClipManager::setCrossfadeRegionBeats. Both clips' before-states are captured
+ * at construction, so construct it AFTER restoring any live-drag preview.
+ * startBeat == endBeat butts the joint (removes the crossfade).
+ */
+class SetCrossfadeCommand : public UndoableCommand {
+  public:
+    SetCrossfadeCommand(ClipId leftId, ClipId rightId, double startBeat, double endBeat,
+                        double tempo = 0.0);
+
+    juce::String getDescription() const override {
+        return "Adjust Crossfade";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetCrossfadeCommand*>(other))
+            return o->leftId_ == leftId_ && o->rightId_ == rightId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        auto* o = static_cast<const SetCrossfadeCommand*>(other);
+        startBeat_ = o->startBeat_;
+        endBeat_ = o->endBeat_;
+        tempo_ = o->tempo_;
+    }
+
+  private:
+    ClipId leftId_;
+    ClipId rightId_;
+    double startBeat_;
+    double endBeat_;
+    double tempo_;
+    ClipInfo leftBefore_;
+    ClipInfo rightBefore_;
+    bool captured_ = false;
 };
 
 /**

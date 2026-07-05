@@ -182,6 +182,8 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.open_plugin_window_on_drop"));
         setupToggle(*this, chordPreviewDefaultToggle,
                     tr("preferences.toggle.chord_preview_default"));
+        setupToggle(*this, autoCrossfadeDefaultToggle,
+                    tr("preferences.toggle.auto_crossfade_default"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
         setupComboLabel(languageLabel, tr("preferences.language.label"));
@@ -284,6 +286,8 @@ class GeneralPage : public juce::Component {
                                                     juce::dontSendNotification);
         chordPreviewDefaultToggle.setToggleState(config.getChordPreviewOnByDefault(),
                                                  juce::dontSendNotification);
+        autoCrossfadeDefaultToggle.setToggleState(config.getAutoCrossfadeByDefault(),
+                                                  juce::dontSendNotification);
 
         languageCombo.clear(juce::dontSendNotification);
         availableLanguages_.clear();
@@ -334,6 +338,7 @@ class GeneralPage : public juce::Component {
         config.setShowTooltips(showTooltipsToggle.getToggleState());
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
         config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
+        config.setAutoCrossfadeByDefault(autoCrossfadeDefaultToggle.getToggleState());
 
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
@@ -372,7 +377,7 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 6) + 16 + secGap + headerH + 4 +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 7) + 16 + secGap + headerH + 4 +
                rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
     }
 
@@ -397,7 +402,7 @@ class GeneralPage : public juce::Component {
         constexpr int secGap = 12;
 
         return padding + headerH + 4 + rowH + 4 + rowH              // Layout
-               + secGap + headerH + 4 + (rowH * 6) + 20             // Behaviour
+               + secGap + headerH + 4 + (rowH * 7) + 20             // Behaviour
                + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH  // Display Scale
                + padding;
     }
@@ -460,6 +465,8 @@ class GeneralPage : public juce::Component {
         openPluginWindowOnDropToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         chordPreviewDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoCrossfadeDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Language
@@ -551,6 +558,8 @@ class GeneralPage : public juce::Component {
         openPluginWindowOnDropToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(secGap);
 
         // Display Scale
@@ -654,6 +663,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton showTooltipsToggle;
     juce::ToggleButton openPluginWindowOnDropToggle;
     juce::ToggleButton chordPreviewDefaultToggle;
+    juce::ToggleButton autoCrossfadeDefaultToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
     juce::Label restartHint;

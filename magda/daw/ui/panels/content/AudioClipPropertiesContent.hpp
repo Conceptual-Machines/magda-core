@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "PanelContent.hpp"
@@ -41,6 +42,11 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
     void onActivated() override;
     void onDeactivated() override;
 
+    // Multi-clip selection (#1499): single-clip controls disable, the fades
+    // section switches to its multi-edit logic (AUTO-XFADE, fade deltas).
+    // An empty/single set restores normal single-clip mode.
+    void setMultiSelection(const std::unordered_set<magda::ClipId>& clipIds);
+
     // ClipManagerListener
     void clipSelectionChanged(magda::ClipId clipId) override;
     void clipPropertyChanged(magda::ClipId clipId) override;
@@ -51,6 +57,7 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
     void createControls();
 
     magda::ClipId clipId_ = magda::INVALID_CLIP_ID;
+    std::unordered_set<magda::ClipId> multiClipIds_;  // >1 entries = multi mode
 
     // Section labels
     std::unique_ptr<juce::Label> clipSectionLabel_;

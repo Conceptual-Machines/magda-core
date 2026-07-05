@@ -337,6 +337,16 @@ class Config {
         chordPreviewOnByDefault = enabled;
     }
 
+    // Whether newly created audio clips get AUTO-XFADE enabled (#1499): their
+    // overlaps with other auto-crossfade audio clips play as crossfades
+    // instead of being trimmed away.
+    bool getAutoCrossfadeByDefault() const {
+        return autoCrossfadeByDefault;
+    }
+    void setAutoCrossfadeByDefault(bool enabled) {
+        autoCrossfadeByDefault = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -1134,6 +1144,9 @@ class Config {
 
     // Audition a new chord track's progression on playback by default.
     bool chordPreviewOnByDefault = false;
+
+    // New audio clips get AUTO-XFADE enabled (see #1499).
+    bool autoCrossfadeByDefault = true;
 
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;    // Show audio files by default

@@ -7,6 +7,7 @@
 #include "TabbedPanel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/PluginPreferences.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "utils/ScopedListener.hpp"
 
@@ -35,6 +36,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
                     public juce::DragAndDropTarget,
                     public ClipManagerListener,
                     public TrackManagerListener,
+                    public SelectionManagerListener,
                     public PluginPreferences::Listener,
                     public TimelineStateListener {
   public:
@@ -69,6 +71,12 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // TrackManagerListener
     void tracksChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
+
+    // SelectionManagerListener — multi-clip selections bypass ClipManager's
+    // single-clip selection, so the panel needs these to react (#1499 editor
+    // multi-select: waveform placeholder + multi-capable properties panel).
+    void selectionTypeChanged(SelectionType newType) override;
+    void multiClipSelectionChanged(const std::unordered_set<ClipId>& clipIds) override;
 
     // PluginPreferences::Listener
     void drumGridPreferenceChanged(const juce::String& pluginIdentifier) override;
