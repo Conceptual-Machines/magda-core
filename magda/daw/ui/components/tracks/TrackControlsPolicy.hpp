@@ -53,7 +53,7 @@ struct TrackControlsPolicy {
     static TrackControlsPolicy forType(TrackType type) {
         TrackControlsPolicy p;
         p.gain = true;
-        p.meter = type != TrackType::Chord;  // the chord track emits no audio (yet)
+        p.meter = true;
         switch (type) {
             case TrackType::Audio:
                 // Regular hybrid track — everything. This includes multi-out

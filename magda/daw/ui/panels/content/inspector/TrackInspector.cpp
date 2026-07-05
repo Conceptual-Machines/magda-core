@@ -8,6 +8,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../components/common/MasterSpeakerButton.hpp"
 #include "../../../components/mixer/LevelMeterScale.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/ColourSwatch.hpp"
@@ -27,21 +28,6 @@
 
 namespace magda::daw::ui {
 namespace {
-void configureMasterSpeakerButton(SvgButton& button) {
-    // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
-    // yellow chip (master_off). Toggle state drives which icon shows.
-    button.setClickingTogglesState(true);
-    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    button.setIconPadding(3.5f);  // larger speaker glyph
-}
-
-void syncMasterSpeakerButton(SvgButton& button, bool muted) {
-    button.setToggleState(muted, juce::dontSendNotification);
-    button.setTooltip(muted ? "Unmute master" : "Mute master");
-}
-
 void useLocalizedLabelPainter(juce::Label& label) {
     label.setLookAndFeel(&DialogLookAndFeel::getInstance());
 }
@@ -211,10 +197,7 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*muteButton_);
 
     // Speaker icon button (used for master mute instead of "M" text)
-    speakerButton_ = std::make_unique<SvgButton>(
-        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
-        BinaryData::master_off_1_svg, BinaryData::master_off_1_svgSize);
-    configureMasterSpeakerButton(*speakerButton_);
+    speakerButton_ = magda::makeMasterSpeakerButton();
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
@@ -573,7 +556,6 @@ void TrackInspector::resized() {
     // Colour swatch / pan / automation share one width and right edge so they
     // form a clean right-aligned column, matching the arrange track headers.
     constexpr int rightColW = 26;
-    constexpr int iconH = 18;
 
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
@@ -605,8 +587,9 @@ void TrackInspector::resized() {
                 mix.pan = speakerButton_.get();  // speaker mute rides the pan cell
                 break;
             case magda::TrackControlsPolicy::MuteStyle::ChordAudition:
+                // Full row height, like the pan label and master speaker, so
+                // the chip doesn't sit squat next to the gain field.
                 mix.pan = chordSpeakerButton_.get();
-                mix.panCellH = iconH;
                 break;
             case magda::TrackControlsPolicy::MuteStyle::Standard:
                 if (p.pan)

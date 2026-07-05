@@ -309,6 +309,9 @@ class TrackHeadersPanel : public juce::Component,
     std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, juce::String> inputChannelMapping_;
 
+    // Flip name-label text colour on the near-white selected fill
+    void updateHeaderSelectionColours();
+
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();
 

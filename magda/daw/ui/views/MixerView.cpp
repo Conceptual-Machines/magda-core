@@ -1183,8 +1183,9 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         const int stripHeight = 4;
         const int labelRowBottom = stripHeight + 26;
         if (selected) {
-            // Selected: black label background behind the strip.
-            g.setColour(juce::Colours::black);
+            // Selected: lifted label background behind the strip (shared
+            // selection fill with the arrange headers / session view).
+            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
         }
         // Thin colour bar always shown, including when selected.
@@ -1207,8 +1208,8 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
 
         if (selected) {
-            // Selected: black header like regular channels
-            g.setColour(juce::Colours::black);
+            // Selected: lifted header like regular channels
+            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
         } else {
             // Plain panel background, with just a thin colour bar on top (like a
@@ -1680,8 +1681,8 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
         trackLabel->setColour(juce::Label::textColourId,
-                              selected ? juce::Colours::white
-                                       : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
+                                                            : DarkTheme::TEXT_PRIMARY));
         repaint();
     }
 }

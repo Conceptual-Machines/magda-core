@@ -27,6 +27,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../automation/AutomationMenu.hpp"
+#include "../common/MasterSpeakerButton.hpp"
 #include "../mixer/LevelMeter.hpp"
 #include "../mixer/LevelMeterScale.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
@@ -153,6 +154,12 @@ class MidiActivityIndicator : public juce::Component {
         repaint();
     }
 
+    // The idle dot needs opposite polarity on the light selected-header fill.
+    void setOnSelectedHeader(bool selected) {
+        onSelectedHeader_ = selected;
+        repaint();
+    }
+
     void trigger() {
         activity_ = 1.0f;
         repaint();
@@ -167,8 +174,11 @@ class MidiActivityIndicator : public juce::Component {
         float dotY = bounds.getY() + 2.0f;  // Small padding from top
         auto dotBounds = juce::Rectangle<float>(dotX, dotY, dotSize, dotSize);
 
-        // Inactive state: neutral dimmed dot
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.4f));
+        // Inactive state: neutral dimmed dot (dark on the selected fill)
+        g.setColour(
+            onSelectedHeader_
+                ? DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT).withAlpha(0.3f)
+                : DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.4f));
         g.fillEllipse(dotBounds);
 
         // Active state: bright cyan glow
@@ -181,6 +191,7 @@ class MidiActivityIndicator : public juce::Component {
 
   private:
     float activity_ = 0.0f;
+    bool onSelectedHeader_ = false;
 };
 
 // Session mode indicator button — shows resume icon, orange when track is in session mode
@@ -269,21 +280,8 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     muteButton->setClickingTogglesState(true);
 
     // Master-only speaker mute (shown instead of the "M" button for the master),
-    // matching the inspector and mixer master strips.
-    {
-        // Dual-icon SvgButton matching the inspector/mixer: gray speaker
-        // (master_on) when audible, orange chip (master_off) when muted.
-        // SvgButton's iconPadding + cornerRadius give the padding and rounded
-        // box a raw DrawableButton can't.
-        masterMuteButton = std::make_unique<magda::SvgButton>(
-            "masterMute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
-            BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-        masterMuteButton->setClickingTogglesState(true);
-        masterMuteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        masterMuteButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        masterMuteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-        masterMuteButton->setIconPadding(3.5f);  // larger speaker glyph
-    }
+    // one shared recipe with the inspector / mixer / master header.
+    masterMuteButton = magda::makeMasterSpeakerButton();
 
     // Chord-track audition: one control folding mute / solo / monitor into a
     // 3-state axis (Silent / Audible / Solo). Left-click cycles, right-click opens
@@ -1294,10 +1292,25 @@ void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
     repaint();
 }
 
+// The selected header fill is near-white, so the name text flips dark on the
+// selected headers and back to TEXT_PRIMARY on the rest.
+void TrackHeadersPanel::updateHeaderSelectionColours() {
+    for (size_t i = 0; i < trackHeaders.size(); ++i) {
+        const bool sel = selectedTrackIndices_.count(static_cast<int>(i)) > 0;
+        trackHeaders[i]->nameLabel->setColour(
+            juce::Label::textColourId,
+            DarkTheme::getColour(sel ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
+                                     : DarkTheme::TEXT_PRIMARY));
+        static_cast<MidiActivityIndicator*>(trackHeaders[i]->midiIndicator.get())
+            ->setOnSelectedHeader(sel);
+    }
+}
+
 void TrackHeadersPanel::selectTrack(int index) {
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         selectedTrackIndices_.clear();
         selectedTrackIndices_.insert(index);
+        updateHeaderSelectionColours();
 
         // Notify SelectionManager of selection change (which syncs with TrackManager)
         TrackId trackId = trackHeaders[index]->trackId;
@@ -1320,6 +1333,7 @@ void TrackHeadersPanel::trackSelectionChanged(TrackId trackId) {
             break;
         }
     }
+    updateHeaderSelectionColours();
     repaint();
 }
 
@@ -1334,6 +1348,7 @@ void TrackHeadersPanel::multiTrackSelectionChanged(const std::unordered_set<Trac
             selectedTrackIndices_.insert(static_cast<int>(i));
         }
     }
+    updateHeaderSelectionColours();
     repaint();
 }
 
@@ -1951,12 +1966,13 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         }
     }
 
-    // Background - groups have slightly different color. Selected headers use
-    // pure black to match the mixer/session views' selection treatment, which
-    // reads at a glance even with many tracks. The timeline content lane keeps
-    // its softer TRACK_SELECTED tint so the clip area doesn't go fully dark.
+    // Background - groups have slightly different color. Selection lifts the
+    // header to the top of the elevation ramp (TRACK_HEADER_SELECTED, shared
+    // with the mixer/session views) so it reads at a glance even with many
+    // tracks. The timeline content lane keeps its softer TRACK_SELECTED tint
+    // so the clip area doesn't brighten with it.
     auto bgArea = outer.trimmed(area, indent);
-    const juce::Colour selectedBg = juce::Colours::black;
+    const auto selectedBg = DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED);
     if (header.isGroup) {
         g.setColour(isSelected ? selectedBg
                                : DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.05f));
@@ -1984,9 +2000,10 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     // band stays dark, so the name reads as high-contrast white.
     const int nameBandHeight = TH_NAME_STRIP_H;
     if (!header.isMaster) {
-        // Dark elevated header band behind the name.
+        // Dark elevated header band behind the name. On a selected header the
+        // band matches the lifted body so the whole header reads as one slab.
         auto nameBandArea = bgArea.withHeight(nameBandHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        g.setColour(isSelected ? selectedBg : DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
         g.fillRect(nameBandArea);
 
         // Colour spine on the outer (left, or right when swapped) edge,
@@ -2069,16 +2086,18 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
     }
 
     const int meterWidth = 20;
-    const int meterPadding = 6;
+    const int meterPadding = 2;
 
     // Only the level meter lives in this right-hand strip now; the MIDI indicator
     // moved up to the header bar (see name-row layout), so the controls can reach
-    // right up to the meter instead of leaving a dead MIDI column.
+    // right up to the meter instead of leaving a dead MIDI column. The passed
+    // area is the full, un-inset header, so the meter sits flush against the
+    // header's outer edge and spans its full height (no floating island on the
+    // selected fill).
     auto meterArea = outer.removeFrom(workArea, meterWidth);
     outer.removeSpacing(workArea, meterPadding);
 
-    // Audio meter spans full track height. The chord track emits no audio yet,
-    // so hide its output meter for now (an oscilloscope may replace it later).
+    // Audio meter spans full track height.
     if (auto* meter = dynamic_cast<LevelMeter*>(header.meterComponent.get()))
         meter->setOrientation(LevelMeter::Orientation::Vertical);
     header.meterComponent->setBounds(meterArea);
@@ -2293,8 +2312,12 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             const int nameRowHeight = TH_NAME_STRIP_H;
             header.nameRowBottomY = headerArea.getY() + nameRowHeight;
 
-            auto workArea = headerArea.reduced(4);
-            layoutMeterColumn(header, workArea, outer);
+            // Carve the meter from the un-inset header so it sits flush with
+            // the outer edge and spans the full height; the remaining
+            // controls keep the usual inset.
+            auto fullArea = headerArea;
+            layoutMeterColumn(header, fullArea, outer);
+            auto workArea = fullArea.reduced(4);
 
             // Apply indentation on nesting side based on depth
             int indent = header.depth * INDENT_WIDTH;

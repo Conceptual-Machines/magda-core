@@ -6,6 +6,7 @@
 #include <thread>
 
 #include "../../../../agents/gain_staging_agent.hpp"
+#include "../../components/common/MasterSpeakerButton.hpp"
 #include "../../components/mixer/LevelMeterScale.hpp"
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
@@ -37,22 +38,6 @@
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
-namespace {
-void configureMasterSpeakerButton(SvgButton& button) {
-    // Single speaker glyph (master_on) recoloured by the chip: audible = gray
-    // speaker on the surface chip, muted = speaker on a yellow chip.
-    button.setClickingTogglesState(true);
-    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    button.setIconPadding(3.5f);  // larger speaker glyph
-}
-
-void syncMasterSpeakerButton(SvgButton& button, bool muted) {
-    button.setToggleState(muted, juce::dontSendNotification);
-    button.setTooltip(muted ? "Unmute master" : "Mute master");
-}
-}  // namespace
 
 namespace {
 bool dragObjectToChainNodePath(const juce::DynamicObject& obj, magda::ChainNodePath& path) {

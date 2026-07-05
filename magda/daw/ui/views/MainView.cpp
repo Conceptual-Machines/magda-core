@@ -7,6 +7,7 @@
 
 #include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
+#include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
 #include "../components/mixer/LevelMeter.hpp"
@@ -2639,16 +2640,10 @@ MainView::MasterHeaderPanel::~MasterHeaderPanel() {
 }
 
 void MainView::MasterHeaderPanel::setupControls() {
-    // Speaker on/off button (toggles master mute). Dual-icon: audible = gray
-    // speaker (master_on), muted = orange block (master_off); pre-baked colors.
-    speakerButton = std::make_unique<SvgButton>(
-        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
-        BinaryData::master_off_1_svg, BinaryData::master_off_1_svgSize);
-    speakerButton->setClickingTogglesState(true);
+    // Speaker on/off button (toggles master mute) — one shared recipe with the
+    // inspector / mixer master strip.
+    speakerButton = makeMasterSpeakerButton();
     speakerButton->setTooltip("Mute master");
-    speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    speakerButton->setIconPadding(7.0f);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2814,8 +2809,7 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
     const auto& master = TrackManager::getInstance().getMasterChannel();
 
     // Dual-icon: toggle state drives which baked icon (audible vs muted) shows.
-    speakerButton->setToggleState(master.muted, juce::dontSendNotification);
-    speakerButton->setTooltip(master.muted ? "Unmute master" : "Mute master");
+    syncMasterSpeakerButton(*speakerButton, master.muted);
 
     volumeLabel->setValue(gainToDb(master.volume), juce::dontSendNotification);
 
