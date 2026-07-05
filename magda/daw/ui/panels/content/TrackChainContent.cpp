@@ -2899,8 +2899,7 @@ void TrackChainContent::onAddDeviceClicked() {
     juce::Array<juce::PluginDescription> externalPlugins;
     if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
             magda::TrackManager::getInstance().getAudioEngine())) {
-        auto& knownPlugins = engine->getKnownPluginList();
-        externalPlugins = knownPlugins.getTypes();
+        externalPlugins = engine->getPreferredPluginTypes();
     }
 
     if (!externalPlugins.isEmpty()) {

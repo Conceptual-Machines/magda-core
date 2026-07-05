@@ -31,6 +31,13 @@ juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
 }
 
+juce::StringArray visiblePluginKeys(const std::vector<PluginBrowserInfo>& plugins) {
+    juce::StringArray keys;
+    for (const auto& plugin : plugins)
+        keys.addIfNotAlreadyThere(preferenceIdentifierForPlugin(plugin));
+    return keys;
+}
+
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
     if (plugin.categoryOverride == "Instrument")
         return "Instrument";
@@ -452,6 +459,7 @@ PluginBrowserContent::PluginBrowserContent() {
     addAndMakeVisible(pluginTree_);
 
     // Build internal plugins and tree (external plugins are loaded when engine is set)
+    magda::PluginPreferences::getInstance().addListener(this);
     buildInternalPluginList();
     loadFolders();
     rebuildTree();
@@ -524,8 +532,7 @@ void PluginBrowserContent::loadExternalPlugins() {
         return;
     }
 
-    auto& knownPlugins = engine_->getKnownPluginList();
-    auto pluginTypes = knownPlugins.getTypes();
+    auto pluginTypes = engine_->getPreferredPluginTypes();
 
     for (const auto& desc : pluginTypes) {
         plugins_.push_back(PluginBrowserInfo::fromPluginDescription(desc));
@@ -551,6 +558,7 @@ void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
 }
 
 PluginBrowserContent::~PluginBrowserContent() {
+    magda::PluginPreferences::getInstance().removeListener(this);
     if (engine_) {
         engine_->getKnownPluginList().removeChangeListener(this);
     }
@@ -560,6 +568,11 @@ PluginBrowserContent::~PluginBrowserContent() {
 
 void PluginBrowserContent::changeListenerCallback(juce::ChangeBroadcaster* /*source*/) {
     // KnownPluginList changed (e.g. scan completed) — refresh the browser
+    refreshPluginList();
+}
+
+void PluginBrowserContent::externalPluginFormatPreferenceChanged(magda::PluginFormat preference) {
+    juce::ignoreUnused(preference);
     refreshPluginList();
 }
 
@@ -915,6 +928,15 @@ juce::File PluginBrowserContent::getFavoritesFile() const {
 
 void PluginBrowserContent::saveFavorites() {
     juce::XmlElement root("PluginFavorites");
+    const auto visibleKeys = visiblePluginKeys(plugins_);
+
+    if (auto existing = juce::parseXML(getFavoritesFile())) {
+        for (auto* elem : existing->getChildIterator()) {
+            const auto key = elem->getStringAttribute("key");
+            if (key.isNotEmpty() && !visibleKeys.contains(key))
+                root.addChildElement(new juce::XmlElement(*elem));
+        }
+    }
 
     for (const auto& p : plugins_) {
         if (p.isFavorite) {
@@ -957,6 +979,15 @@ juce::File PluginBrowserContent::getAliasesFile() const {
 
 void PluginBrowserContent::saveAliases() {
     juce::XmlElement root("PluginAliases");
+    const auto visibleKeys = visiblePluginKeys(plugins_);
+
+    if (auto existing = juce::parseXML(getAliasesFile())) {
+        for (auto* elem : existing->getChildIterator()) {
+            const auto key = elem->getStringAttribute("key");
+            if (key.isNotEmpty() && !visibleKeys.contains(key))
+                root.addChildElement(new juce::XmlElement(*elem));
+        }
+    }
 
     for (const auto& p : plugins_) {
         if (p.alias.isEmpty())

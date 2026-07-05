@@ -7,6 +7,7 @@
 #include "PluginScanCoordinator.hpp"
 #include "TracktionEngineWrapper.hpp"
 #include "core/Config.hpp"
+#include "core/PluginPreferences.hpp"
 
 namespace magda {
 
@@ -187,6 +188,11 @@ juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() {
 
 const juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() const {
     return engine_->getPluginManager().knownPluginList;
+}
+
+juce::Array<juce::PluginDescription> TracktionEngineWrapper::getPreferredPluginTypes() const {
+    return PluginPreferences::getInstance().preferredExternalPlugins(
+        getKnownPluginList().getTypes());
 }
 
 juce::File TracktionEngineWrapper::getPluginListFile() const {
