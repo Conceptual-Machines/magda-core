@@ -1421,7 +1421,9 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !clip->isMidi() || !padRows_)
             return;
 
-        auto noteColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        // Notes take the clip's colour (velocity ramps its brightness), matching
+        // the piano roll instead of a fixed blue (#1706).
+        auto noteColour = clip->colour;
 
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
             auto visibleNote = clip->midiNotes[i];
@@ -1671,7 +1673,9 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !padRows_)
             return;
 
-        auto noteColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        // Notes take the clip's colour (velocity ramps its brightness), matching
+        // the piano roll instead of a fixed blue (#1706).
+        auto noteColour = clip->colour;
 
         for (auto& noteComp : noteComponents_) {
             size_t noteIndex = noteComp->getNoteIndex();
