@@ -60,6 +60,23 @@ PianoRollContent::PianoRollContent() {
     };
     addAndMakeVisible(foldToggle_.get());
 
+    // Create note preview toggle: when lit, clicking or drawing a note auditions
+    // it through the track instrument (#1705). Off by default so normal selection
+    // stays silent. Shares the editor-wide static preview state. Same speaker
+    // glyphs as the mute button, recoloured to match the other gutter icons
+    // (secondary grey off) and accent blue when on.
+    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
+                                                        BinaryData::master_off_svgSize);
+    previewToggle_->setTooltip("Preview notes (click a note to hear it)");
+    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    previewToggle_->onClick = [this]() {
+        setNotePreviewEnabled(!isNotePreviewEnabled());
+        syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    };
+    addAndMakeVisible(previewToggle_.get());
+
     // Create take-lanes toggle button (show/hide the comp take-lanes strip).
     // Only relevant for a MIDI clip with takes; shown contextually.
     takeLanesToggle_ = std::make_unique<magda::SvgButton>("TakeLanesToggle", BinaryData::lanes_svg,
@@ -76,8 +93,9 @@ PianoRollContent::PianoRollContent() {
     addChildComponent(takeLanesToggle_.get());
 
     // Create chord toggle button
-    chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordboldm_svg,
-                                                      BinaryData::iconchordboldm_svgSize);
+    chordToggle_ =
+        std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordtrackboldm_svg,
+                                           BinaryData::iconchordtrackboldm_svgSize);
     chordToggle_->setTooltip("Toggle chord row");
     chordToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     chordToggle_->setActive(showChordRow_);
@@ -100,8 +118,7 @@ PianoRollContent::PianoRollContent() {
     // Progression overlay toggle: ghost the chord-track progression behind this
     // track's chord lane (#1504). Only meaningful on non-chord tracks.
     progressionOverlayToggle_ = std::make_unique<magda::SvgButton>(
-        "ProgressionOverlay", BinaryData::iconchordtrackboldm_svg,
-        BinaryData::iconchordtrackboldm_svgSize);
+        "ProgressionOverlay", BinaryData::stacks_svg, BinaryData::stacks_svgSize);
     progressionOverlayToggle_->setTooltip("Compare against the chord-track progression");
     progressionOverlayToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     progressionOverlayToggle_->setActive(showProgressionOverlay_);
@@ -238,6 +255,25 @@ PianoRollContent::PianoRollContent() {
     gridComponent_->onSelectedPitchRowsChanged = [this](const std::set<int>& notes) {
         if (keyboard_)
             keyboard_->setHighlightedNotes(notes);
+    };
+    // Audition a note through its own clip's track when clicked, but only while
+    // the preview toggle is on (#1705). The clip id comes from the grid so a
+    // secondary clip's note plays its own instrument in multi-clip editing.
+    gridComponent_->onNotePreview = [](magda::ClipId clipId, int noteNumber, int velocity,
+                                       bool isNoteOn) {
+        if (!isNotePreviewEnabled() || clipId == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        if (clip && clip->trackId != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().previewNote(clip->trackId, noteNumber, velocity,
+                                                           isNoteOn);
+        }
+    };
+    // One-shot audition for double-click note creation, which has no hold gesture
+    // to end the note (#1705).
+    gridComponent_->onNoteAuditionOnce = [this](magda::ClipId clipId, int noteNumber, int velocity,
+                                                double lengthBeats) {
+        auditionNoteOnce(clipId, noteNumber, velocity, lengthBeats);
     };
     gridComponent_->onVerticalZoomRequested = [this](int gridY,
                                                      const juce::MouseWheelDetails& wheel) {
@@ -650,6 +686,20 @@ void PianoRollContent::setupGridCallbacks() {
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
+    // Handle legato from right-click context menu: stretch each selected note to
+    // the next selected onset (one undo step via the batch resize command).
+    gridComponent_->onLegatoNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        if (!clip || !clip->isMidi())
+            return;
+        auto newLengths = magda::computeLegatoNoteLengths(*clip, noteIndices);
+        if (newLengths.empty())
+            return;
+        auto cmd =
+            std::make_unique<magda::ResizeMultipleMidiNotesCommand>(clipId, std::move(newLengths));
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
     // Handle copy from context menu
     gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
         magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);
@@ -738,13 +788,15 @@ void PianoRollContent::setupGridCallbacks() {
         setLocalEditCursor(positionSeconds);
     };
 
-    // Playhead set from grid — global arrangement transport, matching the timeline ruler.
-    gridComponent_->onPlayheadPositionBeatsChanged = [](double positionBeats) {
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            const auto& state = controller->getState();
-            controller->dispatch(
-                magda::SetPlayheadPositionBeatsEvent{state.snapBeatsToGrid(positionBeats)});
-        }
+    // Playhead set from grid — global arrangement transport, matching the timeline
+    // ruler. The grid sends the raw beat; snap it to the transport grid here unless
+    // the click held Alt (free position).
+    gridComponent_->onPlayheadPositionBeatsChanged = [this](double positionBeats, bool snapToGrid) {
+        // Snap to the piano-roll grid (what the user sees), not the arrangement
+        // grid, which is far coarser and rounded the click down to the start.
+        const double beats = snapToGrid ? snapBeatToGrid(positionBeats) : positionBeats;
+        if (auto* controller = magda::TimelineController::getCurrent())
+            controller->dispatch(magda::SetPlayheadPositionBeatsEvent{beats});
     };
 
     // Handle chord block drops from the chord panel
@@ -923,10 +975,16 @@ void PianoRollContent::resized() {
     int chordToggleY = showChordRow_ ? chordRowTop() + (chordRowHeight() - iconSize) / 2 : padding;
     chordToggle_->setVisible(hasSidebar);
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
-    // Fold toggle directly below the chord toggle
+    // Note preview toggle directly below the chord toggle
+    if (previewToggle_) {
+        previewToggle_->setVisible(hasSidebar);
+        previewToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
+    }
+    // Fold toggle below the preview toggle
     if (foldToggle_) {
         foldToggle_->setVisible(hasSidebar);
-        foldToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
+        foldToggle_->setBounds(padding, chordToggleY + 2 * (iconSize + padding), iconSize,
+                               iconSize);
     }
     // Take-lanes toggle below the fold toggle (only when the clip has takes)
     if (takeLanesToggle_) {
@@ -936,7 +994,7 @@ void PianoRollContent::resized() {
         takeLanesToggle_->setVisible(hasTakes);
         if (hasTakes) {
             takeLanesToggle_->setActive(clip->takesExpanded);
-            takeLanesToggle_->setBounds(padding, chordToggleY + 2 * (iconSize + padding), iconSize,
+            takeLanesToggle_->setBounds(padding, chordToggleY + 3 * (iconSize + padding), iconSize,
                                         iconSize);
         }
     }
@@ -2050,6 +2108,30 @@ void PianoRollContent::syncChordAnnotations(magda::ClipId clipId) {
     }
 
     isSyncingChords_ = false;
+}
+
+void PianoRollContent::auditionNoteOnce(magda::ClipId clipId, int noteNumber, int velocity,
+                                        double lengthBeats) {
+    if (!isNotePreviewEnabled() || clipId == magda::INVALID_CLIP_ID)
+        return;
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->trackId == magda::INVALID_TRACK_ID)
+        return;
+
+    const auto trackId = clip->trackId;
+    magda::TrackManager::getInstance().previewNote(trackId, noteNumber, velocity, true);
+
+    double bpm = 120.0;
+    if (auto* controller = magda::TimelineController::getCurrent())
+        bpm = controller->getState().tempo.bpm;
+    const int durationMs = juce::jlimit(
+        200, 1500, static_cast<int>(std::round(lengthBeats * 60000.0 / juce::jmax(1.0, bpm))));
+
+    // Capture only PODs + the engine singleton so the note-off is safe (and never
+    // sticks) even if this panel is destroyed before the timer fires.
+    juce::Timer::callAfterDelay(durationMs, [trackId, noteNumber]() {
+        magda::TrackManager::getInstance().previewNote(trackId, noteNumber, 0, false);
+    });
 }
 
 void PianoRollContent::detectChordsFromNotes() {

@@ -14,6 +14,7 @@
 #include "../../windows/CommandIDs.hpp"
 #include "PhaseMarker.hpp"
 #include "PitchFoldMap.hpp"
+#include "VelocityReadout.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/GestureRouter.hpp"
@@ -91,6 +92,8 @@ PianoRollGridComponent::PianoRollGridComponent() {
     setName("PianoRollGrid");
     setWantsKeyboardFocus(true);
     setRepaintsOnMouseActivity(true);
+    velocityReadout_ = std::make_unique<VelocityReadout>();
+    addChildComponent(*velocityReadout_);
     ClipManager::getInstance().addListener(this);
 }
 
@@ -666,6 +669,7 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
                 }
                 menu.addSubMenu("Quantize", quantizeMenu, hasSelection);
             }
+            menu.addItem(14, "Legato", selectedIndices.size() >= 2);
 
             menu.showMenuAsync(juce::PopupMenu::Options(), [this,
                                                             indices = std::move(selectedIndices),
@@ -681,6 +685,8 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
                     onDuplicateNotes(clipId_, indices);
                 else if (result == 13 && onDeleteNotes)
                     onDeleteNotes(clipId_, indices);
+                else if (result == 14 && onLegatoNotes)
+                    onLegatoNotes(clipId_, indices);
                 else if (handleDefaultNoteMenuResult(result))
                     return;
                 else if (result >= 1 && result <= 3 && onQuantizeNotes) {
@@ -706,12 +712,6 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Alt + click on a grid line -> set edit cursor
-    if (e.mods.isAltDown() && isNearGridLine(e.x)) {
-        isEditCursorClick_ = true;
-        return;
-    }
-
     if (e.mods.isShiftDown() && onNoteAdded) {
         auto insertPos = getNoteInsertPosition(e.getPosition());
         if (insertPos.has_value()) {
@@ -728,6 +728,10 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
             drawingNoteEndBeat_ = insertPos->beat + getDefaultNoteLengthBeats();
             drawingNoteNumber_ = insertPos->noteNumber;
             setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
+            // Audition the note being drawn (held until mouseUp). The pitch is
+            // fixed for the gesture, so the note-off matches (#1705).
+            if (onNotePreview)
+                onNotePreview(drawingNoteClipId_, drawingNoteNumber_, defaultNoteVelocity_, true);
             repaint();
             return;
         }
@@ -737,8 +741,10 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
     dragSelectStart_ = e.getPosition();
     dragSelectEnd_ = e.getPosition();
     isDragSelecting_ = false;
-    isPendingPlayheadClick_ =
-        !e.mods.isShiftDown() && !e.mods.isCommandDown() && !e.mods.isAltDown();
+    // Plain click sets the playhead snapped; Alt disables snap (free position).
+    // Alt is allowed here so an Alt+click still lands on the playhead path.
+    isPendingPlayheadClick_ = !e.mods.isShiftDown() && !e.mods.isCommandDown();
+    playheadClickNoSnap_ = e.mods.isAltDown();
     playheadClickStart_ = e.getPosition();
 }
 
@@ -776,6 +782,10 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
     }
 
     if (isDrawingNote_) {
+        // Release the auditioned draw note (fixed pitch for the gesture, #1705).
+        if (onNotePreview)
+            onNotePreview(drawingNoteClipId_, drawingNoteNumber_, 0, false);
+
         const ClipId clipId = drawingNoteClipId_;
         MidiNote note;
         note.startBeat = std::min(drawingNoteStartBeat_, drawingNoteEndBeat_);
@@ -830,9 +840,9 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         const int deltaX = std::abs(e.x - playheadClickStart_.x);
         const int deltaY = std::abs(e.y - playheadClickStart_.y);
         if (juce::jmax(deltaX, deltaY) <= PLAYHEAD_CLICK_DRAG_THRESHOLD) {
+            const double beat = absolutePlayheadBeatForDisplayX(playheadClickStart_.x);
             if (onPlayheadPositionBeatsChanged)
-                onPlayheadPositionBeatsChanged(
-                    absolutePlayheadBeatForDisplayX(playheadClickStart_.x));
+                onPlayheadPositionBeatsChanged(beat, !playheadClickNoSnap_);
         }
     }
     isPendingPlayheadClick_ = false;
@@ -983,11 +993,67 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
         rememberAddedNoteLength(previewNote.lengthBeats);
         onNoteAdded(insertPos->clipId, previewNote.startBeat, previewNote.noteNumber,
                     previewNote.lengthBeats, defaultNoteVelocity_);
+
+        // Instant add has no press-to-release gesture, so audition the note as a
+        // self-terminating one-shot (#1705).
+        if (onNoteAuditionOnce)
+            onNoteAuditionOnce(insertPos->clipId, previewNote.noteNumber, defaultNoteVelocity_,
+                               previewNote.lengthBeats);
     }
+}
+
+std::vector<size_t> PianoRollGridComponent::selectedNoteIndicesForClip(ClipId clipId) const {
+    std::vector<size_t> indices;
+    for (const auto& nc : noteComponents_)
+        if (nc->getSourceClipId() == clipId && nc->isSelected())
+            indices.push_back(nc->getNoteIndex());
+    return indices;
+}
+
+void PianoRollGridComponent::adjustVelocityForNote(ClipId clipId, size_t noteIndex,
+                                                   int velocityDelta) {
+    // A note that is part of the current selection scales the whole selection;
+    // an unselected note is edited on its own without disturbing the selection.
+    std::vector<size_t> targets = selectedNoteIndicesForClip(clipId);
+    if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+        targets = {noteIndex};
+    adjustMidiNoteVelocities(clipId, targets, velocityDelta);
+    flashVelocityReadout(clipId, noteIndex);
+}
+
+void PianoRollGridComponent::adjustVelocityForSelection(int velocityDelta) {
+    if (clipId_ == INVALID_CLIP_ID)
+        return;
+    const auto targets = selectedNoteIndicesForClip(clipId_);
+    adjustMidiNoteVelocities(clipId_, targets, velocityDelta);
+    if (!targets.empty())
+        flashVelocityReadout(clipId_, targets.front());
+}
+
+void PianoRollGridComponent::flashVelocityReadout(ClipId clipId, size_t noteIndex) {
+    if (!velocityReadout_)
+        return;
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || noteIndex >= clip->midiNotes.size())
+        return;
+    velocityReadout_->flash(clip->midiNotes[noteIndex].velocity, getMouseXYRelative());
 }
 
 void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,
                                             const juce::MouseWheelDetails& wheel) {
+    // Shift + wheel over the empty grid edits the selected notes' velocity (#1706)
+    // and is consumed so the view does not scroll. With nothing selected it falls
+    // through to the normal Shift = horizontal scroll gesture. (Over a note the
+    // NoteComponent claims the gesture before it reaches here.)
+    if (isVelocityWheelGesture(e.mods) && !selectedNoteIndicesForClip(clipId_).empty()) {
+        float dy = wheel.deltaY;
+        if (wheel.isReversed)
+            dy = -dy;
+        if (dy != 0.0f)
+            adjustVelocityForSelection((dy > 0.0f ? 1 : -1) * kVelocityWheelStep);
+        return;
+    }
+
     // Alt+wheel = vertical (lane height) zoom, resolved via GestureRouter so the
     // binding is configurable (#1350). The view's callback keeps its own zoom
     // magnitude math, so the gesture only selects the action. A plain wheel
@@ -1944,9 +2010,11 @@ double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) co
 }
 
 double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const {
+    // Raw (unsnapped) absolute beat for the click. Snapping is applied by the
+    // transport on the final beat (unless Alt disables it), because snapping the
+    // display beat here, before the relative/loop conversion, produced a wrong
+    // transport position (#1706 follow-up).
     double beat = pixelToBeat(mouseX);
-    if (snapEnabled_)
-        beat = snapBeatToGrid(beat);
 
     if (relativeMode_) {
         const auto* clip =
@@ -1972,13 +2040,11 @@ double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const
     return juce::jlimit(0.0, timelineLengthBeats_, beat);
 }
 
-void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX) {
-    if (mods.isAltDown() && isNearGridLine(mouseX)) {
-        setMouseCursor(juce::MouseCursor::IBeamCursor);
-    } else if (mods.isShiftDown()) {
+void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int /*mouseX*/) {
+    if (mods.isShiftDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
-        setMouseCursor(juce::MouseCursor::IBeamCursor);
+        setMouseCursor(juce::MouseCursor::NormalCursor);
     }
 }
 
@@ -2024,6 +2090,15 @@ void PianoRollGridComponent::createNoteComponents() {
                     onNoteRangeSelected(clipId, index);
                 }
                 syncSelectionFromManager();
+            };
+
+            noteComp->onNotePreview = [this, clipId](int noteNumber, int velocity, bool isNoteOn) {
+                if (onNotePreview)
+                    onNotePreview(clipId, noteNumber, velocity, isNoteOn);
+            };
+
+            noteComp->onVelocityWheel = [this, clipId](size_t index, int velocityDelta) {
+                adjustVelocityForNote(clipId, index, velocityDelta);
             };
 
             noteComp->onNoteDeselected = [this, clipId](size_t /*index*/) {
@@ -2290,6 +2365,7 @@ void PianoRollGridComponent::createNoteComponents() {
                     }
                     menu.addSubMenu("Quantize", quantizeMenu, hasSelection);
                 }
+                menu.addItem(14, "Legato", selectedIndices.size() >= 2);
 
                 menu.showMenuAsync(
                     juce::PopupMenu::Options(), [this, clipId, indices = std::move(selectedIndices),
@@ -2304,6 +2380,8 @@ void PianoRollGridComponent::createNoteComponents() {
                             onDuplicateNotes(clipId, indices);
                         else if (result == 13 && onDeleteNotes)
                             onDeleteNotes(clipId, indices);
+                        else if (result == 14 && onLegatoNotes)
+                            onLegatoNotes(clipId, indices);
                         else if (handleDefaultNoteMenuResult(result))
                             return;
                         else if (result >= 1 && result <= 3 && onQuantizeNotes) {
@@ -2454,12 +2532,15 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
     // Chord clips follow the chord track's colour live (rather than the colour
     // snapshotted onto clip->colour at creation), so their notes match the
     // chord-lane blocks even after the track colour changes.
-    juce::Colour base = clip->colour;
+    // Render the normalized track/clip swatch (deriveTrackSwatch), the same as
+    // the arrangement clip and the colour swatch, so notes match the clip rather
+    // than showing the raw picked colour (#1706).
+    juce::Colour base = deriveTrackSwatch(clip->colour);
     if (const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
         track != nullptr && track->type == TrackType::Chord)
-        base = track->colour;
+        base = deriveTrackSwatch(track->colour);
 
-    // Use the colour as-is, but slightly desaturated for multi-clip view
+    // Slightly desaturated for multi-clip view so overlaid clips stay distinct.
     return clipIds_.size() == 1 ? base : base.withSaturation(0.7f);
 }
 

@@ -127,6 +127,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     // Components (DrumGrid-specific)
     std::unique_ptr<DrumGridClipGrid> gridComponent_;
     std::unique_ptr<magda::SvgButton> foldToggle_;
+    std::unique_ptr<magda::SvgButton> previewToggle_;  // #1705 audition notes on click
     std::unique_ptr<magda::SvgButton> ccLanesBtn_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
     std::unique_ptr<DrumGridLabelDivider> labelDivider_;

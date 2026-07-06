@@ -1,9 +1,0 @@
-<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-
-  <mask id="magda-macros-needle">
-    <circle cx="24" cy="27" r="11.5" fill="white"></circle>
-    <path d="M24 27 L33.5 17.5" stroke="black" stroke-width="4" stroke-linecap="round"></path>
-  </mask>
-  <circle cx="24" cy="27" r="11.5" fill="#B3B3B3" mask="url(#magda-macros-needle)"></circle>
-  <path d="M8.5 32.6 A 16.5 16.5 0 1 1 39.5 32.6" stroke="#B3B3B3" stroke-width="4" stroke-linecap="round"></path>
-</svg>

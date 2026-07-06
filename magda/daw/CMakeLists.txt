@@ -77,12 +77,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/script.svg
     ../../assets/icons/general/speaker.svg
     ../../assets/icons/general/speaker_simple.svg
-    ../../assets/icons/general/speaker_muted.svg
-    ../../assets/icons/general/speaker_on.svg
-    ../../assets/icons/general/speaker_off.svg
     ../../assets/icons/general/master_on.svg
     ../../assets/icons/general/master_off.svg
-    ../../assets/icons/general/chord_on.svg
     ../../assets/icons/general/chord_off.svg
     ../../assets/icons/general/chord_on_1.svg
     ../../assets/icons/general/solo_off.svg
@@ -152,10 +148,6 @@ juce_add_binary_data(MagdaAssets
     # Inspector icons
     ../../assets/icons/inspector/infinito.svg
     ../../assets/icons/inspector/position.svg
-    ../../assets/icons/inspector/clip_loop_off.svg
-    ../../assets/icons/inspector/clip_loop_on.svg
-    ../../assets/icons/inspector/audio_clip.svg
-    ../../assets/icons/inspector/midi_clip.svg
     ../../assets/icons/inspector/fade_linear.svg
     ../../assets/icons/inspector/fade_convex.svg
     ../../assets/icons/inspector/fade_concave.svg
@@ -189,7 +181,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/fit_loop.svg
     ../../assets/icons/toolbar/horizontal.svg
     ../../assets/icons/toolbar/vertical.svg
-    ../../assets/icons/toolbar/io_routing.svg
     ../../assets/icons/toolbar/location.svg
     ../../assets/icons/toolbar/clock.svg
     # Footer view mode icons
@@ -197,8 +188,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/footer/icon-arrangement-boldm.svg
     ../../assets/icons/footer/icon-mix-boldm.svg
     # Legacy view mode icons (still used by the clip inspector view toggle)
-    ../../assets/icons/footer/Session.svg
-    ../../assets/icons/footer/Arrangement.svg
     # Sidebar icons
     ../../assets/icons/sidebar/plug.svg
     # Browser icons
