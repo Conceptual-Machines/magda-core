@@ -39,13 +39,12 @@ class ColourSwatch : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds().toFloat().reduced(1.0f);
         if (hasColour_) {
-            // Show the derived swatch (same hue, normalized lightness/chroma)
-            // rather than the raw stored colour, so the picker matches what
-            // actually renders on the track header/clips.
-            const auto swatchColour = deriveTrackSwatch(colour_);
-            g.setColour(swatchColour);
+            // Show the real picked colour so the swatch reflects the user's exact
+            // choice. (Track headers / clips / notes render the normalized
+            // deriveTrackSwatch() version for uniform visual energy.)
+            g.setColour(colour_);
             g.fillRoundedRectangle(bounds, 3.0f);
-            g.setColour(swatchColour.brighter(0.3f));
+            g.setColour(colour_.brighter(0.3f));
             g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
         } else {
             // No colour — draw an empty outlined rectangle
