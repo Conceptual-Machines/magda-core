@@ -245,6 +245,12 @@ class PianoRollGridComponent : public juce::Component,
     // editor's preview toggle in the host, not here.
     std::function<void(int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)> onNotePreview;
 
+    // One-shot audition for instant note creation (double-click add), where there
+    // is no press-to-release gesture: the host plays the note and stops it after
+    // its length elapses (#1705). Gated by the editor's preview toggle in the host.
+    std::function<void(int /*noteNumber*/, int /*velocity*/, double /*lengthBeats*/)>
+        onNoteAuditionOnce;
+
     // Callback when note selection changes (e.g. after lasso, deselect-all)
     // Provides the full set of currently selected note indices for the primary clip
     std::function<void(ClipId, std::vector<size_t>)> onNoteSelectionChanged;

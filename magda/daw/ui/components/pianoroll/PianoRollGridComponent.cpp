@@ -991,6 +991,12 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
         rememberAddedNoteLength(previewNote.lengthBeats);
         onNoteAdded(insertPos->clipId, previewNote.startBeat, previewNote.noteNumber,
                     previewNote.lengthBeats, defaultNoteVelocity_);
+
+        // Instant add has no press-to-release gesture, so audition the note as a
+        // self-terminating one-shot (#1705).
+        if (onNoteAuditionOnce)
+            onNoteAuditionOnce(previewNote.noteNumber, defaultNoteVelocity_,
+                               previewNote.lengthBeats);
     }
 }
 

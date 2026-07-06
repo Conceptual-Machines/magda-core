@@ -267,6 +267,11 @@ PianoRollContent::PianoRollContent() {
                                                            isNoteOn);
         }
     };
+    // One-shot audition for double-click note creation, which has no hold gesture
+    // to end the note (#1705).
+    gridComponent_->onNoteAuditionOnce = [this](int noteNumber, int velocity, double lengthBeats) {
+        auditionNoteOnce(noteNumber, velocity, lengthBeats);
+    };
     gridComponent_->onVerticalZoomRequested = [this](int gridY,
                                                      const juce::MouseWheelDetails& wheel) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();
@@ -2084,6 +2089,29 @@ void PianoRollContent::syncChordAnnotations(magda::ClipId clipId) {
     }
 
     isSyncingChords_ = false;
+}
+
+void PianoRollContent::auditionNoteOnce(int noteNumber, int velocity, double lengthBeats) {
+    if (!isNotePreviewEnabled() || editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (!clip || clip->trackId == magda::INVALID_TRACK_ID)
+        return;
+
+    const auto trackId = clip->trackId;
+    magda::TrackManager::getInstance().previewNote(trackId, noteNumber, velocity, true);
+
+    double bpm = 120.0;
+    if (auto* controller = magda::TimelineController::getCurrent())
+        bpm = controller->getState().tempo.bpm;
+    const int durationMs = juce::jlimit(
+        200, 1500, static_cast<int>(std::round(lengthBeats * 60000.0 / juce::jmax(1.0, bpm))));
+
+    // Capture only PODs + the engine singleton so the note-off is safe (and never
+    // sticks) even if this panel is destroyed before the timer fires.
+    juce::Timer::callAfterDelay(durationMs, [trackId, noteNumber]() {
+        magda::TrackManager::getInstance().previewNote(trackId, noteNumber, 0, false);
+    });
 }
 
 void PianoRollContent::detectChordsFromNotes() {
