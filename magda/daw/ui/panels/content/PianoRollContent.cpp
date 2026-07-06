@@ -63,11 +63,12 @@ PianoRollContent::PianoRollContent() {
     // Create note preview toggle: when lit, clicking or drawing a note auditions
     // it through the track instrument (#1705). Off by default so normal selection
     // stays silent. Shares the editor-wide static preview state. Same speaker
-    // glyphs as the mute button, recoloured dimmed grey (off) / accent blue (on).
+    // glyphs as the mute button, recoloured to match the other gutter icons
+    // (secondary grey off) and accent blue when on.
     previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
                                                         BinaryData::master_off_svgSize);
     previewToggle_->setTooltip("Preview notes (click a note to hear it)");
-    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
