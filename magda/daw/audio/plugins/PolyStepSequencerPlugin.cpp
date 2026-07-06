@@ -479,9 +479,16 @@ void PolyStepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 const int pos = stepRecordPosition_.load(std::memory_order_relaxed);
                 if (pos < maxSteps) {
                     const int note = msg.getNoteNumber();
-                    juce::MessageManager::callAsync([this, pos, note] {
-                        addStepNote(pos, note);
-                        setStepGate(pos, true);
+                    // callAsync is posted from the audio thread; the plugin can be
+                    // destroyed (track/plugin removal, project reload) before it
+                    // runs. Capture a weak self-ref so a stale callback no-ops
+                    // instead of writing through a freed ValueTree.
+                    auto safeThis = te::makeSafeRef(*this);
+                    juce::MessageManager::callAsync([safeThis, pos, note] {
+                        if (auto* self = safeThis.get()) {
+                            self->addStepNote(pos, note);
+                            self->setStepGate(pos, true);
+                        }
                     });
                 }
                 ++recordHeldCount_;
