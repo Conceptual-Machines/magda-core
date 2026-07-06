@@ -259,8 +259,8 @@ PianoRollContent::PianoRollContent() {
     // Audition a note through its own clip's track when clicked, but only while
     // the preview toggle is on (#1705). The clip id comes from the grid so a
     // secondary clip's note plays its own instrument in multi-clip editing.
-    gridComponent_->onNotePreview = [this](magda::ClipId clipId, int noteNumber, int velocity,
-                                           bool isNoteOn) {
+    gridComponent_->onNotePreview = [](magda::ClipId clipId, int noteNumber, int velocity,
+                                       bool isNoteOn) {
         if (!isNotePreviewEnabled() || clipId == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
@@ -774,13 +774,12 @@ void PianoRollContent::setupGridCallbacks() {
         setLocalEditCursor(positionSeconds);
     };
 
-    // Playhead set from grid — global arrangement transport, matching the timeline ruler.
+    // Playhead set from grid — global arrangement transport, matching the timeline
+    // ruler. The grid already resolved snapping (snap on unless Alt disables it),
+    // so dispatch the beat as-is rather than snapping again here.
     gridComponent_->onPlayheadPositionBeatsChanged = [](double positionBeats) {
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            const auto& state = controller->getState();
-            controller->dispatch(
-                magda::SetPlayheadPositionBeatsEvent{state.snapBeatsToGrid(positionBeats)});
-        }
+        if (auto* controller = magda::TimelineController::getCurrent())
+            controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
     };
 
     // Handle chord block drops from the chord panel

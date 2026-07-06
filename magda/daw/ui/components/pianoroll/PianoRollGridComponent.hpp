@@ -389,6 +389,7 @@ class PianoRollGridComponent : public juce::Component,
 
     // Plain empty-grid click mirrors the timeline playhead lane.
     bool isPendingPlayheadClick_ = false;
+    bool playheadClickNoSnap_ = false;  // Alt held on the pending click -> free (unsnapped)
     juce::Point<int> playheadClickStart_;
     static constexpr int PLAYHEAD_CLICK_DRAG_THRESHOLD = 5;
 
@@ -528,7 +529,7 @@ class PianoRollGridComponent : public juce::Component,
     std::optional<NoteInsertPosition> getNoteInsertPosition(juce::Point<int> localPos) const;
     double displayBeatForClipBeat(ClipId clipId, double clipBeat) const;
     double clipBeatForDisplayX(ClipId clipId, int mouseX) const;
-    double absolutePlayheadBeatForDisplayX(int mouseX) const;
+    double absolutePlayheadBeatForDisplayX(int mouseX, bool allowSnap = true) const;
     void updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX);
     bool isBlackKey(int noteNumber) const;
     juce::Colour getClipColour() const;

@@ -709,12 +709,6 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Alt + click on a grid line -> set edit cursor
-    if (e.mods.isAltDown() && isNearGridLine(e.x)) {
-        isEditCursorClick_ = true;
-        return;
-    }
-
     if (e.mods.isShiftDown() && onNoteAdded) {
         auto insertPos = getNoteInsertPosition(e.getPosition());
         if (insertPos.has_value()) {
@@ -744,8 +738,10 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
     dragSelectStart_ = e.getPosition();
     dragSelectEnd_ = e.getPosition();
     isDragSelecting_ = false;
-    isPendingPlayheadClick_ =
-        !e.mods.isShiftDown() && !e.mods.isCommandDown() && !e.mods.isAltDown();
+    // Plain click sets the playhead snapped; Alt disables snap (free position).
+    // Alt is allowed here so an Alt+click still lands on the playhead path.
+    isPendingPlayheadClick_ = !e.mods.isShiftDown() && !e.mods.isCommandDown();
+    playheadClickNoSnap_ = e.mods.isAltDown();
     playheadClickStart_ = e.getPosition();
 }
 
@@ -843,7 +839,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         if (juce::jmax(deltaX, deltaY) <= PLAYHEAD_CLICK_DRAG_THRESHOLD) {
             if (onPlayheadPositionBeatsChanged)
                 onPlayheadPositionBeatsChanged(
-                    absolutePlayheadBeatForDisplayX(playheadClickStart_.x));
+                    absolutePlayheadBeatForDisplayX(playheadClickStart_.x, !playheadClickNoSnap_));
         }
     }
     isPendingPlayheadClick_ = false;
@@ -2010,9 +2006,9 @@ double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) co
     return clipBeat;
 }
 
-double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const {
+double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX, bool allowSnap) const {
     double beat = pixelToBeat(mouseX);
-    if (snapEnabled_)
+    if (allowSnap && snapEnabled_)
         beat = snapBeatToGrid(beat);
 
     if (relativeMode_) {
@@ -2039,10 +2035,8 @@ double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const
     return juce::jlimit(0.0, timelineLengthBeats_, beat);
 }
 
-void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX) {
-    if (mods.isAltDown() && isNearGridLine(mouseX)) {
-        setMouseCursor(juce::MouseCursor::IBeamCursor);
-    } else if (mods.isShiftDown()) {
+void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int /*mouseX*/) {
+    if (mods.isShiftDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
