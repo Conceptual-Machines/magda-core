@@ -349,6 +349,21 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
                 te::assignTrackAsInput(*track, *sourceTrack, te::InputDevice::trackMidiDevice);
             if (dest) {
                 dest->recordEnabled = false;  // Arming happens separately
+
+                // te::assignTrackAsInput leaves the source track's MIDI device
+                // disabled until TE's async trackDeviceEnabler runs, and the
+                // device defaults to MonitorMode::automatic (thru only while
+                // recording). The reallocate below would then build a graph
+                // without the source-side tap and with monitoring off — enable
+                // the device and apply the destination's monitor mode first.
+                auto& sourceDevice = sourceTrack->getMidiInputDevice();
+                if (!sourceDevice.isEnabled())
+                    sourceDevice.setEnabled(true);
+                auto teMonitorMode = te::InputDevice::MonitorMode::on;
+                if (auto* destInfo = TrackManager::getInstance().getTrack(trackId))
+                    teMonitorMode = toTeMonitorMode(destInfo->inputMonitor);
+                sourceDevice.setMonitorMode(teMonitorMode);
+
                 DBG("MidiInputRouter: assigned track " << sourceTrackId << " as MIDI input for "
                                                        << trackId);
             } else {

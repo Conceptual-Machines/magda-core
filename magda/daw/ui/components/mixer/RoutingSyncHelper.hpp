@@ -322,7 +322,9 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
         for (const auto& t : allTracks) {
             if (t.id == currentTrackId)
                 continue;
-            if (t.type != TrackType::Audio)
+            // Chord tracks are valid MIDI sources: their progression clip
+            // plays live and drives instrument tracks (issue #1507)
+            if (t.type != TrackType::Audio && t.type != TrackType::Chord)
                 continue;
             if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
                 continue;
