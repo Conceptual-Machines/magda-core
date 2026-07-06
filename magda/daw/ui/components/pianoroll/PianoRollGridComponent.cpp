@@ -14,6 +14,7 @@
 #include "../../windows/CommandIDs.hpp"
 #include "PhaseMarker.hpp"
 #include "PitchFoldMap.hpp"
+#include "VelocityReadout.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/GestureRouter.hpp"
@@ -91,6 +92,8 @@ PianoRollGridComponent::PianoRollGridComponent() {
     setName("PianoRollGrid");
     setWantsKeyboardFocus(true);
     setRepaintsOnMouseActivity(true);
+    velocityReadout_ = std::make_unique<VelocityReadout>();
+    addChildComponent(*velocityReadout_);
     ClipManager::getInstance().addListener(this);
 }
 
@@ -1016,12 +1019,25 @@ void PianoRollGridComponent::adjustVelocityForNote(ClipId clipId, size_t noteInd
     if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
         targets = {noteIndex};
     adjustMidiNoteVelocities(clipId, targets, velocityDelta);
+    flashVelocityReadout(clipId, noteIndex);
 }
 
 void PianoRollGridComponent::adjustVelocityForSelection(int velocityDelta) {
     if (clipId_ == INVALID_CLIP_ID)
         return;
-    adjustMidiNoteVelocities(clipId_, selectedNoteIndicesForClip(clipId_), velocityDelta);
+    const auto targets = selectedNoteIndicesForClip(clipId_);
+    adjustMidiNoteVelocities(clipId_, targets, velocityDelta);
+    if (!targets.empty())
+        flashVelocityReadout(clipId_, targets.front());
+}
+
+void PianoRollGridComponent::flashVelocityReadout(ClipId clipId, size_t noteIndex) {
+    if (!velocityReadout_)
+        return;
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || noteIndex >= clip->midiNotes.size())
+        return;
+    velocityReadout_->flash(clip->midiNotes[noteIndex].velocity, getMouseXYRelative());
 }
 
 void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,

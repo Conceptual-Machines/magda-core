@@ -19,6 +19,7 @@
 namespace magda {
 
 class PitchFoldMap;
+class VelocityReadout;
 
 /**
  * @brief Scrollable grid component containing MIDI notes
@@ -365,6 +366,8 @@ class PianoRollGridComponent : public juce::Component,
 
     // Note components
     std::vector<std::unique_ptr<NoteComponent>> noteComponents_;
+    // Transient velocity value badge shown during wheel velocity edits (#1706).
+    std::unique_ptr<VelocityReadout> velocityReadout_;
 
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
@@ -510,6 +513,8 @@ class PianoRollGridComponent : public juce::Component,
     void adjustVelocityForNote(ClipId clipId, size_t noteIndex, int velocityDelta);
     void adjustVelocityForSelection(int velocityDelta);
     std::vector<size_t> selectedNoteIndicesForClip(ClipId clipId) const;
+    // Show the transient velocity badge near the cursor for the given note.
+    void flashVelocityReadout(ClipId clipId, size_t noteIndex);
 
     // Helpers
     struct NoteInsertPosition {

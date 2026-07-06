@@ -28,6 +28,7 @@
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/NoteComponent.hpp"
 #include "ui/components/pianoroll/NoteGridHost.hpp"
+#include "ui/components/pianoroll/VelocityReadout.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/layout/LayoutConfig.hpp"
 #include "ui/state/TimelineController.hpp"
@@ -112,6 +113,7 @@ class DrumGridClipGrid : public juce::Component,
     DrumGridClipGrid() {
         setName("DrumGridClipGrid");
         setWantsKeyboardFocus(true);
+        addChildComponent(velocityReadout_);
         magda::ClipManager::getInstance().addListener(this);
     }
 
@@ -736,6 +738,14 @@ class DrumGridClipGrid : public juce::Component,
         if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
             targets = {noteIndex};
         magda::adjustMidiNoteVelocities(clipId_, targets, velocityDelta);
+        flashVelocityReadout(noteIndex);
+    }
+
+    void flashVelocityReadout(size_t noteIndex) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+        if (!clip || noteIndex >= clip->midiNotes.size())
+            return;
+        velocityReadout_.flash(clip->midiNotes[noteIndex].velocity, getMouseXYRelative());
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
@@ -749,9 +759,11 @@ class DrumGridClipGrid : public juce::Component,
                 float dy = wheel.deltaY;
                 if (wheel.isReversed)
                     dy = -dy;
-                if (dy != 0.0f)
+                if (dy != 0.0f) {
                     magda::adjustMidiNoteVelocities(
                         clipId_, targets, (dy > 0.0f ? 1 : -1) * magda::kVelocityWheelStep);
+                    flashVelocityReadout(targets.front());
+                }
                 return;
             }
         }
@@ -1186,6 +1198,8 @@ class DrumGridClipGrid : public juce::Component,
 
     // Note components
     std::vector<std::unique_ptr<magda::NoteComponent>> noteComponents_;
+    // Transient velocity value badge shown during wheel velocity edits (#1706).
+    magda::VelocityReadout velocityReadout_;
 
     // Tracks whose MIDI renders as a ghost overlay (paint-only, never interactive)
     std::vector<magda::TrackId> overlayTrackIds_;
