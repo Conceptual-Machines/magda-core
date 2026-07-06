@@ -379,6 +379,93 @@ void SetMidiNoteVelocityCommand::mergeWith(const UndoableCommand* other) {
 }
 
 // ============================================================================
+// SetMultipleMidiNoteVelocitiesCommand
+// ============================================================================
+
+SetMultipleMidiNoteVelocitiesCommand::SetMultipleMidiNoteVelocitiesCommand(
+    ClipId clipId, std::vector<Entry> entries)
+    : clipId_(clipId) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId_);
+    for (const auto& e : entries) {
+        int oldVelocity = 100;
+        if (clip && e.noteIndex < clip->midiNotes.size())
+            oldVelocity = clip->midiNotes[e.noteIndex].velocity;
+        entries_.push_back({e.noteIndex, oldVelocity, e.newVelocity});
+    }
+}
+
+void SetMultipleMidiNoteVelocitiesCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || !clip->isMidi())
+        return;
+
+    for (const auto& e : entries_)
+        if (e.noteIndex < clip->midiNotes.size())
+            clip->midiNotes[e.noteIndex].velocity = e.newVelocity;
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void SetMultipleMidiNoteVelocitiesCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || !clip->isMidi())
+        return;
+
+    for (const auto& e : entries_)
+        if (e.noteIndex < clip->midiNotes.size())
+            clip->midiNotes[e.noteIndex].velocity = e.oldVelocity;
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+}
+
+bool SetMultipleMidiNoteVelocitiesCommand::canMergeWith(const UndoableCommand* other) const {
+    auto* o = dynamic_cast<const SetMultipleMidiNoteVelocitiesCommand*>(other);
+    if (!o || o->clipId_ != clipId_ || o->entries_.size() != entries_.size())
+        return false;
+    // Same note set (same order, which the gesture builds deterministically).
+    for (size_t i = 0; i < entries_.size(); ++i)
+        if (entries_[i].noteIndex != o->entries_[i].noteIndex)
+            return false;
+    return true;
+}
+
+void SetMultipleMidiNoteVelocitiesCommand::mergeWith(const UndoableCommand* other) {
+    auto* o = dynamic_cast<const SetMultipleMidiNoteVelocitiesCommand*>(other);
+    if (!o || o->entries_.size() != entries_.size())
+        return;
+    // Keep our captured old velocities; adopt the newer target velocities.
+    for (size_t i = 0; i < entries_.size(); ++i)
+        entries_[i].newVelocity = o->entries_[i].newVelocity;
+}
+
+void adjustMidiNoteVelocities(ClipId clipId, const std::vector<size_t>& noteIndices, int delta) {
+    if (noteIndices.empty() || delta == 0)
+        return;
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || !clip->isMidi())
+        return;
+
+    std::vector<SetMultipleMidiNoteVelocitiesCommand::Entry> entries;
+    for (size_t idx : noteIndices) {
+        if (idx >= clip->midiNotes.size())
+            continue;
+        const int newVelocity = juce::jlimit(1, 127, clip->midiNotes[idx].velocity + delta);
+        entries.push_back({idx, newVelocity});
+    }
+    if (entries.empty())
+        return;
+
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<SetMultipleMidiNoteVelocitiesCommand>(clipId, std::move(entries)));
+}
+
+// ============================================================================
 // SetNotePitchExpressionCommand
 // ============================================================================
 

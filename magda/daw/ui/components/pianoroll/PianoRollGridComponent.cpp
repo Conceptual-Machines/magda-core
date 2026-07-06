@@ -1000,8 +1000,45 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     }
 }
 
+std::vector<size_t> PianoRollGridComponent::selectedNoteIndicesForClip(ClipId clipId) const {
+    std::vector<size_t> indices;
+    for (const auto& nc : noteComponents_)
+        if (nc->getSourceClipId() == clipId && nc->isSelected())
+            indices.push_back(nc->getNoteIndex());
+    return indices;
+}
+
+void PianoRollGridComponent::adjustVelocityForNote(ClipId clipId, size_t noteIndex,
+                                                   int velocityDelta) {
+    // A note that is part of the current selection scales the whole selection;
+    // an unselected note is edited on its own without disturbing the selection.
+    std::vector<size_t> targets = selectedNoteIndicesForClip(clipId);
+    if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+        targets = {noteIndex};
+    adjustMidiNoteVelocities(clipId, targets, velocityDelta);
+}
+
+void PianoRollGridComponent::adjustVelocityForSelection(int velocityDelta) {
+    if (clipId_ == INVALID_CLIP_ID)
+        return;
+    adjustMidiNoteVelocities(clipId_, selectedNoteIndicesForClip(clipId_), velocityDelta);
+}
+
 void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,
                                             const juce::MouseWheelDetails& wheel) {
+    // Shift + wheel over the empty grid edits the selected notes' velocity (#1706)
+    // and is consumed so the view does not scroll. With nothing selected it falls
+    // through to the normal Shift = horizontal scroll gesture. (Over a note the
+    // NoteComponent claims the gesture before it reaches here.)
+    if (isVelocityWheelGesture(e.mods) && !selectedNoteIndicesForClip(clipId_).empty()) {
+        float dy = wheel.deltaY;
+        if (wheel.isReversed)
+            dy = -dy;
+        if (dy != 0.0f)
+            adjustVelocityForSelection((dy > 0.0f ? 1 : -1) * kVelocityWheelStep);
+        return;
+    }
+
     // Alt+wheel = vertical (lane height) zoom, resolved via GestureRouter so the
     // binding is configurable (#1350). The view's callback keeps its own zoom
     // magnitude math, so the gesture only selects the action. A plain wheel
@@ -2043,6 +2080,10 @@ void PianoRollGridComponent::createNoteComponents() {
             noteComp->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
                 if (onNotePreview)
                     onNotePreview(noteNumber, velocity, isNoteOn);
+            };
+
+            noteComp->onVelocityWheel = [this, clipId](size_t index, int velocityDelta) {
+                adjustVelocityForNote(clipId, index, velocityDelta);
             };
 
             noteComp->onNoteDeselected = [this, clipId](size_t /*index*/) {

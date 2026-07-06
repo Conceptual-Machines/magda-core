@@ -437,6 +437,23 @@ void NoteComponent::updatePreviewPitch(int noteNumber) {
     }
 }
 
+void NoteComponent::mouseWheelMove(const juce::MouseEvent& e,
+                                   const juce::MouseWheelDetails& wheel) {
+    // Shift + wheel over a note edits its velocity (#1706); consume so the view
+    // does not also scroll. Every other wheel gesture is forwarded to the grid
+    // (scroll / zoom) via the base class.
+    if (isVelocityWheelGesture(e.mods) && onVelocityWheel) {
+        float dy = wheel.deltaY;
+        if (wheel.isReversed)
+            dy = -dy;
+        if (dy != 0.0f)
+            onVelocityWheel(noteIndex_, (dy > 0.0f ? 1 : -1) * kVelocityWheelStep);
+        return;
+    }
+
+    juce::Component::mouseWheelMove(e, wheel);
+}
+
 void NoteComponent::timerCallback() {
     if (mouseIsOver_) {
         updateCursor();

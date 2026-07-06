@@ -504,6 +504,13 @@ class PianoRollGridComponent : public juce::Component,
     void updateNoteComponentBounds();
     void rebuildSelectedPitchRows();
 
+    // Velocity wheel editing (#1706). For a note under the cursor: adjusts the
+    // whole selection when the note is part of it, else just that note. The
+    // selection variant (no hovered note) drives the empty-grid wheel path.
+    void adjustVelocityForNote(ClipId clipId, size_t noteIndex, int velocityDelta);
+    void adjustVelocityForSelection(int velocityDelta);
+    std::vector<size_t> selectedNoteIndicesForClip(ClipId clipId) const;
+
     // Helpers
     struct NoteInsertPosition {
         ClipId clipId = INVALID_CLIP_ID;

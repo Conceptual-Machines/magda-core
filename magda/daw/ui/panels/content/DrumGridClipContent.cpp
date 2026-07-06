@@ -721,7 +721,41 @@ class DrumGridClipGrid : public juce::Component,
         }
     }
 
+    std::vector<size_t> selectedNoteIndices() const {
+        std::vector<size_t> indices;
+        for (const auto& nc : noteComponents_)
+            if (nc->isSelected())
+                indices.push_back(nc->getNoteIndex());
+        return indices;
+    }
+
+    // Velocity wheel editing (#1706): a selected note scales the whole selection,
+    // an unselected note is edited alone.
+    void adjustVelocityForNote(size_t noteIndex, int velocityDelta) {
+        std::vector<size_t> targets = selectedNoteIndices();
+        if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+            targets = {noteIndex};
+        magda::adjustMidiNoteVelocities(clipId_, targets, velocityDelta);
+    }
+
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        // Shift + wheel over the empty grid edits the selected notes' velocity
+        // (#1706), consumed so the view does not scroll. Over a note the
+        // NoteComponent claims the gesture first. With nothing selected it falls
+        // through to the normal Shift = horizontal scroll gesture.
+        if (magda::isVelocityWheelGesture(e.mods)) {
+            const auto targets = selectedNoteIndices();
+            if (!targets.empty()) {
+                float dy = wheel.deltaY;
+                if (wheel.isReversed)
+                    dy = -dy;
+                if (dy != 0.0f)
+                    magda::adjustMidiNoteVelocities(
+                        clipId_, targets, (dy > 0.0f ? 1 : -1) * magda::kVelocityWheelStep);
+                return;
+            }
+        }
+
         // Alt+wheel = vertical zoom (via GestureRouter, #1350); the callback
         // owns the zoom math, the binding only selects the action. A plain
         // wheel falls through to the viewport for content scroll.
@@ -1419,6 +1453,10 @@ class DrumGridClipGrid : public juce::Component,
             noteComp->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
                 if (onNotePreview)
                     onNotePreview(noteNumber, velocity, isNoteOn);
+            };
+
+            noteComp->onVelocityWheel = [this](size_t index, int velocityDelta) {
+                adjustVelocityForNote(index, velocityDelta);
             };
 
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {

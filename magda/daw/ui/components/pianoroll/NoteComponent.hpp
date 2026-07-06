@@ -9,6 +9,15 @@ namespace magda {
 // Forward declarations
 class NoteGridHost;
 
+// Modifier + wheel over a note (or with a selection) edits velocity (#1706).
+// Shift is the velocity modifier: its normal role (horizontal scroll) is
+// inhibited while the gesture applies. One wheel tick moves velocity by this
+// much; the sign follows the wheel direction.
+inline constexpr int kVelocityWheelStep = 4;
+inline bool isVelocityWheelGesture(const juce::ModifierKeys& mods) {
+    return mods.isShiftDown() && !mods.isAltDown() && !mods.isCommandDown() && !mods.isCtrlDown();
+}
+
 /**
  * @brief Visual representation of a MIDI note in the piano roll
  *
@@ -49,6 +58,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseEnter(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
     // Selection state
     bool isSelected() const {
@@ -82,6 +92,11 @@ class NoteComponent : public juce::Component, private juce::Timer {
     // note-off on mouse-up so clicking a note can play it (#1705). The host
     // decides whether preview is enabled and routes it to the track instrument.
     std::function<void(int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)> onNotePreview;
+
+    // Modifier + wheel over this note adjusts velocity (#1706). Signed delta is
+    // already scaled by the wheel direction; the host applies it to this note
+    // (and the rest of the selection when this note is part of it).
+    std::function<void(size_t /*noteIndex*/, int /*velocityDelta*/)> onVelocityWheel;
 
   private:
     size_t noteIndex_;

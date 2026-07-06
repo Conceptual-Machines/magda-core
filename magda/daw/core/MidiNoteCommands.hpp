@@ -140,6 +140,48 @@ class SetMidiNoteVelocityCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting the velocity of several notes in one clip as a
+ *        single undo step (#1706). Consecutive edits to the same note set merge,
+ *        so a whole mouse-wheel spin collapses into one undoable change.
+ */
+class SetMultipleMidiNoteVelocitiesCommand : public UndoableCommand {
+  public:
+    struct Entry {
+        size_t noteIndex;
+        int newVelocity;
+    };
+
+    SetMultipleMidiNoteVelocitiesCommand(ClipId clipId, std::vector<Entry> entries);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Note Velocity";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    struct Applied {
+        size_t noteIndex;
+        int oldVelocity;
+        int newVelocity;
+    };
+
+    ClipId clipId_;
+    std::vector<Applied> entries_;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Adjust the velocity of a set of notes in one clip by `delta`, clamped to
+ *        [1, 127], as a single mergeable undo step (#1706). No-op if the target
+ *        set is empty. Used by the modifier + wheel velocity gesture.
+ */
+void adjustMidiNoteVelocities(ClipId clipId, const std::vector<size_t>& noteIndices, int delta);
+
+/**
  * @brief Command for replacing a note's pitch glide (MPE pitch expression) points
  */
 class SetNotePitchExpressionCommand : public UndoableCommand {
