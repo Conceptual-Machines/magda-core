@@ -246,7 +246,7 @@ class PianoRollContent : public MidiEditorContent,
     // Play a note then stop it after its length elapses, for double-click note
     // creation (#1705). Gated by the preview toggle; the note-off is scheduled
     // against the engine so it fires even if this panel is torn down first.
-    void auditionNoteOnce(int noteNumber, int velocity, double lengthBeats);
+    void auditionNoteOnce(magda::ClipId clipId, int noteNumber, int velocity, double lengthBeats);
     void syncChordAnnotations(magda::ClipId clipId);
     void setNoteHeight(int height, bool persist);
     void setNoteHeightAnchored(int height, int anchorNote, int anchorScreenY, bool persist);

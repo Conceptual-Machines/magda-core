@@ -256,12 +256,14 @@ PianoRollContent::PianoRollContent() {
         if (keyboard_)
             keyboard_->setHighlightedNotes(notes);
     };
-    // Audition a note through the track's instrument when clicked, but only while
-    // the preview toggle is on (#1705). Mirrors the keyboard's click-to-play path.
-    gridComponent_->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
-        if (!isNotePreviewEnabled() || editingClipId_ == magda::INVALID_CLIP_ID)
+    // Audition a note through its own clip's track when clicked, but only while
+    // the preview toggle is on (#1705). The clip id comes from the grid so a
+    // secondary clip's note plays its own instrument in multi-clip editing.
+    gridComponent_->onNotePreview = [this](magda::ClipId clipId, int noteNumber, int velocity,
+                                           bool isNoteOn) {
+        if (!isNotePreviewEnabled() || clipId == magda::INVALID_CLIP_ID)
             return;
-        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (clip && clip->trackId != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().previewNote(clip->trackId, noteNumber, velocity,
                                                            isNoteOn);
@@ -269,8 +271,9 @@ PianoRollContent::PianoRollContent() {
     };
     // One-shot audition for double-click note creation, which has no hold gesture
     // to end the note (#1705).
-    gridComponent_->onNoteAuditionOnce = [this](int noteNumber, int velocity, double lengthBeats) {
-        auditionNoteOnce(noteNumber, velocity, lengthBeats);
+    gridComponent_->onNoteAuditionOnce = [this](magda::ClipId clipId, int noteNumber, int velocity,
+                                                double lengthBeats) {
+        auditionNoteOnce(clipId, noteNumber, velocity, lengthBeats);
     };
     gridComponent_->onVerticalZoomRequested = [this](int gridY,
                                                      const juce::MouseWheelDetails& wheel) {
@@ -2091,10 +2094,11 @@ void PianoRollContent::syncChordAnnotations(magda::ClipId clipId) {
     isSyncingChords_ = false;
 }
 
-void PianoRollContent::auditionNoteOnce(int noteNumber, int velocity, double lengthBeats) {
-    if (!isNotePreviewEnabled() || editingClipId_ == magda::INVALID_CLIP_ID)
+void PianoRollContent::auditionNoteOnce(magda::ClipId clipId, int noteNumber, int velocity,
+                                        double lengthBeats) {
+    if (!isNotePreviewEnabled() || clipId == magda::INVALID_CLIP_ID)
         return;
-    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
     if (!clip || clip->trackId == magda::INVALID_TRACK_ID)
         return;
 

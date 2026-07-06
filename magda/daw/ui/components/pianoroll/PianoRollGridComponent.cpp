@@ -734,7 +734,7 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
             // Audition the note being drawn (held until mouseUp). The pitch is
             // fixed for the gesture, so the note-off matches (#1705).
             if (onNotePreview)
-                onNotePreview(drawingNoteNumber_, defaultNoteVelocity_, true);
+                onNotePreview(drawingNoteClipId_, drawingNoteNumber_, defaultNoteVelocity_, true);
             repaint();
             return;
         }
@@ -785,7 +785,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
     if (isDrawingNote_) {
         // Release the auditioned draw note (fixed pitch for the gesture, #1705).
         if (onNotePreview)
-            onNotePreview(drawingNoteNumber_, 0, false);
+            onNotePreview(drawingNoteClipId_, drawingNoteNumber_, 0, false);
 
         const ClipId clipId = drawingNoteClipId_;
         MidiNote note;
@@ -998,7 +998,7 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
         // Instant add has no press-to-release gesture, so audition the note as a
         // self-terminating one-shot (#1705).
         if (onNoteAuditionOnce)
-            onNoteAuditionOnce(previewNote.noteNumber, defaultNoteVelocity_,
+            onNoteAuditionOnce(insertPos->clipId, previewNote.noteNumber, defaultNoteVelocity_,
                                previewNote.lengthBeats);
     }
 }
@@ -2093,9 +2093,9 @@ void PianoRollGridComponent::createNoteComponents() {
                 syncSelectionFromManager();
             };
 
-            noteComp->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+            noteComp->onNotePreview = [this, clipId](int noteNumber, int velocity, bool isNoteOn) {
                 if (onNotePreview)
-                    onNotePreview(noteNumber, velocity, isNoteOn);
+                    onNotePreview(clipId, noteNumber, velocity, isNoteOn);
             };
 
             noteComp->onVelocityWheel = [this, clipId](size_t index, int velocityDelta) {

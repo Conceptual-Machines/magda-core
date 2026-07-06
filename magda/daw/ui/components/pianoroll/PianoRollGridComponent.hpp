@@ -242,14 +242,17 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(ClipId, size_t)> onNoteRangeSelected;    // clipId, index
 
     // Note preview (audition): fires note-on/off as a note is pressed/released so
-    // the host can play it through the track instrument (#1705). Gated by the
-    // editor's preview toggle in the host, not here.
-    std::function<void(int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)> onNotePreview;
+    // the host can play it through the track instrument (#1705). Carries the
+    // note's own clip so multi-clip editing auditions the right track. Gated by
+    // the editor's preview toggle in the host, not here.
+    std::function<void(ClipId, int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)>
+        onNotePreview;
 
     // One-shot audition for instant note creation (double-click add), where there
     // is no press-to-release gesture: the host plays the note and stops it after
-    // its length elapses (#1705). Gated by the editor's preview toggle in the host.
-    std::function<void(int /*noteNumber*/, int /*velocity*/, double /*lengthBeats*/)>
+    // its length elapses (#1705). Carries the target clip so it auditions the
+    // right track. Gated by the editor's preview toggle in the host.
+    std::function<void(ClipId, int /*noteNumber*/, int /*velocity*/, double /*lengthBeats*/)>
         onNoteAuditionOnce;
 
     // Callback when note selection changes (e.g. after lasso, deselect-all)
