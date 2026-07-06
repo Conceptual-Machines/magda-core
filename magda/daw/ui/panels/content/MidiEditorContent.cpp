@@ -32,10 +32,17 @@ bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
 void MidiEditorContent::syncNotePreviewToggle(magda::SvgButton& button, bool on) {
-    // Swap the glyph (plain speaker on, crossed speaker off) and drive the active
-    // state so the shared recolour picks accent blue (on) vs dimmed grey (off).
-    button.updateSvgData(on ? BinaryData::speaker_svg : BinaryData::speaker_muted_svg,
-                         on ? BinaryData::speaker_svgSize : BinaryData::speaker_muted_svgSize);
+    // Same glyphs as the mute button (master_on speaker / master_off speaker-off),
+    // recoloured instead of chipped: accent blue when on, dimmed grey when off.
+    // The two source SVGs bake different fills, so set the recolour source to
+    // match each glyph before driving the active state.
+    if (on) {
+        button.updateSvgData(BinaryData::master_on_svg, BinaryData::master_on_svgSize);
+        button.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    } else {
+        button.updateSvgData(BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+        button.setOriginalColor(juce::Colour(0xFF1E1E1E));
+    }
     button.setActive(on);
 }
 
