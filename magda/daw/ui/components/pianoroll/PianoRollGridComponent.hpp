@@ -275,6 +275,7 @@ class PianoRollGridComponent : public juce::Component,
     // Callbacks for edit operations from context menu
     std::function<void(ClipId, std::vector<size_t>, QuantizeMode, double gridBeats)>
         onQuantizeNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onLegatoNotes;
     std::function<void(ClipId, std::vector<size_t>)> onCopyNotes;
     std::function<void(ClipId)> onPasteNotes;
     std::function<void(ClipId, std::vector<size_t>)> onDuplicateNotes;

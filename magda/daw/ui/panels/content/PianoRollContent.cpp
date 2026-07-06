@@ -686,6 +686,20 @@ void PianoRollContent::setupGridCallbacks() {
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
+    // Handle legato from right-click context menu: stretch each selected note to
+    // the next selected onset (one undo step via the batch resize command).
+    gridComponent_->onLegatoNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        if (!clip || !clip->isMidi())
+            return;
+        auto newLengths = magda::computeLegatoNoteLengths(*clip, noteIndices);
+        if (newLengths.empty())
+            return;
+        auto cmd =
+            std::make_unique<magda::ResizeMultipleMidiNotesCommand>(clipId, std::move(newLengths));
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+
     // Handle copy from context menu
     gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
         magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);

@@ -23,6 +23,50 @@ std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
     return starts;
 }
 
+std::vector<std::pair<size_t, double>> computeLegatoNoteLengths(
+    const ClipInfo& clip, const std::vector<size_t>& noteIndices) {
+    constexpr double kEpsilon = 1e-9;
+    std::vector<std::pair<size_t, double>> result;
+    if (!clip.isMidi())
+        return result;
+
+    struct Entry {
+        size_t index;
+        double start;
+        double length;
+    };
+    std::vector<Entry> notes;
+    notes.reserve(noteIndices.size());
+    for (size_t index : noteIndices) {
+        if (index < clip.midiNotes.size())
+            notes.push_back(
+                {index, clip.midiNotes[index].startBeat, clip.midiNotes[index].lengthBeats});
+    }
+    if (notes.size() < 2)
+        return result;
+
+    // Distinct onsets, sorted, so each note can find the next note that starts
+    // strictly after it (chord-mates on the same onset share the same target).
+    std::vector<double> onsets;
+    onsets.reserve(notes.size());
+    for (const auto& n : notes)
+        onsets.push_back(n.start);
+    std::sort(onsets.begin(), onsets.end());
+    onsets.erase(std::unique(onsets.begin(), onsets.end(),
+                             [](double a, double b) { return std::abs(a - b) < kEpsilon; }),
+                 onsets.end());
+
+    for (const auto& n : notes) {
+        auto next = std::upper_bound(onsets.begin(), onsets.end(), n.start + kEpsilon);
+        if (next == onsets.end())
+            continue;  // trailing note: nothing follows, leave its length alone
+        const double newLength = *next - n.start;
+        if (newLength > kEpsilon && std::abs(newLength - n.length) > kEpsilon)
+            result.emplace_back(n.index, newLength);
+    }
+    return result;
+}
+
 std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
     const ClipInfo& clip, const std::vector<MidiNoteStartBeat>& originalStartBeats, float depth,
     float skew, int cycles, float quantize, int quantizeSub, bool hardAngle) {

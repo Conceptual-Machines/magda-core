@@ -25,6 +25,17 @@ std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
     bool hardAngle = false);
 
 /**
+ * @brief Compute new note lengths for a legato transform: each selected note is
+ *        stretched (or shortened) so it ends exactly where the next selected note
+ *        begins. Notes sharing a start beat (a chord) all extend to the next
+ *        distinct onset; trailing notes with no following onset are left as-is.
+ *        Returns {noteIndex, newLength} pairs only for notes whose length changes,
+ *        ready for ResizeMultipleMidiNotesCommand. Empty for fewer than two notes.
+ */
+std::vector<std::pair<size_t, double>> computeLegatoNoteLengths(
+    const ClipInfo& clip, const std::vector<size_t>& noteIndices);
+
+/**
  * @brief Command for adding a MIDI note to a clip
  */
 class AddMidiNoteCommand : public UndoableCommand {
