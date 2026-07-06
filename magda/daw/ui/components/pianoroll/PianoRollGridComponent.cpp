@@ -839,7 +839,7 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         if (juce::jmax(deltaX, deltaY) <= PLAYHEAD_CLICK_DRAG_THRESHOLD) {
             if (onPlayheadPositionBeatsChanged)
                 onPlayheadPositionBeatsChanged(
-                    absolutePlayheadBeatForDisplayX(playheadClickStart_.x, !playheadClickNoSnap_));
+                    absolutePlayheadBeatForDisplayX(playheadClickStart_.x), !playheadClickNoSnap_);
         }
     }
     isPendingPlayheadClick_ = false;
@@ -2006,10 +2006,12 @@ double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) co
     return clipBeat;
 }
 
-double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX, bool allowSnap) const {
+double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const {
+    // Raw (unsnapped) absolute beat for the click. Snapping is applied by the
+    // transport on the final beat (unless Alt disables it), because snapping the
+    // display beat here, before the relative/loop conversion, produced a wrong
+    // transport position (#1706 follow-up).
     double beat = pixelToBeat(mouseX);
-    if (allowSnap && snapEnabled_)
-        beat = snapBeatToGrid(beat);
 
     if (relativeMode_) {
         const auto* clip =

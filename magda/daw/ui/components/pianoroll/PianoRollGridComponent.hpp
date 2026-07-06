@@ -284,7 +284,9 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(double)> onEditCursorSet;
 
     // Playhead click on grid — absolute timeline position in beats
-    std::function<void(double)> onPlayheadPositionBeatsChanged;
+    // beats = raw absolute beat of the click; snapToGrid = false when Alt is held
+    // (free position). The host applies transport snapping when snapToGrid is set.
+    std::function<void(double /*beats*/, bool /*snapToGrid*/)> onPlayheadPositionBeatsChanged;
 
     // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs), chord name,
     // length
@@ -529,7 +531,7 @@ class PianoRollGridComponent : public juce::Component,
     std::optional<NoteInsertPosition> getNoteInsertPosition(juce::Point<int> localPos) const;
     double displayBeatForClipBeat(ClipId clipId, double clipBeat) const;
     double clipBeatForDisplayX(ClipId clipId, int mouseX) const;
-    double absolutePlayheadBeatForDisplayX(int mouseX, bool allowSnap = true) const;
+    double absolutePlayheadBeatForDisplayX(int mouseX) const;
     void updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX);
     bool isBlackKey(int noteNumber) const;
     juce::Colour getClipColour() const;

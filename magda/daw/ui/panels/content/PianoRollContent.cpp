@@ -775,11 +775,14 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Playhead set from grid — global arrangement transport, matching the timeline
-    // ruler. The grid already resolved snapping (snap on unless Alt disables it),
-    // so dispatch the beat as-is rather than snapping again here.
-    gridComponent_->onPlayheadPositionBeatsChanged = [](double positionBeats) {
-        if (auto* controller = magda::TimelineController::getCurrent())
-            controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
+    // ruler. The grid sends the raw beat; snap it to the transport grid here unless
+    // the click held Alt (free position).
+    gridComponent_->onPlayheadPositionBeatsChanged = [](double positionBeats, bool snapToGrid) {
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            const double beats =
+                snapToGrid ? controller->getState().snapBeatsToGrid(positionBeats) : positionBeats;
+            controller->dispatch(magda::SetPlayheadPositionBeatsEvent{beats});
+        }
     };
 
     // Handle chord block drops from the chord panel
