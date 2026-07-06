@@ -93,8 +93,9 @@ PianoRollContent::PianoRollContent() {
     addChildComponent(takeLanesToggle_.get());
 
     // Create chord toggle button
-    chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordboldm_svg,
-                                                      BinaryData::iconchordboldm_svgSize);
+    chordToggle_ =
+        std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::iconchordtrackboldm_svg,
+                                           BinaryData::iconchordtrackboldm_svgSize);
     chordToggle_->setTooltip("Toggle chord row");
     chordToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     chordToggle_->setActive(showChordRow_);
@@ -117,8 +118,7 @@ PianoRollContent::PianoRollContent() {
     // Progression overlay toggle: ghost the chord-track progression behind this
     // track's chord lane (#1504). Only meaningful on non-chord tracks.
     progressionOverlayToggle_ = std::make_unique<magda::SvgButton>(
-        "ProgressionOverlay", BinaryData::iconchordtrackboldm_svg,
-        BinaryData::iconchordtrackboldm_svgSize);
+        "ProgressionOverlay", BinaryData::stacks_svg, BinaryData::stacks_svgSize);
     progressionOverlayToggle_->setTooltip("Compare against the chord-track progression");
     progressionOverlayToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     progressionOverlayToggle_->setActive(showProgressionOverlay_);
