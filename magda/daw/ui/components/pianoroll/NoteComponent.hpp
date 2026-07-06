@@ -78,6 +78,11 @@ class NoteComponent : public juce::Component, private juce::Timer {
     // Right-click callback for context menu
     std::function<void(size_t, const juce::MouseEvent&)> onRightClick;
 
+    // Note preview (audition) callback — fires note-on on mouse-down and
+    // note-off on mouse-up so clicking a note can play it (#1705). The host
+    // decides whether preview is enabled and routes it to the track instrument.
+    std::function<void(int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)> onNotePreview;
+
   private:
     size_t noteIndex_;
     ClipId sourceClipId_;
@@ -109,6 +114,11 @@ class NoteComponent : public juce::Component, private juce::Timer {
     bool isDragging_ = false;
     bool isCopyDrag_ = false;
     bool deferredDeselect_ = false;
+
+    // Audition state (#1705): the pitch a note-on was sent for, so the matching
+    // note-off targets it even if noteNumber_ changes mid-drag.
+    bool previewNoteActive_ = false;
+    int auditionNoteNumber_ = -1;
 
     // Hover state for resize handles
     bool hoverLeftEdge_ = false;

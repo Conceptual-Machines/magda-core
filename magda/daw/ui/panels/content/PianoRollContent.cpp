@@ -239,6 +239,17 @@ PianoRollContent::PianoRollContent() {
         if (keyboard_)
             keyboard_->setHighlightedNotes(notes);
     };
+    // Audition a note through the track's instrument when clicked, but only while
+    // the preview toggle is on (#1705). Mirrors the keyboard's click-to-play path.
+    gridComponent_->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+        if (!isNotePreviewEnabled() || editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && clip->trackId != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().previewNote(clip->trackId, noteNumber, velocity,
+                                                           isNoteOn);
+        }
+    };
     gridComponent_->onVerticalZoomRequested = [this](int gridY,
                                                      const juce::MouseWheelDetails& wheel) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();

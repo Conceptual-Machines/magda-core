@@ -204,6 +204,10 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, size_t, double, int)> onNoteCopied;
     std::function<void(magda::ClipId, size_t, bool)> onNoteSelected;
     std::function<void(magda::ClipId, std::vector<size_t>)> onNoteSelectionChanged;
+    // Note preview (audition): fires note-on/off as a grid note is pressed/released
+    // so the host can play it through the track instrument (#1705). Gated by the
+    // editor's preview toggle in the host.
+    std::function<void(int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)> onNotePreview;
     std::function<void(magda::ClipId, std::vector<size_t>, magda::QuantizeMode, double)>
         onQuantizeNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onCopyNotes;
@@ -1395,6 +1399,11 @@ class DrumGridClipGrid : public juce::Component,
 
             noteComp->onNoteDeselected = [this](size_t /*index*/) { fireSelectionChanged(); };
 
+            noteComp->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+                if (onNotePreview)
+                    onNotePreview(noteNumber, velocity, isNoteOn);
+            };
+
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {
                 if (!onNoteMoved)
                     return;
@@ -2151,6 +2160,18 @@ DrumGridClipContent::DrumGridClipContent() {
             magda::SelectionManager::getInstance().addNoteToSelection(clipId, noteIndex);
         } else {
             magda::SelectionManager::getInstance().selectNote(clipId, noteIndex);
+        }
+    };
+
+    // Audition a note through the track's instrument when clicked, gated by the
+    // editor's preview toggle (#1705). Mirrors the pad-row play button path.
+    gridComponent_->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+        if (!isNotePreviewEnabled() || editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && clip->trackId != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().previewNote(clip->trackId, noteNumber, velocity,
+                                                           isNoteOn);
         }
     };
 

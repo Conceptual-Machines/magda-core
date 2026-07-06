@@ -25,6 +25,7 @@ namespace magda::daw::ui {
 bool MidiEditorContent::velocityDrawerOpen_ = false;
 bool MidiEditorContent::velocityLaneVisible_ = false;
 bool MidiEditorContent::foldEnabled_ = false;
+bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
 std::vector<int> MidiEditorContent::collectUsedPitches() const {

@@ -2026,6 +2026,11 @@ void PianoRollGridComponent::createNoteComponents() {
                 syncSelectionFromManager();
             };
 
+            noteComp->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+                if (onNotePreview)
+                    onNotePreview(noteNumber, velocity, isNoteOn);
+            };
+
             noteComp->onNoteDeselected = [this, clipId](size_t /*index*/) {
                 // Cmd+click toggled this note OFF — remove from SelectionManager
                 std::vector<size_t> selectedIndices;

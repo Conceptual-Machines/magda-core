@@ -146,6 +146,18 @@ class MidiEditorContent : public PanelContent,
     // onChanged fires after every overlay change (for button lit-state sync)
     void showOverlayTracksMenu(juce::Component* anchor, std::function<void()> onChanged);
 
+    // --- Note preview (audition) toggle (#1705) ---
+    // When enabled, clicking a note in the grid auditions it through the track's
+    // instrument (piano roll and drum grid). Static so the toggle persists across
+    // editor/clip switches within a session (transient, not serialized), matching
+    // the fold toggle. Off by default so normal selection stays silent.
+    static bool isNotePreviewEnabled() {
+        return notePreviewEnabled_;
+    }
+    void setNotePreviewEnabled(bool enabled) {
+        notePreviewEnabled_ = enabled;
+    }
+
   protected:
     // --- Shared state ---
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
@@ -214,6 +226,8 @@ class MidiEditorContent : public PanelContent,
     //     (transient, not serialized). Subclasses wire their grid/keyboard/row
     //     components to &foldMap_ once and repaint via onFoldMapChanged(). ---
     static bool foldEnabled_;
+    // Note preview (audition) toggle state; see isNotePreviewEnabled() (#1705).
+    static bool notePreviewEnabled_;
     magda::PitchFoldMap foldMap_;
     void rebuildFoldMap();
     void applyFold();

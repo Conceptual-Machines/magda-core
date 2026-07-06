@@ -240,6 +240,11 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(ClipId, size_t, bool)> onNoteSelected;   // clipId, index, isAdditive
     std::function<void(ClipId, size_t)> onNoteRangeSelected;    // clipId, index
 
+    // Note preview (audition): fires note-on/off as a note is pressed/released so
+    // the host can play it through the track instrument (#1705). Gated by the
+    // editor's preview toggle in the host, not here.
+    std::function<void(int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)> onNotePreview;
+
     // Callback when note selection changes (e.g. after lasso, deselect-all)
     // Provides the full set of currently selected note indices for the primary clip
     std::function<void(ClipId, std::vector<size_t>)> onNoteSelectionChanged;
