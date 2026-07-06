@@ -159,6 +159,19 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         }
 
         ~Fixture() {
+            // The reversed-clip test triggers an async ReverseRenderJob on the
+            // shared engine's background thread pool: it reads this fixture's
+            // source WAV and writes a reversed proxy. If it outlives the fixture
+            // it reverses a deleted source file (hitting an internal jassertfalse)
+            // and derefs the destroyed edit, segfaulting a later unrelated test.
+            // Let any pending job finish (interrupting a reverse mid-render hits
+            // that same jassertfalse) and drain its follow-up message-thread
+            // callbacks BEFORE we destroy the edit and delete the temp WAV.
+            if (auto* engine = magda::test::getSharedEngine().getEngine())
+                engine->getBackgroundJobs().getPool().removeAllJobs(false, 10000);
+            if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
+                mm->runDispatchLoopUntil(50);
+
             // Destroy ClipSynchronizer first (unregisters listener)
             clipSync.reset();
             warpMarkerManager.reset();
