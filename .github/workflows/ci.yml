@@ -56,7 +56,7 @@ jobs:
         lfs: true
 
     - name: Cache apt packages
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/apt-cache
         key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
@@ -106,7 +106,7 @@ jobs:
         max-size: 3G
 
     - name: Cache CMake build directory
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: |
           build
@@ -171,7 +171,7 @@ jobs:
         lfs: true
 
     - name: Cache apt packages
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: /var/cache/apt/archives
         key: ${{ runner.os }}-apt-clang-${{ hashFiles('.github/workflows/ci.yml') }}
@@ -501,7 +501,7 @@ jobs:
       # Only needed on ephemeral GitHub-hosted runners; the self-hosted binary
       # cache persists locally and needs no upload/download round-trip.
       if: runner.environment == 'github-hosted'
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: .vcpkg-binary-cache
         key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
