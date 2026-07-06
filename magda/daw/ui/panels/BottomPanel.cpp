@@ -206,26 +206,6 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     };
     headerBar_->addChildComponent(overlayTracksButton_.get());
 
-    // Note preview (audition) toggle (#1705) — applies to piano roll and drum
-    // grid. When lit, clicking a note plays it through the track instrument. Off
-    // by default so normal selection stays silent. Manual active state (like the
-    // loop toggle): grey glyph off, solid blue chip with a white glyph when on.
-    previewButton_ = std::make_unique<SvgButton>("NotePreview", BinaryData::speaker_svg,
-                                                 BinaryData::speaker_svgSize);
-    previewButton_->setTooltip("Preview notes (click a note to hear it)");
-    previewButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    previewButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    previewButton_->setActiveColor(juce::Colours::white);
-    previewButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    previewButton_->setClickingTogglesState(false);  // manual active state
-    previewButton_->onClick = [this]() {
-        if (auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent())) {
-            editor->setNotePreviewEnabled(!editor->isNotePreviewEnabled());
-            updatePreviewButtonState();
-        }
-    };
-    headerBar_->addChildComponent(previewButton_.get());
-
     // Fullscreen toggle (issue #1282) — applies to piano roll and drum grid.
     fullscreenToggle_ = std::make_unique<SvgButton>("EditorFullscreen", BinaryData::enter_fs_svg,
                                                     BinaryData::enter_fs_svgSize);
@@ -323,7 +303,6 @@ BottomPanel::~BottomPanel() {
     pianoRollTab_.reset();
     drumGridTab_.reset();
     overlayTracksButton_.reset();
-    previewButton_.reset();
     fullscreenToggle_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
@@ -1233,9 +1212,6 @@ void BottomPanel::addMidiControlsToHeader() {
     }
     overlayTracksButton_->setVisible(showEditorTabs_);
     updateOverlayTracksButtonState();
-    if (previewButton_)
-        previewButton_->setVisible(showEditorTabs_);
-    updatePreviewButtonState();
 }
 
 void BottomPanel::removeMidiControlsFromHeader() {
@@ -1257,8 +1233,6 @@ void BottomPanel::hideMidiHeaderControls() {
     bendButton_->setVisible(false);
     if (overlayTracksButton_)
         overlayTracksButton_->setVisible(false);
-    if (previewButton_)
-        previewButton_->setVisible(false);
     if (fullscreenToggle_)
         fullscreenToggle_->setVisible(false);
 }
@@ -1268,13 +1242,6 @@ void BottomPanel::updateOverlayTracksButtonState() {
         return;
     auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent());
     overlayTracksButton_->setActive(editor != nullptr && editor->hasOverlayTracks());
-}
-
-void BottomPanel::updatePreviewButtonState() {
-    if (!previewButton_)
-        return;
-    auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent());
-    previewButton_->setActive(editor != nullptr && editor->isNotePreviewEnabled());
 }
 
 ClipId BottomPanel::getActiveEditingClipId() const {
@@ -1354,10 +1321,6 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
         drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
         tabX += iconSize + 12;
         overlayTracksButton_->setBounds(tabX, tabY, iconSize, iconSize);
-        if (previewButton_) {
-            tabX += iconSize + 4;
-            previewButton_->setBounds(tabX, tabY, iconSize, iconSize);
-        }
 
         // Note tools centered horizontally in header
         const int toolGap = 4;

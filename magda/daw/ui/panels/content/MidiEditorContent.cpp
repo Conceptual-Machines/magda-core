@@ -1,5 +1,7 @@
 #include "MidiEditorContent.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -10,6 +12,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
@@ -27,6 +30,14 @@ bool MidiEditorContent::velocityLaneVisible_ = false;
 bool MidiEditorContent::foldEnabled_ = false;
 bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
+
+void MidiEditorContent::syncNotePreviewToggle(magda::SvgButton& button, bool on) {
+    // Swap the glyph (plain speaker on, crossed speaker off) and drive the active
+    // state so the shared recolour picks accent blue (on) vs dimmed grey (off).
+    button.updateSvgData(on ? BinaryData::speaker_svg : BinaryData::speaker_muted_svg,
+                         on ? BinaryData::speaker_svgSize : BinaryData::speaker_muted_svgSize);
+    button.setActive(on);
+}
 
 std::vector<int> MidiEditorContent::collectUsedPitches() const {
     std::set<int> used;

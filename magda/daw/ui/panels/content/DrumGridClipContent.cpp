@@ -862,6 +862,12 @@ class DrumGridClipGrid : public juce::Component,
                 repaint();
                 return;
             }
+            // Audition the pad on press; released on mouseUp (#1705).
+            if (onNotePreview) {
+                padAuditionNote_ = (*padRows_)[static_cast<size_t>(row)].noteNumber;
+                onNotePreview(padAuditionNote_, defaultNoteVelocity_, true);
+                padAuditionActive_ = true;
+            }
         }
         dragSelectStart_ = e.getPosition();
         dragSelectEnd_ = e.getPosition();
@@ -888,6 +894,13 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void mouseUp(const juce::MouseEvent& e) override {
+        // Release the auditioned pad note before any early return (#1705).
+        if (padAuditionActive_) {
+            if (onNotePreview)
+                onNotePreview(padAuditionNote_, 0, false);
+            padAuditionActive_ = false;
+        }
+
         // Don't deselect on right-click release (context menu was shown)
         if (e.mods.isPopupMenu()) {
             return;
@@ -1100,6 +1113,10 @@ class DrumGridClipGrid : public juce::Component,
     juce::Point<int> dragSelectEnd_;
     int emptyClickRow_ = -1;
     double emptyClickBeat_ = 0.0;
+    // Audition state (#1705): pad note-on sent on an empty-cell press, released on
+    // mouseUp so the note-off matches even if the gesture turns into a drag.
+    bool padAuditionActive_ = false;
+    int padAuditionNote_ = -1;
     bool isRepeatStamping_ = false;
     int repeatStampRow_ = -1;
     double repeatStampStartBeat_ = 0.0;
@@ -2027,6 +2044,23 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(foldToggle_.get());
 
+    // Note preview toggle: when lit, clicking or adding a note auditions it
+    // through the track instrument (#1705). Off by default; shares the
+    // editor-wide static preview state with the piano roll. Speaker glyph:
+    // crossed + dimmed grey when off, plain + accent blue when on.
+    previewToggle_ = std::make_unique<magda::SvgButton>(
+        "NotePreview", BinaryData::speaker_muted_svg, BinaryData::speaker_muted_svgSize);
+    previewToggle_->setTooltip("Preview notes (click a note to hear it)");
+    previewToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    previewToggle_->onClick = [this]() {
+        setNotePreviewEnabled(!isNotePreviewEnabled());
+        syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    };
+    addAndMakeVisible(previewToggle_.get());
+
     // CC lanes button (opens the drawer + the add-lane menu) — same affordance
     // as the piano roll so drum clips can add CC / pitchbend lanes.
     ccLanesBtn_ = std::make_unique<magda::SvgButton>("CCLanes", BinaryData::iconccboldm_svg,
@@ -2425,8 +2459,11 @@ void DrumGridClipContent::resized() {
     // bottom — mirrors the piano roll's sidebar layout.
     int iconSize = 22;
     int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
+    if (previewToggle_)
+        previewToggle_->setBounds(iconPadding, RULER_HEIGHT + iconPadding, iconSize, iconSize);
     if (foldToggle_)
-        foldToggle_->setBounds(iconPadding, RULER_HEIGHT + iconPadding, iconSize, iconSize);
+        foldToggle_->setBounds(iconPadding, RULER_HEIGHT + 2 * iconPadding + iconSize, iconSize,
+                               iconSize);
     controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
                                iconSize);
     if (ccLanesBtn_)

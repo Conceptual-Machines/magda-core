@@ -220,6 +220,7 @@ class PianoRollContent : public MidiEditorContent,
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
     std::unique_ptr<magda::SvgButton> foldToggle_;
+    std::unique_ptr<magda::SvgButton> previewToggle_;  // #1705 audition notes on click
     std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;

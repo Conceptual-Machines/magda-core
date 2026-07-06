@@ -60,6 +60,23 @@ PianoRollContent::PianoRollContent() {
     };
     addAndMakeVisible(foldToggle_.get());
 
+    // Create note preview toggle: when lit, clicking or drawing a note auditions
+    // it through the track instrument (#1705). Off by default so normal selection
+    // stays silent. Shares the editor-wide static preview state. Speaker glyph:
+    // crossed + dimmed grey when off, plain + accent blue when on.
+    previewToggle_ = std::make_unique<magda::SvgButton>(
+        "NotePreview", BinaryData::speaker_muted_svg, BinaryData::speaker_muted_svgSize);
+    previewToggle_->setTooltip("Preview notes (click a note to hear it)");
+    previewToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    previewToggle_->onClick = [this]() {
+        setNotePreviewEnabled(!isNotePreviewEnabled());
+        syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    };
+    addAndMakeVisible(previewToggle_.get());
+
     // Create take-lanes toggle button (show/hide the comp take-lanes strip).
     // Only relevant for a MIDI clip with takes; shown contextually.
     takeLanesToggle_ = std::make_unique<magda::SvgButton>("TakeLanesToggle", BinaryData::lanes_svg,
@@ -934,10 +951,16 @@ void PianoRollContent::resized() {
     int chordToggleY = showChordRow_ ? chordRowTop() + (chordRowHeight() - iconSize) / 2 : padding;
     chordToggle_->setVisible(hasSidebar);
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
-    // Fold toggle directly below the chord toggle
+    // Note preview toggle directly below the chord toggle
+    if (previewToggle_) {
+        previewToggle_->setVisible(hasSidebar);
+        previewToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
+    }
+    // Fold toggle below the preview toggle
     if (foldToggle_) {
         foldToggle_->setVisible(hasSidebar);
-        foldToggle_->setBounds(padding, chordToggleY + iconSize + padding, iconSize, iconSize);
+        foldToggle_->setBounds(padding, chordToggleY + 2 * (iconSize + padding), iconSize,
+                               iconSize);
     }
     // Take-lanes toggle below the fold toggle (only when the clip has takes)
     if (takeLanesToggle_) {
@@ -947,7 +970,7 @@ void PianoRollContent::resized() {
         takeLanesToggle_->setVisible(hasTakes);
         if (hasTakes) {
             takeLanesToggle_->setActive(clip->takesExpanded);
-            takeLanesToggle_->setBounds(padding, chordToggleY + 2 * (iconSize + padding), iconSize,
+            takeLanesToggle_->setBounds(padding, chordToggleY + 3 * (iconSize + padding), iconSize,
                                         iconSize);
         }
     }

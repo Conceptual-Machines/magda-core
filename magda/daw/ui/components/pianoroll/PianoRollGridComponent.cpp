@@ -728,6 +728,10 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
             drawingNoteEndBeat_ = insertPos->beat + getDefaultNoteLengthBeats();
             drawingNoteNumber_ = insertPos->noteNumber;
             setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
+            // Audition the note being drawn (held until mouseUp). The pitch is
+            // fixed for the gesture, so the note-off matches (#1705).
+            if (onNotePreview)
+                onNotePreview(drawingNoteNumber_, defaultNoteVelocity_, true);
             repaint();
             return;
         }
@@ -776,6 +780,10 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
     }
 
     if (isDrawingNote_) {
+        // Release the auditioned draw note (fixed pitch for the gesture, #1705).
+        if (onNotePreview)
+            onNotePreview(drawingNoteNumber_, 0, false);
+
         const ClipId clipId = drawingNoteClipId_;
         MidiNote note;
         note.startBeat = std::min(drawingNoteStartBeat_, drawingNoteEndBeat_);
@@ -1978,7 +1986,7 @@ void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mod
     } else if (mods.isShiftDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
-        setMouseCursor(juce::MouseCursor::IBeamCursor);
+        setMouseCursor(juce::MouseCursor::NormalCursor);
     }
 }
 

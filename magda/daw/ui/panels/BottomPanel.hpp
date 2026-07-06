@@ -115,12 +115,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<SvgButton> overlayTracksButton_;
     void updateOverlayTracksButtonState();
 
-    // Note preview (audition) toggle (#1705): when lit, clicking a note in the
-    // piano roll or drum grid plays it through the track instrument. Visible
-    // alongside the editor tabs; shares the editor-wide static preview state.
-    std::unique_ptr<SvgButton> previewButton_;
-    void updatePreviewButtonState();
-
     // Centralised header bar — content types populate it via populateHeader()
     class HeaderBar;
     std::unique_ptr<HeaderBar> headerBar_;

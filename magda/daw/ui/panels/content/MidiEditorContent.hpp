@@ -18,6 +18,7 @@ class TimeRuler;
 class VelocityLaneComponent;
 class MidiDrawerComponent;
 class MidiBridge;
+class SvgButton;
 struct MidiNoteEvent;
 }  // namespace magda
 
@@ -157,6 +158,10 @@ class MidiEditorContent : public PanelContent,
     void setNotePreviewEnabled(bool enabled) {
         notePreviewEnabled_ = enabled;
     }
+    // Update a gutter preview toggle to reflect `on`: crossed speaker in dimmed
+    // grey when off, plain speaker in accent blue when on (glyph + colour). Shared
+    // by the piano roll and drum grid so both toggles read identically (#1705).
+    static void syncNotePreviewToggle(magda::SvgButton& button, bool on);
 
   protected:
     // --- Shared state ---
