@@ -2530,12 +2530,15 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
     // Chord clips follow the chord track's colour live (rather than the colour
     // snapshotted onto clip->colour at creation), so their notes match the
     // chord-lane blocks even after the track colour changes.
-    juce::Colour base = clip->colour;
+    // Render the normalized track/clip swatch (deriveTrackSwatch), the same as
+    // the arrangement clip and the colour swatch, so notes match the clip rather
+    // than showing the raw picked colour (#1706).
+    juce::Colour base = deriveTrackSwatch(clip->colour);
     if (const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
         track != nullptr && track->type == TrackType::Chord)
-        base = track->colour;
+        base = deriveTrackSwatch(track->colour);
 
-    // Use the colour as-is, but slightly desaturated for multi-clip view
+    // Slightly desaturated for multi-clip view so overlaid clips stay distinct.
     return clipIds_.size() == 1 ? base : base.withSaturation(0.7f);
 }
 

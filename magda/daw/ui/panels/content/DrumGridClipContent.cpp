@@ -1435,9 +1435,10 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !clip->isMidi() || !padRows_)
             return;
 
-        // Notes take the clip's colour (velocity ramps its brightness), matching
-        // the piano roll instead of a fixed blue (#1706).
-        auto noteColour = clip->colour;
+        // Notes take the clip's normalized swatch colour (deriveTrackSwatch),
+        // matching the piano roll, the arrangement clip and the colour swatch;
+        // velocity ramps its brightness (#1706).
+        auto noteColour = magda::deriveTrackSwatch(clip->colour);
 
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
             auto visibleNote = clip->midiNotes[i];
@@ -1687,9 +1688,10 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !padRows_)
             return;
 
-        // Notes take the clip's colour (velocity ramps its brightness), matching
-        // the piano roll instead of a fixed blue (#1706).
-        auto noteColour = clip->colour;
+        // Notes take the clip's normalized swatch colour (deriveTrackSwatch),
+        // matching the piano roll, the arrangement clip and the colour swatch;
+        // velocity ramps its brightness (#1706).
+        auto noteColour = magda::deriveTrackSwatch(clip->colour);
 
         for (auto& noteComp : noteComponents_) {
             size_t noteIndex = noteComp->getNoteIndex();
