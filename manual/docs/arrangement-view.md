@@ -110,12 +110,12 @@ The ruler above the tracks shows bars and beats, with the loop region and playhe
 
 ### Selection
 
-- **Time selection** — Click and drag on the timeline ruler to select a time range
-- **Loop region** — Displayed as an overlay on the timeline; set from selection with ++ctrl+shift+l++ (++cmd+shift+l++)
+- **Time selection** - Click and drag on the timeline ruler to select a time range. The selection is drawn as a spotlight: everything outside the range dims while clip colours stay true, and the range edges read as near-white. Drag the endpoint handles to adjust the range.
+- **Loop region** - Set from the selection with ++ctrl+shift+l++ (++cmd+shift+l++). It is drawn as a quiet rail with bright glowing caps at each end, the same in the arrangement ruler and in the clip-editor ruler. Drag the caps to move the loop bounds.
 
 ### Playhead
 
-The playhead shows the current playback position. Click on the timeline ruler to reposition it. Press ++home++ to return to the start.
+The playhead shows the current playback position. Click on the timeline ruler to reposition it. Press ++home++ to return to the start. The play and edit cursors are drawn a consistent near-white across every editor.
 
 !!! note "Edit Cursor"
     The **edit cursor** is a white blinking line separate from the playhead. Place it with ++alt+"click"++ on the timeline ruler or inside a clip. It marks the position for operations like **Split** (++cmd+e++). Press ++escape++ to hide it. The MIDI editor has its own independent edit cursor — placing one in the piano roll or drum grid does not affect the arrangement cursor.
@@ -142,6 +142,21 @@ When a time selection is active (drag on the timeline ruler), operations apply t
 
 !!! note
     When a time selection exists, Split/Trim affects all clips that overlap the selection — not just selected clips. Clear the time selection to return to clip-based editing.
+
+## Range Editing
+
+Range edits work on a span of time and ripple everything after it, rather than editing clips in place. They act on the current time selection or the loop range.
+
+| Operation | What it does |
+|-----------|--------------|
+| **Insert Time** | Opens a gap at the selection and pushes later clips to the right, splitting any that straddle the insert point. |
+| **Duplicate Time Range** | Copies the selected span and ripple-inserts the copy directly after it. |
+| **Duplicate Loop Range** | Same as above for the loop span. A grow-vs-advance option in [Preferences](interface/preferences.md) chooses whether the loop grows to cover the copy or advances past it. |
+| **Split All Tracks at Cursor** | Splits every track at the edit cursor. |
+
+A **Range Editing** submenu, in the **Edit** menu and in the right-click menus on clips and on empty arrangement space, offers **Copy**, **Cut**, **Delete**, and **Paste (Ripple)** for both the time selection and the loop range.
+
+Range operations ripple the global tempo, time-signature, and pitch-bend curves along with the clips, so tempo and key changes travel with the music instead of staying pinned to the timeline. Beat-anchored clips keep their bar and beat position under the shifted tempo map. Markers ripple along with the clips on global operations.
 
 ## Editing
 

@@ -13,6 +13,7 @@ The Plugin Browser shows all available audio plugins organized in a tree view.
 - **Tree view** — Plugins organized by manufacturer and category
 - **Search** — Type to filter by plugin name
 - **Favorites** — Star plugins for quick access
+- **Folders** - Switch to a Folders view mode and organize plugins into your own folders. Folders stay in creation order and remain drop targets even when empty; an **Unfiled** bucket holds everything you have not filed.
 
 ### Adding Plugins
 
@@ -24,6 +25,8 @@ The Plugin Browser shows all available audio plugins organized in a tree view.
 - VST3
 - Audio Units (AU) — macOS only
 - VST (legacy)
+
+On macOS, when a plugin is installed as both VST3 and AU, the browser shows only your preferred format. See [Preferred Plugin Format](../interface/plugin-settings.md#preferred-plugin-format-macos).
 
 ### Rescanning
 

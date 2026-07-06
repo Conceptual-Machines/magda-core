@@ -13,6 +13,12 @@ Lists the default system paths where MAGDA looks for VST3 plugins. These are rea
 
 Add extra folders for MAGDA to search when scanning for plugins. Use the **Add...** button to browse for a directory and **Remove** to delete the selected entry.
 
+## Preferred Plugin Format (macOS)
+
+When the same external plugin is installed as both a VST3 and an Audio Unit, MAGDA can collapse the pair to one entry. The **Preferred plugin format** selector (macOS only) offers **Prefer VST3** or **Prefer Audio Unit**, and applies to browsing and to default plugin lookup.
+
+Projects you have already saved still load whichever exact plugin they referenced, regardless of this setting.
+
 ## Scanning
 
 - **Scan for Plugins** — Start a full scan of all listed directories. A progress bar shows scan progress.
