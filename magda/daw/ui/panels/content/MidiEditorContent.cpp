@@ -291,7 +291,7 @@ MidiEditorContent::MidiEditorContent() {
 
         double positionBeats = absoluteSeconds * tempo / 60.0;
         if (!bypassSnap)
-            positionBeats = state.snapBeatsToGrid(positionBeats);
+            positionBeats = snapBeatToGrid(positionBeats);
         controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
     };
 

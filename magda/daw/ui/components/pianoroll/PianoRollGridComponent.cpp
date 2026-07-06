@@ -837,9 +837,9 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         const int deltaX = std::abs(e.x - playheadClickStart_.x);
         const int deltaY = std::abs(e.y - playheadClickStart_.y);
         if (juce::jmax(deltaX, deltaY) <= PLAYHEAD_CLICK_DRAG_THRESHOLD) {
+            const double beat = absolutePlayheadBeatForDisplayX(playheadClickStart_.x);
             if (onPlayheadPositionBeatsChanged)
-                onPlayheadPositionBeatsChanged(
-                    absolutePlayheadBeatForDisplayX(playheadClickStart_.x), !playheadClickNoSnap_);
+                onPlayheadPositionBeatsChanged(beat, !playheadClickNoSnap_);
         }
     }
     isPendingPlayheadClick_ = false;
