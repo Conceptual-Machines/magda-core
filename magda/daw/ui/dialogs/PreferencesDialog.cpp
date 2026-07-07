@@ -176,11 +176,14 @@ class GeneralPage : public juce::Component {
         setupToggle(*this, autoMonitorToggle, tr("preferences.toggle.auto_monitor"));
         setupToggle(*this, openMacrosOnSelectToggle,
                     tr("preferences.toggle.open_macros_on_select"));
+        setupToggle(*this, duplicateLoopGrowsToggle, tr("preferences.toggle.duplicate_loop_grows"));
         setupToggle(*this, showTooltipsToggle, tr("preferences.toggle.show_tooltips"));
         setupToggle(*this, openPluginWindowOnDropToggle,
                     tr("preferences.toggle.open_plugin_window_on_drop"));
         setupToggle(*this, chordPreviewDefaultToggle,
                     tr("preferences.toggle.chord_preview_default"));
+        setupToggle(*this, autoCrossfadeDefaultToggle,
+                    tr("preferences.toggle.auto_crossfade_default"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
         setupComboLabel(languageLabel, tr("preferences.language.label"));
@@ -276,11 +279,15 @@ class GeneralPage : public juce::Component {
                                          juce::dontSendNotification);
         openMacrosOnSelectToggle.setToggleState(config.getOpenMacrosOnSelect(),
                                                 juce::dontSendNotification);
+        duplicateLoopGrowsToggle.setToggleState(config.getDuplicateLoopGrows(),
+                                                juce::dontSendNotification);
         showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
         openPluginWindowOnDropToggle.setToggleState(config.getOpenPluginWindowOnDrop(),
                                                     juce::dontSendNotification);
         chordPreviewDefaultToggle.setToggleState(config.getChordPreviewOnByDefault(),
                                                  juce::dontSendNotification);
+        autoCrossfadeDefaultToggle.setToggleState(config.getAutoCrossfadeByDefault(),
+                                                  juce::dontSendNotification);
 
         languageCombo.clear(juce::dontSendNotification);
         availableLanguages_.clear();
@@ -327,9 +334,11 @@ class GeneralPage : public juce::Component {
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());
+        config.setDuplicateLoopGrows(duplicateLoopGrowsToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
         config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
+        config.setAutoCrossfadeByDefault(autoCrossfadeDefaultToggle.getToggleState());
 
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
@@ -368,7 +377,7 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
-               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 6) + 16 + secGap + headerH + 4 +
+               headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 7) + 16 + secGap + headerH + 4 +
                rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
     }
 
@@ -393,7 +402,7 @@ class GeneralPage : public juce::Component {
         constexpr int secGap = 12;
 
         return padding + headerH + 4 + rowH + 4 + rowH              // Layout
-               + secGap + headerH + 4 + (rowH * 6) + 20             // Behaviour
+               + secGap + headerH + 4 + (rowH * 7) + 20             // Behaviour
                + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH  // Display Scale
                + padding;
     }
@@ -449,11 +458,15 @@ class GeneralPage : public juce::Component {
         bounds.removeFromTop(4);
         openMacrosOnSelectToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
+        duplicateLoopGrowsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
         showTooltipsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         openPluginWindowOnDropToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         chordPreviewDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        autoCrossfadeDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
         // Language
@@ -538,11 +551,15 @@ class GeneralPage : public juce::Component {
         right.removeFromTop(4);
         openMacrosOnSelectToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
+        duplicateLoopGrowsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
         showTooltipsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         openPluginWindowOnDropToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(secGap);
 
         // Display Scale
@@ -642,9 +659,11 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
+    juce::ToggleButton duplicateLoopGrowsToggle;
     juce::ToggleButton showTooltipsToggle;
     juce::ToggleButton openPluginWindowOnDropToggle;
     juce::ToggleButton chordPreviewDefaultToggle;
+    juce::ToggleButton autoCrossfadeDefaultToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
     juce::Label restartHint;

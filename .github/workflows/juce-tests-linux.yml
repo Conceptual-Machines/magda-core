@@ -19,16 +19,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Hash the compiler's CONTENT, not its mtime, when keying ccache objects.
-  # GitHub-hosted Linux runners reprovision the compiler on each run, so mtime
-  # changes even when the compiler bytes are identical. With ccache's default
-  # compiler_check=mtime, restored caches were 100% misses.
-  CCACHE_COMPILERCHECK: content
-
 jobs:
   juce-tests-linux:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # assume the sccache S3 role via OIDC
+      contents: read
 
     steps:
     - uses: actions/checkout@v7
@@ -62,15 +58,57 @@ jobs:
           mesa-common-dev \
           xvfb
 
-    - name: Setup ccache
-      uses: hendrikmuhs/ccache-action@v1.2
+    # Compile cache: sccache backed by S3 (see infra/sccache), sharing the
+    # linux key prefix with the main CI job so common translation units hit.
+    - name: Configure AWS credentials (sccache S3, OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        key: ${{ runner.os }}-juce-ccache-content-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-juce-ccache-content-
-        # Default 500 MB cap thrashes on this project; hold the whole build.
-        # Kept under the 10G repo cache budget shared with the other caches.
-        max-size: 3G
+        role-to-assume: ${{ secrets.AWS_SCCACHE_ROLE_ARN }}
+        aws-region: eu-west-2
+
+    - name: Setup sccache
+      env:
+        SCCACHE_BUCKET_SECRET: ${{ secrets.SCCACHE_BUCKET }}
+      run: |
+        SCCACHE_VERSION=v0.8.1
+        curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar xz
+        sudo mv sccache-*/sccache /usr/local/bin/sccache
+        sccache --version
+        {
+          echo "SCCACHE_BUCKET=${SCCACHE_BUCKET_SECRET}"
+          echo "SCCACHE_REGION=eu-west-2"
+          echo "SCCACHE_S3_KEY_PREFIX=linux"
+        } >> "$GITHUB_ENV"
+
+    # Faust/Mutable prebuilt artifacts (#1669): magda_juce_tests links magda_daw
+    # for its JUCE UI/audio-driver coverage, not for Faust/Mutable DSP, but it
+    # inherits their full source builds anyway. Cache the final build outputs
+    # (fixed, submodule-relative paths - see the top-level CMakeLists.txt) keyed
+    # on the exact submodule revision + compiler + backend/build-type, with no
+    # restore-keys fallback: an approximate match could silently restore an
+    # artifact built with a different ABI, which is worse than a rebuild.
+    - name: Determine Faust/Mutable artifact cache keys
+      id: dsp-cache-keys
+      run: |
+        echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache prebuilt Faust artifact
+      id: faust-cache
+      uses: actions/cache@v6
+      with:
+        path: |
+          third_party/faust/build/bin
+          third_party/faust/build/lib
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug
+
+    - name: Cache prebuilt Mutable artifact
+      id: mutable-cache
+      uses: actions/cache@v6
+      with:
+        path: third_party/eurorack/build/lib
+        key: ${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug
 
     - name: Configure CMake
       run: |
@@ -78,8 +116,10 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+          ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
+          ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
     - name: Build JUCE tests
       run: cmake --build build-juce --target magda_juce_tests --config Debug -j$(nproc)
@@ -94,5 +134,5 @@ jobs:
 
         xvfb-run -a "$JUCE_TEST_BIN"
 
-    - name: Show ccache statistics
-      run: ccache -s
+    - name: Show sccache statistics
+      run: sccache --show-stats

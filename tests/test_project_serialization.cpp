@@ -1161,6 +1161,84 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
     }
 }
 
+TEST_CASE("normalizeForType clears input state on input-less tracks",
+          "[project][tracks][invariants]") {
+    SECTION("Group track loses external input, monitor, and record-arm") {
+        TrackInfo group;
+        group.type = TrackType::Group;
+        group.recordArmed = true;
+        group.inputMonitor = InputMonitorMode::In;
+        group.midiInputDevice = "all";
+        group.audioInputDevice = "input:1";
+
+        group.normalizeForType();
+
+        REQUIRE(group.recordArmed == false);
+        REQUIRE(group.inputMonitor == InputMonitorMode::Off);
+        REQUIRE(group.midiInputDevice.isEmpty());
+        REQUIRE(group.audioInputDevice.isEmpty());
+    }
+
+    SECTION("Aux track loses external input, monitor, and record-arm") {
+        TrackInfo aux;
+        aux.type = TrackType::Aux;
+        aux.recordArmed = true;
+        aux.inputMonitor = InputMonitorMode::Auto;
+        aux.midiInputDevice = "all";
+        aux.audioInputDevice = "input:2";
+
+        aux.normalizeForType();
+
+        REQUIRE(aux.recordArmed == false);
+        REQUIRE(aux.inputMonitor == InputMonitorMode::Off);
+        REQUIRE(aux.midiInputDevice.isEmpty());
+        REQUIRE(aux.audioInputDevice.isEmpty());
+    }
+
+    SECTION("Input-taking track keeps its input state") {
+        TrackInfo audio;
+        audio.type = TrackType::Audio;
+        audio.recordArmed = true;
+        audio.inputMonitor = InputMonitorMode::In;
+        audio.midiInputDevice = "all";
+        audio.audioInputDevice = "input:3";
+
+        audio.normalizeForType();
+
+        REQUIRE(audio.recordArmed == true);
+        REQUIRE(audio.inputMonitor == InputMonitorMode::In);
+        REQUIRE(audio.midiInputDevice == "all");
+        REQUIRE(audio.audioInputDevice == "input:3");
+    }
+}
+
+TEST_CASE("Restoring a legacy group track normalizes stale input state",
+          "[project][tracks][invariants][restore]") {
+    ProjectTestFixture fixture;
+    auto& trackManager = TrackManager::getInstance();
+
+    // Simulate a group track saved before the input-less invariant existed:
+    // it carries record-arm, input monitoring, and MIDI/audio input routing.
+    TrackInfo legacyGroup;
+    legacyGroup.id = 4200;
+    legacyGroup.type = TrackType::Group;
+    legacyGroup.name = "Legacy Group";
+    legacyGroup.recordArmed = true;
+    legacyGroup.inputMonitor = InputMonitorMode::In;
+    legacyGroup.midiInputDevice = "all";
+    legacyGroup.audioInputDevice = "input:1";
+
+    trackManager.restoreTrack(legacyGroup);
+
+    const auto* restored = trackManager.getTrack(4200);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->type == TrackType::Group);
+    REQUIRE(restored->recordArmed == false);
+    REQUIRE(restored->inputMonitor == InputMonitorMode::Off);
+    REQUIRE(restored->midiInputDevice.isEmpty());
+    REQUIRE(restored->audioInputDevice.isEmpty());
+}
+
 TEST_CASE("Project File Format", "[project][serialization][file]") {
     ProjectTestFixture fixture;
 

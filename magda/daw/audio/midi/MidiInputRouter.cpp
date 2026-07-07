@@ -1,8 +1,8 @@
 #include "midi/MidiInputRouter.hpp"
 
 #include <functional>
+#include <unordered_set>
 
-#include "../../core/ClipManager.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
 #include "TrackController.hpp"
@@ -25,11 +25,188 @@ te::InputDevice::MonitorMode toTeMonitorMode(InputMonitorMode mode) {
     }
 }
 
+te::MidiInputDevice* getLiveMidiInputDevice(te::Engine& engine,
+                                            te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (const auto& midiInput : engine.getDeviceManager().getMidiInDevices()) {
+        if (midiInput && midiInput.get() == owner)
+            return midiInput.get();
+    }
+
+    return nullptr;
+}
+
+te::MidiInputDevice* getLiveTrackMidiInputDevice(TrackController& trackController,
+                                                 te::InputDeviceInstance* inputDeviceInstance,
+                                                 TrackId* sourceTrackId = nullptr) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    te::MidiInputDevice* result = nullptr;
+    trackController.withTrackMapping([&](const auto& mapping) {
+        for (const auto& [magdaId, teTrack] : mapping) {
+            if (!teTrack)
+                continue;
+            auto* midiInput = &teTrack->getMidiInputDevice();
+            if (midiInput == owner) {
+                if (sourceTrackId)
+                    *sourceTrackId = magdaId;
+                result = midiInput;
+                return;
+            }
+        }
+    });
+
+    return result;
+}
+
+te::InputDevice* getLiveInputDevice(te::Engine& engine,
+                                    te::InputDeviceInstance* inputDeviceInstance) {
+    if (auto* midiInput = getLiveMidiInputDevice(engine, inputDeviceInstance))
+        return midiInput;
+
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
+        if (waveInput == owner)
+            return waveInput;
+    }
+
+    return nullptr;
+}
+
+te::WaveInputDevice* getLiveTrackWaveInputDevice(TrackController& trackController,
+                                                 te::InputDeviceInstance* inputDeviceInstance) {
+    if (!inputDeviceInstance)
+        return nullptr;
+
+    auto* owner = &inputDeviceInstance->owner;
+    te::WaveInputDevice* result = nullptr;
+    trackController.withTrackMapping([&](const auto& mapping) {
+        for (const auto& [magdaId, teTrack] : mapping) {
+            if (!teTrack)
+                continue;
+            auto* waveInput = &teTrack->getWaveInputDevice();
+            if (waveInput == owner) {
+                result = waveInput;
+                return;
+            }
+        }
+    });
+
+    return result;
+}
+
 }  // namespace
 
 MidiInputRouter::MidiInputRouter(te::Engine& engine, te::Edit& edit,
                                  TrackController& trackController)
     : engine_(engine), edit_(edit), trackController_(trackController) {}
+
+MidiInputRouter::~MidiInputRouter() {
+    cancelPendingUpdate();
+
+    // Unhook preview consumers from any live input instances before the
+    // consumer objects are destroyed. removeConsumer takes the same lock the
+    // audio-thread callback iteration holds, so after this no callback can be
+    // touching them.
+    if (auto* playbackContext = edit_.getCurrentPlaybackContext()) {
+        for (auto* inputDeviceInstance : playbackContext->getAllInputs())
+            for (auto& [sourceTrackId, consumer] : trackMidiPreviewConsumers_)
+                if (consumer)
+                    inputDeviceInstance->removeConsumer(consumer.get());
+    }
+}
+
+void MidiInputRouter::setRecordingQueue(RecordingNoteQueue* queue,
+                                        std::atomic<double>* transportPosition) {
+    recordingQueue_ = queue;
+    transportPositionForMidi_ = transportPosition;
+    for (auto& [sourceTrackId, consumer] : trackMidiPreviewConsumers_)
+        if (consumer)
+            consumer->configure(queue, transportPosition);
+}
+
+TrackId MidiInputRouter::resolveTargetTrackId(te::EditItemID targetID) const {
+    TrackId result = INVALID_TRACK_ID;
+    trackController_.withTrackMapping([&](const auto& mapping) {
+        for (const auto& [magdaId, teTrack] : mapping) {
+            if (!teTrack)
+                continue;
+            if (teTrack->itemID == targetID) {
+                result = magdaId;
+                return;
+            }
+            // Session-slot recording targets the slot, not the track.
+            for (auto* slot : teTrack->getClipSlotList().getClipSlots()) {
+                if (slot && slot->itemID == targetID) {
+                    result = magdaId;
+                    return;
+                }
+            }
+        }
+    });
+    return result;
+}
+
+void MidiInputRouter::syncTrackMidiPreviewConsumers() {
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext)
+        return;
+
+    auto& tm = TrackManager::getInstance();
+
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        TrackId sourceTrackId = INVALID_TRACK_ID;
+        if (!getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance, &sourceTrackId))
+            continue;
+
+        // Preview events are only wanted for armed destinations (mirrors
+        // MidiBridge's recordArmed gate), so un-armed monitoring doesn't fill
+        // the queue with events nobody drains.
+        std::vector<TrackId> armedTargets;
+        for (auto targetID : inputDeviceInstance->getTargets()) {
+            const TrackId destTrackId = resolveTargetTrackId(targetID);
+            if (destTrackId == INVALID_TRACK_ID)
+                continue;
+            const auto* destInfo = tm.getTrack(destTrackId);
+            if (!destInfo || !destInfo->recordArmed)
+                continue;
+            if (std::find(armedTargets.begin(), armedTargets.end(), destTrackId) ==
+                armedTargets.end())
+                armedTargets.push_back(destTrackId);
+        }
+
+        auto& consumer = trackMidiPreviewConsumers_[sourceTrackId];
+        if (!consumer)
+            consumer = std::make_unique<TrackMidiPreviewConsumer>();
+
+        consumer->configure(recordingQueue_, transportPositionForMidi_);
+        consumer->setArmedTargets(armedTargets);
+
+        // addConsumer is idempotent (addIfNotAlreadyThere), so re-adding every
+        // sync keeps registration alive across playback-context/instance
+        // recreation (restartAllTransports, device list rebuilds).
+        if (armedTargets.empty())
+            inputDeviceInstance->removeConsumer(consumer.get());
+        else
+            inputDeviceInstance->addConsumer(consumer.get());
+    }
+}
+
+void MidiInputRouter::requestInputMonitorResync() {
+    triggerAsyncUpdate();
+}
+
+void MidiInputRouter::handleAsyncUpdate() {
+    resyncAllInputMonitors();
+}
 
 te::VirtualMidiInputDevice* MidiInputRouter::getQwertyMidiDevice() {
     if (!qwertyMidiDevice_) {
@@ -116,7 +293,7 @@ void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
     auto& tm = TrackManager::getInstance();
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        if (auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+        if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
             if (!isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()))
                 continue;
 
@@ -149,9 +326,56 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
 
     if (midiDeviceId.isEmpty()) {
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) [[maybe_unused]]
+            if (getLiveMidiInputDevice(engine_, inputDeviceInstance) ||
+                getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance)) [[maybe_unused]]
                 auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
         }
+    } else if (midiDeviceId.startsWith("track:")) {
+        // Route another track's MIDI output as input (internal routing)
+        TrackId sourceTrackId =
+            midiDeviceId.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        auto* sourceTrack = trackController_.getAudioTrack(sourceTrackId);
+
+        // Clear existing MIDI input targets first (hardware + track MIDI) so
+        // switching inputs doesn't accumulate targets
+        for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+            if (getLiveMidiInputDevice(engine_, inputDeviceInstance) ||
+                getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance)) [[maybe_unused]]
+                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+        }
+
+        if (sourceTrack) {
+            auto* dest =
+                te::assignTrackAsInput(*track, *sourceTrack, te::InputDevice::trackMidiDevice);
+            if (dest) {
+                dest->recordEnabled = false;  // Arming happens separately
+
+                // te::assignTrackAsInput leaves the source track's MIDI device
+                // disabled until TE's async trackDeviceEnabler runs, and the
+                // device defaults to MonitorMode::automatic (thru only while
+                // recording). The reallocate below would then build a graph
+                // without the source-side tap and with monitoring off — enable
+                // the device and apply the destination's monitor mode first.
+                auto& sourceDevice = sourceTrack->getMidiInputDevice();
+                if (!sourceDevice.isEnabled())
+                    sourceDevice.setEnabled(true);
+                auto teMonitorMode = te::InputDevice::MonitorMode::on;
+                if (auto* destInfo = TrackManager::getInstance().getTrack(trackId))
+                    teMonitorMode = toTeMonitorMode(destInfo->inputMonitor);
+                sourceDevice.setMonitorMode(teMonitorMode);
+
+                DBG("MidiInputRouter: assigned track " << sourceTrackId << " as MIDI input for "
+                                                       << trackId);
+            } else {
+                DBG("MidiInputRouter: assignTrackAsInput returned null for source track "
+                    << sourceTrackId);
+            }
+        } else {
+            DBG("MidiInputRouter: source track not found: " << sourceTrackId);
+        }
+
+        if (playbackContext->isPlaybackGraphAllocated())
+            playbackContext->reallocate();
     } else if (midiDeviceId == "all") {
         bool addedAnyRouting = false;
         bool removedAnyRouting = false;
@@ -161,8 +385,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
             teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-            if (auto* midiDevice =
-                    dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+            if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
@@ -253,6 +476,8 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
         if (addedRouting && playbackContext->isPlaybackGraphAllocated())
             playbackContext->reallocate();
     }
+
+    syncTrackMidiPreviewConsumers();
 }
 
 bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex,
@@ -289,10 +514,27 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
 
     const auto teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 
+    // Internal track routing: the usable instance is the configured source
+    // track's MIDI input device rather than a hardware device
+    const bool usesTrackMidiInput = trackInfo->midiInputDevice.startsWith("track:");
+    const TrackId configuredSourceId =
+        usesTrackMidiInput
+            ? TrackId(trackInfo->midiInputDevice.fromFirstOccurrenceOf("track:", false, false)
+                          .getIntValue())
+            : INVALID_TRACK_ID;
+
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner);
-        if (!midiDevice || !shouldUseDevice(*midiDevice))
+        auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance);
+        if (usesTrackMidiInput) {
+            TrackId sourceTrackId = INVALID_TRACK_ID;
+            auto* trackMidiDevice =
+                getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance, &sourceTrackId);
+            if (!trackMidiDevice || sourceTrackId != configuredSourceId)
+                continue;
+            midiDevice = trackMidiDevice;
+        } else if (!midiDevice || !shouldUseDevice(*midiDevice)) {
             continue;
+        }
 
         if (enabled) {
             if (!midiDevice->isEnabled())
@@ -348,6 +590,8 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
     if (changedRouting && playbackContext->isPlaybackGraphAllocated())
         playbackContext->reallocate();
 
+    syncTrackMidiPreviewConsumers();
+
     return enabled ? armedSlot : true;
 }
 
@@ -367,7 +611,7 @@ void MidiInputRouter::setSurfaceOnlyMidiInputPort(const juce::String& midiDevice
     }
 
     removeSurfaceOnlyMidiInputTargets();
-    updateForSelection();
+    updateMidiInputRouting();
 }
 
 void MidiInputRouter::clearSurfaceOnlyMidiInputPorts() {
@@ -376,7 +620,7 @@ void MidiInputRouter::clearSurfaceOnlyMidiInputPorts() {
         surfaceOnlyMidiInputPorts_.clear();
     }
 
-    updateForSelection();
+    updateMidiInputRouting();
 }
 
 juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
@@ -388,13 +632,24 @@ juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
     if (!playbackContext)
         return {};
 
+    // Internal track routing takes precedence over hardware devices
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        TrackId sourceTrackId = INVALID_TRACK_ID;
+        if (getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance, &sourceTrackId)) {
+            for (auto targetID : inputDeviceInstance->getTargets()) {
+                if (targetID == track->itemID)
+                    return "track:" + juce::String(sourceTrackId);
+            }
+        }
+    }
+
     juce::StringArray midiInputs;
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-        if (dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+        if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
             auto targets = inputDeviceInstance->getTargets();
             for (auto targetID : targets) {
                 if (targetID == track->itemID)
-                    midiInputs.add(inputDeviceInstance->owner.getName());
+                    midiInputs.add(midiDevice->getName());
             }
         }
     }
@@ -407,31 +662,38 @@ juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
     return "all";
 }
 
-void MidiInputRouter::updateForSelection() {
+void MidiInputRouter::updateMidiInputRouting() {
     auto& tm = TrackManager::getInstance();
-    auto selectedTrackId = tm.getSelectedTrack();
 
-    TrackId midiTrackId = selectedTrackId;
-    if (midiTrackId != INVALID_TRACK_ID) {
-        const auto* selectedTrack = tm.getTrack(midiTrackId);
-        if (selectedTrack && selectedTrack->type == TrackType::MultiOut &&
-            selectedTrack->hasParent()) {
-            midiTrackId = selectedTrack->parentId;
-        }
-    }
-    if (midiTrackId == INVALID_TRACK_ID) {
-        auto selectedClipId = ClipManager::getInstance().getSelectedClip();
-        if (selectedClipId != INVALID_CLIP_ID) {
-            if (auto* clip = ClipManager::getInstance().getClip(selectedClipId))
-                midiTrackId = clip->trackId;
-        }
+    // A track receives live MIDI input purely from its own input-monitor state
+    // (In/Auto) or because it is record-armed. Selection does NOT gate this: a
+    // monitored track keeps listening whether or not it is the selected track.
+    // MultiOut child tracks forward their MIDI to the parent that hosts the
+    // instrument, so their want is expressed against the parent id.
+    std::unordered_set<TrackId> midiTargets;
+    for (const auto& track : tm.getTracks()) {
+        if (!track.takesExternalInput())
+            continue;
+
+        if (!track.receivesLiveMidiInput())
+            continue;
+
+        TrackId target = track.id;
+        if (track.type == TrackType::MultiOut && track.hasParent())
+            target = track.parentId;
+        midiTargets.insert(target);
     }
 
     for (const auto& track : tm.getTracks()) {
-        if (track.type == TrackType::Aux)
+        if (!track.takesExternalInput())
             continue;
 
-        bool shouldReceiveMidi = (track.id == midiTrackId) || track.recordArmed;
+        // Explicit internal routing is managed by setTrackMidiInput — don't
+        // overlay it with "all" hardware inputs or tear it down here.
+        if (track.midiInputDevice.startsWith("track:"))
+            continue;
+
+        bool shouldReceiveMidi = midiTargets.count(track.id) > 0;
 
         std::function<bool(const std::vector<ChainElement>&)> checkElements;
         checkElements = [&](const std::vector<ChainElement>& elements) -> bool {
@@ -482,6 +744,7 @@ void MidiInputRouter::resyncAllInputMonitors() {
         return;
 
     auto& tm = TrackManager::getInstance();
+    std::vector<std::pair<te::InputDevice*, te::InputDevice::MonitorMode>> pendingModes;
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
         bool anyIn = false;
@@ -513,8 +776,27 @@ void MidiInputRouter::resyncAllInputMonitors() {
         else if (anyAuto)
             teMode = te::InputDevice::MonitorMode::automatic;
 
-        inputDeviceInstance->owner.setMonitorMode(teMode);
+        // Hardware devices live in the DeviceManager; track-as-input devices
+        // (audio or MIDI) are owned by the source track, so fall back to the
+        // track mapping — otherwise "track:" inputs keep TE's default
+        // "automatic" mode and only monitor while recording.
+        te::InputDevice* inputDevice = getLiveInputDevice(engine_, inputDeviceInstance);
+        if (!inputDevice)
+            inputDevice = getLiveTrackWaveInputDevice(trackController_, inputDeviceInstance);
+        if (!inputDevice)
+            inputDevice = getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance);
+        if (inputDevice)
+            pendingModes.emplace_back(inputDevice, teMode);
     }
+
+    // Apply AFTER iterating: setMonitorMode() calls
+    // TransportControl::restartAllTransports(), which can stop an active
+    // recording and rebuild the playback context's input instances —
+    // mutating the very container we're walking above. Device pointers are
+    // stable (hardware devices belong to the DeviceManager, track devices
+    // to their source AudioTrack), so applying from a snapshot is safe.
+    for (auto& [inputDevice, teMode] : pendingModes)
+        inputDevice->setMonitorMode(teMode);
 }
 
 void MidiInputRouter::onMidiDevicesAvailable() {
@@ -557,8 +839,14 @@ void MidiInputRouter::handlePlaybackContextTick() {
     if (currentContext != lastPlaybackContext_) {
         lastPlaybackContext_ = currentContext;
         if (currentContext != nullptr)
-            updateForSelection();
+            updateMidiInputRouting();
     }
+
+    // Keep track-MIDI preview consumers registered/armed. Runs every tick:
+    // input instances are recreated behind our back (restartAllTransports on
+    // monitor-mode changes, device-list rebuilds) and arm state changes are
+    // not routed through this class, so reconciliation is the robust model.
+    syncTrackMidiPreviewConsumers();
 }
 
 }  // namespace magda

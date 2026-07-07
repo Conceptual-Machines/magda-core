@@ -4,12 +4,13 @@
 
 namespace magda {
 
-/// Abstract view onto ProjectManager — read-only project info today.
+/// Abstract view onto ProjectManager.
 class ProjectApi {
   public:
     virtual ~ProjectApi() = default;
 
     virtual const ProjectInfo& getCurrentProjectInfo() const = 0;
+    virtual void setTempo(double bpm) = 0;
 };
 
 }  // namespace magda

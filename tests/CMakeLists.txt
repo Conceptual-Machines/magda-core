@@ -14,12 +14,14 @@ set(TEST_SOURCES
     test_interfaces.cpp
     test_midi_clip_sync.cpp
     test_midi_clip_split.cpp
+    test_midi_legato.cpp
     test_midi_offset.cpp
     test_pianoroll_note_position.cpp
     test_nested_racks.cpp
     test_rack_audio.cpp
     test_modulation.cpp
     test_control_target.cpp
+    test_tempo_sequence_ripple_math.cpp
     test_chain_fingerprint.cpp
     test_chain_routing_model.cpp
     test_post_fx_chain.cpp
@@ -35,9 +37,11 @@ set(TEST_SOURCES
     test_prune_missing_plugins.cpp
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp
+    test_device_ui_context.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
+    test_clip_crossfades.cpp
     test_clip_resize_operations.cpp
     test_midi_clip_resize_left.cpp
     test_looped_waveform_tile.cpp
@@ -62,8 +66,12 @@ set(TEST_SOURCES
     test_scale_detection.cpp
     test_step_clock.cpp
     test_string_table.cpp
+    # Arrangement pointer hit tester (#1719)
+    test_arrangement_hit_tester.cpp
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
+    # Internal track-to-track routing (issue #1690)
+    test_internal_track_routing.cpp
     test_master_track_serialization.cpp
     test_automation_agent.cpp
     test_mix_analysis_agent.cpp
@@ -183,6 +191,14 @@ target_compile_definitions(magda_tests
 # Add the test to CTest
 add_test(NAME magda_unit_tests COMMAND magda_tests)
 
+add_test(
+    NAME magda_cli_headless_e2e
+    COMMAND ${CMAKE_COMMAND}
+        -DMAGDA_CLI=$<TARGET_FILE:magda_cli>
+        -DMAGDA_CLI_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/magda_cli_headless_e2e
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/magda_cli_headless_e2e.cmake
+)
+
 # For Catch2 test discovery (optional - automatically discovers individual test cases)
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.10")
     include(Catch)
@@ -209,6 +225,8 @@ target_sources(magda_juce_tests PRIVATE
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
     test_session_slot_recording_juce.cpp
+    test_input_monitor_track_routing_juce.cpp
+    test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_midi_bridge_note_events_juce.cpp
@@ -243,6 +261,7 @@ target_sources(magda_juce_tests PRIVATE
     test_external_plugin_state_restore_juce.cpp
     test_chord_progression_converter_juce.cpp
     test_audio_driver_type_selection_juce.cpp
+    test_tempo_sequence_ripple_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 

@@ -1180,10 +1180,12 @@ bool Interpreter::executeAddFx(const Params& params) {
     }
 
     const auto& knownPlugins = teWrapper->getKnownPluginList();
+    const auto pluginTypes =
+        formatHint.isNotEmpty() ? knownPlugins.getTypes() : teWrapper->getPreferredPluginTypes();
     const juce::PluginDescription* bestMatch = nullptr;
 
     DBG("DSL executeAddFx: looking for plugin fxName=\"" + fxName + "\"");
-    for (const auto& desc : knownPlugins.getTypes()) {
+    for (const auto& desc : pluginTypes) {
         // Match by exact plugin name or generated alias (e.g. "pro_q_3" matches "Pro-Q 3")
         auto alias = magda::pluginNameToAlias(desc.name);
         bool nameMatch = desc.name.equalsIgnoreCase(fxName) || alias.equalsIgnoreCase(fxName);

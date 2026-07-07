@@ -179,7 +179,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         if (editPos >= clipStart && editPos <= clipEnd) {
             int editX = arrangementToSourceX(editPos);
             if (editX >= 0 && editX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                 juce::Path triangle;
                 triangle.addTriangle(static_cast<float>(editX - 5), 0.0f,
                                      static_cast<float>(editX + 5), 0.0f, static_cast<float>(editX),
@@ -198,7 +198,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                     displayPositionToX(di.sessionPlayheadToDisplayPosition(sessionPos));
 
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -223,7 +223,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 double sourcePos = di.loopRegionStartSource + wrapped;
                 int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -232,7 +232,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
             int playX = arrangementToSourceX(playPos);
             if (playX >= 0 && playX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                 g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                            static_cast<float>(getHeight()), 1.5f);
             }
@@ -682,6 +682,21 @@ void WaveformEditorContent::paint(juce::Graphics& g) {
 }
 
 void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
+    // Multi-clip selection placeholder (#1499): no single waveform to show,
+    // list what is selected instead. Editing happens in the properties panel.
+    if (!multiClipNames_.isEmpty()) {
+        auto bounds = getLocalBounds();
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setFont(FontManager::getInstance().getUIFont(14.0f));
+        auto headline = juce::String(multiClipNames_.size()) + " clips selected";
+        auto textArea = bounds.withSizeKeepingCentre(bounds.getWidth() - 40, 60);
+        g.drawText(headline, textArea.removeFromTop(24), juce::Justification::centred);
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
+        g.setFont(FontManager::getInstance().getUIFont(12.0f));
+        g.drawText(multiClipNames_.joinIntoString(", "), textArea, juce::Justification::centredTop,
+                   true);
+    }
+
     if (!transientsUpdating_)
         return;
 
@@ -962,13 +977,17 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
 }
 
 void WaveformEditorContent::transientsChanged(const juce::String& filePath) {
-    if (editingClipId_ == magda::INVALID_CLIP_ID)
+    // Detection finished for a clip we're no longer editing: drop the spinner
+    // (it would otherwise stick — nothing else clears it).
+    if (editingClipId_ == magda::INVALID_CLIP_ID) {
+        setTransientsUpdating(false);
         return;
+    }
     const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (clip == nullptr)
+    if (clip == nullptr || !clip->isAudio()) {
+        setTransientsUpdating(false);
         return;
-    if (!clip->isAudio())
-        return;
+    }
     if (clip->audio().source.filePath != filePath)
         return;
     auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(filePath);
@@ -1081,7 +1100,40 @@ void WaveformEditorContent::timelineStateChanged(const TimelineState& state, Cha
 // Public Methods
 // ============================================================================
 
+void WaveformEditorContent::setMultiClipSelection(
+    const std::unordered_set<magda::ClipId>& clipIds) {
+    juce::StringArray names;
+    if (clipIds.size() > 1) {
+        auto& cm = magda::ClipManager::getInstance();
+        for (auto cid : clipIds) {
+            if (const auto* clip = cm.getClip(cid))
+                names.add(clip->name);
+        }
+        names.sort(true);
+    }
+    if (names == multiClipNames_)
+        return;
+
+    multiClipNames_ = names;
+    if (!multiClipNames_.isEmpty()) {
+        setClip(magda::INVALID_CLIP_ID);
+        setTransientsUpdating(false);
+        // Hide the grid so its own "No audio clip selected" empty state
+        // doesn't show through underneath the placeholder.
+        if (viewport_)
+            viewport_->setVisible(false);
+    } else if (viewport_) {
+        viewport_->setVisible(true);
+    }
+    repaint();
+}
+
 void WaveformEditorContent::setClip(magda::ClipId clipId) {
+    if (clipId != magda::INVALID_CLIP_ID) {
+        multiClipNames_.clear();
+        if (viewport_)
+            viewport_->setVisible(true);
+    }
     if (editingClipId_ != clipId) {
         editingClipId_ = clipId;
         transientsCached_ = false;
@@ -1149,6 +1201,10 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             } else {
                 requestTransientDetection();
             }
+        } else {
+            // No audio target (deselected / multi-selection / MIDI): nothing
+            // is being waited on — clear the spinner or it sticks forever.
+            setTransientsUpdating(false);
         }
 
         updateGridSize();

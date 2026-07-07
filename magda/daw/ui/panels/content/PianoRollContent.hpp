@@ -220,6 +220,7 @@ class PianoRollContent : public MidiEditorContent,
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
     std::unique_ptr<magda::SvgButton> foldToggle_;
+    std::unique_ptr<magda::SvgButton> previewToggle_;  // #1705 audition notes on click
     std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
@@ -242,6 +243,10 @@ class PianoRollContent : public MidiEditorContent,
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void detectChordsFromNotes();
+    // Play a note then stop it after its length elapses, for double-click note
+    // creation (#1705). Gated by the preview toggle; the note-off is scheduled
+    // against the engine so it fires even if this panel is torn down first.
+    void auditionNoteOnce(magda::ClipId clipId, int noteNumber, int velocity, double lengthBeats);
     void syncChordAnnotations(magda::ClipId clipId);
     void setNoteHeight(int height, bool persist);
     void setNoteHeightAnchored(int height, int anchorNote, int anchorScreenY, bool persist);

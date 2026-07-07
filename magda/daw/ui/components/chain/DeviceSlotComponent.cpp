@@ -52,7 +52,6 @@
 #include "slot/DeviceSlotSidechainControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
-#include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -180,6 +179,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         // Capture values by copy before 'this' is destroyed.
         auto pathToDelete = nodePath_;
         auto callback = onDeviceDeleted;
+        detachInlineUiFromLivePlugin();
         juce::MessageManager::callAsync([pathToDelete, callback]() {
             // Top-level devices use undoable command; nested devices fall back to direct removal
             if (pathToDelete.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
@@ -407,15 +407,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         exportClipButton_->setTooltip("Click to copy pattern, drag to timeline");
         exportClipButton_->addMouseListener(this, false);
         exportClipButton_->onClick = [this]() {
-            if (traits_.isPolyStepSequencer) {
-                auto* plugin = customUI_.getPolyStepSeqPlugin();
-                if (plugin != nullptr)
-                    copyPolyStepSequencerPatternToClipboard(*plugin);
-            } else {
-                auto* stepSeqPlugin = customUI_.getStepSeqPlugin();
-                if (stepSeqPlugin != nullptr)
-                    copyStepSequencerPatternToClipboard(*stepSeqPlugin);
-            }
+            customUI_.copySequencerPatternToClipboard(traits_.isPolyStepSequencer);
         };
         addAndMakeVisible(*exportClipButton_);
     }
@@ -545,6 +537,7 @@ DeviceSlotComponent::~DeviceSlotComponent() {
     magda::AutomationManager::getInstance().removeListener(this);
     magda::GainStagingManager::getInstance().removeListener(this);
     stopTimer();
+    detachInlineUiFromLivePlugin();
 }
 
 void DeviceSlotComponent::timerCallback() {
@@ -1129,13 +1122,9 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
-    if (traits_.isPolyStepSequencer) {
-        if (handlePolyStepSequencerPatternExternalDrag(customUI_.getPolyStepSeqPlugin(),
-                                                       exportClipButton_.get(), this, e)) {
-            return;
-        }
-    } else if (handleStepSequencerPatternExternalDrag(customUI_.getStepSeqPlugin(),
-                                                      exportClipButton_.get(), this, e)) {
+    if (isSequencerDevice(traits_) &&
+        customUI_.handleSequencerPatternExternalDrag(traits_.isPolyStepSequencer,
+                                                     exportClipButton_.get(), this, e)) {
         return;
     }
 
@@ -1564,6 +1553,14 @@ void DeviceSlotComponent::createCustomUI() {
     }
 
     applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
+}
+
+void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
+    if (compiledPanel_ != nullptr)
+        compiledPanel_->bindPlugin(nullptr);
+    if (faustUI_ != nullptr)
+        faustUI_->setPlugin(nullptr);
+    customUI_.detachFromLivePlugin();
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {

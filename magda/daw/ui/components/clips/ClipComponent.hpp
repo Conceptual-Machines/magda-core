@@ -3,7 +3,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <limits>
+#include <optional>
 
+#include "../../interaction/ArrangementHitTester.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
@@ -48,6 +50,7 @@ class ClipComponent : public juce::Component,
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void modifierKeysChanged(const juce::ModifierKeys& mods) override;
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
@@ -90,9 +93,20 @@ class ClipComponent : public juce::Component,
     std::function<void(ClipId, double, bool)> onClipResized;  // clipId, newLength, fromStart
     std::function<void(ClipId)> onClipSelected;
     std::function<void(ClipId)> onClipDoubleClicked;
-    std::function<void(ClipId, double)> onClipSplit;       // clipId, splitTime (Alt+click)
-    std::function<void(ClipId)> onClipRenderRequested;     // clipId (render clip to new file)
-    std::function<void()> onRenderTimeSelectionRequested;  // render time selection
+    std::function<void(ClipId, double)> onClipSplit;          // clipId, splitTime (Alt+click)
+    std::function<void(ClipId)> onClipRenderRequested;        // clipId (render clip to new file)
+    std::function<void()> onRenderTimeSelectionRequested;     // render time selection
+    std::function<void()> onInsertTimeRequested;              // ripple-insert empty time
+    std::function<void()> onDuplicateTimeRangeRequested;      // ripple-duplicate time range
+    std::function<void()> onDuplicateLoopRangeRequested;      // ripple-duplicate the loop region
+    std::function<void()> onSplitAllTracksAtCursorRequested;  // split all clips at edit cursor
+    std::function<void()> onCopyTimeRangeRequested;           // copy the time selection's content
+    std::function<void()> onCutTimeRangeRequested;     // copy time selection, then ripple-delete
+    std::function<void()> onDeleteTimeRangeRequested;  // ripple-delete the time selection
+    std::function<void()> onCopyLoopRangeRequested;    // copy the loop region (all tracks)
+    std::function<void()> onCutLoopRangeRequested;     // copy loop region, then ripple-delete
+    std::function<void()> onDeleteLoopRangeRequested;  // ripple-delete the loop region
+    std::function<void()> onPasteRippleRequested;      // ripple-insert clipboard span, then paste
     std::function<void(ClipId)> onBounceInPlaceRequested;  // bounce MIDI clip in place (synth only)
     std::function<void(ClipId)>
         onBounceToNewTrackRequested;               // bounce clip to new track (full chain)
@@ -118,6 +132,8 @@ class ClipComponent : public juce::Component,
         StretchRight,
         FadeIn,
         FadeOut,
+        CrossfadeIn,   // fade-in handle drives the overlap with the previous clip (#1499)
+        CrossfadeOut,  // fade-out handle drives the overlap with the next clip
         VolumeDrag
     };
     DragMode dragMode_ = DragMode::None;
@@ -179,17 +195,38 @@ class ClipComponent : public juce::Component,
     std::unordered_map<ClipId, ClipInfo>
         dragStartSelectedFadeSnapshots_;  // Original state of other selected clips for fade undo
 
+    // Crossfade drag state (#1499): the pair being edited and the neighbour's
+    // pre-drag snapshot (this clip's snapshot lives in dragStartClipSnapshot_).
+    ClipManager::CrossfadeInfo crossfadeDragPair_{};
+    ClipInfo crossfadeOtherSnapshot_;
+
     // Volume handle state
     bool hoverVolumeHandle_ = false;
     float dragStartVolumeDB_ = 0.0f;
 
-    // Visual constants
-    static constexpr int RESIZE_HANDLE_WIDTH = 6;
+    // Visual constants (hit-relevant ones are canonical in the shared hit
+    // tester so zone math can never drift from the paint metrics, #1719)
+    static constexpr int RESIZE_HANDLE_WIDTH = interaction::ClipMetrics::RESIZE_HANDLE_WIDTH;
     static constexpr int CORNER_RADIUS = 4;
-    static constexpr int HEADER_HEIGHT = 16;
+    static constexpr int HEADER_HEIGHT = interaction::ClipMetrics::HEADER_HEIGHT;
     static constexpr int MIN_WIDTH_FOR_NAME = 40;
     static constexpr int FADE_HANDLE_SIZE = 8;
-    static constexpr int FADE_HANDLE_HIT_WIDTH = 14;
+    static constexpr int FADE_HANDLE_HIT_WIDTH = interaction::ClipMetrics::FADE_HANDLE_HIT_WIDTH;
+
+    // Effective fades for display/interaction (#1499): a crossfaded edge shows
+    // the overlap-derived fade (what TE actually plays) instead of the stored
+    // fadeIn/fadeOut, which return once the clips are pulled apart.
+    struct EffectiveFades {
+        double fadeInSeconds = 0.0;
+        double fadeOutSeconds = 0.0;
+        std::optional<ClipManager::CrossfadeInfo> xfIn;   // crossfade covering the start edge
+        std::optional<ClipManager::CrossfadeInfo> xfOut;  // crossfade covering the end edge
+    };
+    EffectiveFades computeEffectiveFades(const ClipInfo& clip) const;
+
+    // The audio clip abutting/overlapping this clip's start (previous) or end
+    // (next) that a crossfade could be created with. INVALID_CLIP_ID if none.
+    ClipId findCrossfadeNeighbour(bool atStart) const;
 
     // Painting helpers
     void paintAudioClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
@@ -202,7 +239,7 @@ class ClipComponent : public juce::Component,
     bool isChordClip(const ClipInfo& clip) const;
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
-    void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
+    void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip, const EffectiveFades& fades,
                            juce::Rectangle<int> waveformArea, double pixelsPerSecond);
     void paintFadeHandles(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
@@ -214,7 +251,14 @@ class ClipComponent : public juce::Component,
     bool isOnFadeInHandle(int x, int y) const;
     bool isOnFadeOutHandle(int x, int y) const;
     bool isOnVolumeHandle(int x, int y) const;
+    // Snapshot for the shared hit tester (#1719): hover flags and the cursor
+    // both derive from interaction::clipHit() so they can never disagree.
+    interaction::ClipSnapshot makeHitSnapshot() const;
     void updateCursor(const juce::ModifierKeys& mods = {});
+    // Reactive recompute (#1720): re-derive hover flags + cursor from the
+    // current mouse position when hit-test inputs change without a mouse
+    // event (selection state, gesture end). No-op unless idle-hovering.
+    void refreshHoverFromMouse();
 
     // Helper to get current clip info
     const ClipInfo* getClipInfo() const;

@@ -10,6 +10,8 @@ constexpr const char* kKind = "plugin_preferences";
 constexpr const char* kDrumGridBuiltinId = "drumgrid";
 constexpr const char* kInstrumentRackWrapperId = "rack";
 constexpr const char* kMidiFxCategoryOverride = "MIDI FX";
+constexpr const char* kFormatVST3 = "VST3";
+constexpr const char* kFormatAU = "AU";
 
 // Plugins whose per-instance kit should NOT be mirrored to a user-global
 // default. Internal DrumGrid is the canonical case: its kit is built
@@ -17,6 +19,18 @@ constexpr const char* kMidiFxCategoryOverride = "MIDI FX";
 // chain — no transferable default exists between instances.
 bool hasGlobalKitDefault(const juce::String& pluginIdentifier) {
     return pluginIdentifier != kDrumGridBuiltinId;
+}
+
+juce::String formatPreferenceToString(PluginFormat preference) {
+    return preference == PluginFormat::AU ? kFormatAU : kFormatVST3;
+}
+
+PluginFormat formatPreferenceFromString(const juce::String& value) {
+    return pluginFormatFromName(value) == PluginFormat::AU ? PluginFormat::AU : PluginFormat::VST3;
+}
+
+juce::String duplicateGroupKey(const juce::PluginDescription& desc) {
+    return desc.name.trim().toLowerCase() + "|" + desc.manufacturerName.trim().toLowerCase();
 }
 }  // namespace
 
@@ -97,6 +111,70 @@ void PluginPreferences::setBrowserCategoryOverride(const juce::String& pluginIde
         saveUnlocked();
 }
 
+PluginFormat PluginPreferences::externalPluginFormatPreference() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return externalFormatPreference_;
+}
+
+void PluginPreferences::setExternalPluginFormatPreference(PluginFormat preference) {
+    preference = preference == PluginFormat::AU ? PluginFormat::AU : PluginFormat::VST3;
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (externalFormatPreference_ == preference)
+            return;
+        externalFormatPreference_ = preference;
+        saveUnlocked();
+        changed = true;
+    }
+    if (changed)
+        notifyExternalPluginFormatPreferenceChanged(preference);
+}
+
+juce::Array<juce::PluginDescription> PluginPreferences::preferredExternalPlugins(
+    const juce::Array<juce::PluginDescription>& plugins) const {
+#if JUCE_MAC
+    const auto preferred = externalPluginFormatPreference();
+    struct FormatPresence {
+        bool hasVST3 = false;
+        bool hasAU = false;
+    };
+    std::unordered_map<juce::String, FormatPresence> formatPresenceByPlugin;
+    for (const auto& desc : plugins) {
+        const auto format = maybePluginFormatFromName(desc.pluginFormatName);
+        auto& presence = formatPresenceByPlugin[duplicateGroupKey(desc)];
+        presence.hasVST3 = presence.hasVST3 || format == PluginFormat::VST3;
+        presence.hasAU = presence.hasAU || format == PluginFormat::AU;
+    }
+
+    juce::Array<juce::PluginDescription> result;
+
+    for (const auto& desc : plugins) {
+        const auto format = maybePluginFormatFromName(desc.pluginFormatName);
+        const bool isVST3 = format == PluginFormat::VST3;
+        const bool isAU = format == PluginFormat::AU;
+        const auto key = duplicateGroupKey(desc);
+        const auto presence = formatPresenceByPlugin[key];
+        if (!isVST3 && !isAU) {
+            result.add(desc);
+            continue;
+        }
+        if (!presence.hasVST3 || !presence.hasAU) {
+            result.add(desc);
+            continue;
+        }
+
+        const bool descMatchesPreference = preferred == PluginFormat::AU ? isAU : isVST3;
+        if (descMatchesPreference)
+            result.add(desc);
+    }
+
+    return result;
+#else
+    return plugins;
+#endif
+}
+
 juce::String PluginPreferences::identifierForDevice(const DeviceInfo& device) {
     return device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
 }
@@ -112,6 +190,12 @@ void PluginPreferences::removeListener(Listener* listener) {
 void PluginPreferences::notifyDrumGridPreferenceChanged(const juce::String& pluginIdentifier) {
     listeners_.call([&pluginIdentifier](Listener& listener) {
         listener.drumGridPreferenceChanged(pluginIdentifier);
+    });
+}
+
+void PluginPreferences::notifyExternalPluginFormatPreferenceChanged(PluginFormat preference) {
+    listeners_.call([preference](Listener& listener) {
+        listener.externalPluginFormatPreferenceChanged(preference);
     });
 }
 
@@ -142,6 +226,7 @@ void PluginPreferences::loadUnlocked() {
     drumGridPlugins_.clear();
     categoryOverrides_.clear();
     defaultKits_.clear();
+    externalFormatPreference_ = PluginFormat::VST3;
     auto file = magda::paths::pluginPreferencesFile();
     if (!file.existsAsFile())
         return;
@@ -154,6 +239,9 @@ void PluginPreferences::loadUnlocked() {
     auto* payload = obj->getProperty("payload").getDynamicObject();
     if (payload == nullptr)
         return;
+
+    externalFormatPreference_ = formatPreferenceFromString(
+        payload->getProperty("externalPluginFormatPreference").toString());
 
     auto prefersVar = payload->getProperty("prefersDrumGrid");
     if (prefersVar.isArray()) {
@@ -252,6 +340,8 @@ void PluginPreferences::saveUnlocked() const {
     payload->setProperty("prefersDrumGrid", prefersList);
     payload->setProperty("categoryOverrides", categoryOverrideList);
     payload->setProperty("defaultKits", kitsList);
+    payload->setProperty("externalPluginFormatPreference",
+                         formatPreferenceToString(externalFormatPreference_));
 
     auto* envelope = new juce::DynamicObject();
     envelope->setProperty("magdaVersion", juce::String(MAGDA_VERSION));

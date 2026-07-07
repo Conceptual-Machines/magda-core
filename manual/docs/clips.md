@@ -180,6 +180,19 @@ MAGDA can detect the notes in an audio clip and turn them into MIDI. Right-click
 
 Transcription works best on clearly pitched, reasonably clean material (a solo vocal, a bassline, a lead). Dense mixes and heavily layered audio give rougher results that usually want some cleanup in the [Piano Roll](panels/piano-roll.md).
 
+## Crossfades
+
+A crossfade is a real overlap between two adjacent audio clips: the outgoing clip fades down as the incoming clip fades up across the shared region.
+
+- **Create** - drag one audio clip so it overlaps its neighbour. With auto-crossfade active the overlap becomes a crossfade, drawn with an X across the shared region. You can also right-click a clip and choose **Crossfade with previous clip** or **Crossfade with next clip**.
+- **Resize** - drag the fade handles at a crossfaded edge to lengthen or shorten the overlap.
+- **Read and edit the length** - the crossfade shows as an editable **XFADE** value in beats in the clip's fades section. Dragging it to zero leaves the row in place so you can re-create the crossfade later.
+- **Remove** - right-click the clip and choose **Remove crossfade**.
+
+New audio clips overlap into a crossfade automatically when **Auto-crossfade new audio clips** is on in [Preferences](interface/preferences.md). This is the same behaviour as the per-clip **Auto Crossfade** property in [Audio Clip Properties](#audio-clip-properties).
+
+Selecting several audio clips at once keeps the [Waveform Editor](panels/waveform-editor.md) open in a multi-clip mode, where the fades section batch-edits all of them at once, including auto-crossfade.
+
 ## Freeze, Bounce, and Render
 
 These operations render a track or clip's output to audio, useful for reducing CPU load or committing effects.

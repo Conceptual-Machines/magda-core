@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <optional>
+
 #include "KitRow.hpp"
 #include "MacroInfo.hpp"
 #include "ModInfo.hpp"
@@ -14,6 +16,22 @@ namespace magda {
  * @brief Plugin format enumeration
  */
 enum class PluginFormat { VST3, AU, VST, Internal };
+
+inline std::optional<PluginFormat> maybePluginFormatFromName(const juce::String& pluginFormatName) {
+    if (pluginFormatName.containsIgnoreCase("VST3"))
+        return PluginFormat::VST3;
+    if (pluginFormatName.containsIgnoreCase("AudioUnit") || pluginFormatName.equalsIgnoreCase("AU"))
+        return PluginFormat::AU;
+    if (pluginFormatName.containsIgnoreCase("VST"))
+        return PluginFormat::VST;
+    return std::nullopt;
+}
+
+inline PluginFormat pluginFormatFromName(const juce::String& pluginFormatName) {
+    if (auto format = maybePluginFormatFromName(pluginFormatName))
+        return *format;
+    return PluginFormat::VST3;
+}
 
 /**
  * @brief Device type classification

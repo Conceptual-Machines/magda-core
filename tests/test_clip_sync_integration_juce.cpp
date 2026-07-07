@@ -79,6 +79,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce();
         testPropertyChangeCreatesMissingReversedArrangementClipSynchronously();
         testBatchSessionSlotCreationReallocatesOnce();
+        testSessionClipMoveToTrackClearsVacatedSlot();
+        testSessionClipMovePreservesEngineIdentity();
+        testSessionClipDeleteRemovesMappedSlotClip();
         testMoveClip();
         testResizeFromRight();
         testResizeFromLeft();
@@ -156,6 +159,19 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         }
 
         ~Fixture() {
+            // The reversed-clip test triggers an async ReverseRenderJob on the
+            // shared engine's background thread pool: it reads this fixture's
+            // source WAV and writes a reversed proxy. If it outlives the fixture
+            // it reverses a deleted source file (hitting an internal jassertfalse)
+            // and derefs the destroyed edit, segfaulting a later unrelated test.
+            // Let any pending job finish (interrupting a reverse mid-render hits
+            // that same jassertfalse) and drain its follow-up message-thread
+            // callbacks BEFORE we destroy the edit and delete the temp WAV.
+            if (auto* engine = magda::test::getSharedEngine().getEngine())
+                engine->getBackgroundJobs().getPool().removeAllJobs(false, 10000);
+            if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
+                mm->runDispatchLoopUntil(50);
+
             // Destroy ClipSynchronizer first (unregisters listener)
             clipSync.reset();
             warpMarkerManager.reset();
@@ -177,6 +193,19 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         te::MidiClip* getTeMidiClip(ClipId clipId) const {
             auto* teClip = clipSync->getArrangementTeClip(clipId);
             return dynamic_cast<te::MidiClip*>(teClip);
+        }
+
+        te::Clip* getSessionSlotClip(TrackId slotTrackId, int sceneIndex) const {
+            auto* audioTrack = trackController->getAudioTrack(slotTrackId);
+            if (!audioTrack)
+                return nullptr;
+
+            auto slots = audioTrack->getClipSlotList().getClipSlots();
+            if (sceneIndex < 0 || sceneIndex >= static_cast<int>(slots.size()))
+                return nullptr;
+
+            auto* slot = slots[sceneIndex];
+            return slot ? slot->getClip() : nullptr;
         }
 
         te::test_utilities::BufferAndSampleRate renderToSeconds(double endSeconds) const {
@@ -476,6 +505,100 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (canObserveReallocation)
             expectEquals(reallocationCount, 1,
                          "Batch-created session slots should share one graph reallocation");
+    }
+
+    void testSessionClipMoveToTrackClearsVacatedSlot() {
+        beginTest("Moving a session clip to another track clears the vacated slot's TE clip");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        const TrackId secondTrackId = 2;
+        f.trackController->ensureTrackMapping(secondTrackId, "Second Track");
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+        cm.setClipSceneIndex(clipId, 0);
+
+        expect(f.clipSync->getSessionTeClip(clipId) != nullptr,
+               "Clip should be synced into the original track's slot before the move");
+
+        cm.moveClipToTrack(clipId, secondTrackId);
+
+        expect(f.clipSync->getSessionTeClip(clipId) != nullptr,
+               "Clip should be synced into the destination track's slot after the move");
+
+        auto* oldTrack = f.trackController->getAudioTrack(f.trackId);
+        expect(oldTrack != nullptr);
+        if (!oldTrack)
+            return;
+        auto oldSlots = oldTrack->getClipSlotList().getClipSlots();
+        expect(!oldSlots.isEmpty());
+        if (oldSlots.isEmpty())
+            return;
+        expect(oldSlots[0]->getClip() == nullptr,
+               "Vacated slot on the original track should no longer hold a TE clip");
+    }
+
+    void testSessionClipMovePreservesEngineIdentity() {
+        beginTest("Moving a session clip recreates it by engine identity, not slot position");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        const TrackId secondTrackId = 2;
+        f.trackController->ensureTrackMapping(secondTrackId, "Second Track");
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+        cm.setClipSceneIndex(clipId, 0);
+
+        auto* originalTeClip = f.clipSync->getSessionTeClip(clipId);
+        expect(originalTeClip != nullptr, "Original session clip should be mapped");
+        if (!originalTeClip)
+            return;
+
+        const auto originalEngineId = originalTeClip->itemID;
+
+        cm.moveClipToTrack(clipId, secondTrackId);
+
+        auto* movedTeClip = f.clipSync->getSessionTeClip(clipId);
+        expect(movedTeClip != nullptr, "Moved session clip should still resolve by clip id");
+        if (!movedTeClip)
+            return;
+
+        expect(movedTeClip->itemID != originalEngineId,
+               "Moved session clip should receive a fresh mapped TE identity");
+        expect(f.getSessionSlotClip(f.trackId, 0) == nullptr,
+               "Old slot should not retain the original mapped TE clip");
+        expect(f.getSessionSlotClip(secondTrackId, 0) == movedTeClip,
+               "Destination slot should hold the mapped TE clip");
+    }
+
+    void testSessionClipDeleteRemovesMappedSlotClip() {
+        beginTest("Deleting a session clip removes its mapped TE slot clip");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+        cm.setClipSceneIndex(clipId, 0);
+
+        auto* teClip = f.clipSync->getSessionTeClip(clipId);
+        expect(teClip != nullptr, "Session clip should be mapped before deletion");
+        expect(f.getSessionSlotClip(f.trackId, 0) == teClip,
+               "Slot should hold the mapped TE clip before deletion");
+
+        cm.deleteClip(clipId);
+
+        expect(f.getSessionSlotClip(f.trackId, 0) == nullptr,
+               "Deleted session clip should not leave a TE clip in its old slot");
+        expect(f.clipSync->getSessionTeClip(clipId) == nullptr,
+               "Deleted session clip mapping should be cleared");
     }
 
     void testMoveClip() {
@@ -1547,6 +1670,12 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         auto mover =
             cm.createAudioClip(f.trackId, 0.0, 8.0, f.audioPath(), ClipView::Arrangement, 60.0);
 
+        // New audio clips default to auto-crossfade, which would KEEP this
+        // partial overlap as a crossfade (#1499). Pin it off to exercise the
+        // trim path this test covers.
+        cm.setAutoCrossfade(stationary, false);
+        cm.setAutoCrossfade(mover, false);
+
         cm.moveClip(mover, 4.0, 60.0);
 
         const auto* s = cm.getClip(stationary);
@@ -1573,6 +1702,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
         auto victim =
             cm.createAudioClip(f.trackId, 8.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        // New audio clips default to auto-crossfade, which the duplicate would
+        // inherit and use to KEEP this partial overlap as a crossfade (#1499).
+        // Pin the source off (the copy inherits the flag) to exercise the trim
+        // path this test covers.
+        cm.setAutoCrossfade(source, false);
+        cm.setAutoCrossfade(victim, false);
 
         auto copy = cm.duplicateClipAt(source, 6.0, f.trackId, 60.0);
         expect(copy != INVALID_CLIP_ID);

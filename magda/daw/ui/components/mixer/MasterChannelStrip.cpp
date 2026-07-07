@@ -3,15 +3,15 @@
 #include <cmath>
 
 #include "../../../audio/AudioBridge.hpp"
-#include "../../../audio/plugins/OscilloscopePlugin.hpp"
-#include "../../../audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "../../utils/SelectionPolicy.hpp"
+#include "../common/MasterSpeakerButton.hpp"
 #include "BinaryData.h"
 #include "LevelMeterScale.hpp"
+#include "components/chain/custom_ui/PluginTelemetrySources.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
@@ -210,31 +210,49 @@ void MasterChannelStrip::refreshMiniAnalyzers() {
     auto* bridge = engine ? engine->getAudioBridge() : nullptr;
 
     if (miniOscilloscopeUI_) {
-        daw::audio::OscilloscopePlugin* osc = nullptr;
+        tracktion::engine::Plugin::Ptr pluginPtr;
         DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
             id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "oscilloscope");
-            if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr =
+            if (id != INVALID_DEVICE_ID)
+                pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
-                osc = dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get());
-            }
         }
-        miniOscilloscopeUI_->setPlugin(osc);
+
+        if (dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get()) == nullptr)
+            pluginPtr = nullptr;
+
+        if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
+            miniOscilloscopeTelemetryPlugin_ = pluginPtr.get();
+            miniOscilloscopeTelemetry_ =
+                pluginPtr != nullptr
+                    ? std::make_shared<daw::ui::OscilloscopePluginTelemetrySource>(pluginPtr)
+                    : nullptr;
+        }
+        miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
     }
 
     if (miniSpectrumUI_) {
-        daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        tracktion::engine::Plugin::Ptr pluginPtr;
         DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
             id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "spectrumanalyzer");
-            if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr =
+            if (id != INVALID_DEVICE_ID)
+                pluginPtr =
                     bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
-                spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get());
-            }
         }
-        miniSpectrumUI_->setPlugin(spec);
+
+        if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get()) == nullptr)
+            pluginPtr = nullptr;
+
+        if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {
+            miniSpectrumTelemetryPlugin_ = pluginPtr.get();
+            miniSpectrumTelemetry_ =
+                pluginPtr != nullptr
+                    ? std::make_shared<daw::ui::SpectrumPluginTelemetrySource>(pluginPtr)
+                    : nullptr;
+        }
+        miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
     }
 }
 
@@ -467,17 +485,9 @@ void MasterChannelStrip::setupControls() {
     cueVolumeSlider_->onValueChanged = [](double /*pos*/) {};
     addAndMakeVisible(*cueVolumeSlider_);
 
-    // Speaker on/off button (toggles master mute). Dual-icon SvgButton matching
-    // the inspector: gray speaker (master_on) when audible, orange chip
-    // (master_off) when muted. SvgButton's iconPadding + cornerRadius give the
-    // padding and rounded box a raw DrawableButton can't.
-    speakerButton = std::make_unique<magda::SvgButton>(
-        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
-        BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-    speakerButton->setClickingTogglesState(true);
-    speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    speakerButton->setIconPadding(3.5f);  // larger speaker glyph
+    // Speaker on/off button (toggles master mute) — one shared recipe with the
+    // inspector / arrange master header.
+    speakerButton = magda::makeMasterSpeakerButton();
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));

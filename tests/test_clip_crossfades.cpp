@@ -1,0 +1,343 @@
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "magda/daw/core/ClipCommands.hpp"
+#include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/Config.hpp"
+#include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/UndoManager.hpp"
+
+/**
+ * Tests for explicit audio clip crossfades (#1499).
+ *
+ * A crossfade is an actual overlap between two adjacent audio arrangement
+ * clips whose autoCrossfade flags are set. The geometry lives in the beat
+ * placements; TE derives the playback fades from the overlap.
+ *
+ * At the default 120 BPM: 1 second = 2 beats.
+ */
+
+using namespace magda;
+
+namespace {
+
+void resetState() {
+    UndoManager::getInstance().clearHistory();
+    ClipManager::getInstance().clearAllClips();
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TrackId createTrack() {
+    return TrackManager::getInstance().createTrack("Track", TrackType::Audio);
+}
+
+// Creates an audio clip with source headroom on both sides (offset 10 s into a
+// 100 s file), so crossfade edge extensions aren't clamped by material limits.
+// Extension clamping itself is covered by its own test case below.
+ClipId createAudioBeats(TrackId trackId, double startBeat, double lengthBeats) {
+    auto& cm = ClipManager::getInstance();
+    const ClipId id =
+        cm.createAudioClipBeats(trackId, startBeat, lengthBeats, "test.wav", ClipView::Arrangement);
+    if (auto* clip = cm.getClip(id)) {
+        clip->audio().source.durationSeconds = 100.0;
+        clip->offset = 10.0;
+        clip->loopStart = 10.0;
+    }
+    return id;
+}
+
+}  // namespace
+
+TEST_CASE("new audio clips follow the auto-crossfade config default", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId id = createAudioBeats(trackId, 0.0, 4.0);
+    CHECK(cm.getClip(id)->autoCrossfade == Config::getInstance().getAutoCrossfadeByDefault());
+}
+
+// ============================================================================
+// setCrossfadeBeats — creation, resize, removal
+// ============================================================================
+
+TEST_CASE("setCrossfadeBeats creates an overlap at a butt joint and flags both clips",
+          "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 8.0, 8.0);
+
+    REQUIRE(cm.setCrossfadeBeats(a, b, 2.0));
+
+    const auto* left = cm.getClip(a);
+    const auto* right = cm.getClip(b);
+    REQUIRE(left != nullptr);
+    REQUIRE(right != nullptr);
+
+    // Overlap centred on the old joint (beat 8): [7, 9]
+    CHECK(left->placement.endBeat() == Catch::Approx(9.0));
+    CHECK(right->placement.startBeat == Catch::Approx(7.0));
+    CHECK(right->placement.endBeat() == Catch::Approx(16.0));
+    CHECK(left->autoCrossfade);
+    CHECK(right->autoCrossfade);
+
+    auto xfB = cm.getCrossfadeAtStart(b);
+    REQUIRE(xfB.has_value());
+    CHECK(xfB->leftClipId == a);
+    CHECK(xfB->rightClipId == b);
+    CHECK(xfB->lengthBeats() == Catch::Approx(2.0));
+
+    auto xfA = cm.getCrossfadeAtEnd(a);
+    REQUIRE(xfA.has_value());
+    CHECK(xfA->startBeat == Catch::Approx(7.0));
+    CHECK(xfA->endBeat == Catch::Approx(9.0));
+}
+
+TEST_CASE("setCrossfadeBeats clamps so neither clip is swallowed", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 4.0);
+    const ClipId b = createAudioBeats(trackId, 4.0, 4.0);
+
+    // Absurd duration: must clamp to a partial overlap, never containment
+    REQUIRE(cm.setCrossfadeBeats(a, b, 100.0));
+
+    const auto* left = cm.getClip(a);
+    const auto* right = cm.getClip(b);
+    CHECK(right->placement.startBeat > left->placement.startBeat);
+    CHECK(left->placement.endBeat() < right->placement.endBeat());
+    CHECK(cm.getCrossfadeAtStart(b).has_value());
+}
+
+TEST_CASE("setCrossfadeBeats with zero duration butts the joint (removal)", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 8.0, 8.0);
+    REQUIRE(cm.setCrossfadeBeats(a, b, 2.0));
+    REQUIRE(cm.getCrossfadeAtStart(b).has_value());
+
+    REQUIRE(cm.setCrossfadeBeats(a, b, 0.0));
+
+    const auto* left = cm.getClip(a);
+    const auto* right = cm.getClip(b);
+    CHECK(left->placement.endBeat() == Catch::Approx(8.0));
+    CHECK(right->placement.startBeat == Catch::Approx(8.0));
+    CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
+    CHECK_FALSE(cm.getCrossfadeAtEnd(a).has_value());
+}
+
+TEST_CASE("setCrossfadeBeats rejects invalid pairs", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+    const auto otherTrackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId otherTrack = createAudioBeats(otherTrackId, 8.0, 8.0);
+    const ClipId midi = cm.createMidiClipBeats(trackId, 8.0, 8.0, ClipView::Arrangement);
+
+    CHECK_FALSE(cm.setCrossfadeBeats(a, otherTrack, 2.0));
+    CHECK_FALSE(cm.setCrossfadeBeats(a, midi, 2.0));
+    CHECK_FALSE(cm.setCrossfadeBeats(a, a, 2.0));
+    CHECK_FALSE(cm.setCrossfadeBeats(a, INVALID_CLIP_ID, 2.0));
+}
+
+TEST_CASE("setCrossfadeRegionBeats respects source material bounds", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    // 4 beats = 2 s at 120 BPM. Give both clips exactly 2 s of source with no
+    // spare material: the left clip cannot extend right, the right clip cannot
+    // extend left (offset 0), so no overlap can be created.
+    const ClipId a = createAudioBeats(trackId, 0.0, 4.0);
+    const ClipId b = createAudioBeats(trackId, 4.0, 4.0);
+    cm.getClip(a)->audio().source.durationSeconds = 2.0;
+    cm.getClip(b)->audio().source.durationSeconds = 2.0;
+    cm.getClip(a)->offset = 0.0;
+    cm.getClip(b)->offset = 0.0;
+
+    REQUIRE(cm.setCrossfadeBeats(a, b, 2.0));
+
+    CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(4.0));
+    CHECK(cm.getClip(b)->placement.startBeat == Catch::Approx(4.0));
+    CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
+
+    // Give the right clip 1 s of pre-roll material (offset 1 s): its edge can
+    // now extend up to 2 beats left, the left clip still cannot move.
+    cm.getClip(b)->audio().source.durationSeconds = 3.0;
+    cm.getClip(b)->offset = 1.0;
+
+    REQUIRE(cm.setCrossfadeBeats(a, b, 4.0));
+    CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(4.0));
+    CHECK(cm.getClip(b)->placement.startBeat == Catch::Approx(2.0));
+
+    auto xf = cm.getCrossfadeAtStart(b);
+    REQUIRE(xf.has_value());
+    CHECK(xf->lengthBeats() == Catch::Approx(2.0));
+}
+
+// ============================================================================
+// resolveOverlaps — crossfade-aware overlap policy
+// ============================================================================
+
+TEST_CASE("moving an auto-crossfade clip onto a neighbour keeps the overlap", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(b, true);
+
+    cm.moveClipBeats(b, 6.0);
+
+    // Overlap [6, 8] survives as a crossfade; the neighbour gets the flag too
+    CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(8.0));
+    CHECK(cm.getClip(b)->placement.startBeat == Catch::Approx(6.0));
+    CHECK(cm.getClip(a)->autoCrossfade);
+
+    auto xf = cm.getCrossfadeAtStart(b);
+    REQUIRE(xf.has_value());
+    CHECK(xf->leftClipId == a);
+    CHECK(xf->startBeat == Catch::Approx(6.0));
+    CHECK(xf->endBeat == Catch::Approx(8.0));
+}
+
+TEST_CASE("moving a clip without auto-crossfade still trims the neighbour", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    // New audio clips default to AUTO-XFADE; pin it off to test the trim path
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(a, false);
+    cm.setAutoCrossfade(b, false);
+
+    cm.moveClipBeats(b, 6.0);
+
+    // Existing behaviour: the covered tail of A is trimmed away
+    CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(6.0));
+    CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
+}
+
+TEST_CASE("auto-crossfade never keeps overlaps with MIDI clips", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId midi = cm.createMidiClipBeats(trackId, 0.0, 8.0, ClipView::Arrangement);
+    const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(b, true);
+
+    cm.moveClipBeats(b, 6.0);
+
+    CHECK(cm.getClip(midi)->placement.endBeat() == Catch::Approx(6.0));
+    CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
+}
+
+TEST_CASE("full containment still deletes even with auto-crossfade", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 2.0, 2.0);
+    const ClipId b = createAudioBeats(trackId, 10.0, 8.0);
+    cm.setAutoCrossfade(b, true);
+
+    cm.moveClipBeats(b, 0.0);
+
+    CHECK(cm.getClip(a) == nullptr);
+}
+
+TEST_CASE("an existing crossfade survives edits to other clips on the track", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 8.0, 8.0);
+    REQUIRE(cm.setCrossfadeBeats(a, b, 2.0));
+
+    // A third clip lands elsewhere on the track — the A/B crossfade is untouched
+    const ClipId c = createAudioBeats(trackId, 30.0, 4.0);
+    cm.moveClipBeats(c, 20.0);
+
+    auto xf = cm.getCrossfadeAtStart(b);
+    REQUIRE(xf.has_value());
+    CHECK(xf->lengthBeats() == Catch::Approx(2.0));
+}
+
+// ============================================================================
+// SetCrossfadeCommand — undo/redo
+// ============================================================================
+
+TEST_CASE("SetCrossfadeCommand undo restores both clips exactly", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    auto& um = UndoManager::getInstance();
+    const auto trackId = createTrack();
+
+    // Pin AUTO-XFADE off so the command's flag-enabling side effect (and its
+    // undo) is observable regardless of the creation default.
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 8.0, 8.0);
+    cm.setAutoCrossfade(a, false);
+    cm.setAutoCrossfade(b, false);
+    const double aEndBefore = cm.getClip(a)->placement.endBeat();
+    const double bStartBefore = cm.getClip(b)->placement.startBeat;
+    const double bOffsetBefore = cm.getClip(b)->offset;
+
+    um.executeCommand(std::make_unique<SetCrossfadeCommand>(a, b, 7.0, 9.0, 120.0));
+
+    REQUIRE(cm.getCrossfadeAtStart(b).has_value());
+
+    um.undo();
+    CHECK(cm.getClip(a)->placement.endBeat() == Catch::Approx(aEndBefore));
+    CHECK(cm.getClip(b)->placement.startBeat == Catch::Approx(bStartBefore));
+    CHECK(cm.getClip(b)->offset == Catch::Approx(bOffsetBefore));
+    CHECK_FALSE(cm.getClip(a)->autoCrossfade);
+    CHECK_FALSE(cm.getClip(b)->autoCrossfade);
+    CHECK_FALSE(cm.getCrossfadeAtStart(b).has_value());
+
+    um.redo();
+    auto xf = cm.getCrossfadeAtStart(b);
+    REQUIRE(xf.has_value());
+    CHECK(xf->startBeat == Catch::Approx(7.0));
+    CHECK(xf->endBeat == Catch::Approx(9.0));
+    CHECK(cm.getClip(a)->autoCrossfade);
+    CHECK(cm.getClip(b)->autoCrossfade);
+}
+
+TEST_CASE("crossfade region edits keep the untouched edge fixed", "[crossfade]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const auto trackId = createTrack();
+
+    const ClipId a = createAudioBeats(trackId, 0.0, 8.0);
+    const ClipId b = createAudioBeats(trackId, 8.0, 8.0);
+    REQUIRE(cm.setCrossfadeBeats(a, b, 2.0));  // region [7, 9]
+
+    // Drag the overlap end (the fade-in handle gesture): start stays at 7
+    REQUIRE(cm.setCrossfadeRegionBeats(a, b, 7.0, 10.0));
+    auto xf = cm.getCrossfadeAtStart(b);
+    REQUIRE(xf.has_value());
+    CHECK(xf->startBeat == Catch::Approx(7.0));
+    CHECK(xf->endBeat == Catch::Approx(10.0));
+
+    // Drag the overlap start (the fade-out handle gesture): end stays at 10
+    REQUIRE(cm.setCrossfadeRegionBeats(a, b, 6.0, 10.0));
+    xf = cm.getCrossfadeAtStart(b);
+    REQUIRE(xf.has_value());
+    CHECK(xf->startBeat == Catch::Approx(6.0));
+    CHECK(xf->endBeat == Catch::Approx(10.0));
+}

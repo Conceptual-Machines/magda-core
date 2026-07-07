@@ -22,15 +22,27 @@ Displayed in the bottom panel when a MIDI clip is selected. Provides a grid for 
     - **Slice** — Split each selected note into equal pieces (see [Slicing Notes](#slicing-notes))
     - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#piano-roll))
     - **Overlay tracks** — Show other tracks' notes as a ghost overlay (see [Overlay Tracks](#overlay-tracks-ghost-notes))
+    - **Loop** - Toggle the clip's own source loop on or off
     - **Fullscreen** — Pinned to the far right, this toggle expands the MIDI editor to fill the window. Click again to restore. Available for the Piano Roll and Drum Grid Editor.
 
 !!! note "Sidebar controls"
     Stacked on the left sidebar:
 
+    - **Audition** - Toggle note preview (see [Auditioning Notes](#auditioning-notes))
     - **Fold** — Collapse the grid to only the pitches in use (see [Fold](#fold))
     - **MPE** — Toggle pitch glide editing (see [Pitch Glides](#pitch-glides-mpe))
     - **CC** — Add a CC or pitchbend lane to the drawer
     - **Velocity** — Toggle the control-lane drawer at the bottom of the editor
+
+## Auditioning Notes
+
+A speaker toggle sits in the editor's top-left gutter, above the **Fold** button. When it is lit, notes sound through the track's instrument as you work on them:
+
+- **Click** an existing note to play it.
+- ++shift++ **+ drag** to draw a note and hear it for as long as you hold.
+- **Double-click** to add a note and it sounds once.
+
+The toggle is off by default, so ordinary selection stays silent. Its state persists as you switch clips and move between the Piano Roll and the [Drum Grid Editor](drum-grid-editor.md) within a session.
 
 ## Control Lanes
 
@@ -40,6 +52,12 @@ The drawer at the bottom of the editor holds the clip's control lanes, stacked v
 - Add **CC** and **pitchbend** lanes with the **+** button at the bottom of the lane header column (or the **CC** sidebar button). The menu offers **Pitchbend**, common controllers (**CC 1 (Mod Wheel)**, **CC 7 (Volume)**, **CC 11 (Expression)**, **CC 64 (Sustain)**) and **Custom CC...** for any controller number.
 - Each added lane shows its name in the header column with a close button; the pitchbend lane also has a **Range** field for the bend range in semitones.
 - Drag the drawer's top edge to resize it. The drawer grows automatically as lanes are added.
+
+## Editing Velocity with the Wheel
+
+Hold ++shift++ and scroll the wheel over a note to nudge its velocity, in steps and clamped to 1-127. If the note is part of the current selection the whole selection scales together; otherwise only that note changes. ++shift++ **+ wheel** over the empty grid edits the current selection. A small `v NN` readout appears by the cursor while you drag, and a full wheel spin collapses into a single undo step.
+
+While a note is hovered or a selection exists, this gesture takes over from the usual ++shift++ **+ wheel** horizontal scroll.
 
 ## Fold
 

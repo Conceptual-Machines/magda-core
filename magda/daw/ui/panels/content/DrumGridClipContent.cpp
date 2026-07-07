@@ -28,6 +28,7 @@
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/NoteComponent.hpp"
 #include "ui/components/pianoroll/NoteGridHost.hpp"
+#include "ui/components/pianoroll/VelocityReadout.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/layout/LayoutConfig.hpp"
 #include "ui/state/TimelineController.hpp"
@@ -112,6 +113,7 @@ class DrumGridClipGrid : public juce::Component,
     DrumGridClipGrid() {
         setName("DrumGridClipGrid");
         setWantsKeyboardFocus(true);
+        addChildComponent(velocityReadout_);
         magda::ClipManager::getInstance().addListener(this);
     }
 
@@ -204,6 +206,10 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, size_t, double, int)> onNoteCopied;
     std::function<void(magda::ClipId, size_t, bool)> onNoteSelected;
     std::function<void(magda::ClipId, std::vector<size_t>)> onNoteSelectionChanged;
+    // Note preview (audition): fires note-on/off as a grid note is pressed/released
+    // so the host can play it through the track instrument (#1705). Gated by the
+    // editor's preview toggle in the host.
+    std::function<void(int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)> onNotePreview;
     std::function<void(magda::ClipId, std::vector<size_t>, magda::QuantizeMode, double)>
         onQuantizeNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onCopyNotes;
@@ -586,22 +592,8 @@ class DrumGridClipGrid : public juce::Component,
                 g.fillRect(clipEndX, 0, bounds.getWidth() - clipEndX, numRows * rowHeight_);
         }
 
-        // Draw loop region markers
-        if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-            int loopStartX = beatToPixel(clipBeatToDisplayBeat(loopOffsetBeats_));
-            int loopEndX = beatToPixel(clipBeatToDisplayBeat(loopOffsetBeats_ + loopLengthBeats_));
-
-            juce::Colour loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
-
-            if (loopStartX >= 0 && loopStartX <= bounds.getWidth()) {
-                g.setColour(loopColour);
-                g.fillRect(loopStartX - 1, 0, 2, numRows * rowHeight_);
-            }
-            if (loopEndX >= 0 && loopEndX <= bounds.getWidth()) {
-                g.setColour(loopColour);
-                g.fillRect(loopEndX - 1, 0, 2, numRows * rowHeight_);
-            }
-        }
+        // Loop boundaries are shown by the endpoint caps in the ruler strip
+        // above; no full-height loop lines are drawn over the grid content.
 
         // Draw content offset marker (yellow vertical line)
         if (clipId_ != magda::INVALID_CLIP_ID) {
@@ -680,7 +672,7 @@ class DrumGridClipGrid : public juce::Component,
                 int playheadX = beatToPixel(displayBeat);
 
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
                 }
             }
@@ -731,7 +723,51 @@ class DrumGridClipGrid : public juce::Component,
         }
     }
 
+    std::vector<size_t> selectedNoteIndices() const {
+        std::vector<size_t> indices;
+        for (const auto& nc : noteComponents_)
+            if (nc->isSelected())
+                indices.push_back(nc->getNoteIndex());
+        return indices;
+    }
+
+    // Velocity wheel editing (#1706): a selected note scales the whole selection,
+    // an unselected note is edited alone.
+    void adjustVelocityForNote(size_t noteIndex, int velocityDelta) {
+        std::vector<size_t> targets = selectedNoteIndices();
+        if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+            targets = {noteIndex};
+        magda::adjustMidiNoteVelocities(clipId_, targets, velocityDelta);
+        flashVelocityReadout(noteIndex);
+    }
+
+    void flashVelocityReadout(size_t noteIndex) {
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+        if (!clip || noteIndex >= clip->midiNotes.size())
+            return;
+        velocityReadout_.flash(clip->midiNotes[noteIndex].velocity, getMouseXYRelative());
+    }
+
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        // Shift + wheel over the empty grid edits the selected notes' velocity
+        // (#1706), consumed so the view does not scroll. Over a note the
+        // NoteComponent claims the gesture first. With nothing selected it falls
+        // through to the normal Shift = horizontal scroll gesture.
+        if (magda::isVelocityWheelGesture(e.mods)) {
+            const auto targets = selectedNoteIndices();
+            if (!targets.empty()) {
+                float dy = wheel.deltaY;
+                if (wheel.isReversed)
+                    dy = -dy;
+                if (dy != 0.0f) {
+                    magda::adjustMidiNoteVelocities(
+                        clipId_, targets, (dy > 0.0f ? 1 : -1) * magda::kVelocityWheelStep);
+                    flashVelocityReadout(targets.front());
+                }
+                return;
+            }
+        }
+
         // Alt+wheel = vertical zoom (via GestureRouter, #1350); the callback
         // owns the zoom math, the binding only selects the action. A plain
         // wheel falls through to the viewport for content scroll.
@@ -872,6 +908,12 @@ class DrumGridClipGrid : public juce::Component,
                 repaint();
                 return;
             }
+            // Audition the pad on press; released on mouseUp (#1705).
+            if (onNotePreview) {
+                padAuditionNote_ = (*padRows_)[static_cast<size_t>(row)].noteNumber;
+                onNotePreview(padAuditionNote_, defaultNoteVelocity_, true);
+                padAuditionActive_ = true;
+            }
         }
         dragSelectStart_ = e.getPosition();
         dragSelectEnd_ = e.getPosition();
@@ -898,6 +940,13 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void mouseUp(const juce::MouseEvent& e) override {
+        // Release the auditioned pad note before any early return (#1705).
+        if (padAuditionActive_) {
+            if (onNotePreview)
+                onNotePreview(padAuditionNote_, 0, false);
+            padAuditionActive_ = false;
+        }
+
         // Don't deselect on right-click release (context menu was shown)
         if (e.mods.isPopupMenu()) {
             return;
@@ -1110,6 +1159,10 @@ class DrumGridClipGrid : public juce::Component,
     juce::Point<int> dragSelectEnd_;
     int emptyClickRow_ = -1;
     double emptyClickBeat_ = 0.0;
+    // Audition state (#1705): pad note-on sent on an empty-cell press, released on
+    // mouseUp so the note-off matches even if the gesture turns into a drag.
+    bool padAuditionActive_ = false;
+    int padAuditionNote_ = -1;
     bool isRepeatStamping_ = false;
     int repeatStampRow_ = -1;
     double repeatStampStartBeat_ = 0.0;
@@ -1145,6 +1198,8 @@ class DrumGridClipGrid : public juce::Component,
 
     // Note components
     std::vector<std::unique_ptr<magda::NoteComponent>> noteComponents_;
+    // Transient velocity value badge shown during wheel velocity edits (#1706).
+    magda::VelocityReadout velocityReadout_;
 
     // Tracks whose MIDI renders as a ghost overlay (paint-only, never interactive)
     std::vector<magda::TrackId> overlayTrackIds_;
@@ -1380,7 +1435,10 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !clip->isMidi() || !padRows_)
             return;
 
-        auto noteColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        // Notes take the clip's normalized swatch colour (deriveTrackSwatch),
+        // matching the piano roll, the arrangement clip and the colour swatch;
+        // velocity ramps its brightness (#1706).
+        auto noteColour = magda::deriveTrackSwatch(clip->colour);
 
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
             auto visibleNote = clip->midiNotes[i];
@@ -1408,6 +1466,15 @@ class DrumGridClipGrid : public juce::Component,
             };
 
             noteComp->onNoteDeselected = [this](size_t /*index*/) { fireSelectionChanged(); };
+
+            noteComp->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+                if (onNotePreview)
+                    onNotePreview(noteNumber, velocity, isNoteOn);
+            };
+
+            noteComp->onVelocityWheel = [this](size_t index, int velocityDelta) {
+                adjustVelocityForNote(index, velocityDelta);
+            };
 
             noteComp->onNoteMoved = [this](size_t index, double newBeat, int newNoteNumber) {
                 if (!onNoteMoved)
@@ -1621,7 +1688,10 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !padRows_)
             return;
 
-        auto noteColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        // Notes take the clip's normalized swatch colour (deriveTrackSwatch),
+        // matching the piano roll, the arrangement clip and the colour swatch;
+        // velocity ramps its brightness (#1706).
+        auto noteColour = magda::deriveTrackSwatch(clip->colour);
 
         for (auto& noteComp : noteComponents_) {
             size_t noteIndex = noteComp->getNoteIndex();
@@ -2032,6 +2102,23 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(foldToggle_.get());
 
+    // Note preview toggle: when lit, clicking or adding a note auditions it
+    // through the track instrument (#1705). Off by default; shares the
+    // editor-wide static preview state with the piano roll. Same speaker glyphs
+    // as the mute button, recoloured to match the other gutter icons (secondary
+    // grey off) and accent blue when on.
+    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
+                                                        BinaryData::master_off_svgSize);
+    previewToggle_->setTooltip("Preview notes (click a note to hear it)");
+    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    previewToggle_->onClick = [this]() {
+        setNotePreviewEnabled(!isNotePreviewEnabled());
+        syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    };
+    addAndMakeVisible(previewToggle_.get());
+
     // CC lanes button (opens the drawer + the add-lane menu) — same affordance
     // as the piano roll so drum clips can add CC / pitchbend lanes.
     ccLanesBtn_ = std::make_unique<magda::SvgButton>("CCLanes", BinaryData::iconccboldm_svg,
@@ -2165,6 +2252,18 @@ DrumGridClipContent::DrumGridClipContent() {
             magda::SelectionManager::getInstance().addNoteToSelection(clipId, noteIndex);
         } else {
             magda::SelectionManager::getInstance().selectNote(clipId, noteIndex);
+        }
+    };
+
+    // Audition a note through the track's instrument when clicked, gated by the
+    // editor's preview toggle (#1705). Mirrors the pad-row play button path.
+    gridComponent_->onNotePreview = [this](int noteNumber, int velocity, bool isNoteOn) {
+        if (!isNotePreviewEnabled() || editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (clip && clip->trackId != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().previewNote(clip->trackId, noteNumber, velocity,
+                                                           isNoteOn);
         }
     };
 
@@ -2418,8 +2517,11 @@ void DrumGridClipContent::resized() {
     // bottom — mirrors the piano roll's sidebar layout.
     int iconSize = 22;
     int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
+    if (previewToggle_)
+        previewToggle_->setBounds(iconPadding, RULER_HEIGHT + iconPadding, iconSize, iconSize);
     if (foldToggle_)
-        foldToggle_->setBounds(iconPadding, RULER_HEIGHT + iconPadding, iconSize, iconSize);
+        foldToggle_->setBounds(iconPadding, RULER_HEIGHT + 2 * iconPadding + iconSize, iconSize,
+                               iconSize);
     controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
                                iconSize);
     if (ccLanesBtn_)

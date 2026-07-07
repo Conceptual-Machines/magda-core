@@ -3,6 +3,8 @@
 #include <map>
 #include <unordered_set>
 
+#include "../../../components/tracks/TrackControlsLayout.hpp"
+#include "../../../components/tracks/TrackControlsPolicy.hpp"
 #include "../../common/ChordAuditionControl.hpp"
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../common/MonitorControl.hpp"
@@ -74,6 +76,10 @@ class TrackInspector : public BaseInspector,
     std::unordered_set<magda::TrackId> selectedTrackIds_;  // For multi-track mode
     bool isMultiTrackMode_ = false;
 
+    // Which controls the current selection exposes — shared with the arrange
+    // track headers so the two views can't drift. Set in showTrackControls.
+    magda::TrackControlsPolicy policy_;
+
     // Base values for relative multi-track drag (captured at drag start)
     std::unordered_map<magda::TrackId, float> multiTrackBaseVolumes_;
     std::unordered_map<magda::TrackId, float> multiTrackBasePans_;
@@ -92,6 +98,9 @@ class TrackInspector : public BaseInspector,
     std::unique_ptr<SvgButton> soloButton_;
     std::unique_ptr<SvgButton> recordButton_;
     MonitorControl monitorButton_;
+    std::unique_ptr<SvgButton>
+        automationIndicator_;               // Purple when track has automation; toggles section
+    bool automatedSectionExpanded_ = true;  // Automated section shown when it has automation
     std::unique_ptr<magda::DraggableValueLabel> gainLabel_;
     std::unique_ptr<magda::DraggableValueLabel> panLabel_;
 
@@ -152,6 +161,7 @@ class TrackInspector : public BaseInspector,
     std::map<int, magda::TrackId> outputTrackMapping_;
     std::map<int, magda::TrackId> midiOutputTrackMapping_;
     std::map<int, magda::TrackId> inputTrackMapping_;
+    std::map<int, magda::TrackId> midiInputTrackMapping_;
     std::map<int, juce::String> inputChannelMapping_;
 
     // MIDI device change detection

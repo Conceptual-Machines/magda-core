@@ -80,6 +80,10 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // bound to a MixerAnalysis device on the master track.
     std::unique_ptr<daw::ui::OscilloscopeUI> miniOscilloscopeUI_;
     std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
+    void* miniOscilloscopeTelemetryPlugin_ = nullptr;
+    void* miniSpectrumTelemetryPlugin_ = nullptr;
+    std::shared_ptr<daw::ui::OscilloscopeTelemetrySource> miniOscilloscopeTelemetry_;
+    std::shared_ptr<daw::ui::SpectrumTelemetrySource> miniSpectrumTelemetry_;
 
   public:
     void refreshMiniAnalyzers();

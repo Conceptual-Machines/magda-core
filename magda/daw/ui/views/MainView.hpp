@@ -85,6 +85,17 @@ class MainView : public juce::Component,
     std::function<void(int, int)> onTimeSignatureChanged;     // (numerator, denominator)
     std::function<void(ClipId)> onClipRenderRequested;        // Render clip to new file
     std::function<void()> onRenderTimeSelectionRequested;     // Render time selection
+    std::function<void()> onInsertTimeRequested;              // Ripple-insert empty time
+    std::function<void()> onDuplicateTimeRangeRequested;      // Ripple-duplicate time range
+    std::function<void()> onDuplicateLoopRangeRequested;      // Ripple-duplicate the loop region
+    std::function<void()> onSplitAllTracksAtCursorRequested;  // Split all clips at edit cursor
+    std::function<void()> onCopyTimeRangeRequested;           // Copy the time selection's content
+    std::function<void()> onCutTimeRangeRequested;     // Copy time selection, then ripple-delete
+    std::function<void()> onDeleteTimeRangeRequested;  // Ripple-delete the time selection
+    std::function<void()> onCopyLoopRangeRequested;    // Copy the loop region (all tracks)
+    std::function<void()> onCutLoopRangeRequested;     // Copy loop region, then ripple-delete
+    std::function<void()> onDeleteLoopRangeRequested;  // Ripple-delete the loop region
+    std::function<void()> onPasteRippleRequested;      // Ripple-insert clipboard span, then paste
     std::function<void(ClipId)> onBounceInPlaceRequested;     // Bounce MIDI clip in place
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
 
@@ -185,6 +196,13 @@ class MainView : public juce::Component,
     static constexpr int AUX_ROW_HEIGHT = 30;
     static constexpr int MIN_MASTER_STRIP_HEIGHT = 84;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
+
+    // Track-height density presets (the S / M / L gutter buttons). Medium is
+    // pinned to the default track height so a freshly created track and the
+    // Medium preset land at the same size.
+    static constexpr int COMPACT_TRACK_HEIGHT = 61;
+    static constexpr int MEDIUM_TRACK_HEIGHT = TrackHeadersPanel::DEFAULT_TRACK_HEIGHT;
+    static constexpr int SPACIOUS_TRACK_HEIGHT = 126;
 
     // Cached state from controller for quick access
     // These are updated when TimelineStateListener callbacks are called
@@ -422,13 +440,6 @@ class MainView::SelectionOverlayComponent : public juce::Component {
     void drawTimeSelection(juce::Graphics& g);
     void drawLoopRegion(juce::Graphics& g);
     void drawRecordingRegion(juce::Graphics& g);
-
-    // Paints `bandRect` (overlay-local coords) by snapshotting the matching
-    // region of trackContentPanel, inverting RGB with reduced saturation, and
-    // drawing it back. The colour-inversion (rather than a simple blue tint)
-    // is what makes the band readable on a black-painted waveform without
-    // making the whole clip look like a different colour clip.
-    void paintTimeSelectionBand(juce::Graphics& g, juce::Rectangle<int> bandRect);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SelectionOverlayComponent)
 };

@@ -90,6 +90,7 @@ void Config::save() {
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("localizedUIFontScale", localizedUIFontScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
+    root->setProperty("duplicateLoopGrows", duplicateLoopGrows);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
@@ -190,6 +191,7 @@ void Config::save() {
     root->setProperty("browserFilterAudio", browserFilterAudio);
     root->setProperty("browserFilterMidi", browserFilterMidi);
     root->setProperty("browserFilterPreset", browserFilterPreset);
+    root->setProperty("browserTreeView", browserTreeView);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
@@ -226,6 +228,7 @@ void Config::save() {
     root->setProperty("stopUpdatesPlayhead", stopUpdatesPlayhead);
     root->setProperty("followPlayhead", followPlayhead);
     root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
+    root->setProperty("autoCrossfadeByDefault", autoCrossfadeByDefault);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -407,6 +410,7 @@ void Config::load() {
     else
         localizedUIFontScale = defaultLocalizedUIFontScaleForLanguage(juce::String(language));
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
+    duplicateLoopGrows = getBool("duplicateLoopGrows", duplicateLoopGrows);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
@@ -606,6 +610,7 @@ void Config::load() {
     browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);
     browserFilterMidi = getBool("browserFilterMidi", browserFilterMidi);
     browserFilterPreset = getBool("browserFilterPreset", browserFilterPreset);
+    browserTreeView = getBool("browserTreeView", browserTreeView);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
@@ -627,6 +632,7 @@ void Config::load() {
     stopUpdatesPlayhead = getBool("stopUpdatesPlayhead", stopUpdatesPlayhead);
     followPlayhead = getBool("followPlayhead", followPlayhead);
     chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
+    autoCrossfadeByDefault = getBool("autoCrossfadeByDefault", autoCrossfadeByDefault);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 

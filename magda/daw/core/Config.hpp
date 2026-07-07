@@ -337,6 +337,16 @@ class Config {
         chordPreviewOnByDefault = enabled;
     }
 
+    // Whether newly created audio clips get AUTO-XFADE enabled (#1499): their
+    // overlaps with other auto-crossfade audio clips play as crossfades
+    // instead of being trimmed away.
+    bool getAutoCrossfadeByDefault() const {
+        return autoCrossfadeByDefault;
+    }
+    void setAutoCrossfadeByDefault(bool enabled) {
+        autoCrossfadeByDefault = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -386,6 +396,14 @@ class Config {
     }
     void setBrowserFilterPreset(bool enabled) {
         browserFilterPreset = enabled;
+    }
+
+    // Sample browser file view: directory tree instead of a flat list (#1699)
+    bool getBrowserTreeView() const {
+        return browserTreeView;
+    }
+    void setBrowserTreeView(bool enabled) {
+        browserTreeView = enabled;
     }
 
     // Browser Default Directory
@@ -736,6 +754,15 @@ class Config {
         confirmTrackDelete = confirm;
     }
 
+    // Duplicate Loop Range behaviour: true grows the loop to cover the original
+    // plus the new copy; false advances the loop onto just the new copy.
+    bool getDuplicateLoopGrows() const {
+        return duplicateLoopGrows;
+    }
+    void setDuplicateLoopGrows(bool grows) {
+        duplicateLoopGrows = grows;
+    }
+
     // Tooltip Configuration
     bool getShowTooltips() const {
         return showTooltips;
@@ -1038,6 +1065,9 @@ class Config {
     // Track deletion settings
     bool confirmTrackDelete = true;  // Show confirmation dialog before deleting a track
 
+    // Duplicate Loop Range: grow the loop over the copy (true) or advance onto it (false)
+    bool duplicateLoopGrows = true;
+
     // Tooltip settings
     bool showTooltips = true;  // Enabled by default — disable via config
 
@@ -1115,10 +1145,14 @@ class Config {
     // Audition a new chord track's progression on playback by default.
     bool chordPreviewOnByDefault = false;
 
+    // New audio clips get AUTO-XFADE enabled (see #1499).
+    bool autoCrossfadeByDefault = true;
+
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;    // Show audio files by default
     bool browserFilterMidi = false;    // Hide MIDI files by default
     bool browserFilterPreset = false;  // Hide MAGDA presets by default
+    bool browserTreeView = false;      // Sample browser: tree view instead of flat list (#1699)
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;

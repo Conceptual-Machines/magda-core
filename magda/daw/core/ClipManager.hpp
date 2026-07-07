@@ -425,6 +425,64 @@ class ClipManager {
 
     void setLaunchFadeSamples(ClipId clipId, int samples);
 
+    // ========================================================================
+    // Crossfades (#1499)
+    //
+    // A crossfade IS an overlap: two audio arrangement clips on the same track
+    // whose placements partially overlap and whose autoCrossfade flags are set.
+    // Playback fades come from TE's auto-crossfade over the overlap region
+    // (each clip's stored fadeIn/fadeOut returns when the clips are pulled
+    // apart). The geometry is beat-domain and lives in the placements, so it
+    // serializes and round-trips with them — there is no separate duration
+    // field to keep in sync.
+    // ========================================================================
+
+    struct CrossfadeInfo {
+        ClipId leftClipId = INVALID_CLIP_ID;   // earlier clip (fades out)
+        ClipId rightClipId = INVALID_CLIP_ID;  // later clip (fades in)
+        double startBeat = 0.0;                // overlap start (right clip's start)
+        double endBeat = 0.0;                  // overlap end (left clip's end)
+
+        double lengthBeats() const {
+            return endBeat - startBeat;
+        }
+    };
+
+    /// The crossfade covering this clip's start/end edge, if any. Only
+    /// returns a value when the overlap qualifies (both clips audio,
+    /// arrangement, autoCrossfade on, partial overlap).
+    std::optional<CrossfadeInfo> getCrossfadeAtStart(ClipId clipId) const;
+    std::optional<CrossfadeInfo> getCrossfadeAtEnd(ClipId clipId) const;
+
+    /// The audio clip abutting/overlapping this clip's start (previous) or
+    /// end (next) that a crossfade could be created with — regardless of the
+    /// autoCrossfade flags. INVALID_CLIP_ID if none.
+    ClipId findCrossfadeNeighbour(ClipId clipId, bool atStart) const;
+
+    /**
+     * @brief Set the crossfade overlap region between two clips — the core
+     *        beats-authoritative crossfade edit.
+     *
+     * Moves the left clip's right edge to endBeat and the right clip's left
+     * edge to startBeat (content-anchored, via the container resize helpers),
+     * clamped so neither clip swallows the other and neither runs out of
+     * source material. Enables autoCrossfade on both clips when the resulting
+     * overlap is non-empty. startBeat == endBeat butts the joint (removes the
+     * crossfade; the flags stay).
+     *
+     * @return false when the pair is not crossfade-capable (different track,
+     *         non-audio, no joint between them).
+     */
+    bool setCrossfadeRegionBeats(ClipId leftId, ClipId rightId, double startBeat, double endBeat,
+                                 double tempo = 0.0);
+
+    /**
+     * @brief Create/resize a crossfade centred on the joint (current overlap
+     *        centre, or the touch point for abutting clips).
+     *        durationBeats == 0 removes it.
+     */
+    bool setCrossfadeBeats(ClipId leftId, ClipId rightId, double durationBeats, double tempo = 0.0);
+
     // Channels
     void setLeftChannelActive(ClipId clipId, bool active);
     void setRightChannelActive(ClipId clipId, bool active);
@@ -565,19 +623,44 @@ class ClipManager {
     void copyToClipboard(const std::unordered_set<ClipId>& clipIds);
 
     /**
-     * @brief Copy the overlapping portions of clips within a time range to clipboard
-     * @param startTime Start of time range
-     * @param endTime End of time range
+     * @brief Copy the overlapping portions of clips within a beat range to
+     *        clipboard — beats-authoritative entry point.
+     *
+     * Clipboard positions are beat-domain; overlap, trimming and the paste
+     * reference anchor are all computed in beats. bpm is used only to derive
+     * source-domain seconds (audio offset/loop) at the boundary.
+     * @param startBeat Start of range (beats)
+     * @param endBeat End of range (beats)
      * @param trackIds Tracks to copy from (empty = all arrangement tracks)
+     */
+    void copyBeatRangeToClipboard(double startBeat, double endBeat,
+                                  const std::vector<TrackId>& trackIds, double tempoBPM = 120.0);
+
+    /**
+     * @brief Copy a time range to clipboard from timeline seconds.
+     *
+     * Thin shim around copyBeatRangeToClipboard for callers whose natural unit
+     * is still seconds (bridge/UI sites carrying the transitional seconds cache).
      */
     void copyTimeRangeToClipboard(double startTime, double endTime,
                                   const std::vector<TrackId>& trackIds, double tempoBPM = 120.0);
 
     /**
-     * @brief Paste clips from clipboard
-     * @param pasteTime Timeline position to paste at
+     * @brief Paste clips from clipboard at a beat position — beats-authoritative.
+     * @param pasteBeat Timeline position to paste at (beats)
      * @param targetTrackId Track to paste on (INVALID_TRACK_ID = use original tracks)
      * @return IDs of the newly created clips
+     */
+    std::vector<ClipId> pasteFromClipboardBeats(double pasteBeat,
+                                                TrackId targetTrackId = INVALID_TRACK_ID,
+                                                ClipView targetView = ClipView::Arrangement,
+                                                int targetSceneIndex = -1);
+
+    /**
+     * @brief Paste clips from clipboard at a timeline-seconds position.
+     *
+     * Thin shim around pasteFromClipboardBeats for seconds-domain callers.
+     * @param pasteTime Timeline position to paste at (seconds)
      */
     std::vector<ClipId> pasteFromClipboard(double pasteTime,
                                            TrackId targetTrackId = INVALID_TRACK_ID,
@@ -594,6 +677,12 @@ class ClipManager {
      * @brief Check if clipboard has clips
      */
     bool hasClipsInClipboard() const;
+
+    /**
+     * @brief Beat span of the clipboard contents (max clip end - reference anchor).
+     *        0 if the clipboard is empty. Used to size a ripple-insert on paste.
+     */
+    double getClipboardBeatSpan() const;
 
     /**
      * @brief True when clipboard clips have no source track and paste must supply one.
@@ -748,6 +837,14 @@ class ClipManager {
     double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
                                         double lengthBeats, ClipView view) const;
 
+    // How far (in timeline beats) an audio clip's edge can extend before it
+    // runs out of source material. Left = earlier than its current start
+    // (bounded by the source read offset), right = past its current end
+    // (bounded by the source duration). Unbounded (infinity) for looping
+    // clips and when the source duration is unknown.
+    double availableLeftExtensionBeats(const ClipInfo& clip, double bpm) const;
+    double availableRightExtensionBeats(const ClipInfo& clip, double bpm) const;
+
     // Unified clip storage — ClipView is a property, not storage identity
     std::unordered_map<ClipId, ClipInfo> clips_;
 
@@ -770,7 +867,7 @@ class ClipManager {
 
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;
-    double clipboardReferenceTime_ = 0.0;  // For maintaining relative positions
+    double clipboardReferenceBeat_ = 0.0;  // Beats; anchor for maintaining relative paste positions
 
     // Note clipboard storage
     std::vector<MidiNote> noteClipboard_;

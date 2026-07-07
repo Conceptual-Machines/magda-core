@@ -2,7 +2,6 @@
 
 #include <cmath>
 
-#include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -134,8 +133,8 @@ std::vector<LinkableTextSlider*> NimbusUI::getLinkableSliders() {
     return out;
 }
 
-void NimbusUI::setPlugin(daw::audio::MutableCloudsPlugin* plugin) {
-    plugin_ = plugin;
+void NimbusUI::setTelemetrySource(std::shared_ptr<NimbusTelemetrySource> telemetry) {
+    telemetry_ = std::move(telemetry);
 }
 
 void NimbusUI::paintBuffer(juce::Graphics& g) {
@@ -150,9 +149,9 @@ void NimbusUI::paintBuffer(juce::Graphics& g) {
     // Recent input level drives the cloud's liveliness (ambient, not a buffer).
     float energy = 0.0f;
     bool haveAudio = false;
-    if (plugin_ != nullptr && plugin_->inputEnvelopeTap().writePosition() > 0) {
+    if (telemetry_ != nullptr && telemetry_->inputEnvelopeWritePosition() > 0) {
         float env[64];
-        plugin_->inputEnvelopeTap().readLatest(env, 64);
+        telemetry_->readInputEnvelope(env, 64);
         float s = 0.0f;
         for (float e : env)
             s += e;

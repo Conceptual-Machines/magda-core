@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
@@ -25,6 +26,9 @@ class PluginPreferences {
         virtual void drumGridPreferenceChanged(const juce::String& pluginIdentifier) {
             juce::ignoreUnused(pluginIdentifier);
         }
+        virtual void externalPluginFormatPreferenceChanged(PluginFormat preference) {
+            juce::ignoreUnused(preference);
+        }
     };
 
     static PluginPreferences& getInstance();
@@ -47,6 +51,17 @@ class PluginPreferences {
     /** Set/clear the browser/category override. Writes immediately to disk. */
     void setBrowserCategoryOverride(const juce::String& pluginIdentifier,
                                     const juce::String& categoryOverride);
+
+    /** Preferred format when the same external plugin is available as both
+     *  VST3 and AudioUnit. Used only for browser/default lookup presentation;
+     *  exact saved plugin identifiers remain loadable. */
+    PluginFormat externalPluginFormatPreference() const;
+    void setExternalPluginFormatPreference(PluginFormat preference);
+
+    /** Returns KnownPluginList entries with AU/VST3 duplicates collapsed to
+     *  the preferred format when both are available. */
+    juce::Array<juce::PluginDescription> preferredExternalPlugins(
+        const juce::Array<juce::PluginDescription>& plugins) const;
 
     /** Compatibility helper for the legacy MIDI FX category override. */
     bool treatsAsMidiFx(const juce::String& pluginIdentifier) const;
@@ -79,11 +94,13 @@ class PluginPreferences {
     void loadUnlocked();
     void saveUnlocked() const;
     void notifyDrumGridPreferenceChanged(const juce::String& pluginIdentifier);
+    void notifyExternalPluginFormatPreferenceChanged(PluginFormat preference);
 
     mutable std::mutex mutex_;
     std::unordered_set<juce::String> drumGridPlugins_;
     std::unordered_map<juce::String, juce::String> categoryOverrides_;
     std::unordered_map<juce::String, std::vector<magda::KitRow>> defaultKits_;
+    PluginFormat externalFormatPreference_ = PluginFormat::VST3;
     juce::ListenerList<Listener> listeners_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginPreferences)

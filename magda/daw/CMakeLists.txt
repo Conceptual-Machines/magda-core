@@ -48,6 +48,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/copycontent.svg
     ../../assets/icons/general/delete.svg
     ../../assets/icons/general/random.svg
+    ../../assets/icons/general/loop.svg
     ../../assets/icons/general/sidechain.svg
     ../../assets/icons/general/compare.svg
     ../../assets/icons/general/add.svg
@@ -76,13 +77,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/script.svg
     ../../assets/icons/general/speaker.svg
     ../../assets/icons/general/speaker_simple.svg
-    ../../assets/icons/general/speaker_muted.svg
-    ../../assets/icons/general/speaker_on.svg
-    ../../assets/icons/general/speaker_off.svg
     ../../assets/icons/general/master_on.svg
     ../../assets/icons/general/master_off.svg
-    ../../assets/icons/general/master_off_1.svg
-    ../../assets/icons/general/chord_on.svg
     ../../assets/icons/general/chord_off.svg
     ../../assets/icons/general/chord_on_1.svg
     ../../assets/icons/general/solo_off.svg
@@ -152,10 +148,6 @@ juce_add_binary_data(MagdaAssets
     # Inspector icons
     ../../assets/icons/inspector/infinito.svg
     ../../assets/icons/inspector/position.svg
-    ../../assets/icons/inspector/clip_loop_off.svg
-    ../../assets/icons/inspector/clip_loop_on.svg
-    ../../assets/icons/inspector/audio_clip.svg
-    ../../assets/icons/inspector/midi_clip.svg
     ../../assets/icons/inspector/fade_linear.svg
     ../../assets/icons/inspector/fade_convex.svg
     ../../assets/icons/inspector/fade_concave.svg
@@ -189,7 +181,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/fit_loop.svg
     ../../assets/icons/toolbar/horizontal.svg
     ../../assets/icons/toolbar/vertical.svg
-    ../../assets/icons/toolbar/io_routing.svg
     ../../assets/icons/toolbar/location.svg
     ../../assets/icons/toolbar/clock.svg
     # Footer view mode icons
@@ -197,8 +188,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/footer/icon-arrangement-boldm.svg
     ../../assets/icons/footer/icon-mix-boldm.svg
     # Legacy view mode icons (still used by the clip inspector view toggle)
-    ../../assets/icons/footer/Session.svg
-    ../../assets/icons/footer/Arrangement.svg
     # Sidebar icons
     ../../assets/icons/sidebar/plug.svg
     # Browser icons
@@ -369,10 +358,19 @@ target_sources(magda_plugin_scanner PRIVATE
     engine/plugin_scanner_main.cpp
 )
 
+# Headless CLI for e2e project round-trips.
+juce_add_console_app(magda_cli
+    VERSION "${MAGDA_BUNDLE_VERSION}"
+    COMPANY_NAME "Conceptual Machines"
+    PRODUCT_NAME "MAGDA CLI"
+    BUNDLE_ID "com.MAGDA.MAGDACLI"
+)
+
 # =============================================================================
 # Per-subdirectory sources
 # =============================================================================
 
+add_subdirectory(cli)
 add_subdirectory(core)
 add_subdirectory(audio)
 add_subdirectory(engine)
@@ -592,6 +590,38 @@ target_include_directories(magda_plugin_scanner
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
+
+target_link_libraries(magda_cli
+    PRIVATE
+    magda_daw
+    juce::juce_core
+    juce::juce_events
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    tracktion::tracktion_engine
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+)
+
+target_compile_definitions(magda_cli
+    PRIVATE
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=1
+    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    JUCE_WEB_BROWSER=0
+    $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+)
+
+target_include_directories(magda_cli
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/project
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+
+if(APPLE)
+    target_link_options(magda_cli PRIVATE "-Wl,-exported_symbol,_main")
+endif()
 
 # On MSVC Release builds, generate a PDB for crash symbolization.
 # /Zi is applied here (not globally) so llama.cpp and other third-party targets

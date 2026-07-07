@@ -3,7 +3,11 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <map>
+
 #include "PanelContent.hpp"
+#include "SearchTextEditor.hpp"
+#include "core/PluginPreferences.hpp"
 
 namespace magda {
 class TracktionEngineWrapper;
@@ -51,13 +55,15 @@ struct PluginBrowserInfo {
  */
 class PluginBrowserContent : public PanelContent,
                              public juce::TreeViewItem,
-                             public juce::ChangeListener {
+                             public juce::ChangeListener,
+                             public magda::PluginPreferences::Listener {
   public:
     PluginBrowserContent();
     ~PluginBrowserContent() override;
 
     // ChangeListener — auto-refresh when KnownPluginList changes (e.g. after scan)
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    void externalPluginFormatPreferenceChanged(magda::PluginFormat preference) override;
 
     PanelContentType getContentType() const override {
         return PanelContentType::PluginBrowser;
@@ -94,7 +100,7 @@ class PluginBrowserContent : public PanelContent,
 
   private:
     // UI Components
-    juce::TextEditor searchBox_;
+    SearchTextEditor searchBox_;
     juce::TreeView pluginTree_;
     juce::ComboBox viewModeSelector_;
 
@@ -103,7 +109,8 @@ class PluginBrowserContent : public PanelContent,
         ByCategory,      // Instruments, Effects
         ByManufacturer,  // Grouped by vendor
         ByFormat,        // VST3, AU
-        Favorites
+        Favorites,
+        Folders  // User-defined folders (drag plugins in, or use the context menu)
     };
     ViewMode currentViewMode_ = ViewMode::ByCategory;
 
@@ -132,8 +139,26 @@ class PluginBrowserContent : public PanelContent,
     void loadAliases();
     juce::File getAliasesFile() const;
 
+    // User folders (issue #1700) — user-defined browser folders, persisted
+    // like favorites/aliases. A plugin lives in at most one folder; anything
+    // unassigned shows under "Unfiled" in the Folders view.
+    void assignPluginToFolder(const juce::String& pluginKey, const juce::String& folderName);
+    void createFolder(const juce::String& name);
+    void renameFolder(const juce::String& oldName, const juce::String& newName);
+    void deleteFolder(const juce::String& name);
+    void showFolderContextMenu(const juce::String& folderName, juce::Point<int> position);
+    void showNewFolderDialog(const juce::String& pluginKeyToAssign = {});
+    void showRenameFolderDialog(const juce::String& folderName);
+    void saveFolders();
+    void loadFolders();
+    juce::File getFoldersFile() const;
+
+    juce::StringArray folderNames_;                           // in creation order
+    std::map<juce::String, juce::String> pluginFolderByKey_;  // plugin key -> folder name
+
     class PluginTreeItem;
     class CategoryTreeItem;
+    class FolderTreeItem;
 
     std::unique_ptr<juce::TreeViewItem> rootItem_;
     std::unique_ptr<juce::Drawable> instrumentIcon_;

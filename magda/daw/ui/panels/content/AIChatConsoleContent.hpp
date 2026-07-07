@@ -17,6 +17,7 @@
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/MixAnalysisService.hpp"
+#include "../../../core/PluginPreferences.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackMeasurementManager.hpp"
 #include "../../../core/ViewModeController.hpp"
@@ -55,7 +56,8 @@ class AIChatConsoleContent : public PanelContent,
                              public magda::ProjectManagerListener,
                              public magda::ConfigListener,
                              public magda::ViewModeListener,
-                             public magda::MixAnalysisService::Listener {
+                             public magda::MixAnalysisService::Listener,
+                             public magda::PluginPreferences::Listener {
   public:
     AIChatConsoleContent();
     ~AIChatConsoleContent() override;
@@ -85,6 +87,10 @@ class AIChatConsoleContent : public PanelContent,
 
     // MixAnalysisService::Listener (#886): refresh the "mix analysis ready" chip.
     void mixAnalysisChanged() override;
+
+    // PluginPreferences::Listener: keep @plugin autocomplete aligned with the
+    // preferred AU/VST3 presentation list.
+    void externalPluginFormatPreferenceChanged(magda::PluginFormat preference) override;
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;

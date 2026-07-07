@@ -34,6 +34,11 @@ inline void resetJuceProjectState() {
             audioBridge->resetTestState();
         if (auto* midiBridge = engine->getMidiBridge())
             midiBridge->resetTestState();
+        if (auto* edit = engine->getEdit()) {
+            if (auto* ctx = edit->getCurrentPlaybackContext();
+                ctx && ctx->isPlaybackGraphAllocated())
+                ctx->reallocate();
+        }
     }
 }
 

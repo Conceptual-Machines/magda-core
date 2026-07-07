@@ -39,12 +39,14 @@ LevelsUI::LevelsUI() {
 
 LevelsUI::~LevelsUI() {
     stopTimer();
-    if (plugin_ != nullptr)
-        plugin_->setActive(false);
+    if (telemetry_ != nullptr)
+        telemetry_->setActive(false);
 }
 
-void LevelsUI::setPlugin(daw::audio::LevelsPlugin* plugin) {
-    plugin_ = plugin;
+void LevelsUI::setTelemetrySource(std::shared_ptr<LevelsTelemetrySource> telemetry) {
+    if (telemetry_ != nullptr)
+        telemetry_->setActive(false);
+    telemetry_ = std::move(telemetry);
     updateActiveState();
     repaint();
 }
@@ -59,8 +61,8 @@ void LevelsUI::parentHierarchyChanged() {
 
 void LevelsUI::updateActiveState() {
     const bool live = isVisible() && getParentComponent() != nullptr;
-    if (plugin_ != nullptr)
-        plugin_->setActive(live);
+    if (telemetry_ != nullptr)
+        telemetry_->setActive(live);
     if (live && !isTimerRunning())
         startTimerHz(kTimerHz);
     else if (!live && isTimerRunning())
@@ -68,9 +70,9 @@ void LevelsUI::updateActiveState() {
 }
 
 void LevelsUI::timerCallback() {
-    if (!isShowing() || plugin_ == nullptr)
+    if (!isShowing() || telemetry_ == nullptr)
         return;
-    snapshot_ = plugin_->getSnapshot();
+    snapshot_ = telemetry_->snapshot();
     repaint();
 }
 

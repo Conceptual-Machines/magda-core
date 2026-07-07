@@ -7,6 +7,7 @@
 
 #include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
+#include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
 #include "../components/mixer/LevelMeter.hpp"
@@ -437,17 +438,17 @@ void MainView::setupComponents() {
     // density_large.svg (2 rows = spacious)
     setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::density_small_svg,
                       BinaryData::density_small_svgSize);
-    trackSmallButton->onClick = [this]() { setAllTrackHeights(47); };
+    trackSmallButton->onClick = [this]() { setAllTrackHeights(COMPACT_TRACK_HEIGHT); };
     trackSmallButton->setTooltip("Compact track height");
 
     setupCornerButton(trackMediumButton, "TrackMedium", BinaryData::density_medium_svg,
                       BinaryData::density_medium_svgSize);
-    trackMediumButton->onClick = [this]() { setAllTrackHeights(78); };
+    trackMediumButton->onClick = [this]() { setAllTrackHeights(MEDIUM_TRACK_HEIGHT); };
     trackMediumButton->setTooltip("Medium track height");
 
     setupCornerButton(trackLargeButton, "TrackLarge", BinaryData::density_large_svg,
                       BinaryData::density_large_svgSize);
-    trackLargeButton->onClick = [this]() { setAllTrackHeights(140); };
+    trackLargeButton->onClick = [this]() { setAllTrackHeights(SPACIOUS_TRACK_HEIGHT); };
     trackLargeButton->setTooltip("Large track height");
 
     setupCornerButton(ioToggleButton, "IOToggle", BinaryData::inputoutput_svg,
@@ -534,14 +535,20 @@ void MainView::setupCallbacks() {
         dispatchArrangementGesture(g);
     };
 
-    // Handle time selection from timeline ruler
-    timeline->onTimeSelectionBeatsChanged = [this](double startBeats, double endBeats) {
+    // Dragging the ruler strip beneath the loop marker area selects a time
+    // range across ALL tracks (every track's clips), which is the range source
+    // the ripple/insert/duplicate/delete time-range ops act on.
+    timeline->onRulerTimeSelectionChanged = [this](double startBeats, double endBeats,
+                                                   bool movePlayhead) {
         if (startBeats < 0 || endBeats < 0) {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
-            timelineController->dispatch(SetTimeSelectionBeatsEvent{startBeats, endBeats, {}});
-            // Move playhead to follow the left side of selection
-            timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
+            timelineController->dispatch(
+                SetTimeSelectionBeatsEvent::allTracks(startBeats, endBeats));
+            // Snap the playhead to the selection start only when the selection is
+            // first created; resizing an existing edge leaves the playhead alone.
+            if (movePlayhead)
+                timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
         }
     };
 
@@ -1876,9 +1883,23 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
                 LayoutConfig::TIMELINE_LEFT_PADDING;
     playX -= scrollOffset;
 
-    // Draw edit cursor (triangle) - always visible
+    // Draw edit cursor (triangle) - always visible. Neutral near-white to match
+    // the range strip and stay hue-agnostic over any clip colour.
     if (editPos >= 0 && editPos <= owner.timelineLength && editX >= 0 && editX < getWidth()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        // When the playhead sits on top of a time-range handle (it snaps to the
+        // selection start on creation), draw it translucent so the blue handle
+        // shows through instead of being fully covered.
+        float triAlpha = 1.0f;
+        if (state.selection.isVisuallyActive()) {
+            const auto handleX = [&](double beats) {
+                return static_cast<int>(std::round(beats * owner.horizontalZoom)) +
+                       LayoutConfig::TIMELINE_LEFT_PADDING - scrollOffset;
+            };
+            if (std::abs(editX - handleX(state.selection.startBeats)) <= 5 ||
+                std::abs(editX - handleX(state.selection.endBeats)) <= 5)
+                triAlpha = 0.55f;
+        }
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(triAlpha));
         // Fill the playhead row: top edge at y0, tip at the row bottom.
         const float ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
@@ -1891,7 +1912,7 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
         playX < getWidth()) {
         // Draw thin vertical line extending the full track area, starting at the
         // top of the track content (just below the playhead/triangle row).
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
         const float lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         g.drawLine(static_cast<float>(playX), lineTop, static_cast<float>(playX),
                    static_cast<float>(getHeight()), 1.5f);
@@ -2244,6 +2265,50 @@ void MainView::setupSelectionCallbacks() {
         if (onRenderTimeSelectionRequested)
             onRenderTimeSelectionRequested();
     };
+    trackContentPanel->onInsertTimeRequested = [this]() {
+        if (onInsertTimeRequested)
+            onInsertTimeRequested();
+    };
+    trackContentPanel->onDuplicateTimeRangeRequested = [this]() {
+        if (onDuplicateTimeRangeRequested)
+            onDuplicateTimeRangeRequested();
+    };
+    trackContentPanel->onDuplicateLoopRangeRequested = [this]() {
+        if (onDuplicateLoopRangeRequested)
+            onDuplicateLoopRangeRequested();
+    };
+    trackContentPanel->onSplitAllTracksAtCursorRequested = [this]() {
+        if (onSplitAllTracksAtCursorRequested)
+            onSplitAllTracksAtCursorRequested();
+    };
+    trackContentPanel->onCopyTimeRangeRequested = [this]() {
+        if (onCopyTimeRangeRequested)
+            onCopyTimeRangeRequested();
+    };
+    trackContentPanel->onCutTimeRangeRequested = [this]() {
+        if (onCutTimeRangeRequested)
+            onCutTimeRangeRequested();
+    };
+    trackContentPanel->onDeleteTimeRangeRequested = [this]() {
+        if (onDeleteTimeRangeRequested)
+            onDeleteTimeRangeRequested();
+    };
+    trackContentPanel->onCopyLoopRangeRequested = [this]() {
+        if (onCopyLoopRangeRequested)
+            onCopyLoopRangeRequested();
+    };
+    trackContentPanel->onCutLoopRangeRequested = [this]() {
+        if (onCutLoopRangeRequested)
+            onCutLoopRangeRequested();
+    };
+    trackContentPanel->onDeleteLoopRangeRequested = [this]() {
+        if (onDeleteLoopRangeRequested)
+            onDeleteLoopRangeRequested();
+    };
+    trackContentPanel->onPasteRippleRequested = [this]() {
+        if (onPasteRippleRequested)
+            onPasteRippleRequested();
+    };
     trackContentPanel->onBounceInPlaceRequested = [this](ClipId id) {
         if (onBounceInPlaceRequested)
             onBounceInPlaceRequested(id);
@@ -2351,7 +2416,9 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     startX -= scrollOffset;
     endX -= scrollOffset;
 
-    // Skip if out of view horizontally
+    // Skip if out of view horizontally. Returning here (rather than clamping to
+    // an empty range) is important for the spotlight model below: if the
+    // selection is scrolled off-screen we must NOT dim the whole visible area.
     if (endX < 0 || startX > getWidth()) {
         return;
     }
@@ -2361,11 +2428,20 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     endX = juce::jmin(getWidth(), endX);
 
     const int selectionWidth = endX - startX;
-    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f);
+    if (selectionWidth <= 0) {
+        return;
+    }
 
-    if (state.selection.automationOnly && !state.selection.automationLaneIds.empty()) {
-        const int scrollY = owner.trackContentViewport->getViewPositionY();
-        for (auto laneId : state.selection.automationLaneIds) {
+    const int scrollY = owner.trackContentViewport->getViewPositionY();
+
+    // Collect the "lit" rectangles: the rows the selection actually covers.
+    // Everything outside these is dimmed, so clip colours inside the selection
+    // stay honest (spotlight model). This reads over any clip hue because it
+    // signals selection with luminance/contrast, not colour.
+    juce::RectangleList<int> litRects;
+
+    const auto addLaneRects = [&](const auto& laneIds) {
+        for (auto laneId : laneIds) {
             juce::Rectangle<int> laneBounds;
             if (!owner.trackContentPanel->getAutomationLaneBounds(laneId, laneBounds))
                 continue;
@@ -2377,141 +2453,54 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
 
             const int clippedY = juce::jmax(0, drawY);
             const int clippedBottom = juce::jmin(getHeight(), drawBottom);
-            const int drawHeight = clippedBottom - clippedY;
-            if (drawHeight <= 0)
-                continue;
-
-            paintTimeSelectionBand(g, {startX, clippedY, selectionWidth, drawHeight});
-
-            g.setColour(edgeColour);
-            g.drawLine(static_cast<float>(startX), static_cast<float>(clippedY),
-                       static_cast<float>(startX), static_cast<float>(clippedBottom), 2.0f);
-            g.drawLine(static_cast<float>(endX), static_cast<float>(clippedY),
-                       static_cast<float>(endX), static_cast<float>(clippedBottom), 2.0f);
+            if (clippedBottom - clippedY > 0)
+                litRects.add({startX, clippedY, selectionWidth, clippedBottom - clippedY});
         }
-        return;
-    }
-
-    int scrollY = owner.trackContentViewport->getViewPositionY();
-    int numTracks = owner.trackContentPanel->getNumTracks();
-
-    // Clip time selections only paint clip rows. Automation-only selections
-    // have their own lane-scoped branch above.
-    for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex) {
-        if (state.selection.includesTrack(trackIndex)) {
-            int trackY = owner.trackContentPanel->getTrackYPosition(trackIndex) - scrollY;
-            int trackHeight = owner.trackContentPanel->getTrackHeight(trackIndex);
-            trackHeight = static_cast<int>(trackHeight * owner.verticalZoom);
-
-            if (trackY + trackHeight < 0 || trackY > getHeight()) {
-                continue;
-            }
-
-            int drawY = juce::jmax(0, trackY);
-            int drawBottom = juce::jmin(getHeight(), trackY + trackHeight);
-            int drawHeight = drawBottom - drawY;
-
-            if (drawHeight > 0) {
-                paintTimeSelectionBand(g, {startX, drawY, selectionWidth, drawHeight});
-
-                g.setColour(edgeColour);
-                g.drawLine(static_cast<float>(startX), static_cast<float>(drawY),
-                           static_cast<float>(startX), static_cast<float>(drawBottom), 2.0f);
-                g.drawLine(static_cast<float>(endX), static_cast<float>(drawY),
-                           static_cast<float>(endX), static_cast<float>(drawBottom), 2.0f);
-            }
-        }
-    }
-
-    for (auto laneId : state.selection.automationLaneIds) {
-        juce::Rectangle<int> laneBounds;
-        if (!owner.trackContentPanel->getAutomationLaneBounds(laneId, laneBounds))
-            continue;
-
-        const int drawY = laneBounds.getY() - scrollY;
-        const int drawBottom = drawY + laneBounds.getHeight();
-        if (drawBottom < 0 || drawY > getHeight())
-            continue;
-
-        const int clippedY = juce::jmax(0, drawY);
-        const int clippedBottom = juce::jmin(getHeight(), drawBottom);
-        const int drawHeight = clippedBottom - clippedY;
-        if (drawHeight <= 0)
-            continue;
-
-        paintTimeSelectionBand(g, {startX, clippedY, selectionWidth, drawHeight});
-
-        g.setColour(edgeColour);
-        g.drawLine(static_cast<float>(startX), static_cast<float>(clippedY),
-                   static_cast<float>(startX), static_cast<float>(clippedBottom), 2.0f);
-        g.drawLine(static_cast<float>(endX), static_cast<float>(clippedY), static_cast<float>(endX),
-                   static_cast<float>(clippedBottom), 2.0f);
-    }
-}
-
-void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics& g,
-                                                                 juce::Rectangle<int> bandRect) {
-    if (bandRect.isEmpty() || !owner.trackContentPanel || !owner.trackContentViewport)
-        return;
-
-    const int scrollX = owner.trackContentViewport->getViewPositionX();
-    const int scrollY = owner.trackContentViewport->getViewPositionY();
-
-    auto panelRect = bandRect.translated(scrollX, scrollY)
-                         .getIntersection(owner.trackContentPanel->getLocalBounds());
-    if (panelRect.isEmpty())
-        return;
-
-    const auto invertPixel = [](juce::Colour px) {
-        const auto invertAndContrast = [](int channel) {
-            constexpr float contrast = 1.15f;
-            const float inverted = static_cast<float>(255 - channel);
-            return static_cast<juce::uint8>(juce::jlimit(
-                0, 255, static_cast<int>(std::round((inverted - 128.0f) * contrast + 128.0f))));
-        };
-
-        auto inverted =
-            juce::Colour::fromRGB(invertAndContrast(px.getRed()), invertAndContrast(px.getGreen()),
-                                  invertAndContrast(px.getBlue()));
-        auto blueTinted =
-            inverted.interpolatedWith(DarkTheme::getColour(DarkTheme::ACCENT_BLUE), 0.45f);
-        return blueTinted.withAlpha(px.getAlpha());
     };
 
-    // Force a software image: NativeImageType on Windows is Direct2D-backed,
-    // and BitmapData pixel writes don't round-trip back to the GPU surface,
-    // so the inversion below would silently no-op on Windows.
-    auto snapshot = owner.trackContentPanel->createComponentSnapshot(panelRect, false, 1.0f,
-                                                                     juce::SoftwareImageType{});
-    if (snapshot.isValid() && snapshot.getWidth() > 0 && snapshot.getHeight() > 0) {
-        juce::Image::BitmapData data(snapshot, juce::Image::BitmapData::readWrite);
-        for (int y = 0; y < data.height; ++y) {
-            for (int x = 0; x < data.width; ++x) {
-                const auto px = data.getPixelColour(x, y);
-                data.setPixelColour(x, y, invertPixel(px));
-            }
+    if (state.selection.automationOnly && !state.selection.automationLaneIds.empty()) {
+        addLaneRects(state.selection.automationLaneIds);
+    } else {
+        // Clip time selections light clip rows; automation lanes (if any) too.
+        const int numTracks = owner.trackContentPanel->getNumTracks();
+        for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex) {
+            if (!state.selection.includesTrack(trackIndex))
+                continue;
+
+            const int trackY = owner.trackContentPanel->getTrackYPosition(trackIndex) - scrollY;
+            const int trackHeight = static_cast<int>(
+                owner.trackContentPanel->getTrackHeight(trackIndex) * owner.verticalZoom);
+
+            if (trackY + trackHeight < 0 || trackY > getHeight())
+                continue;
+
+            const int drawY = juce::jmax(0, trackY);
+            const int drawBottom = juce::jmin(getHeight(), trackY + trackHeight);
+            if (drawBottom - drawY > 0)
+                litRects.add({startX, drawY, selectionWidth, drawBottom - drawY});
         }
 
-        g.drawImageAt(snapshot, panelRect.getX() - scrollX, panelRect.getY() - scrollY);
+        addLaneRects(state.selection.automationLaneIds);
     }
 
-    if (owner.gridOverlay) {
-        auto gridSnapshot = owner.gridOverlay->createComponentSnapshot(bandRect, false, 1.0f,
-                                                                       juce::SoftwareImageType{});
-        if (gridSnapshot.isValid() && gridSnapshot.getWidth() > 0 && gridSnapshot.getHeight() > 0) {
-            juce::Image::BitmapData data(gridSnapshot, juce::Image::BitmapData::readWrite);
-            for (int y = 0; y < data.height; ++y) {
-                for (int x = 0; x < data.width; ++x) {
-                    const auto px = data.getPixelColour(x, y);
-                    if (px.getAlpha() == 0)
-                        continue;
+    if (litRects.isEmpty()) {
+        return;
+    }
 
-                    data.setPixelColour(x, y, invertPixel(px));
-                }
-            }
+    // Spotlight: darken everything outside the lit rectangles.
+    juce::RectangleList<int> dimmed(getLocalBounds());
+    dimmed.subtract(litRects);
+    g.setColour(juce::Colours::black.withAlpha(0.4f));
+    g.fillRectList(dimmed);
 
-            g.drawImageAt(gridSnapshot, bandRect.getX(), bandRect.getY());
-        }
+    // Crisp accent-blue edges at the selection's vertical boundaries, matching
+    // the blue range strip in the ruler and keeping the selection distinct from
+    // the near-white playhead.
+    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.9f);
+    g.setColour(edgeColour);
+    for (const auto& r : litRects) {
+        g.fillRect(r.getX(), r.getY(), 1, r.getHeight());
+        g.fillRect(r.getRight() - 1, r.getY(), 1, r.getHeight());
     }
 }
 
@@ -2544,10 +2533,6 @@ void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
         return;
     }
 
-    // Track original positions before clamping (for marker visibility)
-    int originalStartX = startX;
-    int originalEndX = endX;
-
     // Clamp to visible area for the filled region
     startX = juce::jmax(0, startX);
     endX = juce::jmin(getWidth(), endX);
@@ -2556,24 +2541,13 @@ void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
     bool enabled = state.loop.enabled;
     juce::Colour regionColour = enabled ? DarkTheme::getColour(DarkTheme::LOOP_REGION)
                                         : juce::Colour(0x15808080);  // Light grey, very transparent
-    juce::Colour markerColour = enabled
-                                    ? DarkTheme::getColour(DarkTheme::LOOP_MARKER).withAlpha(0.8f)
-                                    : juce::Colour(0xFF606060);  // Medium grey
 
-    // Draw semi-transparent loop region
+    // Draw the semi-transparent loop region fill only. The loop range is marked
+    // by the triangular flags in the ruler strip; no vertical edge lines are
+    // drawn over the tracks (those "side sticks" cut through clips and read as
+    // noise).
     g.setColour(regionColour);
     g.fillRect(startX, 0, endX - startX, getHeight());
-
-    // Draw loop region edges only if they're actually visible (not clamped)
-    g.setColour(markerColour);
-    if (originalStartX >= 0 && originalStartX <= getWidth()) {
-        g.drawLine(static_cast<float>(originalStartX), 0.0f, static_cast<float>(originalStartX),
-                   static_cast<float>(getHeight()), 2.0f);
-    }
-    if (originalEndX >= 0 && originalEndX <= getWidth()) {
-        g.drawLine(static_cast<float>(originalEndX), 0.0f, static_cast<float>(originalEndX),
-                   static_cast<float>(getHeight()), 2.0f);
-    }
 }
 
 void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g) {
@@ -2666,16 +2640,10 @@ MainView::MasterHeaderPanel::~MasterHeaderPanel() {
 }
 
 void MainView::MasterHeaderPanel::setupControls() {
-    // Speaker on/off button (toggles master mute). Dual-icon: audible = gray
-    // speaker (master_on), muted = orange block (master_off); pre-baked colors.
-    speakerButton = std::make_unique<SvgButton>(
-        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
-        BinaryData::master_off_1_svg, BinaryData::master_off_1_svgSize);
-    speakerButton->setClickingTogglesState(true);
+    // Speaker on/off button (toggles master mute) — one shared recipe with the
+    // inspector / mixer master strip.
+    speakerButton = makeMasterSpeakerButton();
     speakerButton->setTooltip("Mute master");
-    speakerButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    speakerButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    speakerButton->setIconPadding(7.0f);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -2841,8 +2809,7 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
     const auto& master = TrackManager::getInstance().getMasterChannel();
 
     // Dual-icon: toggle state drives which baked icon (audible vs muted) shows.
-    speakerButton->setToggleState(master.muted, juce::dontSendNotification);
-    speakerButton->setTooltip(master.muted ? "Unmute master" : "Mute master");
+    syncMasterSpeakerButton(*speakerButton, master.muted);
 
     volumeLabel->setValue(gainToDb(master.volume), juce::dontSendNotification);
 

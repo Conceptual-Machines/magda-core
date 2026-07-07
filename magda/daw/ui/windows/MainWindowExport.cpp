@@ -9,6 +9,7 @@
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
+#include "engine/OfflineRenderHelper.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -275,146 +276,117 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
     auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                  juce::FileBrowserComponent::warnAboutOverwriting;
 
-    fileChooser_->launchAsync(
-        flags, [this, settings, engine, edit, extension](const juce::FileChooser& chooser) {
-            auto file = chooser.getResult();
-            if (file == juce::File()) {
-                fileChooser_.reset();
-                return;
-            }
-
-            // Ensure correct extension
-            if (!file.hasFileExtension(extension)) {
-                file = file.withFileExtension(extension);
-            }
-
-            // CRITICAL: Stop transport AND free playback context before offline rendering
-            // Tracktion Engine asserts that play context is not active during export
-            // (assertion in tracktion_NodeRenderContext.cpp:182)
-            auto& transport = edit->getTransport();
-            if (transport.isPlaying()) {
-                transport.stop(false, false);  // Stop immediately without fading
-            }
-
-            te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
-
-            te::freePlaybackContextIfNotRecording(transport);
-
-            // Enable all plugins for offline rendering
-            // When transport stops, AudioBridge bypasses generator plugins (like test tone)
-            // but we need them enabled for export to work properly
-            for (auto track : te::getAudioTracks(*edit)) {
-                for (auto plugin : track->pluginList) {
-                    if (!plugin->isEnabled()) {
-                        plugin->setEnabled(true);
-                    }
-                }
-            }
-
-            // Create Renderer::Parameters
-            te::Renderer::Parameters params(*edit);
-            params.destFile = file;
-
-            // The chord track is monitor-only: exclude it from the bounce so its
-            // notes never reach the master render. tracksToDo lists every track
-            // index to render (empty = all), so we set all but the chord track.
-            if (auto chordId = magda::TrackManager::getInstance().getChordTrackId();
-                chordId != magda::INVALID_TRACK_ID) {
-                if (auto* bridge = engine->getAudioBridge()) {
-                    if (auto* chordTe = bridge->getAudioTrack(chordId)) {
-                        auto allTracks = te::getAllTracks(*edit);
-                        juce::BigInteger tracksToDo;
-                        for (int i = 0; i < allTracks.size(); ++i)
-                            if (allTracks[i] != chordTe)
-                                tracksToDo.setBit(i);
-                        params.tracksToDo = tracksToDo;
-                    }
-                }
-            }
-
-            // Set audio format
-            auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
-            if (settings.format.startsWith("WAV")) {
-                params.audioFormat = formatManager.getWavFormat();
-            } else if (settings.format == "FLAC") {
-                params.audioFormat = formatManager.getFlacFormat();
-            } else {
-                params.audioFormat = formatManager.getWavFormat();  // Default
-            }
-
-            params.bitDepth = getBitDepthForFormat(settings.format);
-            params.sampleRateForAudio = settings.sampleRate;
-            params.shouldNormalise = settings.normalize;
-            params.normaliseToLevelDb = 0.0f;
-            params.useMasterPlugins = true;
-            params.usePlugins = true;
-
-            // Allow export even when there are no clips (generator devices can still produce audio)
-            params.checkNodesForAudio = false;
-
-            // Match live playback block size so LFO phase reset timing
-            // (which has a one-block delay via pendingNoteOnResync_) behaves
-            // identically to live playback.
-            params.blockSizeForAudio = 512;
-            params.realTimeRender = settings.realTimeRender;
-
-            // Set time range based on export range setting
-            te::TimeRange requestedRange;
-            using ExportRange = ExportAudioDialog::ExportRange;
-            switch (settings.exportRange) {
-                case ExportRange::TimeSelection:
-                    // TODO: Get actual time selection from SelectionManager when implemented
-                    requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                                   te::TimePosition() + edit->getLength());
-                    break;
-
-                case ExportRange::LoopRegion:
-                    requestedRange = edit->getTransport().getLoopRange();
-                    break;
-
-                case ExportRange::EntireSong:
-                default:
-                    requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                                   te::TimePosition() + edit->getLength());
-                    break;
-            }
-
-            // Add preroll for offline renders to let plugins settle.
-            // Even with the default 512 block size, some plugins need extra
-            // warmup time. The preroll is rendered then trimmed off.
-            constexpr double prerollSeconds = 2.0;
-            double actualPreroll = 0.0;
-            if (!settings.realTimeRender) {
-                actualPreroll = prerollSeconds;
-                params.time = te::TimeRange(requestedRange.getStart() -
-                                                te::TimeDuration::fromSeconds(actualPreroll),
-                                            requestedRange.getEnd());
-            } else {
-                params.time = requestedRange;
-            }
-
-            // Enable MIDI-triggered LFO modulation for offline rendering.
-            // During live playback, the message-thread timer gates these LFOs
-            // based on held notes, but it can't keep up with non-real-time rendering.
-            auto* audioBridge = engine->getAudioBridge();
-            if (audioBridge)
-                audioBridge->getPluginManager().prepareForRendering();
-
-            // Launch progress window with background rendering (non-blocking)
-            // The window will delete itself via threadComplete() callback.
-            // ExportProgressWindow holds a ReallocationInhibitor to prevent
-            // edit.restartPlayback() from recreating the playback context during render.
-            auto* progressWindow = new ExportProgressWindow(
-                params, file, transport,
-                [audioBridge]() {
-                    if (audioBridge)
-                        audioBridge->getPluginManager().restoreAfterRendering();
-                },
-                actualPreroll, settings.leadInSilence);
-            progressWindow->launchThread();
-
+    fileChooser_->launchAsync(flags, [this, settings, engine, edit,
+                                      extension](const juce::FileChooser& chooser) {
+        auto file = chooser.getResult();
+        if (file == juce::File()) {
             fileChooser_.reset();
-        });
+            return;
+        }
+
+        // Ensure correct extension
+        if (!file.hasFileExtension(extension)) {
+            file = file.withFileExtension(extension);
+        }
+
+        auto& transport = edit->getTransport();
+        te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
+        prepareEditForOfflineRender(*edit);
+
+        auto& formatManager = engine->getEngine()->getAudioFileFormatManager();
+        juce::AudioFormat* audioFormat = formatManager.getWavFormat();
+        if (settings.format.startsWith("WAV")) {
+            audioFormat = formatManager.getWavFormat();
+        } else if (settings.format == "FLAC") {
+            audioFormat = formatManager.getFlacFormat();
+        }
+
+        auto params =
+            makeOfflineRenderParameters(*edit, {.destFile = file,
+                                                .audioFormat = audioFormat,
+                                                .bitDepth = getBitDepthForFormat(settings.format),
+                                                .sampleRate = settings.sampleRate,
+                                                .blockSize = 512,
+                                                .shouldNormalise = settings.normalize,
+                                                .normaliseToLevelDb = 0.0f,
+                                                .useMasterPlugins = true,
+                                                .usePlugins = true,
+                                                .checkNodesForAudio = false,
+                                                .realTimeRender = settings.realTimeRender});
+
+        // The chord track is monitor-only: exclude it from the bounce so its
+        // notes never reach the master render. tracksToDo lists every track
+        // index to render (empty = all), so we set all but the chord track.
+        if (auto chordId = magda::TrackManager::getInstance().getChordTrackId();
+            chordId != magda::INVALID_TRACK_ID) {
+            if (auto* bridge = engine->getAudioBridge()) {
+                if (auto* chordTe = bridge->getAudioTrack(chordId)) {
+                    auto allTracks = te::getAllTracks(*edit);
+                    juce::BigInteger tracksToDo;
+                    for (int i = 0; i < allTracks.size(); ++i)
+                        if (allTracks[i] != chordTe)
+                            tracksToDo.setBit(i);
+                    params.tracksToDo = tracksToDo;
+                }
+            }
+        }
+
+        // Set time range based on export range setting
+        te::TimeRange requestedRange;
+        using ExportRange = ExportAudioDialog::ExportRange;
+        switch (settings.exportRange) {
+            case ExportRange::TimeSelection:
+                // TODO: Get actual time selection from SelectionManager when implemented
+                requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                               te::TimePosition() + edit->getLength());
+                break;
+
+            case ExportRange::LoopRegion:
+                requestedRange = edit->getTransport().getLoopRange();
+                break;
+
+            case ExportRange::EntireSong:
+            default:
+                requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                               te::TimePosition() + edit->getLength());
+                break;
+        }
+
+        // Add preroll for offline renders to let plugins settle.
+        // Even with the default 512 block size, some plugins need extra
+        // warmup time. The preroll is rendered then trimmed off.
+        constexpr double prerollSeconds = 2.0;
+        double actualPreroll = 0.0;
+        if (!settings.realTimeRender) {
+            actualPreroll = prerollSeconds;
+            params.time = te::TimeRange(requestedRange.getStart() -
+                                            te::TimeDuration::fromSeconds(actualPreroll),
+                                        requestedRange.getEnd());
+        } else {
+            params.time = requestedRange;
+        }
+
+        // Enable MIDI-triggered LFO modulation for offline rendering.
+        // During live playback, the message-thread timer gates these LFOs
+        // based on held notes, but it can't keep up with non-real-time rendering.
+        auto* audioBridge = engine->getAudioBridge();
+        preparePluginsForOfflineRender(*engine);
+
+        // Launch progress window with background rendering (non-blocking)
+        // The window will delete itself via threadComplete() callback.
+        // ExportProgressWindow holds a ReallocationInhibitor to prevent
+        // edit.restartPlayback() from recreating the playback context during render.
+        auto* progressWindow = new ExportProgressWindow(
+            params, file, transport,
+            [audioBridge]() {
+                if (audioBridge)
+                    audioBridge->getPluginManager().restoreAfterRendering();
+            },
+            actualPreroll, settings.leadInSilence);
+        progressWindow->launchThread();
+
+        fileChooser_.reset();
+    });
 }
 
 juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) const {

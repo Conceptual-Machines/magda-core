@@ -11,6 +11,12 @@ void ClipInspector::resized() {
     if (bounds.getWidth() < 1 || bounds.getHeight() < 1)
         return;
 
+    // Preserve the scroll position across relayout. The container is
+    // re-anchored at the origin below (setBounds(cb) with cb at 0,0), which
+    // would otherwise snap the view back to the top on every property-driven
+    // update — resized() runs on each one.
+    const auto savedViewPos = clipPropsViewport_.getViewPosition();
+
     // Multi-clip count label (above header when multiple clips selected)
     if (clipCountLabel_.isVisible()) {
         clipCountLabel_.setBounds(bounds.removeFromTop(20));
@@ -423,8 +429,10 @@ void ClipInspector::resized() {
         followActionLoopCountSlider_.setBounds(addRow(24).reduced(0, 1));
     }
 
-    // Set container bounds to accommodate all content
+    // Set container bounds to accommodate all content, then restore the
+    // scroll position (the viewport clamps it if the content shrank).
     clipPropsContainer_.setBounds(cb);
+    clipPropsViewport_.setViewPosition(savedViewPos);
 }
 
 void ClipInspector::ClipPropsContainer::paint(juce::Graphics& g) {

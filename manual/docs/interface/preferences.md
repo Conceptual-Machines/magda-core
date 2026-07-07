@@ -17,6 +17,8 @@ The dialog is organised into sections; each section is described below.
 
 - **Panel visibility defaults** — Choose which panels are shown on startup
 - **Behavior settings** — Configure UI interaction preferences
+- **Auto-crossfade new audio clips** - New audio clips overlap into a [crossfade](../clips.md#crossfades) automatically when they meet a neighbour
+- **Duplicate Loop Range: grow / advance** - When you duplicate the loop range, choose whether the loop grows to cover the copy or advances past it
 - **Auto-hide arrangement scrollbars** — Keep the arrangement scrollbars hidden until you hover near them, for a cleaner workspace
 - **Language** — Select the UI language from the dropdown. The list is populated from the locale files (`.json`) shipped in MAGDA's `lang/` folder, so available languages grow as translations are contributed. A restart-required hint appears after switching; the new language takes effect the next time MAGDA launches. See [Localization](../localization.md) for how translations are managed and how to contribute.
 

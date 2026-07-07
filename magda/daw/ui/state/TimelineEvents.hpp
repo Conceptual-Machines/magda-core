@@ -5,6 +5,7 @@
 #include <set>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "TimelineState.hpp"
 
@@ -232,6 +233,14 @@ struct SetTimeSelectionBeatsEvent {
           trackIndices(std::move(trackIndicesIn)),
           automationOnly(automationOnlyIn),
           automationLaneIds(std::move(automationLaneIdsIn)) {}
+
+    // A full-height selection spanning every track (empty trackIndices). This is
+    // the range source for the ripple/insert/duplicate/delete time-range ops:
+    // it time-selects all clips in [startBeats, endBeats). Used by the ruler
+    // strip drag beneath the loop marker area (see TimelineComponent).
+    static SetTimeSelectionBeatsEvent allTracks(double startBeats, double endBeats) {
+        return SetTimeSelectionBeatsEvent{startBeats, endBeats, /*trackIndices*/ {}};
+    }
 
     double startBeats;
     double endBeats;
@@ -519,6 +528,15 @@ struct RemoveMarkerEvent {
 };
 
 /**
+ * @brief Replace the entire marker list (used by ripple edits for atomic,
+ *        undoable marker moves). The controller re-sorts and refreshes
+ *        nextMarkerId from the supplied markers.
+ */
+struct SetMarkersEvent {
+    std::vector<TimelineMarker> markers;
+};
+
+/**
  * @brief Select an existing marker, or clear selection with 0
  */
 struct SelectMarkerEvent {
@@ -597,8 +615,8 @@ using TimelineEvent = std::variant<
     AddSectionBeatsEvent, AddSectionEvent, RemoveSectionEvent, MoveSectionBeatsEvent,
     MoveSectionEvent, ResizeSectionBeatsEvent, ResizeSectionEvent, SelectSectionEvent,
     // Marker events
-    AddMarkerBeatsEvent, AddMarkerEvent, UpdateMarkerEvent, RemoveMarkerEvent, SelectMarkerEvent,
-    GoToMarkerEvent, GoToNextMarkerEvent, GoToPreviousMarkerEvent,
+    AddMarkerBeatsEvent, AddMarkerEvent, UpdateMarkerEvent, RemoveMarkerEvent, SetMarkersEvent,
+    SelectMarkerEvent, GoToMarkerEvent, GoToNextMarkerEvent, GoToPreviousMarkerEvent,
     // Viewport events
     ViewportResizedEvent, SetTimelineLengthBeatsEvent, SetTimelineLengthEvent>;
 

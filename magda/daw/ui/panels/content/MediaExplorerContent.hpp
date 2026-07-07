@@ -7,6 +7,7 @@
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "PanelContent.hpp"
+#include "SearchTextEditor.hpp"
 
 namespace magda::daw::ui {
 
@@ -76,7 +77,7 @@ class MediaExplorerContent : public PanelContent,
 
     // Top Bar Components
     juce::ComboBox sourceSelector_;  // Left: Source dropdown (User, Library, etc.)
-    juce::TextEditor searchBox_;     // Center-left: Search
+    SearchTextEditor searchBox_;     // Center-left: Search
     std::unique_ptr<magda::SvgButton> audioFilterButton_;        // Center: Audio type filter
     std::unique_ptr<magda::SvgButton> midiFilterButton_;         // Center: MIDI type filter
     std::unique_ptr<magda::SvgButton> presetFilterButton_;       // Center: Preset type filter
@@ -108,7 +109,23 @@ class MediaExplorerContent : public PanelContent,
     class SidebarComponent;
     std::unique_ptr<SidebarComponent> sidebarComponent_;
 
-    // File browser
+    // File browser. Shown either as a flat list or a directory tree (#1699);
+    // the choice is a Config-persisted toggle and swapping recreates the
+    // browser component with the matching FileBrowserComponent flags.
+    bool treeView_ = false;
+    void setupFileBrowser(const juce::File& initialRoot);
+    void teardownFileBrowser();
+    void rebuildFileBrowser();
+
+    // Recursive search (#1699 follow-up): while a search term is active in
+    // filesystem mode, a flat results list of matches found anywhere under
+    // the current root replaces the browser — searching no longer requires
+    // drilling into the folder that holds the samples.
+    class SearchResultsComponent;
+    std::unique_ptr<SearchResultsComponent> searchResults_;
+    void updateSearchResults();
+    void searchResultSelected(const juce::File& file);
+    void searchResultClicked(const juce::File& file, const juce::MouseEvent& e);
     std::unique_ptr<juce::FileFilter> mediaFileFilter_;
     std::unique_ptr<juce::FileBrowserComponent> fileBrowser_;
     std::unique_ptr<juce::FileChooser> fileChooser_;  // Persisted for async callbacks

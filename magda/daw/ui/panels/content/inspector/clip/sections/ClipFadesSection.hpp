@@ -57,6 +57,18 @@ class ClipFadesSection : public juce::Component {
     std::unique_ptr<magda::SvgButton> fadeOutBehaviourButtons_[2];
     juce::TextButton autoCrossfadeToggle_;
 
+    // Crossfade durations (#1499), in beats — shown only when the clip's edge
+    // is crossfaded with a neighbour (single selection). Editing resizes the
+    // overlap around the joint centre.
+    std::unique_ptr<magda::DraggableValueLabel> xfadeInValue_;
+    std::unique_ptr<magda::DraggableValueLabel> xfadeOutValue_;
+    bool hasXfadeIn_ = false;
+    bool hasXfadeOut_ = false;
+    magda::ClipId xfadeInLeftId_ = magda::INVALID_CLIP_ID;
+    magda::ClipId xfadeInRightId_ = magda::INVALID_CLIP_ID;
+    magda::ClipId xfadeOutLeftId_ = magda::INVALID_CLIP_ID;
+    magda::ClipId xfadeOutRightId_ = magda::INVALID_CLIP_ID;
+
     // Session-only controls
     juce::Label launchFadeLabel_;
     std::unique_ptr<magda::DraggableValueLabel> launchFadeValue_;

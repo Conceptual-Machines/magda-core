@@ -593,6 +593,229 @@ class MediaFileFilter : public juce::FileFilter {
 };
 
 //==============================================================================
+// SearchResultsComponent - flat list of files matching the search term found
+// anywhere under the current browser root. Scanning runs on one persistent
+// background worker; cancellation is non-blocking: starting or cancelling a
+// search just bumps a generation counter, the in-flight scan notices at its
+// next file step and abandons itself, and stale result batches are dropped.
+// The only blocking join is in the destructor.
+//==============================================================================
+class MediaExplorerContent::SearchResultsComponent : public juce::Component,
+                                                     public juce::ListBoxModel,
+                                                     private juce::Thread,
+                                                     private juce::AsyncUpdater {
+  public:
+    explicit SearchResultsComponent(MediaExplorerContent& owner)
+        : juce::Thread("MediaSearch"), owner_(owner) {
+        list_.setModel(this);
+        list_.setRowHeight(22);
+        list_.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+        addAndMakeVisible(list_);
+    }
+
+    ~SearchResultsComponent() override {
+        cancelPendingUpdate();
+        stopThread(2000);  // signalThreadShouldExit + notify wakes the idle wait
+    }
+
+    void startSearch(const juce::File& root, const juce::String& term,
+                     const juce::String& wildcardPattern) {
+        {
+            const juce::ScopedLock sl(lock_);
+            ++generation_;
+            request_ = {root, term.toLowerCase(), wildcardPattern, generation_};
+            hasRequest_ = true;
+            pending_.clear();
+        }
+        results_.clear();
+        displayRoot_ = root;
+        list_.updateContent();
+        repaint();
+        if (!isThreadRunning())
+            startThread();
+        notify();
+    }
+
+    void cancel() {
+        {
+            const juce::ScopedLock sl(lock_);
+            ++generation_;  // in-flight scan abandons at its next file step
+            hasRequest_ = false;
+            pending_.clear();
+        }
+        results_.clear();
+        list_.updateContent();
+        repaint();
+    }
+
+    void resized() override {
+        list_.setBounds(getLocalBounds());
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getPanelBackgroundColour());
+        if (results_.isEmpty()) {
+            bool done = false;
+            {
+                const juce::ScopedLock sl(lock_);
+                done = doneGeneration_ == generation_;
+            }
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(12.0f));
+            g.drawText(done ? "No matches" : "Searching...", getLocalBounds(),
+                       juce::Justification::centred);
+        }
+    }
+
+    // ListBoxModel
+    int getNumRows() override {
+        return results_.size();
+    }
+
+    void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
+                          bool rowIsSelected) override {
+        if (row < 0 || row >= results_.size())
+            return;
+        const auto& file = results_.getReference(row);
+
+        if (rowIsSelected) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.fillRect(0, 0, width, height);
+        }
+
+        // Name, then the containing folder relative to the searched root
+        // (dimmed) so equally-named samples stay distinguishable.
+        g.setColour(DarkTheme::getTextColour());
+        const auto nameFont =
+            FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.6f);
+        g.setFont(nameFont);
+        const auto name = file.getFileName();
+        auto bounds = juce::Rectangle<int>(0, 0, width, height).reduced(6, 0);
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(nameFont, name, 0.0f, 0.0f);
+        const int nameWidth =
+            juce::jmin(bounds.getWidth(),
+                       juce::roundToInt(glyphs.getBoundingBox(0, -1, false).getWidth()) + 4);
+        g.drawText(name, bounds.removeFromLeft(nameWidth), juce::Justification::centredLeft);
+
+        const auto relativeDir = file.getParentDirectory().getRelativePathFrom(displayRoot_);
+        if (relativeDir.isNotEmpty() && relativeDir != ".") {
+            bounds.removeFromLeft(8);
+            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
+            g.setFont(FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.5f));
+            g.drawText(relativeDir, bounds, juce::Justification::centredLeft);
+        }
+    }
+
+    void listBoxItemClicked(int row, const juce::MouseEvent& e) override {
+        if (row >= 0 && row < results_.size())
+            owner_.searchResultClicked(results_.getReference(row), e);
+    }
+
+    void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override {
+        if (row >= 0 && row < results_.size())
+            owner_.fileDoubleClicked(results_.getReference(row));
+    }
+
+    void selectedRowsChanged(int lastRowSelected) override {
+        if (lastRowSelected >= 0 && lastRowSelected < results_.size())
+            owner_.searchResultSelected(results_.getReference(lastRowSelected));
+    }
+
+  private:
+    struct Request {
+        juce::File root;
+        juce::String term;  // pre-lowered
+        juce::String pattern;
+        int generation = 0;
+    };
+
+    void run() override {
+        while (!threadShouldExit()) {
+            Request request;
+            bool haveRequest = false;
+            {
+                const juce::ScopedLock sl(lock_);
+                if (hasRequest_) {
+                    request = request_;
+                    hasRequest_ = false;
+                    haveRequest = true;
+                }
+            }
+            if (!haveRequest) {
+                wait(-1);  // woken by notify() (new request) or stopThread()
+                continue;
+            }
+            runScan(request);
+        }
+    }
+
+    // True while this request is still the one the UI wants.
+    bool requestIsCurrent(const Request& request) const {
+        const juce::ScopedLock sl(lock_);
+        return request.generation == generation_;
+    }
+
+    void runScan(const Request& request) {
+        const juce::WildcardFileFilter wildcard(request.pattern, "*", "Media files");
+        int found = 0;
+        for (juce::RangedDirectoryIterator it(request.root, true, "*", juce::File::findFiles);
+             it != juce::RangedDirectoryIterator(); ++it) {
+            if (threadShouldExit() || !requestIsCurrent(request))
+                return;  // abandoned - a newer search or cancel superseded it
+            const auto file = (*it).getFile();
+            if (!file.getFileName().toLowerCase().contains(request.term))
+                continue;
+            if (!wildcard.isFileSuitable(file))
+                continue;
+            {
+                const juce::ScopedLock sl(lock_);
+                if (request.generation != generation_)
+                    return;
+                pending_.add(file);
+            }
+            triggerAsyncUpdate();
+            if (++found >= kMaxResults)
+                break;
+        }
+        {
+            const juce::ScopedLock sl(lock_);
+            if (request.generation == generation_)
+                doneGeneration_ = request.generation;
+        }
+        triggerAsyncUpdate();
+    }
+
+    void handleAsyncUpdate() override {
+        {
+            // pending_ only ever holds current-generation entries: the scan
+            // adds under the lock after re-checking the generation, and every
+            // generation bump clears it under the same lock.
+            const juce::ScopedLock sl(lock_);
+            results_.addArray(pending_);
+            pending_.clear();
+        }
+        list_.updateContent();
+        repaint();
+    }
+
+    static constexpr int kMaxResults = 500;  // keep huge libraries responsive
+
+    MediaExplorerContent& owner_;
+    juce::ListBox list_;
+    juce::Array<juce::File> results_;
+    juce::File displayRoot_;  // message-thread copy for painting relative paths
+
+    // lock_ guards generation_, request_, hasRequest_, pending_, doneGeneration_.
+    juce::CriticalSection lock_;
+    int generation_ = 0;
+    Request request_;
+    bool hasRequest_ = false;
+    juce::Array<juce::File> pending_;
+    int doneGeneration_ = 0;
+};
+
+//==============================================================================
 // MediaExplorerContent
 //==============================================================================
 
@@ -607,7 +830,11 @@ MediaExplorerContent::MediaExplorerContent() {
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
     searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.45f));
+    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    searchBox_.setSelectAllWhenFocused(true);
     searchBox_.onTextChange = [this]() {
         searchTerm_ = searchBox_.getText();
         stopTimer();
@@ -676,8 +903,27 @@ MediaExplorerContent::MediaExplorerContent() {
     };
     addAndMakeVisible(*progressionFilterButton_);
 
-    // View toggle buttons removed - not needed for now
-    // View mode selector dropdown removed - not needed for now
+    // View mode selector: flat list vs directory tree (#1699)
+    viewModeSelector_.addItem("List", 1);
+    viewModeSelector_.addItem("Tree", 2);
+    viewModeSelector_.setSelectedId(magda::Config::getInstance().getBrowserTreeView() ? 2 : 1,
+                                    juce::dontSendNotification);
+    viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+    viewModeSelector_.setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
+    viewModeSelector_.setTooltip("File view: flat list or directory tree");
+    viewModeSelector_.onChange = [this]() {
+        const bool tree = viewModeSelector_.getSelectedId() == 2;
+        if (tree == treeView_)
+            return;
+        treeView_ = tree;
+        magda::Config::getInstance().setBrowserTreeView(tree);
+        magda::Config::getInstance().save();
+        rebuildFileBrowser();
+    };
+    addAndMakeVisible(viewModeSelector_);
 
     // Setup navigation buttons
     homeButton_.setButtonText("Home");
@@ -803,64 +1049,13 @@ MediaExplorerContent::MediaExplorerContent() {
     // Setup file browser with initial filter
     mediaFileFilter_ = std::make_unique<MediaFileFilter>(getMediaFilterPattern(), juce::String());
 
-    fileBrowser_ = std::make_unique<juce::FileBrowserComponent>(
-        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles |
-            juce::FileBrowserComponent::canSelectMultipleItems |  // Enable multi-select
-            juce::FileBrowserComponent::filenameBoxIsReadOnly,
-        juce::File::getSpecialLocation(juce::File::userMusicDirectory), mediaFileFilter_.get(),
-        nullptr);
+    treeView_ = magda::Config::getInstance().getBrowserTreeView();
+    setupFileBrowser(juce::File::getSpecialLocation(juce::File::userMusicDirectory));
 
-    fileBrowser_->addListener(this);
-    // Set colours before LookAndFeel so lookAndFeelChanged() picks them up
-    fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxBackgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxTextColourId,
-                            DarkTheme::getTextColour());
-    fileBrowser_->setColour(juce::FileBrowserComponent::filenameBoxBackgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    fileBrowser_->setColour(juce::FileBrowserComponent::filenameBoxTextColourId,
-                            DarkTheme::getTextColour());
-    fileBrowser_->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-    fileBrowser_->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
-                            DarkTheme::getTextColour());
-    // Apply LookAndFeel — triggers lookAndFeelChanged() which recreates go-up button
-    fileBrowser_->setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
-    // Listen to mouse events on file browser (Component IS-A MouseListener)
-    fileBrowser_->addMouseListener(this, true);
-    addAndMakeVisible(*fileBrowser_);
-
-    // Belt-and-braces: ensure the underlying list honours shift/cmd multi-select and
-    // paints with our theme's highlight colour (FileListComponent::findColour does not
-    // inherit from the parent FileBrowserComponent, so colours must be set here too).
-    if (auto* listComp =
-            dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent())) {
-        listComp->setMultipleSelectionEnabled(true);
-        listComp->setRowSelectedOnMouseDown(true);
-        listComp->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-        listComp->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
-                            DarkTheme::getTextColour());
-        listComp->setColour(juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
-                            DarkTheme::getTextColour());
-        // Issue #1339 — bind LEFT/RIGHT on the file list to preview
-        // stop/replay. UP/DOWN already audition via JUCE's built-in
-        // selection-change path (FileListComponent::selectedRowsChanged
-        // → FileBrowserListener::selectionChanged), provided the list has
-        // keyboard focus.
-        listComp->addKeyListener(this);
-    }
-
-    // Apply LookAndFeel to ComboBox child and hide the filename editor
-    for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
-        auto* child = fileBrowser_->getChildComponent(i);
-        if (auto* comboBox = dynamic_cast<juce::ComboBox*>(child)) {
-            comboBox->setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
-        }
-        if (auto* editor = dynamic_cast<juce::TextEditor*>(child)) {
-            editor->setVisible(false);
-        }
-    }
+    // Recursive search results — hidden until a search term is active.
+    searchResults_ = std::make_unique<SearchResultsComponent>(*this);
+    searchResults_->addMouseListener(this, true);  // reuse the file-drag machinery
+    addChildComponent(*searchResults_);
 
     // Setup sidebar navigation
     sidebarComponent_ = std::make_unique<SidebarComponent>();
@@ -928,20 +1123,126 @@ MediaExplorerContent::MediaExplorerContent() {
     setupAudioPreview();
 }
 
-MediaExplorerContent::~MediaExplorerContent() {
+void MediaExplorerContent::setupFileBrowser(const juce::File& initialRoot) {
+    int flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles |
+                juce::FileBrowserComponent::canSelectMultipleItems |  // Enable multi-select
+                juce::FileBrowserComponent::filenameBoxIsReadOnly;
+    if (treeView_)
+        flags |= juce::FileBrowserComponent::useTreeView;
+
+    fileBrowser_ = std::make_unique<juce::FileBrowserComponent>(flags, initialRoot,
+                                                                mediaFileFilter_.get(), nullptr);
+
+    fileBrowser_->addListener(this);
+    // Set colours before LookAndFeel so lookAndFeelChanged() picks them up
+    fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxBackgroundColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxTextColourId,
+                            DarkTheme::getTextColour());
+    fileBrowser_->setColour(juce::FileBrowserComponent::filenameBoxBackgroundColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    fileBrowser_->setColour(juce::FileBrowserComponent::filenameBoxTextColourId,
+                            DarkTheme::getTextColour());
+    fileBrowser_->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    fileBrowser_->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
+                            DarkTheme::getTextColour());
+    // Apply LookAndFeel — triggers lookAndFeelChanged() which recreates go-up button
+    fileBrowser_->setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
+    // Listen to mouse events on file browser (Component IS-A MouseListener)
+    fileBrowser_->addMouseListener(this, true);
+    addAndMakeVisible(*fileBrowser_);
+
+    // Belt-and-braces: ensure the underlying list honours shift/cmd multi-select and
+    // paints with our theme's highlight colour (FileListComponent::findColour does not
+    // inherit from the parent FileBrowserComponent, so colours must be set here too).
+    if (auto* listComp =
+            dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent())) {
+        listComp->setMultipleSelectionEnabled(true);
+        listComp->setRowSelectedOnMouseDown(true);
+        listComp->setOutlineThickness(0);  // borderless, matching the tree view
+        listComp->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        listComp->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
+                            DarkTheme::getTextColour());
+        listComp->setColour(juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
+                            DarkTheme::getTextColour());
+        // Issue #1339 — bind LEFT/RIGHT on the file list to preview
+        // stop/replay. UP/DOWN already audition via JUCE's built-in
+        // selection-change path (FileListComponent::selectedRowsChanged
+        // → FileBrowserListener::selectionChanged), provided the list has
+        // keyboard focus.
+        listComp->addKeyListener(this);
+    }
+
+    // Tree mode (#1699): same colours and key bindings on the FileTreeComponent.
+    // Multi-select works via the TreeView; the sticky-selection drag helper is
+    // list-only and degrades gracefully to single-file drags here.
+    if (auto* treeComp =
+            dynamic_cast<juce::FileTreeComponent*>(fileBrowser_->getDisplayComponent())) {
+        treeComp->setMultiSelectEnabled(true);
+        treeComp->setIndentSize(16);
+        treeComp->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        treeComp->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
+                            DarkTheme::getTextColour());
+        treeComp->setColour(juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
+                            DarkTheme::getTextColour());
+        treeComp->addKeyListener(this);
+    }
+
+    // Apply LookAndFeel to ComboBox child and hide the filename editor
+    for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
+        auto* child = fileBrowser_->getChildComponent(i);
+        if (auto* comboBox = dynamic_cast<juce::ComboBox*>(child)) {
+            comboBox->setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
+        }
+        if (auto* editor = dynamic_cast<juce::TextEditor*>(child)) {
+            editor->setVisible(false);
+        }
+    }
+}
+
+void MediaExplorerContent::teardownFileBrowser() {
+    if (!fileBrowser_)
+        return;
     for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
         if (auto* comboBox = dynamic_cast<juce::ComboBox*>(fileBrowser_->getChildComponent(i))) {
             comboBox->setLookAndFeel(nullptr);
         }
     }
-    // Mirror addKeyListener in the ctor (issue #1339). The FileListComponent
-    // is owned by fileBrowser_, which is still alive at the top of this
-    // dtor body — safe to detach now.
+    // Mirror addKeyListener in setupFileBrowser (issue #1339). The display
+    // component is owned by fileBrowser_, which is still alive here — safe
+    // to detach now.
     if (auto* listComp =
             dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent())) {
         listComp->removeKeyListener(this);
     }
+    if (auto* treeComp =
+            dynamic_cast<juce::FileTreeComponent*>(fileBrowser_->getDisplayComponent())) {
+        treeComp->removeKeyListener(this);
+    }
+    fileBrowser_->removeMouseListener(this);
+    fileBrowser_->removeListener(this);
     fileBrowser_->setLookAndFeel(nullptr);
+    removeChildComponent(fileBrowser_.get());
+    fileBrowser_.reset();
+}
+
+// Swaps the list/tree display in place, keeping the current root and the
+// filesystem-vs-library visibility state.
+void MediaExplorerContent::rebuildFileBrowser() {
+    const auto root = fileBrowser_ ? fileBrowser_->getRoot() : pickStartupFilesystemRoot();
+    const bool wasVisible = fileBrowser_ == nullptr || fileBrowser_->isVisible();
+    teardownFileBrowser();
+    setupFileBrowser(root);
+    fileBrowser_->setVisible(wasVisible);
+    resized();
+}
+
+MediaExplorerContent::~MediaExplorerContent() {
+    teardownFileBrowser();
+    viewModeSelector_.setLookAndFeel(nullptr);
     autoPlayButton_.setLookAndFeel(nullptr);
 
     stopPreview();
@@ -1044,6 +1345,7 @@ void MediaExplorerContent::applyView(ViewState target) {
     }
 
     currentView_ = target;
+    updateSearchResults();
 
     // Persist the mode so the next launch restores the same view.
     const char* persistedMode =
@@ -1393,6 +1695,8 @@ void MediaExplorerContent::updateMediaFilter() {
     if (dbBrowser_ != nullptr && searchTerm_.isEmpty()) {
         dbBrowser_->setQueryText(searchTerm_);
     }
+
+    updateSearchResults();
 }
 
 juce::String MediaExplorerContent::getMediaFilterPattern() const {
@@ -1468,6 +1772,10 @@ void MediaExplorerContent::resized() {
     // Top bar with all controls
     auto topBar = bounds.removeFromTop(32);
 
+    // Far right: list/tree view toggle (#1699)
+    viewModeSelector_.setBounds(topBar.removeFromRight(64).withSizeKeepingCentre(64, 24));
+    topBar.removeFromRight(6);
+
     // Right: Type filter icon buttons (audio / midi / preset / progression),
     // then search fills remaining space.
     const int iconButtonSize = 30;
@@ -1515,6 +1823,9 @@ void MediaExplorerContent::resized() {
     // Right: File browser (filesystem mode) or DB browser (library mode) —
     // same bounds either way, visibility is toggled at the click site.
     fileBrowser_->setBounds(bounds);
+    if (searchResults_) {
+        searchResults_->setBounds(bounds);
+    }
     if (dbBrowser_) {
         dbBrowser_->setBounds(bounds);
     }
@@ -2040,6 +2351,51 @@ void MediaExplorerContent::mouseUp(const juce::MouseEvent& /*e*/) {
 void MediaExplorerContent::timerCallback() {
     stopTimer();
     updateMediaFilter();
+}
+
+// While a search term is active in filesystem mode, the recursive results
+// list replaces the browser; clearing the term (or leaving filesystem mode)
+// restores it. Called from updateMediaFilter and applyView so every search /
+// filter / mode / root transition re-derives the visibility.
+void MediaExplorerContent::updateSearchResults() {
+    if (!searchResults_)
+        return;
+    const bool active =
+        currentView_.mode == ViewState::Mode::Filesystem && searchTerm_.isNotEmpty();
+    if (active) {
+        searchResults_->startSearch(fileBrowser_ ? fileBrowser_->getRoot()
+                                                 : pickStartupFilesystemRoot(),
+                                    searchTerm_, getMediaFilterPattern());
+    } else {
+        searchResults_->cancel();
+    }
+    searchResults_->setVisible(active);
+    if (fileBrowser_)
+        fileBrowser_->setVisible(currentView_.mode == ViewState::Mode::Filesystem && !active);
+}
+
+void MediaExplorerContent::searchResultSelected(const juce::File& file) {
+    if (previewLockedForIndexing_ || !file.existsAsFile())
+        return;
+    fileForDrag_ = file;
+    if (isAudioFile(file)) {
+        loadFileForPreview(file);
+        if (autoPlayButton_.getToggleState())
+            playPreview();
+    } else {
+        stopPreview();
+        playButton_->setEnabled(false);
+    }
+    updateFileInfo(file);
+    if (thumbnailComponent_)
+        thumbnailComponent_->setFile(isAudioFile(file) ? file : juce::File());
+}
+
+void MediaExplorerContent::searchResultClicked(const juce::File& file, const juce::MouseEvent& e) {
+    // Mirror fileClicked's drag capture so results can drag to the arrangement.
+    fileForDrag_ = file;
+    mouseDownPosition_ = e.getScreenPosition();
+    isDraggingFile_ = false;
 }
 
 }  // namespace magda::daw::ui

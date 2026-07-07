@@ -59,6 +59,18 @@ class TracktionEngineWrapper : public AudioEngine,
     TracktionEngineWrapper();
     ~TracktionEngineWrapper();
 
+    /**
+     * @brief Force the wrapper to skip UI/timer-backed runtime helpers.
+     *
+     * Intended for console tools and e2e tests that boot the engine without a GUI.
+     * The MAGDA_HEADLESS environment variable provides the same behavior.
+     */
+    void setForceHeadless(bool forceHeadless) {
+        forceHeadless_ = forceHeadless;
+    }
+
+    bool isHeadlessRuntime() const;
+
     // Initialize the engine
     bool initialize() override;
     void shutdown() override;
@@ -366,6 +378,13 @@ class TracktionEngineWrapper : public AudioEngine,
     const juce::KnownPluginList& getKnownPluginList() const;
 
     /**
+     * @brief Get plugins for browser/menu presentation, honoring user format
+     * preference on macOS while leaving exact KnownPluginList lookup available
+     * through getKnownPluginList().
+     */
+    juce::Array<juce::PluginDescription> getPreferredPluginTypes() const;
+
+    /**
      * @brief Save the plugin list to persistent storage
      * Called after plugin scanning completes
      */
@@ -553,6 +572,7 @@ class TracktionEngineWrapper : public AudioEngine,
     double lastPosition_ = 0.0;  // Previous frame's position (for loop detection)
     bool justStarted_ = false;   // True for one frame after play starts
     bool justLooped_ = false;    // True for one frame after loop
+    bool forceHeadless_ = false;
 
     // Device change tracking
     int lastKnownDeviceCount_ = 0;
@@ -592,8 +612,14 @@ class TracktionEngineWrapper : public AudioEngine,
     std::unordered_map<int, double> recordingStartTimes_;
     double intendedRecordPosition_ = 0.0;  // Position before count-in offset
 
-    // Real-time MIDI recording preview (outside ClipManager)
+    // Real-time MIDI recording preview (outside ClipManager).
+    // Two queues because RecordingNoteQueue is single-producer/single-consumer:
+    // recordingNoteQueue_ is fed by MidiBridge (hardware/QWERTY MIDI callback
+    // threads) and trackMidiRecordingNoteQueue_ by MidiInputRouter's TE input
+    // consumers (audio thread) for "track:N"-routed MIDI. Both drain on the
+    // message thread in drainRecordingNoteQueue().
     RecordingNoteQueue recordingNoteQueue_;
+    RecordingNoteQueue trackMidiRecordingNoteQueue_;
     std::atomic<double> transportPositionForMidi_{0.0};
     std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
     void drainRecordingNoteQueue();

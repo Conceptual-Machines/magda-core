@@ -224,6 +224,48 @@ struct TrackInfo {
         return parentId == INVALID_TRACK_ID;
     }
 
+    // True for tracks that take external audio/MIDI input and can be recorded /
+    // monitored. Aux send buses and Group summing tracks only pass signal from
+    // elsewhere, so they never take external input. Single source of truth for
+    // the input/record/monitor guards across TrackManager and MidiInputRouter.
+    bool takesExternalInput() const {
+        return type != TrackType::Aux && type != TrackType::Group;
+    }
+
+    // True for tracks that can host an instrument device. Aux/Group summing
+    // buses and the Master track only process signal from elsewhere, so they
+    // never host instruments. Single source of truth for the instrument-add
+    // guards across TrackManager (track and rack-chain add paths).
+    bool canHostInstrument() const {
+        return type != TrackType::Aux && type != TrackType::Group && type != TrackType::Master;
+    }
+
+    // Enforce the track-type invariants on this struct's own fields. Input-less
+    // tracks (Aux send buses, Group summing tracks) only pass signal from
+    // elsewhere: they take no external audio/MIDI input and so cannot be
+    // monitored or record-armed. This is the single normalization boundary for
+    // those rules. Aggregate entry points that accept or mutate whole track
+    // state (create, restore, deserialize) call it so persistence and importers
+    // stay mechanical and cannot let stale on-disk input state become live.
+    void normalizeForType() {
+        if (!takesExternalInput()) {
+            recordArmed = false;
+            inputMonitor = InputMonitorMode::Off;
+            midiInputDevice = "";
+            audioInputDevice = "";
+        }
+    }
+
+    // MIDI input helpers
+    //
+    // Single source of truth for "does this track listen to live MIDI input".
+    // Gated purely on the track's own monitor/arm state - NOT on selection - so
+    // the TE routing (MidiInputRouter) and the UI activity light agree. A track
+    // listens when input monitoring is enabled (In/Auto) or it is record-armed.
+    bool receivesLiveMidiInput() const {
+        return inputMonitor != InputMonitorMode::Off || recordArmed;
+    }
+
     // View settings helpers
     bool isVisibleIn(ViewMode mode) const {
         return viewSettings.isVisible(mode);

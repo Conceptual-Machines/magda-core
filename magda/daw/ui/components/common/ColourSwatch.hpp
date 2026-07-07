@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include "../../themes/DarkTheme.hpp"
+
 namespace magda {
 
 /**
@@ -37,6 +39,9 @@ class ColourSwatch : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds().toFloat().reduced(1.0f);
         if (hasColour_) {
+            // Show the real picked colour so the swatch reflects the user's exact
+            // choice. (Track headers / clips / notes render the normalized
+            // deriveTrackSwatch() version for uniform visual energy.)
             g.setColour(colour_);
             g.fillRoundedRectangle(bounds, 3.0f);
             g.setColour(colour_.brighter(0.3f));

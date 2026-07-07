@@ -19,6 +19,7 @@
 namespace magda {
 
 class PitchFoldMap;
+class VelocityReadout;
 
 /**
  * @brief Scrollable grid component containing MIDI notes
@@ -240,6 +241,20 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(ClipId, size_t, bool)> onNoteSelected;   // clipId, index, isAdditive
     std::function<void(ClipId, size_t)> onNoteRangeSelected;    // clipId, index
 
+    // Note preview (audition): fires note-on/off as a note is pressed/released so
+    // the host can play it through the track instrument (#1705). Carries the
+    // note's own clip so multi-clip editing auditions the right track. Gated by
+    // the editor's preview toggle in the host, not here.
+    std::function<void(ClipId, int /*noteNumber*/, int /*velocity*/, bool /*isNoteOn*/)>
+        onNotePreview;
+
+    // One-shot audition for instant note creation (double-click add), where there
+    // is no press-to-release gesture: the host plays the note and stops it after
+    // its length elapses (#1705). Carries the target clip so it auditions the
+    // right track. Gated by the editor's preview toggle in the host.
+    std::function<void(ClipId, int /*noteNumber*/, int /*velocity*/, double /*lengthBeats*/)>
+        onNoteAuditionOnce;
+
     // Callback when note selection changes (e.g. after lasso, deselect-all)
     // Provides the full set of currently selected note indices for the primary clip
     std::function<void(ClipId, std::vector<size_t>)> onNoteSelectionChanged;
@@ -260,6 +275,7 @@ class PianoRollGridComponent : public juce::Component,
     // Callbacks for edit operations from context menu
     std::function<void(ClipId, std::vector<size_t>, QuantizeMode, double gridBeats)>
         onQuantizeNotes;
+    std::function<void(ClipId, std::vector<size_t>)> onLegatoNotes;
     std::function<void(ClipId, std::vector<size_t>)> onCopyNotes;
     std::function<void(ClipId)> onPasteNotes;
     std::function<void(ClipId, std::vector<size_t>)> onDuplicateNotes;
@@ -269,7 +285,9 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(double)> onEditCursorSet;
 
     // Playhead click on grid — absolute timeline position in beats
-    std::function<void(double)> onPlayheadPositionBeatsChanged;
+    // beats = raw absolute beat of the click; snapToGrid = false when Alt is held
+    // (free position). The host applies transport snapping when snapToGrid is set.
+    std::function<void(double /*beats*/, bool /*snapToGrid*/)> onPlayheadPositionBeatsChanged;
 
     // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs), chord name,
     // length
@@ -354,6 +372,8 @@ class PianoRollGridComponent : public juce::Component,
 
     // Note components
     std::vector<std::unique_ptr<NoteComponent>> noteComponents_;
+    // Transient velocity value badge shown during wheel velocity edits (#1706).
+    std::unique_ptr<VelocityReadout> velocityReadout_;
 
     // Currently selected note index (or -1 for none)
     int selectedNoteIndex_ = -1;
@@ -372,6 +392,7 @@ class PianoRollGridComponent : public juce::Component,
 
     // Plain empty-grid click mirrors the timeline playhead lane.
     bool isPendingPlayheadClick_ = false;
+    bool playheadClickNoSnap_ = false;  // Alt held on the pending click -> free (unsnapped)
     juce::Point<int> playheadClickStart_;
     static constexpr int PLAYHEAD_CLICK_DRAG_THRESHOLD = 5;
 
@@ -492,6 +513,15 @@ class PianoRollGridComponent : public juce::Component,
     void clearNoteComponents();
     void updateNoteComponentBounds();
     void rebuildSelectedPitchRows();
+
+    // Velocity wheel editing (#1706). For a note under the cursor: adjusts the
+    // whole selection when the note is part of it, else just that note. The
+    // selection variant (no hovered note) drives the empty-grid wheel path.
+    void adjustVelocityForNote(ClipId clipId, size_t noteIndex, int velocityDelta);
+    void adjustVelocityForSelection(int velocityDelta);
+    std::vector<size_t> selectedNoteIndicesForClip(ClipId clipId) const;
+    // Show the transient velocity badge near the cursor for the given note.
+    void flashVelocityReadout(ClipId clipId, size_t noteIndex);
 
     // Helpers
     struct NoteInsertPosition {

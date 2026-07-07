@@ -173,6 +173,10 @@ juce::File pluginAliasesFile() {
     return dataDir().getChildFile("plugin_aliases.xml");
 }
 
+juce::File pluginFoldersFile() {
+    return dataDir().getChildFile("plugin_folders.xml");
+}
+
 juce::File pluginPreferencesFile() {
     return dataDir().getChildFile("plugin_preferences.json");
 }

@@ -28,6 +28,7 @@
 #include "core/ClipPropertyCommands.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
@@ -196,6 +197,10 @@ constexpr int kTakeMenuMaxItems = 64;
 // Context-menu IDs for "Send Progression to Track" (one per eligible track),
 // kept clear of the take-selection range (300..363).
 constexpr int kProgressionTargetBaseId = 400;
+
+// Length of a crossfade created from the context menu (#1499). The handles
+// resize it afterwards; setCrossfadeRegionBeats clamps it into both clips.
+constexpr double kDefaultCrossfadeBeats = 0.5;
 
 juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds,
                                       juce::Rectangle<int> visibleBounds, float radius) {
@@ -791,23 +796,48 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Draw directly — no offscreen cache.  AudioThumbnail is already a
     // pre-computed waveform cache (512 samples/point) so drawing from it is fast.
-    auto bgColour = clip.colour.darker(0.3f);
+    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     if (clip.audio().source.filePath.isNotEmpty())
         paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
-                             1.0f);
+    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
+                             CORNER_RADIUS, 1.0f);
 
-    // Fade overlays
-    if (clip.fadeIn > 0.0 || clip.fadeOut > 0.0) {
+    // Fade overlays (crossfaded edges show the overlap-derived fade, #1499)
+    const auto fades = computeEffectiveFades(clip);
+    if (fades.fadeInSeconds > 0.0 || fades.fadeOutSeconds > 0.0) {
         double pps = (clipDisplayLength > 0.0)
                          ? static_cast<double>(waveformArea.getWidth()) / clipDisplayLength
                          : 0.0;
         if (pps > 0.0)
-            paintFadeOverlays(g, clip, waveformArea, pps);
+            paintFadeOverlays(g, clip, fades, waveformArea, pps);
     }
+}
+
+ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInfo& clip) const {
+    EffectiveFades fades;
+    fades.fadeInSeconds = clip.fadeIn;
+    fades.fadeOutSeconds = clip.fadeOut;
+    if (!clip.isAudio() || clip.view != ClipView::Arrangement)
+        return fades;
+
+    auto& cm = ClipManager::getInstance();
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    if (auto xf = cm.getCrossfadeAtStart(clipId_)) {
+        fades.xfIn = xf;
+        fades.fadeInSeconds = xf->lengthBeats() * 60.0 / tempo;
+    }
+    if (auto xf = cm.getCrossfadeAtEnd(clipId_)) {
+        fades.xfOut = xf;
+        fades.fadeOutSeconds = xf->lengthBeats() * 60.0 / tempo;
+    }
+    return fades;
+}
+
+ClipId ClipComponent::findCrossfadeNeighbour(bool atStart) const {
+    return ClipManager::getInstance().findCrossfadeNeighbour(clipId_, atStart);
 }
 
 void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
@@ -816,14 +846,14 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     if (visibleBounds.isEmpty())
         return;
 
-    auto bgColour = clip.colour.darker(0.3f);
+    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     paintMidiNotes(g, clip, noteArea, juce::Colours::black);
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
-                             1.0f);
+    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
+                             CORNER_RADIUS, 1.0f);
 }
 
 void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
@@ -970,7 +1000,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
     // Translucent base so the timeline shows through (track-map style) rather
     // than a solid pastel card. Selection makes the clip body read as the track
     // colour while keeping the black selected header separate.
-    auto bgColour = clip.colour.withAlpha(selected ? 0.24f : 0.16f);
+    auto bgColour = deriveTrackSwatch(clip.colour, selected ? 0.24f : 0.16f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
@@ -1048,8 +1078,8 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
-    strokeClippedRoundedRect(g, bounds, visibleBounds, clip.colour.withAlpha(0.45f), CORNER_RADIUS,
-                             1.0f);
+    strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
+                             CORNER_RADIUS, 1.0f);
 }
 
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
@@ -1060,7 +1090,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     // This replaces the old white selection rectangle so it can't fight overlay
     // UI (e.g. controller scene-view rectangles).
     const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
-    const auto headerColour = selected ? juce::Colours::black : clip.colour;
+    const auto headerColour = selected ? juce::Colours::black : deriveTrackSwatch(clip.colour);
     const auto headerForeground =
         selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
 
@@ -1152,6 +1182,7 @@ void ClipComponent::paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> b
 }
 
 void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
+                                      const EffectiveFades& fades,
                                       juce::Rectangle<int> waveformArea, double pixelsPerSecond) {
     constexpr int NUM_STEPS = 32;
     float areaTop = static_cast<float>(waveformArea.getY());
@@ -1160,9 +1191,29 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
     float areaLeft = static_cast<float>(waveformArea.getX());
     float areaRight = static_cast<float>(waveformArea.getRight());
 
+    // The counterpart curve of a crossfade (the other clip's fade across the
+    // same overlap) — drawn by both components of the pair so the X reads the
+    // same whichever one is on top.
+    auto strokeCounterpartCurve = [&](float regionStartPx, float regionWidthPx, FadeCurve type,
+                                      bool descending) {
+        juce::Path curve;
+        for (int i = 0; i <= NUM_STEPS; ++i) {
+            float alpha = static_cast<float>(i) / static_cast<float>(NUM_STEPS);
+            float gain = computeFadeGain(descending ? 1.0f - alpha : alpha, type);
+            float x = regionStartPx + alpha * regionWidthPx;
+            float y = areaTop + (1.0f - gain) * areaHeight;
+            if (i == 0)
+                curve.startNewSubPath(x, y);
+            else
+                curve.lineTo(x, y);
+        }
+        g.setColour(juce::Colours::white.withAlpha(0.35f));
+        g.strokePath(curve, juce::PathStrokeType(1.5f));
+    };
+
     // Fade-in overlay
-    if (clip.fadeIn > 0.0) {
-        float fadeInPx = juce::jmin(static_cast<float>(clip.fadeIn * pixelsPerSecond),
+    if (fades.fadeInSeconds > 0.0) {
+        float fadeInPx = juce::jmin(static_cast<float>(fades.fadeInSeconds * pixelsPerSecond),
                                     static_cast<float>(waveformArea.getWidth()));
         if (fadeInPx > 1.0f) {
             // Build overlay path: darkens area above the fade curve
@@ -1197,12 +1248,20 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             }
             g.setColour(juce::Colours::white.withAlpha(0.6f));
             g.strokePath(curveLine, juce::PathStrokeType(1.5f));
+
+            // Crossfade: overlay the previous clip's fade-out curve (the X)
+            if (fades.xfIn) {
+                auto* other = ClipManager::getInstance().getClip(fades.xfIn->leftClipId);
+                strokeCounterpartCurve(areaLeft, fadeInPx,
+                                       static_cast<FadeCurve>(other ? other->fadeOutType : 1),
+                                       true);
+            }
         }
     }
 
     // Fade-out overlay
-    if (clip.fadeOut > 0.0) {
-        float fadeOutPx = juce::jmin(static_cast<float>(clip.fadeOut * pixelsPerSecond),
+    if (fades.fadeOutSeconds > 0.0) {
+        float fadeOutPx = juce::jmin(static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond),
                                      static_cast<float>(waveformArea.getWidth()));
         if (fadeOutPx > 1.0f) {
             float fadeStart = areaRight - fadeOutPx;
@@ -1244,6 +1303,14 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
             }
             g.setColour(juce::Colours::white.withAlpha(0.6f));
             g.strokePath(curveLine, juce::PathStrokeType(1.5f));
+
+            // Crossfade: overlay the next clip's fade-in curve (the X)
+            if (fades.xfOut) {
+                auto* other = ClipManager::getInstance().getClip(fades.xfOut->rightClipId);
+                strokeCounterpartCurve(fadeStart, fadeOutPx,
+                                       static_cast<FadeCurve>(other ? other->fadeInType : 1),
+                                       false);
+            }
         }
     }
 }
@@ -1267,10 +1334,11 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     float waveTop = static_cast<float>(waveformArea.getY());
 
     auto handleColour = juce::Colour(DarkTheme::ACCENT_ORANGE);
+    const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover
     if (hoverFadeIn_) {
-        float fadeInPx = static_cast<float>(clip.fadeIn * pixelsPerSecond);
+        float fadeInPx = static_cast<float>(fades.fadeInSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getX()) + fadeInPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -1278,7 +1346,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
 
     // Fade-out handle: only visible on hover
     if (hoverFadeOut_) {
-        float fadeOutPx = static_cast<float>(clip.fadeOut * pixelsPerSecond);
+        float fadeOutPx = static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getRight()) - fadeOutPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -1629,6 +1697,18 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             repaint();
             return;
         }
+        // Crossfaded start edge: the handle drives the overlap with the
+        // previous clip (moves its end) instead of this clip's own fade-in.
+        if (auto xfIn = computeEffectiveFades(*clip).xfIn) {
+            if (const auto* other = ClipManager::getInstance().getClip(xfIn->leftClipId)) {
+                dragMode_ = DragMode::CrossfadeIn;
+                crossfadeDragPair_ = *xfIn;
+                dragStartClipSnapshot_ = *clip;
+                crossfadeOtherSnapshot_ = *other;
+                repaint();
+                return;
+            }
+        }
         dragMode_ = DragMode::FadeIn;
         dragStartFadeIn_ = clip->fadeIn;
         dragStartClipSnapshot_ = *clip;
@@ -1657,6 +1737,18 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragMode_ = DragMode::None;
             repaint();
             return;
+        }
+        // Crossfaded end edge: the handle drives the overlap with the next
+        // clip (moves its start) instead of this clip's own fade-out.
+        if (auto xfOut = computeEffectiveFades(*clip).xfOut) {
+            if (const auto* other = ClipManager::getInstance().getClip(xfOut->rightClipId)) {
+                dragMode_ = DragMode::CrossfadeOut;
+                crossfadeDragPair_ = *xfOut;
+                dragStartClipSnapshot_ = *clip;
+                crossfadeOtherSnapshot_ = *other;
+                repaint();
+                return;
+            }
         }
         dragMode_ = DragMode::FadeOut;
         dragStartFadeOut_ = clip->fadeOut;
@@ -2187,6 +2279,42 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             break;
         }
 
+        case DragMode::CrossfadeIn: {
+            // This clip's geometry is fixed; the handle moves the previous
+            // clip's end (the overlap end). Overlap start = our start.
+            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            double pps = (dragStartLength_ > 0.0)
+                             ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                             : 0.0;
+            if (pps > 0.0) {
+                double px = juce::jmax(0.0, static_cast<double>(e.x - wfArea.getX()));
+                double newEndBeat = crossfadeDragPair_.startBeat + (px / pps) * tempoBPM / 60.0;
+                ClipManager::getInstance().setCrossfadeRegionBeats(
+                    crossfadeDragPair_.leftClipId, crossfadeDragPair_.rightClipId,
+                    crossfadeDragPair_.startBeat, newEndBeat, tempoBPM);
+                repaint();
+            }
+            break;
+        }
+
+        case DragMode::CrossfadeOut: {
+            // The handle moves the next clip's start (the overlap start).
+            // Overlap end = our end.
+            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            double pps = (dragStartLength_ > 0.0)
+                             ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                             : 0.0;
+            if (pps > 0.0) {
+                double px = juce::jmax(0.0, static_cast<double>(wfArea.getRight() - e.x));
+                double newStartBeat = crossfadeDragPair_.endBeat - (px / pps) * tempoBPM / 60.0;
+                ClipManager::getInstance().setCrossfadeRegionBeats(
+                    crossfadeDragPair_.leftClipId, crossfadeDragPair_.rightClipId, newStartBeat,
+                    crossfadeDragPair_.endBeat, tempoBPM);
+                repaint();
+            }
+            break;
+        }
+
         case DragMode::VolumeDrag: {
             // Convert vertical delta to dB (~1 dB per 2px, up = louder)
             auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
@@ -2595,6 +2723,45 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 break;
             }
 
+            case DragMode::CrossfadeIn:
+            case DragMode::CrossfadeOut: {
+                const bool isIn = savedDragMode == DragMode::CrossfadeIn;
+
+                // Capture the final overlap region from the mouse position
+                double finalStart = crossfadeDragPair_.startBeat;
+                double finalEnd = crossfadeDragPair_.endBeat;
+                auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+                double pps = (dragStartLength_ > 0.0)
+                                 ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
+                                 : 0.0;
+                if (pps > 0.0) {
+                    if (isIn) {
+                        double px = juce::jmax(0.0, static_cast<double>(e.x - wfArea.getX()));
+                        finalEnd =
+                            crossfadeDragPair_.startBeat + (px / pps) * commitTempoBPM / 60.0;
+                    } else {
+                        double px = juce::jmax(0.0, static_cast<double>(wfArea.getRight() - e.x));
+                        finalStart =
+                            crossfadeDragPair_.endBeat - (px / pps) * commitTempoBPM / 60.0;
+                    }
+                }
+
+                // Restore both clips to pre-drag state so the command captures
+                // it as the undo state, then apply the final region undoably.
+                auto& cm = ClipManager::getInstance();
+                if (auto* c = cm.getClip(clipId_))
+                    *c = dragStartClipSnapshot_;
+                const ClipId otherId =
+                    isIn ? crossfadeDragPair_.leftClipId : crossfadeDragPair_.rightClipId;
+                if (auto* c = cm.getClip(otherId))
+                    *c = crossfadeOtherSnapshot_;
+
+                UndoManager::getInstance().executeCommand(std::make_unique<SetCrossfadeCommand>(
+                    crossfadeDragPair_.leftClipId, crossfadeDragPair_.rightClipId, finalStart,
+                    finalEnd, commitTempoBPM));
+                break;
+            }
+
             case DragMode::VolumeDrag: {
                 // Restore all clips to pre-drag state for correct undo capture
                 auto& cm = ClipManager::getInstance();
@@ -2733,6 +2900,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
     }
 
     shouldDeselectOnMouseUp_ = false;
+
+    // Gesture over: the pre-drag cursor may be stale for wherever the mouse
+    // ended up (#1720). mouseIsOver_ still gates this inside the helper.
+    refreshHoverFromMouse();
 }
 
 void ClipComponent::mouseMove(const juce::MouseEvent& e) {
@@ -2744,26 +2915,18 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 
     bool wasHoverLowerZone = hoverLowerZone_;
 
-    hoverLeftEdge_ = isOnLeftEdge(e.x);
-    hoverRightEdge_ = isOnRightEdge(e.x);
-
-    // Lower half (away from the resize edges) is the time-selection zone.
-    // (When a time selection covers this point hitTest() makes the clip
-    // transparent, so the panel handles the grab/resize cursor there.)
-    hoverLowerZone_ = e.y >= getHeight() / 2 && !hoverLeftEdge_ && !hoverRightEdge_;
-
-    // Check fade handle hover (selected audio clips only)
-    if (isSelected_) {
-        hoverFadeIn_ = isOnFadeInHandle(e.x, e.y);
-        hoverFadeOut_ = isOnFadeOutHandle(e.x, e.y);
-        // Volume handle: only when not on fade handles or edges
-        hoverVolumeHandle_ = !hoverFadeIn_ && !hoverFadeOut_ && !hoverLeftEdge_ &&
-                             !hoverRightEdge_ && isOnVolumeHandle(e.x, e.y);
-    } else {
-        hoverFadeIn_ = false;
-        hoverFadeOut_ = false;
-        hoverVolumeHandle_ = false;
-    }
+    // Zone model lives in the shared hit tester (#1719). Notes on the zones:
+    // the lower half (away from the resize edges) is the time-selection zone
+    // — when a time selection covers this point hitTest() makes the clip
+    // transparent, so the panel handles the grab/resize cursor there. Fade
+    // and volume handles exist on selected audio clips only.
+    const auto hit = interaction::clipHit(e.x, e.y, makeHitSnapshot());
+    hoverLeftEdge_ = hit.onLeftEdge;
+    hoverRightEdge_ = hit.onRightEdge;
+    hoverLowerZone_ = hit.lowerHalf;
+    hoverFadeIn_ = hit.onFadeIn;
+    hoverFadeOut_ = hit.onFadeOut;
+    hoverVolumeHandle_ = hit.onVolume;
 
     // Always update cursor to check modifier-driven tools.
     updateCursor(e.mods);
@@ -2790,6 +2953,32 @@ void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     hoverVolumeHandle_ = false;
     hoverLowerZone_ = false;
     updateCursor();
+    repaint();
+}
+
+void ClipComponent::modifierKeysChanged(const juce::ModifierKeys& mods) {
+    // Modifier tools (Alt copy, Cmd+Alt blade, Shift+Ctrl erase, Shift
+    // stretch) must swap the cursor without waiting for a mouse move
+    // (#1720). The hover flags don't depend on modifiers, so re-running the
+    // cursor table is enough. During a drag the gesture owns the cursor.
+    if (mouseIsOver_ && !juce::Component::isMouseButtonDownAnywhere())
+        updateCursor(mods);
+    juce::Component::modifierKeysChanged(mods);
+}
+
+void ClipComponent::refreshHoverFromMouse() {
+    if (!mouseIsOver_ || juce::Component::isMouseButtonDownAnywhere())
+        return;
+
+    const auto pos = getMouseXYRelative();
+    const auto hit = interaction::clipHit(pos.x, pos.y, makeHitSnapshot());
+    hoverLeftEdge_ = hit.onLeftEdge;
+    hoverRightEdge_ = hit.onRightEdge;
+    hoverLowerZone_ = hit.lowerHalf;
+    hoverFadeIn_ = hit.onFadeIn;
+    hoverFadeOut_ = hit.onFadeOut;
+    hoverVolumeHandle_ = hit.onVolume;
+    updateCursor(juce::ModifierKeys::getCurrentModifiers());
     repaint();
 }
 
@@ -2826,6 +3015,17 @@ void ClipComponent::clipPropertyChanged(ClipId clipId) {
 
     if (clipId == clipId_) {
         repaint();
+        return;
+    }
+
+    // A same-track audio neighbour's geometry drives this clip's crossfade
+    // rendering (#1499): moving it out of (or into) the overlap must refresh
+    // the fade display here, not just on the moved clip.
+    const auto* clip = getClipInfo();
+    if (clip && clip->isAudio()) {
+        const auto* other = ClipManager::getInstance().getClip(clipId);
+        if (other && other->isAudio() && other->trackId == clip->trackId)
+            repaint();
     }
 }
 
@@ -2851,6 +3051,10 @@ void ClipComponent::clipSelectionChanged(ClipId clipId) {
 void ClipComponent::setSelected(bool selected) {
     if (isSelected_ != selected) {
         isSelected_ = selected;
+        // Selection changes the hit zones under a stationary mouse (fade and
+        // volume handles appear, the body becomes grabbable) — re-derive the
+        // hover flags and cursor instead of waiting for a mouse move (#1720).
+        refreshHoverFromMouse();
         repaint();
     }
 }
@@ -2879,127 +3083,57 @@ bool ClipComponent::isOnRightEdge(int x) const {
     return x > getWidth() - RESIZE_HANDLE_WIDTH;
 }
 
+// The fade/volume handle geometry lives in the shared hit tester (#1721);
+// these delegate so gesture dispatch and the cursor share one zone model.
+// The raw (selection-ungated) variants match the historical predicates —
+// callers apply their own isSelected_ gates.
 bool ClipComponent::isOnFadeInHandle(int x, int y) const {
-    const auto* clip = getClipInfo();
-    if (!clip || !clip->isAudio())
-        return false;
-
-    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
-    if (waveformArea.getWidth() <= 0)
-        return false;
-
-    // Check y is in handle zone (top of waveform area)
-    if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
-        return false;
-
-    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    const double clipLength = clip->getTimelineLength(tempo);
-    double pps =
-        (clipLength > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clipLength : 0.0;
-    if (pps <= 0.0)
-        return false;
-
-    float handleX =
-        static_cast<float>(waveformArea.getX()) + static_cast<float>(clip->fadeIn * pps);
-    return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
+    return interaction::clipFadeInHandleHit(x, y, makeHitSnapshot());
 }
 
 bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
-    const auto* clip = getClipInfo();
-    if (!clip || !clip->isAudio())
-        return false;
-
-    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
-    if (waveformArea.getWidth() <= 0)
-        return false;
-
-    if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
-        return false;
-
-    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    const double clipLength = clip->getTimelineLength(tempo);
-    double pps =
-        (clipLength > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clipLength : 0.0;
-    if (pps <= 0.0)
-        return false;
-
-    float handleX =
-        static_cast<float>(waveformArea.getRight()) - static_cast<float>(clip->fadeOut * pps);
-    return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
+    return interaction::clipFadeOutHandleHit(x, y, makeHitSnapshot());
 }
 
 bool ClipComponent::isOnVolumeHandle(int x, int y) const {
     juce::ignoreUnused(x);
+    return interaction::clipVolumeLineHit(y, makeHitSnapshot());
+}
+
+interaction::ClipSnapshot ClipComponent::makeHitSnapshot() const {
+    interaction::ClipSnapshot s;
+    s.width = getWidth();
+    s.height = getHeight();
+    s.selected = isSelected_;
+
     const auto* clip = getClipInfo();
-    if (!clip || !clip->isAudio())
-        return false;
-
-    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
-    if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
-        return false;
-
-    // Hit test near the actual volume line position (±6px tolerance)
-    float volumeLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
-    volumeLinear = juce::jlimit(0.0f, 1.0f, volumeLinear);
-    float lineY = static_cast<float>(waveformArea.getY()) +
-                  ((1.0f - volumeLinear) * static_cast<float>(waveformArea.getHeight()));
-    return std::abs(static_cast<float>(y) - lineY) <= 6.0f;
+    s.isAudio = clip != nullptr && clip->isAudio();
+    if (s.isAudio) {
+        const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+        s.clipLengthSeconds = clip->getTimelineLength(tempo);
+        const auto fades = computeEffectiveFades(*clip);
+        s.fadeInSeconds = fades.fadeInSeconds;
+        s.fadeOutSeconds = fades.fadeOutSeconds;
+        s.volumeGainLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
+    }
+    return s;
 }
 
 void ClipComponent::updateCursor(const juce::ModifierKeys& mods) {
-    const bool isShiftDown = mods.isShiftDown();
+    // Cursor policy lives in the shared hit tester's table (#1719); the
+    // hover flags were derived from the same hit test in mouseMove, so the
+    // cursor always matches what a click here would do.
+    interaction::ClipHit hit;
+    hit.onLeftEdge = hoverLeftEdge_;
+    hit.onRightEdge = hoverRightEdge_;
+    hit.onFadeIn = hoverFadeIn_;
+    hit.onFadeOut = hoverFadeOut_;
+    hit.onVolume = hoverVolumeHandle_;
+    hit.lowerHalf = hoverLowerZone_;
 
-    if (isShiftDown && mods.isCtrlDown()) {
-        setMouseCursor(CursorManager::getInstance().getEraseCursor());
-        return;
-    }
-
-    // Cmd+Alt = blade (scissors), Alt alone = copy-drag
-    if (mods.isAltDown() && !isShiftDown) {
-        if (mods.isCommandDown()) {
-            setMouseCursor(CursorManager::getInstance().getBladeCursor());
-        } else {
-            setMouseCursor(juce::MouseCursor::CopyingCursor);
-        }
-        return;
-    }
-
-    bool isClipSelected = SelectionManager::getInstance().isClipSelected(clipId_);
-
-    if (isClipSelected && (hoverFadeIn_ || hoverFadeOut_)) {
-        setMouseCursor(juce::MouseCursor::PointingHandCursor);
-        return;
-    }
-
-    if (isClipSelected && hoverVolumeHandle_) {
-        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-        return;
-    }
-
-    // Lower half of the body is a time-selection zone (I-beam), regardless of
-    // selection state. Edge-resize and the selected-clip handles above keep
-    // priority since hoverLowerZone_ already excludes the edges.
-    if (hoverLowerZone_) {
-        setMouseCursor(juce::MouseCursor::IBeamCursor);
-        return;
-    }
-
-    if (isClipSelected && (hoverLeftEdge_ || hoverRightEdge_)) {
-        if (isShiftDown) {
-            // Shift+edge = stretch cursor
-            setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
-        } else {
-            // Resize cursor only when selected
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        }
-    } else if (isClipSelected) {
-        // Shift over the body is a selection gesture now (range select);
-        // the copy cursor lives on Alt, handled above
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-    } else {
-        // Normal cursor when not selected (need to click to select first)
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-    }
+    const bool isClipSelected = SelectionManager::getInstance().isClipSelected(clipId_);
+    setMouseCursor(interaction::toJuceCursor(
+        interaction::clipCursor(hit, isClipSelected, interaction::ModifierSnapshot::from(mods))));
 }
 
 const ClipInfo* ClipComponent::getClipInfo() const {
@@ -3201,6 +3335,31 @@ void ClipComponent::showContextMenu() {
     menu.addItem(8, "Join Clips", canJoin && !isFrozen);
     menu.addSeparator();
 
+    // Crossfades (#1499): create at a butt joint / remove an existing one
+    {
+        bool hasXfadeIn = false;
+        bool hasXfadeOut = false;
+        bool canXfadePrev = false;
+        bool canXfadeNext = false;
+        if (!isMultiSelection && canEdit && clipForMenu && clipForMenu->isAudio()) {
+            hasXfadeIn = clipManager.getCrossfadeAtStart(clipId_).has_value();
+            hasXfadeOut = clipManager.getCrossfadeAtEnd(clipId_).has_value();
+            canXfadePrev = !hasXfadeIn && findCrossfadeNeighbour(true) != INVALID_CLIP_ID;
+            canXfadeNext = !hasXfadeOut && findCrossfadeNeighbour(false) != INVALID_CLIP_ID;
+        }
+        if (canXfadePrev || canXfadeNext || hasXfadeIn || hasXfadeOut) {
+            if (canXfadePrev)
+                menu.addItem(45, "Crossfade with Previous Clip");
+            if (canXfadeNext)
+                menu.addItem(46, "Crossfade with Next Clip");
+            if (hasXfadeIn)
+                menu.addItem(47, "Remove Start Crossfade");
+            if (hasXfadeOut)
+                menu.addItem(48, "Remove End Crossfade");
+            menu.addSeparator();
+        }
+    }
+
     // Delete
     menu.addItem(6, "Delete", canEdit);
     menu.addSeparator();
@@ -3316,11 +3475,34 @@ void ClipComponent::showContextMenu() {
     // Render Time Selection - always available (not for chord progressions)
     if (!isChord) {
         bool hasTimeSelection = false;
+        bool hasLoop = false;
+        bool hasCursor = false;
         if (parentPanel_ && parentPanel_->getTimelineController()) {
             const auto& state = parentPanel_->getTimelineController()->getState();
             hasTimeSelection = state.selection.isActive() && !state.selection.visuallyHidden;
+            hasLoop = state.loop.isValid();
+            hasCursor = state.editCursorPosition >= 0.0;
         }
         menu.addItem(10, "Render Time Selection", hasTimeSelection);
+        menu.addSeparator();
+        menu.addItem(30, "Insert Time", hasTimeSelection);
+        menu.addItem(31, "Duplicate Time Range", hasTimeSelection);
+        menu.addItem(32, "Duplicate Loop Range", hasLoop);
+        menu.addItem(33, "Split All Tracks at Cursor", hasCursor);
+
+        // Range Editing submenu mirrors the Edit menu's Copy/Cut/Delete/Paste-Ripple set.
+        const bool hasClipboard = ClipManager::getInstance().hasClipsInClipboard();
+        juce::PopupMenu rangeMenu;
+        rangeMenu.addItem(34, "Copy Time Range", hasTimeSelection);
+        rangeMenu.addItem(35, "Cut Time Range", hasTimeSelection);
+        rangeMenu.addItem(36, "Delete Time Range", hasTimeSelection);
+        rangeMenu.addSeparator();
+        rangeMenu.addItem(37, "Copy Loop Range", hasLoop);
+        rangeMenu.addItem(38, "Cut Loop Range", hasLoop);
+        rangeMenu.addItem(39, "Delete Loop Range", hasLoop);
+        rangeMenu.addSeparator();
+        rangeMenu.addItem(40, "Paste (Ripple)", hasClipboard);
+        menu.addSubMenu("Range Editing", rangeMenu);
     }
 
     // Bounce operations (not for chord progressions)
@@ -3426,13 +3608,17 @@ void ClipComponent::showContextMenu() {
                         }
                     }
                     const double bpm = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                    TrackId targetTrackId = INVALID_TRACK_ID;
-                    if (clipManager.clipboardRequiresTargetTrack()) {
-                        if (const auto* contextClip = clipManager.getClip(clipId_))
-                            targetTrackId = contextClip->trackId;
-                    }
+                    TrackId contextTrackId = INVALID_TRACK_ID;
+                    if (const auto* contextClip = clipManager.getClip(clipId_))
+                        contextTrackId = contextClip->trackId;
+                    const auto target =
+                        resolvePasteTarget(ViewModeController::getInstance().getViewMode(),
+                                           PasteTrackMode::PinToResolvedTrack,
+                                           PasteInvocation::fromContextTrack(contextTrackId));
+                    if (!target.ok)
+                        break;
                     auto cmd = std::make_unique<PasteClipCommand>(
-                        BeatPosition{pasteTime * bpm / 60.0}, targetTrackId);
+                        BeatPosition{pasteTime * bpm / 60.0}, target.trackId);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     const auto& pastedIds = cmdPtr->getPastedClipIds();
@@ -3655,6 +3841,40 @@ void ClipComponent::showContextMenu() {
                 break;
             }
 
+            case 45:    // Crossfade with Previous Clip
+            case 46: {  // Crossfade with Next Clip
+                const bool atStart = result == 45;
+                const ClipId neighbourId = findCrossfadeNeighbour(atStart);
+                const auto* c = clipManager.getClip(clipId_);
+                const auto* neighbour = clipManager.getClip(neighbourId);
+                if (c && neighbour) {
+                    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                    const double centre =
+                        atStart ? (c->placement.startBeat + neighbour->placement.endBeat()) * 0.5
+                                : (neighbour->placement.startBeat + c->placement.endBeat()) * 0.5;
+                    const double half = kDefaultCrossfadeBeats * 0.5;
+                    const ClipId leftId = atStart ? neighbourId : clipId_;
+                    const ClipId rightId = atStart ? clipId_ : neighbourId;
+                    UndoManager::getInstance().executeCommand(std::make_unique<SetCrossfadeCommand>(
+                        leftId, rightId, centre - half, centre + half, tempo));
+                }
+                break;
+            }
+
+            case 47:    // Remove Start Crossfade
+            case 48: {  // Remove End Crossfade
+                auto xf = result == 47 ? clipManager.getCrossfadeAtStart(clipId_)
+                                       : clipManager.getCrossfadeAtEnd(clipId_);
+                if (xf) {
+                    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+                    // Butt the joint at the overlap centre
+                    const double centre = (xf->startBeat + xf->endBeat) * 0.5;
+                    UndoManager::getInstance().executeCommand(std::make_unique<SetCrossfadeCommand>(
+                        xf->leftClipId, xf->rightClipId, centre, centre, tempo));
+                }
+                break;
+            }
+
             case 9: {  // Render Clip
                 if (onClipRenderRequested) {
                     onClipRenderRequested(clipId_);
@@ -3665,6 +3885,83 @@ void ClipComponent::showContextMenu() {
             case 10: {  // Render Time Selection
                 if (onRenderTimeSelectionRequested) {
                     onRenderTimeSelectionRequested();
+                }
+                break;
+            }
+
+            case 30: {  // Insert Time (ripple)
+                if (onInsertTimeRequested) {
+                    onInsertTimeRequested();
+                }
+                break;
+            }
+
+            case 31: {  // Duplicate Time Range (ripple)
+                if (onDuplicateTimeRangeRequested) {
+                    onDuplicateTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 32: {  // Duplicate Loop Range (ripple, all tracks)
+                if (onDuplicateLoopRangeRequested) {
+                    onDuplicateLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 33: {  // Split All Tracks at Cursor
+                if (onSplitAllTracksAtCursorRequested) {
+                    onSplitAllTracksAtCursorRequested();
+                }
+                break;
+            }
+
+            case 34: {  // Copy Time Range
+                if (onCopyTimeRangeRequested) {
+                    onCopyTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 35: {  // Cut Time Range
+                if (onCutTimeRangeRequested) {
+                    onCutTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 36: {  // Delete Time Range
+                if (onDeleteTimeRangeRequested) {
+                    onDeleteTimeRangeRequested();
+                }
+                break;
+            }
+
+            case 37: {  // Copy Loop Range
+                if (onCopyLoopRangeRequested) {
+                    onCopyLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 38: {  // Cut Loop Range
+                if (onCutLoopRangeRequested) {
+                    onCutLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 39: {  // Delete Loop Range
+                if (onDeleteLoopRangeRequested) {
+                    onDeleteLoopRangeRequested();
+                }
+                break;
+            }
+
+            case 40: {  // Paste (Ripple)
+                if (onPasteRippleRequested) {
+                    onPasteRippleRequested();
                 }
                 break;
             }

@@ -403,9 +403,16 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 if (pos < maxSteps) {
                     int note = msg.getNoteNumber();
                     int capturedPos = pos;
-                    juce::MessageManager::callAsync([this, capturedPos, note] {
-                        setStepNote(capturedPos, note);
-                        setStepGate(capturedPos, true);
+                    // callAsync is posted from the audio thread; the plugin can be
+                    // destroyed (track/plugin removal, project reload) before it
+                    // runs. Capture a weak self-ref so a stale callback no-ops
+                    // instead of writing through a freed ValueTree.
+                    auto safeThis = te::makeSafeRef(*this);
+                    juce::MessageManager::callAsync([safeThis, capturedPos, note] {
+                        if (auto* self = safeThis.get()) {
+                            self->setStepNote(capturedPos, note);
+                            self->setStepGate(capturedPos, true);
+                        }
                     });
                     const int nextPos = pos + 1;
                     stepRecordPosition_.store(nextPos, std::memory_order_relaxed);
@@ -496,8 +503,13 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         if (pCount != numSteps.get())
             numSteps = pCount;
         stepCount = juce::jlimit(1, MAX_STEPS, pCount);
-        // Persist to ValueTree (on message thread to avoid blocking audio)
-        juce::MessageManager::callAsync([this] { saveStepsToState(); });
+        // Persist to ValueTree (on message thread to avoid blocking audio).
+        // Weak self-ref: the plugin may be gone before this runs (see above).
+        auto safeThis = te::makeSafeRef(*this);
+        juce::MessageManager::callAsync([safeThis] {
+            if (auto* self = safeThis.get())
+                self->saveStepsToState();
+        });
     }
 
     // --- Get step events from the clock ---

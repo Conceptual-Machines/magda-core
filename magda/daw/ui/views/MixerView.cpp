@@ -18,6 +18,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/SelectionPolicy.hpp"
+#include "components/chain/custom_ui/PluginTelemetrySources.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
@@ -394,7 +395,7 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
                 midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
                 midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut, nullptr,
-                teInputDeviceNames);
+                teInputDeviceNames, &midiInputTrackMapping_);
         }
     }
 
@@ -785,9 +786,10 @@ void MixerView::ChannelStrip::setupControls() {
             RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector.get(), trackId_, device,
                                                           outputTrackMapping_,
                                                           enabledOutputChannels);
-            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge);
+            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge, trackId_,
+                                                        &midiInputTrackMapping_);
             RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(), midiBridge,
-                                                         midiOutputTrackMapping_);
+                                                         midiOutputTrackMapping_, trackId_);
         }
 
         setupRoutingCallbacks();
@@ -846,6 +848,15 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
             int selectedId = midiInSelector->getSelectedId();
             if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+            } else if (selectedId >= 200) {
+                // Preserve existing track input instead of forcing "all"
+                auto it = midiInputTrackMapping_.find(selectedId);
+                if (it != midiInputTrackMapping_.end()) {
+                    TrackManager::getInstance().setTrackMidiInput(
+                        trackId_, "track:" + juce::String(it->second));
+                } else {
+                    TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+                }
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
@@ -868,6 +879,13 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
             TrackManager::getInstance().setTrackMidiInput(trackId_, "");
         } else if (selectedId == 1) {
             TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+        } else if (selectedId >= 200) {
+            // Track-as-input (internal MIDI routing)
+            auto it = midiInputTrackMapping_.find(selectedId);
+            if (it != midiInputTrackMapping_.end()) {
+                TrackManager::getInstance().setTrackMidiInput(trackId_,
+                                                              "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
@@ -913,10 +931,10 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
         if (selectedId == 1) {
             TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
         } else if (selectedId >= 200) {
+            // "MIDI To track" — internal routing, mirror of the dest's MIDI input
             auto it = midiOutputTrackMapping_.find(selectedId);
             if (it != midiOutputTrackMapping_.end()) {
-                TrackManager::getInstance().setTrackMidiOutput(trackId_,
-                                                               "track:" + juce::String(it->second));
+                TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
             }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
@@ -1006,31 +1024,47 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr;
 
     if (miniOscilloscopeUI_) {
-        daw::audio::OscilloscopePlugin* osc = nullptr;
+        te::Plugin::Ptr pluginPtr;
         DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
             id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
-            if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr =
-                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-                osc = dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get());
-            }
+            if (id != INVALID_DEVICE_ID)
+                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
-        miniOscilloscopeUI_->setPlugin(osc);
+
+        if (dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get()) == nullptr)
+            pluginPtr = nullptr;
+
+        if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
+            miniOscilloscopeTelemetryPlugin_ = pluginPtr.get();
+            miniOscilloscopeTelemetry_ =
+                pluginPtr != nullptr
+                    ? std::make_shared<daw::ui::OscilloscopePluginTelemetrySource>(pluginPtr)
+                    : nullptr;
+        }
+        miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
     }
 
     if (miniSpectrumUI_) {
-        daw::audio::SpectrumAnalyzerPlugin* spec = nullptr;
+        te::Plugin::Ptr pluginPtr;
         DeviceId id = INVALID_DEVICE_ID;
         if (bridge) {
             id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
-            if (id != INVALID_DEVICE_ID) {
-                auto pluginPtr =
-                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-                spec = dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get());
-            }
+            if (id != INVALID_DEVICE_ID)
+                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
-        miniSpectrumUI_->setPlugin(spec);
+
+        if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get()) == nullptr)
+            pluginPtr = nullptr;
+
+        if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {
+            miniSpectrumTelemetryPlugin_ = pluginPtr.get();
+            miniSpectrumTelemetry_ =
+                pluginPtr != nullptr
+                    ? std::make_shared<daw::ui::SpectrumPluginTelemetrySource>(pluginPtr)
+                    : nullptr;
+        }
+        miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
     }
 }
 
@@ -1149,14 +1183,14 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         const int stripHeight = 4;
         const int labelRowBottom = stripHeight + 26;
         if (selected) {
-            // Selected: black strip + black label background
-            g.setColour(juce::Colours::black);
+            // Selected: lifted label background behind the strip (shared
+            // selection fill with the arrange headers / session view).
+            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
-        } else {
-            // Thin colour bar only — label sits on the regular panel background
-            g.setColour(trackColour_);
-            g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
         }
+        // Thin colour bar always shown, including when selected.
+        g.setColour(trackColour_);
+        g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(0, labelRowBottom, ownBounds.getWidth() - 1, 1);
     }
@@ -1174,8 +1208,8 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
 
         if (selected) {
-            // Selected: black header like regular channels
-            g.setColour(juce::Colours::black);
+            // Selected: lifted header like regular channels
+            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
         } else {
             // Plain panel background, with just a thin colour bar on top (like a
@@ -1647,8 +1681,8 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
         trackLabel->setColour(juce::Label::textColourId,
-                              selected ? juce::Colours::white
-                                       : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
+                                                            : DarkTheme::TEXT_PRIMARY));
         repaint();
     }
 }

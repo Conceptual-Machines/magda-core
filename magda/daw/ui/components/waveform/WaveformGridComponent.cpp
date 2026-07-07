@@ -646,31 +646,12 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     const auto* clip = getClip();
     const bool canResizeClipEnd = clip && !clip->loopEnabled && !clip->autoTempo;
 
-    // Use theme's loop marker colour (green)
-    auto loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
-
     double baseTime = getDisplayStartTime();
     const double sampleStart = getSampleStartPositionSeconds();
     const double offsetPosition = displayInfo_.offsetPositionSeconds;
 
-    // Loop boundaries - only shown when loop is enabled
-    if (isLooped && displayInfo_.loopLengthSeconds > 0.0) {
-        // Loop markers from ClipDisplayInfo (at real source positions)
-        double loopStartPos = displayInfo_.loopStartPositionSeconds;
-        double loopEndPos = displayInfo_.loopEndPositionSeconds;
-
-        // Loop start marker
-        int loopStartX = timeToPixel(baseTime + loopStartPos);
-        g.setColour(loopColour.withAlpha(0.8f));
-        g.fillRect(loopStartX - 1, 0, 2, bounds.getHeight());
-
-        // Loop end marker
-        int loopEndX = timeToPixel(baseTime + loopEndPos);
-        g.setColour(loopColour.withAlpha(0.8f));
-        g.fillRect(loopEndX - 1, 0, 3, bounds.getHeight());
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
-    }
+    // Loop boundaries are shown by the endpoint caps in the ruler strip above;
+    // no full-height loop lines are drawn over the waveform content.
 
     const bool hasVisibleLoopPhase = isLooped && displayInfo_.loopLengthSeconds > 0.0;
 

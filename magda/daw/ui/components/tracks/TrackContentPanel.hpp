@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../interaction/ArrangementHitTester.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 #include "core/AutomationManager.hpp"
@@ -42,9 +43,9 @@ class TrackContentPanel : public juce::Component,
                           public ViewModeListener,
                           private juce::Timer {
   public:
-    static constexpr int DEFAULT_TRACK_HEIGHT = 80;
-    static constexpr int MIN_TRACK_HEIGHT = 40;
-    static constexpr int MAX_TRACK_HEIGHT = 200;
+    static constexpr int DEFAULT_TRACK_HEIGHT = 83;
+    static constexpr int MIN_TRACK_HEIGHT = 56;
+    static constexpr int MAX_TRACK_HEIGHT = 220;
 
     TrackContentPanel();
     ~TrackContentPanel() override;
@@ -185,7 +186,18 @@ class TrackContentPanel : public juce::Component,
         onPlayheadPositionBeatsChanged;                    // Called when playhead is set via click
     std::function<void(ClipId)> onClipRenderRequested;     // Render clip to new file
     std::function<void()> onRenderTimeSelectionRequested;  // Render time selection
-    std::function<void(ClipId)> onBounceInPlaceRequested;  // Bounce MIDI clip in place
+    std::function<void()> onInsertTimeRequested;           // Ripple-insert empty time
+    std::function<void()> onDuplicateTimeRangeRequested;   // Ripple-duplicate time range
+    std::function<void()> onDuplicateLoopRangeRequested;   // Ripple-duplicate the loop region
+    std::function<void()> onSplitAllTracksAtCursorRequested;  // Split all clips at edit cursor
+    std::function<void()> onCopyTimeRangeRequested;           // Copy the time selection's content
+    std::function<void()> onCutTimeRangeRequested;     // Copy time selection, then ripple-delete
+    std::function<void()> onDeleteTimeRangeRequested;  // Ripple-delete the time selection
+    std::function<void()> onCopyLoopRangeRequested;    // Copy the loop region (all tracks)
+    std::function<void()> onCutLoopRangeRequested;     // Copy loop region, then ripple-delete
+    std::function<void()> onDeleteLoopRangeRequested;  // Ripple-delete the loop region
+    std::function<void()> onPasteRippleRequested;      // Ripple-insert clipboard span, then paste
+    std::function<void(ClipId)> onBounceInPlaceRequested;     // Bounce MIDI clip in place
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
     // Fires while a clip is being dragged/resized. The transparent grid overlay
     // is a sibling stacked above the track viewport; the incremental invalidation
@@ -293,6 +305,7 @@ class TrackContentPanel : public juce::Component,
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void modifierKeysChanged(const juce::ModifierKeys& mods) override;
     void showEmptySpaceContextMenu(const juce::MouseEvent& event);
 
     // Mouse interaction constants and state
@@ -412,7 +425,14 @@ class TrackContentPanel : public juce::Component,
 
     // Track zone detection - upper half = marquee, lower half = time selection
     bool isInUpperTrackZone(int y) const;
+    // Snapshot of selection + lane geometry for the shared hit tester
+    // (#1719), which drives the cursor (and, later, gesture dispatch).
+    interaction::PanelSnapshot makePanelHitSnapshot(int x, int y) const;
     void updateCursorForPosition(int x, int y, bool shiftHeld = false);
+    // Reactive recompute (#1720): re-derive the cursor from the current
+    // mouse position when hit-test inputs change without a mouse event
+    // (modifiers, time selection). No-op unless idle-hovering the panel.
+    void refreshCursorFromMouse();
     bool lastShiftState_ = false;
 
     // Marquee methods

@@ -16,6 +16,8 @@
 #include "../common/SvgButton.hpp"
 #include "../mixer/InputTypeSelector.hpp"
 #include "../mixer/RoutingSelector.hpp"
+#include "TrackControlsLayout.hpp"
+#include "TrackControlsPolicy.hpp"
 #include "audio/MidiBridge.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -37,9 +39,9 @@ class TrackHeadersPanel : public juce::Component,
                           public MidiBridge::Listener {
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
-    static constexpr int DEFAULT_TRACK_HEIGHT = 80;
-    static constexpr int MIN_TRACK_HEIGHT = 47;
-    static constexpr int MAX_TRACK_HEIGHT = 200;
+    static constexpr int DEFAULT_TRACK_HEIGHT = 83;
+    static constexpr int MIN_TRACK_HEIGHT = 56;
+    static constexpr int MAX_TRACK_HEIGHT = 220;
 
     TrackHeadersPanel(AudioEngine* audioEngine = nullptr);
     ~TrackHeadersPanel() override;
@@ -150,6 +152,9 @@ class TrackHeadersPanel : public juce::Component,
         bool isMaster = false;      // Is this the master track?
         bool isChordTrack = false;  // Is this the singleton chord track?
         bool isCollapsed = false;   // Is group collapsed?
+        // Which controls this track type exposes — shared with the inspector
+        // so the two views can't drift. Set from TrackControlsPolicy::forTrack.
+        TrackControlsPolicy policy;
         bool selected = false;
         bool muted = false;
         bool solo = false;
@@ -292,7 +297,7 @@ class TrackHeadersPanel : public juce::Component,
     void populateAudioInputOptions(RoutingSelector* selector, TrackId trackId = INVALID_TRACK_ID);
     void populateAudioOutputOptions(RoutingSelector* selector,
                                     TrackId currentTrackId = INVALID_TRACK_ID);
-    void populateMidiInputOptions(RoutingSelector* selector);
+    void populateMidiInputOptions(RoutingSelector* selector, TrackId trackId = INVALID_TRACK_ID);
     void populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId);
     void setupRoutingCallbacks(TrackHeader& header, TrackId trackId);
     void updateRoutingSelectorFromTrack(TrackHeader& header, const TrackInfo* track);
@@ -301,7 +306,11 @@ class TrackHeadersPanel : public juce::Component,
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
     std::map<int, TrackId> inputTrackMapping_;
+    std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, juce::String> inputChannelMapping_;
+
+    // Flip name-label text colour on the near-white selected fill
+    void updateHeaderSelectionColours();
 
     // Refresh all input selectors (call after MIDI device scan completes)
     void refreshInputSelectors();
@@ -323,15 +332,16 @@ class TrackHeadersPanel : public juce::Component,
                            const SideColumn& outer);
     void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
                            const SideColumn& inner, int trackHeight);
-    void layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
-                                const SideColumn& inner, int gapOverride = -1);
-    // Single-row content layout helpers (the passed rect is the already-positioned
-    // inner row). Used both for the top-packed compact layouts and the distributed
-    // fully-expanded layout.
-    void layoutVolPanRow(TrackHeader& header, juce::Rectangle<int> row);
-    void layoutButtonRow(TrackHeader& header, juce::Rectangle<int> row);
-    void layoutRoutingRow(TrackHeader& header, juce::Rectangle<int> row, RoutingSelector& audioDd,
-                          RoutingSelector& midiDd, juce::Component& icon);
+    // Master-only compact block: volume + speaker mute, horizontal meter with
+    // the back-to-arrangement button, peak readout.
+    void layoutMasterControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
+                                 const SideColumn& inner);
+    // Hides every control the control-area layout may place, so each layout
+    // pass starts from a clean slate and only shows what fits.
+    void hideControlAreaComponents(TrackHeader& header);
+    // Builds the policy-driven mix cluster (gain/pan/buttons/automation) for
+    // the shared track_controls layout.
+    track_controls::MixControls mixControlsFor(TrackHeader& header) const;
 
     // Automation lane height helpers
     int getTrackTotalHeight(int trackIndex) const;
@@ -373,7 +383,7 @@ class TrackHeadersPanel : public juce::Component,
     AutoLaneHeaderButtons* findLaneHeaderButtons(AutomationLaneId laneId);
 
     // Indentation
-    static constexpr int INDENT_WIDTH = 12;
+    static constexpr int INDENT_WIDTH = 8;
     static constexpr int COLLAPSE_BUTTON_SIZE = 10;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackHeadersPanel)

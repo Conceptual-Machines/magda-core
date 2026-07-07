@@ -1,5 +1,7 @@
 #include "MidiEditorContent.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -10,6 +12,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
@@ -25,7 +28,23 @@ namespace magda::daw::ui {
 bool MidiEditorContent::velocityDrawerOpen_ = false;
 bool MidiEditorContent::velocityLaneVisible_ = false;
 bool MidiEditorContent::foldEnabled_ = false;
+bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
+
+void MidiEditorContent::syncNotePreviewToggle(magda::SvgButton& button, bool on) {
+    // Same glyphs as the mute button (master_on speaker / master_off speaker-off),
+    // recoloured instead of chipped: accent blue when on, dimmed grey when off.
+    // The two source SVGs bake different fills, so set the recolour source to
+    // match each glyph before driving the active state.
+    if (on) {
+        button.updateSvgData(BinaryData::master_on_svg, BinaryData::master_on_svgSize);
+        button.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    } else {
+        button.updateSvgData(BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+        button.setOriginalColor(juce::Colour(0xFF1E1E1E));
+    }
+    button.setActive(on);
+}
 
 std::vector<int> MidiEditorContent::collectUsedPitches() const {
     std::set<int> used;
@@ -272,7 +291,7 @@ MidiEditorContent::MidiEditorContent() {
 
         double positionBeats = absoluteSeconds * tempo / 60.0;
         if (!bypassSnap)
-            positionBeats = state.snapBeatsToGrid(positionBeats);
+            positionBeats = snapBeatToGrid(positionBeats);
         controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
     };
 

@@ -669,6 +669,41 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         getCommandManager().invokeDirectly(CommandIDs::renderTimeSelection, false);
     };
 
+    // Wire ripple time-editing callbacks
+    mainView->onInsertTimeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::insertTime, false);
+    };
+    mainView->onDuplicateTimeRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::duplicateTimeRange, false);
+    };
+    mainView->onDuplicateLoopRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::duplicateLoopRange, false);
+    };
+    mainView->onSplitAllTracksAtCursorRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::splitAllTracksAtCursor, false);
+    };
+    mainView->onCopyTimeRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::copyTimeRange, false);
+    };
+    mainView->onCutTimeRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::cutTimeRange, false);
+    };
+    mainView->onDeleteTimeRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::deleteTimeRange, false);
+    };
+    mainView->onCopyLoopRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::copyLoopRange, false);
+    };
+    mainView->onCutLoopRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::cutLoopRange, false);
+    };
+    mainView->onDeleteLoopRangeRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::deleteLoopRange, false);
+    };
+    mainView->onPasteRippleRequested = [this]() {
+        getCommandManager().invokeDirectly(CommandIDs::pasteRipple, false);
+    };
+
     // Wire bounce callbacks
     mainView->onBounceInPlaceRequested = [this](ClipId clipId) {
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());

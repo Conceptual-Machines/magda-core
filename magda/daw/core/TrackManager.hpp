@@ -246,6 +246,12 @@ class TrackManager {
     std::vector<TrackId> getChildTracks(TrackId groupId) const;
     std::vector<TrackId> getTopLevelTracks() const;
     std::vector<TrackId> getAllDescendants(TrackId trackId) const;
+    // True if routing sourceTrackId's output into destTrackId's input would
+    // create a cycle: sourceTrackId == destTrackId, or walking the "track:"
+    // input chain from sourceTrackId reaches destTrackId. Each track has at
+    // most one track input (audio and MIDI are mutually exclusive), so this
+    // is a simple chain walk.
+    bool wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const;
 
     /**
      * @brief Preview a MIDI note on a track (for keyboard audition)
@@ -285,13 +291,22 @@ class TrackManager {
     void setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode);
     void setAllTracksPlaybackMode(TrackPlaybackMode mode);
     bool isAnyTrackInSessionMode() const;
-    void setTrackType(TrackId trackId, TrackType type);
     void setTrackMixerChannelWidth(TrackId trackId, int width);
     void setTrackMixerFaderTopInset(TrackId trackId, int inset);
 
     // Track routing setters (notify listeners and forward to bridges)
     void setTrackMidiInput(TrackId trackId, const juce::String& deviceId);
     void setTrackMidiOutput(TrackId trackId, const juce::String& deviceId);
+    // "MIDI To track": route sourceTrackId's MIDI output into destTrackId's
+    // input — the mirror view of setTrackMidiInput(dest, "track:<source>").
+    // Single destination: any other track listening to the source is cleared
+    // first, and the source's hardware MIDI output is cleared (the MIDI out
+    // selector is one exclusive choice). Rejects self / unknown / aux
+    // destination / cycle without changing anything.
+    void routeMidiOutputToTrack(TrackId sourceTrackId, TrackId destTrackId);
+    // Clear midiInputDevice on every track listening to sourceTrackId
+    // (optionally keeping excludeTrackId's routing intact).
+    void clearMidiTrackListeners(TrackId sourceTrackId, TrackId excludeTrackId = INVALID_TRACK_ID);
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
     void setTrackAudioOutput(TrackId trackId, const juce::String& routing);
 
@@ -830,6 +845,11 @@ class TrackManager {
   private:
     TrackManager();
     ~TrackManager() = default;
+
+    // Register a track with MidiBridge for input monitoring. No-op when no audio
+    // engine is attached or the track takes no external input (Aux, Group).
+    // Single place for the create/restore/duplicate/engine-attach wiring.
+    void startMidiMonitoring(const TrackInfo& track, const juce::String& deviceId);
 
     // Mutable resolver — used only by the unified setters in
     // TrackManagerModulation.cpp. Kept private so external callers can't

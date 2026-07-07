@@ -1,0 +1,9 @@
+# Local Terraform state and working dirs. State lives on the operator's machine
+# for this small, rarely-changed stack; the .terraform.lock.hcl IS committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.auto.tfvars.local

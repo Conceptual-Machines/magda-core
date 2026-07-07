@@ -15,6 +15,7 @@ Displayed in the bottom panel when an audio clip is selected. Shows the audio wa
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision
     - **SNAP** — Toggle snap-to-grid
     - **GRID** — Toggle grid line visibility
+    - **Loop** - Toggle the clip's own source loop on or off
 
 ## Edit in an External Editor
 

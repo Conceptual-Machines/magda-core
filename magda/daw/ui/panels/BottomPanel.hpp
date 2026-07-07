@@ -7,6 +7,7 @@
 #include "TabbedPanel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/PluginPreferences.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "utils/ScopedListener.hpp"
 
@@ -35,6 +36,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
                     public juce::DragAndDropTarget,
                     public ClipManagerListener,
                     public TrackManagerListener,
+                    public SelectionManagerListener,
                     public PluginPreferences::Listener,
                     public TimelineStateListener {
   public:
@@ -69,6 +71,12 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // TrackManagerListener
     void tracksChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
+
+    // SelectionManagerListener — multi-clip selections bypass ClipManager's
+    // single-clip selection, so the panel needs these to react (#1499 editor
+    // multi-select: waveform placeholder + multi-capable properties panel).
+    void selectionTypeChanged(SelectionType newType) override;
+    void multiClipSelectionChanged(const std::unordered_set<ClipId>& clipIds) override;
 
     // PluginPreferences::Listener
     void drumGridPreferenceChanged(const juce::String& pluginIdentifier) override;
@@ -116,6 +124,12 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void hideMidiHeaderControls();
     void layoutMidiHeaderControls(juce::Rectangle<int> headerBounds);
 
+    // Clip id of the clip currently open in the active editor (MIDI or waveform),
+    // or INVALID_CLIP_ID if the active content isn't a clip editor.
+    ClipId getActiveEditingClipId() const;
+    // Reflect the active clip's source-loop state on the header loop toggle.
+    void syncLoopButtonState();
+
     bool showEditorTabs_ = false;
     bool updatingTabs_ = false;  // Guard against re-entrancy
     static constexpr int SIDEBAR_WIDTH = 32;
@@ -139,6 +153,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
     std::unique_ptr<juce::TextButton> autoGridButton_;
     std::unique_ptr<juce::TextButton> snapButton_;
+    std::unique_ptr<SvgButton> loopButton_;  // toggles the clip's source loop
     std::unique_ptr<SvgButton> sliceButton_;
     std::unique_ptr<SvgButton> bendButton_;
 

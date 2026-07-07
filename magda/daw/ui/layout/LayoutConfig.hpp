@@ -26,15 +26,6 @@ struct LayoutConfig {
     int rulerLabelFontSize = 11;
     int rulerLabelTopMargin = 10;  // Space between separator line and time labels
 
-    // Ruler interaction zones (fraction of ruler height for zoom area, rest is time selection)
-    float rulerZoomAreaRatio = 0.67f;  // Upper 67% for zoom, lower 33% for time selection
-
-    // Helper to get the Y position that splits zoom/selection zones
-    int getRulerZoneSplitY() const {
-        return chordRowHeight + arrangementBarHeight +
-               static_cast<int>(timeRulerHeight * rulerZoomAreaRatio);
-    }
-
     // Grid/tick spacing - shared between timeline ruler and track content grid
     int minGridPixelSpacing = 50;  // Minimum pixels between grid lines/ticks
 

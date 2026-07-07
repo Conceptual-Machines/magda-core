@@ -148,6 +148,15 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
         deferredDeselect_ = true;
     }
 
+    // Audition the clicked note if a preview host is wired (gated upstream by
+    // the editor's preview toggle). Note-off fires on mouseUp; the sent pitch is
+    // captured so the note-off matches even if noteNumber_ shifts during a drag.
+    if (onNotePreview) {
+        auditionNoteNumber_ = noteNumber_;
+        onNotePreview(auditionNoteNumber_, velocity_, true);
+        previewNoteActive_ = true;
+    }
+
     // Store drag start info (in grid-relative coordinates)
     if (parentGrid_) {
         auto screenPos = e.getScreenPosition();
@@ -294,6 +303,14 @@ void NoteComponent::mouseDrag(const juce::MouseEvent& /*e*/) {
 }
 
 void NoteComponent::mouseUp(const juce::MouseEvent& /*e*/) {
+    // Release the auditioned note before committing edits (which may rebuild
+    // note components), so the preview note-off always reaches the instrument.
+    if (previewNoteActive_) {
+        if (onNotePreview)
+            onNotePreview(auditionNoteNumber_, 0, false);
+        previewNoteActive_ = false;
+    }
+
     if (isDragging_ && dragMode_ != DragMode::None) {
         // Commit the change via callback
         switch (dragMode_) {
@@ -418,6 +435,23 @@ void NoteComponent::updatePreviewPitch(int noteNumber) {
         noteNumber_ = noteNumber;
         repaint();
     }
+}
+
+void NoteComponent::mouseWheelMove(const juce::MouseEvent& e,
+                                   const juce::MouseWheelDetails& wheel) {
+    // Shift + wheel over a note edits its velocity (#1706); consume so the view
+    // does not also scroll. Every other wheel gesture is forwarded to the grid
+    // (scroll / zoom) via the base class.
+    if (isVelocityWheelGesture(e.mods) && onVelocityWheel) {
+        float dy = wheel.deltaY;
+        if (wheel.isReversed)
+            dy = -dy;
+        if (dy != 0.0f)
+            onVelocityWheel(noteIndex_, (dy > 0.0f ? 1 : -1) * kVelocityWheelStep);
+        return;
+    }
+
+    juce::Component::mouseWheelMove(e, wheel);
 }
 
 void NoteComponent::timerCallback() {

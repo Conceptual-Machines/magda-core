@@ -215,6 +215,10 @@ class MixerView : public juce::Component,
         // mixer rail toggle is on and the track has the post-FX device.
         std::unique_ptr<daw::ui::OscilloscopeUI> miniOscilloscopeUI_;
         std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
+        void* miniOscilloscopeTelemetryPlugin_ = nullptr;
+        void* miniSpectrumTelemetryPlugin_ = nullptr;
+        std::shared_ptr<daw::ui::OscilloscopeTelemetrySource> miniOscilloscopeTelemetry_;
+        std::shared_ptr<daw::ui::SpectrumTelemetrySource> miniSpectrumTelemetry_;
         void refreshMiniAnalyzers();
 
         // Mini FX chain: one MiniChainRow per top-level fx device on this
@@ -269,6 +273,7 @@ class MixerView : public juce::Component,
         std::map<int, TrackId> outputTrackMapping_;
         std::map<int, TrackId> midiOutputTrackMapping_;
         std::map<int, TrackId> inputTrackMapping_;
+        std::map<int, TrackId> midiInputTrackMapping_;
 
         void setupControls();
         void setupRoutingCallbacks();

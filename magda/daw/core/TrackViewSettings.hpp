@@ -35,7 +35,7 @@ inline TrackViewSettings getDefaultViewSettings(ViewMode mode) {
             settings.height = 60;
             break;
         case ViewMode::Arrange:
-            settings.height = 80;
+            settings.height = 83;
             break;
         case ViewMode::Mix:
             settings.visible = true;  // Always show in mix

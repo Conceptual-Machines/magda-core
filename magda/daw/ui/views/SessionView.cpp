@@ -29,6 +29,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
+#include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/SessionLaunchService.hpp"
 #include "core/SessionViewState.hpp"
@@ -938,7 +939,7 @@ class SessionView::MiniIOStrip : public juce::Component {
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
             midiOutSelector_.get(), midiBridge, device, trackId_, outputTrackMapping_,
             midiOutputTrackMapping_, &inputTrackMapping_, enabledInputChannels,
-            enabledOutputChannels, nullptr, teInputDeviceNames);
+            enabledOutputChannels, nullptr, teInputDeviceNames, &midiInputTrackMapping_);
     }
 
     TrackId getTrackId() const {
@@ -953,6 +954,7 @@ class SessionView::MiniIOStrip : public juce::Component {
     std::unique_ptr<RoutingSelector> midiInSelector_;
     std::unique_ptr<RoutingSelector> midiOutSelector_;
     std::map<int, TrackId> inputTrackMapping_;
+    std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
 
@@ -977,9 +979,10 @@ class SessionView::MiniIOStrip : public juce::Component {
                                                      nullptr, teInputDeviceNames);
         RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector_.get(), trackId_, device,
                                                       outputTrackMapping_, enabledOutputChannels);
-        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge);
+        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge, trackId_,
+                                                    &midiInputTrackMapping_);
         RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(), midiBridge,
-                                                     midiOutputTrackMapping_);
+                                                     midiOutputTrackMapping_, trackId_);
 
         // Sync current track state into selectors
         updateFromTrack();
@@ -1023,6 +1026,14 @@ class SessionView::MiniIOStrip : public juce::Component {
                 int selectedId = midiInSelector_->getSelectedId();
                 if (selectedId == 1) {
                     TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+                } else if (selectedId >= 200) {
+                    // Preserve existing track input instead of forcing "all"
+                    auto it = midiInputTrackMapping_.find(selectedId);
+                    if (it != midiInputTrackMapping_.end())
+                        TrackManager::getInstance().setTrackMidiInput(
+                            trackId_, "track:" + juce::String(it->second));
+                    else
+                        TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
                 } else if (selectedId >= 10 && midiBridge) {
                     auto midiInputs = midiBridge->getAvailableMidiInputs();
                     int deviceIndex = selectedId - 10;
@@ -1044,6 +1055,12 @@ class SessionView::MiniIOStrip : public juce::Component {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "");
             } else if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
+            } else if (selectedId >= 200) {
+                // Track-as-input (internal MIDI routing)
+                auto it = midiInputTrackMapping_.find(selectedId);
+                if (it != midiInputTrackMapping_.end())
+                    TrackManager::getInstance().setTrackMidiInput(
+                        trackId_, "track:" + juce::String(it->second));
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
@@ -1084,10 +1101,10 @@ class SessionView::MiniIOStrip : public juce::Component {
             if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
             } else if (selectedId >= 200) {
+                // "MIDI To track" — internal routing, mirror of the dest's MIDI input
                 auto it = midiOutputTrackMapping_.find(selectedId);
                 if (it != midiOutputTrackMapping_.end())
-                    TrackManager::getInstance().setTrackMidiOutput(
-                        trackId_, "track:" + juce::String(it->second));
+                    TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiOutputs = midiBridge->getAvailableMidiOutputs();
                 int deviceIndex = selectedId - 10;
@@ -1298,9 +1315,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
 
-        // Track colour bar at top (3px)
+        // Track colour bar at top (4px, matching the mixer channel strip)
         g.setColour(trackColour_);
-        g.fillRect(bounds.removeFromTop(3));
+        g.fillRect(bounds.removeFromTop(4));
     }
 
     void setShowRecordMonitor(bool show) {
@@ -1311,7 +1328,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
     void resized() override {
         auto bounds = getLocalBounds();
-        bounds.removeFromTop(3);  // colour bar
+        bounds.removeFromTop(4);  // colour bar
 
         // Button rows at bottom
         auto msRow = bounds.removeFromBottom(18);
@@ -1869,7 +1886,9 @@ void SessionView::rebuildTracks() {
                                     : juce::String(juce::CharPointer_UTF8("\xe2\x96\xbc ")))  // ▼
                          + track->name;
         }
-        header->setColour(juce::TextButton::buttonColourId, track->colour.withAlpha(0.5f));
+        header->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+        header->setTrackColour(track->colour);
 
         header->setButtonText(headerText);
         header->setColour(juce::TextButton::textColourOffId,
@@ -2600,9 +2619,14 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
     slot.onPasteClip = [this, trackIndex, sceneIndex]() {
         if (!ClipManager::getInstance().hasClipsInClipboard())
             return;
-        TrackId tId = visibleTrackIds_[trackIndex];
-        auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{0.0}, tId, ClipView::Session,
-                                                      sceneIndex);
+        const TrackId tId = visibleTrackIds_[trackIndex];
+        const auto target = resolvePasteTarget(ViewModeController::getInstance().getViewMode(),
+                                               PasteTrackMode::PinToResolvedTrack,
+                                               PasteInvocation::fromContextTrack(tId));
+        if (!target.ok)
+            return;
+        auto cmd = std::make_unique<PasteClipCommand>(BeatPosition{0.0}, target.trackId,
+                                                      ClipView::Session, sceneIndex);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
     slot.onDuplicateClip = [this, trackIndex, sceneIndex]() {
@@ -3064,7 +3088,7 @@ void SessionView::updateHeaderSelectionVisuals() {
 
     for (size_t i = 0; i < visibleTrackIds_.size() && i < trackHeaders.size(); ++i) {
         bool isSelected = sel.isTrackSelected(visibleTrackIds_[i]);
-        auto* header = trackHeaders[i].get();
+        auto* header = static_cast<TrackHeaderButton*>(trackHeaders[i].get());
 
         // Get track info for proper coloring
         const auto* track = TrackManager::getInstance().getTrack(visibleTrackIds_[i]);
@@ -3072,12 +3096,16 @@ void SessionView::updateHeaderSelectionVisuals() {
             continue;
 
         if (isSelected) {
-            // Selected: white text on black background
-            header->setColour(juce::TextButton::buttonColourId, juce::Colours::black);
-            header->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            // Selected: white text on the lifted selection fill (shared with
+            // the arrange headers / mixer)
+            header->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            header->setColour(juce::TextButton::textColourOffId,
+                              DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT));
         } else {
-            // Unselected: track colour background
-            header->setColour(juce::TextButton::buttonColourId, track->colour.withAlpha(0.5f));
+            // Unselected: dark header, track colour carried by the top strip
+            header->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
             header->setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         }
@@ -3086,8 +3114,10 @@ void SessionView::updateHeaderSelectionVisuals() {
     if (masterLabel_) {
         bool masterSelected = selectedId == MASTER_TRACK_ID;
         if (masterSelected) {
-            masterLabel_->setColour(juce::TextButton::buttonColourId, juce::Colours::black);
-            masterLabel_->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            masterLabel_->setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            masterLabel_->setColour(juce::TextButton::textColourOffId,
+                                    DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT));
         } else {
             masterLabel_->setColour(juce::TextButton::buttonColourId,
                                     DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));

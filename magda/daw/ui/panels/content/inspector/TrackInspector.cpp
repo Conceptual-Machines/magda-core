@@ -8,6 +8,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../components/common/MasterSpeakerButton.hpp"
 #include "../../../components/mixer/LevelMeterScale.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/ColourSwatch.hpp"
@@ -27,27 +28,27 @@
 
 namespace magda::daw::ui {
 namespace {
-void configureMasterSpeakerButton(SvgButton& button) {
-    // Dual-icon (pre-baked colors): audible = gray speaker (master_on), muted =
-    // yellow chip (master_off). Toggle state drives which icon shows.
-    button.setClickingTogglesState(true);
-    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    button.setIconPadding(3.5f);  // larger speaker glyph
-}
-
-void syncMasterSpeakerButton(SvgButton& button, bool muted) {
-    button.setToggleState(muted, juce::dontSendNotification);
-    button.setTooltip(muted ? "Unmute master" : "Mute master");
-}
-
 void useLocalizedLabelPainter(juce::Label& label) {
     label.setLookAndFeel(&DialogLookAndFeel::getInstance());
 }
 
 void clearLocalizedLabelPainter(juce::Label& label) {
     label.setLookAndFeel(nullptr);
+}
+
+// Inspector-tuned metrics for the shared track_controls layout. The control
+// sizes match the arrange track headers; only the row height differs.
+magda::track_controls::Metrics inspectorControlMetrics() {
+    magda::track_controls::Metrics m;
+    m.rowH = 22;
+    m.buttonW = 26;
+    m.buttonH = 18;
+    m.cellW = 26;
+    m.gap = 4;
+    m.rowGap = 4;
+    m.iconW = 16;
+    m.ddGap = 4;
+    return m;
 }
 }  // namespace
 
@@ -196,10 +197,7 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*muteButton_);
 
     // Speaker icon button (used for master mute instead of "M" text)
-    speakerButton_ = std::make_unique<SvgButton>(
-        "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
-        BinaryData::master_off_1_svg, BinaryData::master_off_1_svgSize);
-    configureMasterSpeakerButton(*speakerButton_);
+    speakerButton_ = magda::makeMasterSpeakerButton();
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
@@ -219,7 +217,7 @@ TrackInspector::TrackInspector() {
     soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    soloButton_->setIconPadding(7.0f);
+    soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
     soloButton_->setInactiveIconOpacity(0.58f);
     soloButton_->setClickingTogglesState(true);
     soloButton_->onClick = [this]() {
@@ -238,7 +236,7 @@ TrackInspector::TrackInspector() {
     recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton_->setIconPadding(7.0f);
+    recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
     recordButton_->setInactiveIconOpacity(0.58f);
     recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
@@ -266,6 +264,23 @@ TrackInspector::TrackInspector() {
     };
     monitorButton_.setInactiveIconOpacity(0.58f);
     addAndMakeVisible(monitorButton_);
+
+    // Automation indicator — mirrors the arrange track-header automation button.
+    // Lights purple when the track has automation, and clicking it collapses /
+    // expands the "Automated" section below.
+    automationIndicator_ = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
+                                                       BinaryData::automation_svgSize);
+    automationIndicator_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    automationIndicator_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationIndicator_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationIndicator_->setIconPadding(2.5f);
+    automationIndicator_->onClick = [this]() {
+        automatedSectionExpanded_ = !automatedSectionExpanded_;
+        updateAutomatedParametersSummary();
+        resized();
+        repaint();
+    };
+    addChildComponent(*automationIndicator_);
 
     // Gain label (TCP style - draggable dB display)
     gainLabel_ =
@@ -538,15 +553,19 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.clear();
     const int separatorPadding = 6;
 
+    // Colour swatch / pan / automation share one width and right edge so they
+    // form a clean right-aligned column, matching the arrange track headers.
+    constexpr int rightColW = 26;
+
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
     auto nameRow = bounds.removeFromTop(24);
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
-        // Mirror the volume row's mute button (22x22 within a 36px right area)
-        // so the glyph lines up with it.
-        masterGlyph_->setBounds(nameRow.removeFromRight(36).withSizeKeepingCentre(22, 22));
+        // Right-align the glyph flush to the row edge in a 22px cell, matching
+        // the volume row's speaker mute button below it so the two line up.
+        masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
     } else {
-        colourSwatch_->setBounds(nameRow.removeFromRight(24));
+        colourSwatch_->setBounds(nameRow.removeFromRight(rightColW));
     }
     nameRow.removeFromRight(4);
     trackNameValue_.setBounds(nameRow);
@@ -554,55 +573,41 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
-    const int selectorGap = 4;
+    const auto& p = policy_;
+    const auto m = inspectorControlMetrics();
 
-    constexpr int controlRowHeight = 22;
-    constexpr int buttonSize = 22;
-    constexpr int buttonGap = 4;
-    constexpr int panWidth = 42;
-    const int buttonCount =
-        (muteButton_->isVisible() || speakerButton_->isVisible() || chordSpeakerButton_->isVisible()
-             ? 1
-             : 0) +
-        (soloButton_->isVisible() ? 1 : 0) + (recordButton_->isVisible() ? 1 : 0) +
-        (monitorButton_.isVisible() ? 1 : 0);
-    const int controlWidth =
-        std::max(buttonSize, buttonCount * buttonSize + std::max(0, buttonCount - 1) * buttonGap);
-
-    auto mixRow = bounds.removeFromTop(controlRowHeight);
-    if (speakerButton_->isVisible()) {
-        auto speakerArea = mixRow.removeFromRight(buttonSize);
-        mixRow.removeFromRight(buttonGap);
-        gainLabel_->setBounds(mixRow);
-        speakerButton_->setBounds(speakerArea);
-        bounds.removeFromTop(separatorPadding);
-        sectionSeparatorYs_.push_back(bounds.getY());
-        bounds.removeFromTop(separatorPadding);
-    } else {
-        gainLabel_->setBounds(mixRow.removeFromLeft(std::min(controlWidth, mixRow.getWidth())));
-        if (panLabel_->isVisible() && mixRow.getWidth() > buttonGap + panWidth) {
-            mixRow.removeFromLeft(buttonGap);
-            panLabel_->setBounds(mixRow.removeFromLeft(panWidth));
+    // Mix rows — which controls exist comes from the shared policy; the
+    // shared layout reflows to one or two rows depending on the panel width,
+    // so nothing is hidden when the panel gets narrow.
+    if (p.gain) {
+        track_controls::MixControls mix;
+        mix.gain = gainLabel_.get();
+        switch (p.muteStyle) {
+            case magda::TrackControlsPolicy::MuteStyle::MasterSpeaker:
+                mix.pan = speakerButton_.get();  // speaker mute rides the pan cell
+                break;
+            case magda::TrackControlsPolicy::MuteStyle::ChordAudition:
+                // Full row height, like the pan label and master speaker, so
+                // the chip doesn't sit squat next to the gain field.
+                mix.pan = chordSpeakerButton_.get();
+                break;
+            case magda::TrackControlsPolicy::MuteStyle::Standard:
+                if (p.pan)
+                    mix.pan = panLabel_.get();
+                break;
         }
+        if (p.mute && p.muteStyle == magda::TrackControlsPolicy::MuteStyle::Standard)
+            mix.buttons.push_back(muteButton_.get());
+        if (p.solo)
+            mix.buttons.push_back(soloButton_.get());
+        if (p.record)
+            mix.buttons.push_back(recordButton_.get());
+        if (p.monitor)
+            mix.buttons.push_back(&monitorButton_);
+        if (p.automation)
+            mix.trailing = automationIndicator_.get();
 
-        bounds.removeFromTop(4);
-        auto buttonRow = bounds.removeFromTop(buttonSize);
-        if (chordSpeakerButton_->isVisible()) {
-            chordSpeakerButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-        } else {
-            muteButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-            buttonRow.removeFromLeft(buttonGap);
-            if (soloButton_->isVisible()) {
-                soloButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-                buttonRow.removeFromLeft(buttonGap);
-            }
-            if (recordButton_->isVisible()) {
-                recordButton_->setBounds(buttonRow.removeFromLeft(buttonSize));
-                buttonRow.removeFromLeft(buttonGap);
-            }
-            if (monitorButton_.isVisible())
-                monitorButton_.setBounds(buttonRow.removeFromLeft(buttonSize));
-        }
+        track_controls::layoutMixControls(bounds, mix, m);
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
         bounds.removeFromTop(separatorPadding);
@@ -617,61 +622,38 @@ void TrackInspector::resized() {
         bounds.removeFromTop(separatorPadding);
     }
 
-    // Routing section — only lay out if visible (audio out or, for the chord
-    // track, MIDI out).
-    if (outputSelector_->isVisible() || midiOutputSelector_->isVisible()) {
+    // Routing section — column labels above, then the input/output rows. Row
+    // composition comes from the policy; the shared routing-row layout splits
+    // the width between whichever dropdowns exist.
+    if (p.anyRouting()) {
         const int selectorHeight = 18;
         const int columnHeaderHeight = 14;
-        const int iconSize = 16;
-        const int dropdownGap = selectorGap;
-        const int dropdownWidth = (bounds.getWidth() - dropdownGap - dropdownGap - iconSize) / 2;
+        const int numCols = ((p.audioIn || p.audioOut) ? 1 : 0) + ((p.midiIn || p.midiOut) ? 1 : 0);
+        const int ddW = track_controls::routingDropdownWidth(bounds.getWidth(), numCols, m);
 
-        if (outputSelector_->isVisible()) {
-            // Column headers: [Audio] [MIDI]
-            if (audioInputSelector_->isVisible()) {
-                auto headerRow = bounds.removeFromTop(columnHeaderHeight);
-                audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-                headerRow.removeFromLeft(dropdownGap);
-                midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-                bounds.removeFromTop(2);
+        if (audioColumnLabel_.isVisible() || midiColumnLabel_.isVisible()) {
+            auto headerRow = bounds.removeFromTop(columnHeaderHeight);
+            if (audioColumnLabel_.isVisible()) {
+                audioColumnLabel_.setBounds(headerRow.removeFromLeft(ddW));
+                headerRow.removeFromLeft(m.ddGap);
             }
+            if (midiColumnLabel_.isVisible())
+                midiColumnLabel_.setBounds(headerRow.removeFromLeft(ddW));
+            bounds.removeFromTop(2);
+        }
 
-            // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out
-            if (audioInputSelector_->isVisible()) {
-                auto inputRow = bounds.removeFromTop(selectorHeight);
-                audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                inputRow.removeFromLeft(dropdownGap);
-                inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                inputRow.removeFromLeft(dropdownGap);
-                inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
-                bounds.removeFromTop(4);
-            }
-
-            // Output row: [Audio Out] [MIDI Out] [outputIcon]
+        if (p.anyInput()) {
+            auto inputRow = bounds.removeFromTop(selectorHeight);
+            track_controls::layoutRoutingRow(
+                inputRow, p.audioIn ? audioInputSelector_.get() : nullptr,
+                p.midiIn ? inputSelector_.get() : nullptr, inputIcon_.get(), m);
+            bounds.removeFromTop(4);
+        }
+        if (p.anyOutput()) {
             auto outputRow = bounds.removeFromTop(selectorHeight);
-            outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-            outputRow.removeFromLeft(dropdownGap);
-            midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-            outputRow.removeFromLeft(dropdownGap);
-            outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
-        } else {
-            // Chord track: MIDI-only routing in a single column.
-            if (midiColumnLabel_.isVisible()) {
-                auto headerRow = bounds.removeFromTop(columnHeaderHeight);
-                midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-                bounds.removeFromTop(2);
-            }
-            if (inputSelector_->isVisible()) {
-                auto inputRow = bounds.removeFromTop(selectorHeight);
-                inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-                inputRow.removeFromLeft(dropdownGap);
-                inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
-                bounds.removeFromTop(4);
-            }
-            auto outputRow = bounds.removeFromTop(selectorHeight);
-            midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-            outputRow.removeFromLeft(dropdownGap);
-            outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+            track_controls::layoutRoutingRow(
+                outputRow, p.audioOut ? outputSelector_.get() : nullptr,
+                p.midiOut ? midiOutputSelector_.get() : nullptr, outputIcon_.get(), m);
         }
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
@@ -926,6 +908,8 @@ void TrackInspector::automationLanePropertyChanged(magda::AutomationLaneId laneI
 
 void TrackInspector::updateAutomatedParametersSummary() {
     if (isMultiTrackMode_ || selectedTrackId_ == magda::INVALID_TRACK_ID) {
+        if (automationIndicator_)
+            automationIndicator_->setActive(false);
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
         return;
@@ -944,7 +928,14 @@ void TrackInspector::updateAutomatedParametersSummary() {
             names.addIfNotAlreadyThere(lane->getDisplayName());
     }
 
-    if (names.isEmpty()) {
+    // Automation button lights purple whenever the track has automation.
+    const bool hasAutomation = !names.isEmpty();
+    if (automationIndicator_)
+        automationIndicator_->setActive(hasAutomation);
+
+    // The "Automated" section is shown only when there's automation and the
+    // button hasn't collapsed it.
+    if (!hasAutomation || !automatedSectionExpanded_) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
         return;
@@ -1224,120 +1215,79 @@ void TrackInspector::updateFromMultiTrackSelection() {
         multiTrackBasePans_.clear();
     };
 
-    // Show name + buttons + volume/pan; hide routing/sends/clips
-    trackNameLabel_.setVisible(true);
-    trackNameValue_.setVisible(true);
-    colourSwatch_->setVisible(true);
-    masterGlyph_->setVisible(false);
-    muteButton_->setVisible(true);
-    speakerButton_->setVisible(false);
-    soloButton_->setVisible(true);
-    recordButton_->setVisible(true);
-    monitorButton_.setVisible(true);
-    gainLabel_->setVisible(true);
-    panLabel_->setVisible(true);
-
-    routingSectionLabel_.setVisible(false);
-    audioInputSelector_->setVisible(false);
-    inputSelector_->setVisible(false);
-    audioColumnLabel_.setVisible(false);
-    midiColumnLabel_.setVisible(false);
-    inputIcon_->setVisible(false);
-    outputIcon_->setVisible(false);
-    outputSelector_->setVisible(false);
-    midiOutputSelector_->setVisible(false);
-
-    sendReceiveSectionLabel_.setVisible(false);
-    addSendButton_->setVisible(false);
-    noSendsLabel_.setVisible(false);
-    receivesLabel_.setVisible(false);
-    for (auto& l : sendDestLabels_)
-        l->setVisible(false);
-    for (auto& l : sendLevelLabels_)
-        l->setVisible(false);
-    for (auto& b : sendDeleteButtons_)
-        b->setVisible(false);
-
-    clipsSectionLabel_.setVisible(false);
-    clipCountLabel_.setVisible(false);
-    latencyLabel_.setVisible(false);
-    latencyValue_.setVisible(false);
-    automatedSectionLabel_.setVisible(false);
-    automatedParamsLabel_.setVisible(false);
+    // Show the shared multi-selection controls; hide routing/sends/clips.
+    showTrackControls(true);
 
     resized();
     repaint();
 }
 
 void TrackInspector::showTrackControls(bool show) {
-    bool isMaster = show && selectedTrackId_ == magda::MASTER_TRACK_ID;
-    bool isAux = false;
-    bool isMultiOut = false;
-    bool isChord = false;
-    if (show && selectedTrackId_ != magda::INVALID_TRACK_ID &&
-        selectedTrackId_ != magda::MASTER_TRACK_ID) {
-        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        if (track && track->type == magda::TrackType::Aux)
-            isAux = true;
-        if (track && track->type == magda::TrackType::MultiOut)
-            isMultiOut = true;
-        if (track && track->type == magda::TrackType::Chord)
-            isChord = true;
+    // Which controls exist for the selection comes from the shared
+    // TrackControlsPolicy — the same rules drive the arrange track headers,
+    // so the two views can't drift apart.
+    policy_ = magda::TrackControlsPolicy::hidden();
+    if (show) {
+        if (isMultiTrackMode_) {
+            policy_ = magda::TrackControlsPolicy::forMultiSelection();
+        } else if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
+            policy_ = magda::TrackControlsPolicy::forType(magda::TrackType::Master);
+        } else if (const auto* track =
+                       magda::TrackManager::getInstance().getTrack(selectedTrackId_)) {
+            policy_ = magda::TrackControlsPolicy::forTrack(*track);
+        }
     }
-    isChordTrack_ = isChord;
+    const auto& p = policy_;
+    using MuteStyle = magda::TrackControlsPolicy::MuteStyle;
+    const bool isMaster = p.muteStyle == MuteStyle::MasterSpeaker;
+    isChordTrack_ = p.muteStyle == MuteStyle::ChordAudition;
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
     colourSwatch_->setVisible(show && !isMaster);
     masterGlyph_->setVisible(show && isMaster);
-    // Chord track: a single 3-state audition control replaces "M" + solo +
-    // monitor (it folds all three in); no record either. (volume + chord control,
-    // matching the chord track header.)
-    muteButton_->setVisible(show && !isMaster && !isChord);
-    speakerButton_->setVisible(isMaster);
-    chordSpeakerButton_->setVisible(isChord);
-    soloButton_->setVisible(show && !isMaster && !isChord);
-    recordButton_->setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
-    monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut && !isChord);
-    gainLabel_->setVisible(show);
-    panLabel_->setVisible(show && !isMaster && !isChord);
 
-    // Routing section — hidden for master and aux. The chord track shows MIDI
-    // I/O only (no audio in/out, since it drives its own instrument).
-    bool showRouting = show && !isMaster && !isAux;
-    bool showAudio = showRouting && !isChord && !isMultiOut;
-    bool showMidi = showRouting && !isMultiOut;
+    muteButton_->setVisible(p.mute && p.muteStyle == MuteStyle::Standard);
+    speakerButton_->setVisible(p.mute && isMaster);
+    chordSpeakerButton_->setVisible(p.mute && isChordTrack_);
+    soloButton_->setVisible(p.solo);
+    recordButton_->setVisible(p.record);
+    monitorButton_.setVisible(p.monitor);
+    gainLabel_->setVisible(p.gain);
+    panLabel_->setVisible(p.pan);
+    // The automation indicator's active state is driven by
+    // updateAutomatedParametersSummary; here it only loses its slot when the
+    // type has no automation button at all.
+    if (!p.automation)
+        automationIndicator_->setVisible(false);
+
     routingSectionLabel_.setVisible(false);
-    audioInputSelector_->setVisible(showAudio);
-    audioColumnLabel_.setVisible(showAudio);
-    inputSelector_->setVisible(showMidi);
-    midiColumnLabel_.setVisible(showMidi);
-    inputIcon_->setVisible(showMidi);
-    outputSelector_->setVisible(showRouting && !isChord);
-    midiOutputSelector_->setVisible(showMidi);
-    outputIcon_->setVisible(showRouting);
+    audioInputSelector_->setVisible(p.audioIn);
+    audioColumnLabel_.setVisible(p.audioIn);
+    inputSelector_->setVisible(p.midiIn);
+    midiColumnLabel_.setVisible(p.midiIn || p.midiOut);
+    inputIcon_->setVisible(p.anyInput());
+    outputSelector_->setVisible(p.audioOut);
+    midiOutputSelector_->setVisible(p.midiOut);
+    outputIcon_->setVisible(p.anyOutput());
 
-    // Send/Receive section — hidden for master, aux and chord tracks
-    bool showSends = show && !isMaster && !isAux && !isChord;
-    sendReceiveSectionLabel_.setVisible(showSends);
-    addSendButton_->setVisible(showSends);
-    noSendsLabel_.setVisible(showSends);
-    receivesLabel_.setVisible(showSends);
+    sendReceiveSectionLabel_.setVisible(p.sends);
+    addSendButton_->setVisible(p.sends);
+    noSendsLabel_.setVisible(p.sends);
+    receivesLabel_.setVisible(p.sends);
     for (auto& l : sendDestLabels_)
-        l->setVisible(showSends);
+        l->setVisible(p.sends);
     for (auto& l : sendLevelLabels_)
-        l->setVisible(showSends);
+        l->setVisible(p.sends);
     for (auto& b : sendDeleteButtons_)
-        b->setVisible(showSends);
+        b->setVisible(p.sends);
 
-    // Clips section — hidden for master
-    clipsSectionLabel_.setVisible(show && !isMaster);
-    clipCountLabel_.setVisible(show && !isMaster);
-
-    // Latency — shown for all tracks (including master)
-    latencyLabel_.setVisible(show);
-    latencyValue_.setVisible(show);
-    if (!show) {
+    // Clips / latency are inspector-only extras, not per-type track controls.
+    clipsSectionLabel_.setVisible(show && !isMaster && !isMultiTrackMode_);
+    clipCountLabel_.setVisible(show && !isMaster && !isMultiTrackMode_);
+    latencyLabel_.setVisible(show && !isMultiTrackMode_);
+    latencyValue_.setVisible(show && !isMultiTrackMode_);
+    if (!show || isMultiTrackMode_) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
     }
@@ -1613,6 +1563,15 @@ void TrackInspector::populateRoutingSelectors() {
             int selectedId = inputSelector_->getSelectedId();
             if (selectedId == 1) {
                 magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+            } else if (selectedId >= 200) {
+                // Preserve existing track input instead of forcing "all"
+                auto it = midiInputTrackMapping_.find(selectedId);
+                if (it != midiInputTrackMapping_.end()) {
+                    magda::TrackManager::getInstance().setTrackMidiInput(
+                        selectedTrackId_, "track:" + juce::String(it->second));
+                } else {
+                    magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+                }
             } else if (selectedId >= 10 && midiBridge) {
                 auto midiInputs = midiBridge->getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
@@ -1638,6 +1597,13 @@ void TrackInspector::populateRoutingSelectors() {
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "");
         } else if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
+        } else if (selectedId >= 200) {
+            // Track-as-input (internal MIDI routing)
+            auto it = midiInputTrackMapping_.find(selectedId);
+            if (it != midiInputTrackMapping_.end()) {
+                magda::TrackManager::getInstance().setTrackMidiInput(
+                    selectedTrackId_, "track:" + juce::String(it->second));
+            }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiInputs = midiBridge->getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
@@ -1701,11 +1667,11 @@ void TrackInspector::populateRoutingSelectors() {
         if (selectedId == 1) {
             magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_, "");
         } else if (selectedId >= 200) {
-            // Track destination
+            // "MIDI To track" — internal routing, mirror of the dest's MIDI input
             auto it = midiOutputTrackMapping_.find(selectedId);
             if (it != midiOutputTrackMapping_.end()) {
-                magda::TrackManager::getInstance().setTrackMidiOutput(
-                    selectedTrackId_, "track:" + juce::String(it->second));
+                magda::TrackManager::getInstance().routeMidiOutputToTrack(selectedTrackId_,
+                                                                          it->second);
             }
         } else if (selectedId >= 10 && midiBridge) {
             auto midiOutputs = midiBridge->getAvailableMidiOutputs();
@@ -1753,14 +1719,16 @@ void TrackInspector::populateMidiInputOptions() {
     if (!inputSelector_ || !audioEngine_)
         return;
     magda::RoutingSyncHelper::populateMidiInputOptions(inputSelector_.get(),
-                                                       audioEngine_->getMidiBridge());
+                                                       audioEngine_->getMidiBridge(),
+                                                       selectedTrackId_, &midiInputTrackMapping_);
 }
 
 void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
-    magda::RoutingSyncHelper::populateMidiOutputOptions(
-        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), midiOutputTrackMapping_);
+    magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
+                                                        audioEngine_->getMidiBridge(),
+                                                        midiOutputTrackMapping_, selectedTrackId_);
 }
 
 void TrackInspector::updateRoutingSelectorsFromTrack() {
@@ -1787,7 +1755,7 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
         midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
         outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut,
-        &inputChannelMapping_, teInputDeviceNames);
+        &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_);
 }
 
 }  // namespace magda::daw::ui

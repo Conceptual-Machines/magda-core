@@ -188,7 +188,7 @@ DeviceInfo* findUniqueBareDeviceIdMatch(TrackInfo& masterTrack, std::vector<Trac
 DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
                                         const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
-        if (track->type == TrackType::Group && device.isInstrument) {
+        if (!track->canHostInstrument() && device.isInstrument) {
             return INVALID_DEVICE_ID;
         }
     }
@@ -206,7 +206,7 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device) {
     if (auto* track = getTrack(chainPath.trackId)) {
-        if (track->type == TrackType::Group && device.isInstrument) {
+        if (!track->canHostInstrument() && device.isInstrument) {
             return INVALID_DEVICE_ID;
         }
     }
@@ -260,7 +260,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device, int insertIndex) {
     if (auto* track = getTrack(chainPath.trackId)) {
-        if (track->type == TrackType::Group && device.isInstrument) {
+        if (!track->canHostInstrument() && device.isInstrument) {
             return INVALID_DEVICE_ID;
         }
     }

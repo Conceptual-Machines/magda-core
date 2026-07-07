@@ -3,10 +3,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
+#include "core/DeviceUiContext.hpp"
 #include "core/SelectionManager.hpp"
 
 namespace magda::daw::audio {
@@ -36,6 +39,7 @@ class ImpulseResponseUI;
 class LevelsUI;
 class LinkableTextSlider;
 class OscilloscopeUI;
+class OscilloscopeTelemetrySource;
 class PhaserUI;
 class PolyStepSequencerUI;
 class PolySynthUI;
@@ -46,12 +50,23 @@ class NimbusUI;
 class DrumVoiceUI;
 class StruckInstrumentUI;
 class SpectrumAnalyzerUI;
+class SpectrumTelemetrySource;
 class PitchShiftUI;
 class ReverbUI;
 class SamplerUI;
 class StepSequencerUI;
 class StrumUI;
 class ToneGeneratorUI;
+class LevelsTelemetrySource;
+class NimbusTelemetrySource;
+
+}  // namespace magda::daw::ui
+
+namespace magda {
+class MidiNoteStrip;
+}
+
+namespace magda::daw::ui {
 
 /**
  * @brief Manages all custom UI instances for a DeviceSlotComponent.
@@ -88,6 +103,9 @@ class DeviceCustomUIManager {
         // Optional live-plugin resolver for embedded device contexts that do
         // not have an AudioBridge-resolvable ChainNodePath, such as DrumGrid pad chains.
         std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
+        // Optional stable UI context. If omitted, DeviceCustomUIManager creates
+        // a BasicDeviceUiContext so migrations can adopt the context gradually.
+        std::shared_ptr<magda::DeviceUiContext> deviceUiContext;
     };
 
     DeviceCustomUIManager();
@@ -163,35 +181,19 @@ class DeviceCustomUIManager {
     /** Preferred content width for layout calculations (matches old per-type if-chains). */
     int getPreferredContentWidth(int drumGridFallback = 0) const;
 
-    // -------------------------------------------------------------------------
-    // Accessors used outside createCustomUI / updateCustomUI
-    // -------------------------------------------------------------------------
-
-    // Plugin raw pointers (needed by DeviceSlotComponent::timerCallback and setNodePath)
-    daw::audio::ArpeggiatorPlugin* getArpPlugin() const {
-        return arpPlugin_;
-    }
-    daw::audio::MidiStrumPlugin* getStrumPlugin() const {
-        return strumPlugin_;
-    }
-    daw::audio::StepSequencerPlugin* getStepSeqPlugin() const {
-        return stepSeqPlugin_;
-    }
-    daw::audio::PolyStepSequencerPlugin* getPolyStepSeqPlugin() const {
-        return polyStepSeqPlugin_;
-    }
-    daw::audio::MidiChordEnginePlugin* getChordPlugin() const {
-        return chordPlugin_;
+    std::shared_ptr<magda::DeviceUiContext> getDeviceUiContext() const {
+        return deviceUiContext_;
     }
 
-    // Allow timerCallback to write stepSeqPlugin_ after setNodePath resolution
-    void setStepSeqPlugin(daw::audio::StepSequencerPlugin* p) {
+    // MIDI utility binding refreshes. Concrete plugin pointers stay inside the
+    // manager so slot/header code does not depend on plugin lifetime.
+    void bindStepSequencerPlugin(daw::audio::StepSequencerPlugin* p) {
         stepSeqPlugin_ = p;
     }
-    void setPolyStepSeqPlugin(daw::audio::PolyStepSequencerPlugin* p) {
+    void bindPolyStepSequencerPlugin(daw::audio::PolyStepSequencerPlugin* p) {
         polyStepSeqPlugin_ = p;
     }
-    void setStrumPlugin(daw::audio::MidiStrumPlugin* p) {
+    void bindStrumPlugin(daw::audio::MidiStrumPlugin* p) {
         strumPlugin_ = p;
     }
 
@@ -202,6 +204,25 @@ class DeviceCustomUIManager {
     // Re-resolve path-bound plugin pointers for UIs that depend on a live
     // Tracktion plugin. Safe to call before the plugin exists.
     void refreshLivePluginBindings();
+
+    // Invalidate the current UI context and clear live plugin bindings before
+    // the owning slot is destroyed, removed, or rebound to another plugin.
+    void detachFromLivePlugin();
+
+    bool randomizeSequencerPattern(bool polyphonic);
+    std::optional<bool> toggleSequencerStepRecording(bool polyphonic);
+    void copySequencerPatternToClipboard(bool polyphonic);
+    bool handleSequencerPatternExternalDrag(bool polyphonic, juce::Component* exportButton,
+                                            juce::Component* dragOwner,
+                                            const juce::MouseEvent& event);
+    bool getSequencerStepRecordingState(bool polyphonic, int& position, int& maxSteps) const;
+    void refreshArpeggiatorMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshStrumMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshStepSequencerMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshPolyStepSequencerMidiActivity(magda::MidiNoteStrip& strip, int& lastNote) const;
+    void refreshChordEngineMidiActivity(magda::MidiNoteStrip& strip,
+                                        std::array<int, 32>& lastChordNotes,
+                                        int& lastChordCount) const;
 
     // Pending tab index (set before fourOscUI_ is created, consumed in create())
     static constexpr int NO_PENDING_TAB = -1;
@@ -255,12 +276,23 @@ class DeviceCustomUIManager {
                               const Callbacks& callbacks);
     bool createImpulseResponseUI(const magda::DeviceInfo& device, juce::Component& parent,
                                  const Callbacks& callbacks);
+    juce::var executeCustomUiCommand(const juce::Identifier& command, const juce::var& arguments);
+    juce::var executeSamplerCommand(const juce::Identifier& command, const juce::var& arguments);
+    bool executeImpulseResponseLoadCommand(const juce::var& arguments);
+    juce::var executeSequencerCommand(const juce::Identifier& command, const juce::var& arguments,
+                                      bool polyphonic);
 
     // Path of the device this manager is bound to. Used by every internal
     // plugin lookup; the bare device.id is no longer sufficient under
     // section-scoped device ids.
     magda::ChainNodePath devicePath_;
+    std::shared_ptr<magda::DeviceUiContext> deviceUiContext_;
     std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
+    tracktion::engine::Plugin* telemetryPlugin_ = nullptr;
+    std::shared_ptr<OscilloscopeTelemetrySource> oscilloscopeTelemetry_;
+    std::shared_ptr<SpectrumTelemetrySource> spectrumTelemetry_;
+    std::shared_ptr<LevelsTelemetrySource> levelsTelemetry_;
+    std::shared_ptr<NimbusTelemetrySource> nimbusTelemetry_;
 
     // Custom UI unique_ptrs
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;

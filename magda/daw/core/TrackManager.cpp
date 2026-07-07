@@ -329,13 +329,14 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
 
-    // Assign aux bus index for Aux tracks; aux tracks never receive MIDI
-    if (type == TrackType::Aux) {
+    // Aux buses need a bus index.
+    if (type == TrackType::Aux)
         track.auxBusIndex = nextAuxBusIndex_++;
-        track.midiInputDevice = "";  // Aux tracks don't receive MIDI
-    } else {
-        track.midiInputDevice = "all";  // MIDI listens to all inputs
-    }
+
+    // Seed the default "listen to all inputs" and let the single type-invariant
+    // boundary clear it (plus monitor/record-arm) for input-less tracks.
+    track.midiInputDevice = "all";
+    track.normalizeForType();
 
     TrackId trackId = track.id;
     tracks_.push_back(track);
@@ -344,17 +345,10 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     DBG("Created track: " << track.name << " (id=" << trackId << ", type=" << getTrackTypeName(type)
                           << ")");
 
-    // Initialize MIDI routing for this track if audioEngine is available
-    // Aux tracks never receive MIDI; other tracks rely on selection-based routing
-    if (audioEngine_ && type != TrackType::Aux) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            midiBridge->setTrackMidiInput(trackId, "all");
-            midiBridge->startMonitoring(trackId);
-        }
-        // Don't auto-route MIDI at the TE level for every new track.
-        // AudioBridge::updateMidiRoutingForSelection() will handle this
-        // based on whether the track is selected or record-armed.
-    }
+    // Register for MIDI input monitoring (no-op for input-less tracks). TE-level
+    // routing is left to AudioBridge::updateMidiInputRouting() based on
+    // selection / record-arm.
+    startMidiMonitoring(track, "all");
 
     // The chord track ships with a Chord Engine (the authoring/suggestion UI
     // the chord panel binds to) followed by a default instrument, so chord
@@ -635,6 +629,22 @@ void TrackManager::deleteTrack(TrackId trackId) {
             sends.end());
     }
 
+    // Clear internal track-input routing on tracks listening to this track.
+    // Collect ids first: the setters notify listeners, which may mutate tracks_.
+    const juce::String trackInputId = "track:" + juce::String(trackId);
+    std::vector<TrackId> audioInputListeners;
+    std::vector<TrackId> midiInputListeners;
+    for (const auto& t : tracks_) {
+        if (t.audioInputDevice == trackInputId)
+            audioInputListeners.push_back(t.id);
+        if (t.midiInputDevice == trackInputId)
+            midiInputListeners.push_back(t.id);
+    }
+    for (auto listenerId : audioInputListeners)
+        setTrackAudioInput(listenerId, "");
+    for (auto listenerId : midiInputListeners)
+        setTrackMidiInput(listenerId, "");
+
     // Remove the track itself
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
@@ -765,6 +775,18 @@ void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId de
     }
 }
 
+void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::String& deviceId) {
+    // Input-less tracks (Aux, Group) never receive MIDI. TE-level routing is
+    // owned by AudioBridge::updateMidiInputRouting(); this only wires the
+    // MidiBridge activity monitor.
+    if (!audioEngine_ || !track.takesExternalInput())
+        return;
+    if (auto* midiBridge = audioEngine_->getMidiBridge()) {
+        midiBridge->setTrackMidiInput(track.id, deviceId);
+        midiBridge->startMonitoring(track.id);
+    }
+}
+
 void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
     // Check if a track with this ID already exists
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
@@ -776,6 +798,12 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
     }
 
     tracks_.push_back(trackInfo);
+
+    // Projects saved before the input-less-track invariant existed can carry
+    // MIDI/audio input, monitoring, or record-arm on Aux/Group tracks
+    // (createTrack used to seed every non-Aux track with "all"). Normalize on
+    // restore rather than let stale on-disk state reintroduce it.
+    tracks_.back().normalizeForType();
 
     // Ensure nextTrackId_ is beyond any restored track IDs
     if (trackInfo.id >= nextTrackId_) {
@@ -792,13 +820,8 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
         }
     }
 
-    // Set up MidiBridge monitoring for restored track (same as createTrack)
-    if (audioEngine_ && trackInfo.type != TrackType::Aux) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            midiBridge->setTrackMidiInput(trackInfo.id, "all");
-            midiBridge->startMonitoring(trackInfo.id);
-        }
-    }
+    // Register for MIDI input monitoring (no-op for input-less tracks).
+    startMidiMonitoring(trackInfo, "all");
 
     notifyTracksChanged();
     DBG("Restored track: " << trackInfo.name << " (id=" << trackInfo.id << ")");
@@ -939,13 +962,8 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
         }
     }
 
-    // Set up MIDI monitoring (same as createTrack)
-    if (audioEngine_ && newTrack.type != TrackType::Aux) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            midiBridge->setTrackMidiInput(newId, newTrack.midiInputDevice);
-            midiBridge->startMonitoring(newId);
-        }
-    }
+    // Register for MIDI input monitoring (no-op for input-less tracks).
+    startMidiMonitoring(newTrack, newTrack.midiInputDevice);
 
     notifyTracksChanged();
     DBG("Duplicated track: " << newTrack.name << " (id=" << newId << ")");
@@ -1207,6 +1225,36 @@ std::vector<TrackId> TrackManager::getAllDescendants(TrackId trackId) const {
     return result;
 }
 
+bool TrackManager::wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const {
+    if (sourceTrackId == destTrackId)
+        return true;
+
+    // Walk the "track:" input chain upstream from the source track. Each track
+    // has at most one track input (audio and MIDI inputs are mutually
+    // exclusive), so this is a simple chain walk; the visited set terminates
+    // the walk on any pre-existing loop.
+    std::unordered_set<TrackId> visited;
+    TrackId current = sourceTrackId;
+    while (visited.insert(current).second) {
+        const auto* track = getTrack(current);
+        if (!track)
+            return false;
+
+        juce::String input;
+        if (track->audioInputDevice.startsWith("track:"))
+            input = track->audioInputDevice;
+        else if (track->midiInputDevice.startsWith("track:"))
+            input = track->midiInputDevice;
+        else
+            return false;
+
+        current = input.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        if (current == destTrackId)
+            return true;
+    }
+    return false;
+}
+
 // ============================================================================
 // Access
 // ============================================================================
@@ -1307,6 +1355,10 @@ void TrackManager::setTrackSoloed(TrackId trackId, bool soloed) {
 
 void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
     if (auto* track = getTrack(trackId)) {
+        // Input-less tracks (Aux, Group) have no clip lane to record into, so
+        // they can't be record-armed.
+        if (!track->takesExternalInput())
+            return;
         track->recordArmed = armed;
         notifyTrackPropertyChanged(trackId);
     }
@@ -1314,6 +1366,10 @@ void TrackManager::setTrackRecordArmed(TrackId trackId, bool armed) {
 
 void TrackManager::setTrackInputMonitor(TrackId trackId, InputMonitorMode mode) {
     if (auto* track = getTrack(trackId)) {
+        // Input-less tracks (Aux, Group) take no external input, so input
+        // monitoring does not apply to them.
+        if (!track->takesExternalInput())
+            return;
         track->inputMonitor = mode;
         notifyTrackPropertyChanged(trackId);
     }
@@ -1349,18 +1405,6 @@ bool TrackManager::isAnyTrackInSessionMode() const {
     return false;
 }
 
-void TrackManager::setTrackType(TrackId trackId, TrackType type) {
-    if (auto* track = getTrack(trackId)) {
-        // Don't allow changing type if track has children (group tracks)
-        if (track->hasChildren() && type != TrackType::Group) {
-            DBG("Cannot change type of group track with children");
-            return;
-        }
-        track->type = type;
-        notifyTrackPropertyChanged(trackId);
-    }
-}
-
 void TrackManager::setTrackMixerChannelWidth(TrackId trackId, int width) {
     if (auto* track = getTrack(trackId)) {
         const int clamped = juce::jlimit(0, 180, width);
@@ -1386,17 +1430,11 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
     // Only set up MidiBridge monitoring; TE-level MIDI routing is handled by
-    // AudioBridge::updateMidiRoutingForSelection() based on selection/arm state.
+    // AudioBridge::updateMidiInputRouting() based on selection/arm state.
     if (audioEngine_) {
         for (const auto& track : tracks_) {
-            if (!track.midiInputDevice.isEmpty() && track.type != TrackType::Aux) {
-                if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-                    midiBridge->setTrackMidiInput(track.id, track.midiInputDevice);
-                    midiBridge->startMonitoring(track.id);
-                }
-                DBG("Synced MIDI monitoring for track " << track.id << ": "
-                                                        << track.midiInputDevice);
-            }
+            if (!track.midiInputDevice.isEmpty())
+                startMidiMonitoring(track, track.midiInputDevice);
         }
     }
 }
@@ -1431,14 +1469,29 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
         return;
     }
 
-    // Aux tracks never receive MIDI
-    if (track->type == TrackType::Aux) {
-        DBG("Cannot set MIDI input on aux track " << trackId);
+    // Input-less tracks (Aux, Group) never receive external MIDI
+    if (!track->takesExternalInput()) {
+        DBG("Cannot set MIDI input on input-less track " << trackId);
         return;
     }
 
     DBG("TrackManager::setTrackMidiInput - trackId=" << trackId << " deviceId='" << deviceId
                                                      << "'");
+
+    // Internal track routing: validate "track:" sources before touching the model
+    if (deviceId.startsWith("track:")) {
+        const TrackId sourceId =
+            deviceId.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        if (!getTrack(sourceId)) {
+            DBG("  -> Rejected: source track " << sourceId << " does not exist");
+            return;
+        }
+        if (wouldCreateInputRoutingCycle(trackId, sourceId)) {
+            DBG("  -> Rejected: routing track " << sourceId << " into track " << trackId
+                                                << " would create an input routing cycle");
+            return;
+        }
+    }
 
     // Audio and MIDI input are mutually exclusive — clear audio input when enabling MIDI
     if (!deviceId.isEmpty() && !track->audioInputDevice.isEmpty()) {
@@ -1463,10 +1516,12 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
         pendingMidiNoteOffs_.erase(trackId);
     }
 
-    // Forward to MidiBridge for MIDI activity monitoring (UI indicators)
+    // Forward to MidiBridge for MIDI activity monitoring (UI indicators).
+    // MidiBridge is a hardware MIDI input callback — "track:" sources are
+    // routed internally via MidiInputRouter, so clear any hardware routing.
     if (audioEngine_) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            if (deviceId.isEmpty()) {
+            if (deviceId.isEmpty() || deviceId.startsWith("track:")) {
                 midiBridge->clearTrackMidiInput(trackId);
                 midiBridge->stopMonitoring(trackId);
             } else {
@@ -1496,11 +1551,72 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
     DBG("TrackManager::setTrackMidiOutput - trackId=" << trackId << " deviceId='" << deviceId
                                                       << "'");
 
+    // The MIDI output selector is one exclusive choice: picking a hardware
+    // device (or None) tears down any internal "MIDI To track" routing.
+    clearMidiTrackListeners(trackId);
+    // Re-fetch: clearMidiTrackListeners triggers notifyTrackPropertyChanged which
+    // may cause listeners to modify the tracks_ vector, invalidating our pointer.
+    track = getTrack(trackId);
+    if (!track)
+        return;
+
     // Update track state
     track->midiOutputDevice = deviceId;
 
     // Notify listeners (AudioBridge forwards to TrackController for TE routing)
     notifyTrackPropertyChanged(trackId);
+}
+
+void TrackManager::routeMidiOutputToTrack(TrackId sourceTrackId, TrackId destTrackId) {
+    DBG("TrackManager::routeMidiOutputToTrack - source=" << sourceTrackId
+                                                         << " dest=" << destTrackId);
+
+    // Validate everything up-front — a rejected route must change nothing.
+    auto* source = getTrack(sourceTrackId);
+    const auto* dest = getTrack(destTrackId);
+    if (!source || !dest) {
+        DBG("  -> Rejected: unknown source or destination track");
+        return;
+    }
+    if (dest->type == TrackType::Aux) {
+        DBG("  -> Rejected: aux tracks don't receive MIDI");
+        return;
+    }
+    // Also rejects self-routing (source == dest counts as a cycle)
+    if (wouldCreateInputRoutingCycle(destTrackId, sourceTrackId)) {
+        DBG("  -> Rejected: routing track " << sourceTrackId << " into track " << destTrackId
+                                            << " would create an input routing cycle");
+        return;
+    }
+
+    // Single destination: clear every other track currently listening to the source
+    clearMidiTrackListeners(sourceTrackId, destTrackId);
+
+    // Route the source into the destination (input-owned edge on the destination)
+    setTrackMidiInput(destTrackId, "track:" + juce::String(sourceTrackId));
+
+    // The MIDI output selector is one exclusive choice — clear the source's
+    // hardware MIDI output. Set the field directly (setTrackMidiOutput would
+    // tear down the listener we just created) and notify so the source's
+    // routing UI re-syncs its mirror view.
+    // Re-fetch: the setters above notify listeners which may mutate tracks_.
+    source = getTrack(sourceTrackId);
+    if (!source)
+        return;
+    source->midiOutputDevice = "";
+    notifyTrackPropertyChanged(sourceTrackId);
+}
+
+void TrackManager::clearMidiTrackListeners(TrackId sourceTrackId, TrackId excludeTrackId) {
+    // Collect ids first: the setter notifies listeners, which may mutate tracks_.
+    const juce::String trackInputId = "track:" + juce::String(sourceTrackId);
+    std::vector<TrackId> listenerIds;
+    for (const auto& t : tracks_) {
+        if (t.id != excludeTrackId && t.midiInputDevice == trackInputId)
+            listenerIds.push_back(t.id);
+    }
+    for (auto listenerId : listenerIds)
+        setTrackMidiInput(listenerId, "");
 }
 
 void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {
@@ -1509,8 +1625,29 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
         return;
     }
 
+    // Input-less tracks (Aux, Group) take no external input.
+    if (!track->takesExternalInput()) {
+        DBG("Cannot set audio input on input-less track " << trackId);
+        return;
+    }
+
     DBG("TrackManager::setTrackAudioInput - trackId=" << trackId << " deviceId='" << deviceId
                                                       << "'");
+
+    // Internal track routing: validate "track:" sources before touching the model
+    if (deviceId.startsWith("track:")) {
+        const TrackId sourceId =
+            deviceId.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        if (!getTrack(sourceId)) {
+            DBG("  -> Rejected: source track " << sourceId << " does not exist");
+            return;
+        }
+        if (wouldCreateInputRoutingCycle(trackId, sourceId)) {
+            DBG("  -> Rejected: routing track " << sourceId << " into track " << trackId
+                                                << " would create an input routing cycle");
+            return;
+        }
+    }
 
     // Audio and MIDI input are mutually exclusive — clear MIDI input when enabling audio
     if (!deviceId.isEmpty() && !track->midiInputDevice.isEmpty()) {
@@ -1715,9 +1852,7 @@ void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
-             track->type == TrackType::Master) &&
-            device.isInstrument) {
+        if (!track->canHostInstrument() && device.isInstrument) {
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
@@ -1740,9 +1875,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
-             track->type == TrackType::Master) &&
-            device.isInstrument) {
+        if (!track->canHostInstrument() && device.isInstrument) {
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }

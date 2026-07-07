@@ -31,6 +31,13 @@ juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
 }
 
+juce::StringArray visiblePluginKeys(const std::vector<PluginBrowserInfo>& plugins) {
+    juce::StringArray keys;
+    for (const auto& plugin : plugins)
+        keys.addIfNotAlreadyThere(preferenceIdentifierForPlugin(plugin));
+    return keys;
+}
+
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
     if (plugin.categoryOverride == "Instrument")
         return "Instrument";
@@ -351,6 +358,47 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
 };
 
 //==============================================================================
+// FolderTreeItem - user-defined folder (Folders view): accepts plugin drops
+// and carries the folder context menu. The "Unfiled" bucket is a FolderTreeItem
+// with isUserFolder = false — dropping there removes the folder assignment.
+//==============================================================================
+class PluginBrowserContent::FolderTreeItem : public CategoryTreeItem {
+  public:
+    FolderTreeItem(const juce::String& name, PluginBrowserContent& owner, bool isUserFolder)
+        : CategoryTreeItem(name), owner_(owner), isUserFolder_(isUserFolder) {}
+
+    bool isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails& details) override {
+        if (auto* obj = details.description.getDynamicObject())
+            return obj->getProperty("type").toString() == "plugin";
+        return false;
+    }
+
+    void itemDropped(const juce::DragAndDropTarget::SourceDetails& details,
+                     int /*insertIndex*/) override {
+        auto* obj = details.description.getDynamicObject();
+        if (obj == nullptr)
+            return;
+        auto key = obj->getProperty("uniqueId").toString();
+        if (key.isEmpty())
+            key = obj->getProperty("name").toString();
+        owner_.assignPluginToFolder(key, isUserFolder_ ? getUniqueName() : juce::String());
+    }
+
+    void itemClicked(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu()) {
+            owner_.showFolderContextMenu(isUserFolder_ ? getUniqueName() : juce::String(),
+                                         e.getScreenPosition());
+            return;
+        }
+        CategoryTreeItem::itemClicked(e);
+    }
+
+  private:
+    PluginBrowserContent& owner_;
+    bool isUserFolder_;
+};
+
+//==============================================================================
 // PluginBrowserContent
 //==============================================================================
 PluginBrowserContent::PluginBrowserContent() {
@@ -379,7 +427,11 @@ PluginBrowserContent::PluginBrowserContent() {
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
     searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.45f));
+    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    searchBox_.setSelectAllWhenFocused(true);
     searchBox_.onTextChange = [this]() { filterBySearch(searchBox_.getText()); };
     addAndMakeVisible(searchBox_);
 
@@ -388,6 +440,7 @@ PluginBrowserContent::PluginBrowserContent() {
     viewModeSelector_.addItem("By Manufacturer", 2);
     viewModeSelector_.addItem("By Format", 3);
     viewModeSelector_.addItem("Favorites", 4);
+    viewModeSelector_.addItem("Folders", 5);
     viewModeSelector_.setSelectedId(1, juce::dontSendNotification);
     viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
@@ -410,7 +463,9 @@ PluginBrowserContent::PluginBrowserContent() {
     addAndMakeVisible(pluginTree_);
 
     // Build internal plugins and tree (external plugins are loaded when engine is set)
+    magda::PluginPreferences::getInstance().addListener(this);
     buildInternalPluginList();
+    loadFolders();
     rebuildTree();
 }
 
@@ -481,8 +536,7 @@ void PluginBrowserContent::loadExternalPlugins() {
         return;
     }
 
-    auto& knownPlugins = engine_->getKnownPluginList();
-    auto pluginTypes = knownPlugins.getTypes();
+    auto pluginTypes = engine_->getPreferredPluginTypes();
 
     for (const auto& desc : pluginTypes) {
         plugins_.push_back(PluginBrowserInfo::fromPluginDescription(desc));
@@ -508,6 +562,7 @@ void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
 }
 
 PluginBrowserContent::~PluginBrowserContent() {
+    magda::PluginPreferences::getInstance().removeListener(this);
     if (engine_) {
         engine_->getKnownPluginList().removeChangeListener(this);
     }
@@ -517,6 +572,11 @@ PluginBrowserContent::~PluginBrowserContent() {
 
 void PluginBrowserContent::changeListenerCallback(juce::ChangeBroadcaster* /*source*/) {
     // KnownPluginList changed (e.g. scan completed) — refresh the browser
+    refreshPluginList();
+}
+
+void PluginBrowserContent::externalPluginFormatPreferenceChanged(magda::PluginFormat preference) {
+    juce::ignoreUnused(preference);
     refreshPluginList();
 }
 
@@ -530,6 +590,7 @@ void PluginBrowserContent::refreshPluginList() {
             prefs.browserCategoryOverride(preferenceIdentifierForPlugin(plugin));
     loadFavorites();
     loadAliases();
+    loadFolders();
     rebuildTree();
 }
 
@@ -539,6 +600,34 @@ void PluginBrowserContent::rebuildTree() {
 
     // Create root based on view mode
     auto root = std::make_unique<CategoryTreeItem>("Plugins");
+
+    // User folders view: folders in creation order (empty ones included, so a
+    // fresh folder is a visible drop target), then everything unassigned under
+    // "Unfiled".
+    if (currentViewMode_ == ViewMode::Folders) {
+        std::map<juce::String, FolderTreeItem*> folderItems;
+        for (const auto& folderName : folderNames_) {
+            auto* item = new FolderTreeItem(folderName, *this, true);
+            root->addSubItem(item);
+            folderItems[folderName] = item;
+        }
+        auto* unfiled = new FolderTreeItem("Unfiled", *this, false);
+        for (const auto& plugin : plugins_) {
+            auto it = pluginFolderByKey_.find(preferenceIdentifierForPlugin(plugin));
+            if (it != pluginFolderByKey_.end() && folderItems.count(it->second) > 0)
+                folderItems[it->second]->addSubItem(new PluginTreeItem(plugin, *this));
+            else
+                unfiled->addSubItem(new PluginTreeItem(plugin, *this));
+        }
+        root->addSubItem(unfiled);
+
+        rootItem_ = std::move(root);
+        pluginTree_.setRootItem(rootItem_.get());
+        pluginTree_.setRootItemVisible(false);
+        for (int i = 0; i < rootItem_->getNumSubItems(); ++i)
+            rootItem_->getSubItem(i)->setOpen(true);
+        return;
+    }
 
     std::map<juce::String, CategoryTreeItem*> categories;
 
@@ -562,6 +651,8 @@ void PluginBrowserContent::rebuildTree() {
                     continue;
                 groupKey = "Favorites";
                 break;
+            case ViewMode::Folders:
+                continue;  // handled above
         }
 
         // For nested categories (e.g., "Effect/EQ")
@@ -683,6 +774,23 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     }
 
     menu.addItem(5, plugin.isFavorite ? "Remove from Favorites" : "Add to Favorites");
+
+    // User folders — assign from any view; the Folders view shows the result.
+    {
+        const auto currentFolderIt = pluginFolderByKey_.find(pluginIdentifier);
+        const juce::String currentFolder =
+            currentFolderIt != pluginFolderByKey_.end() ? currentFolderIt->second : juce::String();
+        juce::PopupMenu folderMenu;
+        for (int i = 0; i < folderNames_.size(); ++i)
+            folderMenu.addItem(100 + i, folderNames_[i], true, folderNames_[i] == currentFolder);
+        if (!folderNames_.isEmpty())
+            folderMenu.addSeparator();
+        folderMenu.addItem(99, "New Folder...");
+        if (currentFolder.isNotEmpty())
+            folderMenu.addItem(98, "Remove from Folder");
+        menu.addSubMenu("Add to Folder", folderMenu);
+    }
+
     menu.addSeparator();
     menu.addItem(6, "Show in Finder", !plugin.fileOrIdentifier.isEmpty());
 
@@ -776,6 +884,17 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     rebuildTree();
                     break;
                 }
+                case 98:
+                    assignPluginToFolder(preferenceIdentifierForPlugin(plugin), {});
+                    break;
+                case 99:
+                    showNewFolderDialog(preferenceIdentifierForPlugin(plugin));
+                    break;
+                default:
+                    if (result >= 100 && result - 100 < folderNames_.size())
+                        assignPluginToFolder(preferenceIdentifierForPlugin(plugin),
+                                             folderNames_[result - 100]);
+                    break;
             }
         });
 }
@@ -813,6 +932,15 @@ juce::File PluginBrowserContent::getFavoritesFile() const {
 
 void PluginBrowserContent::saveFavorites() {
     juce::XmlElement root("PluginFavorites");
+    const auto visibleKeys = visiblePluginKeys(plugins_);
+
+    if (auto existing = juce::parseXML(getFavoritesFile())) {
+        for (auto* elem : existing->getChildIterator()) {
+            const auto key = elem->getStringAttribute("key");
+            if (key.isNotEmpty() && !visibleKeys.contains(key))
+                root.addChildElement(new juce::XmlElement(*elem));
+        }
+    }
 
     for (const auto& p : plugins_) {
         if (p.isFavorite) {
@@ -855,6 +983,15 @@ juce::File PluginBrowserContent::getAliasesFile() const {
 
 void PluginBrowserContent::saveAliases() {
     juce::XmlElement root("PluginAliases");
+    const auto visibleKeys = visiblePluginKeys(plugins_);
+
+    if (auto existing = juce::parseXML(getAliasesFile())) {
+        for (auto* elem : existing->getChildIterator()) {
+            const auto key = elem->getStringAttribute("key");
+            if (key.isNotEmpty() && !visibleKeys.contains(key))
+                root.addChildElement(new juce::XmlElement(*elem));
+        }
+    }
 
     for (const auto& p : plugins_) {
         if (p.alias.isEmpty())
@@ -945,6 +1082,165 @@ void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) 
             delete alertWindow;
         }),
         true);
+}
+
+//==============================================================================
+// User folders (issue #1700)
+//==============================================================================
+
+void PluginBrowserContent::assignPluginToFolder(const juce::String& pluginKey,
+                                                const juce::String& folderName) {
+    if (pluginKey.isEmpty())
+        return;
+    if (folderName.isEmpty())
+        pluginFolderByKey_.erase(pluginKey);
+    else
+        pluginFolderByKey_[pluginKey] = folderName;
+    saveFolders();
+    rebuildTree();
+}
+
+void PluginBrowserContent::createFolder(const juce::String& name) {
+    // "Unfiled" is the reserved bucket for unassigned plugins.
+    if (name.isEmpty() || name == "Unfiled" || folderNames_.contains(name))
+        return;
+    folderNames_.add(name);
+    saveFolders();
+    rebuildTree();
+}
+
+void PluginBrowserContent::renameFolder(const juce::String& oldName, const juce::String& newName) {
+    if (newName.isEmpty() || newName == "Unfiled" || folderNames_.contains(newName) ||
+        !folderNames_.contains(oldName))
+        return;
+    folderNames_.set(folderNames_.indexOf(oldName), newName);
+    for (auto& [key, folder] : pluginFolderByKey_) {
+        if (folder == oldName)
+            folder = newName;
+    }
+    saveFolders();
+    rebuildTree();
+}
+
+void PluginBrowserContent::deleteFolder(const juce::String& name) {
+    folderNames_.removeString(name);
+    // Its plugins fall back to Unfiled.
+    for (auto it = pluginFolderByKey_.begin(); it != pluginFolderByKey_.end();) {
+        if (it->second == name)
+            it = pluginFolderByKey_.erase(it);
+        else
+            ++it;
+    }
+    saveFolders();
+    rebuildTree();
+}
+
+void PluginBrowserContent::showFolderContextMenu(const juce::String& folderName,
+                                                 juce::Point<int> position) {
+    juce::PopupMenu menu;
+    menu.addItem(1, "New Folder...");
+    if (folderName.isNotEmpty()) {
+        menu.addItem(2, "Rename...");
+        menu.addItem(3, "Delete Folder");
+    }
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea({position.x, position.y, 1, 1}),
+        [this, folderName](int result) {
+            switch (result) {
+                case 1:
+                    showNewFolderDialog();
+                    break;
+                case 2:
+                    showRenameFolderDialog(folderName);
+                    break;
+                case 3:
+                    deleteFolder(folderName);
+                    break;
+            }
+        });
+}
+
+void PluginBrowserContent::showNewFolderDialog(const juce::String& pluginKeyToAssign) {
+    auto* alertWindow = new juce::AlertWindow("New Plugin Folder",
+                                              "Folder name:", juce::MessageBoxIconType::NoIcon);
+    alertWindow->addTextEditor("name", "", "Name:");
+    alertWindow->addButton("OK", 1);
+    alertWindow->addButton("Cancel", 0);
+
+    alertWindow->enterModalState(
+        true,
+        juce::ModalCallbackFunction::create([this, alertWindow, pluginKeyToAssign](int result) {
+            if (result == 1) {
+                const auto name = alertWindow->getTextEditorContents("name").trim();
+                createFolder(name);
+                if (pluginKeyToAssign.isNotEmpty() && folderNames_.contains(name))
+                    assignPluginToFolder(pluginKeyToAssign, name);
+            }
+            delete alertWindow;
+        }),
+        true);
+}
+
+void PluginBrowserContent::showRenameFolderDialog(const juce::String& folderName) {
+    auto* alertWindow = new juce::AlertWindow("Rename Folder", "New name for " + folderName + ":",
+                                              juce::MessageBoxIconType::NoIcon);
+    alertWindow->addTextEditor("name", folderName, "Name:");
+    alertWindow->addButton("OK", 1);
+    alertWindow->addButton("Cancel", 0);
+
+    alertWindow->enterModalState(
+        true, juce::ModalCallbackFunction::create([this, alertWindow, folderName](int result) {
+            if (result == 1)
+                renameFolder(folderName, alertWindow->getTextEditorContents("name").trim());
+            delete alertWindow;
+        }),
+        true);
+}
+
+juce::File PluginBrowserContent::getFoldersFile() const {
+    return magda::paths::pluginFoldersFile();
+}
+
+void PluginBrowserContent::saveFolders() {
+    juce::XmlElement root("PluginFolders");
+
+    for (const auto& name : folderNames_) {
+        auto* folderElem = root.createNewChildElement("Folder");
+        folderElem->setAttribute("name", name);
+        for (const auto& [key, folder] : pluginFolderByKey_) {
+            if (folder == name)
+                folderElem->createNewChildElement("Plugin")->setAttribute("key", key);
+        }
+    }
+
+    auto file = getFoldersFile();
+    file.getParentDirectory().createDirectory();
+    root.writeTo(file);
+}
+
+void PluginBrowserContent::loadFolders() {
+    folderNames_.clear();
+    pluginFolderByKey_.clear();
+
+    auto file = getFoldersFile();
+    if (!file.existsAsFile())
+        return;
+
+    auto xml = juce::parseXML(file);
+    if (!xml)
+        return;
+
+    for (auto* folderElem : xml->getChildWithTagNameIterator("Folder")) {
+        const auto name = folderElem->getStringAttribute("name");
+        if (name.isEmpty() || folderNames_.contains(name))
+            continue;
+        folderNames_.add(name);
+        for (auto* pluginElem : folderElem->getChildWithTagNameIterator("Plugin")) {
+            const auto key = pluginElem->getStringAttribute("key");
+            if (key.isNotEmpty())
+                pluginFolderByKey_[key] = name;
+        }
+    }
 }
 
 }  // namespace magda::daw::ui

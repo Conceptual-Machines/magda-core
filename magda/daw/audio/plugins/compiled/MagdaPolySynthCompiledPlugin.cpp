@@ -444,7 +444,10 @@ void MagdaPolySynthCompiledPlugin::deinitialise() {
 }
 
 void MagdaPolySynthCompiledPlugin::reset() {
-    resetAllVoices();
+    // Called from the message thread (TE plugin API, resetSynthsOnTrack after a
+    // record pass). Defer the actual voice flush to the audio thread — see
+    // pendingVoiceFlush_.
+    pendingVoiceFlush_.store(true, std::memory_order_release);
 }
 
 int MagdaPolySynthCompiledPlugin::readVoiceModeIndex() const {
@@ -459,10 +462,24 @@ void MagdaPolySynthCompiledPlugin::resetAllVoices() {
         poly_->ctrlChange(0, 123, 0);  // All Notes Off: release every poly voice
     if (monoVoice_)
         monoVoice_->instanceClear();
-    polyHeld_.fill(false);
     heldNotes_.clear();
     if (monoGateZone_)
         *monoGateZone_ = 0.0f;
+}
+
+void MagdaPolySynthCompiledPlugin::releasePolyVoicesForPitch(int pitch) {
+    // poly_ is always constructed as mydsp_poly in rebuildEngineState().
+    auto* impl = static_cast<mydsp_poly*>(poly_.get());
+    if (impl == nullptr)
+        return;
+
+    for (auto* voice : impl->fVoiceTable) {
+        if (voice == nullptr)
+            continue;
+        if (voice->fCurNote == pitch ||
+            (voice->fCurNote == kLegatoVoice && voice->fNextNote == pitch))
+            voice->keyOff(/*hard*/ false);
+    }
 }
 
 bool MagdaPolySynthCompiledPlugin::handleMonoNoteOn(int note, int velocity, int mode) {
@@ -504,6 +521,9 @@ void MagdaPolySynthCompiledPlugin::handleMonoNoteOff(int note) {
 void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!poly_ || !monoVoice_ || !fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
+
+    if (pendingVoiceFlush_.exchange(false, std::memory_order_acq_rel))
+        resetAllVoices();
 
     // Stop mid-note doesn't deliver note-offs, so a sounding voice would hang
     // gated-on. Flush every voice on the playing->stopped edge.
@@ -606,24 +626,19 @@ void MagdaPolySynthCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
                     *monoBendZone_ = currentBend_;
             } else if (mode == Poly) {
                 if (m.isNoteOn()) {
-                    const int note = m.getNoteNumber();
                     // Release any voice still sounding this pitch before
                     // re-triggering, so the allocator never accumulates orphan
                     // voices that would hang (one voice per pitch).
-                    if (note >= 0 && note < 128) {
-                        if (polyHeld_[static_cast<size_t>(note)])
-                            poly_->keyOff(m.getChannel(), note, 0);
-                        polyHeld_[static_cast<size_t>(note)] = true;
-                    }
-                    poly_->keyOn(m.getChannel(), note, m.getVelocity());
+                    releasePolyVoicesForPitch(m.getNoteNumber());
+                    poly_->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
                 } else if (m.isNoteOff()) {
-                    const int note = m.getNoteNumber();
-                    if (note >= 0 && note < 128)
-                        polyHeld_[static_cast<size_t>(note)] = false;
-                    poly_->keyOff(m.getChannel(), note, m.getVelocity());
+                    // Release ALL voices of this pitch (not just the oldest):
+                    // with merged duplicate streams (recorded clip + live
+                    // monitored input) note-on/off counts can be unbalanced,
+                    // and any note-off must be able to silence every voice of
+                    // its pitch so nothing stays stuck.
+                    releasePolyVoicesForPitch(m.getNoteNumber());
                 } else if (m.isController()) {
-                    if (m.getControllerNumber() == 120 || m.getControllerNumber() == 123)
-                        polyHeld_.fill(false);
                     poly_->ctrlChange(m.getChannel(), m.getControllerNumber(),
                                       m.getControllerValue());
                 }
