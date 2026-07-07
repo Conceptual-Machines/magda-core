@@ -301,6 +301,13 @@ void TrackContentPanel::timelineStateChanged(const TimelineState& state, ChangeF
         tempoBPM = state.tempo.bpm;
         needsRepaint = true;
     }
+
+    // A time selection appearing, moving, or clearing swaps the hover cursor
+    // (grab hand over the selection body) without any mouse movement — e.g.
+    // Escape or a programmatic clear. Recompute from the hit tester (#1720).
+    if (hasFlag(changes, ChangeFlags::Selection)) {
+        refreshCursorFromMouse();
+    }
     timeSignatureNumerator = state.tempo.timeSignatureNumerator;
     timeSignatureDenominator = state.tempo.timeSignatureDenominator;
 
@@ -1868,6 +1875,13 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         isShiftHeld = false;
         currentDragType_ = DragType::None;
     }
+
+    // Gesture over: recompute the cursor for wherever the mouse ended up —
+    // e.g. a freshly dragged time selection should show the grab hand
+    // immediately, not after the next mouse move (#1720). The early-return
+    // paths above are covered by the Selection listener in
+    // timelineStateChanged or by clip rebuilds triggering fake mouse moves.
+    refreshCursorFromMouse();
 }
 
 void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
@@ -2321,6 +2335,24 @@ void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
     // duplicated logic carried.)
     const auto zone = interaction::panelZone(x, y, makePanelHitSnapshot(x, y));
     setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(zone, shiftHeld)));
+}
+
+void TrackContentPanel::refreshCursorFromMouse() {
+    // Idle-hover only: during a gesture the drag owns the cursor, and when
+    // the mouse is over a child (clip) that child owns it — isMouseOver()
+    // without children covers both the panel test and pointer presence.
+    if (!isMouseOver() || juce::Component::isMouseButtonDownAnywhere())
+        return;
+
+    const auto pos = getMouseXYRelative();
+    updateCursorForPosition(pos.x, pos.y, juce::ModifierKeys::getCurrentModifiers().isShiftDown());
+}
+
+void TrackContentPanel::modifierKeysChanged(const juce::ModifierKeys& mods) {
+    // Shift swaps the empty-lane cursors to draw-clip; recompute without
+    // waiting for a mouse move (#1720).
+    refreshCursorFromMouse();
+    juce::Component::modifierKeysChanged(mods);
 }
 
 // ============================================================================
@@ -2805,9 +2837,16 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Escape: Clear selection
+    // Escape: dismiss everything — clip selection AND the time selection
+    // (#1722). This handler consumes the key, so MainView's Escape (which
+    // clears both) never runs while the arrangement has focus; without the
+    // dispatch here the time selection survived and kept the grab-hand
+    // cursor, leaving click-on-empty as the only way out.
     if (key == juce::KeyPress::escapeKey) {
         selectionManager.clearSelection();
+        if (timelineController) {
+            timelineController->dispatch(ClearTimeSelectionEvent{});
+        }
         if (isMarqueeActive_) {
             isMarqueeActive_ = false;
             marqueePreviewClips_.clear();

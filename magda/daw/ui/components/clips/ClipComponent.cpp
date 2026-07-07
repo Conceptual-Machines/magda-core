@@ -2900,6 +2900,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
     }
 
     shouldDeselectOnMouseUp_ = false;
+
+    // Gesture over: the pre-drag cursor may be stale for wherever the mouse
+    // ended up (#1720). mouseIsOver_ still gates this inside the helper.
+    refreshHoverFromMouse();
 }
 
 void ClipComponent::mouseMove(const juce::MouseEvent& e) {
@@ -2949,6 +2953,32 @@ void ClipComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     hoverVolumeHandle_ = false;
     hoverLowerZone_ = false;
     updateCursor();
+    repaint();
+}
+
+void ClipComponent::modifierKeysChanged(const juce::ModifierKeys& mods) {
+    // Modifier tools (Alt copy, Cmd+Alt blade, Shift+Ctrl erase, Shift
+    // stretch) must swap the cursor without waiting for a mouse move
+    // (#1720). The hover flags don't depend on modifiers, so re-running the
+    // cursor table is enough. During a drag the gesture owns the cursor.
+    if (mouseIsOver_ && !juce::Component::isMouseButtonDownAnywhere())
+        updateCursor(mods);
+    juce::Component::modifierKeysChanged(mods);
+}
+
+void ClipComponent::refreshHoverFromMouse() {
+    if (!mouseIsOver_ || juce::Component::isMouseButtonDownAnywhere())
+        return;
+
+    const auto pos = getMouseXYRelative();
+    const auto hit = interaction::clipHit(pos.x, pos.y, makeHitSnapshot());
+    hoverLeftEdge_ = hit.onLeftEdge;
+    hoverRightEdge_ = hit.onRightEdge;
+    hoverLowerZone_ = hit.lowerHalf;
+    hoverFadeIn_ = hit.onFadeIn;
+    hoverFadeOut_ = hit.onFadeOut;
+    hoverVolumeHandle_ = hit.onVolume;
+    updateCursor(juce::ModifierKeys::getCurrentModifiers());
     repaint();
 }
 
@@ -3021,6 +3051,10 @@ void ClipComponent::clipSelectionChanged(ClipId clipId) {
 void ClipComponent::setSelected(bool selected) {
     if (isSelected_ != selected) {
         isSelected_ = selected;
+        // Selection changes the hit zones under a stationary mouse (fade and
+        // volume handles appear, the body becomes grabbable) — re-derive the
+        // hover flags and cursor instead of waiting for a mouse move (#1720).
+        refreshHoverFromMouse();
         repaint();
     }
 }

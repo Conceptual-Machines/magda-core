@@ -50,6 +50,7 @@ class ClipComponent : public juce::Component,
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void modifierKeysChanged(const juce::ModifierKeys& mods) override;
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
@@ -254,6 +255,10 @@ class ClipComponent : public juce::Component,
     // both derive from interaction::clipHit() so they can never disagree.
     interaction::ClipSnapshot makeHitSnapshot() const;
     void updateCursor(const juce::ModifierKeys& mods = {});
+    // Reactive recompute (#1720): re-derive hover flags + cursor from the
+    // current mouse position when hit-test inputs change without a mouse
+    // event (selection state, gesture end). No-op unless idle-hovering.
+    void refreshHoverFromMouse();
 
     // Helper to get current clip info
     const ClipInfo* getClipInfo() const;
