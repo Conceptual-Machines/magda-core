@@ -2911,26 +2911,18 @@ void ClipComponent::mouseMove(const juce::MouseEvent& e) {
 
     bool wasHoverLowerZone = hoverLowerZone_;
 
-    hoverLeftEdge_ = isOnLeftEdge(e.x);
-    hoverRightEdge_ = isOnRightEdge(e.x);
-
-    // Lower half (away from the resize edges) is the time-selection zone.
-    // (When a time selection covers this point hitTest() makes the clip
-    // transparent, so the panel handles the grab/resize cursor there.)
-    hoverLowerZone_ = e.y >= getHeight() / 2 && !hoverLeftEdge_ && !hoverRightEdge_;
-
-    // Check fade handle hover (selected audio clips only)
-    if (isSelected_) {
-        hoverFadeIn_ = isOnFadeInHandle(e.x, e.y);
-        hoverFadeOut_ = isOnFadeOutHandle(e.x, e.y);
-        // Volume handle: only when not on fade handles or edges
-        hoverVolumeHandle_ = !hoverFadeIn_ && !hoverFadeOut_ && !hoverLeftEdge_ &&
-                             !hoverRightEdge_ && isOnVolumeHandle(e.x, e.y);
-    } else {
-        hoverFadeIn_ = false;
-        hoverFadeOut_ = false;
-        hoverVolumeHandle_ = false;
-    }
+    // Zone model lives in the shared hit tester (#1719). Notes on the zones:
+    // the lower half (away from the resize edges) is the time-selection zone
+    // — when a time selection covers this point hitTest() makes the clip
+    // transparent, so the panel handles the grab/resize cursor there. Fade
+    // and volume handles exist on selected audio clips only.
+    const auto hit = interaction::clipHit(e.x, e.y, makeHitSnapshot());
+    hoverLeftEdge_ = hit.onLeftEdge;
+    hoverRightEdge_ = hit.onRightEdge;
+    hoverLowerZone_ = hit.lowerHalf;
+    hoverFadeIn_ = hit.onFadeIn;
+    hoverFadeOut_ = hit.onFadeOut;
+    hoverVolumeHandle_ = hit.onVolume;
 
     // Always update cursor to check modifier-driven tools.
     updateCursor(e.mods);
@@ -3124,60 +3116,40 @@ bool ClipComponent::isOnVolumeHandle(int x, int y) const {
     return std::abs(static_cast<float>(y) - lineY) <= 6.0f;
 }
 
+interaction::ClipSnapshot ClipComponent::makeHitSnapshot() const {
+    interaction::ClipSnapshot s;
+    s.width = getWidth();
+    s.height = getHeight();
+    s.selected = isSelected_;
+
+    const auto* clip = getClipInfo();
+    s.isAudio = clip != nullptr && clip->isAudio();
+    if (s.isAudio) {
+        const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+        s.clipLengthSeconds = clip->getTimelineLength(tempo);
+        const auto fades = computeEffectiveFades(*clip);
+        s.fadeInSeconds = fades.fadeInSeconds;
+        s.fadeOutSeconds = fades.fadeOutSeconds;
+        s.volumeGainLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
+    }
+    return s;
+}
+
 void ClipComponent::updateCursor(const juce::ModifierKeys& mods) {
-    const bool isShiftDown = mods.isShiftDown();
+    // Cursor policy lives in the shared hit tester's table (#1719); the
+    // hover flags were derived from the same hit test in mouseMove, so the
+    // cursor always matches what a click here would do.
+    interaction::ClipHit hit;
+    hit.onLeftEdge = hoverLeftEdge_;
+    hit.onRightEdge = hoverRightEdge_;
+    hit.onFadeIn = hoverFadeIn_;
+    hit.onFadeOut = hoverFadeOut_;
+    hit.onVolume = hoverVolumeHandle_;
+    hit.lowerHalf = hoverLowerZone_;
 
-    if (isShiftDown && mods.isCtrlDown()) {
-        setMouseCursor(CursorManager::getInstance().getEraseCursor());
-        return;
-    }
-
-    // Cmd+Alt = blade (scissors), Alt alone = copy-drag
-    if (mods.isAltDown() && !isShiftDown) {
-        if (mods.isCommandDown()) {
-            setMouseCursor(CursorManager::getInstance().getBladeCursor());
-        } else {
-            setMouseCursor(juce::MouseCursor::CopyingCursor);
-        }
-        return;
-    }
-
-    bool isClipSelected = SelectionManager::getInstance().isClipSelected(clipId_);
-
-    if (isClipSelected && (hoverFadeIn_ || hoverFadeOut_)) {
-        setMouseCursor(juce::MouseCursor::PointingHandCursor);
-        return;
-    }
-
-    if (isClipSelected && hoverVolumeHandle_) {
-        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-        return;
-    }
-
-    // Lower half of the body is a time-selection zone (I-beam), regardless of
-    // selection state. Edge-resize and the selected-clip handles above keep
-    // priority since hoverLowerZone_ already excludes the edges.
-    if (hoverLowerZone_) {
-        setMouseCursor(juce::MouseCursor::IBeamCursor);
-        return;
-    }
-
-    if (isClipSelected && (hoverLeftEdge_ || hoverRightEdge_)) {
-        if (isShiftDown) {
-            // Shift+edge = stretch cursor
-            setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
-        } else {
-            // Resize cursor only when selected
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        }
-    } else if (isClipSelected) {
-        // Shift over the body is a selection gesture now (range select);
-        // the copy cursor lives on Alt, handled above
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-    } else {
-        // Normal cursor when not selected (need to click to select first)
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-    }
+    const bool isClipSelected = SelectionManager::getInstance().isClipSelected(clipId_);
+    setMouseCursor(interaction::toJuceCursor(
+        interaction::clipCursor(hit, isClipSelected, interaction::ModifierSnapshot::from(mods))));
 }
 
 const ClipInfo* ClipComponent::getClipInfo() const {

@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../interaction/ArrangementHitTester.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
 #include "core/AutomationManager.hpp"
@@ -423,6 +424,9 @@ class TrackContentPanel : public juce::Component,
 
     // Track zone detection - upper half = marquee, lower half = time selection
     bool isInUpperTrackZone(int y) const;
+    // Snapshot of selection + lane geometry for the shared hit tester
+    // (#1719), which drives the cursor (and, later, gesture dispatch).
+    interaction::PanelSnapshot makePanelHitSnapshot(int x, int y) const;
     void updateCursorForPosition(int x, int y, bool shiftHeld = false);
     bool lastShiftState_ = false;
 

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <functional>
 
+#include "../../interaction/ArrangementHitTester.hpp"
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/CursorManager.hpp"
@@ -1081,8 +1082,8 @@ bool TrackContentPanel::isOnSelectionEdge(int x, int y, bool& isLeftEdge) const 
         return false;
     }
 
-    // Check if mouse is near the edges (within EDGE_THRESHOLD pixels)
-    static constexpr int EDGE_THRESHOLD = 8;
+    // Check if mouse is near the edges (threshold shared with the hit tester)
+    static constexpr int EDGE_THRESHOLD = interaction::SELECTION_EDGE_THRESHOLD;
     int startX = beatsToPixel(selection.startBeats);
     int endX = beatsToPixel(selection.endBeats);
 
@@ -2282,71 +2283,44 @@ bool TrackContentPanel::isInUpperTrackZone(int y) const {
     return y < trackMidY;
 }
 
+interaction::PanelSnapshot TrackContentPanel::makePanelHitSnapshot(int x, int y) const {
+    interaction::PanelSnapshot s;
+
+    if (timelineController) {
+        const auto& selection = timelineController->getState().selection;
+        s.selectionActive = selection.isActive();
+        s.selStartBeats = selection.startBeats;
+        s.selEndBeats = selection.endBeats;
+        s.selectedTracks = &selection.trackIndices;
+    }
+
+    s.pixelsPerBeat = currentZoom;
+    s.leftPadding = LayoutConfig::TIMELINE_LEFT_PADDING;
+
+    // Lane hit bands mirror getTrackIndexAtY: a track's own height only,
+    // advancing past its automation lanes.
+    int currentY = 0;
+    s.lanes.reserve(trackLanes.size());
+    for (size_t i = 0; i < trackLanes.size(); ++i) {
+        interaction::PanelSnapshot::Lane lane;
+        lane.hitTop = currentY;
+        lane.hitHeight = static_cast<int>(trackLanes[i]->height * verticalZoom);
+        lane.area = getTrackLaneArea(static_cast<int>(i));
+        s.lanes.push_back(lane);
+        currentY += getTrackTotalHeight(static_cast<int>(i));
+    }
+
+    s.clipAtPoint = getClipComponentAt(x, y) != nullptr;
+    return s;
+}
+
 void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
-    // An active time selection takes priority, even over a clip: the clip is
-    // transparent to plain mouse events there (ClipComponent::hitTest), so the
-    // panel both drives the gesture and owns the cursor. Edge = resize/trim,
-    // interior = grab to move the selected portion.
-    {
-        bool isLeftEdge = false;
-        if (isOnSelectionEdge(x, y, isLeftEdge)) {
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            return;
-        }
-        if (isOnExistingSelection(x, y)) {
-            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-            return;
-        }
-    }
-
-    if (getClipComponentAt(x, y) != nullptr) {
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-        return;
-    }
-
-    // Check track zone first
-    bool inUpperZone = isInUpperTrackZone(y);
-
-    if (inUpperZone) {
-        // UPPER ZONE: Clip operations
-        // Empty space in upper zone - crosshair for marquee selection
-        if (isInSelectableArea(x, y)) {
-            if (shiftHeld) {
-                setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
-            } else {
-                setMouseCursor(juce::MouseCursor::CrosshairCursor);
-            }
-        } else {
-            setMouseCursor(juce::MouseCursor::NormalCursor);
-        }
-    } else {
-        // LOWER ZONE: Time selection operations
-        if (isInSelectableArea(x, y)) {
-            bool isLeftEdge = false;
-            if (isOnSelectionEdge(x, y, isLeftEdge)) {
-                // Over edge of time selection - show resize cursor
-                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            } else if (isOnExistingSelection(x, y)) {
-                // Over existing time selection
-                // Shift = split at boundaries cursor, otherwise grab hand
-                // TODO: Replace CrosshairCursor with a custom closed-fist icon
-                if (shiftHeld) {
-                    setMouseCursor(juce::MouseCursor::CrosshairCursor);
-                } else {
-                    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-                }
-            } else {
-                // Empty space - I-beam for creating time selection
-                if (shiftHeld) {
-                    setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
-                } else {
-                    setMouseCursor(juce::MouseCursor::IBeamCursor);
-                }
-            }
-        } else {
-            setMouseCursor(juce::MouseCursor::NormalCursor);
-        }
-    }
+    // Zone model + cursor policy live in the shared hit tester (#1719), so
+    // the cursor and the mouseDown gesture can never disagree. (This also
+    // retired an unreachable lower-zone shift-crosshair branch the old
+    // duplicated logic carried.)
+    const auto zone = interaction::panelZone(x, y, makePanelHitSnapshot(x, y));
+    setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(zone, shiftHeld)));
 }
 
 // ============================================================================
