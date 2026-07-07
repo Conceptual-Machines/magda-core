@@ -135,6 +135,40 @@ TEST_CASE("Panel: per-track selections only hit their tracks", "[hit-tester]") {
     REQUIRE(panelZone(200, 20, all) == PanelZone::SelectionBody);
 }
 
+TEST_CASE("Panel: panelHit exposes the raw facts gesture code branches on", "[hit-tester]") {
+    const auto s = makePanelWithSelection(100.0, 300.0);
+
+    // A point just inside the left boundary is BOTH on the edge (zone) and
+    // inside the selection rectangle — gesture code needs the raw fact, the
+    // cursor needs the priority. The old duplicated predicates kept these
+    // subtly different; panelHit carries both.
+    const auto nearEdgeInside = panelHit(103, 20, s);
+    REQUIRE(nearEdgeInside.zone == PanelZone::SelectionEdgeLeft);
+    REQUIRE(nearEdgeInside.onSelectionEdge);
+    REQUIRE(nearEdgeInside.selectionEdgeIsLeft);
+    REQUIRE(nearEdgeInside.insideSelection);
+
+    // Just outside the boundary: edge zone, but NOT inside the rectangle.
+    const auto nearEdgeOutside = panelHit(97, 20, s);
+    REQUIRE(nearEdgeOutside.zone == PanelZone::SelectionEdgeLeft);
+    REQUIRE_FALSE(nearEdgeOutside.insideSelection);
+
+    const auto body = panelHit(200, 20, s);
+    REQUIRE(body.laneIndex == 0);
+    REQUIRE(body.inUpperZone);
+    REQUIRE(body.selectable);
+    REQUIRE_FALSE(body.onSelectionEdge);
+    REQUIRE(body.insideSelection);
+
+    const auto lowerLane1 = panelHit(400, 180, makePanel());
+    REQUIRE(lowerLane1.laneIndex == 1);
+    REQUIRE_FALSE(lowerLane1.inUpperZone);
+
+    const auto outside = panelHit(400, 250, makePanel());
+    REQUIRE(outside.laneIndex == -1);
+    REQUIRE_FALSE(outside.selectable);
+}
+
 TEST_CASE("Panel: selection needs a lane hit band, automation gaps miss", "[hit-tester]") {
     // Lane hit band is the track's own height only; y below it (e.g. an
     // automation lane) must not report the selection.
@@ -233,6 +267,23 @@ TEST_CASE("Clip: volume line yields to edges and fade handles", "[hit-tester]") 
     const auto nearFade = clipHit(51, 30, s);
     REQUIRE(nearFade.onFadeIn);
     REQUIRE_FALSE(nearFade.onVolume);
+}
+
+TEST_CASE("Clip: raw handle hits ignore selection but respect audio", "[hit-tester]") {
+    auto s = makeAudioClip();
+    s.selected = false;
+
+    // Gesture code gates on selection itself, so the raw predicates hit
+    // even on unselected clips (unlike clipHit's gated flags)...
+    REQUIRE(clipFadeInHandleHit(51, 20, s));
+    REQUIRE(clipFadeOutHandleHit(197, 20, s));
+    REQUIRE(clipVolumeLineHit(30, s));
+    REQUIRE_FALSE(clipHit(51, 20, s).onFadeIn);
+
+    // ...but never on MIDI clips.
+    s.isAudio = false;
+    REQUIRE_FALSE(clipFadeInHandleHit(51, 20, s));
+    REQUIRE_FALSE(clipVolumeLineHit(30, s));
 }
 
 TEST_CASE("Clip: modifier tools override every zone", "[hit-tester]") {

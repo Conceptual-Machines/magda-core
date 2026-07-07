@@ -3083,71 +3083,21 @@ bool ClipComponent::isOnRightEdge(int x) const {
     return x > getWidth() - RESIZE_HANDLE_WIDTH;
 }
 
+// The fade/volume handle geometry lives in the shared hit tester (#1721);
+// these delegate so gesture dispatch and the cursor share one zone model.
+// The raw (selection-ungated) variants match the historical predicates —
+// callers apply their own isSelected_ gates.
 bool ClipComponent::isOnFadeInHandle(int x, int y) const {
-    const auto* clip = getClipInfo();
-    if (!clip || !clip->isAudio())
-        return false;
-
-    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
-    if (waveformArea.getWidth() <= 0)
-        return false;
-
-    // Check y is in handle zone (top of waveform area)
-    if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
-        return false;
-
-    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    const double clipLength = clip->getTimelineLength(tempo);
-    double pps =
-        (clipLength > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clipLength : 0.0;
-    if (pps <= 0.0)
-        return false;
-
-    float handleX = static_cast<float>(waveformArea.getX()) +
-                    static_cast<float>(computeEffectiveFades(*clip).fadeInSeconds * pps);
-    return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
+    return interaction::clipFadeInHandleHit(x, y, makeHitSnapshot());
 }
 
 bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
-    const auto* clip = getClipInfo();
-    if (!clip || !clip->isAudio())
-        return false;
-
-    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
-    if (waveformArea.getWidth() <= 0)
-        return false;
-
-    if (y < waveformArea.getY() || y > waveformArea.getY() + FADE_HANDLE_HIT_WIDTH)
-        return false;
-
-    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-    const double clipLength = clip->getTimelineLength(tempo);
-    double pps =
-        (clipLength > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clipLength : 0.0;
-    if (pps <= 0.0)
-        return false;
-
-    float handleX = static_cast<float>(waveformArea.getRight()) -
-                    static_cast<float>(computeEffectiveFades(*clip).fadeOutSeconds * pps);
-    return std::abs(static_cast<float>(x) - handleX) <= FADE_HANDLE_HIT_WIDTH * 0.5f;
+    return interaction::clipFadeOutHandleHit(x, y, makeHitSnapshot());
 }
 
 bool ClipComponent::isOnVolumeHandle(int x, int y) const {
     juce::ignoreUnused(x);
-    const auto* clip = getClipInfo();
-    if (!clip || !clip->isAudio())
-        return false;
-
-    auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
-    if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
-        return false;
-
-    // Hit test near the actual volume line position (±6px tolerance)
-    float volumeLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
-    volumeLinear = juce::jlimit(0.0f, 1.0f, volumeLinear);
-    float lineY = static_cast<float>(waveformArea.getY()) +
-                  ((1.0f - volumeLinear) * static_cast<float>(waveformArea.getHeight()));
-    return std::abs(static_cast<float>(y) - lineY) <= 6.0f;
+    return interaction::clipVolumeLineHit(y, makeHitSnapshot());
 }
 
 interaction::ClipSnapshot ClipComponent::makeHitSnapshot() const {

@@ -85,28 +85,36 @@ int laneIndexAtY(int y, const PanelSnapshot& s) {
     return -1;  // not in any track's own band (or in an automation lane)
 }
 
-PanelZone panelZone(int x, int y, const PanelSnapshot& s) {
+PanelHit panelHit(int x, int y, const PanelSnapshot& s) {
+    PanelHit hit;
+    hit.laneIndex = laneIndexAtY(y, s);
+    // Upper half of a lane = clip/marquee zone, lower half (and everything
+    // below the last hit band, e.g. automation lanes) = time-selection zone.
+    hit.inUpperZone =
+        hit.laneIndex >= 0 && y < s.lanes[static_cast<size_t>(hit.laneIndex)].area.getCentreY();
+    hit.selectable = inSelectableArea(x, y, s);
+    hit.onSelectionEdge = onSelectionEdge(x, y, s, hit.selectionEdgeIsLeft);
+    hit.insideSelection = onExistingSelection(x, y, s);
+
     // Priority mirrors the panel's historical cursor logic: an active time
     // selection wins over everything (clips are hit-transparent under it),
     // then clip passthrough, then the lane zones.
-    bool isLeftEdge = false;
-    if (onSelectionEdge(x, y, s, isLeftEdge))
-        return isLeftEdge ? PanelZone::SelectionEdgeLeft : PanelZone::SelectionEdgeRight;
-    if (onExistingSelection(x, y, s))
-        return PanelZone::SelectionBody;
+    if (hit.onSelectionEdge)
+        hit.zone =
+            hit.selectionEdgeIsLeft ? PanelZone::SelectionEdgeLeft : PanelZone::SelectionEdgeRight;
+    else if (hit.insideSelection)
+        hit.zone = PanelZone::SelectionBody;
+    else if (s.clipAtPoint)
+        hit.zone = PanelZone::OverClip;
+    else if (!hit.selectable)
+        hit.zone = PanelZone::None;
+    else
+        hit.zone = hit.inUpperZone ? PanelZone::EmptyLaneUpper : PanelZone::EmptyLaneLower;
+    return hit;
+}
 
-    if (s.clipAtPoint)
-        return PanelZone::OverClip;
-
-    // Upper half of a lane = clip/marquee zone, lower half (and everything
-    // below the last hit band, e.g. automation lanes) = time-selection zone.
-    const int laneIndex = laneIndexAtY(y, s);
-    const bool inUpperZone =
-        laneIndex >= 0 && y < s.lanes[static_cast<size_t>(laneIndex)].area.getCentreY();
-
-    if (!inSelectableArea(x, y, s))
-        return PanelZone::None;
-    return inUpperZone ? PanelZone::EmptyLaneUpper : PanelZone::EmptyLaneLower;
+PanelZone panelZone(int x, int y, const PanelSnapshot& s) {
+    return panelHit(x, y, s).zone;
 }
 
 CursorKind panelCursor(PanelZone zone, bool shiftHeld) {
@@ -181,6 +189,18 @@ bool onVolumeLine(int y, const ClipSnapshot& s) {
 }
 
 }  // namespace
+
+bool clipFadeInHandleHit(int x, int y, const ClipSnapshot& s) {
+    return onFadeHandle(x, y, s, true);
+}
+
+bool clipFadeOutHandleHit(int x, int y, const ClipSnapshot& s) {
+    return onFadeHandle(x, y, s, false);
+}
+
+bool clipVolumeLineHit(int y, const ClipSnapshot& s) {
+    return onVolumeLine(y, s);
+}
 
 ClipHit clipHit(int x, int y, const ClipSnapshot& s) {
     ClipHit hit;

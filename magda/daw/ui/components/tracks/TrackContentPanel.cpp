@@ -987,15 +987,9 @@ juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {
 }
 
 bool TrackContentPanel::isInSelectableArea(int x, int y) const {
-    // Check if we're in an empty track area (not on a clip)
-    // For now, entire track area is selectable since we don't have clips yet
-    // In the future, check if clicking on upper half of clips
-    for (size_t i = 0; i < trackLanes.size(); ++i) {
-        if (getTrackLaneArea(static_cast<int>(i)).contains(x, y)) {
-            return true;
-        }
-    }
-    return false;
+    // Delegates to the shared hit tester (#1721) so gesture dispatch and the
+    // cursor branch on the same zone model.
+    return interaction::panelHit(x, y, makePanelHitSnapshot(x, y)).selectable;
 }
 
 double TrackContentPanel::pixelToTime(int pixel) const {
@@ -1047,64 +1041,19 @@ int TrackContentPanel::getTrackIndexAtY(int y) const {
 }
 
 bool TrackContentPanel::isOnExistingSelection(int x, int y) const {
-    // Check if there's an active selection in the controller
-    if (!timelineController) {
-        return false;
-    }
-
-    const auto& selection = timelineController->getState().selection;
-    if (!selection.isActive()) {
-        return false;
-    }
-
-    // Check horizontal bounds in the timeline's native beat domain.
-    double clickBeats = pixelToBeats(x);
-    if (clickBeats < selection.startBeats || clickBeats > selection.endBeats) {
-        return false;
-    }
-
-    // Check vertical bounds (track-based)
-    int trackIndex = getTrackIndexAtY(y);
-    if (trackIndex < 0) {
-        return false;
-    }
-
-    // Check if this track is part of the selection
-    return selection.includesTrack(trackIndex);
+    // Shared hit tester (#1721). insideSelection is the plain rectangle
+    // test: beat range + selected track, edges included.
+    return interaction::panelHit(x, y, makePanelHitSnapshot(x, y)).insideSelection;
 }
 
 bool TrackContentPanel::isOnSelectionEdge(int x, int y, bool& isLeftEdge) const {
-    if (!timelineController) {
+    // Shared hit tester (#1721): near a selection boundary on a selected
+    // track, left edge winning ties.
+    const auto hit = interaction::panelHit(x, y, makePanelHitSnapshot(x, y));
+    if (!hit.onSelectionEdge)
         return false;
-    }
-
-    const auto& selection = timelineController->getState().selection;
-    if (!selection.isActive()) {
-        return false;
-    }
-
-    // Check vertical bounds (must be on a selected track)
-    int trackIndex = getTrackIndexAtY(y);
-    if (trackIndex < 0 || !selection.includesTrack(trackIndex)) {
-        return false;
-    }
-
-    // Check if mouse is near the edges (threshold shared with the hit tester)
-    static constexpr int EDGE_THRESHOLD = interaction::SELECTION_EDGE_THRESHOLD;
-    int startX = beatsToPixel(selection.startBeats);
-    int endX = beatsToPixel(selection.endBeats);
-
-    if (std::abs(x - startX) <= EDGE_THRESHOLD) {
-        isLeftEdge = true;
-        return true;
-    }
-
-    if (std::abs(x - endX) <= EDGE_THRESHOLD) {
-        isLeftEdge = false;
-        return true;
-    }
-
-    return false;
+    isLeftEdge = hit.selectionEdgeIsLeft;
+    return true;
 }
 
 bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event) {
@@ -2286,15 +2235,8 @@ void TrackContentPanel::mouseWheelMove(const juce::MouseEvent& event,
 }
 
 bool TrackContentPanel::isInUpperTrackZone(int y) const {
-    int trackIndex = getTrackIndexAtY(y);
-    if (trackIndex < 0) {
-        return false;
-    }
-
-    auto trackArea = getTrackLaneArea(trackIndex);
-    int trackMidY = trackArea.getY() + trackArea.getHeight() / 2;
-
-    return y < trackMidY;
+    // Shared hit tester (#1721): upper half of the lane under y.
+    return interaction::panelHit(0, y, makePanelHitSnapshot(0, y)).inUpperZone;
 }
 
 interaction::PanelSnapshot TrackContentPanel::makePanelHitSnapshot(int x, int y) const {

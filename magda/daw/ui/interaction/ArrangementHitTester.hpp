@@ -119,9 +119,25 @@ struct PanelSnapshot {
 /** Track index whose hit band contains y, or -1 (getTrackIndexAtY). */
 int laneIndexAtY(int y, const PanelSnapshot& s);
 
+/** Full panel-space hit result: the winning zone plus the raw per-test
+ *  facts the gesture code branches on (#1721). `insideSelection` is the
+ *  plain rectangle test — unlike `zone`, it stays true when the point is
+ *  also within the edge threshold. */
+struct PanelHit {
+    PanelZone zone = PanelZone::None;
+    int laneIndex = -1;        // hit-band lane under y, or -1
+    bool inUpperZone = false;  // lane's upper half (clip/marquee zone)
+    bool selectable = false;   // inside any lane rectangle
+    bool onSelectionEdge = false;
+    bool selectionEdgeIsLeft = false;
+    bool insideSelection = false;
+};
+
+PanelHit panelHit(int x, int y, const PanelSnapshot& s);
+
 /** The winning zone for a point, using the same priority order as the
  *  panel's historical cursor logic: selection edge > selection body >
- *  clip > upper/lower lane zones. */
+ *  clip > upper/lower lane zones. Convenience for panelHit(...).zone. */
 PanelZone panelZone(int x, int y, const PanelSnapshot& s);
 
 /** Cursor for a panel zone. Shift swaps the empty-lane zones to the
@@ -182,6 +198,13 @@ struct ClipSnapshot {
  *  (fades/volume only on selected audio clips; volume excludes edges and
  *  fades; lower half excludes edges). */
 ClipHit clipHit(int x, int y, const ClipSnapshot& s);
+
+/** Raw handle hit tests, ungated by selection (audio-only still applies).
+ *  Gesture code that checks selection itself uses these; clipHit() applies
+ *  the selected gate on top (#1721). */
+bool clipFadeInHandleHit(int x, int y, const ClipSnapshot& s);
+bool clipFadeOutHandleHit(int x, int y, const ClipSnapshot& s);
+bool clipVolumeLineHit(int y, const ClipSnapshot& s);
 
 /** Cursor for a clip hit. Modifier tools take priority (Shift+Ctrl erase,
  *  Alt copy-drag, Cmd+Alt blade), then the zone table. `selected` gates the
