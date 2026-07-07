@@ -64,25 +64,24 @@ TEST_CASE("Panel: empty lane zones split at the lane midline", "[hit-tester]") {
     REQUIRE(panelZone(400, 120, s) == PanelZone::EmptyLaneUpper);
     REQUIRE(panelZone(400, 180, s) == PanelZone::EmptyLaneLower);
 
-    REQUIRE(panelCursor(PanelZone::EmptyLaneUpper, false) == CursorKind::Crosshair);
-    REQUIRE(panelCursor(PanelZone::EmptyLaneLower, false) == CursorKind::IBeam);
-    // Shift = draw-clip cursor in both empty zones.
-    REQUIRE(panelCursor(PanelZone::EmptyLaneUpper, true) == CursorKind::NoteDraw);
-    REQUIRE(panelCursor(PanelZone::EmptyLaneLower, true) == CursorKind::NoteDraw);
+    // The hover cursor is modifier-independent: the pen (NoteDraw) only shows
+    // once a Shift-draw actually begins, so Shift stays free for Shift+wheel
+    // horizontal scroll instead of flashing the pen on hover.
+    REQUIRE(panelCursor(PanelZone::EmptyLaneUpper) == CursorKind::Crosshair);
+    REQUIRE(panelCursor(PanelZone::EmptyLaneLower) == CursorKind::IBeam);
 }
 
 TEST_CASE("Panel: outside every lane is None / Normal", "[hit-tester]") {
     const auto s = makePanel();
     REQUIRE(panelZone(400, 250, s) == PanelZone::None);
-    REQUIRE(panelCursor(PanelZone::None, false) == CursorKind::Normal);
-    REQUIRE(panelCursor(PanelZone::None, true) == CursorKind::Normal);
+    REQUIRE(panelCursor(PanelZone::None) == CursorKind::Normal);
 }
 
 TEST_CASE("Panel: a clip owns its point when no selection is active", "[hit-tester]") {
     auto s = makePanel();
     s.clipAtPoint = true;
     REQUIRE(panelZone(400, 20, s) == PanelZone::OverClip);
-    REQUIRE(panelCursor(PanelZone::OverClip, false) == CursorKind::Normal);
+    REQUIRE(panelCursor(PanelZone::OverClip) == CursorKind::Normal);
 }
 
 TEST_CASE("Panel: selection body beats everything, including clips", "[hit-tester]") {
@@ -90,12 +89,7 @@ TEST_CASE("Panel: selection body beats everything, including clips", "[hit-teste
     s.clipAtPoint = true;
 
     REQUIRE(panelZone(200, 20, s) == PanelZone::SelectionBody);
-    REQUIRE(panelCursor(PanelZone::SelectionBody, false) == CursorKind::DraggingHand);
-
-    // Historical note: the pre-#1719 duplicated lower-zone logic carried an
-    // unreachable shift-crosshair branch for this case; the observable
-    // behavior was (and stays) the grab hand regardless of Shift.
-    REQUIRE(panelCursor(PanelZone::SelectionBody, true) == CursorKind::DraggingHand);
+    REQUIRE(panelCursor(PanelZone::SelectionBody) == CursorKind::DraggingHand);
 }
 
 TEST_CASE("Panel: selection edges win within the threshold, left first", "[hit-tester]") {
@@ -114,8 +108,8 @@ TEST_CASE("Panel: selection edges win within the threshold, left first", "[hit-t
     const auto tiny = makePanelWithSelection(100.0, 104.0);
     REQUIRE(panelZone(102, 20, tiny) == PanelZone::SelectionEdgeLeft);
 
-    REQUIRE(panelCursor(PanelZone::SelectionEdgeLeft, false) == CursorKind::LeftRightResize);
-    REQUIRE(panelCursor(PanelZone::SelectionEdgeRight, false) == CursorKind::LeftRightResize);
+    REQUIRE(panelCursor(PanelZone::SelectionEdgeLeft) == CursorKind::LeftRightResize);
+    REQUIRE(panelCursor(PanelZone::SelectionEdgeRight) == CursorKind::LeftRightResize);
 }
 
 TEST_CASE("Panel: per-track selections only hit their tracks", "[hit-tester]") {

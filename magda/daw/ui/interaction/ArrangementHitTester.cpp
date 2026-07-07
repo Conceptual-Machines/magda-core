@@ -117,7 +117,7 @@ PanelZone panelZone(int x, int y, const PanelSnapshot& s) {
     return panelHit(x, y, s).zone;
 }
 
-CursorKind panelCursor(PanelZone zone, bool shiftHeld) {
+CursorKind panelCursor(PanelZone zone) {
     switch (zone) {
         case PanelZone::SelectionEdgeLeft:
         case PanelZone::SelectionEdgeRight:
@@ -127,9 +127,9 @@ CursorKind panelCursor(PanelZone zone, bool shiftHeld) {
         case PanelZone::OverClip:
             return CursorKind::Normal;
         case PanelZone::EmptyLaneUpper:
-            return shiftHeld ? CursorKind::NoteDraw : CursorKind::Crosshair;
+            return CursorKind::Crosshair;
         case PanelZone::EmptyLaneLower:
-            return shiftHeld ? CursorKind::NoteDraw : CursorKind::IBeam;
+            return CursorKind::IBeam;
         case PanelZone::None:
             break;
     }

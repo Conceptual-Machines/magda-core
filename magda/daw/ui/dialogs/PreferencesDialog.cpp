@@ -1886,8 +1886,15 @@ class ShortcutsPage : public juce::Component {
 
         void mouseWheelMove(const juce::MouseEvent& e,
                             const juce::MouseWheelDetails& wheel) override {
-            if (!handleCaptureWheel(e, wheel))
-                juce::Component::mouseWheelMove(e, wheel);
+            // This runs as a mouse listener for every child (addMouseListener
+            // (this, true)) so Learn can capture a wheel over any row widget —
+            // including the sensitivity slider, which eats the wheel before it
+            // reaches the list viewport. JUCE dispatches listener callbacks
+            // AFTER the target's own handling, so the inner list viewport has
+            // already captured-or-scrolled by now. Never fall through to the
+            // base handler: it would bubble this same event to the outer
+            // preferences viewport and scroll the whole page on top of that.
+            handleCaptureWheel(e, wheel);
         }
 
         bool handleCaptureWheel(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
