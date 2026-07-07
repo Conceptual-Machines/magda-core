@@ -66,6 +66,8 @@ set(TEST_SOURCES
     test_scale_detection.cpp
     test_step_clock.cpp
     test_string_table.cpp
+    # Arrangement pointer hit tester (#1719)
+    test_arrangement_hit_tester.cpp
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
     # Internal track-to-track routing (issue #1690)
