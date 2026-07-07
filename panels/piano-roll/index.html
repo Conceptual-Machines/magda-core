@@ -1066,9 +1066,27 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#auditioning-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Auditioning Notes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#control-lanes" class="md-nav__link">
     <span class="md-ellipsis">
       Control Lanes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-velocity-with-the-wheel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing Velocity with the Wheel
     </span>
   </a>
   
@@ -2116,9 +2134,27 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#auditioning-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Auditioning Notes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#control-lanes" class="md-nav__link">
     <span class="md-ellipsis">
       Control Lanes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editing-velocity-with-the-wheel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing Velocity with the Wheel
     </span>
   </a>
   
@@ -2221,6 +2257,7 @@
 <li><strong>Slice</strong> — Split each selected note into equal pieces (see <a href="#slicing-notes">Slicing Notes</a>)</li>
 <li><strong>Time Bend</strong> — Redistribute selected note timing along a curve (see <a href="../../time-bend/#piano-roll">Time Bend</a>)</li>
 <li><strong>Overlay tracks</strong> — Show other tracks' notes as a ghost overlay (see <a href="#overlay-tracks-ghost-notes">Overlay Tracks</a>)</li>
+<li><strong>Loop</strong> - Toggle the clip's own source loop on or off</li>
 <li><strong>Fullscreen</strong> — Pinned to the far right, this toggle expands the MIDI editor to fill the window. Click again to restore. Available for the Piano Roll and Drum Grid Editor.</li>
 </ul>
 </div>
@@ -2228,12 +2265,21 @@
 <p class="admonition-title">Sidebar controls</p>
 <p>Stacked on the left sidebar:</p>
 <ul>
+<li><strong>Audition</strong> - Toggle note preview (see <a href="#auditioning-notes">Auditioning Notes</a>)</li>
 <li><strong>Fold</strong> — Collapse the grid to only the pitches in use (see <a href="#fold">Fold</a>)</li>
 <li><strong>MPE</strong> — Toggle pitch glide editing (see <a href="#pitch-glides-mpe">Pitch Glides</a>)</li>
 <li><strong>CC</strong> — Add a CC or pitchbend lane to the drawer</li>
 <li><strong>Velocity</strong> — Toggle the control-lane drawer at the bottom of the editor</li>
 </ul>
 </div>
+<h2 id="auditioning-notes">Auditioning Notes<a class="headerlink" href="#auditioning-notes" title="Permanent link">&para;</a></h2>
+<p>A speaker toggle sits in the editor's top-left gutter, above the <strong>Fold</strong> button. When it is lit, notes sound through the track's instrument as you work on them:</p>
+<ul>
+<li><strong>Click</strong> an existing note to play it.</li>
+<li><span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ drag</strong> to draw a note and hear it for as long as you hold.</li>
+<li><strong>Double-click</strong> to add a note and it sounds once.</li>
+</ul>
+<p>The toggle is off by default, so ordinary selection stays silent. Its state persists as you switch clips and move between the Piano Roll and the <a href="../drum-grid-editor/">Drum Grid Editor</a> within a session.</p>
 <h2 id="control-lanes">Control Lanes<a class="headerlink" href="#control-lanes" title="Permanent link">&para;</a></h2>
 <p>The drawer at the bottom of the editor holds the clip's control lanes, stacked vertically so they are all visible at once:</p>
 <ul>
@@ -2242,6 +2288,9 @@
 <li>Each added lane shows its name in the header column with a close button; the pitchbend lane also has a <strong>Range</strong> field for the bend range in semitones.</li>
 <li>Drag the drawer's top edge to resize it. The drawer grows automatically as lanes are added.</li>
 </ul>
+<h2 id="editing-velocity-with-the-wheel">Editing Velocity with the Wheel<a class="headerlink" href="#editing-velocity-with-the-wheel" title="Permanent link">&para;</a></h2>
+<p>Hold <span class="keys"><kbd class="key-shift">Shift</kbd></span> and scroll the wheel over a note to nudge its velocity, in steps and clamped to 1-127. If the note is part of the current selection the whole selection scales together; otherwise only that note changes. <span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ wheel</strong> over the empty grid edits the current selection. A small <code>v NN</code> readout appears by the cursor while you drag, and a full wheel spin collapses into a single undo step.</p>
+<p>While a note is hovered or a selection exists, this gesture takes over from the usual <span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ wheel</strong> horizontal scroll.</p>
 <h2 id="fold">Fold<a class="headerlink" href="#fold" title="Permanent link">&para;</a></h2>
 <p>The <strong>Fold</strong> sidebar button collapses the vertical axis to only the pitches that are actually used in the clip, hiding the empty rows in between. Every remaining row is labelled, and the view re-centres on the used notes when you toggle it. Folding is handy on sparse parts — a bassline or a lead — so you can see all the notes without scrolling. With Fold on, dragging a note vertically snaps through the used-pitch rows. The same control exists in the <a href="../drum-grid-editor/">Drum Grid Editor</a> as <strong>Fold to used pads</strong>.</p>
 <h2 id="take-lanes">Take Lanes<a class="headerlink" href="#take-lanes" title="Permanent link">&para;</a></h2>

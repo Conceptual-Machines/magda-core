@@ -1088,6 +1088,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#auditioning-hits" class="md-nav__link">
+    <span class="md-ellipsis">
+      Auditioning Hits
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#row-labels-and-roles" class="md-nav__link">
     <span class="md-ellipsis">
       Row Labels and Roles
@@ -2071,6 +2080,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#auditioning-hits" class="md-nav__link">
+    <span class="md-ellipsis">
+      Auditioning Hits
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#row-labels-and-roles" class="md-nav__link">
     <span class="md-ellipsis">
       Row Labels and Roles
@@ -2126,12 +2144,14 @@
 <li><strong>Slice</strong> — Split each selected note into equal pieces (see <a href="../piano-roll/#slicing-notes">Slicing Notes</a>)</li>
 <li><strong>Time Bend</strong> — Redistribute selected note timing along a curve (see <a href="../../time-bend/#drum-grid-editor">Time Bend</a>)</li>
 <li><strong>Overlay tracks</strong> — Show other tracks' notes as a ghost overlay, same as in the <a href="../piano-roll/#overlay-tracks-ghost-notes">Piano Roll</a>. Ghost hits land on the row matching their pitch; notes that do not map to a pad row are skipped.</li>
+<li><strong>Loop</strong> - Toggle the clip's own source loop on or off</li>
 <li><strong>Fullscreen</strong> — Pinned to the far right, this toggle expands the editor to fill the window. Click again to restore. Shared with the Piano Roll.</li>
 </ul>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Sidebar controls</p>
 <ul>
+<li><strong>Audition</strong> - Toggle hit preview (see <a href="#auditioning-hits">Auditioning Hits</a>)</li>
 <li><strong>Fold</strong> — Collapse the grid to only the pads in use, hiding empty lanes (<strong>Fold to used pads</strong>)</li>
 <li><strong>CC</strong> — Add a CC or pitchbend lane to the drawer, the same way as in the <a href="../piano-roll/#control-lanes">Piano Roll</a>. The menu offers <strong>Pitchbend</strong>, common controllers (<strong>CC 1 (Mod Wheel)</strong>, <strong>CC 7 (Volume)</strong>, <strong>CC 11 (Expression)</strong>, <strong>CC 64 (Sustain)</strong>), and <strong>Custom CC...</strong></li>
 </ul>
@@ -2142,6 +2162,9 @@
 <li><img alt="bar chart" src="../../assets/images/icons/bar_chart.svg" width="16" /> <strong>Velocity</strong> — Toggle the velocity lane at the bottom of the editor</li>
 </ul>
 </div>
+<h2 id="auditioning-hits">Auditioning Hits<a class="headerlink" href="#auditioning-hits" title="Permanent link">&para;</a></h2>
+<p>The speaker toggle in the top-left gutter previews hits through the track's instrument. With it lit, clicking a cell or pressing a pad sounds that note. It works the same as in the <a href="../piano-roll/#auditioning-notes">Piano Roll</a>, and the setting is shared between the two editors. The pad-row play buttons always audition, whatever the toggle state.</p>
+<p><span class="keys"><kbd class="key-shift">Shift</kbd></span> <strong>+ wheel</strong> over a hit edits its velocity, exactly as in the <a href="../piano-roll/#editing-velocity-with-the-wheel">Piano Roll</a>.</p>
 <h2 id="row-labels-and-roles">Row Labels and Roles<a class="headerlink" href="#row-labels-and-roles" title="Permanent link">&para;</a></h2>
 <p>Each pad row can carry a custom name and an instrument <strong>role</strong>. The role is a semantic label (what the pad <em>is</em>: a kick, a snare, a closed hat) and shows as a small coloured pill next to the row, abbreviated to a short tag like <code>K</code>, <code>S</code>, or <code>HH</code>.</p>
 <p>Right-click a row to set both:</p>

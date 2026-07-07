@@ -699,6 +699,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#track-to-track-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track-to-Track Routing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#track-view-manager" class="md-nav__link">
     <span class="md-ellipsis">
       Track View Manager
@@ -2205,6 +2214,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#track-to-track-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Track-to-Track Routing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#track-view-manager" class="md-nav__link">
     <span class="md-ellipsis">
       Track View Manager
@@ -2352,7 +2370,7 @@
 </tbody>
 </table>
 <h2 id="track-controls">Track Controls<a class="headerlink" href="#track-controls" title="Permanent link">&para;</a></h2>
-<p>Every track provides the following controls (visible in track headers and channel strips):</p>
+<p>Every track provides the following controls. They render identically in the track header and the track <a href="../panels/inspector/">Inspector</a>, and reflow responsively to the width available rather than to fixed height presets, so no control is ever hidden.</p>
 <ul>
 <li><strong>Volume fader</strong> — Adjust the track's output level</li>
 <li><strong>Pan knob</strong> — Position in the stereo field</li>
@@ -2361,7 +2379,11 @@
 <li><strong>Record arm</strong> (R) — Arm the track for recording</li>
 <li><strong>Input monitor</strong> — Monitor the live input signal through the track</li>
 <li><strong>Automation</strong> — Toggle automation read/write for the track</li>
+<li><strong>Sends</strong> - Level to each aux / return the track feeds</li>
+<li><strong>Routing</strong> - Input and output routing for the track (see <a href="#track-to-track-routing">Track-to-Track Routing</a>)</li>
+<li><strong>Meter</strong> - Peak level meter for the track</li>
 </ul>
+<p>The <strong>Automation</strong> button lights purple when the track holds automation.</p>
 <h2 id="multi-output-plugins">Multi-Output Plugins<a class="headerlink" href="#multi-output-plugins" title="Permanent link">&para;</a></h2>
 <p>When an instrument plugin has more than two output channels (e.g. Kontakt, Battery, Drum Machine Designer), MAGDA can create separate output tracks for each stereo pair.</p>
 <ul>
@@ -2374,6 +2396,10 @@
 <p class="admonition-title">Note</p>
 <p>Multi-out tracks receive audio from the parent instrument's rack — their input routing is fixed. Output routing (to master, groups, or aux sends) works normally.</p>
 </div>
+<h2 id="track-to-track-routing">Track-to-Track Routing<a class="headerlink" href="#track-to-track-routing" title="Permanent link">&para;</a></h2>
+<p>A track can take another track's output as its own input. Every other track appears in the audio-input and MIDI-input selectors, listed after a separator alongside the hardware inputs, in the <a href="../panels/inspector/">Inspector</a>, the track headers, the <a href="../mixer-view/">Mixer</a>, and <a href="../session-view/">Session View</a>.</p>
+<p>From the source side, <strong>MIDI To</strong> routes a track's MIDI output to a single destination track.</p>
+<p>Self-routing and feedback loops are detected and blocked. Routings are saved with the project, and input monitoring works normally for an internally-routed track.</p>
 <h2 id="track-view-manager">Track View Manager<a class="headerlink" href="#track-view-manager" title="Permanent link">&para;</a></h2>
 <p>Each of the three views — Session, Arrangement, and Mixer — maintains its own independent track visibility and layout. This means you can show a different set of tracks in each view.</p>
 <p><img alt="Track Manager" src="../assets/images/tracks/track-manager.png" width="300" /></p>

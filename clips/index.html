@@ -891,6 +891,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#crossfades" class="md-nav__link">
+    <span class="md-ellipsis">
+      Crossfades
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#freeze-bounce-and-render" class="md-nav__link">
     <span class="md-ellipsis">
       Freeze, Bounce, and Render
@@ -2472,6 +2481,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#crossfades" class="md-nav__link">
+    <span class="md-ellipsis">
+      Crossfades
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#freeze-bounce-and-render" class="md-nav__link">
     <span class="md-ellipsis">
       Freeze, Bounce, and Render
@@ -2767,6 +2785,16 @@ groove.set(template=&quot;Basic 8th Swing&quot;, strength=0.5)
 <h2 id="transcribe-audio-to-midi">Transcribe Audio to MIDI<a class="headerlink" href="#transcribe-audio-to-midi" title="Permanent link">&para;</a></h2>
 <p>MAGDA can detect the notes in an audio clip and turn them into MIDI. Right-click an audio clip and choose <strong>Transcribe to MIDI</strong>: the audio is analysed and a MIDI clip of the detected notes is created, ready to drive an instrument. It works on a single audio clip at a time and needs the clip's source file on disk.</p>
 <p>Transcription works best on clearly pitched, reasonably clean material (a solo vocal, a bassline, a lead). Dense mixes and heavily layered audio give rougher results that usually want some cleanup in the <a href="../panels/piano-roll/">Piano Roll</a>.</p>
+<h2 id="crossfades">Crossfades<a class="headerlink" href="#crossfades" title="Permanent link">&para;</a></h2>
+<p>A crossfade is a real overlap between two adjacent audio clips: the outgoing clip fades down as the incoming clip fades up across the shared region.</p>
+<ul>
+<li><strong>Create</strong> - drag one audio clip so it overlaps its neighbour. With auto-crossfade active the overlap becomes a crossfade, drawn with an X across the shared region. You can also right-click a clip and choose <strong>Crossfade with previous clip</strong> or <strong>Crossfade with next clip</strong>.</li>
+<li><strong>Resize</strong> - drag the fade handles at a crossfaded edge to lengthen or shorten the overlap.</li>
+<li><strong>Read and edit the length</strong> - the crossfade shows as an editable <strong>XFADE</strong> value in beats in the clip's fades section. Dragging it to zero leaves the row in place so you can re-create the crossfade later.</li>
+<li><strong>Remove</strong> - right-click the clip and choose <strong>Remove crossfade</strong>.</li>
+</ul>
+<p>New audio clips overlap into a crossfade automatically when <strong>Auto-crossfade new audio clips</strong> is on in <a href="../interface/preferences/">Preferences</a>. This is the same behaviour as the per-clip <strong>Auto Crossfade</strong> property in <a href="#audio-clip-properties">Audio Clip Properties</a>.</p>
+<p>Selecting several audio clips at once keeps the <a href="../panels/waveform-editor/">Waveform Editor</a> open in a multi-clip mode, where the fades section batch-edits all of them at once, including auto-crossfade.</p>
 <h2 id="freeze-bounce-and-render">Freeze, Bounce, and Render<a class="headerlink" href="#freeze-bounce-and-render" title="Permanent link">&para;</a></h2>
 <p>These operations render a track or clip's output to audio, useful for reducing CPU load or committing effects.</p>
 <ul>

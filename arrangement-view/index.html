@@ -909,6 +909,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#range-editing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Range Editing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#editing" class="md-nav__link">
     <span class="md-ellipsis">
       Editing
@@ -2442,6 +2451,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#range-editing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Range Editing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#editing" class="md-nav__link">
     <span class="md-ellipsis">
       Editing
@@ -2624,11 +2642,11 @@
 </ul>
 <h3 id="selection">Selection<a class="headerlink" href="#selection" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Time selection</strong> — Click and drag on the timeline ruler to select a time range</li>
-<li><strong>Loop region</strong> — Displayed as an overlay on the timeline; set from selection with <span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-l">L</kbd></span> (<span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-l">L</kbd></span>)</li>
+<li><strong>Time selection</strong> - Click and drag on the timeline ruler to select a time range. The selection is drawn as a spotlight: everything outside the range dims while clip colours stay true, and the range edges read as near-white. Drag the endpoint handles to adjust the range.</li>
+<li><strong>Loop region</strong> - Set from the selection with <span class="keys"><kbd class="key-control">Ctrl</kbd><span>+</span><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-l">L</kbd></span> (<span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-l">L</kbd></span>). It is drawn as a quiet rail with bright glowing caps at each end, the same in the arrangement ruler and in the clip-editor ruler. Drag the caps to move the loop bounds.</li>
 </ul>
 <h3 id="playhead">Playhead<a class="headerlink" href="#playhead" title="Permanent link">&para;</a></h3>
-<p>The playhead shows the current playback position. Click on the timeline ruler to reposition it. Press <span class="keys"><kbd class="key-home">Home</kbd></span> to return to the start.</p>
+<p>The playhead shows the current playback position. Click on the timeline ruler to reposition it. Press <span class="keys"><kbd class="key-home">Home</kbd></span> to return to the start. The play and edit cursors are drawn a consistent near-white across every editor.</p>
 <div class="admonition note">
 <p class="admonition-title">Edit Cursor</p>
 <p>The <strong>edit cursor</strong> is a white blinking line separate from the playhead. Place it with <span class="keys"><kbd class="key-alt">Alt</kbd><span>+</span><kbd>click</kbd></span> on the timeline ruler or inside a clip. It marks the position for operations like <strong>Split</strong> (<span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-e">E</kbd></span>). Press <span class="keys"><kbd class="key-escape">Esc</kbd></span> to hide it. The MIDI editor has its own independent edit cursor — placing one in the piano roll or drum grid does not affect the arrangement cursor.</p>
@@ -2653,6 +2671,36 @@
 <p class="admonition-title">Note</p>
 <p>When a time selection exists, Split/Trim affects all clips that overlap the selection — not just selected clips. Clear the time selection to return to clip-based editing.</p>
 </div>
+<h2 id="range-editing">Range Editing<a class="headerlink" href="#range-editing" title="Permanent link">&para;</a></h2>
+<p>Range edits work on a span of time and ripple everything after it, rather than editing clips in place. They act on the current time selection or the loop range.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Insert Time</strong></td>
+<td>Opens a gap at the selection and pushes later clips to the right, splitting any that straddle the insert point.</td>
+</tr>
+<tr>
+<td><strong>Duplicate Time Range</strong></td>
+<td>Copies the selected span and ripple-inserts the copy directly after it.</td>
+</tr>
+<tr>
+<td><strong>Duplicate Loop Range</strong></td>
+<td>Same as above for the loop span. A grow-vs-advance option in <a href="../interface/preferences/">Preferences</a> chooses whether the loop grows to cover the copy or advances past it.</td>
+</tr>
+<tr>
+<td><strong>Split All Tracks at Cursor</strong></td>
+<td>Splits every track at the edit cursor.</td>
+</tr>
+</tbody>
+</table>
+<p>A <strong>Range Editing</strong> submenu, in the <strong>Edit</strong> menu and in the right-click menus on clips and on empty arrangement space, offers <strong>Copy</strong>, <strong>Cut</strong>, <strong>Delete</strong>, and <strong>Paste (Ripple)</strong> for both the time selection and the loop range.</p>
+<p>Range operations ripple the global tempo, time-signature, and pitch-bend curves along with the clips, so tempo and key changes travel with the music instead of staying pinned to the timeline. Beat-anchored clips keep their bar and beat position under the shifted tempo map. Markers ripple along with the clips on global operations.</p>
 <h2 id="editing">Editing<a class="headerlink" href="#editing" title="Permanent link">&para;</a></h2>
 <h3 id="cut-copy-paste">Cut, Copy, Paste<a class="headerlink" href="#cut-copy-paste" title="Permanent link">&para;</a></h3>
 <table>
