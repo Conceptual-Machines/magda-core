@@ -22,7 +22,7 @@ MAGDA uses a **hybrid track system**: there is no strict distinction between aud
 
 ## Track Controls
 
-Every track provides the following controls (visible in track headers and channel strips):
+Every track provides the following controls. They render identically in the track header and the track [Inspector](panels/inspector.md), and reflow responsively to the width available rather than to fixed height presets, so no control is ever hidden.
 
 - **Volume fader** — Adjust the track's output level
 - **Pan knob** — Position in the stereo field
@@ -31,6 +31,11 @@ Every track provides the following controls (visible in track headers and channe
 - **Record arm** (R) — Arm the track for recording
 - **Input monitor** — Monitor the live input signal through the track
 - **Automation** — Toggle automation read/write for the track
+- **Sends** - Level to each aux / return the track feeds
+- **Routing** - Input and output routing for the track (see [Track-to-Track Routing](#track-to-track-routing))
+- **Meter** - Peak level meter for the track
+
+The **Automation** button lights purple when the track holds automation.
 
 ## Multi-Output Plugins
 
@@ -43,6 +48,14 @@ When an instrument plugin has more than two output channels (e.g. Kontakt, Batte
 
 !!! note
     Multi-out tracks receive audio from the parent instrument's rack — their input routing is fixed. Output routing (to master, groups, or aux sends) works normally.
+
+## Track-to-Track Routing
+
+A track can take another track's output as its own input. Every other track appears in the audio-input and MIDI-input selectors, listed after a separator alongside the hardware inputs, in the [Inspector](panels/inspector.md), the track headers, the [Mixer](mixer-view.md), and [Session View](session-view.md).
+
+From the source side, **MIDI To** routes a track's MIDI output to a single destination track.
+
+Self-routing and feedback loops are detected and blocked. Routings are saved with the project, and input monitoring works normally for an internally-routed track.
 
 ## Track View Manager
 

@@ -17,14 +17,22 @@ Displayed in the bottom panel when a drum clip is selected or a DrumGrid device 
     - **Slice** — Split each selected note into equal pieces (see [Slicing Notes](piano-roll.md#slicing-notes))
     - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#drum-grid-editor))
     - **Overlay tracks** — Show other tracks' notes as a ghost overlay, same as in the [Piano Roll](piano-roll.md#overlay-tracks-ghost-notes). Ghost hits land on the row matching their pitch; notes that do not map to a pad row are skipped.
+    - **Loop** - Toggle the clip's own source loop on or off
     - **Fullscreen** — Pinned to the far right, this toggle expands the editor to fill the window. Click again to restore. Shared with the Piano Roll.
 
 !!! note "Sidebar controls"
+    - **Audition** - Toggle hit preview (see [Auditioning Hits](#auditioning-hits))
     - **Fold** — Collapse the grid to only the pads in use, hiding empty lanes (**Fold to used pads**)
     - **CC** — Add a CC or pitchbend lane to the drawer, the same way as in the [Piano Roll](piano-roll.md#control-lanes). The menu offers **Pitchbend**, common controllers (**CC 1 (Mod Wheel)**, **CC 7 (Volume)**, **CC 11 (Expression)**, **CC 64 (Sustain)**), and **Custom CC...**
 
 !!! note "Footer controls"
     - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity lane at the bottom of the editor
+
+## Auditioning Hits
+
+The speaker toggle in the top-left gutter previews hits through the track's instrument. With it lit, clicking a cell or pressing a pad sounds that note. It works the same as in the [Piano Roll](piano-roll.md#auditioning-notes), and the setting is shared between the two editors. The pad-row play buttons always audition, whatever the toggle state.
+
+++shift++ **+ wheel** over a hit edits its velocity, exactly as in the [Piano Roll](piano-roll.md#editing-velocity-with-the-wheel).
 
 ## Row Labels and Roles
 

@@ -5,6 +5,7 @@
 #include <limits>
 #include <optional>
 
+#include "../../interaction/ArrangementHitTester.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
@@ -49,6 +50,7 @@ class ClipComponent : public juce::Component,
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void modifierKeysChanged(const juce::ModifierKeys& mods) override;
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
@@ -202,13 +204,14 @@ class ClipComponent : public juce::Component,
     bool hoverVolumeHandle_ = false;
     float dragStartVolumeDB_ = 0.0f;
 
-    // Visual constants
-    static constexpr int RESIZE_HANDLE_WIDTH = 6;
+    // Visual constants (hit-relevant ones are canonical in the shared hit
+    // tester so zone math can never drift from the paint metrics, #1719)
+    static constexpr int RESIZE_HANDLE_WIDTH = interaction::ClipMetrics::RESIZE_HANDLE_WIDTH;
     static constexpr int CORNER_RADIUS = 4;
-    static constexpr int HEADER_HEIGHT = 16;
+    static constexpr int HEADER_HEIGHT = interaction::ClipMetrics::HEADER_HEIGHT;
     static constexpr int MIN_WIDTH_FOR_NAME = 40;
     static constexpr int FADE_HANDLE_SIZE = 8;
-    static constexpr int FADE_HANDLE_HIT_WIDTH = 14;
+    static constexpr int FADE_HANDLE_HIT_WIDTH = interaction::ClipMetrics::FADE_HANDLE_HIT_WIDTH;
 
     // Effective fades for display/interaction (#1499): a crossfaded edge shows
     // the overlap-derived fade (what TE actually plays) instead of the stored
@@ -248,7 +251,14 @@ class ClipComponent : public juce::Component,
     bool isOnFadeInHandle(int x, int y) const;
     bool isOnFadeOutHandle(int x, int y) const;
     bool isOnVolumeHandle(int x, int y) const;
+    // Snapshot for the shared hit tester (#1719): hover flags and the cursor
+    // both derive from interaction::clipHit() so they can never disagree.
+    interaction::ClipSnapshot makeHitSnapshot() const;
     void updateCursor(const juce::ModifierKeys& mods = {});
+    // Reactive recompute (#1720): re-derive hover flags + cursor from the
+    // current mouse position when hit-test inputs change without a mouse
+    // event (selection state, gesture end). No-op unless idle-hovering.
+    void refreshHoverFromMouse();
 
     // Helper to get current clip info
     const ClipInfo* getClipInfo() const;

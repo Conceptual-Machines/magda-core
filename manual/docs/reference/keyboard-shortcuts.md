@@ -51,6 +51,8 @@ Wheel and trackpad gestures are context-aware and remappable from **Settings > P
 
 In the **piano roll**, ++alt++ + wheel changes note-row height. In the **drum grid**, ++alt++ + wheel changes row height and ++cmd++ + wheel zooms the timebase.
 
+In the **MIDI editors**, ++shift++ + wheel over a note nudges its velocity, taking over from horizontal scroll while a note is hovered or a selection exists.
+
 ## Tracks
 
 | Shortcut | Action |
