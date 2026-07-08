@@ -1530,6 +1530,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         drawingClipTrackIndex_ = -1;
         drawingClipStartBeat_ = 0.0;
         drawingClipEndBeat_ = 0.0;
+        // The draw set the pen cursor on mouseDown; snap it back to the
+        // zone's hover cursor now instead of leaving the pen until the next
+        // mouse move.
+        refreshCursorFromMouse();
         repaintVisible();
         return;
     }
@@ -2197,20 +2201,10 @@ void TrackContentPanel::timerCallback() {
             repaint(juce::Rectangle<int>(cursorX - 3, trackArea.getY(), 6, trackArea.getHeight()));
         }
     }
-
-    // Update cursor when modifier keys change (e.g. shift for split mode)
-    if (isMouseOver(true)) {
-        auto mousePos = getMouseXYRelative();
-        bool shiftNow = juce::ModifierKeys::currentModifiers.isShiftDown();
-        if (shiftNow != lastShiftState_) {
-            lastShiftState_ = shiftNow;
-            updateCursorForPosition(mousePos.x, mousePos.y, shiftNow);
-        }
-    }
 }
 
 void TrackContentPanel::mouseMove(const juce::MouseEvent& event) {
-    updateCursorForPosition(event.x, event.y, event.mods.isShiftDown());
+    updateCursorForPosition(event.x, event.y);
 }
 
 void TrackContentPanel::mouseWheelMove(const juce::MouseEvent& event,
@@ -2270,13 +2264,14 @@ interaction::PanelSnapshot TrackContentPanel::makePanelHitSnapshot(int x, int y)
     return s;
 }
 
-void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
+void TrackContentPanel::updateCursorForPosition(int x, int y) {
     // Zone model + cursor policy live in the shared hit tester (#1719), so
-    // the cursor and the mouseDown gesture can never disagree. (This also
-    // retired an unreachable lower-zone shift-crosshair branch the old
-    // duplicated logic carried.)
+    // the cursor and the mouseDown gesture can never disagree. The hover
+    // cursor is modifier-independent: the pen appears only once a Shift-draw
+    // actually starts (see mouseDown), so Shift stays free for Shift+wheel
+    // horizontal scroll instead of flashing the pen on every Shift press.
     const auto zone = interaction::panelZone(x, y, makePanelHitSnapshot(x, y));
-    setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(zone, shiftHeld)));
+    setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(zone)));
 }
 
 void TrackContentPanel::refreshCursorFromMouse() {
@@ -2287,14 +2282,7 @@ void TrackContentPanel::refreshCursorFromMouse() {
         return;
 
     const auto pos = getMouseXYRelative();
-    updateCursorForPosition(pos.x, pos.y, juce::ModifierKeys::getCurrentModifiers().isShiftDown());
-}
-
-void TrackContentPanel::modifierKeysChanged(const juce::ModifierKeys& mods) {
-    // Shift swaps the empty-lane cursors to draw-clip; recompute without
-    // waiting for a mouse move (#1720).
-    refreshCursorFromMouse();
-    juce::Component::modifierKeysChanged(mods);
+    updateCursorForPosition(pos.x, pos.y);
 }
 
 // ============================================================================

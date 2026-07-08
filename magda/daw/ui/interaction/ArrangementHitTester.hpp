@@ -140,9 +140,11 @@ PanelHit panelHit(int x, int y, const PanelSnapshot& s);
  *  clip > upper/lower lane zones. Convenience for panelHit(...).zone. */
 PanelZone panelZone(int x, int y, const PanelSnapshot& s);
 
-/** Cursor for a panel zone. Shift swaps the empty-lane zones to the
- *  draw-clip cursor. */
-CursorKind panelCursor(PanelZone zone, bool shiftHeld);
+/** Cursor for a panel zone. The hover cursor is modifier-independent: the
+ *  draw-clip (pen) cursor only appears once a Shift-draw actually begins, so
+ *  Shift stays free for Shift+wheel horizontal scroll without the pen flashing
+ *  on every Shift press. */
+CursorKind panelCursor(PanelZone zone);
 
 // ============================================================================
 // Clip surface (ClipComponent-local space)

@@ -305,7 +305,6 @@ class TrackContentPanel : public juce::Component,
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
-    void modifierKeysChanged(const juce::ModifierKeys& mods) override;
     void showEmptySpaceContextMenu(const juce::MouseEvent& event);
 
     // Mouse interaction constants and state
@@ -428,12 +427,11 @@ class TrackContentPanel : public juce::Component,
     // Snapshot of selection + lane geometry for the shared hit tester
     // (#1719), which drives the cursor (and, later, gesture dispatch).
     interaction::PanelSnapshot makePanelHitSnapshot(int x, int y) const;
-    void updateCursorForPosition(int x, int y, bool shiftHeld = false);
+    void updateCursorForPosition(int x, int y);
     // Reactive recompute (#1720): re-derive the cursor from the current
     // mouse position when hit-test inputs change without a mouse event
-    // (modifiers, time selection). No-op unless idle-hovering the panel.
+    // (time selection). No-op unless idle-hovering the panel.
     void refreshCursorFromMouse();
-    bool lastShiftState_ = false;
 
     // Marquee methods
     void startMarqueeSelection(const juce::Point<int>& startPoint);

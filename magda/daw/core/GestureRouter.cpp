@@ -13,9 +13,12 @@ namespace magda {
 // site migrates it keeps its own constants.
 // ----------------------------------------------------------------------------
 namespace {
-// Scroll: magnitude is a pixel delta, so sensitivity scales the raw wheel
-// delta (~0.195 per mouse tick on X11) into a sensible pixel step.
-constexpr float kScrollSensitivity = 50.0f;
+// Horizontal scroll: magnitude is a pixel delta, so sensitivity scales the raw
+// wheel delta (~0.195 per mouse tick on X11) into a sensible pixel step. Set a
+// bit above the vertical viewport step (kViewportScrollSensitivity) so a mouse
+// wheel covers timeline distance briskly; the old value of 50 left horizontal
+// scroll ~4x slower than vertical. User-overridable in the gesture prefs (#22).
+constexpr float kScrollSensitivity = 300.0f;
 // Vertical track scroll matches juce::Viewport's default wheel formula
 // (deltaY * 14 * singleStepSize=16), the same factor TrackHeadersPanel uses,
 // so the arrangement body and the headers scroll in lockstep.
