@@ -1530,6 +1530,10 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         drawingClipTrackIndex_ = -1;
         drawingClipStartBeat_ = 0.0;
         drawingClipEndBeat_ = 0.0;
+        // The draw set the pen cursor on mouseDown; snap it back to the
+        // zone's hover cursor now instead of leaving the pen until the next
+        // mouse move.
+        refreshCursorFromMouse();
         repaintVisible();
         return;
     }
