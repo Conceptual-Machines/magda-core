@@ -8,6 +8,7 @@
 #include "ui/components/chain/modulation/SyncDivisionUi.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -28,7 +29,11 @@ magda::ControlTarget gainTarget(const magda::ChainNodePath& path) {
 }  // namespace
 
 SidechainUI::SidechainUI() {
-    // Curve editor bound to the bundled duck modulator (mods[0]).
+    // Curve editor bound to the bundled duck modulator (mods[0]). A generous
+    // padding insets the curve field so extreme points (and the parked phase
+    // dot at full level) sit clearly inside the widget.
+    curveEditor_.setPadding(16);
+    curveEditor_.setDrawContentBorder(true);
     curveEditor_.setGridDivisionsX(4);
     curveEditor_.setGridDivisionsY(4);
     addAndMakeVisible(curveEditor_);
@@ -72,6 +77,7 @@ SidechainUI::SidechainUI() {
     // sync division while notes retrigger the phase.
     setupSmallLabel(modeLabel_, "MODE", this);
     modeButton_.setClickingTogglesState(true);
+    modeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     modeButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
     modeButton_.setColour(juce::TextButton::buttonOnColourId,
@@ -183,7 +189,16 @@ void SidechainUI::resized() {
     constexpr int controlHeight = 18;
 
     auto controlRow = area.removeFromBottom(labelHeight + controlHeight);
-    curveEditor_.setBounds(area.reduced(0, 2));
+    const auto curveBounds = area.reduced(0, 2);
+    curveEditor_.setBounds(curveBounds);
+
+    // X gridlines stay at 4 (musical quarters of the cycle); pick the value
+    // gridline count from the aspect ratio so the cells come out square.
+    if (curveBounds.getWidth() > 0) {
+        const int squareY = juce::roundToInt(4.0 * curveBounds.getHeight() /
+                                             static_cast<double>(curveBounds.getWidth()));
+        curveEditor_.setGridDivisionsY(juce::jlimit(2, 10, squareY));
+    }
 
     const int colWidth = controlRow.getWidth() / 5;
     auto layoutColumn = [&](juce::Label& label, juce::Component& control) {

@@ -606,7 +606,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (filterUI_)
         return 250;
     if (sidechainUI_)
-        return 350;  // curve editor + source/depth/sync/atk/rel control row
+        return 500;  // curve editor + depth/sync/mode/atk/rel control row
     if (pitchShiftUI_)
         return 200;
     if (impulseResponseUI_)
