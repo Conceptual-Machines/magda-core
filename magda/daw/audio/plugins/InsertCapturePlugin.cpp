@@ -141,8 +141,11 @@ void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         // dry passthrough) must not mix with the captured return.
         fc.destBuffer->clear(fc.bufferStartSample, fc.bufferNumSamples);
         if (m.numSamples > 0 && m.fileStartSample < (juce::int64)reader->lengthInSamples) {
+            // std::min, not juce::jmin: an explicit jmin<int64> instantiation
+            // drags in the juce::dsp SIMD overload set, which has no
+            // SIMDNativeOps<long long> on Linux/GCC and fails to compile.
             const auto available = static_cast<int>(
-                juce::jmin<juce::int64>(m.numSamples, reader->lengthInSamples - m.fileStartSample));
+                std::min<juce::int64>(m.numSamples, reader->lengthInSamples - m.fileStartSample));
             reader->read(fc.destBuffer, fc.bufferStartSample + m.bufferOffset, available,
                          m.fileStartSample, true, true);
         }
