@@ -16,6 +16,7 @@
 #include "../audio/plugins/OscilloscopePlugin.hpp"
 #include "../audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
+#include "../audio/plugins/SidechainPlugin.hpp"
 #include "../audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
 #include "../audio/plugins/TrackMeasurementPlugin.hpp"
@@ -163,6 +164,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::LevelsPlugin::xmlTypeName) {
             return new daw::audio::LevelsPlugin(info);
+        }
+        if (type == daw::audio::SidechainPlugin::xmlTypeName) {
+            return new daw::audio::SidechainPlugin(info);
         }
         if (type == daw::audio::InstrumentMeterTapPlugin::xmlTypeName) {
             return new daw::audio::InstrumentMeterTapPlugin(info);

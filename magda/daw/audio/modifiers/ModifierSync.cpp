@@ -57,23 +57,14 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
                 auto& snapHolder = state.curveSnapshots[modInfo.id];
                 if (!snapHolder)
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
-                applyLFOProperties(lfo, modInfo, snapHolder.get());
-
-                // Cross-track sidechain LFOs must not retrigger from the
-                // destination track's own MIDI — they're driven externally
-                // via triggerSidechainNoteOn from the source track.
-                if (ctx.hasCrossTrackSidechain)
-                    lfo->setSkipNativeResync(true);
+                // Owns skipNativeResync / gateOnTriggerSource / initial gate,
+                // including the cross-track sidechain policy.
+                applyLFOProperties(lfo, modInfo, snapHolder.get(), ctx.hasCrossTrackSidechain);
 
                 // Audio-trigger LFOs start gated; the audio thread clears the
                 // gate on each peak (gateSidechainLFOs / triggerNoteOn).
-                // MIDI-trigger LFOs are gated in applyLFOProperties from
-                // MAGDA's held-note model so rack and top-level scopes match.
-                if (modInfo.triggerMode == LFOTriggerMode::Audio) {
+                if (modInfo.triggerMode == LFOTriggerMode::Audio)
                     lfo->setGated(true);
-                } else if (modInfo.triggerMode == LFOTriggerMode::MIDI) {
-                    lfo->setGateOnTriggerSource(true);
-                }
             }
             modifier = lfoMod;
             break;
@@ -355,7 +346,11 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 auto& snapHolder = state.curveSnapshots[modInfo.id];
                 if (!snapHolder)
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
-                applyLFOProperties(lfo, modInfo, snapHolder.get());
+                // This in-place path is the ONLY one that runs when a
+                // sidechain source is picked on an existing device (the link
+                // fingerprint doesn't change), so it must restate the
+                // cross-track policy - see applyLFOProperties.
+                applyLFOProperties(lfo, modInfo, snapHolder.get(), ctx.hasCrossTrackSidechain);
                 // MIDI gate state is part of the MAGDA model and is applied
                 // above. Audio-trigger gate state remains owned by the audio
                 // sidechain path.

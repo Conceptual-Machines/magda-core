@@ -77,6 +77,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/ChorusUI.cpp
     custom_ui/PhaserUI.cpp
     custom_ui/FilterUI.cpp
+    custom_ui/SidechainUI.cpp
     custom_ui/PitchShiftUI.cpp
     custom_ui/ImpulseResponseUI.cpp
     custom_ui/FaustUI.cpp

@@ -8,54 +8,9 @@
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "modulation/FollowerEditorPanel.hpp"
+#include "ui/components/chain/modulation/SyncDivisionUi.hpp"
 #include "ui/components/chain/params/ParamLinkResolver.hpp"
 #include "ui/themes/DarkTheme.hpp"
-
-namespace {
-// Stepped slider order — slow to fast. Multi-bar lengths first, then 1 Bar,
-// then for each note (Half, Quarter, Eighth, Sixteenth, ThirtySecond):
-// dotted → normal → triplet. Matches the labels used in valueFormatter.
-constexpr magda::SyncDivision kSyncDivisionOrder[] = {
-    magda::SyncDivision::SixteenBars,         // 16 Bars
-    magda::SyncDivision::EightBars,           // 8 Bars
-    magda::SyncDivision::FourBars,            // 4 Bars
-    magda::SyncDivision::TwoBars,             // 2 Bars
-    magda::SyncDivision::Whole,               // 1 Bar
-    magda::SyncDivision::DottedHalf,          // 1/2.
-    magda::SyncDivision::Half,                // 1/2
-    magda::SyncDivision::TripletHalf,         // 1/2T
-    magda::SyncDivision::DottedQuarter,       // 1/4.
-    magda::SyncDivision::Quarter,             // 1/4
-    magda::SyncDivision::TripletQuarter,      // 1/4T
-    magda::SyncDivision::DottedEighth,        // 1/8.
-    magda::SyncDivision::Eighth,              // 1/8
-    magda::SyncDivision::TripletEighth,       // 1/8T
-    magda::SyncDivision::DottedSixteenth,     // 1/16.
-    magda::SyncDivision::Sixteenth,           // 1/16
-    magda::SyncDivision::TripletSixteenth,    // 1/16T
-    magda::SyncDivision::DottedThirtySecond,  // 1/32.
-    magda::SyncDivision::ThirtySecond,        // 1/32
-    magda::SyncDivision::TripletThirtySecond  // 1/32T
-};
-
-int syncDivisionToIndex(magda::SyncDivision d) {
-    for (int i = 0; i < static_cast<int>(std::size(kSyncDivisionOrder)); ++i)
-        if (kSyncDivisionOrder[i] == d)
-            return i;
-    // Quarter — find its position dynamically so this stays correct if the
-    // order array is reshuffled.
-    for (int i = 0; i < static_cast<int>(std::size(kSyncDivisionOrder)); ++i)
-        if (kSyncDivisionOrder[i] == magda::SyncDivision::Quarter)
-            return i;
-    return 0;
-}
-
-magda::SyncDivision indexToSyncDivision(int idx) {
-    if (idx < 0 || idx >= static_cast<int>(std::size(kSyncDivisionOrder)))
-        return magda::SyncDivision::Quarter;
-    return kSyncDivisionOrder[idx];
-}
-}  // namespace
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -451,7 +406,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Sync division stepped slider — N musical divisions, indexed 0..N-1.
     // Stepped (interval=1) so each drag click steps to the next division.
     // valueFormatter renders the index as "1 Bar", "1/4", etc.
-    constexpr int kNumDivisions = static_cast<int>(std::size(kSyncDivisionOrder));
+    constexpr int kNumDivisions = kNumSyncDivisions;
     syncDivisionSlider_.setRange(0.0, static_cast<double>(kNumDivisions - 1), 1.0);
     syncDivisionSlider_.setValue(
         static_cast<double>(syncDivisionToIndex(magda::SyncDivision::Quarter)),
@@ -460,12 +415,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     syncDivisionSlider_.setShowFillIndicator(false);
     syncDivisionSlider_.setValueFormatter([](double v) {
         int idx = juce::jlimit(0, kNumDivisions - 1, static_cast<int>(std::round(v)));
-        // Order matches kSyncDivisionOrder above (slow → fast, grouped per note).
-        static const char* const kLabels[] = {"16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar",
-                                              "1/2.",    "1/2",    "1/2T",   "1/4.",   "1/4",
-                                              "1/4T",    "1/8.",   "1/8",    "1/8T",   "1/16.",
-                                              "1/16",    "1/16T",  "1/32.",  "1/32",   "1/32T"};
-        return juce::String(kLabels[idx]);
+        return syncDivisionLabelForIndex(idx);
     });
     syncDivisionSlider_.onValueChanged = [this](double value) {
         int idx = juce::jlimit(0, kNumDivisions - 1, static_cast<int>(std::round(value)));

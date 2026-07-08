@@ -67,6 +67,17 @@ class MutableCloudsProcessor : public AutomatablePluginProcessor {
 };
 
 /**
+ * @brief Processor for the Sidechain volume-shaper insert.
+ *
+ * Parameters (gain / attack / release) are addressed by index off the
+ * plugin's automatable parameters.
+ */
+class SidechainProcessor : public AutomatablePluginProcessor {
+  public:
+    SidechainProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+};
+
+/**
  * @brief Processor for the built-in 4OSC synthesizer
  *
  * Enumerates parameters generically from plugin->getAutomatableParameters().

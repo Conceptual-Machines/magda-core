@@ -54,6 +54,7 @@ class SpectrumTelemetrySource;
 class PitchShiftUI;
 class ReverbUI;
 class SamplerUI;
+class SidechainUI;
 class StepSequencerUI;
 class StrumUI;
 class ToneGeneratorUI;
@@ -314,6 +315,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<ChorusUI> chorusUI_;
     std::unique_ptr<PhaserUI> phaserUI_;
     std::unique_ptr<FilterUI> filterUI_;
+    std::unique_ptr<SidechainUI> sidechainUI_;
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<FaustUI> faustUI_;

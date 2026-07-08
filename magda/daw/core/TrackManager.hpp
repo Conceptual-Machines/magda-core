@@ -391,6 +391,15 @@ class TrackManager {
     // addDevice* and isn't affected.
     static void stampDefaultKitIfMissing(DeviceInfo& dev);
 
+    // Seed a fresh Sidechain device (issue #1591) with its bundled curve
+    // modulator: an LFO with a one-shot duck curve, MIDI-triggered, linked to
+    // the device's own gain param at full negative depth. Needs the device's
+    // final ChainNodePath for the link target, so it runs at the add sites
+    // (after prepareNewDevice assigns the id), not inside prepareNewDevice.
+    // No-op for other devices or when mods already exist (duplication keeps
+    // the user's curve). Deserialized projects never pass through here.
+    static void seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath);
+
     // Common prep for the FX-chain and rack-chain add paths: assign a fresh
     // DeviceId from nextFxDeviceId_, stamp the default kit, and tag analysis
     // devices. Returns the prepared copy; callers insert it, then fire
@@ -637,6 +646,7 @@ class TrackManager {
     void setModPhaseOffset(const ChainNodePath& path, int modIndex, float phaseOffset);
     void setModTempoSync(const ChainNodePath& path, int modIndex, bool tempoSync);
     void setModSyncDivision(const ChainNodePath& path, int modIndex, SyncDivision division);
+    void setModOneShot(const ChainNodePath& path, int modIndex, bool oneShot);
     void setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode);
     void setModCurvePreset(const ChainNodePath& path, int modIndex, CurvePreset preset);
     void setModCurveState(const ChainNodePath& path, int modIndex, CurvePreset preset,

@@ -510,6 +510,19 @@ void TrackManager::setModSyncDivision(const ChainNodePath& path, int modIndex,
                               static_cast<float>(syncDivisionToTeRateOrdinal(division)));
 }
 
+void TrackManager::setModOneShot(const ChainNodePath& path, int modIndex, bool oneShot) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    auto& mod = (*node.mods)[modIndex];
+    mod.oneShot = oneShot;
+    // A completed one-shot must rearm when the mode is toggled, in either
+    // direction: back to loop it should run again, and re-entering one-shot
+    // should wait for the next trigger rather than stay latched complete.
+    mod.oneShotComplete = false;
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
 void TrackManager::setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))

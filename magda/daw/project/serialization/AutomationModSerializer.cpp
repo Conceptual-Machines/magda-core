@@ -452,6 +452,7 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     SER(syncDivision);
     SER(triggerMode);
     SER(oneShot);
+    SER(invertOutput);
     SER(useLoopRegion);
     SER(loopStart);
     SER(loopEnd);
@@ -526,6 +527,8 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     DESER(syncDivision);
     DESER(triggerMode);
     DESER(oneShot);
+    if (obj->hasProperty("invertOutput"))
+        DESER(invertOutput);
     DESER(useLoopRegion);
     DESER(loopStart);
     DESER(loopEnd);

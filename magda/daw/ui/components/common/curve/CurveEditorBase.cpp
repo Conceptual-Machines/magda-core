@@ -143,6 +143,7 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     // Create path for curve
     juce::Path curvePath;
     bool pathStarted = false;
+    float pathStartX = 0.0f;  // where the fill's left edge closes (kept vertical)
 
     // Handle edge behavior based on loop mode
     if (shouldLoop()) {
@@ -154,6 +155,7 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
             float firstPixelY = static_cast<float>(yToPixelF(firstY));
             curvePath.startNewSubPath(firstPixelX, firstPixelY);
             pathStarted = true;
+            pathStartX = firstPixelX;
         }
     } else {
         // For non-looping (automation): Extend from left edge at first point's value
@@ -166,6 +168,7 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
                 curvePath.startNewSubPath(0.0f, firstPixelY);
                 curvePath.lineTo(firstPixelX, firstPixelY);
                 pathStarted = true;
+                pathStartX = 0.0f;
             }
         }
     }
@@ -180,6 +183,7 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         if (!pathStarted) {
             curvePath.startNewSubPath(pixelX, pixelY);
             pathStarted = true;
+            pathStartX = pixelX;
         } else if (i > 0) {
             const auto& prevP = points[i - 1];
 
@@ -223,11 +227,15 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     // get the fill baseline at the padded y=0 position, while the base/
     // automation editor continues to use content.getBottom() (same result
     // because the base yToPixelF(0) == content.getBottom()).
+    // Close the fill straight down from the curve's actual end and start x
+    // (which sit kEdgePadding inside the content bounds for the LFO editor):
+    // closing to the content corners instead draws the fill's side edges as
+    // visible diagonals across that offset.
     juce::Path fillPath = curvePath;
-    auto content = getContentBounds();
+    const auto curveEnd = curvePath.getCurrentPosition();
     float fillBaseY = static_cast<float>(yToPixelF(0.0));
-    fillPath.lineTo(static_cast<float>(content.getRight()), fillBaseY);
-    fillPath.lineTo(static_cast<float>(content.getX()), fillBaseY);
+    fillPath.lineTo(curveEnd.x, fillBaseY);
+    fillPath.lineTo(pathStartX, fillBaseY);
     fillPath.closeSubPath();
     g.setColour(curveColour_.withAlpha(0.13f));
     g.fillPath(fillPath);

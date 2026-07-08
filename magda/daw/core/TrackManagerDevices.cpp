@@ -194,6 +194,8 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(
+            newDevice, ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         notifyDeviceAdded(ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id),
@@ -248,6 +250,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
         notifyDeviceAdded(chainPath.withDevice(newDevice.id), newDevice);
@@ -301,6 +304,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device at the specified index
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(chain->elements.size());
