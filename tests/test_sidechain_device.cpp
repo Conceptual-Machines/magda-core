@@ -115,6 +115,37 @@ TEST_CASE("Sidechain device - creation-time mod seeding", "[sidechain][device]")
     }
 }
 
+TEST_CASE("Sidechain device - rejected where its modulator cannot run", "[sidechain][device]") {
+    auto& tm = TrackManager::getInstance();
+
+    DeviceInfo device;
+    device.pluginId = "sidechain";
+    device.name = "Sidechain";
+    device.format = PluginFormat::Internal;
+
+    SECTION("master track: outside tracks_, so trigger cache and source "
+            "resolution never see it") {
+        REQUIRE(tm.addDeviceToTrack(MASTER_TRACK_ID, device) == INVALID_DEVICE_ID);
+        REQUIRE(tm.addDeviceToTrack(MASTER_TRACK_ID, device, 0) == INVALID_DEVICE_ID);
+    }
+
+    SECTION("post-fader FX: device mods only sync for main-chain devices") {
+        const auto trackId = tm.createTrack("SC Guard Test");
+        REQUIRE(trackId != INVALID_TRACK_ID);
+        REQUIRE(tm.addDeviceToPostFx(trackId, device) == INVALID_DEVICE_ID);
+
+        // Sanity: the main chain still accepts and seeds it.
+        const auto deviceId = tm.addDeviceToTrack(trackId, device);
+        REQUIRE(deviceId != INVALID_DEVICE_ID);
+        const auto* added =
+            tm.getDeviceInChainByPath(ChainNodePath::topLevelDevice(trackId, deviceId));
+        REQUIRE(added != nullptr);
+        REQUIRE(added->mods.size() == 1);
+
+        tm.deleteTrack(trackId);
+    }
+}
+
 TEST_CASE("Sidechain device - state survives a serialization round-trip",
           "[sidechain][device][serialization]") {
     const auto path = ChainNodePath::topLevelDevice(3, 42);
