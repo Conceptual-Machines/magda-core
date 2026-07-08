@@ -5,7 +5,6 @@
 #include <unordered_map>
 
 #include "../../core/ModInfo.hpp"
-#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 
 namespace magda {
@@ -348,19 +347,8 @@ inline bool overlayModifierVisuals(ModInfo& magdaMod, te::Modifier* mod) {
         // is (1 - drawn curve), so map it back into the drawn domain for the
         // editor's phase dot. Gated/idle (output 0) lands on 1 = full level,
         // matching where the drawn curve rests.
-        if (magdaMod.invertOutput) {
-            const float teRaw = magdaMod.value;
+        if (magdaMod.invertOutput)
             magdaMod.value = 1.0f - magdaMod.value;
-            MAGDA_ADSR_AUDIO_LOG(
-                "SC-DOT OVL mod="
-                << juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(&magdaMod))
-                << " lfo="
-                << juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(lfo))
-                << " teRaw=" << teRaw << " val=" << magdaMod.value << " phase=" << magdaMod.phase
-                << " gated=" << static_cast<int>(lfo->isGated())
-                << " skipResync=" << static_cast<int>(lfo->getSkipNativeResync())
-                << " running=" << static_cast<int>(magdaMod.running));
-        }
         // For a looping custom curve the dot must follow the remapped (looped)
         // position published by the curve callback, not TE's raw 0..1 sweep.
         if (auto* holder = static_cast<CurveSnapshotHolder*>(

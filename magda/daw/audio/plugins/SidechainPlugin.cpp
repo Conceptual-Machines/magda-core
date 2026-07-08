@@ -1,7 +1,5 @@
 #include "plugins/SidechainPlugin.hpp"
 
-#include "modifiers/ADSRDebugLog.hpp"
-
 namespace magda::daw::audio {
 
 const char* SidechainPlugin::xmlTypeName = "sidechain";
@@ -90,19 +88,16 @@ void SidechainPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         return;
 
     const float target = gainParam->getCurrentValue();
-    const float attackCoeff = smoothingCoeff(attackParam->getCurrentValue(), sampleRate_);
-    const float releaseCoeff = smoothingCoeff(releaseParam->getCurrentValue(), sampleRate_);
-
-    // Click probe: a large block-boundary jump of the modulated gain target is
-    // where any click originates. Rare (a few per bar at most), so the log
-    // call is acceptable while we chase this.
-    if (std::abs(target - currentGain_) > 0.2f)
-        MAGDA_ADSR_AUDIO_LOG("SC-GAIN jump plug="
-                             << juce::String::toHexString(
-                                    reinterpret_cast<juce::pointer_sized_int>(this))
-                             << " target=" << target << " current=" << currentGain_
-                             << " atkMs=" << attackParam->getCurrentValue()
-                             << " relMs=" << releaseParam->getCurrentValue());
+    // Anti-click floors, not user-range mins: with 0 ms the gain trajectory
+    // has raw corners - most audibly where the steep recovery ramp freezes
+    // the instant it reaches full level (a slope discontinuity at maximum
+    // loudness). A fraction of a millisecond keeps the duck hit effectively
+    // instant; a few milliseconds of release round the arrival corner with
+    // no audible loudness cost.
+    const float attackCoeff =
+        smoothingCoeff(juce::jmax(0.3f, attackParam->getCurrentValue()), sampleRate_);
+    const float releaseCoeff =
+        smoothingCoeff(juce::jmax(5.0f, releaseParam->getCurrentValue()), sampleRate_);
 
     const int numChannels = fc.destBuffer->getNumChannels();
     float* channels[8] = {};

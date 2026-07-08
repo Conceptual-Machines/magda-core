@@ -1,7 +1,6 @@
 #include <cmath>
 #include <set>
 
-#include "../audio/modifiers/ADSRDebugLog.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
@@ -950,16 +949,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 else
                     mod.value = 0.0f;
             }
-
-            if (mod.invertOutput)
-                MAGDA_ADSR_AUDIO_LOG(
-                    "SC-DOT SIM mod="
-                    << juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(&mod))
-                    << " phase=" << mod.phase << " val=" << mod.value
-                    << " running=" << static_cast<int>(mod.running)
-                    << " advance=" << static_cast<int>(shouldAdvance)
-                    << " oneShotC=" << static_cast<int>(mod.oneShotComplete)
-                    << " trig=" << static_cast<int>(mod.triggerCount));
         }
 
         if (mod.type == ModType::Random) {
