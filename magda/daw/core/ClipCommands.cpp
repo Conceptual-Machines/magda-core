@@ -7,7 +7,9 @@
 #include <limits>
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
+#include "../audio/plugins/InsertCapturePlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/racks/InstrumentRackManager.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
@@ -122,6 +124,81 @@ class RenderProgressWindow : public juce::ThreadWithProgressWindow {
   private:
     te::Renderer::Parameters params_;
     bool success_ = false;
+};
+
+// True when this track hosts an enabled external insert with both send and
+// return set — its hardware return only exists live, so an offline bounce
+// needs the real-time capture pass first (#1623).
+bool trackNeedsInsertCapture(te::Track& track) {
+    for (auto plugin : track.pluginList) {
+        if (auto* insert = dynamic_cast<te::InsertPlugin*>(plugin))
+            if (insert->isEnabled() && insert->outputDevice.get().isNotEmpty() &&
+                insert->inputDevice.get().isNotEmpty())
+                return true;
+    }
+    return false;
+}
+
+// Runs the external-insert capture pass modally over [startSec, endSec]
+// (progress + Cancel), mirroring what export does: the range plays once in
+// real time while hidden taps record each routed insert's return, then the
+// taps flip to playback mode so the offline render substitutes the captures.
+// Returns false when the user cancelled; on success (true with a service),
+// call cleanupAfterRender() once the render is done — InsertCaptureScope
+// below does it on scope exit.
+bool runInsertCapturePass(TracktionEngineWrapper& engine, double startSec, double endSec) {
+    auto* service = engine.getInsertRenderCaptureService();
+    if (service == nullptr)
+        return true;
+
+    juce::AlertWindow window("Capturing External Hardware",
+                             "Playing the bounce range in real time to record the "
+                             "external instrument/FX returns.",
+                             juce::MessageBoxIconType::InfoIcon);
+    double progress = 0.0;
+    window.addProgressBarComponent(progress);
+    window.addButton("Cancel", 0);
+
+    struct ProgressTimer : juce::Timer {
+        InsertRenderCaptureService& service;
+        double& value;
+        ProgressTimer(InsertRenderCaptureService& s, double& v) : service(s), value(v) {
+            startTimerHz(10);
+        }
+        void timerCallback() override {
+            value = service.getProgress();
+        }
+    } progressTimer{*service, progress};
+
+    bool finished = false;
+    bool ok = false;
+    const bool started = service->startCapturePass(startSec, endSec, [&](bool success) {
+        finished = true;
+        ok = success;
+        window.exitModalState(success ? 1 : 0);
+    });
+    if (!started)
+        return true;  // nothing to capture after all
+
+    window.setVisible(true);
+    window.toFront(true);
+    window.runModalLoop();
+
+    // Cancel button exits the loop before the pass ends — abort it (fires the
+    // onFinished callback synchronously, which sets `ok`).
+    if (!finished)
+        service->cancelCapturePass();
+    return ok;
+}
+
+// Removes the hidden capture taps + temp files when the bounce is done, on
+// every exit path.
+struct InsertCaptureScope {
+    InsertRenderCaptureService* service = nullptr;
+    ~InsertCaptureScope() {
+        if (service != nullptr)
+            service->cleanupAfterRender();
+    }
 };
 
 }  // namespace
@@ -1930,7 +2007,35 @@ void BounceInPlaceCommand::execute() {
         return;
     }
 
-    // Bypass FX plugins (everything that isn't the instrument wrapper rack)
+    // External insert returns only exist live — run the capture pass first,
+    // with the chain still fully enabled (#1623). The taps substitute the
+    // captured returns during the offline render below.
+    const double bounceTailSeconds = 2.0;
+    const double bounceBpm = currentProjectBpm();
+    InsertCaptureScope captureScope;
+    if (trackNeedsInsertCapture(*teTrack)) {
+        if (!runInsertCapturePass(*engine_, clip->getTimelineStart(bounceBpm),
+                                  clip->getTimelineEnd(bounceBpm) + bounceTailSeconds)) {
+            restoreTransport();
+            return;
+        }
+        captureScope.service = engine_->getInsertRenderCaptureService();
+
+        // The pass ran the live transport; listener callbacks may have
+        // invalidated the model/engine clip pointers — re-resolve.
+        clip = clipManager.getClip(clipId_);
+        teClip = clip != nullptr ? bridge->getArrangementTeClip(clipId_) : nullptr;
+        teTrack = teClip != nullptr ? teClip->getTrack() : nullptr;
+        if (clip == nullptr || teClip == nullptr || teTrack == nullptr) {
+            DBG("BounceInPlaceCommand: clip vanished during the capture pass");
+            restoreTransport();
+            return;
+        }
+    }
+
+    // Bypass FX plugins (everything that isn't the instrument wrapper rack).
+    // The external insert counts as the instrument on its track, and the
+    // hidden capture tap must stay enabled to play the captured return.
     auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
     struct PluginState {
         te::Plugin* plugin;
@@ -1939,10 +2044,12 @@ void BounceInPlaceCommand::execute() {
     std::vector<PluginState> savedStates;
 
     for (auto plugin : teTrack->pluginList) {
-        if (!rackManager.isWrapperRack(plugin)) {
-            savedStates.push_back({plugin, plugin->isEnabled()});
-            plugin->setEnabled(false);
-        }
+        if (rackManager.isWrapperRack(plugin) ||
+            dynamic_cast<te::InsertPlugin*>(plugin) != nullptr ||
+            dynamic_cast<InsertCapturePlugin*>(plugin) != nullptr)
+            continue;
+        savedStates.push_back({plugin, plugin->isEnabled()});
+        plugin->setEnabled(false);
     }
 
     // Find track index for tracksToDo bitset
@@ -2173,6 +2280,16 @@ void BounceToNewTrackCommand::execute() {
     const double clipEnd = clip->getTimelineEnd(projectBPM);
     params.time = te::TimeRange(te::TimePosition::fromSeconds(clipStart),
                                 te::TimePosition::fromSeconds(clipEnd + endAllowance));
+
+    // External insert returns only exist live — capture them first (#1623).
+    InsertCaptureScope captureScope;
+    if (trackNeedsInsertCapture(*teTrack)) {
+        if (!runInsertCapturePass(*engine_, clipStart, clipEnd + endAllowance)) {
+            restoreTransport();
+            return;
+        }
+        captureScope.service = engine_->getInsertRenderCaptureService();
+    }
 
     juce::BigInteger trackBits;
     trackBits.setBit(trackIndex);
