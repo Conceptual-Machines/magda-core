@@ -142,8 +142,10 @@ class MidiInputRouter : private juce::AsyncUpdater {
     /// Feedback guard (#1623): true when this input port belongs to the
     /// hardware an External Instrument on this track sends MIDI to — routing
     /// it back in would loop the synth's own notes through the insert send
-    /// (doubled and hanging notes). Matched by port name: hardware exposes
-    /// the same device name on its in and out ports.
+    /// (doubled and hanging notes). Same-hardware matching handles asymmetric
+    /// port naming ("monologue KBD/KNOB" vs "monologue MIDI OUT"). Applied to
+    /// "All Inputs" routing only — an explicitly selected port is respected,
+    /// so the synth's keyboard can still be recorded (Local Control off).
     bool isExternalInstrumentSendbackInput(TrackId trackId, const juce::String& inputName) const;
 
     void handleAsyncUpdate() override;

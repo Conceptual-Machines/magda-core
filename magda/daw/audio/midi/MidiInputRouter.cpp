@@ -313,11 +313,63 @@ void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
         playbackContext->reallocate();
 }
 
+namespace {
+
+// True when a MIDI input and a MIDI output port belong to the same hardware.
+// Real devices rarely name the two directions identically, so match in tiers:
+//   1. identical names ("IAC Driver Bus 1" both ways)
+//   2. identical after dropping direction words ("monologue MIDI IN" /
+//      "monologue MIDI OUT") — port numbers are kept, so a multi-port
+//      interface only matches the same-numbered port ("MIDISPORT IN 2" does
+//      not match "MIDISPORT OUT 1")
+//   3. same first word when neither name carries a port number — covers
+//      asymmetric single-device naming ("monologue KBD/KNOB" vs
+//      "monologue SOUND")
+bool sameMidiHardware(const juce::String& a, const juce::String& b) {
+    if (a.isEmpty() || b.isEmpty())
+        return false;
+    if (a.equalsIgnoreCase(b))
+        return true;
+
+    auto stripDirection = [](const juce::String& name) {
+        auto tokens = juce::StringArray::fromTokens(name, " ", {});
+        tokens.removeEmptyStrings();
+        for (int i = tokens.size(); --i >= 0;) {
+            const auto t = tokens[i].toLowerCase();
+            if (t == "in" || t == "out" || t == "input" || t == "output")
+                tokens.remove(i);
+        }
+        return tokens.joinIntoString(" ").toLowerCase();
+    };
+    const auto stemA = stripDirection(a);
+    const auto stemB = stripDirection(b);
+    if (stemA.isNotEmpty() && stemA == stemB)
+        return true;
+
+    if (!a.containsAnyOf("0123456789") && !b.containsAnyOf("0123456789")) {
+        const auto firstA = a.upToFirstOccurrenceOf(" ", false, false).toLowerCase();
+        const auto firstB = b.upToFirstOccurrenceOf(" ", false, false).toLowerCase();
+        if (firstA.length() >= 3 && firstA == firstB)
+            return true;
+    }
+    return false;
+}
+
+}  // namespace
+
 bool MidiInputRouter::isExternalInstrumentSendbackInput(TrackId trackId,
                                                         const juce::String& inputName) const {
+    // Arm-gated: a record-armed track re-admits the synth's own ports so its
+    // keyboard can be captured (Local Control off on the synth is the no-
+    // double-trigger companion). Un-armed, the ports stay dropped so playback
+    // through the insert can't double or loop back.
+    if (const auto* track = TrackManager::getInstance().getTrack(trackId);
+        track != nullptr && track->recordArmed)
+        return false;
+
     auto routing = TrackManager::getInstance().getExternalInstrumentRouting(trackId);
     return routing.present && routing.midiOut.isNotEmpty() &&
-           inputName.equalsIgnoreCase(routing.midiOut);
+           sameMidiHardware(inputName, routing.midiOut);
 }
 
 void MidiInputRouter::reapplyExternalInstrumentSendbackGuard(TrackId trackId) {
@@ -463,8 +515,10 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
         }
 
         if (midiDevice) {
-            if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()) ||
-                isExternalInstrumentSendbackInput(trackId, midiDevice->getName())) {
+            // The sendback guard does NOT apply here: explicitly picking the
+            // synth's own port is the record-its-keyboard workflow (Local
+            // Control off on the synth); only "All Inputs" filters it out.
+            if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
                 bool removedAnyRouting = false;
                 for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
                     if (&inputDeviceInstance->owner == midiDevice) {
@@ -532,8 +586,8 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
             return false;
         if (isSurfaceOnlyMidiInput(midiDevice.getDeviceID(), midiDevice.getName()))
             return false;
-        if (isExternalInstrumentSendbackInput(trackId, midiDevice.getName()))
-            return false;
+        // No sendback guard here: arming a session slot is an explicit
+        // capture intent, so the synth's own ports stay recordable.
         if (configured == "all")
             return true;
         return magda::midi::matches(configured, midiDevice.getDeviceID(), midiDevice.getName());

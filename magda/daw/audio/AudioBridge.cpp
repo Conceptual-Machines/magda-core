@@ -397,6 +397,12 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // (armed tracks should receive MIDI even when not selected)
             updateMidiInputRouting();
 
+            // The external-instrument sendback guard is arm-gated: arming
+            // re-admits the synth's own ports so its keyboard records,
+            // disarming drops them again (#1623). Re-apply BEFORE the arm
+            // sync so the re-added targets exist when they get armed.
+            midiInputRouter_.reapplyExternalInstrumentSendbackGuard(trackId);
+
             syncRecordArmedToTE(trackId);
         }
     }

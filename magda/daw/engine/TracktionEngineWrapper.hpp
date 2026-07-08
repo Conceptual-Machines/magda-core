@@ -84,6 +84,12 @@ class TracktionEngineWrapper : public AudioEngine,
     void stop() override;
     void pause() override;
     void record() override;
+
+    /**
+     * @brief Flush all-notes-off through every External Instrument insert's
+     *        MIDI send so hardware synths never hang after a transport stop.
+     */
+    void sendAllNotesOffToExternalInserts();
     void locate(double position_seconds) override;
     void locateMusical(int bar, int beat, int tick = 0) override;
     double getCurrentPosition() const override;
