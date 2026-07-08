@@ -5,7 +5,6 @@
 #include <map>
 #include <memory>
 
-#include "audio/insert_freeze/InsertFreezeService.hpp"
 #include "components/mixer/RoutingSelector.hpp"
 #include "core/ChainNodePath.hpp"
 
@@ -23,16 +22,15 @@ namespace magda::daw::ui {
  * directly to the live plugin (then updateDeviceTypes()), so they persist through
  * the normal internal-plugin state round-trip.
  *
- * A Freeze button runs the real-time capture pass (InsertFreezeService) that
- * records the insert's audio return into an audio clip so offline export can
- * bounce it; while frozen the routing controls are disabled and the button
- * becomes Unfreeze.
+ * A status line warns when another insert shares one of this insert's
+ * hardware ports (feedback guard, #1623). Offline export captures the insert's
+ * return automatically (InsertRenderCaptureService) — nothing to trigger here.
  *
  * The live plugin may not exist when the slot first builds this UI, so the
  * pickers are (re)populated in setDevicePath(), called once the slot's device
  * path is bound (mirrors the analyzer/Faust UIs).
  */
-class ExternalInsertUI : public juce::Component, private juce::Timer {
+class ExternalInsertUI : public juce::Component {
   public:
     explicit ExternalInsertUI(bool isInstrument);
     ~ExternalInsertUI() override = default;
@@ -45,14 +43,7 @@ class ExternalInsertUI : public juce::Component, private juce::Timer {
 
   private:
     void rebuildFromPlugin();
-    void refreshFreezeRow();
-    void onFreezeClicked();
-    magda::InsertFreezeService* freezeService() const;
-
-    // Polls capture progress while a freeze pass for this device runs; the
-    // pass ending is detected here too (completion also arrives as a model
-    // change that rebuilds the slot). Timer-as-progress-display only.
-    void timerCallback() override;
+    void refreshConflictWarning();
 
     const bool isInstrument_;
     magda::ChainNodePath devicePath_;
@@ -64,8 +55,7 @@ class ExternalInsertUI : public juce::Component, private juce::Timer {
     std::unique_ptr<magda::RoutingSelector> returnSelector_;
     juce::Label latencyValue_;  // editable manual-latency field (ms)
 
-    juce::TextButton freezeButton_;
-    juce::Label freezeStatus_;
+    juce::Label warningLabel_;
 
     // Picker option id -> TE device name, for mapping a selection back to the
     // string the InsertPlugin expects.

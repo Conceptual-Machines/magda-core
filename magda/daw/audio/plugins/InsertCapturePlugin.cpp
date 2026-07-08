@@ -2,7 +2,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
-#include "insert_freeze/CaptureWindowMath.hpp"
+#include "insert_capture/CaptureWindowMath.hpp"
 
 namespace magda {
 
@@ -17,7 +17,32 @@ InsertCapturePlugin::InsertCapturePlugin(const te::PluginCreationInfo& info) : t
 
 InsertCapturePlugin::~InsertCapturePlugin() {
     stopCapture(false);
+    stopPlayback();
     notifyListenersOfDeletion();
+}
+
+bool InsertCapturePlugin::startPlayback(const juce::File& wavFile, double windowStartSec,
+                                        double windowEndSec) {
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    stopPlayback();
+
+    juce::WavAudioFormat format;
+    auto stream = wavFile.createInputStream();
+    if (stream == nullptr)
+        return false;
+    playbackReader_.reset(format.createReaderFor(stream.release(), true));
+    if (playbackReader_ == nullptr)
+        return false;
+
+    windowStart_ = windowStartSec;
+    windowEnd_ = windowEndSec;
+    activeReader_.store(playbackReader_.get(), std::memory_order_release);
+    return true;
+}
+
+void InsertCapturePlugin::stopPlayback() {
+    activeReader_.store(nullptr, std::memory_order_release);
+    playbackReader_.reset();
 }
 
 void InsertCapturePlugin::initialise(const te::PluginInitialisationInfo& info) {
@@ -101,9 +126,32 @@ void InsertCapturePlugin::writeSilence(juce::AudioFormatWriter::ThreadedWriter& 
 }
 
 void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    // Transparent passthrough — never modify the buffer.
+    if (fc.destBuffer == nullptr || fc.bufferNumSamples <= 0)
+        return;
+
+    // Playback mode: substitute the captured return during an offline render.
+    // The isRendering gate keeps file reads off the live audio thread.
+    if (auto* reader = activeReader_.load(std::memory_order_acquire); reader != nullptr) {
+        if (!fc.isRendering)
+            return;  // live graph: transparent passthrough
+        const auto m = mapBlockToCaptureWindow(
+            fc.editTime.getStart().inSeconds(), fc.editTime.getEnd().inSeconds(),
+            fc.bufferNumSamples, windowStart_, windowEnd_, reader->sampleRate);
+        // REPLACE semantics: whatever the offline insert produced (silence or
+        // dry passthrough) must not mix with the captured return.
+        fc.destBuffer->clear(fc.bufferStartSample, fc.bufferNumSamples);
+        if (m.numSamples > 0 && m.fileStartSample < (juce::int64)reader->lengthInSamples) {
+            const auto available = static_cast<int>(
+                juce::jmin<juce::int64>(m.numSamples, reader->lengthInSamples - m.fileStartSample));
+            reader->read(fc.destBuffer, fc.bufferStartSample + m.bufferOffset, available,
+                         m.fileStartSample, true, true);
+        }
+        return;
+    }
+
+    // Capture mode: transparent passthrough — never modify the buffer.
     auto* writer = activeWriter_.load(std::memory_order_acquire);
-    if (writer == nullptr || fc.destBuffer == nullptr || fc.bufferNumSamples <= 0 || !fc.isPlaying)
+    if (writer == nullptr || !fc.isPlaying || fc.isRendering)
         return;
     if (complete_.load(std::memory_order_relaxed))
         return;

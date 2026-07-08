@@ -1,13 +1,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "audio/insert_freeze/CaptureWindowMath.hpp"
-#include "core/ExternalInsertFreeze.hpp"
-#include "project/serialization/ProjectSerializer.hpp"
+#include "insert_capture/CaptureWindowMath.hpp"
 
-// External-insert freeze (#1623): capture-window sample mapping used by the
-// hidden InsertCapturePlugin on the audio thread, and the freeze-state
-// round-trip through DeviceInfo serialization.
+// External-insert export capture (#1623): the capture-window sample mapping
+// shared by the hidden InsertCapturePlugin's record and playback modes.
 
 using namespace magda;
 using Catch::Approx;
@@ -78,58 +75,4 @@ TEST_CASE("Capture window mapping", "[insert-freeze][capture-window]") {
         REQUIRE(mapBlockToCaptureWindow(0.0, kBlockSec, kBlock, winEnd, winStart, kSr).numSamples ==
                 0);
     }
-}
-
-TEST_CASE("External-insert freeze state round-trips through DeviceInfo serialization",
-          "[insert-freeze][serialization]") {
-    DeviceInfo device;
-    device.id = 7;
-    device.name = "External Instrument";
-    device.pluginId = "insert";
-    device.isInstrument = true;
-
-    auto freeze = std::make_shared<ExternalInsertFreeze>();
-    freeze->captureFile = "Freeze/synth_20260708.wav";
-    freeze->frozenClipId = 42;
-    freeze->bypassedDevices = {3, 7};
-
-    ClipInfo midiClip;  // ClipInfo defaults to MIDI content
-    midiClip.id = 11;
-    midiClip.trackId = 2;
-    midiClip.name = "Synth line";
-    midiClip.setPlacementBeats(4.0, 8.0);
-    freeze->stashedClips.push_back(midiClip);
-
-    device.externalFreeze = freeze;
-
-    auto json = ProjectSerializer::serializeDeviceInfo(device);
-
-    DeviceInfo restored;
-    REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, restored));
-    REQUIRE(restored.isFrozen());
-    REQUIRE(restored.externalFreeze->captureFile == "Freeze/synth_20260708.wav");
-    REQUIRE(restored.externalFreeze->frozenClipId == 42);
-    REQUIRE(restored.externalFreeze->bypassedDevices == std::vector<DeviceId>{3, 7});
-
-    REQUIRE(restored.externalFreeze->stashedClips.size() == 1);
-    const auto& clip = restored.externalFreeze->stashedClips.front();
-    REQUIRE(clip.id == 11);
-    REQUIRE(clip.trackId == 2);
-    REQUIRE(clip.isMidi());
-    REQUIRE(clip.getStartBeats(120.0) == Approx(4.0));
-    REQUIRE(clip.getEndBeats(120.0) == Approx(12.0));
-}
-
-TEST_CASE("DeviceInfo without freeze state stays unfrozen after a round-trip",
-          "[insert-freeze][serialization]") {
-    DeviceInfo device;
-    device.id = 1;
-    device.name = "External FX";
-    device.pluginId = "insert";
-
-    auto json = ProjectSerializer::serializeDeviceInfo(device);
-
-    DeviceInfo restored;
-    REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, restored));
-    REQUIRE_FALSE(restored.isFrozen());
 }

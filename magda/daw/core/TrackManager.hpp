@@ -377,10 +377,6 @@ class TrackManager {
     void setChainBypassed(TrackId trackId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
-    // External-insert freeze state (#1623). Pass nullptr to clear (unfreeze).
-    void setDeviceExternalFreeze(TrackId trackId, DeviceId deviceId,
-                                 std::shared_ptr<const struct ExternalInsertFreeze> freeze);
-
     // Drum-kit row metadata lives on the device instance — it's a physical
     // property of the plugin (note N triggers a specific sound), not of any
     // individual clip. The drum grid reads from these on every clip routed

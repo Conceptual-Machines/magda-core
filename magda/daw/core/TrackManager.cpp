@@ -2193,14 +2193,6 @@ void TrackManager::setDeviceBypassedByPath(const ChainNodePath& devicePath, bool
     }
 }
 
-void TrackManager::setDeviceExternalFreeze(TrackId trackId, DeviceId deviceId,
-                                           std::shared_ptr<const ExternalInsertFreeze> freeze) {
-    if (auto* device = getDevice(trackId, deviceId)) {
-        device->externalFreeze = std::move(freeze);
-        notifyTrackDevicesChanged(trackId);
-    }
-}
-
 void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
     if (auto* track = getTrack(trackId)) {
         std::vector<ChainNodePath> affectedDevices;

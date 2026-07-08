@@ -14,9 +14,8 @@ MIDI synth). Full design is in `EXTERNAL_INSERT_PLAN.md`. Issue: #1623.
   - **External Instrument** (`isInstrument=true`): MIDI send + audio return.
 - **Slot UI** (`ExternalInsertUI`): a send picker (audio-out for FX, MIDI-out for
   instrument), an audio-return picker, a manual-latency (ms) field, and a
-  **Freeze** button with a status line (fourth row of the slot body — make the
-  device slot expanded/tall enough to see it). Selections write straight to the
-  live plugin's `outputDevice`/`inputDevice`/`manualAdjustMs` +
+  status line that carries the feedback-port warning. Selections write straight
+  to the live plugin's `outputDevice`/`inputDevice`/`manualAdjustMs` +
   `updateDeviceTypes()`.
 - **Routing mirror**: track-level MIDI-out / audio-in go read-only and mirror the
   device's selection while an External Instrument is on the track
@@ -29,26 +28,29 @@ MIDI synth). Full design is in `EXTERNAL_INSERT_PLAN.md`. Issue: #1623.
   uses them. Ports the user enabled in Audio Settings are never touched. The
   pickers list disabled ports too (picking one enables it). Triggers:
   devicePropertyChanged, trackDevicesChanged, tracksChanged (post-load).
-- **MIDI feedback guard (#1623)**: `MidiInputRouter` drops the send target's own
-  input port from the track's MIDI routing (matched by port name, both "All
-  Inputs" and explicit selection), so the synth cannot loop its own notes back
-  through the insert send. Re-applied when the send target changes.
+- **MIDI feedback guard (#1623)**: `MidiInputRouter` drops the send target's
+  own input ports from the track's "All Inputs" routing (same-hardware name
+  matching, e.g. 'monologue KBD/KNOB' vs 'monologue MIDI OUT'), so the synth
+  cannot loop or double its own notes through the insert send. Arm-gated: a
+  record-armed track re-admits the ports so the synth's keyboard records
+  (Local Control off on the synth). Explicit port selection and session-slot
+  recording are never filtered. Transport stop flushes note-offs + All Notes
+  Off through every insert send so hardware never hangs.
 - **Feedback-port warning (#1623)**: the slot status line warns when another
   enabled insert uses the same send or return port, or the return equals the
   send.
-- **Freeze-to-audio (#1623 main item)**: offline export cannot capture outboard
-  gear, so Freeze runs a real-time pass — plays the track's clip range through
-  the live engine, records the insert's PDC-aligned audio return via a hidden
-  `InsertCapturePlugin` placed after the insert, then replaces the track's
-  clips with the captured clip, bypasses the insert + everything before it in
-  the chain, and stores the whole prior state on the device
-  (`DeviceInfo::externalFreeze`, persisted). Unfreeze restores exactly.
-  Orchestrated by `InsertFreezeService` (owned by TracktionEngineWrapper,
-  reachable via `AudioEngine::getInsertFreezeService`). Export shows a warning
-  when an enabled, un-frozen external insert exists (the track would be silent).
+- **Export capture pass (#1623 main item)**: offline export cannot capture
+  outboard gear, so export runs it under the hood — when a routed insert
+  exists, the export range first plays once in real time (progress + Cancel)
+  while a hidden `InsertCapturePlugin` after each insert records its
+  PDC-aligned return to a temp wav; the taps then flip to playback mode and
+  substitute the recordings during the offline render (gated on
+  `PluginRenderContext::isRendering`), then vanish with their files. No button,
+  no project mutation. Orchestrated by `InsertRenderCaptureService` (owned by
+  TracktionEngineWrapper).
 
 Build + `magda_tests` (incl. `test_external_insert_registry.cpp`,
-`test_insert_freeze.cpp`) are green. **Runtime behaviour is compile/test
+`test_insert_capture.cpp`) are green. **Runtime behaviour is compile/test
 verified only — the hardware paths need a real interface.**
 
 ## How to test
@@ -69,27 +71,21 @@ verified only — the hardware paths need a real interface.**
      notes must NOT double (the synth's port is dropped from the track input).
      Local Control off on the synth remains the fix for the synth triggering
      its own voice.
-4. **Freeze**: put MIDI clips on the instrument track, press **Freeze** on the
-   device slot. The transport plays the clip range in real time (status shows
-   progress; pressing stop or Cancel aborts). Afterwards the track holds one
-   audio clip of the synth's return, the insert + upstream devices are
-   bypassed, and offline export now bounces correctly. **Verify alignment** of
-   the frozen clip against other tracks; trim `Latency (ms)` and re-freeze if
-   the hardware round-trip needs compensation. **Unfreeze** restores the
-   original clips and bypass states.
-5. Export with an un-frozen external insert: the export dialog flow warns and
-   offers Export Anyway / Cancel.
-6. Save + reload: send/return + latency persist; a frozen track stays frozen
-   (unfreeze after reload must restore the stashed clips); saved ports on a
-   fresh machine/device enable themselves on load.
+4. **Record the synth's keys**: arm the track (its ports come back into "All
+   Inputs"), set Local Control OFF on the synth, record. Notes must land in
+   the clip and nothing may hang after stop.
+5. **Export**: with the insert routed, exporting first plays the range in
+   real time (progress box, Cancel aborts the export) and the rendered file
+   must contain the hardware audio. **Verify alignment** against other tracks;
+   trim `Latency (ms)` and re-export if the round-trip needs compensation.
+6. Save + reload: send/return + latency persist; saved ports on a fresh
+   machine/device enable themselves on load.
 
 ## Known gaps / things to watch
 
-- **Freeze capture alignment** is derived from the block edit-time at the tap
-  node (auto-PDC + `manualAdjustMs` included). Needs verification with a
-  physical loopback; a constant offset means trimming `manualAdjustMs`.
-- The freeze pass records arrangement clips only; session-view clips on the
-  track are left untouched (and un-stashed).
+- **Capture alignment** is derived from the block edit-time at the tap node
+  (auto-PDC + `manualAdjustMs` included). Needs verification with a physical
+  loopback; a constant offset means trimming `manualAdjustMs`.
 - Port-conflict warnings refresh when a slot rebuilds or its own selection
   changes — another slot's change doesn't live-refresh an open slot.
 - Track MIDI-out suppression is the read-only mirror (not hidden).
@@ -97,12 +93,14 @@ verified only — the hardware paths need a real interface.**
 
 ## Key files
 
-- `magda/daw/audio/plugins/InsertCapturePlugin.{hpp,cpp}` — hidden capture tap.
-- `magda/daw/audio/insert_freeze/InsertFreezeService.{hpp,cpp}` — freeze
-  orchestration; `CaptureWindowMath.hpp` — block/window mapping (unit tested).
+- `magda/daw/audio/plugins/InsertCapturePlugin.{hpp,cpp}` — hidden tap
+  (capture + render-playback modes).
+- `magda/daw/audio/insert_capture/InsertRenderCaptureService.{hpp,cpp}` —
+  export capture pass; `CaptureWindowMath.hpp` — block/window mapping (unit
+  tested in `test_insert_capture.cpp`).
 - `magda/daw/audio/ExternalInsertDeviceEnablement.{hpp,cpp}` — port auto-enable.
 - `magda/daw/audio/midi/MidiInputRouter.cpp` — sendback feedback guard.
-- `magda/daw/core/ExternalInsertFreeze.hpp` — persisted freeze state
-  (`DeviceInfo::externalFreeze`, serialized in `TrackSerializer.cpp`).
+- `magda/daw/engine/TracktionEngineWrapperTransport.cpp` — note-off flush on
+  stop (`sendAllNotesOffToExternalInserts`).
 - `magda/daw/ui/components/chain/slot/ExternalInsertUI.{hpp,cpp}` — slot UI.
-- `magda/daw/ui/windows/MainWindowExport.cpp` — unfrozen-insert export warning.
+- `magda/daw/ui/windows/MainWindowExport.cpp` — capture pass wiring + progress.

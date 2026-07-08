@@ -127,12 +127,6 @@ class AudioEngine : public AudioEngineListener {
     virtual class AudioBridge* getAudioBridge() = 0;
     virtual const class AudioBridge* getAudioBridge() const = 0;
 
-    // ===== External-insert freeze (#1623) =====
-    // Null when unavailable (headless runtime, no edit loaded).
-    virtual class InsertFreezeService* getInsertFreezeService() {
-        return nullptr;
-    }
-
     // ===== MIDI Management =====
     virtual class MidiBridge* getMidiBridge() = 0;
     virtual const class MidiBridge* getMidiBridge() const = 0;

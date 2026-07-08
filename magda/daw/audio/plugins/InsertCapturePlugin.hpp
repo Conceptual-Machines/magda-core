@@ -12,18 +12,25 @@ namespace magda {
 namespace te = tracktion;
 
 /**
- * @brief Hidden audio-thread plugin that records a capture window of the track
- *        signal to a wav file — the capture half of external-insert freeze.
+ * @brief Hidden audio-thread plugin that bridges an external insert's audio
+ *        return into offline export (#1623).
  *
  * Placed directly after a te::InsertPlugin in the TE plugin list (never in the
  * MAGDA device model), so the signal it sees is the insert's audio return,
- * PDC-aligned into the timeline. While armed it writes every block that
- * intersects the capture window to a juce::AudioFormatWriter::ThreadedWriter
- * (lock-free FIFO + background write thread) and flags completion once the
- * window has fully passed. Transparent passthrough at all times.
+ * PDC-aligned into the timeline. Two mutually exclusive modes:
+ *
+ * - **Capture** (live pass): writes every block that intersects the capture
+ *   window to a juce::AudioFormatWriter::ThreadedWriter (lock-free FIFO +
+ *   background write thread) and flags completion once the window has fully
+ *   passed. Transparent passthrough; never active while rendering.
+ * - **Playback** (offline render): REPLACES the buffer with the captured file
+ *   at the same chain position, substituting the hardware return the offline
+ *   graph cannot produce. Gated on PluginRenderContext::isRendering, so the
+ *   live graph passes through untouched and file reads never happen on the
+ *   live audio thread.
  *
  * Registered via MagdaEngineBehaviour::createCustomPlugin(); orchestrated by
- * InsertFreezeService.
+ * InsertRenderCaptureService.
  */
 class InsertCapturePlugin : public te::Plugin {
   public:
@@ -87,6 +94,15 @@ class InsertCapturePlugin : public te::Plugin {
         destroying it. */
     void stopCapture(bool keepFile);
 
+    /** Arm offline-render playback of a previously captured window: while the
+        context is rendering, the buffer is REPLACED with the file's content at
+        the window position (silence outside it). No effect on live playback.
+        Returns false if the file cannot be read. */
+    bool startPlayback(const juce::File& wavFile, double windowStartSec, double windowEndSec);
+
+    /** Disarm playback. Call while no offline render is running. */
+    void stopPlayback();
+
     bool isCapturing() const {
         return activeWriter_.load(std::memory_order_acquire) != nullptr;
     }
@@ -102,9 +118,15 @@ class InsertCapturePlugin : public te::Plugin {
     static constexpr int kNumChannels = 2;
 
   private:
-    juce::TimeSliceThread writeThread_{"Insert Freeze Writer"};
+    juce::TimeSliceThread writeThread_{"Insert Capture Writer"};
     std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> threadedWriter_;
     std::atomic<juce::AudioFormatWriter::ThreadedWriter*> activeWriter_{nullptr};
+
+    // Offline-render playback state. The reader is only dereferenced when the
+    // render context reports isRendering, i.e. on render threads — never on
+    // the live audio thread — so plain blocking file reads are fine.
+    std::unique_ptr<juce::AudioFormatReader> playbackReader_;
+    std::atomic<juce::AudioFormatReader*> activeReader_{nullptr};
 
     // Window bounds are written before activeWriter_ is published (release) and
     // only read on the audio thread after the acquire load — plain doubles.

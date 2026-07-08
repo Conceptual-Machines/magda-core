@@ -153,81 +153,28 @@ they stay live-consistent.
 
 Graceful "device missing" state when a saved device name is absent on load.
 
-## Freeze-to-audio capture (issue #1623 main item)
+## Export capture pass (issue #1623 main item)
 
 Offline export cannot capture outboard gear: TE's `Renderer` runs a private
-offline node player, so the insert send transmits nothing and the return node is
-absent (`createInsertReturnNode` resolves the live input device, which does not
-exist offline). `realTimeRender` only paces the offline render to wall-clock; it
-never routes through hardware. The fix is a real-time capture pass that turns
-the insert's return into a normal audio clip, after which offline export just
-works.
+offline node player, so the insert send transmits nothing and the return is
+silent. `realTimeRender` only paces the offline render to wall-clock; it never
+routes through hardware.
 
-### Capture mechanism: hidden tap plugin after the InsertNode
-
-The graph wires an enabled insert as `InsertNode(chain-so-far, insert,
-returnNode)` where the post-InsertNode signal IS the return audio, PDC-aligned
-into the timeline (`manualAdjustMs` included). A disabled insert is skipped
-entirely (passthrough). So the capture point is a hidden
-**`InsertCapturePlugin`** placed directly after the insert in
-`teTrack->pluginList` — same pattern as `FollowerSourceTapPlugin`
-(`PluginManager::ensureFollowerSourceTap`): created via the plugin cache from a
-`ValueTree` with a custom `xmlTypeName`, registered in
-`MagdaEngineBehaviour::createCustomPlugin`, never in the browser or the MAGDA
-device model, removed with `deleteFromParent()` when done.
-
-The plugin is a transparent passthrough. When armed with a capture window
-`[start, end)` (edit seconds) it writes blocks that intersect the window to a
-`juce::AudioFormatWriter::ThreadedWriter` (lock-free FIFO + background write
-thread — the standard JUCE recording pattern), zero-padding to align the exact
-start sample, and flags completion through an atomic once the window has fully
-passed. Writer lifecycle (create/finalise) stays on the message thread.
-
-### Orchestration (message thread)
-
-`freeze(trackId, deviceId)`:
-
-1. Compute the capture range: first clip start → last clip end on the track,
-   plus a release tail (constant, ~2 s). Beats in the model; convert to seconds
-   at the TE boundary.
-2. Create the capture wav under the project media dir (`Freeze/`), insert the
-   capture plugin after the insert, arm it with the range.
-3. Disable transport looping for the pass, locate slightly before range start,
-   `transport.play()`. A small progress window (timer-driven progress + Cancel —
-   the transport plays in real time, the user hears the pass) tracks the
-   plugin's completion atomic.
-4. On completion or cancel: stop transport, restore position/loop, remove the
-   plugin, finalise the writer (cancel deletes the partial file).
-5. On success:
-   - `ClipManager::createAudioClipBeats` at range start with the capture file +
-     `syncClipToEngine` (same landing path as `recordingFinished`).
-   - Mute the track's content clips (store their ids for unfreeze).
-   - Bypass the insert **and every device before it** in the chain (store prior
-     bypass states). The captured signal is post-insert (wet): with the insert
-     disabled the frozen clip passes through the chain, and pre-insert devices
-     must not re-process it. Post-insert devices stay live — only the
-     hardware-dependent part of the chain is frozen, everything after remains
-     editable and renders offline as normal.
-   - Persist frozen state on the device (frozen flag, capture file, frozen clip
-     id, muted clip ids, saved bypass states).
-
-`unfreeze(trackId, deviceId)`: delete the frozen clip, unmute the stored clips,
-restore bypass states, clear the state.
-
-### UI
-
-`ExternalInsertUI` gets a Freeze/Unfreeze button (disabled until both send and
-return are configured) and a frozen badge. The export dialog warns when any
-enabled, un-frozen external insert exists — the render would be silent for that
-track (shares the guardrail infra below).
-
-### Alignment note
-
-The capture stamps file position from the block's edit time at the tap node, so
-the captured clip aligns exactly as the live graph aligns the return
-(auto-PDC + `manualAdjustMs`). Any residual constant offset heard on real
-hardware is what `manualAdjustMs` is for. Needs verification with a physical
-loopback.
+The fix runs entirely under the hood — no button, no project mutation. When
+export detects a routed external insert, it first plays the export range once
+in real time (progress + Cancel in the export flow) while a hidden
+**`InsertCapturePlugin`** placed directly after each insert records its
+PDC-aligned audio return to a temp wav (`InsertRenderCaptureService`,
+same hidden-plugin pattern as `FollowerSourceTapPlugin`; the chain-order sync
+skips it). The taps then flip to playback mode and stay in the graph: during
+the offline render — and only then, gated on
+`PluginRenderContext::isRendering` — each tap REPLACES the chain signal at its
+position with the captured file, substituting exactly what the hardware
+answered. Capture and playback index the same edit-time at the same graph
+position, so alignment matches live playback by construction (residual
+hardware round-trip offset is what `manualAdjustMs` trims). After the render
+the taps and temp files are removed. Works for any number of inserts, even
+several on one track, in a single pass.
 
 ## Phasing
 
@@ -246,9 +193,9 @@ loopback.
 5. **Tests & guardrails** — DONE: registry + freeze round-trip + capture-window
    tests; slot status line warns on shared send/return ports; MIDI sendback
    feedback guard in `MidiInputRouter`; still disallowed in racks.
-6. **Freeze-to-audio capture** — DONE (section above): `InsertCapturePlugin` +
-   `InsertFreezeService` + slot Freeze button + export warning. Hardware
-   alignment verification outstanding.
+6. **Export capture pass** — DONE (section above): `InsertCapturePlugin`
+   (capture + render-playback modes) + `InsertRenderCaptureService`, run
+   automatically by export. Hardware alignment verification outstanding.
 
 ## What's free vs. real effort
 
