@@ -412,6 +412,9 @@ target_sources(magda_daw PRIVATE
     plugins/SidechainPlugin.cpp
     plugins/AudioSidechainMonitorPlugin.cpp
     plugins/FollowerSourceTapPlugin.cpp
+    plugins/InsertCapturePlugin.cpp
+    insert_freeze/InsertFreezeService.cpp
+    ExternalInsertDeviceEnablement.cpp
     plugins/MidiReceivePlugin.cpp
     plugins/MagdaSamplerPlugin.cpp
     plugins/mutable/MutableElementsPlugin.cpp

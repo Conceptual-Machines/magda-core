@@ -5,6 +5,8 @@
 #include <vector>
 
 #include "audio/AudioBridge.hpp"
+#include "core/ExternalInsertFreeze.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "themes/DarkTheme.hpp"
@@ -47,14 +49,39 @@ int idForName(const std::map<int, juce::String>& names, const juce::String& curr
     return 0;
 }
 
-// Build picker options from te::InsertPlugin::getPossibleDeviceNames, keeping
-// only audio (or MIDI) endpoints. The returned names round-trip into the
-// plugin's input/output device CachedValues verbatim.
+// Build picker options from the device manager, keeping only audio (or MIDI)
+// endpoints. Unlike te::InsertPlugin::getPossibleDeviceNames this lists
+// DISABLED ports too — picking one auto-enables it (#1623 Phase 3,
+// ExternalInsertDeviceEnablement). The names round-trip into the plugin's
+// input/output device CachedValues verbatim.
 std::vector<magda::RoutingSelector::RoutingOption> buildOptions(
     te::Engine& engine, bool forInput, bool wantMidi, std::map<int, juce::String>& names) {
-    juce::StringArray devices, aliases;
-    juce::BigInteger hasAudio, hasMidi;
-    te::InsertPlugin::getPossibleDeviceNames(engine, devices, aliases, hasAudio, hasMidi, forInput);
+    juce::StringArray devices;
+    auto& dm = engine.getDeviceManager();
+    if (forInput) {
+        for (int i = 0; i < dm.getNumInputDevices(); ++i) {
+            auto* in = dm.getInputDevice(i);
+            if (in == nullptr)
+                continue;
+            const bool isMidi = dynamic_cast<te::MidiInputDevice*>(in) != nullptr;
+            if (isMidi != wantMidi)
+                continue;
+            devices.add(in->getName());
+        }
+    } else {
+        for (int i = 0; i < dm.getNumOutputDevices(); ++i) {
+            auto* out = dm.getOutputDeviceAt(i);
+            if (out == nullptr)
+                continue;
+            auto* midiOut = dynamic_cast<te::MidiOutputDevice*>(out);
+            if ((midiOut != nullptr) != wantMidi)
+                continue;
+            // Same exclusion TE's own enumeration applies.
+            if (midiOut != nullptr && midiOut->isConnectedToExternalController())
+                continue;
+            devices.add(out->getName());
+        }
+    }
 
     std::vector<magda::RoutingSelector::RoutingOption> options;
     options.push_back({0, "None", false});
@@ -62,9 +89,6 @@ std::vector<magda::RoutingSelector::RoutingOption> buildOptions(
 
     bool addedSeparator = false;
     for (int i = 0; i < devices.size(); ++i) {
-        const bool ok = wantMidi ? hasMidi[i] : hasAudio[i];
-        if (!ok)
-            continue;
         if (!addedSeparator) {
             options.push_back({-1, "", true});
             addedSeparator = true;
@@ -74,6 +98,53 @@ std::vector<magda::RoutingSelector::RoutingOption> buildOptions(
         names[id] = devices[i];
     }
     return options;
+}
+
+const magda::DeviceInfo* deviceForPath(const magda::ChainNodePath& path) {
+    if (!path.isValid())
+        return nullptr;
+    return magda::TrackManager::getInstance().getDevice(path.trackId, path.getDeviceId());
+}
+
+// Feedback-port guard (#1623): two inserts driving the same hardware send, or
+// pulling the same return, silently double signals / cross-feed. Returns a
+// warning string when another enabled external insert shares one of this
+// insert's ports, empty otherwise.
+juce::String findPortConflict(const magda::ChainNodePath& myPath, te::InsertPlugin& mine) {
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
+    if (bridge == nullptr)
+        return {};
+
+    const auto mySend = mine.outputDevice.get();
+    const auto myReturn = mine.inputDevice.get();
+    if (mySend.isEmpty() && myReturn.isEmpty())
+        return {};
+    if (mySend.isNotEmpty() && mySend == myReturn)
+        return "Return uses the same port as the send";
+
+    for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
+        for (const auto& element : track.chain.fxChainElements) {
+            if (!magda::isDevice(element))
+                continue;
+            const auto& device = magda::getDevice(element);
+            if (device.bypassed || magda::classifyInternalDevice(device.pluginId) !=
+                                       magda::InternalDeviceKind::ExternalInsert)
+                continue;
+            auto path = magda::ChainNodePath::topLevelDevice(track.id, device.id);
+            if (path == myPath)
+                continue;
+            auto plugin = bridge->getPlugin(path);
+            auto* other = dynamic_cast<te::InsertPlugin*>(plugin.get());
+            if (other == nullptr)
+                continue;
+            if (mySend.isNotEmpty() && other->outputDevice.get() == mySend)
+                return "Send port also used on " + track.name;
+            if (myReturn.isNotEmpty() && other->inputDevice.get() == myReturn)
+                return "Return port also used on " + track.name;
+        }
+    }
+    return {};
 }
 
 }  // namespace
@@ -111,6 +182,22 @@ ExternalInsertUI::ExternalInsertUI(bool isInstrument) : isInstrument_(isInstrume
         if (auto* insert = liveInsert(devicePath_))
             insert->manualAdjustMs = latencyValue_.getText().getDoubleValue();
     };
+
+    freezeButton_.setButtonText("Freeze");
+    freezeButton_.onClick = [this] { onFreezeClicked(); };
+    addAndMakeVisible(freezeButton_);
+
+    freezeStatus_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    freezeStatus_.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    freezeStatus_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(freezeStatus_);
+}
+
+magda::InsertFreezeService* ExternalInsertUI::freezeService() const {
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
+        return engine->getInsertFreezeService();
+    return nullptr;
 }
 
 void ExternalInsertUI::setDevicePath(const magda::ChainNodePath& path) {
@@ -134,6 +221,7 @@ void ExternalInsertUI::rebuildFromPlugin() {
             ins->outputDevice = (id <= 0) ? juce::String() : sendNames_[id];
             ins->updateDeviceTypes();
             rebuildPlaybackGraph(*ins, devicePath_);
+            refreshFreezeRow();
         }
     };
 
@@ -145,11 +233,94 @@ void ExternalInsertUI::rebuildFromPlugin() {
             ins->inputDevice = (id <= 0) ? juce::String() : returnNames_[id];
             ins->updateDeviceTypes();
             rebuildPlaybackGraph(*ins, devicePath_);
+            refreshFreezeRow();
         }
     };
 
     latencyValue_.setText(juce::String(insert->manualAdjustMs.get(), 1),
                           juce::dontSendNotification);
+
+    refreshFreezeRow();
+}
+
+void ExternalInsertUI::refreshFreezeRow() {
+    const auto* device = deviceForPath(devicePath_);
+    auto* service = freezeService();
+    const bool frozen = device != nullptr && device->isFrozen();
+    const bool freezing = service != nullptr && device != nullptr &&
+                          service->isFreezing(devicePath_.trackId, device->id);
+
+    if (freezing)
+        freezeButton_.setButtonText("Cancel");
+    else
+        freezeButton_.setButtonText(frozen ? "Unfreeze" : "Freeze");
+    freezeButton_.setEnabled(service != nullptr && device != nullptr &&
+                             (freezing || frozen || !service->isFreezing()));
+
+    if (frozen && !freezing) {
+        freezeStatus_.setText("Frozen", juce::dontSendNotification);
+    } else if (!freezing) {
+        // The status line doubles as the feedback-port warning while idle.
+        juce::String conflict;
+        if (auto* insert = liveInsert(devicePath_))
+            conflict = findPortConflict(devicePath_, *insert);
+        freezeStatus_.setText(conflict, juce::dontSendNotification);
+    }
+
+    // While frozen the insert is bypassed and the routing is baked into the
+    // captured clip — lock the controls so the state can't drift.
+    const bool lock = frozen || freezing;
+    sendSelector_->setEnabled(!lock);
+    returnSelector_->setEnabled(!lock);
+    latencyValue_.setEnabled(!lock);
+}
+
+void ExternalInsertUI::onFreezeClicked() {
+    auto* service = freezeService();
+    const auto* device = deviceForPath(devicePath_);
+    if (service == nullptr || device == nullptr)
+        return;
+
+    if (service->isFreezing(devicePath_.trackId, device->id)) {
+        service->cancelFreeze();
+        return;
+    }
+
+    juce::String error;
+    if (device->isFrozen()) {
+        const bool ok = service->unfreeze(devicePath_.trackId, device->id, error);
+        refreshFreezeRow();
+        if (!ok)
+            freezeStatus_.setText(error, juce::dontSendNotification);
+        return;
+    }
+
+    if (!service->startFreeze(devicePath_.trackId, device->id, error)) {
+        freezeStatus_.setText(error, juce::dontSendNotification);
+        return;
+    }
+    freezeStatus_.setText("Capturing... 0%", juce::dontSendNotification);
+    refreshFreezeRow();
+    startTimerHz(10);
+}
+
+void ExternalInsertUI::timerCallback() {
+    auto* service = freezeService();
+    if (service != nullptr && service->isFreezing(devicePath_.trackId, devicePath_.getDeviceId())) {
+        freezeStatus_.setText(
+            "Capturing... " +
+                juce::String(juce::roundToInt(service->getActiveFreezeProgress() * 100.0)) + "%",
+            juce::dontSendNotification);
+        return;
+    }
+
+    // Pass ended. A successful freeze also rebuilds the slot via the device
+    // model notification; refresh covers the cancelled/failed case.
+    stopTimer();
+    refreshFreezeRow();
+    const auto* device = deviceForPath(devicePath_);
+    if (device != nullptr && !device->isFrozen())
+        freezeStatus_.setText("Freeze cancelled", juce::dontSendNotification);
 }
 
 void ExternalInsertUI::resized() {
@@ -168,6 +339,11 @@ void ExternalInsertUI::resized() {
     layoutRow(sendLabel_, *sendSelector_);
     layoutRow(returnLabel_, *returnSelector_);
     layoutRow(latencyLabel_, latencyValue_);
+
+    auto freezeRow = bounds.removeFromTop(rowHeight);
+    freezeButton_.setBounds(freezeRow.removeFromLeft(labelWidth));
+    freezeRow.removeFromLeft(gap);
+    freezeStatus_.setBounds(freezeRow);
 }
 
 }  // namespace magda::daw::ui

@@ -7,6 +7,7 @@
 #include "../audio/plugins/FaustInstrumentPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
 #include "../audio/plugins/FollowerSourceTapPlugin.hpp"
+#include "../audio/plugins/InsertCapturePlugin.hpp"
 #include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "../audio/plugins/LevelsPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
@@ -122,6 +123,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == FollowerSourceTapPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FollowerSourceTapPlugin");
             return new FollowerSourceTapPlugin(info);
+        }
+        if (type == InsertCapturePlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating InsertCapturePlugin");
+            return new InsertCapturePlugin(info);
         }
         if (type == daw::audio::FaustPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");

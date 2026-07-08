@@ -22,6 +22,7 @@
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
+#include "plugins/InsertCapturePlugin.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
@@ -894,8 +895,21 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // Move after the previous desired plugin
                 int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
                 int curVtIdx = listState.indexOf(desiredOrder[i]->state);
-                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1) {
-                    listState.moveChild(curVtIdx, prevVtIdx + 1, nullptr);
+                // A freeze pass pins a hidden InsertCapturePlugin directly
+                // after its insert; skip it so a mid-pass sync doesn't
+                // displace it (and with it, the capture point).
+                int expectedVtIdx = prevVtIdx + 1;
+                while (expectedVtIdx < listState.getNumChildren()) {
+                    auto child = listState.getChild(expectedVtIdx);
+                    if (child.hasType(te::IDs::PLUGIN) &&
+                        child.getProperty(te::IDs::type).toString() ==
+                            InsertCapturePlugin::xmlTypeName)
+                        ++expectedVtIdx;
+                    else
+                        break;
+                }
+                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != expectedVtIdx) {
+                    listState.moveChild(curVtIdx, expectedVtIdx, nullptr);
                     pluginOrderChanged = true;
                 }
             }

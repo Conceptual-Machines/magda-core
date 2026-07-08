@@ -6,6 +6,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
@@ -235,6 +236,41 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
                                                tr("dialogs.error.export_no_edit"));
         return;
     }
+
+    // The offline renderer cannot capture outboard gear: an active External
+    // FX / External Instrument insert renders silent unless its return has
+    // been frozen to an audio clip (#1623). Warn before exporting.
+    juce::StringArray unfrozenTracks;
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        for (const auto& element : track.chain.fxChainElements) {
+            if (!magda::isDevice(element))
+                continue;
+            const auto& device = magda::getDevice(element);
+            if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert &&
+                !device.bypassed && !device.isFrozen()) {
+                unfrozenTracks.addIfNotAlreadyThere(track.name);
+            }
+        }
+    }
+    if (!unfrozenTracks.isEmpty()) {
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon, tr("export.alert.unfrozen_inserts_title"),
+            tr("export.alert.unfrozen_inserts_body")
+                .replace("{0}", unfrozenTracks.joinIntoString("\n")),
+            tr("export.alert.unfrozen_inserts_confirm"), tr("export.alert.unfrozen_inserts_cancel"),
+            nullptr, juce::ModalCallbackFunction::create([this, settings, engine](int result) {
+                if (result == 1)
+                    launchAudioExport(settings, engine);
+            }));
+        return;
+    }
+
+    launchAudioExport(settings, engine);
+}
+
+void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
+                                   TracktionEngineWrapper* engine) {
+    namespace te = tracktion;
 
     auto* edit = engine->getEdit();
 

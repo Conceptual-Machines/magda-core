@@ -32,6 +32,7 @@ set(TEST_SOURCES
     test_plugin_loading.cpp
     test_plugin_format.cpp
     test_external_insert_registry.cpp
+    test_insert_freeze.cpp
     test_plugin_window_manager.cpp
     test_plugin_capabilities.cpp
     test_plugin_preferences.cpp

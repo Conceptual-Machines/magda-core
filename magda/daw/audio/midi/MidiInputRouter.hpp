@@ -60,6 +60,11 @@ class MidiInputRouter : private juce::AsyncUpdater {
     void applyPendingRoutes();
     void handlePlaybackContextTick();
 
+    /// Re-applies a track's MIDI route after its External Instrument send
+    /// target changed, so the sendback feedback guard (#1623) reflects the
+    /// new port.
+    void reapplyExternalInstrumentSendbackGuard(TrackId trackId);
+
   private:
     /// Pushes note on/off events from a source track's MIDI input device into
     /// the recording-preview queue, one event per armed destination track.
@@ -133,6 +138,13 @@ class MidiInputRouter : private juce::AsyncUpdater {
     bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
                                 const juce::String& liveName) const;
     void removeSurfaceOnlyMidiInputTargets();
+
+    /// Feedback guard (#1623): true when this input port belongs to the
+    /// hardware an External Instrument on this track sends MIDI to — routing
+    /// it back in would loop the synth's own notes through the insert send
+    /// (doubled and hanging notes). Matched by port name: hardware exposes
+    /// the same device name on its in and out ports.
+    bool isExternalInstrumentSendbackInput(TrackId trackId, const juce::String& inputName) const;
 
     void handleAsyncUpdate() override;
 

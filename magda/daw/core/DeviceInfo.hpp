@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <memory>
 #include <optional>
 
 #include "KitRow.hpp"
@@ -209,6 +210,16 @@ struct DeviceInfo {
 
     // Plugin loading state (Loading while async load is in-flight)
     DeviceLoadState loadState = DeviceLoadState::Loaded;
+
+    // External-insert freeze state (#1623): non-null while this External FX /
+    // External Instrument device's audio return has been captured to an audio
+    // clip so offline export can bounce it. Immutable once published — replace
+    // the pointer, never mutate the pointee. See ExternalInsertFreeze.hpp.
+    std::shared_ptr<const struct ExternalInsertFreeze> externalFreeze;
+
+    bool isFrozen() const {
+        return externalFreeze != nullptr;
+    }
 
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)

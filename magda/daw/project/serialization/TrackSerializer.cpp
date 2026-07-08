@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "../../core/ExternalInsertFreeze.hpp"
 #include "../../core/InternalDeviceKind.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
@@ -410,6 +411,23 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
     obj->setProperty("aiPanelOpen", device.aiPanelOpen);
 
+    // External-insert freeze state (#1623)
+    if (device.externalFreeze != nullptr) {
+        const auto& freeze = *device.externalFreeze;
+        auto* freezeObj = new juce::DynamicObject();
+        freezeObj->setProperty("captureFile", freeze.captureFile);
+        freezeObj->setProperty("frozenClipId", freeze.frozenClipId);
+        juce::Array<juce::var> stashed;
+        for (const auto& clip : freeze.stashedClips)
+            stashed.add(serializeClipInfo(clip));
+        freezeObj->setProperty("stashedClips", juce::var(stashed));
+        juce::Array<juce::var> bypassed;
+        for (auto deviceId : freeze.bypassedDevices)
+            bypassed.add(deviceId);
+        freezeObj->setProperty("bypassedDevices", juce::var(bypassed));
+        obj->setProperty("externalFreeze", juce::var(freezeObj));
+    }
+
     // Parameters
     juce::Array<juce::var> paramsArray;
     for (const auto& param : device.parameters) {
@@ -546,6 +564,28 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
     if (obj->hasProperty("aiPanelOpen"))
         outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
+
+    // External-insert freeze state (#1623). Stashed clips are restored with
+    // beats-authoritative fields; derived seconds are recomputed against the
+    // live tempo at unfreeze (deriveTimesFromBeats), so no tempo is needed here.
+    if (auto freezeVar = obj->getProperty("externalFreeze"); freezeVar.isObject()) {
+        auto* freezeObj = freezeVar.getDynamicObject();
+        auto freeze = std::make_shared<ExternalInsertFreeze>();
+        freeze->captureFile = freezeObj->getProperty("captureFile").toString();
+        freeze->frozenClipId = freezeObj->getProperty("frozenClipId");
+        if (auto stashedVar = freezeObj->getProperty("stashedClips"); stashedVar.isArray()) {
+            for (const auto& clipVar : *stashedVar.getArray()) {
+                ClipInfo clip;
+                if (!deserializeClipInfo(clipVar, clip))
+                    return false;
+                freeze->stashedClips.push_back(std::move(clip));
+            }
+        }
+        if (auto bypassedVar = freezeObj->getProperty("bypassedDevices"); bypassedVar.isArray())
+            for (const auto& idVar : *bypassedVar.getArray())
+                freeze->bypassedDevices.push_back(static_cast<DeviceId>(static_cast<int>(idVar)));
+        outDevice.externalFreeze = std::move(freeze);
+    }
 
     // Parameters
     auto paramsVar = obj->getProperty("parameters");

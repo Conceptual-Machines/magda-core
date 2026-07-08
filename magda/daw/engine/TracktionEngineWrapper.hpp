@@ -19,6 +19,7 @@ namespace magda {
 
 // Forward declarations
 class AudioBridge;
+class InsertFreezeService;
 class MagdaApi;
 class MidiBridge;
 class PluginScanCoordinator;
@@ -235,6 +236,14 @@ class TracktionEngineWrapper : public AudioEngine,
     }
     const AudioBridge* getAudioBridge() const override {
         return audioBridge_.get();
+    }
+
+    /**
+     * @brief Freeze-to-audio service for External FX / Instrument devices (#1623)
+     * @return Pointer to the service, or nullptr when unavailable (headless)
+     */
+    InsertFreezeService* getInsertFreezeService() override {
+        return insertFreezeService_.get();
     }
 
     /**
@@ -550,6 +559,9 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Session recorder for recording session performances to arrangement
     std::unique_ptr<SessionRecorder> sessionRecorder_;
+
+    // Freeze-to-audio for External FX / Instrument devices (#1623)
+    std::unique_ptr<InsertFreezeService> insertFreezeService_;
 
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;
