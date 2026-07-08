@@ -50,6 +50,7 @@ enum class InternalDeviceKind {
     Strum,
     StepSequencer,
     PolyStepSequencer,
+    Sidechain,  // MIDI-triggered volume-shaper insert (issue #1591)
     SidechainMonitor,
     AudioSidechainMonitor,
     InstrumentMeterTap,

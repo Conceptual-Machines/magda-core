@@ -1564,7 +1564,12 @@ void RackSyncManager::syncLFOValuesToVisuals() {
                 overlayModifierVisuals(magdaMod, it->second.get());
                 continue;
             }
-            const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running;
+            // Level-curve mods overlay unconditionally too: the one-shot
+            // latch in the curve holder keeps the TE value meaningful at
+            // idle, and the sim's separately integrated phase would fight
+            // the overlay's (dot jumping backwards).
+            const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) ||
+                                 magdaMod.running || magdaMod.invertOutput;
             if (!running)
                 continue;
             overlayModifierVisuals(magdaMod, it->second.get());

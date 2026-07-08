@@ -26,11 +26,11 @@ void showDeviceSlotSidechainMenu(const magda::DeviceInfo& device,
 
     magda::SidechainConfig currentSidechain;
     bool canAudio = device.canSidechain;
-    bool canMidi = supportsMidiInputRouting(device);
+    bool canMidi = supportsMidiSidechainSource(device);
     if (auto* currentDevice = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath)) {
         currentSidechain = currentDevice->sidechain;
         canAudio = currentDevice->canSidechain;
-        canMidi = supportsMidiInputRouting(*currentDevice);
+        canMidi = supportsMidiSidechainSource(*currentDevice);
     }
 
     const bool isNone = !currentSidechain.isActive();

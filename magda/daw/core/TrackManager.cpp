@@ -7,6 +7,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
+#include "../audio/plugins/SidechainPlugin.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ClipManager.hpp"
@@ -1850,6 +1851,44 @@ void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
     dev.kitRows = PluginPreferences::getInstance().defaultKitRows(identifier);
 }
 
+void TrackManager::seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath) {
+    if (classifyInternalDevice(dev.pluginId) != InternalDeviceKind::Sidechain)
+        return;
+    if (!dev.mods.empty())
+        return;
+
+    ModInfo mod(0);
+    mod.name = "Duck";
+    mod.waveform = LFOWaveform::Custom;
+    mod.curvePreset = CurvePreset::Custom;
+    // The drawn curve is the audible gain envelope: 0 at note-on (fully
+    // ducked) easing back up to 1 (full level) over one cycle - the classic
+    // sidechain shape. Positive tension keeps it low early and steepens into
+    // the recovery. One-shot holds the end value (full level) between notes.
+    CurvePointData start;
+    start.phase = 0.0f;
+    start.value = 0.0f;
+    start.tension = 1.0f;
+    CurvePointData end;
+    end.phase = 1.0f;
+    end.value = 1.0f;
+    mod.curvePoints = {start, end};
+    // Applied output is (1 - curve): the engine receives duck amount, so an
+    // inactive modifier (untriggered/gated forces output 0) means unity gain.
+    mod.invertOutput = true;
+    mod.triggerMode = LFOTriggerMode::MIDI;
+    mod.tempoSync = true;
+    mod.syncDivision = SyncDivision::Quarter;
+    mod.oneShot = true;
+    // Full negative depth on the duck output: gain = 1 - depth * (1 - curve),
+    // i.e. at full depth the gain follows the drawn curve exactly. The
+    // faceplate's depth control edits this link amount.
+    mod.addLink(
+        ControlTarget::pluginParam(devicePath, daw::audio::SidechainPlugin::kGainParamIndex),
+        -1.0f);
+    dev.mods.push_back(mod);
+}
+
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
         if (!track->canHostInstrument() && device.isInstrument) {
@@ -1862,6 +1901,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
         track->chain.fxChainElements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         notifyDeviceAdded(ChainNodePath::topLevelDevice(trackId, newDevice.id), newDevice);
@@ -1885,6 +1925,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(track->chain.fxChainElements.size());

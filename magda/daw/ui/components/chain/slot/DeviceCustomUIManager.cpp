@@ -24,6 +24,7 @@
 #include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
+#include "audio/plugins/SidechainPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
@@ -60,6 +61,7 @@
 #include "custom_ui/PolySynthUI.hpp"
 #include "custom_ui/ReverbUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
+#include "custom_ui/SidechainUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "custom_ui/StruckInstrumentUI.hpp"
@@ -477,6 +479,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return phaserUI_.get();
     if (filterUI_)
         return filterUI_.get();
+    if (sidechainUI_)
+        return sidechainUI_.get();
     if (pitchShiftUI_)
         return pitchShiftUI_.get();
     if (impulseResponseUI_)
@@ -537,6 +541,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return phaserUI_->getLinkableSliders();
     if (filterUI_)
         return filterUI_->getLinkableSliders();
+    if (sidechainUI_)
+        return sidechainUI_->getLinkableSliders();
     if (pitchShiftUI_)
         return pitchShiftUI_->getLinkableSliders();
     if (impulseResponseUI_)
@@ -562,7 +568,8 @@ bool DeviceCustomUIManager::hasAnyUI() const {
            polySynthUI_ || fmUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ || reverbUI_ ||
            delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ ||
            faustUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_ || struckUI_;
+           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_ ||
+           struckUI_ || sidechainUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -598,6 +605,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 300;
     if (filterUI_)
         return 250;
+    if (sidechainUI_)
+        return 350;  // curve editor + source/depth/sync/atk/rel control row
     if (pitchShiftUI_)
         return 200;
     if (impulseResponseUI_)
@@ -854,6 +863,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         phaserUI_->updateFromParameters(device.parameters);
     if (filterUI_ && device.pluginId.containsIgnoreCase("lowpass"))
         filterUI_->updateFromParameters(device.parameters);
+    if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
+        sidechainUI_->updateFromParameters(device.parameters);
     if (pitchShiftUI_ && device.pluginId.containsIgnoreCase("pitchshift"))
         pitchShiftUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse"))
@@ -1151,6 +1162,17 @@ bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& de
 bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device,
                                                  juce::Component& parent,
                                                  const Callbacks& callbacks) {
+    if (device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName)) {
+        sidechainUI_ = std::make_unique<SidechainUI>();
+        forwardParameterChanges(*sidechainUI_, callbacks);
+        // The curve editor / depth / source picker address the live model by
+        // path, so hand through the slot's live path getter.
+        sidechainUI_->getNodePath = callbacks.getNodePath;
+        parent.addAndMakeVisible(*sidechainUI_);
+        update(device);
+        return true;
+    }
+
     if (device.pluginId.equalsIgnoreCase("eq")) {
         eqUI_ = std::make_unique<EqualiserUI>();
         forwardParameterChanges(*eqUI_, callbacks);
@@ -2022,6 +2044,11 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
     // the path is bound so LFO/Mod Env destination lists are not left empty.
     if (fourOscUI_ && devicePath_.isValid())
         readAndPushModMatrix(devicePath_.getDeviceId());
+
+    // Same create-before-path situation for the Sidechain faceplate: its curve
+    // editor binds to the live model through the path, so rebind now.
+    if (sidechainUI_ && devicePath_.isValid())
+        sidechainUI_->refreshFromModel();
 }
 
 void DeviceCustomUIManager::refreshLivePluginBindings() {
@@ -2165,6 +2192,9 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
             controller->setDevice(device);
         }
     }
+
+    if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
+        sidechainUI_->updateFromDevice(device);
 
     if (toneGeneratorUI_ && device.pluginId.containsIgnoreCase("tone")) {
         float frequency = 440.0f;

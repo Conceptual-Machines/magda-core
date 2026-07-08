@@ -16,6 +16,7 @@
 #include "plugins/OscilloscopePlugin.hpp"
 #include "plugins/PolyStepSequencerPlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
+#include "plugins/SidechainPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/TrackMeasurementPlugin.hpp"
@@ -55,6 +56,7 @@ constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
 constexpr const char* kOscilloscopeAliases[] = {"scope"};
 constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
 constexpr const char* kLevelsAliases[] = {"loudness", "lufs"};
+constexpr const char* kSidechainAliases[] = {"duck", "pump", "volumeshaper"};
 
 const InternalPluginSpec kSpecs[] = {
     {InternalDeviceKind::TeEq, te::EqualiserPlugin::xmlTypeName, "Equaliser", "EQ",
@@ -141,6 +143,12 @@ const InternalPluginSpec kSpecs[] = {
      "MIDI", "Polyphonic MIDI step sequencer with multiple notes per step for chord patterns.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
      matches<PolyStepSequencerPlugin>, makeProcessor<PolyStepSequencerProcessor>, true},
+    {InternalDeviceKind::Sidechain, SidechainPlugin::xmlTypeName, "Sidechain", "Dynamics",
+     "MIDI-triggered volume shaper: ducks its own gain with a retriggerable curve keyed "
+     "from a chosen source track's notes.",
+     InternalPluginCreateMode::SavedStateOrFresh, true, true, kSidechainAliases,
+     std::size(kSidechainAliases), matches<SidechainPlugin>, makeProcessor<SidechainProcessor>,
+     true},
     {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, "Faust", "Experimental",
      "Interpreted Faust device for loading and editing user DSP code.",
      InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0, matches<FaustPlugin>,

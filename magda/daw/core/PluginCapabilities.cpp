@@ -1,6 +1,7 @@
 #include "PluginCapabilities.hpp"
 
 #include "AppPaths.hpp"
+#include "InternalDeviceKind.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -257,8 +258,14 @@ bool supportsExternalMidiInputRouting(const DeviceInfo& device) {
     return supportsMidiInputRouting(device);
 }
 
+bool supportsMidiSidechainSource(const DeviceInfo& device) {
+    if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::Sidechain)
+        return true;
+    return supportsMidiInputRouting(device);
+}
+
 bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
-    return device.canSidechain || supportsMidiInputRouting(device);
+    return device.canSidechain || supportsMidiSidechainSource(device);
 }
 
 void applyCachedCapabilitiesToDevice(DeviceInfo& device) {

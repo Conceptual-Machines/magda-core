@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "../../core/ModInfo.hpp"
+#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 
 namespace magda {
@@ -117,8 +118,13 @@ inline float mapSyncType(const ModInfo& modInfo) {
     return 0.0f;
 }
 
+// `crossTrackSidechain` is deliberately NOT defaulted: every caller must
+// restate whether this mod's device sidechains from another track. The fact
+// is not sticky on the TE modifier - a source picked after creation reaches
+// only the in-place property path, and a forgotten (defaulted) argument
+// would silently revert to retriggering/gating from the device's own track.
 inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
-                               CurveSnapshotHolder* holder = nullptr) {
+                               CurveSnapshotHolder* holder, bool crossTrackSidechain) {
     float syncType = mapSyncType(modInfo);
 
     // rateType determines Hz vs musical divisions in TE's LFO timer.
@@ -167,15 +173,31 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
     lfo->syncTypeParam->setParameterFromHost(syncType, juce::dontSendNotification);
     lfo->rateTypeParam->setParameterFromHost(rateType, juce::dontSendNotification);
 
+    // Cross-track sidechain LFOs are driven exclusively by the source
+    // track's monitor (triggerSidechainNoteOn): no native phase resync and
+    // no gate from the destination track's OWN MIDI. Both used to stay
+    // active after a source was picked (skipNativeResync was only set at
+    // modifier creation, and the trigger-source gate unconditionally), so
+    // the destination track's notes kept retriggering the phase and
+    // slamming the gate open/closed on every note-on/off - audible clicks
+    // and a phase dot restarting against the sidechain rhythm. Owned here
+    // so the create and in-place property paths cannot diverge.
+    lfo->setSkipNativeResync(crossTrackSidechain);
+
     // MIDI-triggered LFOs are gated from MAGDA's held-note model, not from
     // TE's native modifier input. That keeps top-level and rack-contained
     // LFOs consistent: note-on opens the gate, all-notes-off closes it.
+    // Cross-track LFOs are never gated: their idle state is the one-shot
+    // hold (or a free-running loop), and the trigger path resyncs them.
     //
     // Audio-triggered LFOs are still gated by the audio sidechain path so
     // one-shots can continue through release while normal loops close on
     // the audio gate.
-    lfo->setGateOnTriggerSource(modInfo.triggerMode == LFOTriggerMode::MIDI);
-    if (modInfo.triggerMode == LFOTriggerMode::MIDI)
+    lfo->setGateOnTriggerSource(modInfo.triggerMode == LFOTriggerMode::MIDI &&
+                                !crossTrackSidechain);
+    if (crossTrackSidechain)
+        lfo->setGated(false);
+    else if (modInfo.triggerMode == LFOTriggerMode::MIDI)
         lfo->setGated(!modInfo.running);
     else if (modInfo.triggerMode != LFOTriggerMode::Audio)
         lfo->setGated(false);
@@ -322,13 +344,35 @@ inline bool overlayModifierVisuals(ModInfo& magdaMod, te::Modifier* mod) {
     if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod)) {
         magdaMod.value = lfo->getCurrentValue();
         magdaMod.phase = lfo->getCurrentPhase();
+        // The TE value is the APPLIED output. For a level-envelope curve that
+        // is (1 - drawn curve), so map it back into the drawn domain for the
+        // editor's phase dot. Gated/idle (output 0) lands on 1 = full level,
+        // matching where the drawn curve rests.
+        if (magdaMod.invertOutput) {
+            const float teRaw = magdaMod.value;
+            magdaMod.value = 1.0f - magdaMod.value;
+            MAGDA_ADSR_AUDIO_LOG(
+                "SC-DOT OVL mod="
+                << juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(&magdaMod))
+                << " lfo="
+                << juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(lfo))
+                << " teRaw=" << teRaw << " val=" << magdaMod.value << " phase=" << magdaMod.phase
+                << " gated=" << static_cast<int>(lfo->isGated())
+                << " skipResync=" << static_cast<int>(lfo->getSkipNativeResync())
+                << " running=" << static_cast<int>(magdaMod.running));
+        }
         // For a looping custom curve the dot must follow the remapped (looped)
         // position published by the curve callback, not TE's raw 0..1 sweep.
         if (auto* holder = static_cast<CurveSnapshotHolder*>(
                 lfo->customWaveUserData.load(std::memory_order_acquire))) {
             const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
-            if (snap->useLoopRegion && (snap->loopEnd - snap->loopStart) > 1.0e-4f)
+            if (snap->useLoopRegion && (snap->loopEnd - snap->loopStart) > 1.0e-4f) {
                 magdaMod.phase = holder->lastEffectivePhase_.load(std::memory_order_acquire);
+            } else if (snap->oneShot && holder->oneShotCompleted_.load(std::memory_order_acquire)) {
+                // Latched one-shot: TE's raw phase keeps sweeping while the
+                // value holds at the curve end - park the dot there.
+                magdaMod.phase = 1.0f;
+            }
         }
         return true;
     }
@@ -358,8 +402,16 @@ inline bool overlayModifierVisuals(ModInfo& magdaMod, te::Modifier* mod) {
 inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo, bool forceZeroValue = true) {
     auto* holder =
         static_cast<CurveSnapshotHolder*>(lfo->customWaveUserData.load(std::memory_order_acquire));
-    if (holder)
+    if (holder) {
         holder->resetOneShot();
+        // The forced zero emulates a gate gap: neutral output for the trigger
+        // block. For a level-envelope curve (invertOutput) zero output means
+        // FULL level, so forcing it mid-duck pops the gain up for one block -
+        // an audible click on every retrigger. Keep the previous value; the
+        // resynced curve takes over on the next block.
+        if (holder->active.load(std::memory_order_acquire)->invertOutput)
+            forceZeroValue = false;
+    }
     lfo->triggerNoteOn(forceZeroValue);
 }
 

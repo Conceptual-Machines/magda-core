@@ -283,6 +283,14 @@ void AudioBridge::tracksChanged() {
     // recordEnabled=N, and transport.record() silently produces no clip. Also
     // covers the add/remove/reorder paths — cheap and idempotent.
     syncAllArmedTracksToTE();
+
+    // Post-load sidechain monitor sync: DeviceInfo::sidechain is persisted,
+    // but the source-track monitor plugins are MAGDA-injected infrastructure
+    // that is not part of the saved model. They are normally inserted by
+    // deviceModifiersChanged / handleDeviceSidechainChanged, neither of which
+    // fires on a plain load, so a restored MIDI sidechain would stay silent
+    // until the user re-picks the source. Cheap and idempotent.
+    sidechainRouting_.refreshAllSourceMonitors();
 }
 
 void AudioBridge::syncAllArmedTracksToTE() {

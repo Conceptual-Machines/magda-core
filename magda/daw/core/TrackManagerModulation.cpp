@@ -1,6 +1,7 @@
 #include <cmath>
 #include <set>
 
+#include "../audio/modifiers/ADSRDebugLog.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
@@ -510,6 +511,19 @@ void TrackManager::setModSyncDivision(const ChainNodePath& path, int modIndex,
                               static_cast<float>(syncDivisionToTeRateOrdinal(division)));
 }
 
+void TrackManager::setModOneShot(const ChainNodePath& path, int modIndex, bool oneShot) {
+    auto node = resolveChainNode(path);
+    if (!indexInRange(node.mods, modIndex))
+        return;
+    auto& mod = (*node.mods)[modIndex];
+    mod.oneShot = oneShot;
+    // A completed one-shot must rearm when the mode is toggled, in either
+    // direction: back to loop it should run again, and re-entering one-shot
+    // should wait for the next trigger rather than stay latched complete.
+    mod.oneShotComplete = false;
+    notifyDeviceModifiersChanged(path.trackId);
+}
+
 void TrackManager::setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
@@ -936,6 +950,16 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 else
                     mod.value = 0.0f;
             }
+
+            if (mod.invertOutput)
+                MAGDA_ADSR_AUDIO_LOG(
+                    "SC-DOT SIM mod="
+                    << juce::String::toHexString(reinterpret_cast<juce::pointer_sized_int>(&mod))
+                    << " phase=" << mod.phase << " val=" << mod.value
+                    << " running=" << static_cast<int>(mod.running)
+                    << " advance=" << static_cast<int>(shouldAdvance)
+                    << " oneShotC=" << static_cast<int>(mod.oneShotComplete)
+                    << " trig=" << static_cast<int>(mod.triggerCount));
         }
 
         if (mod.type == ModType::Random) {

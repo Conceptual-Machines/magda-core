@@ -409,6 +409,7 @@ target_sources(magda_daw PRIVATE
     session/ClipSynchronizer.cpp
     session/ClipWarpSynchronizer.cpp
     plugins/SidechainMonitorPlugin.cpp
+    plugins/SidechainPlugin.cpp
     plugins/AudioSidechainMonitorPlugin.cpp
     plugins/FollowerSourceTapPlugin.cpp
     plugins/MidiReceivePlugin.cpp

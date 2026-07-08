@@ -704,7 +704,12 @@ void PluginManager::syncLFOValuesToVisuals() {
             overlayModifierVisuals(magdaMod, mod.get());
             return;
         }
-        const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running;
+        // Level-curve mods are single-writer: the TE value (with the holder's
+        // one-shot latch) fully defines the visual. Skipping the overlay when
+        // the sim thinks the mod stopped would let the sim's separately
+        // integrated phase fight TE's - the dot visibly jumps backwards.
+        const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running ||
+                             magdaMod.invertOutput;
         if (!running)
             return;
         overlayModifierVisuals(magdaMod, mod.get());
