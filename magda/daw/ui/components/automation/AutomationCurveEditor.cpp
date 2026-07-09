@@ -269,17 +269,19 @@ void AutomationCurveEditor::paintClipBorders(juce::Graphics& g) {
         return;
 
     // The view span starts at clipOffset_ (0 in the looped one-cycle view,
-    // the clip's arrangement start in the absolute view).
+    // the clip's arrangement start in the absolute view). xToPixel rounds
+    // the same way the TimeRuler places its ticks, so the 1px markers land
+    // on exactly the ruler's pixel column.
     const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
     const double span = looped ? clip->loopLengthBeats : clip->lengthBeats;
-    const auto startX = static_cast<float>(xToPixelF(clipOffset_));
-    const auto endX = static_cast<float>(xToPixelF(clipOffset_ + span));
+    const int startX = xToPixel(clipOffset_);
+    const int endX = xToPixel(clipOffset_ + span);
 
-    // Same 2px marker language as the piano roll's clip boundaries.
+    // Same colour language as the piano roll's clip boundaries.
     constexpr juce::uint32 kClipBoundaryColour = 0xFF6A7280;
     g.setColour(juce::Colour(kClipBoundaryColour));
-    g.fillRect(startX - 1.0f, 0.0f, 2.0f, static_cast<float>(getHeight()));
-    g.fillRect(endX - 1.0f, 0.0f, 2.0f, static_cast<float>(getHeight()));
+    g.fillRect(startX, 0, 1, getHeight());
+    g.fillRect(endX, 0, 1, getHeight());
 }
 
 juce::String AutomationCurveEditor::formatValueLabel(double y) const {
