@@ -647,8 +647,16 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
     if (!lane)
         return;
 
+    paintScaleLabelsFor(g, area, lane->target, [this, &area](double normalized) {
+        return valueToPixel(normalized, area.getHeight());
+    });
+}
+
+void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Rectangle<int> area,
+                                                  const ControlTarget& target,
+                                                  const std::function<int(double)>& normToYOffset) {
     // Get parameter info for this target
-    ParameterInfo paramInfo = getParameterInfoForTarget(lane->target);
+    ParameterInfo paramInfo = getParameterInfoForTarget(target);
 
     g.setColour(juce::Colour(0xFF888888));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
@@ -656,7 +664,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
     // Helper lambda to draw a label at a real value position
     auto drawLabelAtRealValue = [&](double realValue, const juce::String& label) {
         double normalizedValue = realToNormalizedForTarget(realValue, paramInfo);
-        int y = area.getY() + valueToPixel(normalizedValue, area.getHeight());
+        int y = area.getY() + normToYOffset(normalizedValue);
 
         auto labelBounds = juce::Rectangle<int>(2, y - 5, area.getWidth() - 6, 10);
         if (labelBounds.getY() < area.getY())
@@ -686,7 +694,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
         for (const auto& [db, label] : dbLabels) {
             drawLabelAtRealValue(db, label);
         }
-    } else if (lane->target.kind == ControlTarget::Kind::TrackPan) {
+    } else if (target.kind == ControlTarget::Kind::TrackPan) {
         // Pan: L, C, R (real values -1, 0, +1)
         drawLabelAtRealValue(1.0, "R");
         drawLabelAtRealValue(0.0, "C");
@@ -732,7 +740,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
                                           static_cast<double>(paramInfo.maxValue), realValue);
             double normValue = static_cast<double>(
                 ParameterUtils::realToNormalized(static_cast<float>(clamped), paramInfo));
-            int y = area.getY() + valueToPixel(normValue, area.getHeight());
+            int y = area.getY() + normToYOffset(normValue);
 
             auto labelBounds = juce::Rectangle<int>(2, y - 5, area.getWidth() - 6, 10);
             if (labelBounds.getY() < area.getY())

@@ -101,6 +101,16 @@ class AutomationLaneComponent : public juce::Component,
      *                       these point IDs (all other points are left
      *                       untouched). Empty means "simplify the whole lane".
      */
+    /**
+     * @brief Draw the unit value scale (dB / pan / discrete / unit labels)
+     *        for a target into `area`. normToYOffset maps a normalized value
+     *        to a y offset within the area. Shared with the bottom-panel
+     *        clip editor's scale strip.
+     */
+    static void paintScaleLabelsFor(juce::Graphics& g, juce::Rectangle<int> area,
+                                    const ControlTarget& target,
+                                    const std::function<int(double)>& normToYOffset);
+
     static void simplifyLane(AutomationLaneId laneId, double epsilon,
                              const std::vector<AutomationPointId>& pointIdFilter = {});
 

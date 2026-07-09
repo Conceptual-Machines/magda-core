@@ -202,6 +202,21 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
     if (paintUnderlay)
         paintUnderlay(g);
 
+    // Vertical gridlines at the current quantization, on the same pixel
+    // columns as the ruler ticks (xToPixel mirrors the ruler's rounding).
+    if (showBeatGrid_ && getGridSpacingBeats && pixelsPerBeat_ > 0.0) {
+        const double res = getGridSpacingBeats();
+        if (res > 0.0 && res * pixelsPerBeat_ >= 4.0) {
+            const double domainStart = pixelToX(0);
+            const double domainEnd = pixelToX(getWidth());
+            g.setColour(juce::Colour(0x14FFFFFF));
+            for (double beat = std::ceil(domainStart / res - 1.0e-9) * res; beat <= domainEnd;
+                 beat += res) {
+                g.drawVerticalLine(xToPixel(beat), 0.0f, static_cast<float>(getHeight()));
+            }
+        }
+    }
+
     paintClipBorders(g);
 
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);

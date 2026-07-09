@@ -93,6 +93,16 @@ class AutomationCurveEditor : public CurveEditorBase,
         repaint();
     }
 
+    // Vertical beat gridlines at getGridSpacingBeats' resolution. Enabled by
+    // the bottom-panel clip editor; timeline lanes sit over the
+    // arrangement's own grid.
+    void setShowBeatGrid(bool show) {
+        if (showBeatGrid_ == show)
+            return;
+        showBeatGrid_ = show;
+        repaint();
+    }
+
     // Playback position in editor x-domain beats; < 0 hides it. Drawn as a
     // dot riding the curve at the playing value. Driven by the bottom-panel
     // clip editor (timeline lanes sit under the arrangement's global
@@ -185,6 +195,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     double tempoBPM_ = 120.0;
     int edgeInsetPx_ = 0;
     bool showClipBorders_ = false;
+    bool showBeatGrid_ = false;
     double playheadBeat_ = -1.0;
 
     // Cached curve points (converted from AutomationPoints)

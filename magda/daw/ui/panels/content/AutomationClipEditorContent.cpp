@@ -101,12 +101,30 @@ void AutomationClipEditorContent::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(13.0f));
         g.drawText("No automation clip selected", getLocalBounds(), juce::Justification::centred);
+        return;
+    }
+
+    // Unit value scale on the left (the lanes' scale painter). The y mapping
+    // mirrors the editor's own value mapping so labels line up with the
+    // curve regardless of its content padding.
+    if (const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId)) {
+        if (!scaleStripArea_.isEmpty()) {
+            magda::AutomationLaneComponent::paintScaleLabelsFor(
+                g, scaleStripArea_, lane->target,
+                [this](double normalized) { return editor_->yToPixel(normalized); });
+        }
     }
 }
 
 void AutomationClipEditorContent::resized() {
     auto bounds = getLocalBounds().reduced(kInset);
     titleLabel_.setBounds(bounds.removeFromTop(kTitleHeight));
+    // Value scale strip on the left (same width as the lanes'), spanning the
+    // curve area; the ruler and viewport shift right together so beat 0
+    // stays aligned between them.
+    auto scaleCol = bounds.removeFromLeft(magda::AutomationLaneComponent::SCALE_LABEL_WIDTH);
+    scaleCol.removeFromTop(timeRuler_->getPreferredHeight());
+    scaleStripArea_ = scaleCol;
     timeRuler_->setBounds(bounds.removeFromTop(timeRuler_->getPreferredHeight()));
     viewport_.setBounds(bounds);
     updateView();
@@ -397,6 +415,7 @@ void AutomationClipEditorContent::rebuildEditor() {
     editor_ = std::make_unique<magda::AutomationCurveEditor>(selection_.laneId);
     editor_->setClipId(selection_.clipId);
     editor_->setShowClipBorders(true);
+    editor_->setShowBeatGrid(true);
     editor_->setDrawMode(magda::AutomationDrawMode::Pencil);
     editor_->paintUnderlay = [this](juce::Graphics& g) { paintTrackGhost(g); };
     // Grid and snap come from the clip's own settings (header controls),

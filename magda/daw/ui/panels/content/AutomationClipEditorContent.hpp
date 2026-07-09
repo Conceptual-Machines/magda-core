@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "../../components/automation/AutomationCurveEditor.hpp"
+#include "../../components/automation/AutomationLaneComponent.hpp"
 #include "../../components/timeline/TimeRuler.hpp"
 #include "../../state/TimelineController.hpp"
 #include "PanelContent.hpp"
@@ -85,7 +86,8 @@ class AutomationClipEditorContent : public PanelContent,
     juce::Component canvas_;
     std::unique_ptr<magda::AutomationCurveEditor> editor_;
 
-    double horizontalZoom_ = 0.0;  // pixels per beat; 0 = fit on next layout
+    double horizontalZoom_ = 0.0;          // pixels per beat; 0 = fit on next layout
+    juce::Rectangle<int> scaleStripArea_;  // left value scale, next to the viewport
 
     const magda::AutomationClipInfo* getClip() const;
     double viewSpanBeats(const magda::AutomationClipInfo& clip) const;
