@@ -315,6 +315,10 @@ class AutomationManager : public TrackManagerListener {
     void setClipSnapEnabled(AutomationClipId clipId, bool enabled);
     /// Replace a clip's points wholesale (fresh ids, sorted, one notify).
     void setClipPoints(AutomationClipId clipId, std::vector<AutomationPoint> points);
+    /// Flip an EMPTY lane (no points, no clips) to the given type; lanes
+    /// with data keep their type. Returns true when the lane ends up with
+    /// the requested type.
+    bool retypeEmptyLane(AutomationLaneId laneId, AutomationLaneType type);
     /// Move a clip to the front of its lane's clipIds: playback resolves
     /// overlapping clips as first-in-clipIds, so the front clip wins.
     void moveClipToFront(AutomationClipId clipId);

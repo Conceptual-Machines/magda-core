@@ -152,13 +152,18 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     // the ctx array pointers staying alive.
     auto bakeable = collectBakeableModLinks(ctx, thisTarget);
     if (!ctx.devicePath.isPostFx()) {
-        // Each bake destination needs a compatible lane: an existing lane of
-        // the other type can't take it (no lane yet = either works, the bake
-        // creates it).
+        // Gate the destinations on existing automation DATA: points can only
+        // add to a point curve, clips to a clip lane. No data at all (no
+        // lane, or an empty lane of either type) offers both — the bake
+        // retypes an empty lane to the chosen destination.
         auto& autoMgr = magda::AutomationManager::getInstance();
         const auto* existingLane = autoMgr.getLane(autoMgr.getLaneForTarget(thisTarget));
-        const bool canBakePoints = existingLane == nullptr || existingLane->isAbsolute();
-        const bool canBakeClip = existingLane == nullptr || existingLane->isClipBased();
+        const bool hasPoints = existingLane != nullptr && existingLane->isAbsolute() &&
+                               !existingLane->absolutePoints.empty();
+        const bool hasClips = existingLane != nullptr && existingLane->isClipBased() &&
+                              !existingLane->clipIds.empty();
+        const bool canBakePoints = !hasClips;
+        const bool canBakeClip = !hasPoints;
         menu.addSeparator();
         menu.addItem(5000, "Show Automation Lane");
         menu.addItem(5001, "Bake Modulation to Automation", !bakeable.empty() && canBakePoints);

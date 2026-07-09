@@ -812,6 +812,19 @@ void AutomationManager::setClipPoints(AutomationClipId clipId,
     notifyClipsChanged(clip->laneId);
 }
 
+bool AutomationManager::retypeEmptyLane(AutomationLaneId laneId, AutomationLaneType type) {
+    auto* lane = getLane(laneId);
+    if (lane == nullptr)
+        return false;
+    if (lane->type == type)
+        return true;
+    if (!lane->absolutePoints.empty() || !lane->clipIds.empty())
+        return false;
+    lane->type = type;
+    notifyLanesChanged();
+    return true;
+}
+
 void AutomationManager::moveClipToFront(AutomationClipId clipId) {
     const auto* clip = getClip(clipId);
     if (clip == nullptr)

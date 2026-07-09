@@ -85,11 +85,18 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
         autoMgr.getOrCreateLane(target, wantClip ? magda::AutomationLaneType::ClipBased
                                                  : magda::AutomationLaneType::Absolute);
     // getOrCreateLane returns the existing lane regardless of the requested
-    // type; an existing lane of the OTHER type can't take this bake (the
-    // menu gates on compatibility, this guards the races).
+    // type. An EMPTY lane of the other type retypes to the chosen
+    // destination (the menu offers both for empty lanes); a lane with data
+    // of the other kind can't take this bake (menu-gated; this guards the
+    // races).
     const auto* lane = autoMgr.getLane(laneId);
-    if (lane == nullptr || lane->isClipBased() != wantClip)
+    if (lane == nullptr)
         return;
+    if (lane->isClipBased() != wantClip) {
+        if (!autoMgr.retypeEmptyLane(laneId, wantClip ? magda::AutomationLaneType::ClipBased
+                                                      : magda::AutomationLaneType::Absolute))
+            return;
+    }
     const bool clipBased = wantClip;
     autoMgr.setLaneVisible(laneId, true);
 
