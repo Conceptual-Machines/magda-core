@@ -276,27 +276,18 @@ void AutomationClipEditorContent::timelineStateChanged(const magda::TimelineStat
     if (editor_ == nullptr || clip == nullptr)
         return;
 
-    // Playhead over the curve, playback only (matching the MIDI editors).
-    // Looped view: the position wraps into the displayed loop cycle.
+    // Playback dot over the curve, playback only. Looped view: the position
+    // wraps into the displayed loop cycle. The dot is the only indicator —
+    // no ruler triangle.
     double editorBeat = -1.0;
-    double rulerSeconds = -1.0;
     const double playBeats = state.playhead.playbackPositionBeats;
     if (state.playhead.isPlaying && playBeats >= clip->startBeats &&
         playBeats < clip->getEndBeats()) {
         const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
-        if (looped) {
-            const double local =
-                magda::wrapPhase(playBeats - clip->startBeats, clip->loopLengthBeats);
-            editorBeat = local;
-            rulerSeconds = state.beatsToSeconds(clip->startBeats + local) -
-                           state.beatsToSeconds(clip->startBeats);
-        } else {
-            editorBeat = playBeats;
-            rulerSeconds = state.playhead.playbackPosition;
-        }
+        editorBeat = looped ? magda::wrapPhase(playBeats - clip->startBeats, clip->loopLengthBeats)
+                            : playBeats;
     }
     editor_->setPlayheadBeat(editorBeat);
-    timeRuler_->setPlayheadHandlePosition(rulerSeconds);
 }
 
 void AutomationClipEditorContent::clipsChanged() {
