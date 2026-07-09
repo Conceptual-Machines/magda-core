@@ -122,12 +122,15 @@ struct AutomationClipInfo {
     bool looping = false;
     double loopLengthBeats = 4.0;  // Loop length in beats
 
-    // Editor grid settings, per clip (same model as MIDI clips: each clip
-    // remembers its own grid instead of sharing the arrangement's).
-    bool gridAutoGrid = true;
-    int gridNumerator = 1;
-    int gridDenominator = 4;
-    bool gridSnapEnabled = true;
+    // Editor snap settings, per clip (each clip remembers its own instead of
+    // sharing the arrangement's). X = time grid, num/den of a whole note
+    // (like MIDI grids); Y = value grid, num/den of the normalized range.
+    bool snapXEnabled = true;
+    int snapXNumerator = 1;
+    int snapXDenominator = 4;
+    bool snapYEnabled = false;
+    int snapYNumerator = 1;
+    int snapYDenominator = 8;
 
     std::vector<AutomationPoint> points;
 

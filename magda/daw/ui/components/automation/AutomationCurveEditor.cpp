@@ -37,6 +37,8 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
     CurveEditorBase::snapYToGrid = [this](double y) -> double {
         if (AutomationManager::getInstance().isWriteModeEnabled())
             return y;
+        if (snapValueToGrid)
+            return snapValueToGrid(y);
         return applyValueSnap(y);
     };
 

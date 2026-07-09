@@ -310,9 +310,8 @@ class AutomationManager : public TrackManagerListener {
     std::optional<juce::Colour> getLaneTrackColour(AutomationLaneId laneId) const;
     void setClipLooping(AutomationClipId clipId, bool looping);
     void setClipLoopLength(AutomationClipId clipId, double length);
-    void setClipGridSettings(AutomationClipId clipId, bool autoGrid, int numerator,
-                             int denominator);
-    void setClipSnapEnabled(AutomationClipId clipId, bool enabled);
+    void setClipSnapX(AutomationClipId clipId, bool enabled, int numerator, int denominator);
+    void setClipSnapY(AutomationClipId clipId, bool enabled, int numerator, int denominator);
     /// Replace a clip's points wholesale (fresh ids, sorted, one notify).
     void setClipPoints(AutomationClipId clipId, std::vector<AutomationPoint> points);
     /// Flip an EMPTY lane (no points, no clips) to the given type; lanes

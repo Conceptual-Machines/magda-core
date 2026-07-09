@@ -360,11 +360,8 @@ void BottomPanel::setupHeaderControls() {
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
-            auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
             if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
                 midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
-            } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
-                autoEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
             } else if (auto* controller = TimelineController::getCurrent()) {
                 controller->dispatch(
                     SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
@@ -417,11 +414,8 @@ void BottomPanel::setupHeaderControls() {
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
-            auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
             if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
                 midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
-            } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
-                autoEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
             } else if (auto* controller = TimelineController::getCurrent()) {
                 controller->dispatch(
                     SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
@@ -455,11 +449,8 @@ void BottomPanel::setupHeaderControls() {
         gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
-        auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
             midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
-        } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
-            autoEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
         } else if (auto* controller = TimelineController::getCurrent()) {
             controller->dispatch(
                 SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
@@ -486,11 +477,8 @@ void BottomPanel::setupHeaderControls() {
         isSnapEnabled_ = snapButton_->getToggleState();
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
-        auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
             midiEditor->setSnapEnabledFromUI(isSnapEnabled_);
-        } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
-            autoEditor->setSnapEnabledFromUI(isSnapEnabled_);
         } else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content)) {
             waveEditor->setSnapEnabledFromUI(isSnapEnabled_);
         } else if (auto* controller = TimelineController::getCurrent()) {
@@ -1166,12 +1154,9 @@ void BottomPanel::updateContentBasedOnSelection() {
     if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content)) {
         midiEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
     } else if (auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content)) {
-        autoEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
-        autoEditor->refreshGridDisplay();
-        autoEditor->onClipStateChanged = [this]() {
-            syncLoopButtonState();
-            syncGridControlsFromContent();
-        };
+        // The automation editor owns its snap controls; only the shared loop
+        // toggle needs resyncing on clip changes.
+        autoEditor->onClipStateChanged = [this]() { syncLoopButtonState(); };
     }
 
     // Push multi-selection state into the waveform editor and the properties
@@ -1265,13 +1250,8 @@ void BottomPanel::addMidiControlsToHeader() {
 }
 
 void BottomPanel::addGridControlsToHeader() {
-    // The loop + num/den + AUTO/SNAP subset of the MIDI header set
-    // (automation clip editor): no tabs or note tools.
-    gridNumeratorLabel_->setVisible(true);
-    gridSlashLabel_->setVisible(true);
-    gridDenominatorLabel_->setVisible(true);
-    autoGridButton_->setVisible(true);
-    snapButton_->setVisible(true);
+    // Automation clip editor: only the shared loop toggle — the snap
+    // controls are content-owned (populateHeader).
     loopButton_->setVisible(true);
     syncLoopButtonState();
 }
@@ -1545,19 +1525,9 @@ void BottomPanel::applyTimeModeToContent() {
 void BottomPanel::syncGridControlsFromContent() {
     auto* content = getActiveContent();
     auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
-    auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
     if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
         // Read grid state from the clip
         const auto* clip = ClipManager::getInstance().getClip(midiEditor->getEditingClipId());
-        if (clip) {
-            isAutoGrid_ = clip->gridAutoGrid;
-            gridNumerator_ = clip->gridNumerator;
-            gridDenominator_ = clip->gridDenominator;
-            isSnapEnabled_ = clip->gridSnapEnabled;
-        }
-    } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
-        // Automation clips carry their own grid settings, like MIDI clips
-        const auto* clip = AutomationManager::getInstance().getClip(autoEditor->getEditingClipId());
         if (clip) {
             isAutoGrid_ = clip->gridAutoGrid;
             gridNumerator_ = clip->gridNumerator;

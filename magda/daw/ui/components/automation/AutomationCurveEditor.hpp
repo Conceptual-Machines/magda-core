@@ -125,6 +125,9 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Snapping (uses base class snapXToGrid)
     std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;  // Grid step in beats
+    // Optional value-snap override (the clip editor's Y grid); when unset,
+    // Y snap falls back to the lane's parameter-natural ticks (snapValue).
+    std::function<double(double)> snapValueToGrid;
 
     // Optional background painter drawn beneath the grid and curve — the
     // bottom-panel clip editor uses it for the track's MIDI/audio ghost.

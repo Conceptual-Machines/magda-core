@@ -782,19 +782,22 @@ void AutomationManager::setClipLoopLength(AutomationClipId clipId, double length
     }
 }
 
-void AutomationManager::setClipGridSettings(AutomationClipId clipId, bool autoGrid, int numerator,
-                                            int denominator) {
+void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int numerator,
+                                     int denominator) {
     if (auto* clip = getClip(clipId)) {
-        clip->gridAutoGrid = autoGrid;
-        clip->gridNumerator = juce::jmax(1, numerator);
-        clip->gridDenominator = juce::jmax(1, denominator);
+        clip->snapXEnabled = enabled;
+        clip->snapXNumerator = juce::jmax(1, numerator);
+        clip->snapXDenominator = juce::jmax(1, denominator);
         notifyClipsChanged(clip->laneId);
     }
 }
 
-void AutomationManager::setClipSnapEnabled(AutomationClipId clipId, bool enabled) {
+void AutomationManager::setClipSnapY(AutomationClipId clipId, bool enabled, int numerator,
+                                     int denominator) {
     if (auto* clip = getClip(clipId)) {
-        clip->gridSnapEnabled = enabled;
+        clip->snapYEnabled = enabled;
+        clip->snapYNumerator = juce::jmax(1, numerator);
+        clip->snapYDenominator = juce::jmax(1, denominator);
         notifyClipsChanged(clip->laneId);
     }
 }

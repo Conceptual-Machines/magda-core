@@ -72,9 +72,194 @@ AutomationClipEditorContent::AutomationClipEditorContent() {
     viewport_.setViewedComponent(&canvas_, false);
     viewport_.setScrollBarsShown(false, true);
     addAndMakeVisible(viewport_);
+
+    buildHeaderControls();
+}
+
+void AutomationClipEditorContent::buildHeaderControls() {
+    // Allowed denominators (multiples of 2 and 3), shared by both axes.
+    static constexpr int kAllowedDen[] = {2, 3, 4, 6, 8, 12, 16, 24, 32};
+    const auto constrainDen = [](double raw) {
+        int best = kAllowedDen[0];
+        int bestDist = std::abs(static_cast<int>(std::round(raw)) - best);
+        for (int candidate : kAllowedDen) {
+            const int dist = std::abs(static_cast<int>(std::round(raw)) - candidate);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = candidate;
+            }
+        }
+        return best;
+    };
+
+    const auto makeSnapButton = [this](const juce::String& text) {
+        auto button = std::make_unique<juce::TextButton>(text);
+        button->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+        button->setColour(juce::TextButton::buttonOnColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+        button->setColour(juce::TextButton::textColourOffId,
+                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        button->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+        button->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        button->setWantsKeyboardFocus(false);
+        button->setClickingTogglesState(false);  // state mirrors the clip
+        button->setLookAndFeel(&smallButtonLF_);
+        addChildComponent(button.get());
+        return button;
+    };
+    const auto makeNumLabel = [this](double maxValue, double defaultValue) {
+        auto label = std::make_unique<magda::DraggableValueLabel>(
+            magda::DraggableValueLabel::Format::Integer);
+        label->setRange(1.0, maxValue, defaultValue);
+        label->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        label->setShowFillIndicator(false);
+        label->setFontSize(12.0f);
+        label->setDoubleClickResetsValue(true);
+        label->setDrawBorder(false);
+        addChildComponent(label.get());
+        return label;
+    };
+    const auto makeSlash = [this](juce::Label& slash) {
+        slash.setText("/", juce::dontSendNotification);
+        slash.setFont(FontManager::getInstance().getUIFont(12.0f));
+        slash.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        slash.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        slash.setJustificationType(juce::Justification::centred);
+        addChildComponent(slash);
+    };
+
+    snapXButton_ = makeSnapButton("SNAP X");
+    snapXNum_ = makeNumLabel(128.0, 1.0);
+    makeSlash(snapXSlash_);
+    snapXDen_ = makeNumLabel(32.0, 4.0);
+    snapYButton_ = makeSnapButton("SNAP Y");
+    snapYNum_ = makeNumLabel(32.0, 1.0);
+    makeSlash(snapYSlash_);
+    snapYDen_ = makeNumLabel(32.0, 8.0);
+
+    snapXButton_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapX(
+                clip->id, !clip->snapXEnabled, clip->snapXNumerator, clip->snapXDenominator);
+    };
+    snapYButton_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapY(
+                clip->id, !clip->snapYEnabled, clip->snapYNumerator, clip->snapYDenominator);
+    };
+    snapXNum_->onValueChange = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapX(
+                clip->id, clip->snapXEnabled, static_cast<int>(std::round(snapXNum_->getValue())),
+                clip->snapXDenominator);
+    };
+    snapXDen_->onValueChange = [this, constrainDen]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapX(
+                clip->id, clip->snapXEnabled, clip->snapXNumerator,
+                constrainDen(snapXDen_->getValue()));
+    };
+    snapYNum_->onValueChange = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapY(
+                clip->id, clip->snapYEnabled, static_cast<int>(std::round(snapYNum_->getValue())),
+                clip->snapYDenominator);
+    };
+    snapYDen_->onValueChange = [this, constrainDen]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapY(
+                clip->id, clip->snapYEnabled, clip->snapYNumerator,
+                constrainDen(snapYDen_->getValue()));
+    };
+}
+
+void AutomationClipEditorContent::populateHeader(juce::Component& headerBar) {
+    for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
+                               static_cast<juce::Component*>(snapXNum_.get()),
+                               static_cast<juce::Component*>(&snapXSlash_),
+                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapYButton_.get()),
+                               static_cast<juce::Component*>(snapYNum_.get()),
+                               static_cast<juce::Component*>(&snapYSlash_),
+                               static_cast<juce::Component*>(snapYDen_.get())})
+        headerBar.addAndMakeVisible(c);
+    syncSnapControls();
+}
+
+void AutomationClipEditorContent::depopulateHeader(juce::Component& headerBar) {
+    juce::ignoreUnused(headerBar);
+    for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
+                               static_cast<juce::Component*>(snapXNum_.get()),
+                               static_cast<juce::Component*>(&snapXSlash_),
+                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapYButton_.get()),
+                               static_cast<juce::Component*>(snapYNum_.get()),
+                               static_cast<juce::Component*>(&snapYSlash_),
+                               static_cast<juce::Component*>(snapYDen_.get())})
+        addChildComponent(c);
+}
+
+void AutomationClipEditorContent::layoutHeader(juce::Rectangle<int> headerBounds) {
+    auto area = headerBounds;
+    area.removeFromRight(30);
+    const int y = area.getY() + 4;
+    const int h = area.getHeight() - 8;
+
+    int x = area.getRight();
+    // Rightmost group: SNAP Y [n]/[d]
+    x -= 24;
+    snapYDen_->setBounds(x, y, 24, h);
+    x -= 8;
+    snapYSlash_.setBounds(x, area.getY(), 8, area.getHeight());
+    x -= 24;
+    snapYNum_->setBounds(x, y, 24, h);
+    x -= 52;
+    snapYButton_->setBounds(x, y, 48, h);
+    x -= 16;
+    // Left group: SNAP X [n]/[d]
+    x -= 24;
+    snapXDen_->setBounds(x, y, 24, h);
+    x -= 8;
+    snapXSlash_.setBounds(x, area.getY(), 8, area.getHeight());
+    x -= 24;
+    snapXNum_->setBounds(x, y, 24, h);
+    x -= 52;
+    snapXButton_->setBounds(x, y, 48, h);
+}
+
+void AutomationClipEditorContent::syncSnapControls() {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return;
+    snapXButton_->setToggleState(clip->snapXEnabled, juce::dontSendNotification);
+    snapYButton_->setToggleState(clip->snapYEnabled, juce::dontSendNotification);
+    if (!snapXNum_->isDragging())
+        snapXNum_->setValue(clip->snapXNumerator, juce::dontSendNotification);
+    if (!snapXDen_->isDragging())
+        snapXDen_->setValue(clip->snapXDenominator, juce::dontSendNotification);
+    if (!snapYNum_->isDragging())
+        snapYNum_->setValue(clip->snapYNumerator, juce::dontSendNotification);
+    if (!snapYDen_->isDragging())
+        snapYDen_->setValue(clip->snapYDenominator, juce::dontSendNotification);
+    const auto dim = [](juce::Component& c, bool on) {
+        c.setEnabled(on);
+        c.setAlpha(on ? 1.0f : 0.6f);
+    };
+    dim(*snapXNum_, clip->snapXEnabled);
+    dim(*snapXDen_, clip->snapXEnabled);
+    dim(snapXSlash_, clip->snapXEnabled);
+    dim(*snapYNum_, clip->snapYEnabled);
+    dim(*snapYDen_, clip->snapYEnabled);
+    dim(snapYSlash_, clip->snapYEnabled);
 }
 
 AutomationClipEditorContent::~AutomationClipEditorContent() {
+    if (snapXButton_)
+        snapXButton_->setLookAndFeel(nullptr);
+    if (snapYButton_)
+        snapYButton_->setLookAndFeel(nullptr);
     magda::SelectionManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::ClipManager::getInstance().removeListener(this);
@@ -337,46 +522,19 @@ double AutomationClipEditorContent::gridResolutionBeats() const {
     const auto* clip = getClip();
     if (clip == nullptr)
         return 1.0;
-    if (clip->gridAutoGrid) {
-        // Auto: densest readable subdivision at the current zoom.
-        constexpr int minPixelSpacing = 20;
-        const double zoom = horizontalZoom_ > 0.0 ? horizontalZoom_ : kMinZoom;
-        const double frac = magda::GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
-        return frac > 0.0 ? frac : 1.0;
-    }
-    return (4.0 * clip->gridNumerator) / static_cast<double>(clip->gridDenominator);
+    return (4.0 * clip->snapXNumerator) /
+           static_cast<double>(juce::jmax(1, clip->snapXDenominator));
 }
 
 void AutomationClipEditorContent::gridSettingsChanged() {
     const auto* clip = getClip();
     if (clip == nullptr)
         return;
-    const double res = gridResolutionBeats();
-    timeRuler_->setGridResolution(res);
-    timeRuler_->setSnapEnabled(clip->gridSnapEnabled);
+    timeRuler_->setGridResolution(gridResolutionBeats());
+    timeRuler_->setSnapEnabled(clip->snapXEnabled);
     timeRuler_->repaint();
     if (editor_ != nullptr)
         editor_->repaint();
-    if (clip->gridAutoGrid && onAutoGridDisplayChanged) {
-        // Mirror the MIDI editor's display convention: auto grid reads 1/den.
-        const int den = juce::jmax(1, static_cast<int>(std::round(4.0 / res)));
-        onAutoGridDisplayChanged(1, den);
-    }
-}
-
-void AutomationClipEditorContent::setGridSettingsFromUI(bool autoGrid, int numerator,
-                                                        int denominator) {
-    if (selection_.clipId == magda::INVALID_AUTOMATION_CLIP_ID)
-        return;
-    // Notifies clips-changed, which routes back through updateView().
-    magda::AutomationManager::getInstance().setClipGridSettings(selection_.clipId, autoGrid,
-                                                                numerator, denominator);
-}
-
-void AutomationClipEditorContent::setSnapEnabledFromUI(bool enabled) {
-    if (selection_.clipId == magda::INVALID_AUTOMATION_CLIP_ID)
-        return;
-    magda::AutomationManager::getInstance().setClipSnapEnabled(selection_.clipId, enabled);
 }
 
 void AutomationClipEditorContent::refreshFromSelection() {
@@ -422,11 +580,11 @@ void AutomationClipEditorContent::rebuildEditor() {
     editor_->setShowBeatGrid(true);
     editor_->setDrawMode(magda::AutomationDrawMode::Pencil);
     editor_->paintUnderlay = [this](juce::Graphics& g) { paintTrackGhost(g); };
-    // Grid and snap come from the clip's own settings (header controls),
-    // not the arrangement's — same model as the piano roll.
+    // Snap comes from the clip's own settings (header controls), not the
+    // arrangement's. X = time grid; Y = fraction of the normalized range.
     editor_->snapBeatToGrid = [this](double beats) {
         const auto* clip = getClip();
-        if (clip == nullptr || !clip->gridSnapEnabled)
+        if (clip == nullptr || !clip->snapXEnabled)
             return beats;
         const double res = gridResolutionBeats();
         if (res <= 0.0)
@@ -434,6 +592,16 @@ void AutomationClipEditorContent::rebuildEditor() {
         return std::round(beats / res) * res;
     };
     editor_->getGridSpacingBeats = [this]() { return gridResolutionBeats(); };
+    editor_->snapValueToGrid = [this](double value) {
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->snapYEnabled)
+            return value;
+        const double step = static_cast<double>(clip->snapYNumerator) /
+                            static_cast<double>(juce::jmax(1, clip->snapYDenominator));
+        if (step <= 0.0)
+            return value;
+        return juce::jlimit(0.0, 1.0, std::round(value / step) * step);
+    };
     canvas_.addAndMakeVisible(*editor_);
     updateView();
     repaint();
@@ -569,9 +737,11 @@ void AutomationClipEditorContent::automationClipsChanged(magda::AutomationLaneId
         rebuildEditor();
         return;
     }
-    // Length / loop / position / name changes update the view and title.
+    // Length / loop / position / name / snap changes update the view, title,
+    // and header controls.
     updateTitle();
     updateView();
+    syncSnapControls();
     repaint();
     if (onClipStateChanged)
         onClipStateChanged();

@@ -7,8 +7,10 @@
 
 #include "../../components/automation/AutomationCurveEditor.hpp"
 #include "../../components/automation/AutomationLaneComponent.hpp"
+#include "../../components/common/DraggableValueLabel.hpp"
 #include "../../components/timeline/TimeRuler.hpp"
 #include "../../state/TimelineController.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "PanelContent.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
@@ -58,24 +60,18 @@ class AutomationClipEditorContent : public PanelContent,
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    // Header grid controls (BottomPanel's shared AUTO/SNAP + num/den set).
-    // Grid settings live on the automation clip, like MIDI clips.
     magda::AutomationClipId getEditingClipId() const {
         return selection_.clipId;
     }
-    void setGridSettingsFromUI(bool autoGrid, int numerator, int denominator);
-    void setSnapEnabledFromUI(bool enabled);
-    // Fires when auto-grid recomputes from zoom so the num/den labels follow.
-    std::function<void(int numerator, int denominator)> onAutoGridDisplayChanged;
     // Fires on any clip change so BottomPanel can resync its header controls
-    // (loop toggle, grid labels) when the inspector or undo edits the clip.
+    // (the shared loop toggle) when the inspector or undo edits the clip.
     std::function<void()> onClipStateChanged;
-    // Re-emits the current grid state; BottomPanel calls this right after
-    // wiring onAutoGridDisplayChanged (the initial updateView ran before the
-    // callback existed, so auto mode would show the clip's stored num/den).
-    void refreshGridDisplay() {
-        gridSettingsChanged();
-    }
+
+    // Content-owned header controls: SNAP X (time grid) and SNAP Y (value
+    // grid), each with its own num/den. Settings live on the clip.
+    void populateHeader(juce::Component& headerBar) override;
+    void depopulateHeader(juce::Component& headerBar) override;
+    void layoutHeader(juce::Rectangle<int> headerBounds) override;
 
   private:
     magda::AutomationClipSelection selection_;
@@ -89,10 +85,18 @@ class AutomationClipEditorContent : public PanelContent,
     double horizontalZoom_ = 0.0;          // pixels per beat; 0 = fit on next layout
     juce::Rectangle<int> scaleStripArea_;  // left value scale, next to the viewport
 
+    // Header snap controls (reparented into the panel header bar)
+    SmallButtonLookAndFeel smallButtonLF_;
+    std::unique_ptr<juce::TextButton> snapXButton_, snapYButton_;
+    std::unique_ptr<magda::DraggableValueLabel> snapXNum_, snapXDen_, snapYNum_, snapYDen_;
+    juce::Label snapXSlash_, snapYSlash_;
+
     const magda::AutomationClipInfo* getClip() const;
     double viewSpanBeats(const magda::AutomationClipInfo& clip) const;
     double gridResolutionBeats() const;
     void gridSettingsChanged();
+    void buildHeaderControls();
+    void syncSnapControls();
     void updateTitle();
     // Ghost of the lane's track content (piano-roll style MIDI notes /
     // audio waveform) painted beneath the curve via the editor's underlay.
