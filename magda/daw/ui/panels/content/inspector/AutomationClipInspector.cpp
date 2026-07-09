@@ -169,6 +169,8 @@ AutomationClipInspector::AutomationClipInspector() {
     styleLabel(lengthLabel_, "Length");
     addChildComponent(lengthLabel_);
     lengthValue_ = std::make_unique<magda::DraggableValueLabel>(F::BarsBeats);
+    // Duration, not position: 4 bars must read 4.0.000, not 5.1.000.
+    lengthValue_->setBarsBeatsIsPosition(false);
     lengthValue_->setRange(kMinClipLength, 100000.0, 4.0);
     lengthValue_->onValueChange = [this]() {
         if (const auto* clip = getClip()) {
@@ -201,6 +203,8 @@ AutomationClipInspector::AutomationClipInspector() {
     styleLabel(loopLengthLabel_, "Loop Len");
     addChildComponent(loopLengthLabel_);
     loopLengthValue_ = std::make_unique<magda::DraggableValueLabel>(F::BarsBeats);
+    // Duration, not position (see Length above).
+    loopLengthValue_->setBarsBeatsIsPosition(false);
     loopLengthValue_->setRange(kMinClipLength, 100000.0, 4.0);
     loopLengthValue_->onValueChange = [this]() {
         if (const auto* clip = getClip())
