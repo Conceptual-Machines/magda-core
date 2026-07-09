@@ -16,7 +16,10 @@ ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param) {
     info.teMinValue = range.getStart();
     info.teMaxValue = range.getEnd();
     info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    info.currentValue = param->getCurrentValue();
+    // Base value, NOT getCurrentValue(): the current value includes live
+    // modifier output, and this mirror is the model's idea of the knob
+    // position (same rule as ExternalPluginProcessor::currentValueChanged).
+    info.currentValue = param->getCurrentBaseValue();
 
     // Only adopt the plugin's unit label when the range is a real range
     // (not normalized 0..1). External plugins (VST3/AU) often report

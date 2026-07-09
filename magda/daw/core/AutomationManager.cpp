@@ -90,11 +90,14 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             // go stale when a UI writes the engine without updating the model
             // (observed with the compiled Faust custom UIs, #162 bake), and a
             // stale value here seeds lanes and bake bases at the wrong height.
+            // Base value, NOT getCurrentValue(): the current value includes
+            // live modifier output, and a bake/seed must ride on the knob
+            // position, not on whatever the LFO happened to output right now.
             if (auto* audioEngine = TrackManager::getInstance().getAudioEngine()) {
                 if (const auto* bridge = audioEngine->getAudioBridge()) {
                     if (auto* teParam = bridge->resolveControlTarget(target))
                         return laneNormalizedFromTEValue(target, teParam,
-                                                         teParam->getCurrentValue());
+                                                         teParam->getCurrentBaseValue());
                 }
             }
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
