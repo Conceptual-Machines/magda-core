@@ -199,6 +199,9 @@ double AutomationCurveEditor::xToPixelF(double x) const {
 }
 
 void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
+    if (paintUnderlay)
+        paintUnderlay(g);
+
     paintClipBorders(g);
 
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);

@@ -1,9 +1,11 @@
 #include "AutomationClipEditorContent.hpp"
 
+#include "../../components/waveform/ClipWaveformPainter.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/AutomationInfo.hpp"
+#include "core/ClipOperations.hpp"
 
 namespace magda::daw::ui {
 
@@ -44,17 +46,20 @@ AutomationClipEditorContent::AutomationClipEditorContent() {
 AutomationClipEditorContent::~AutomationClipEditorContent() {
     magda::SelectionManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
+    magda::ClipManager::getInstance().removeListener(this);
 }
 
 void AutomationClipEditorContent::onActivated() {
     magda::SelectionManager::getInstance().addListener(this);
     magda::AutomationManager::getInstance().addListener(this);
+    magda::ClipManager::getInstance().addListener(this);
     refreshFromSelection();
 }
 
 void AutomationClipEditorContent::onDeactivated() {
     magda::SelectionManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
+    magda::ClipManager::getInstance().removeListener(this);
 }
 
 void AutomationClipEditorContent::paint(juce::Graphics& g) {
@@ -84,6 +89,119 @@ double AutomationClipEditorContent::viewSpanBeats(const magda::AutomationClipInf
     // Looped -> one loop cycle (the clip's own timeline); else content length.
     const bool looped = clip.looping && clip.loopLengthBeats > 0.0;
     return juce::jmax(looped ? clip.loopLengthBeats : clip.lengthBeats, 0.25);
+}
+
+void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
+    const auto* clip = getClip();
+    if (clip == nullptr || editor_ == nullptr)
+        return;
+    const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId);
+    if (lane == nullptr || lane->target.isEditScoped())
+        return;
+    const auto trackId = lane->target.devicePath.trackId;
+    if (trackId == magda::INVALID_TRACK_ID)
+        return;
+
+    double tempo = 120.0;
+    if (auto* tc = TimelineController::getCurrent())
+        tempo = tc->getState().tempo.bpm;
+
+    const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+    const double span = viewSpanBeats(*clip);
+    const double arrStart = clip->startBeats;
+    const double arrEnd = arrStart + span;
+    // Editor x-domain is local beats in the looped view — the ghost shows
+    // the arrangement under the FIRST loop cycle — and timeline beats in
+    // the absolute view.
+    const double domainShift = looped ? -clip->startBeats : 0.0;
+    const auto beatToPixelF = [&](double arrBeat) {
+        return static_cast<float>(editor_->xToPixelF(arrBeat + domainShift));
+    };
+
+    const int editorH = editor_->getHeight();
+    auto& clipManager = magda::ClipManager::getInstance();
+
+    // MIDI ghosts get collected across all clips first so every note shares
+    // ONE pitch axis (a per-clip fit would put the same pitch on different
+    // rows for different clips).
+    struct GhostNote {
+        double beat, length;
+        int pitch;
+        juce::Colour colour;
+    };
+    std::vector<GhostNote> ghostNotes;
+    int minPitch = 127;
+    int maxPitch = 0;
+
+    for (magda::ClipId cid : clipManager.getClipsOnTrack(trackId)) {
+        const auto* c = clipManager.getClip(cid);
+        if (c == nullptr || c->view == magda::ClipView::Session)
+            continue;
+        const double cStart = c->getStartBeats(tempo);
+        const double cLenSeconds = c->getTimelineLength(tempo);
+        const double cEnd = cStart + cLenSeconds * tempo / 60.0;
+        if (cEnd <= arrStart || cStart >= arrEnd)
+            continue;
+
+        if (c->isMidi()) {
+            // Same display math as the piano roll's overlay-track ghosts.
+            const double visibleStart = magda::ClipOperations::getMidiVisibleRange(*c).startBeat;
+            for (auto note : c->midiNotes) {
+                if (!magda::ClipOperations::clipMidiNoteToVisibleRange(*c, note))
+                    continue;
+                const double displayBeat = cStart + note.startBeat - visibleStart;
+                if (displayBeat + note.lengthBeats <= arrStart || displayBeat >= arrEnd)
+                    continue;
+                ghostNotes.push_back({displayBeat, note.lengthBeats, note.noteNumber, c->colour});
+                minPitch = juce::jmin(minPitch, note.noteNumber);
+                maxPitch = juce::jmax(maxPitch, note.noteNumber);
+            }
+        } else if (c->isAudio() && c->audio().source.filePath.isNotEmpty()) {
+            const float x0 = beatToPixelF(cStart);
+            const float x1 = beatToPixelF(cEnd);
+            const auto area = juce::Rectangle<int>(
+                juce::roundToInt(x0), 0, juce::jmax(1, juce::roundToInt(x1 - x0)), editorH);
+            ClipWaveformSpec spec;
+            spec.tempo = tempo;
+            spec.colour = c->colour.withAlpha(0.3f);
+            paintClipWaveform(g, *c, cid, area, cLenSeconds, spec);
+        }
+    }
+
+    if (ghostNotes.empty())
+        return;
+
+    // Ghost piano roll: pitch rows fitted to the visible notes, at least an
+    // octave so rows keep a sane height.
+    while (maxPitch - minPitch < 12 && !(minPitch == 0 && maxPitch == 127)) {
+        if (minPitch > 0)
+            --minPitch;
+        if (maxPitch - minPitch < 12 && maxPitch < 127)
+            ++maxPitch;
+    }
+    const int rows = maxPitch - minPitch + 1;
+    const float rowH = static_cast<float>(editorH) / static_cast<float>(rows);
+    for (const auto& n : ghostNotes) {
+        const float x = beatToPixelF(n.beat);
+        const float w = juce::jmax(2.0f, beatToPixelF(n.beat + n.length) - x);
+        const float y = static_cast<float>(maxPitch - n.pitch) * rowH;
+        const auto rect = juce::Rectangle<float>(x, y + 1.0f, w, juce::jmax(1.0f, rowH - 2.0f));
+        g.setColour(n.colour.withAlpha(0.2f));
+        g.fillRoundedRectangle(rect, 2.0f);
+        g.setColour(n.colour.withAlpha(0.4f));
+        g.drawRoundedRectangle(rect, 2.0f, 1.0f);
+    }
+}
+
+void AutomationClipEditorContent::clipsChanged() {
+    if (editor_ != nullptr)
+        editor_->repaint();
+}
+
+void AutomationClipEditorContent::clipPropertyChanged(magda::ClipId clipId) {
+    juce::ignoreUnused(clipId);
+    if (editor_ != nullptr)
+        editor_->repaint();
 }
 
 void AutomationClipEditorContent::updateTitle() {
@@ -183,6 +301,7 @@ void AutomationClipEditorContent::rebuildEditor() {
     editor_->setClipId(selection_.clipId);
     editor_->setShowClipBorders(true);
     editor_->setDrawMode(magda::AutomationDrawMode::Pencil);
+    editor_->paintUnderlay = [this](juce::Graphics& g) { paintTrackGhost(g); };
     // Grid and snap come from the clip's own settings (header controls),
     // not the arrangement's — same model as the piano roll.
     editor_->snapBeatToGrid = [this](double beats) {

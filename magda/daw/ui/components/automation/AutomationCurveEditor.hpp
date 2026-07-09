@@ -105,6 +105,10 @@ class AutomationCurveEditor : public CurveEditorBase,
     std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;  // Grid step in beats
 
+    // Optional background painter drawn beneath the grid and curve — the
+    // bottom-panel clip editor uses it for the track's MIDI/audio ghost.
+    std::function<void(juce::Graphics&)> paintUnderlay;
+
     // Clip mode (for clip-based automation)
     void setClipId(AutomationClipId clipId) {
         if (clipId_ == clipId)

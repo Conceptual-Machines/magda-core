@@ -9,6 +9,7 @@
 #include "../../components/timeline/TimeRuler.hpp"
 #include "PanelContent.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
 
 namespace magda::daw::ui {
@@ -30,7 +31,8 @@ namespace magda::daw::ui {
  */
 class AutomationClipEditorContent : public PanelContent,
                                     private magda::SelectionManagerListener,
-                                    private magda::AutomationManagerListener {
+                                    private magda::AutomationManagerListener,
+                                    private magda::ClipManagerListener {
   public:
     AutomationClipEditorContent();
     ~AutomationClipEditorContent() override;
@@ -88,6 +90,9 @@ class AutomationClipEditorContent : public PanelContent,
     double gridResolutionBeats() const;
     void gridSettingsChanged();
     void updateTitle();
+    // Ghost of the lane's track content (piano-roll style MIDI notes /
+    // audio waveform) painted beneath the curve via the editor's underlay.
+    void paintTrackGhost(juce::Graphics& g);
     void refreshFromSelection();
     void rebuildEditor();
     void updateView();
@@ -102,6 +107,10 @@ class AutomationClipEditorContent : public PanelContent,
     // AutomationManagerListener
     void automationLanesChanged() override;
     void automationClipsChanged(magda::AutomationLaneId laneId) override;
+
+    // ClipManagerListener — the track ghost must follow MIDI/audio edits.
+    void clipsChanged() override;
+    void clipPropertyChanged(magda::ClipId clipId) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AutomationClipEditorContent)
 };
