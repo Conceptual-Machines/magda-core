@@ -1,5 +1,7 @@
 #include "AutomationClipComponent.hpp"
 
+#include <algorithm>
+
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "AutomationLaneComponent.hpp"
@@ -120,6 +122,17 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
         return bounds.getBottom() - static_cast<float>(value * bounds.getHeight());
     };
 
+    // Effective position: the dragged point renders at its live preview
+    // coordinates until the mouse-up commit.
+    const auto effective = [&](const AutomationPoint& p) -> std::pair<double, double> {
+        if (p.id == previewPointId_)
+            return {previewPointBeat_, previewPointValue_};
+        return {p.beatPosition, p.value};
+    };
+    const auto [firstBeat, firstValue] = effective(clip->points.front());
+    const auto [lastBeat, lastValue] = effective(clip->points.back());
+    juce::ignoreUnused(firstBeat);
+
     juce::Path curvePath;
     bool pathStarted = false;
 
@@ -127,7 +140,7 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
         // Cycle-start value (the curve holds the first point's value before
         // it); on later cycles this line is the vertical wrap jump.
         const float startX = beatToX(cycleStart);
-        const float startY = valueToY(clip->points.front().value);
+        const float startY = valueToY(firstValue);
         if (!pathStarted) {
             curvePath.startNewSubPath(startX, startY);
             pathStarted = true;
@@ -135,15 +148,17 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
             curvePath.lineTo(startX, startY);
         }
 
-        for (const auto& point : clip->points)
-            curvePath.lineTo(beatToX(cycleStart + point.beatPosition), valueToY(point.value));
+        for (const auto& point : clip->points) {
+            const auto [beat, value] = effective(point);
+            curvePath.lineTo(beatToX(cycleStart + beat), valueToY(value));
+        }
 
         // Hold the last value to the cycle end — unless the visible span cuts
         // off before the last point (shrinking resize preview / partial final
         // cycle), where a hold line would double back leftward.
         const double cycleEnd = juce::jmin(cycleStart + cycleBeats, spanBeats);
-        if (cycleEnd > cycleStart + clip->points.back().beatPosition)
-            curvePath.lineTo(beatToX(cycleEnd), valueToY(clip->points.back().value));
+        if (cycleEnd > cycleStart + lastBeat)
+            curvePath.lineTo(beatToX(cycleEnd), valueToY(lastValue));
 
         if (!looped)
             break;
@@ -389,8 +404,26 @@ void AutomationClipComponent::showContextMenu() {
 void AutomationClipComponent::automationClipsChanged(AutomationLaneId laneId) {
     const auto* clip = getClipInfo();
     if (clip && clip->laneId == laneId) {
+        // The commit lands here; drop any in-flight drag preview.
+        previewPointId_ = INVALID_AUTOMATION_POINT_ID;
         repaint();
     }
+}
+
+void AutomationClipComponent::automationPointDragPreview(AutomationLaneId laneId,
+                                                         AutomationPointId pointId,
+                                                         double previewTime, double previewValue) {
+    const auto* clip = getClipInfo();
+    if (!clip || clip->laneId != laneId)
+        return;
+    const bool ours = std::any_of(clip->points.begin(), clip->points.end(),
+                                  [pointId](const AutomationPoint& p) { return p.id == pointId; });
+    if (!ours)
+        return;
+    previewPointId_ = pointId;
+    previewPointBeat_ = previewTime;
+    previewPointValue_ = previewValue;
+    repaint();
 }
 
 void AutomationClipComponent::selectionTypeChanged(SelectionType newType) {

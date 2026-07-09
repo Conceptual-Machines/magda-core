@@ -40,6 +40,10 @@ class AutomationClipComponent : public juce::Component,
     // AutomationManagerListener
     void automationLanesChanged() override {}
     void automationClipsChanged(AutomationLaneId laneId) override;
+    // Live drag preview from the curve editor (previewTime is clip-local),
+    // so the mini curve tracks point drags before the mouse-up commit.
+    void automationPointDragPreview(AutomationLaneId laneId, AutomationPointId pointId,
+                                    double previewTime, double previewValue) override;
 
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
@@ -89,6 +93,11 @@ class AutomationClipComponent : public juce::Component,
     double dragStartLengthBeats_ = 0.0;
     double previewStartBeat_ = 0.0;
     double previewLengthBeats_ = 0.0;
+
+    // In-flight point drag (mini curve preview); cleared on the commit.
+    AutomationPointId previewPointId_ = INVALID_AUTOMATION_POINT_ID;
+    double previewPointBeat_ = 0.0;
+    double previewPointValue_ = 0.0;
 
     // Helpers
     void showContextMenu();

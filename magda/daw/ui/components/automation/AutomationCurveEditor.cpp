@@ -106,14 +106,16 @@ void AutomationCurveEditor::automationPointDragPreview(AutomationLaneId laneId,
     if (laneId != laneId_)
         return;
 
+    // previewTime arrives in model coordinates (clip-local); the preview
+    // state and point components live in editor coordinates.
     previewPointId_ = pointId;
-    previewX_ = previewTime;
+    previewX_ = previewTime + clipOffset_;
     previewY_ = previewValue;
 
     // Update the point component position for visual feedback
     for (auto& pc : pointComponents_) {
         if (pc->getPointId() == static_cast<uint32_t>(pointId)) {
-            int x = xToPixel(previewTime);
+            int x = xToPixel(previewX_);
             int y = yToPixel(previewValue);
             pc->setCentrePosition(x, y);
             break;
@@ -577,9 +579,12 @@ void AutomationCurveEditor::onPointDragPreview(uint32_t pointId, double newX, do
     // preview value straight into the TE parameter — this keeps the fader /
     // knob tracking the drag in real time without waiting for the mouseUp
     // commit + full rebake. Visual point movement is already handled by the
-    // base-class lambda; this notification is purely for audio-side listeners.
+    // base-class lambda.
+    // previewTime is broadcast in MODEL coordinates (clip-local beats for
+    // clip points, lane beats otherwise) so listeners like the timeline
+    // clip's mini preview don't need this editor's offset convention.
     AutomationManager::getInstance().notifyPointDragPreview(
-        laneId_, static_cast<AutomationPointId>(pointId), newX, newY);
+        laneId_, static_cast<AutomationPointId>(pointId), newX - clipOffset_, newY);
 }
 
 void AutomationCurveEditor::onSelectedPointsMoved(
