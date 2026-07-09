@@ -530,8 +530,11 @@ class BakeModulationCommand : public UndoableCommand {
  *
  * The clip spans [startBeat, endBeat) with the baked points converted to
  * clip-local beats, and is moved to the FRONT of the lane's clipIds so it
- * wins playback over any overlapping clip (first-in-clipIds rule). Undo
- * deletes the clip and re-enables the baked links.
+ * wins playback over any overlapping clip (first-in-clipIds rule). With
+ * loopLengthBeats > 0 the points cover only the first cycle and the clip
+ * loops that cycle across its length (an LFO is cycle-periodic, so one
+ * baked cycle looped IS the signal). Undo deletes the clip and re-enables
+ * the baked links.
  */
 class BakeModulationToClipCommand : public UndoableCommand {
   public:
@@ -539,10 +542,12 @@ class BakeModulationToClipCommand : public UndoableCommand {
 
     BakeModulationToClipCommand(AutomationLaneId laneId, double startBeat, double endBeat,
                                 std::vector<AutomationPoint> bakedPoints,
-                                std::vector<ModLinkRef> linksToDisable)
+                                std::vector<ModLinkRef> linksToDisable,
+                                double loopLengthBeats = 0.0)
         : laneId_(laneId),
           startBeat_(startBeat),
           endBeat_(endBeat),
+          loopLengthBeats_(loopLengthBeats),
           bakedPoints_(std::move(bakedPoints)),
           linksToDisable_(std::move(linksToDisable)) {}
 
@@ -560,6 +565,7 @@ class BakeModulationToClipCommand : public UndoableCommand {
   private:
     AutomationLaneId laneId_;
     double startBeat_, endBeat_;
+    double loopLengthBeats_ = 0.0;              // > 0: loop one baked cycle
     std::vector<AutomationPoint> bakedPoints_;  // id-less, timeline beats
     std::vector<ModLinkRef> linksToDisable_;
     std::vector<ModLinkRef> disabledLinks_;  // links actually flipped off by execute()

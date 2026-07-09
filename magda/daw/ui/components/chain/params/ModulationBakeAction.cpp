@@ -52,6 +52,27 @@ BakeableModLinks collectBakeableModLinks(const ParamLinkContext& ctx,
 
 namespace {
 
+/** Cycle length in beats shared by ALL sources, or 0 when they disagree.
+    Tempo-synced LFOs are beat-periodic by definition; free (Hz) LFOs are
+    beat-periodic at a fixed tempo. */
+double commonCycleBeats(const std::vector<magda::ModulationBaker::Source>& sources, double bpm) {
+    double common = 0.0;
+    for (const auto& source : sources) {
+        double cycle = 0.0;
+        if (source.mod.tempoSync)
+            cycle = magda::ModulationBaker::beatsPerCycle(source.mod.syncDivision);
+        else if (source.mod.rate > 0.0f)
+            cycle = (bpm / 60.0) / static_cast<double>(source.mod.rate);
+        if (cycle <= 0.0)
+            return 0.0;
+        if (common == 0.0)
+            common = cycle;
+        else if (std::abs(common - cycle) > 1.0e-6)
+            return 0.0;
+    }
+    return common;
+}
+
 /** End beat of the track's MIDI content (0 if the track has no MIDI clips). */
 double midiContentEndBeats(const magda::ControlTarget& target, double bpm) {
     if (target.isEditScoped())
@@ -119,6 +140,19 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
         }
     }
 
+    // Clip bakes: when every source shares one LFO cycle shorter than the
+    // range, bake exactly ONE cycle and loop the clip across the range —
+    // one crisp cycle of points instead of an unrolled wall.
+    const double clipEndBeat = opts.endBeat;
+    double loopCycleBeats = 0.0;
+    if (clipBased) {
+        const double cycle = commonCycleBeats(links.sources, state.tempo.bpm);
+        if (cycle > 0.0 && cycle < clipEndBeat - opts.startBeat) {
+            loopCycleBeats = cycle;
+            opts.endBeat = opts.startBeat + cycle;
+        }
+    }
+
     opts.fallbackBaseValue = autoMgr.getCurrentTargetValue(target).value_or(0.5);
     const auto baseValueAt = [&autoMgr, laneId](double beat) {
         return autoMgr.getValueAtBeat(laneId, beat);
@@ -130,9 +164,9 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
 
     if (clipBased) {
         magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::BakeModulationToClipCommand>(laneId, opts.startBeat,
-                                                                 opts.endBeat, std::move(points),
-                                                                 std::move(links.linkRefs)));
+            std::make_unique<magda::BakeModulationToClipCommand>(
+                laneId, opts.startBeat, clipEndBeat, std::move(points), std::move(links.linkRefs),
+                loopCycleBeats));
     } else {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::BakeModulationCommand>(laneId, opts.startBeat, opts.endBeat,

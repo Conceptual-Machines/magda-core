@@ -484,6 +484,10 @@ void BakeModulationToClipCommand::execute() {
     for (auto& point : localPoints)
         point.beatPosition -= startBeat_;
     autoMgr.setClipPoints(createdClipId_, std::move(localPoints));
+    if (loopLengthBeats_ > 0.0) {
+        autoMgr.setClipLooping(createdClipId_, true);
+        autoMgr.setClipLoopLength(createdClipId_, loopLengthBeats_);
+    }
     autoMgr.moveClipToFront(createdClipId_);
 
     disabledLinks_ = disableModLinks(linksToDisable_);

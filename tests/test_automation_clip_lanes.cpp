@@ -433,6 +433,41 @@ TEST_CASE("BakeModulationToClipCommand bakes into a front-priority clip",
     REQUIRE(mgr.getValueAtBeat(fx.laneId, 4.0) == Approx(0.5));
 }
 
+TEST_CASE("BakeModulationToClipCommand loops one baked cycle across the range",
+          "[automation][cliplane]") {
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+
+    // One cycle of a 1-beat "triangle": 0 -> 1 -> 0, timeline beats [0, 1].
+    std::vector<AutomationPoint> cycle;
+    AutomationPoint p;
+    p.beatPosition = 0.0;
+    p.value = 0.0;
+    cycle.push_back(p);
+    p.beatPosition = 0.5;
+    p.value = 1.0;
+    cycle.push_back(p);
+    p.beatPosition = 1.0;
+    p.value = 0.0;
+    cycle.push_back(p);
+
+    BakeModulationToClipCommand cmd(fx.laneId, 0.0, 8.0, std::move(cycle), {},
+                                    /*loopLengthBeats=*/1.0);
+    cmd.execute();
+
+    const auto* clip = mgr.getClip(cmd.getCreatedClipId());
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->lengthBeats == Approx(8.0));
+    REQUIRE(clip->looping);
+    REQUIRE(clip->loopLengthBeats == Approx(1.0));
+    REQUIRE(clip->points.size() == 3);
+
+    // The cycle repeats across the clip: beat 2.5 wraps to local 0.5.
+    REQUIRE(mgr.getValueAtBeat(fx.laneId, 0.5) == Approx(1.0));
+    REQUIRE(mgr.getValueAtBeat(fx.laneId, 2.5) == Approx(1.0));
+    REQUIRE(mgr.getValueAtBeat(fx.laneId, 7.25) == Approx(0.5));
+}
+
 TEST_CASE("Clip commands - create/move/resize/delete/duplicate with undo",
           "[automation][cliplane]") {
     ClipLaneFixture fx;
