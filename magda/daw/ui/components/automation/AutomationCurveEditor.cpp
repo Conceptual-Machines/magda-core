@@ -431,11 +431,34 @@ void AutomationCurveEditor::mouseUp(const juce::MouseEvent& e) {
 void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
     paintOverrideOverlay(g);
 
-    // Playhead (same 2px line language as the piano roll grid).
+    // Playback indicator: a dot riding the curve (the mod editor's
+    // phase-dot language) — position from the transport, value from the
+    // model's interpolation, so it shows WHAT plays, not just when.
     if (playheadBeat_ >= 0.0) {
-        const int x = xToPixel(playheadBeat_);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        g.fillRect(x - 1, 0, 2, getHeight());
+        auto& mgr = AutomationManager::getInstance();
+        double value = 0.5;
+        bool haveValue = false;
+        if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
+            if (const auto* clip = mgr.getClip(clipId_)) {
+                value = mgr.interpolatePoints(clip->points, playheadBeat_ - clipOffset_);
+                haveValue = true;
+            }
+        } else if (const auto* lane = mgr.getLane(laneId_)) {
+            if (lane->isAbsolute()) {
+                value = mgr.interpolatePoints(lane->absolutePoints, playheadBeat_);
+                haveValue = true;
+            }
+        }
+        if (haveValue) {
+            const auto x = static_cast<float>(xToPixelF(playheadBeat_));
+            const auto y = static_cast<float>(yToPixelF(value));
+            constexpr float dotSize = 7.0f;
+            constexpr float dotRadius = dotSize / 2.0f;
+            g.setColour(curveColour_);
+            g.fillEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize);
+            g.setColour(juce::Colours::white);
+            g.drawEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize, 1.5f);
+        }
     }
 
     CurveEditorBase::paintOverChildren(g);

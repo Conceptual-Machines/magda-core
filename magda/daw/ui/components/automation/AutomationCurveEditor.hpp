@@ -93,9 +93,10 @@ class AutomationCurveEditor : public CurveEditorBase,
         repaint();
     }
 
-    // Playback position in editor x-domain beats; < 0 hides it. Driven by
-    // the bottom-panel clip editor (timeline lanes sit under the
-    // arrangement's global playhead already).
+    // Playback position in editor x-domain beats; < 0 hides it. Drawn as a
+    // dot riding the curve at the playing value. Driven by the bottom-panel
+    // clip editor (timeline lanes sit under the arrangement's global
+    // playhead already).
     void setPlayheadBeat(double editorBeat) {
         if (playheadBeat_ == editorBeat)
             return;
