@@ -3,6 +3,7 @@
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "AutomationLaneComponent.hpp"
+#include "BinaryData.h"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -53,11 +54,24 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
     auto curveBounds = bounds.reduced(4);
     paintMiniCurve(g, curveBounds);
 
-    // Draw clip name
+    // Header row: name on the left, loop glyph (same infinity icon as
+    // MIDI/audio clips) on the right when looping.
+    auto headerArea = bounds.reduced(4).removeFromTop(14);
+    if (clip->looping && headerArea.getWidth() > 30) {
+        auto loopArea = headerArea.removeFromRight(14).reduced(1);
+        static const auto loopIcon = []() {
+            auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
+                                                            BinaryData::infinito_svgSize);
+            if (icon)
+                icon->replaceColour(juce::Colour(0xFFB3B3B3), juce::Colours::white);
+            return icon;
+        }();
+        if (loopIcon)
+            loopIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+    }
     g.setColour(juce::Colour(0xFFFFFFFF));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    auto textBounds = bounds.reduced(4).removeFromTop(14);
-    g.drawText(clip->name, textBounds, juce::Justification::centredLeft, true);
+    g.drawText(clip->name, headerArea, juce::Justification::centredLeft, true);
 
     // Resize handles visual indication when hovered
     if (isHovered_) {
