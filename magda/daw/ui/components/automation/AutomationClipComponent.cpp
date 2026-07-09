@@ -79,29 +79,55 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
 
 void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<int> bounds) {
     const auto* clip = getClipInfo();
-    if (!clip || clip->points.empty())
+    if (!clip || clip->points.empty() || clip->lengthBeats <= 0.0)
         return;
+
+    // Looped clips repeat one loop cycle across the clip, exactly like
+    // playback unrolls them: hold the last value to the cycle end, then a
+    // wrap jump back to the cycle-start value.
+    const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+    const double cycleBeats = looped ? clip->loopLengthBeats : clip->lengthBeats;
+
+    const auto beatToX = [&](double beat) {
+        return bounds.getX() +
+               static_cast<float>(beat / clip->lengthBeats) * static_cast<float>(bounds.getWidth());
+    };
+    const auto valueToY = [&](double value) {
+        return bounds.getBottom() - static_cast<float>(value * bounds.getHeight());
+    };
 
     juce::Path curvePath;
     bool pathStarted = false;
 
-    for (const auto& point : clip->points) {
-        // Map point to bounds
-        float x = bounds.getX() +
-                  static_cast<float>(point.beatPosition / clip->lengthBeats) * bounds.getWidth();
-        float y = bounds.getBottom() - static_cast<float>(point.value) * bounds.getHeight();
-
+    for (double cycleStart = 0.0; cycleStart < clip->lengthBeats; cycleStart += cycleBeats) {
+        // Cycle-start value (the curve holds the first point's value before
+        // it); on later cycles this line is the vertical wrap jump.
+        const float startX = beatToX(cycleStart);
+        const float startY = valueToY(clip->points.front().value);
         if (!pathStarted) {
-            curvePath.startNewSubPath(x, y);
+            curvePath.startNewSubPath(startX, startY);
             pathStarted = true;
         } else {
-            curvePath.lineTo(x, y);
+            curvePath.lineTo(startX, startY);
         }
+
+        for (const auto& point : clip->points)
+            curvePath.lineTo(beatToX(cycleStart + point.beatPosition), valueToY(point.value));
+
+        // Hold the last value to the cycle end (or the clip end when the
+        // final cycle is cut short).
+        const double cycleEnd = juce::jmin(cycleStart + cycleBeats, clip->lengthBeats);
+        curvePath.lineTo(beatToX(cycleEnd), valueToY(clip->points.back().value));
+
+        if (!looped)
+            break;
     }
 
-    // Draw curve
+    g.saveState();
+    g.reduceClipRegion(bounds);
     g.setColour(juce::Colour(0xAAFFFFFF));
     g.strokePath(curvePath, juce::PathStrokeType(1.5f));
+    g.restoreState();
 }
 
 void AutomationClipComponent::resized() {
