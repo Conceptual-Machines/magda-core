@@ -702,7 +702,12 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         return;
     }
 
-    double normalized = convertFromTEValue(target, &param, param.getCurrentValue());
+    // Base value, NOT getCurrentValue(): TE fires this listener for modifier
+    // (LFO) movement too, and the current value includes the modifier output.
+    // Broadcasting it made every UI follower dance with the modulation as
+    // soon as a lane existed for the target (mod range indicators own that
+    // display); the automation curve only ever writes the base.
+    double normalized = convertFromTEValue(target, &param, param.getCurrentBaseValue());
     AutomationManager::getInstance().notifyValueChanged(it->second.laneId, normalized);
 
     // Keep MAGDA's TrackInfo cache in sync with what TE just wrote, so any UI
