@@ -443,6 +443,13 @@ class AutomationManager : public TrackManagerListener {
      */
     double getClipValueAtBeat(AutomationClipId clipId, double localBeatPosition) const;
 
+    /**
+     * @brief Interpolate a raw point list at a beat, curve-type aware
+     *        (linear/tension, bezier, step, hard corner) — the model's exact
+     *        curve for renderers working outside lane/clip lookups.
+     */
+    double interpolatePoints(const std::vector<AutomationPoint>& points, double beatPosition) const;
+
     // ========================================================================
     // Listener Management
     // ========================================================================
@@ -604,7 +611,6 @@ class AutomationManager : public TrackManagerListener {
     // Interpolation helpers
     double interpolateLinear(double t, double v1, double v2) const;
     double interpolateBezier(double t, const AutomationPoint& p1, const AutomationPoint& p2) const;
-    double interpolatePoints(const std::vector<AutomationPoint>& points, double beatPosition) const;
 
     // Point management helpers
     AutomationPoint* findPoint(std::vector<AutomationPoint>& points, AutomationPointId pointId);

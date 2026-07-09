@@ -122,44 +122,47 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
         return bounds.getBottom() - static_cast<float>(value * bounds.getHeight());
     };
 
-    // Effective position: the dragged point renders at its live preview
-    // coordinates until the mouse-up commit.
-    const auto effective = [&](const AutomationPoint& p) -> std::pair<double, double> {
-        if (p.id == previewPointId_)
-            return {previewPointBeat_, previewPointValue_};
-        return {p.beatPosition, p.value};
-    };
-    const auto [firstBeat, firstValue] = effective(clip->points.front());
-    const auto [lastBeat, lastValue] = effective(clip->points.back());
-    juce::ignoreUnused(firstBeat);
+    // The dragged point renders at its live preview coordinates until the
+    // mouse-up commit.
+    std::vector<AutomationPoint> points = clip->points;
+    if (previewPointId_ != INVALID_AUTOMATION_POINT_ID) {
+        for (auto& point : points) {
+            if (point.id == previewPointId_) {
+                point.beatPosition = previewPointBeat_;
+                point.value = previewPointValue_;
+                break;
+            }
+        }
+        std::sort(points.begin(), points.end(),
+                  [](const AutomationPoint& a, const AutomationPoint& b) {
+                      return a.beatPosition < b.beatPosition;
+                  });
+    }
 
+    // Sample the model's interpolation (bezier / step / tension aware) at
+    // ~2px steps: straight point-to-point lines flattened curved segments
+    // into triangles. Each loop cycle is sampled separately so the wrap
+    // jump stays a crisp vertical edge.
+    auto& mgr = AutomationManager::getInstance();
+    const double stepBeats = juce::jmax(2.0 / pixelsPerBeat_, 1.0e-3);
     juce::Path curvePath;
     bool pathStarted = false;
 
     for (double cycleStart = 0.0; cycleStart < spanBeats; cycleStart += cycleBeats) {
-        // Cycle-start value (the curve holds the first point's value before
-        // it); on later cycles this line is the vertical wrap jump.
-        const float startX = beatToX(cycleStart);
-        const float startY = valueToY(firstValue);
-        if (!pathStarted) {
-            curvePath.startNewSubPath(startX, startY);
-            pathStarted = true;
-        } else {
-            curvePath.lineTo(startX, startY);
-        }
-
-        for (const auto& point : clip->points) {
-            const auto [beat, value] = effective(point);
-            curvePath.lineTo(beatToX(cycleStart + beat), valueToY(value));
-        }
-
-        // Hold the last value to the cycle end — unless the visible span cuts
-        // off before the last point (shrinking resize preview / partial final
-        // cycle), where a hold line would double back leftward.
         const double cycleEnd = juce::jmin(cycleStart + cycleBeats, spanBeats);
-        if (cycleEnd > cycleStart + lastBeat)
-            curvePath.lineTo(beatToX(cycleEnd), valueToY(lastValue));
-
+        for (double beat = cycleStart;; beat += stepBeats) {
+            const double clamped = juce::jmin(beat, cycleEnd);
+            const float x = beatToX(clamped);
+            const float y = valueToY(mgr.interpolatePoints(points, clamped - cycleStart));
+            if (!pathStarted) {
+                curvePath.startNewSubPath(x, y);
+                pathStarted = true;
+            } else {
+                curvePath.lineTo(x, y);
+            }
+            if (clamped >= cycleEnd)
+                break;
+        }
         if (!looped)
             break;
     }
