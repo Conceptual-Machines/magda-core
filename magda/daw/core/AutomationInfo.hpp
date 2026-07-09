@@ -4,6 +4,7 @@
 #include <juce_graphics/juce_graphics.h>
 
 #include <array>
+#include <cmath>
 #include <vector>
 
 #include "AutomationTypes.hpp"
@@ -147,6 +148,20 @@ struct AutomationClipInfo {
                 localBeatPosition += loopLengthBeats;
         }
         return localBeatPosition;
+    }
+
+    /**
+     * @brief Local beat corresponding to the clip's end, as a limit from the
+     *        left: the wrapped loop position that is sounding as the clip
+     *        runs out. Used to hold a clip's final value across the gap that
+     *        follows it.
+     */
+    double getEndLocalBeat() const {
+        if (looping && loopLengthBeats > 0.0) {
+            double local = std::fmod(lengthBeats, loopLengthBeats);
+            return (local == 0.0 && lengthBeats > 0.0) ? loopLengthBeats : local;
+        }
+        return lengthBeats;
     }
 
     // Default automation clip colors

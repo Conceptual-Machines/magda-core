@@ -90,6 +90,7 @@ class AutomationClipComponent : public juce::Component,
     double previewLengthBeats_ = 0.0;
 
     // Helpers
+    void showContextMenu();
     bool isOnLeftEdge(int x) const {
         return x < RESIZE_EDGE_WIDTH;
     }

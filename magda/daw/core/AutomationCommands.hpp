@@ -266,6 +266,173 @@ class DeleteAutomationLaneCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Convert a lane between absolute and clip-based (issue #1087).
+ *
+ * Captures the lane's full state (points + clips) at construction; execute
+ * converts to the OTHER mode, undo restores the captured state verbatim
+ * (point and clip ids preserved).
+ */
+class ConvertAutomationLaneTypeCommand : public UndoableCommand {
+  public:
+    explicit ConvertAutomationLaneTypeCommand(AutomationLaneId laneId) : laneId_(laneId) {
+        captureLane();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return storedLane_.isAbsolute() ? "Convert Lane to Clips" : "Convert Lane to Curve";
+    }
+
+  private:
+    void captureLane();
+
+    AutomationLaneId laneId_;
+    AutomationLaneInfo storedLane_;
+    std::vector<AutomationClipInfo> storedClips_;
+    bool captured_ = false;
+};
+
+/**
+ * @brief Create an automation clip on a clip-based lane.
+ */
+class CreateAutomationClipCommand : public UndoableCommand {
+  public:
+    CreateAutomationClipCommand(AutomationLaneId laneId, double startBeats, double lengthBeats)
+        : laneId_(laneId), startBeats_(startBeats), lengthBeats_(lengthBeats) {}
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Create Automation Clip";
+    }
+
+    /// Valid after execute() has run.
+    AutomationClipId getCreatedClipId() const {
+        return createdClipId_;
+    }
+
+  private:
+    AutomationLaneId laneId_;
+    double startBeats_, lengthBeats_;
+    AutomationClipId createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+};
+
+/**
+ * @brief Delete an automation clip (captures it for undo).
+ */
+class DeleteAutomationClipCommand : public UndoableCommand {
+  public:
+    explicit DeleteAutomationClipCommand(AutomationClipId clipId) : clipId_(clipId) {
+        captureClip();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete Automation Clip";
+    }
+
+  private:
+    void captureClip();
+
+    AutomationClipId clipId_;
+    AutomationClipInfo storedClip_;
+    bool captured_ = false;
+};
+
+/**
+ * @brief Move an automation clip (merges consecutive drag steps).
+ */
+class MoveAutomationClipCommand : public UndoableCommand {
+  public:
+    MoveAutomationClipCommand(AutomationClipId clipId, double newStartBeats)
+        : clipId_(clipId), newStartBeats_(newStartBeats) {
+        captureOldStart();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Move Automation Clip";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const MoveAutomationClipCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newStartBeats_ = static_cast<const MoveAutomationClipCommand*>(other)->newStartBeats_;
+    }
+
+  private:
+    void captureOldStart();
+
+    AutomationClipId clipId_;
+    double newStartBeats_;
+    double oldStartBeats_ = 0.0;
+};
+
+/**
+ * @brief Resize an automation clip (merges consecutive drag steps).
+ */
+class ResizeAutomationClipCommand : public UndoableCommand {
+  public:
+    ResizeAutomationClipCommand(AutomationClipId clipId, double newLengthBeats, bool fromStart)
+        : clipId_(clipId), newLengthBeats_(newLengthBeats), fromStart_(fromStart) {
+        captureOldBounds();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Resize Automation Clip";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const ResizeAutomationClipCommand*>(other))
+            return o->clipId_ == clipId_ && o->fromStart_ == fromStart_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newLengthBeats_ = static_cast<const ResizeAutomationClipCommand*>(other)->newLengthBeats_;
+    }
+
+  private:
+    void captureOldBounds();
+
+    AutomationClipId clipId_;
+    double newLengthBeats_;
+    bool fromStart_;
+    double oldStartBeats_ = 0.0, oldLengthBeats_ = 0.0;
+};
+
+/**
+ * @brief Duplicate an automation clip (placed at the source clip's end).
+ */
+class DuplicateAutomationClipCommand : public UndoableCommand {
+  public:
+    explicit DuplicateAutomationClipCommand(AutomationClipId sourceClipId)
+        : sourceClipId_(sourceClipId) {}
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Duplicate Automation Clip";
+    }
+
+    /// Valid after execute() has run.
+    AutomationClipId getCreatedClipId() const {
+        return createdClipId_;
+    }
+
+  private:
+    AutomationClipId sourceClipId_;
+    AutomationClipId createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+};
+
+/**
  * @brief Bake modulation into an absolute lane (issue #162).
  *
  * Replaces the lane's points inside [startBeat, endBeat] with the baked

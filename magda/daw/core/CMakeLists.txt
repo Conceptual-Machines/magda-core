@@ -36,6 +36,7 @@ target_sources(magda_daw PRIVATE
     TrackCommands.cpp
     TrackPropertyCommands.cpp
     AutomationCommands.cpp
+    ClipLaneFlattener.cpp
     MidiNoteCommands.cpp
     ParameterInfo.cpp
     ParameterUtils.cpp

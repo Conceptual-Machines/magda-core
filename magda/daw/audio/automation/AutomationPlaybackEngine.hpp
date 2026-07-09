@@ -47,6 +47,9 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     // AutomationManagerListener — rebake on data changes during playback
     void automationLanesChanged() override;
     void automationPointsChanged(AutomationLaneId laneId) override;
+    // Clip create/move/resize/point edits change what a clip-based lane
+    // bakes to, so they follow the same rebake path as point edits.
+    void automationClipsChanged(AutomationLaneId laneId) override;
     // Property changes include bypass, snap flags, arm, name, etc. Only
     // bypass affects what gets baked, but any property-change listener miss
     // means a bypass toggle has no audible effect until another event forces

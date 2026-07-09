@@ -1,5 +1,7 @@
 #include "AutomationClipComponent.hpp"
 
+#include "../../../core/AutomationCommands.hpp"
+#include "../../../core/UndoManager.hpp"
 #include "AutomationLaneComponent.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -37,12 +39,14 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
         bgColour = bgColour.brighter(0.15f);
     }
 
-    // Draw background with rounded corners
-    g.setColour(bgColour.withAlpha(0.8f));
+    // Translucent body: automation clips must read as a different species
+    // from MIDI/audio clips at a glance — the lane shows through them.
+    const float fillAlpha = isSelected_ ? 0.5f : (isHovered_ ? 0.42f : 0.35f);
+    g.setColour(bgColour.withAlpha(fillAlpha));
     g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
 
-    // Draw border
-    g.setColour(isSelected_ ? juce::Colour(0xFFFFFFFF) : bgColour.darker(0.3f));
+    // Draw border (kept solid so the clip bounds stay crisp)
+    g.setColour(isSelected_ ? juce::Colour(0xFFFFFFFF) : bgColour.withAlpha(0.9f));
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
 
     // Draw mini curve preview
@@ -109,6 +113,13 @@ bool AutomationClipComponent::hitTest(int x, int y) {
 }
 
 void AutomationClipComponent::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) {
+        if (onClipSelected)
+            onClipSelected(clipId_);
+        showContextMenu();
+        return;
+    }
+
     if (e.mods.isLeftButtonDown()) {
         // Select clip
         if (onClipSelected) {
@@ -205,20 +216,32 @@ void AutomationClipComponent::mouseUp(const juce::MouseEvent& e) {
 
     if (isDragging_) {
         isDragging_ = false;
-        auto& manager = AutomationManager::getInstance();
+        auto& undoMgr = UndoManager::getInstance();
+        const bool moved = previewStartBeat_ != dragStartBeat_;
+        const bool resized = previewLengthBeats_ != dragStartLengthBeats_;
 
         switch (dragMode_) {
             case DragMode::Move:
-                manager.moveClip(clipId_, previewStartBeat_);
+                if (moved)
+                    undoMgr.executeCommand(
+                        std::make_unique<MoveAutomationClipCommand>(clipId_, previewStartBeat_));
                 break;
 
             case DragMode::ResizeLeft:
-                manager.moveClip(clipId_, previewStartBeat_);
-                manager.resizeClip(clipId_, previewLengthBeats_, false);
+                if (moved || resized) {
+                    undoMgr.beginCompoundOperation("Resize Automation Clip");
+                    undoMgr.executeCommand(
+                        std::make_unique<MoveAutomationClipCommand>(clipId_, previewStartBeat_));
+                    undoMgr.executeCommand(std::make_unique<ResizeAutomationClipCommand>(
+                        clipId_, previewLengthBeats_, false));
+                    undoMgr.endCompoundOperation();
+                }
                 break;
 
             case DragMode::ResizeRight:
-                manager.resizeClip(clipId_, previewLengthBeats_, false);
+                if (resized)
+                    undoMgr.executeCommand(std::make_unique<ResizeAutomationClipCommand>(
+                        clipId_, previewLengthBeats_, false));
                 break;
 
             default:
@@ -246,6 +269,56 @@ void AutomationClipComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     if (onClipDoubleClicked) {
         onClipDoubleClicked(clipId_);
     }
+}
+
+void AutomationClipComponent::showContextMenu() {
+    const auto* clip = getClipInfo();
+    if (!clip)
+        return;
+
+    enum MenuItem { EditCurve = 1, Duplicate = 2, ToggleLoop = 3, Delete = 4 };
+
+    juce::PopupMenu menu;
+    menu.addItem(EditCurve, "Edit Curve");
+    menu.addItem(Duplicate, "Duplicate");
+    menu.addItem(ToggleLoop, "Loop", true, clip->looping);
+    menu.addSeparator();
+    menu.addItem(Delete, "Delete");
+
+    // The component can be rebuilt (or deleted) by the action itself, so the
+    // async handler only captures the clip id and the open-editor callback.
+    auto clipId = clipId_;
+    auto openEditor = onClipDoubleClicked;
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(this), [clipId, openEditor](int result) {
+            switch (result) {
+                case EditCurve:
+                    if (openEditor)
+                        openEditor(clipId);
+                    break;
+                case Duplicate:
+                    juce::MessageManager::callAsync([clipId]() {
+                        UndoManager::getInstance().executeCommand(
+                            std::make_unique<DuplicateAutomationClipCommand>(clipId));
+                    });
+                    break;
+                case ToggleLoop:
+                    juce::MessageManager::callAsync([clipId]() {
+                        auto& mgr = AutomationManager::getInstance();
+                        if (const auto* c = mgr.getClip(clipId))
+                            mgr.setClipLooping(clipId, !c->looping);
+                    });
+                    break;
+                case Delete:
+                    juce::MessageManager::callAsync([clipId]() {
+                        UndoManager::getInstance().executeCommand(
+                            std::make_unique<DeleteAutomationClipCommand>(clipId));
+                    });
+                    break;
+                default:
+                    break;
+            }
+        });
 }
 
 void AutomationClipComponent::automationClipsChanged(AutomationLaneId laneId) {

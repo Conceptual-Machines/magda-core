@@ -274,6 +274,114 @@ bool DuplicateAutomationTimeSelectionCommand::shouldDuplicateLane(
 }
 
 // ============================================================================
+// ConvertAutomationLaneTypeCommand
+// ============================================================================
+
+void ConvertAutomationLaneTypeCommand::captureLane() {
+    auto& mgr = AutomationManager::getInstance();
+    const auto* lane = mgr.getLane(laneId_);
+    if (!lane)
+        return;
+
+    storedLane_ = *lane;
+    storedClips_.clear();
+    for (auto clipId : lane->clipIds) {
+        if (const auto* clip = mgr.getClip(clipId))
+            storedClips_.push_back(*clip);
+    }
+    captured_ = true;
+}
+
+void ConvertAutomationLaneTypeCommand::execute() {
+    if (!captured_)
+        return;
+    auto& mgr = AutomationManager::getInstance();
+    if (storedLane_.isAbsolute())
+        mgr.convertLaneToClipBased(laneId_);
+    else
+        mgr.convertLaneToAbsolute(laneId_);
+}
+
+void ConvertAutomationLaneTypeCommand::undo() {
+    if (!captured_)
+        return;
+    AutomationManager::getInstance().restoreLaneState(storedLane_, storedClips_);
+}
+
+// ============================================================================
+// Clip commands
+// ============================================================================
+
+void CreateAutomationClipCommand::execute() {
+    createdClipId_ =
+        AutomationManager::getInstance().createClip(laneId_, startBeats_, lengthBeats_);
+}
+
+void CreateAutomationClipCommand::undo() {
+    if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID)
+        AutomationManager::getInstance().deleteClip(createdClipId_);
+}
+
+void DeleteAutomationClipCommand::captureClip() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
+        storedClip_ = *clip;
+        captured_ = true;
+    }
+}
+
+void DeleteAutomationClipCommand::execute() {
+    if (captured_)
+        AutomationManager::getInstance().deleteClip(clipId_);
+}
+
+void DeleteAutomationClipCommand::undo() {
+    if (!captured_)
+        return;
+    AutomationClipInfo clipCopy = storedClip_;
+    AutomationManager::getInstance().restoreClip(clipCopy);
+}
+
+void MoveAutomationClipCommand::captureOldStart() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_))
+        oldStartBeats_ = clip->startBeats;
+}
+
+void MoveAutomationClipCommand::execute() {
+    AutomationManager::getInstance().moveClip(clipId_, newStartBeats_);
+}
+
+void MoveAutomationClipCommand::undo() {
+    AutomationManager::getInstance().moveClip(clipId_, oldStartBeats_);
+}
+
+void ResizeAutomationClipCommand::captureOldBounds() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
+        oldStartBeats_ = clip->startBeats;
+        oldLengthBeats_ = clip->lengthBeats;
+    }
+}
+
+void ResizeAutomationClipCommand::execute() {
+    AutomationManager::getInstance().resizeClip(clipId_, newLengthBeats_, fromStart_);
+}
+
+void ResizeAutomationClipCommand::undo() {
+    // Restore both bounds: a fromStart resize moved the start too.
+    auto& mgr = AutomationManager::getInstance();
+    mgr.moveClip(clipId_, oldStartBeats_);
+    mgr.resizeClip(clipId_, oldLengthBeats_, false);
+}
+
+void DuplicateAutomationClipCommand::execute() {
+    createdClipId_ = AutomationManager::getInstance().duplicateClip(sourceClipId_);
+}
+
+void DuplicateAutomationClipCommand::undo() {
+    if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID)
+        AutomationManager::getInstance().deleteClip(createdClipId_);
+}
+
+// ============================================================================
 // BakeModulationCommand
 // ============================================================================
 

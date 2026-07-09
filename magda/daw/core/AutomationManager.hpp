@@ -92,6 +92,29 @@ class AutomationManager : public TrackManagerListener {
     AutomationLaneId getOrCreateLane(const AutomationTarget& target, AutomationLaneType type);
 
     /**
+     * @brief Convert an absolute lane to clip-based: wrap its points into
+     *        one clip spanning the data range (min 1 beat, point positions
+     *        become clip-local). An empty lane just flips type. Returns the
+     *        created clip id, INVALID when no clip was needed.
+     */
+    AutomationClipId convertLaneToClipBased(AutomationLaneId laneId);
+
+    /**
+     * @brief Convert a clip-based lane to absolute: flatten its clips
+     *        (loops unrolled, gap holds baked in) into absolutePoints and
+     *        delete the clips.
+     */
+    void convertLaneToAbsolute(AutomationLaneId laneId);
+
+    /**
+     * @brief Restore a lane's full state (type + points + clips) in place.
+     *        Undo support for lane type conversion: `clips` replaces every
+     *        clip currently owned by the lane, ids preserved.
+     */
+    void restoreLaneState(const AutomationLaneInfo& laneState,
+                          const std::vector<AutomationClipInfo>& clips);
+
+    /**
      * @brief Delete an automation lane
      */
     void deleteLane(AutomationLaneId laneId);

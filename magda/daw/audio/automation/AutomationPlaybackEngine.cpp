@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "../../core/AutomationManager.hpp"
+#include "../../core/ClipLaneFlattener.hpp"
 #include "../../core/ParameterInfo.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TrackManager.hpp"
@@ -213,6 +214,11 @@ void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId laneId) 
     needsRebake_ = false;
 }
 
+void AutomationPlaybackEngine::automationClipsChanged(AutomationLaneId laneId) {
+    // Same semantics as a point edit: the lane's baked data changed.
+    automationPointsChanged(laneId);
+}
+
 void AutomationPlaybackEngine::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
     needsRebake_ = true;
 }
@@ -408,9 +414,19 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // couple of helper points so TE's linear-only iterator still matches
     // the MAGDA shape.
     const std::vector<AutomationPoint>* sourcePoints = nullptr;
-    if (lane.isAbsolute())
+    std::vector<AutomationPoint> clipFlattened;
+    if (lane.isAbsolute()) {
         sourcePoints = &lane.absolutePoints;
-    // TODO: handle clip-based lanes similarly
+    } else if (lane.isClipBased()) {
+        // Unroll the lane's clips (loop iterations, gap holds, wrap jumps)
+        // into an absolute-style breakpoint list; the emission loop below
+        // then treats it exactly like an absolute lane. Its tessellation
+        // queries go through getValueAtBeat, which resolves clips natively.
+        clipFlattened = flattenClipLane(
+            lane, [&](AutomationClipId clipId) { return autoMgr.getClip(clipId); },
+            [&](double beat) { return autoMgr.getValueAtBeat(lane.id, beat); });
+        sourcePoints = &clipFlattened;
+    }
 
     auto addTEPoint = [&](double beat, double normalizedValue) {
         float teValue = convertValue(normalizedValue);

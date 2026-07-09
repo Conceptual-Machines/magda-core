@@ -56,6 +56,8 @@ set(TEST_SOURCES
     test_automation_curve_simplifier.cpp
     # Bake modulation to automation (issue #162)
     test_modulation_baker.cpp
+    # Clip-based automation lanes: gap-hold + bake flattener (issue #1087)
+    test_automation_clip_lanes.cpp
     test_scan_report.cpp
     test_drum_grid_plugin.cpp
     test_velocity_lane_utils.cpp

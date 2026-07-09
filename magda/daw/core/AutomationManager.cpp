@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iterator>
 
+#include "ClipLaneFlattener.hpp"
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
 #include "TrackManager.hpp"
@@ -304,6 +305,88 @@ AutomationLaneId AutomationManager::getOrCreateLane(const AutomationTarget& targ
         return existingId;
     }
     return createLane(target, type);
+}
+
+AutomationClipId AutomationManager::convertLaneToClipBased(AutomationLaneId laneId) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isAbsolute())
+        return INVALID_AUTOMATION_CLIP_ID;
+
+    if (lane->absolutePoints.empty()) {
+        lane->type = AutomationLaneType::ClipBased;
+        notifyLanesChanged();
+        return INVALID_AUTOMATION_CLIP_ID;
+    }
+
+    // Wrap the existing curve into one clip spanning the data range. Points
+    // are sorted by beat, so front/back bound the data.
+    const double start = lane->absolutePoints.front().beatPosition;
+    const double length = juce::jmax(lane->absolutePoints.back().beatPosition - start, 1.0);
+
+    AutomationClipInfo clip;
+    clip.id = nextClipId_++;
+    clip.laneId = laneId;
+    clip.startBeats = start;
+    clip.lengthBeats = length;
+    clip.colour = AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
+    clip.name = "Automation " + juce::String(clip.id);
+    clip.points = std::move(lane->absolutePoints);
+    for (auto& point : clip.points)
+        point.beatPosition -= start;
+
+    lane->absolutePoints.clear();
+    lane->type = AutomationLaneType::ClipBased;
+    lane->clipIds = {clip.id};
+    clips_.push_back(std::move(clip));
+
+    notifyLanesChanged();
+    notifyClipsChanged(laneId);
+    return lane->clipIds.front();
+}
+
+void AutomationManager::convertLaneToAbsolute(AutomationLaneId laneId) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isClipBased())
+        return;
+
+    auto flattened = flattenClipLane(
+        *lane, [this](AutomationClipId clipId) { return getClip(clipId); },
+        [this, laneId](double beat) { return getValueAtBeat(laneId, beat); });
+
+    clips_.erase(
+        std::remove_if(clips_.begin(), clips_.end(),
+                       [laneId](const AutomationClipInfo& c) { return c.laneId == laneId; }),
+        clips_.end());
+    lane->clipIds.clear();
+    lane->type = AutomationLaneType::Absolute;
+    lane->absolutePoints.clear();
+    lane->absolutePoints.reserve(flattened.size());
+    for (auto point : flattened) {
+        point.id = nextPointId_++;
+        lane->absolutePoints.push_back(point);
+    }
+
+    notifyLanesChanged();
+    notifyPointsChanged(laneId);
+}
+
+void AutomationManager::restoreLaneState(const AutomationLaneInfo& laneState,
+                                         const std::vector<AutomationClipInfo>& clips) {
+    auto* lane = getLane(laneState.id);
+    if (!lane)
+        return;
+
+    *lane = laneState;
+    clips_.erase(std::remove_if(clips_.begin(), clips_.end(),
+                                [&laneState](const AutomationClipInfo& c) {
+                                    return c.laneId == laneState.id;
+                                }),
+                 clips_.end());
+    for (const auto& clip : clips)
+        clips_.push_back(clip);
+
+    notifyLanesChanged();
+    notifyClipsChanged(laneState.id);
 }
 
 void AutomationManager::deleteLane(AutomationLaneId laneId) {
@@ -937,7 +1020,28 @@ double AutomationManager::getValueAtBeat(AutomationLaneId laneId, double beatPos
         }
     }
 
-    return 0.5;  // Default if no clip at this beat
+    // Gap between clips: hold the nearest clip edge — the previous clip's
+    // final value, or before the first clip, the first clip's initial value.
+    const AutomationClipInfo* prevClip = nullptr;  // greatest end <= beat
+    const AutomationClipInfo* nextClip = nullptr;  // smallest start > beat
+    for (auto clipId : lane->clipIds) {
+        const auto* clip = getClip(clipId);
+        if (!clip)
+            continue;
+        if (clip->getEndBeats() <= beatPosition) {
+            if (!prevClip || clip->getEndBeats() > prevClip->getEndBeats())
+                prevClip = clip;
+        } else if (clip->startBeats > beatPosition) {
+            if (!nextClip || clip->startBeats < nextClip->startBeats)
+                nextClip = clip;
+        }
+    }
+    if (prevClip)
+        return interpolatePoints(prevClip->points, prevClip->getEndLocalBeat());
+    if (nextClip)
+        return interpolatePoints(nextClip->points, 0.0);
+
+    return 0.5;  // Lane has no clips at all
 }
 
 double AutomationManager::getClipValueAtBeat(AutomationClipId clipId,
@@ -1171,8 +1275,20 @@ void AutomationManager::insertLaneAt(AutomationLaneInfo& lane, size_t index) {
 }
 
 void AutomationManager::restoreClip(AutomationClipInfo& clip) {
+    const AutomationClipId clipId = clip.id;
+    const AutomationLaneId laneId = clip.laneId;
     clips_.push_back(std::move(clip));
-    notifyClipsChanged(clip.laneId);
+
+    // Re-link into the owning lane when missing: a single-clip delete undo
+    // must restore the reference too. The lane-restore path (undo of a lane
+    // delete) re-inserts the lane with its clipIds intact, so this is a
+    // no-op there.
+    if (auto* lane = getLane(laneId)) {
+        if (std::find(lane->clipIds.begin(), lane->clipIds.end(), clipId) == lane->clipIds.end())
+            lane->clipIds.push_back(clipId);
+    }
+
+    notifyClipsChanged(laneId);
 }
 
 void AutomationManager::refreshIdCountersFromLanes() {

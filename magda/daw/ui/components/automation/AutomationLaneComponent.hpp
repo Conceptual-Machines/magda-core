@@ -38,6 +38,7 @@ class AutomationLaneComponent : public juce::Component,
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
     bool hitTest(int x, int y) override;
 
     // AutomationManagerListener
@@ -68,6 +69,10 @@ class AutomationLaneComponent : public juce::Component,
     // Snapping
     std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;
+
+    // Open a clip's curve in the big editor (bottom panel). Fired by
+    // double-clicking an automation clip or its "Edit Curve" menu item.
+    std::function<void(AutomationLaneId, AutomationClipId)> onOpenClipEditor;
 
     // Header dimensions
     static constexpr int HEADER_HEIGHT = 24;

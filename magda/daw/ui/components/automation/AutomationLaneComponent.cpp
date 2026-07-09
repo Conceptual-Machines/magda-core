@@ -137,6 +137,27 @@ void AutomationLaneComponent::mouseDown(const juce::MouseEvent& e) {
     }
 }
 
+void AutomationLaneComponent::mouseDoubleClick(const juce::MouseEvent& e) {
+    // Double-click on a clip lane's empty area creates a clip there (the
+    // clip components consume double-clicks on themselves).
+    const auto* lane = getLaneInfo();
+    if (!lane || !lane->isClipBased())
+        return;
+    if (e.y < headerTop() + HEADER_HEIGHT || isInResizeArea(e.y) || e.x < SCALE_LABEL_WIDTH)
+        return;
+
+    double beat = xToBeat(e.x);
+    if (snapBeatToGrid)
+        beat = snapBeatToGrid(beat);
+    beat = juce::jmax(0.0, beat);
+
+    auto cmd = std::make_unique<CreateAutomationClipCommand>(laneId_, beat, 4.0);
+    auto* cmdPtr = cmd.get();
+    UndoManager::getInstance().executeCommand(std::move(cmd));
+    if (cmdPtr->getCreatedClipId() != INVALID_AUTOMATION_CLIP_ID)
+        SelectionManager::getInstance().selectAutomationClip(cmdPtr->getCreatedClipId(), laneId_);
+}
+
 void AutomationLaneComponent::mouseDrag(const juce::MouseEvent& e) {
     if (isCreatingTimeSelection_) {
         double endBeat = xToBeat(e.x);
@@ -356,6 +377,16 @@ void AutomationLaneComponent::rebuildClipComponents() {
 
         auto cc = std::make_unique<AutomationClipComponent>(clipId);
         cc->setPixelsPerBeat(pixelsPerBeat_);
+        cc->snapBeatToGrid = [this](double beat) {
+            return snapBeatToGrid ? snapBeatToGrid(beat) : beat;
+        };
+        cc->onClipSelected = [this](AutomationClipId id) {
+            SelectionManager::getInstance().selectAutomationClip(id, laneId_);
+        };
+        cc->onClipDoubleClicked = [this](AutomationClipId id) {
+            if (onOpenClipEditor)
+                onOpenClipEditor(laneId_, id);
+        };
         addAndMakeVisible(cc.get());
         clipComponents_.push_back(std::move(cc));
     }

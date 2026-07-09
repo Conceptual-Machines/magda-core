@@ -170,6 +170,36 @@ class PowerGlyphButton : public LaneHeaderButton {
     }
 };
 
+// Lane mode toggle: a lane hosts EITHER automation clips OR a free-drawn
+// curve (issue #1087). Off = curve mode (wave glyph), On = clip mode (two
+// blocks glyph). Clicking converts the lane's data to the other mode
+// (undoable ConvertAutomationLaneTypeCommand).
+class LaneModeButton : public LaneHeaderButton {
+  public:
+    LaneModeButton() : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {}
+
+    void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
+        auto bounds = getLocalBounds().toFloat();
+        auto glyph = bounds.reduced(bounds.getWidth() * 0.2f, bounds.getHeight() * 0.28f);
+        g.setColour(colour);
+
+        if (getToggleState()) {
+            // Clip mode: two blocks on the lane.
+            const float w = glyph.getWidth() * 0.44f;
+            g.fillRoundedRectangle(glyph.getX(), glyph.getY(), w, glyph.getHeight(), 1.5f);
+            g.fillRoundedRectangle(glyph.getRight() - w, glyph.getY(), w, glyph.getHeight(), 1.5f);
+        } else {
+            // Curve mode: a free-drawn ramp.
+            juce::Path curve;
+            curve.startNewSubPath(glyph.getX(), glyph.getBottom());
+            curve.cubicTo(glyph.getCentreX(), glyph.getBottom(), glyph.getCentreX(), glyph.getY(),
+                          glyph.getRight(), glyph.getY());
+            g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+        }
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneId laneId,
@@ -195,6 +225,12 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
     entry->bypassBtn = std::make_unique<PowerGlyphButton>();
     entry->bypassBtn->setTooltip("Automation on/off");
     host.addAndMakeVisible(*entry->bypassBtn);
+
+    // Mode toggle: clip lane vs free-drawn curve lane. Converts the lane's
+    // existing data to the other representation (undoable).
+    entry->modeBtn = std::make_unique<LaneModeButton>();
+    entry->modeBtn->setTooltip("Lane mode: clips / free draw");
+    host.addAndMakeVisible(*entry->modeBtn);
 
     // Delete button: matches the device-header × in NodeComponent — same
     // reddish-purple fill, same × glyph. Replaces the old "lane options"
@@ -222,6 +258,10 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
         if (const auto* lane = mgr.getLane(id))
             mgr.setLaneBypass(id, !lane->bypass);
     };
+    entry->modeBtn->onClick = [id]() {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<ConvertAutomationLaneTypeCommand>(id));
+    };
     entry->deleteBtn->onClick = [id]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<DeleteAutomationLaneCommand>(id));
@@ -236,6 +276,9 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons,
     buttons.snapValueBtn->setToggleState(lane.snapValue, juce::dontSendNotification);
     // Power glyph: inverted — "on" means automation active, not bypassed.
     buttons.bypassBtn->setToggleState(!lane.bypass, juce::dontSendNotification);
+    // Mode glyph: on = clip lane, off = free-drawn curve lane.
+    buttons.modeBtn->setToggleState(lane.isClipBased(), juce::dontSendNotification);
+    buttons.modeBtn->repaint();
 }
 
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
@@ -249,6 +292,7 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
     buttons.snapEditGridBtn->setVisible(inView);
     buttons.snapValueBtn->setVisible(inView);
     buttons.bypassBtn->setVisible(inView);
+    buttons.modeBtn->setVisible(inView);
     buttons.deleteBtn->setVisible(inView);
 
     if (!inView)
@@ -263,6 +307,7 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
     place(*buttons.snapEditGridBtn);
     place(*buttons.snapValueBtn);
     place(*buttons.bypassBtn);
+    place(*buttons.modeBtn);
     place(*buttons.deleteBtn);
 }
 
