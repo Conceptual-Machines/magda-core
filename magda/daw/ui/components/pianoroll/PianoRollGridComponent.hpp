@@ -58,6 +58,7 @@ class PianoRollGridComponent : public juce::Component,
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;

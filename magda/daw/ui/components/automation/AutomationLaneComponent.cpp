@@ -9,6 +9,7 @@
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../state/TimelineController.hpp"
+#include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -66,6 +67,21 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
     int handleLineY =
         resizeHandleAtTop_ ? RESIZE_HANDLE_HEIGHT - 1 : getHeight() - RESIZE_HANDLE_HEIGHT;
     g.drawHorizontalLine(handleLineY, 0.0f, static_cast<float>(getWidth()));
+
+    // Alt-pencil preview: the clip being drawn, before the mouse-up commit.
+    if (isDrawingClip_) {
+        const int contentY = headerTop() + HEADER_HEIGHT;
+        const int contentHeight =
+            getHeight() - contentY - (resizeHandleAtTop_ ? 0 : RESIZE_HANDLE_HEIGHT);
+        const int x0 = SCALE_LABEL_WIDTH + static_cast<int>(drawClipStartBeat_ * pixelsPerBeat_);
+        const int x1 = SCALE_LABEL_WIDTH + static_cast<int>(drawClipEndBeat_ * pixelsPerBeat_);
+        const auto rect = juce::Rectangle<int>(x0, contentY, juce::jmax(2, x1 - x0),
+                                               juce::jmax(1, contentHeight));
+        g.setColour(juce::Colours::white.withAlpha(0.15f));
+        g.fillRoundedRectangle(rect.toFloat(), 3.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.5f));
+        g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 3.0f, 1.0f);
+    }
 }
 
 void AutomationLaneComponent::paintOverChildren(juce::Graphics& g) {
@@ -132,6 +148,21 @@ void AutomationLaneComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // Alt pencil: drag on a clip lane's empty area draws a new clip (the
+    // same modifier that draws clips in the arrangement and notes in the
+    // piano roll).
+    if (e.mods.isLeftButtonDown() && e.mods.isAltDown() && canDrawClipAt(e.x, e.y)) {
+        double beat = xToBeat(e.x);
+        if (snapBeatToGrid)
+            beat = snapBeatToGrid(beat);
+        isDrawingClip_ = true;
+        drawClipStartBeat_ = juce::jmax(0.0, beat);
+        drawClipEndBeat_ = drawClipStartBeat_;
+        setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
+        repaint();
+        return;
+    }
+
     // Click on header selects lane
     if (inHeader) {
         SelectionManager::getInstance().selectAutomationLane(laneId_);
@@ -165,6 +196,15 @@ void AutomationLaneComponent::mouseDoubleClick(const juce::MouseEvent& e) {
 }
 
 void AutomationLaneComponent::mouseDrag(const juce::MouseEvent& e) {
+    if (isDrawingClip_) {
+        double beat = xToBeat(e.x);
+        if (snapBeatToGrid)
+            beat = snapBeatToGrid(beat);
+        drawClipEndBeat_ = juce::jmax(drawClipStartBeat_, beat);
+        repaint();
+        return;
+    }
+
     if (isCreatingTimeSelection_) {
         double endBeat = xToBeat(e.x);
         if (snapBeatToGrid)
@@ -195,6 +235,28 @@ void AutomationLaneComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void AutomationLaneComponent::mouseUp(const juce::MouseEvent& e) {
+    if (isDrawingClip_) {
+        isDrawingClip_ = false;
+        double lengthBeats = drawClipEndBeat_ - drawClipStartBeat_;
+        if (lengthBeats <= 0.0) {
+            // Pencil click without a drag: default one-bar clip, matching
+            // the double-click gesture.
+            lengthBeats = 4.0;
+            if (auto* tc = TimelineController::getCurrent())
+                lengthBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+        }
+        auto cmd =
+            std::make_unique<CreateAutomationClipCommand>(laneId_, drawClipStartBeat_, lengthBeats);
+        auto* cmdPtr = cmd.get();
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+        if (cmdPtr->getCreatedClipId() != INVALID_AUTOMATION_CLIP_ID)
+            SelectionManager::getInstance().selectAutomationClip(cmdPtr->getCreatedClipId(),
+                                                                 laneId_);
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+        return;
+    }
+
     if (isCreatingTimeSelection_) {
         double endBeat = xToBeat(e.x);
         if (snapBeatToGrid)
@@ -221,9 +283,38 @@ void AutomationLaneComponent::mouseMove(const juce::MouseEvent& e) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     } else if (isInTimeSelectionStrip(e.x, e.y)) {
         setMouseCursor(juce::MouseCursor::IBeamCursor);
+    } else if (e.mods.isAltDown() && canDrawClipAt(e.x, e.y)) {
+        setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
+}
+
+void AutomationLaneComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    // Pressing/releasing Alt while hovering must swap the pencil cursor
+    // without waiting for a mouse move.
+    if (!isMouseOver() || juce::Component::isMouseButtonDownAnywhere())
+        return;
+    const auto pos = getMouseXYRelative();
+    if (!isInResizeArea(pos.y) && !isInTimeSelectionStrip(pos.x, pos.y)) {
+        setMouseCursor(modifiers.isAltDown() && canDrawClipAt(pos.x, pos.y)
+                           ? CursorManager::getInstance().getNoteDrawCursor()
+                           : juce::MouseCursor::NormalCursor);
+    }
+}
+
+bool AutomationLaneComponent::canDrawClipAt(int x, int y) const {
+    const auto* lane = getLaneInfo();
+    if (lane == nullptr || !lane->isClipBased())
+        return false;
+    if (y < headerTop() + HEADER_HEIGHT || isInResizeArea(y) || x < SCALE_LABEL_WIDTH)
+        return false;
+    // Clip components own their own area; this only sees the empty lane —
+    // but guard against overlaps anyway.
+    for (const auto& cc : clipComponents_)
+        if (cc->getBounds().contains(x, y))
+            return false;
+    return true;
 }
 
 bool AutomationLaneComponent::isInResizeArea(int y) const {

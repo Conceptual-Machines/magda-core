@@ -31,6 +31,7 @@ class AutomationLaneComponent : public juce::Component,
     // Component
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
     void resized() override;
 
     // Mouse interaction
@@ -120,6 +121,11 @@ class AutomationLaneComponent : public juce::Component,
     juce::Point<int> timeSelectionAnchor_;
     double timeSelectionStartBeat_ = 0.0;
 
+    // Alt+drag clip pencil state (clip-based lanes, empty area)
+    bool isDrawingClip_ = false;
+    double drawClipStartBeat_ = 0.0;
+    double drawClipEndBeat_ = 0.0;
+
     // UI components
     std::unique_ptr<AutomationCurveEditor> curveEditor_;
     std::vector<std::unique_ptr<AutomationClipComponent>> clipComponents_;
@@ -145,6 +151,8 @@ class AutomationLaneComponent : public juce::Component,
     // Resize helpers
     bool isInResizeArea(int y) const;
     bool isInTimeSelectionStrip(int x, int y) const;
+    // Empty clip-lane area where the Alt pencil can draw a clip.
+    bool canDrawClipAt(int x, int y) const;
     double xToBeat(int x) const;
     juce::Rectangle<int> getResizeHandleArea() const;
 
