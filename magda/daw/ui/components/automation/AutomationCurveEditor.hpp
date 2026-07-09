@@ -160,6 +160,9 @@ class AutomationCurveEditor : public CurveEditorBase,
     void onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
                        double prevValue) override;
     void paintGrid(juce::Graphics& g) override;
+    // With an edge inset, the base's hold-line extension to the component
+    // edges would overhang the clip borders into the pads — clip it out.
+    void paintCurve(juce::Graphics& g) override;
     void syncSelectionState() override;
     void rebuildPointComponents() override;
 

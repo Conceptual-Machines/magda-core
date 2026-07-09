@@ -266,6 +266,17 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
     }
 }
 
+void AutomationCurveEditor::paintCurve(juce::Graphics& g) {
+    if (edgeInsetPx_ <= 0) {
+        CurveEditorBase::paintCurve(g);
+        return;
+    }
+    g.saveState();
+    g.reduceClipRegion(edgeInsetPx_, 0, juce::jmax(0, getWidth() - 2 * edgeInsetPx_), getHeight());
+    CurveEditorBase::paintCurve(g);
+    g.restoreState();
+}
+
 void AutomationCurveEditor::paintClipBorders(juce::Graphics& g) {
     if (!showClipBorders_ || clipId_ == INVALID_AUTOMATION_CLIP_ID)
         return;
