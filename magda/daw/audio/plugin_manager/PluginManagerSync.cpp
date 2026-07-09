@@ -22,6 +22,7 @@
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
+#include "plugins/InsertCapturePlugin.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
@@ -894,8 +895,21 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // Move after the previous desired plugin
                 int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
                 int curVtIdx = listState.indexOf(desiredOrder[i]->state);
-                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1) {
-                    listState.moveChild(curVtIdx, prevVtIdx + 1, nullptr);
+                // A freeze pass pins a hidden InsertCapturePlugin directly
+                // after its insert; skip it so a mid-pass sync doesn't
+                // displace it (and with it, the capture point).
+                int expectedVtIdx = prevVtIdx + 1;
+                while (expectedVtIdx < listState.getNumChildren()) {
+                    auto child = listState.getChild(expectedVtIdx);
+                    if (child.hasType(te::IDs::PLUGIN) &&
+                        child.getProperty(te::IDs::type).toString() ==
+                            InsertCapturePlugin::xmlTypeName)
+                        ++expectedVtIdx;
+                    else
+                        break;
+                }
+                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != expectedVtIdx) {
+                    listState.moveChild(curVtIdx, expectedVtIdx, nullptr);
                     pluginOrderChanged = true;
                 }
             }
@@ -2284,7 +2298,16 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
         // Wrap instruments in a RackType with audio passthrough so both synth
         // output and audio clips on the same track are summed together.
-        if (device.isInstrument) {
+        //
+        // Exception: an External Instrument is a te::InsertPlugin. TE only turns
+        // an InsertPlugin into a graph-level send/return when it sits DIRECTLY in
+        // the track's plugin list (EditNodeBuilder special-case). Inside a
+        // RackType it would be processed as a normal plugin and hit
+        // InsertPlugin::applyToBuffer's jassertfalse (dead stub), with no audio
+        // routed. So never wrap it, even though it presents as an instrument.
+        const bool isExternalInsert =
+            classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert;
+        if (device.isInstrument && !isExternalInsert) {
             // Detect multi-output capability
             int numOutputChannels = 2;
             if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {

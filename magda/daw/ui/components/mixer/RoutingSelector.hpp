@@ -36,10 +36,20 @@ class RoutingSelector : public juce::Component {
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
 
-    // Enable/disable state
+    // Enable/disable state ("enabled" = routing active; still interactive)
     void setEnabled(bool shouldBeEnabled);
     bool isEnabled() const {
         return enabled_;
+    }
+
+    // Read-only mode: greyed out and non-interactive (no popup / hover), used
+    // when another owner controls the routing (e.g. an External Instrument
+    // insert owns a track's MIDI-out / audio-in). When displayText is set it is
+    // shown verbatim so the control can mirror the owner's selection; otherwise
+    // it shows "None". Passing readOnly=false restores normal behaviour.
+    void setReadOnly(bool readOnly, const juce::String& displayText = {});
+    bool isReadOnly() const {
+        return readOnly_;
     }
 
     // Current selection
@@ -64,6 +74,8 @@ class RoutingSelector : public juce::Component {
     Type type_;
     bool enabled_ = true;
     bool isHovering_ = false;
+    bool readOnly_ = false;
+    juce::String readOnlyDisplay_;
     int selectedId_ = -1;
     std::vector<RoutingOption> options_;
 

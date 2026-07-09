@@ -85,10 +85,12 @@ void TracktionEngineWrapper::recordingFinished(
     const juce::ReferenceCountedArray<tracktion::Clip>& recordedClips) {
     bool isPhysical = dynamic_cast<tracktion::PhysicalMidiInputDevice*>(&instance.owner) != nullptr;
     bool isVirtual = dynamic_cast<tracktion::VirtualMidiInputDevice*>(&instance.owner) != nullptr;
-    DBG("recordingFinished: device='"
-        << instance.owner.getName() << "' " << recordedClips.size() << " clips"
-        << " targetID=" << (int)targetID.getRawID() << " physical=" << (int)isPhysical
-        << " virtual=" << (int)isVirtual << " enabled=" << (int)instance.owner.isEnabled());
+    // File-logged (magda.log): DBG only reaches a terminal, which GUI runs
+    // don't have — this path needs to be diagnosable from user machines.
+    juce::Logger::writeToLog("[MidiRec] finished dev='" + instance.owner.getName() +
+                             "' clips=" + juce::String(recordedClips.size()) +
+                             " targetID=" + juce::String((int)targetID.getRawID()) +
+                             " physical=" + juce::String((int)isPhysical));
     if (!audioBridge_)
         return;
 
@@ -243,8 +245,15 @@ void TracktionEngineWrapper::recordingFinished(
         const auto* midiTrackInfo = TrackManager::getInstance().getTrack(midiTrackId);
         const bool midiTrackHasInput = midiTrackInfo && !midiTrackInfo->midiInputDevice.isEmpty();
 
+        juce::Logger::writeToLog(
+            "[MidiRec]   midi clip notes=" +
+            juce::String(midiClip->getSequence().getNotes().size()) +
+            " takes=" + juce::String(midiClip->hasAnyTakes() ? midiClip->getNumTakes(false) : 0) +
+            " len=" + juce::String(midiClip->getPosition().getLength().inSeconds(), 3) + " track=" +
+            juce::String(midiTrackId) + " hasMidiInput=" + juce::String((int)midiTrackHasInput));
+
         if (!midiTrackHasInput) {
-            DBG("  skipping MIDI clip — track has no MIDI input configured");
+            juce::Logger::writeToLog("[MidiRec]   SKIP: track has no MIDI input configured");
             midiClip->removeFromParent();
             continue;
         }
@@ -267,13 +276,54 @@ void TracktionEngineWrapper::recordingFinished(
         auto pendingIt = pendingMidiRecordings_.find(trackId);
         if (pendingIt == pendingMidiRecordings_.end()) {
             pendingMidiRecordings_[trackId] = midiClip;
-            DBG("  stashed TE midi clip for deferred finalize on track " << trackId);
+            juce::Logger::writeToLog("[MidiRec]   stashed for deferred finalize, track " +
+                                     juce::String(trackId));
         } else if (pendingIt->second.get() != midiClip) {
-            // A second device (mergeRecordings must be false for this device)
-            // produced its own overlapping clip. Drop it — we only commit one
-            // MAGDA clip per track per record pass.
-            DBG("  dropping duplicate TE midi clip on track " << trackId);
-            midiClip->removeFromParent();
+            // With several MIDI inputs armed (mergeRecordings=false), TE fires
+            // one clip per device for the same track. Only one MAGDA clip is
+            // committed per pass, and the callback order is arbitrary — so
+            // keep whichever clip has content and merge when several do. The
+            // old first-wins rule silently threw away the played notes when
+            // an unplayed device's empty clip happened to arrive first.
+            auto stashed = pendingIt->second;
+            const int stashedNotes = stashed->getSequence().getNotes().size();
+            const int incomingNotes = midiClip->getSequence().getNotes().size();
+
+            if (incomingNotes == 0) {
+                juce::Logger::writeToLog("[MidiRec]   drop empty clip dev='" +
+                                         instance.owner.getName() + "' track " +
+                                         juce::String(trackId));
+                midiClip->removeFromParent();
+            } else if (stashedNotes == 0) {
+                // The played device's clip supersedes the empty stash (takes
+                // and all).
+                juce::Logger::writeToLog("[MidiRec]   swap: keeping clip with " +
+                                         juce::String(incomingNotes) + " notes from dev='" +
+                                         instance.owner.getName() + "' track " +
+                                         juce::String(trackId));
+                stashed->removeFromParent();
+                pendingIt->second = midiClip;
+            } else {
+                // Both devices were played: merge the incoming events into the
+                // stashed clip's sequence. (Loop takes of the merged-away clip
+                // are not preserved — takes only exist for loop recording.)
+                juce::Logger::writeToLog("[MidiRec]   merge: " + juce::String(incomingNotes) +
+                                         " notes from dev='" + instance.owner.getName() +
+                                         "' into stashed clip (" + juce::String(stashedNotes) +
+                                         " notes), track " + juce::String(trackId));
+                auto& seq = stashed->getSequence();
+                for (auto* note : midiClip->getSequence().getNotes())
+                    if (note != nullptr)
+                        seq.addNote(note->getNoteNumber(), note->getStartBeat(),
+                                    note->getLengthBeats(), note->getVelocity(), note->getColour(),
+                                    nullptr);
+                for (auto* ce : midiClip->getSequence().getControllerEvents())
+                    if (ce != nullptr)
+                        seq.addControllerEvent(ce->getBeatPosition(), ce->getType(),
+                                               ce->getControllerValue(), ce->getMetadata(),
+                                               nullptr);
+                midiClip->removeFromParent();
+            }
         }
 
         if (pendingFinalizeMidi_.count(trackId) == 0) {
@@ -826,9 +876,11 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
     MidiTake active = takes.empty() ? extractTake(midiClip->getSequence())
                                     : takes[static_cast<size_t>(activeTakeIndex)];
 
-    DBG("finalizeMidiRecording: track=" << trackId << " takes=" << (int)takes.size()
-                                        << " active=" << activeTakeIndex
-                                        << " notes=" << (int)active.notes.size());
+    juce::Logger::writeToLog("[MidiRec] finalize track=" + juce::String(trackId) +
+                             " takes=" + juce::String((int)takes.size()) +
+                             " active=" + juce::String(activeTakeIndex) +
+                             " notes=" + juce::String((int)active.notes.size()) +
+                             " len=" + juce::String(lengthSeconds, 3));
 
     midiClip->removeFromParent();
 

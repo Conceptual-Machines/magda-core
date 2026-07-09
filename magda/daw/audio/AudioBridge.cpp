@@ -7,6 +7,7 @@
 #include "../core/ChainRoutingModel.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/Config.hpp"
+#include "../core/InternalDeviceKind.hpp"
 #include "../core/ModulatorEngine.hpp"
 #include "../core/RackInfo.hpp"
 #include "../engine/PluginWindowManager.hpp"
@@ -118,6 +119,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       midiInputRouter_(engine, edit, trackController_),
       controlTargetResolver_(trackController_, pluginManager_),
       sidechainRouting_(pluginManager_, trackController_),
+      insertDeviceEnablement_(edit),
       samplerFileLoader_(pluginManager_),
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
       automationPlayback_(*this, edit),
@@ -291,6 +293,11 @@ void AudioBridge::tracksChanged() {
     // fires on a plain load, so a restored MIDI sidechain would stay silent
     // until the user re-picks the source. Cheap and idempotent.
     sidechainRouting_.refreshAllSourceMonitors();
+
+    // Post-load external-insert port enablement (#1623): a saved send/return
+    // on a disabled hardware port resolves to noDevice until the port is
+    // enabled. Cheap and idempotent.
+    refreshInsertDeviceEnablement();
 }
 
 void AudioBridge::syncAllArmedTracksToTE() {
@@ -390,6 +397,12 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // (armed tracks should receive MIDI even when not selected)
             updateMidiInputRouting();
 
+            // The external-instrument sendback guard is arm-gated: arming
+            // re-admits the synth's own ports so its keyboard records,
+            // disarming drops them again (#1623). Re-apply BEFORE the arm
+            // sync so the re-added targets exist when they get armed.
+            midiInputRouter_.reapplyExternalInstrumentSendbackGuard(trackId);
+
             syncRecordArmedToTE(trackId);
         }
     }
@@ -407,6 +420,13 @@ void AudioBridge::updateMidiInputRouting() {
     midiInputRouter_.updateMidiInputRouting();
 }
 
+void AudioBridge::refreshInsertDeviceEnablement() {
+    if (insertDeviceEnablement_.refresh())
+        if (auto* ctx = edit_.getCurrentPlaybackContext();
+            ctx != nullptr && ctx->isPlaybackGraphAllocated())
+            ctx->reallocate();
+}
+
 void AudioBridge::resyncAllInputMonitors() {
     // Coalesced: a burst of monitor changes in one message-loop drain applies
     // once, and never re-entrantly from trackPropertyChanged / graph
@@ -419,6 +439,10 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
     DBG("AudioBridge::trackDevicesChanged: trackId=" << trackId);
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
+
+    // An added/removed external insert claims/releases its hardware ports
+    // (#1623). Cheap and idempotent when no inserts changed.
+    refreshInsertDeviceEnablement();
 }
 
 void AudioBridge::deviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) {
@@ -581,6 +605,14 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     pluginManager_.resyncDeviceModifiers(devicePath.trackId);
 
     sidechainRouting_.handleDeviceSidechainChanged(devicePath.trackId, *device);
+
+    // External-insert routing changed (#1623): auto-enable any hardware port
+    // the insert now references, and re-apply the MIDI feedback guard so the
+    // send target's own input port is dropped from this track's routing.
+    if (classifyInternalDevice(device->pluginId) == InternalDeviceKind::ExternalInsert) {
+        refreshInsertDeviceEnablement();
+        midiInputRouter_.reapplyExternalInstrumentSendbackGuard(devicePath.trackId);
+    }
 }
 
 // =============================================================================

@@ -4,6 +4,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
+#include "../audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
 #include "../audio/session/SessionRecorder.hpp"
 #include "../core/Config.hpp"
@@ -376,6 +377,9 @@ void TracktionEngineWrapper::createEditAndBridges() {
         });
         pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
         audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
+        // The export capture pass needs the live transport + hardware I/O;
+        // pointless (and Timer-based) in the headless runtime.
+        insertRenderCapture_ = std::make_unique<InsertRenderCaptureService>(*currentEdit_);
     }
 
     // Configure AudioBridge
@@ -575,6 +579,10 @@ void TracktionEngineWrapper::shutdown() {
             audioBridge_->setPluginWindowManager(nullptr);
         pluginWindowManager_.reset();
     }
+
+    // Cancel any export capture pass and drop the service before the Edit
+    // goes away (it references it).
+    insertRenderCapture_.reset();
 
     // Detach the Tempo lane sync first (it listens to tempoSequence + the
     // AutomationManager singleton, and holds an Edit reference).

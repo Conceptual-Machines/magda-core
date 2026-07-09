@@ -96,6 +96,36 @@ void TracktionEngineWrapper::stop() {
         // the next play session starts clean (prevents note count accumulation).
         if (audioBridge_)
             audioBridge_->getPluginManager().resetSidechainState();
+
+        // Hardware synths driven by an External Instrument insert get no
+        // note-off cleanup from the graph teardown (resetSynthsOnTrack only
+        // covers internal synths), so a note-on in flight at stop rings
+        // forever. Flush all-notes-off through every insert's MIDI send.
+        sendAllNotesOffToExternalInserts();
+    }
+}
+
+void TracktionEngineWrapper::sendAllNotesOffToExternalInserts() {
+    if (!currentEdit_ || !engine_)
+        return;
+
+    for (auto plugin : tracktion::getAllPlugins(*currentEdit_, false)) {
+        auto* insert = dynamic_cast<tracktion::InsertPlugin*>(plugin);
+        if (insert == nullptr || !insert->isEnabled())
+            continue;
+        const auto outputName = insert->outputDevice.get();
+        if (outputName.isEmpty())
+            continue;
+
+        auto& dm = engine_->getDeviceManager();
+        for (int i = 0; i < dm.getNumOutputDevices(); ++i) {
+            auto* midiOut = dynamic_cast<tracktion::MidiOutputDevice*>(dm.getOutputDeviceAt(i));
+            if (midiOut == nullptr || midiOut->getName() != outputName)
+                continue;
+            midiOut->sendNoteOffMessages();  // note-offs for TE-tracked notes
+            for (int channel = 1; channel <= 16; ++channel)
+                midiOut->fireMessage(juce::MidiMessage::allNotesOff(channel));
+        }
     }
 }
 

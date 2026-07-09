@@ -332,6 +332,19 @@ class TrackManager {
     /// raw-vs-worked signal (#886).
     std::vector<std::string> getChainSummary(TrackId trackId) const;
 
+    /// Routing owned by an External Instrument insert on a track. When such a
+    /// device is present it owns the track's MIDI send and audio return, so the
+    /// track-level MIDI-out / audio-in selectors are shown read-only and mirror
+    /// these values (the live insert's outputDevice / inputDevice). `present` is
+    /// false when there's no External Instrument on the track. Inserts are not
+    /// rack-hostable, so only the top-level chain is checked.
+    struct ExternalInstrumentRouting {
+        bool present = false;
+        juce::String midiOut;      // insert send (MIDI output device name)
+        juce::String audioReturn;  // insert return (audio input device name)
+    };
+    ExternalInstrumentRouting getExternalInstrumentRouting(TrackId trackId) const;
+
     // Post-fader FX chain (flat device list; never racks or instruments).
     // Getting/removing a post-fx device goes through the path-based APIs
     // (getDeviceInChainByPath / removeDeviceFromChainByPath with a
@@ -812,6 +825,11 @@ class TrackManager {
     // structure (e.g. creating a track together with a device) can force the
     // UI to rebuild once the final state is in place.
     void notifyTracksChanged();
+    // Broadcast that a device changed one of its own properties (UI-only refresh,
+    // no engine resync). Public so a device's custom UI (e.g. the External
+    // Instrument send/return picker) can refresh dependent views such as the
+    // track-level read-only routing mirror.
+    void notifyDevicePropertyChanged(const ChainNodePath& devicePath);
 
     /**
      * @brief Suspend and coalesce structural tracksChanged() notifications.
@@ -938,7 +956,6 @@ class TrackManager {
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyAudioSidechainTriggered(TrackId sourceTrackId);
-    void notifyDevicePropertyChanged(const ChainNodePath& devicePath);
     void notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
                                       float newValue);
     void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,

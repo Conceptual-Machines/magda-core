@@ -19,6 +19,7 @@ namespace magda {
 
 // Forward declarations
 class AudioBridge;
+class InsertRenderCaptureService;
 class MagdaApi;
 class MidiBridge;
 class PluginScanCoordinator;
@@ -83,6 +84,12 @@ class TracktionEngineWrapper : public AudioEngine,
     void stop() override;
     void pause() override;
     void record() override;
+
+    /**
+     * @brief Flush all-notes-off through every External Instrument insert's
+     *        MIDI send so hardware synths never hang after a transport stop.
+     */
+    void sendAllNotesOffToExternalInserts();
     void locate(double position_seconds) override;
     void locateMusical(int bar, int beat, int tick = 0) override;
     double getCurrentPosition() const override;
@@ -235,6 +242,14 @@ class TracktionEngineWrapper : public AudioEngine,
     }
     const AudioBridge* getAudioBridge() const override {
         return audioBridge_.get();
+    }
+
+    /**
+     * @brief Export capture pass for External FX / Instrument devices (#1623)
+     * @return Pointer to the service, or nullptr when unavailable (headless)
+     */
+    InsertRenderCaptureService* getInsertRenderCaptureService() {
+        return insertRenderCapture_.get();
     }
 
     /**
@@ -550,6 +565,9 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Session recorder for recording session performances to arrangement
     std::unique_ptr<SessionRecorder> sessionRecorder_;
+
+    // Export capture pass for External FX / Instrument devices (#1623)
+    std::unique_ptr<InsertRenderCaptureService> insertRenderCapture_;
 
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;

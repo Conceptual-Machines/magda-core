@@ -1115,6 +1115,18 @@ void TrackHeadersPanel::trackDevicesChanged(TrackId trackId) {
     }
 }
 
+void TrackHeadersPanel::devicePropertyChanged(const magda::ChainNodePath& devicePath) {
+    // An External Instrument's send/return picker changed: re-lay-out so the
+    // track-level read-only MIDI-out / audio-in mirror picks up the new value.
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        if (visibleTrackIds_[i] == devicePath.trackId && i < trackHeaders.size()) {
+            updateTrackHeaderLayout();
+            repaint();
+            break;
+        }
+    }
+}
+
 void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
                                                        const TrackInfo* track) {
     if (!track || !audioEngine_)
@@ -2294,6 +2306,14 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
                                          p.midiIn ? header.inputSelector.get() : nullptr,
                                          header.inputIcon.get(), m);
     }
+
+    // An External Instrument insert owns the track's MIDI send + audio return,
+    // so the track-level audio-in and MIDI-out go read-only and mirror the
+    // device's selection (editable only on the device). MIDI-in and audio-out
+    // stay fully interactive.
+    auto extRouting = TrackManager::getInstance().getExternalInstrumentRouting(header.trackId);
+    header.audioInputSelector->setReadOnly(extRouting.present, extRouting.audioReturn);
+    header.midiOutputSelector->setReadOnly(extRouting.present, extRouting.midiOut);
 }
 
 void TrackHeadersPanel::updateTrackHeaderLayout() {
