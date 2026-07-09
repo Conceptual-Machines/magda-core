@@ -297,7 +297,7 @@ void ConvertAutomationLaneTypeCommand::execute() {
         return;
     auto& mgr = AutomationManager::getInstance();
     if (storedLane_.isAbsolute())
-        mgr.convertLaneToClipBased(laneId_);
+        mgr.convertLaneToClipBased(laneId_, clipMinLengthBeats_);
     else
         mgr.convertLaneToAbsolute(laneId_);
 }

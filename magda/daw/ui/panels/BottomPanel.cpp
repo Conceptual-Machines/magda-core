@@ -1045,6 +1045,10 @@ void BottomPanel::updateContentBasedOnSelection() {
                 targetContent = daw::ui::PanelContentType::WaveformEditor;
             }
         }
+    } else if (SelectionManager::getInstance().getSelectionType() ==
+                   SelectionType::AutomationClip &&
+               SelectionManager::getInstance().getAutomationClipSelection().isValid()) {
+        targetContent = daw::ui::PanelContentType::AutomationClipEditor;
     } else if (selectedTrack != INVALID_TRACK_ID) {
         targetContent = daw::ui::PanelContentType::TrackChain;
     }

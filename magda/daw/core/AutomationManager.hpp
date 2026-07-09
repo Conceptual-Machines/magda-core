@@ -93,11 +93,14 @@ class AutomationManager : public TrackManagerListener {
 
     /**
      * @brief Convert an absolute lane to clip-based: wrap its points into
-     *        one clip spanning the data range (min 1 beat, point positions
-     *        become clip-local). An empty lane just flips type. Returns the
-     *        created clip id, INVALID when no clip was needed.
+     *        one clip spanning the data range (point positions become
+     *        clip-local). minLengthBeats floors the clip length — callers
+     *        pass one bar from the current time signature so a lane with a
+     *        single seed point yields a bar-long clip, not a sliver. An
+     *        empty lane just flips type. Returns the created clip id,
+     *        INVALID when no clip was needed.
      */
-    AutomationClipId convertLaneToClipBased(AutomationLaneId laneId);
+    AutomationClipId convertLaneToClipBased(AutomationLaneId laneId, double minLengthBeats = 4.0);
 
     /**
      * @brief Convert a clip-based lane to absolute: flatten its clips

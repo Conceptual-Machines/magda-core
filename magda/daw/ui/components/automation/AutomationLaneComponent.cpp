@@ -8,6 +8,7 @@
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"
+#include "../../state/TimelineController.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -151,7 +152,12 @@ void AutomationLaneComponent::mouseDoubleClick(const juce::MouseEvent& e) {
         beat = snapBeatToGrid(beat);
     beat = juce::jmax(0.0, beat);
 
-    auto cmd = std::make_unique<CreateAutomationClipCommand>(laneId_, beat, 4.0);
+    // Default clip length: one bar, from the timeline's time signature.
+    double lengthBeats = 4.0;
+    if (auto* tc = TimelineController::getCurrent())
+        lengthBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+
+    auto cmd = std::make_unique<CreateAutomationClipCommand>(laneId_, beat, lengthBeats);
     auto* cmdPtr = cmd.get();
     UndoManager::getInstance().executeCommand(std::move(cmd));
     if (cmdPtr->getCreatedClipId() != INVALID_AUTOMATION_CLIP_ID)

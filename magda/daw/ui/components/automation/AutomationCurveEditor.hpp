@@ -88,7 +88,13 @@ class AutomationCurveEditor : public CurveEditorBase,
         return clipId_;
     }
     void setClipOffset(double offset) {
+        if (clipOffset_ == offset)
+            return;
         clipOffset_ = offset;
+        // Cached editor-space positions bake the offset in.
+        pointsCacheDirty_ = true;
+        rebuildPointComponents();
+        repaint();
     }
 
     // CurveEditorBase data access

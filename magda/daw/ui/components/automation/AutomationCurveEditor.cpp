@@ -503,7 +503,10 @@ void AutomationCurveEditor::updatePointsCache() const {
         for (const auto& ap : *sourcePoints) {
             CurvePoint cp;
             cp.id = ap.id;
-            cp.x = ap.beatPosition;
+            // Editor-space x: clip points are stored clip-local; clipOffset_
+            // shifts them into timeline beats for the absolute (non-looped)
+            // clip editor view. Zero for lanes and loop-cycle views.
+            cp.x = ap.beatPosition + clipOffset_;
             cp.y = ap.value;
             cp.curveType = toCurveType(ap.curveType);
             cp.tension = ap.tension;

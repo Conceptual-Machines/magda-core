@@ -307,7 +307,8 @@ AutomationLaneId AutomationManager::getOrCreateLane(const AutomationTarget& targ
     return createLane(target, type);
 }
 
-AutomationClipId AutomationManager::convertLaneToClipBased(AutomationLaneId laneId) {
+AutomationClipId AutomationManager::convertLaneToClipBased(AutomationLaneId laneId,
+                                                           double minLengthBeats) {
     auto* lane = getLane(laneId);
     if (!lane || !lane->isAbsolute())
         return INVALID_AUTOMATION_CLIP_ID;
@@ -321,7 +322,8 @@ AutomationClipId AutomationManager::convertLaneToClipBased(AutomationLaneId lane
     // Wrap the existing curve into one clip spanning the data range. Points
     // are sorted by beat, so front/back bound the data.
     const double start = lane->absolutePoints.front().beatPosition;
-    const double length = juce::jmax(lane->absolutePoints.back().beatPosition - start, 1.0);
+    const double length = juce::jmax(lane->absolutePoints.back().beatPosition - start,
+                                     juce::jmax(minLengthBeats, 0.1));
 
     AutomationClipInfo clip;
     clip.id = nextClipId_++;

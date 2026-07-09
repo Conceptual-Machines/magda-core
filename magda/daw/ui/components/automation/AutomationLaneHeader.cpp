@@ -10,6 +10,7 @@
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../../core/UndoManager.hpp"
+#include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AutomationLaneComponent.hpp"
@@ -259,8 +260,13 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
             mgr.setLaneBypass(id, !lane->bypass);
     };
     entry->modeBtn->onClick = [id]() {
+        // A lane whose curve spans less than a bar (e.g. just the seed
+        // point) converts into a one-bar clip, per the time signature.
+        double barBeats = 4.0;
+        if (auto* tc = TimelineController::getCurrent())
+            barBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
         UndoManager::getInstance().executeCommand(
-            std::make_unique<ConvertAutomationLaneTypeCommand>(id));
+            std::make_unique<ConvertAutomationLaneTypeCommand>(id, barBeats));
     };
     entry->deleteBtn->onClick = [id]() {
         UndoManager::getInstance().executeCommand(

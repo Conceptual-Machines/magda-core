@@ -274,7 +274,9 @@ class DeleteAutomationLaneCommand : public UndoableCommand {
  */
 class ConvertAutomationLaneTypeCommand : public UndoableCommand {
   public:
-    explicit ConvertAutomationLaneTypeCommand(AutomationLaneId laneId) : laneId_(laneId) {
+    explicit ConvertAutomationLaneTypeCommand(AutomationLaneId laneId,
+                                              double clipMinLengthBeats = 4.0)
+        : laneId_(laneId), clipMinLengthBeats_(clipMinLengthBeats) {
         captureLane();
     }
 
@@ -288,6 +290,7 @@ class ConvertAutomationLaneTypeCommand : public UndoableCommand {
     void captureLane();
 
     AutomationLaneId laneId_;
+    double clipMinLengthBeats_ = 4.0;
     AutomationLaneInfo storedLane_;
     std::vector<AutomationClipInfo> storedClips_;
     bool captured_ = false;
