@@ -107,16 +107,19 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
     if (auto* tc = TimelineController::getCurrent())
         tempo = tc->getState().tempo.bpm;
 
+    // Absolute view only: in the looped (relative) view every automation
+    // cycle plays against DIFFERENT arrangement content, so any single
+    // ghost would be wrong from the second cycle on.
     const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+    if (looped)
+        return;
+
     const double span = viewSpanBeats(*clip);
     const double arrStart = clip->startBeats;
     const double arrEnd = arrStart + span;
-    // Editor x-domain is local beats in the looped view — the ghost shows
-    // the arrangement under the FIRST loop cycle — and timeline beats in
-    // the absolute view.
-    const double domainShift = looped ? -clip->startBeats : 0.0;
+    // Editor x-domain is timeline beats in the absolute view.
     const auto beatToPixelF = [&](double arrBeat) {
-        return static_cast<float>(editor_->xToPixelF(arrBeat + domainShift));
+        return static_cast<float>(editor_->xToPixelF(arrBeat));
     };
 
     const int editorH = editor_->getHeight();
