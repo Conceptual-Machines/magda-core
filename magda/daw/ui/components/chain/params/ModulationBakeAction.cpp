@@ -69,7 +69,8 @@ double midiContentEndBeats(const magda::ControlTarget& target, double bpm) {
 
 }  // namespace
 
-void performModulationBake(const magda::ControlTarget& target, BakeableModLinks links) {
+void performModulationBake(const magda::ControlTarget& target, BakeableModLinks links,
+                           BakeDestination destination) {
     if (links.empty())
         return;
 
@@ -78,15 +79,18 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
         return;
     const auto& state = tc->getState();
 
+    const bool wantClip = destination == BakeDestination::Clip;
     auto& autoMgr = magda::AutomationManager::getInstance();
-    const auto laneId = autoMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+    const auto laneId =
+        autoMgr.getOrCreateLane(target, wantClip ? magda::AutomationLaneType::ClipBased
+                                                 : magda::AutomationLaneType::Absolute);
     // getOrCreateLane returns the existing lane regardless of the requested
-    // type; clip-based lanes take the bake as a new clip instead of
-    // absolute points.
+    // type; an existing lane of the OTHER type can't take this bake (the
+    // menu gates on compatibility, this guards the races).
     const auto* lane = autoMgr.getLane(laneId);
-    if (lane == nullptr)
+    if (lane == nullptr || lane->isClipBased() != wantClip)
         return;
-    const bool clipBased = lane->isClipBased();
+    const bool clipBased = wantClip;
     autoMgr.setLaneVisible(laneId, true);
 
     magda::ModulationBaker::Options opts;

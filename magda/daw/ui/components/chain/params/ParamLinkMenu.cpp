@@ -1,6 +1,7 @@
 #include "params/ParamLinkMenu.hpp"
 
 #include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "params/ModulationBakeAction.hpp"
 
@@ -151,11 +152,17 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     // the ctx array pointers staying alive.
     auto bakeable = collectBakeableModLinks(ctx, thisTarget);
     if (!ctx.devicePath.isPostFx()) {
+        // Each bake destination needs a compatible lane: an existing lane of
+        // the other type can't take it (no lane yet = either works, the bake
+        // creates it).
+        auto& autoMgr = magda::AutomationManager::getInstance();
+        const auto* existingLane = autoMgr.getLane(autoMgr.getLaneForTarget(thisTarget));
+        const bool canBakePoints = existingLane == nullptr || existingLane->isAbsolute();
+        const bool canBakeClip = existingLane == nullptr || existingLane->isClipBased();
         menu.addSeparator();
         menu.addItem(5000, "Show Automation Lane");
-        // Absolute lanes take the bake as points; clip-based lanes as a new
-        // clip (BakeModulationToClipCommand).
-        menu.addItem(5001, "Bake Modulation to Automation", !bakeable.empty());
+        menu.addItem(5001, "Bake Modulation to Automation", !bakeable.empty() && canBakePoints);
+        menu.addItem(5002, "Bake Modulation to Automation Clip", !bakeable.empty() && canBakeClip);
     }
 
     // MIDI section
@@ -183,95 +190,96 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     auto devicePath = ctx.devicePath;
     auto cbs = callbacks;
 
-    menu.showMenuAsync(
-        juce::PopupMenu::Options(), [safeAnchor, paramIdx, devicePath, cbs, bakeable](int result) {
-            if (safeAnchor == nullptr || result == 0) {
-                return;
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeAnchor, paramIdx, devicePath, cbs,
+                                                    bakeable](int result) {
+        if (safeAnchor == nullptr || result == 0) {
+            return;
+        }
+
+        magda::ControlTarget target = magda::ControlTarget::pluginParam(devicePath, paramIdx);
+
+        if (result >= 1700 && result < 1800) {
+            int modIndex = result - 1700;
+            if (cbs.onTrackModUnlinked)
+                cbs.onTrackModUnlinked(modIndex, target);
+        } else if (result >= 1600 && result < 1700) {
+            int modIndex = result - 1600;
+            if (cbs.onRackModUnlinked)
+                cbs.onRackModUnlinked(modIndex, target);
+        } else if (result >= 1500 && result < 1600) {
+            int modIndex = result - 1500;
+            if (cbs.onModUnlinked)
+                cbs.onModUnlinked(modIndex, target);
+        } else if (result >= 2200 && result < 2300) {
+            int macroIndex = result - 2200;
+            magda::ControlTarget macroTarget =
+                magda::ControlTarget::pluginParam(devicePath, paramIdx);
+            if (cbs.onTrackMacroUnlinked)
+                cbs.onTrackMacroUnlinked(macroIndex, macroTarget);
+        } else if (result >= 2100 && result < 2200) {
+            int macroIndex = result - 2100;
+            magda::ControlTarget macroTarget =
+                magda::ControlTarget::pluginParam(devicePath, paramIdx);
+            if (cbs.onRackMacroUnlinked)
+                cbs.onRackMacroUnlinked(macroIndex, macroTarget);
+        } else if (result >= 2000 && result < 2100) {
+            int macroIndex = result - 2000;
+            magda::ControlTarget macroTarget =
+                magda::ControlTarget::pluginParam(devicePath, paramIdx);
+            if (cbs.onMacroUnlinked)
+                cbs.onMacroUnlinked(macroIndex, macroTarget);
+        } else if (result >= 3000 && result < 4000) {
+            int modIndex = result - 3000;
+            if (cbs.onModLinkedWithAmount) {
+                cbs.onModLinkedWithAmount(modIndex, target, 0.0f);
             }
-
-            magda::ControlTarget target = magda::ControlTarget::pluginParam(devicePath, paramIdx);
-
-            if (result >= 1700 && result < 1800) {
-                int modIndex = result - 1700;
-                if (cbs.onTrackModUnlinked)
-                    cbs.onTrackModUnlinked(modIndex, target);
-            } else if (result >= 1600 && result < 1700) {
-                int modIndex = result - 1600;
-                if (cbs.onRackModUnlinked)
-                    cbs.onRackModUnlinked(modIndex, target);
-            } else if (result >= 1500 && result < 1600) {
-                int modIndex = result - 1500;
-                if (cbs.onModUnlinked)
-                    cbs.onModUnlinked(modIndex, target);
-            } else if (result >= 2200 && result < 2300) {
-                int macroIndex = result - 2200;
+        } else if (result >= 4200 && result < 4300) {
+            int macroIndex = result - 4200;
+            magda::ControlTarget macroTarget =
+                magda::ControlTarget::pluginParam(devicePath, paramIdx);
+            if (cbs.onTrackMacroLinked)
+                cbs.onTrackMacroLinked(macroIndex, macroTarget);
+        } else if (result >= 4100 && result < 4200) {
+            int macroIndex = result - 4100;
+            magda::ControlTarget macroTarget =
+                magda::ControlTarget::pluginParam(devicePath, paramIdx);
+            if (cbs.onRackMacroLinked)
+                cbs.onRackMacroLinked(macroIndex, macroTarget);
+        } else if (result >= 4000 && result < 4100) {
+            int macroIndex = result - 4000;
+            if (cbs.onMacroLinked) {
                 magda::ControlTarget macroTarget =
                     magda::ControlTarget::pluginParam(devicePath, paramIdx);
-                if (cbs.onTrackMacroUnlinked)
-                    cbs.onTrackMacroUnlinked(macroIndex, macroTarget);
-            } else if (result >= 2100 && result < 2200) {
-                int macroIndex = result - 2100;
-                magda::ControlTarget macroTarget =
-                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
-                if (cbs.onRackMacroUnlinked)
-                    cbs.onRackMacroUnlinked(macroIndex, macroTarget);
-            } else if (result >= 2000 && result < 2100) {
-                int macroIndex = result - 2000;
-                magda::ControlTarget macroTarget =
-                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
-                if (cbs.onMacroUnlinked)
-                    cbs.onMacroUnlinked(macroIndex, macroTarget);
-            } else if (result >= 3000 && result < 4000) {
-                int modIndex = result - 3000;
-                if (cbs.onModLinkedWithAmount) {
-                    cbs.onModLinkedWithAmount(modIndex, target, 0.0f);
-                }
-            } else if (result >= 4200 && result < 4300) {
-                int macroIndex = result - 4200;
-                magda::ControlTarget macroTarget =
-                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
-                if (cbs.onTrackMacroLinked)
-                    cbs.onTrackMacroLinked(macroIndex, macroTarget);
-            } else if (result >= 4100 && result < 4200) {
-                int macroIndex = result - 4100;
-                magda::ControlTarget macroTarget =
-                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
-                if (cbs.onRackMacroLinked)
-                    cbs.onRackMacroLinked(macroIndex, macroTarget);
-            } else if (result >= 4000 && result < 4100) {
-                int macroIndex = result - 4000;
-                if (cbs.onMacroLinked) {
-                    magda::ControlTarget macroTarget =
-                        magda::ControlTarget::pluginParam(devicePath, paramIdx);
-                    cbs.onMacroLinked(macroIndex, macroTarget);
-                }
-            } else if (result == 5000) {
-                if (cbs.onShowAutomationLane)
-                    cbs.onShowAutomationLane();
-            } else if (result == 5001) {
-                performModulationBake(target, bakeable);
-                if (cbs.onShowAutomationLane)
-                    cbs.onShowAutomationLane();
-            } else if (result == 6000) {
-                bool isCurrentlyLearning = magda::MidiLearnCoordinator::getInstance().isLearning(
-                    magda::ControlTarget::pluginParam(devicePath, paramIdx));
-                if (isCurrentlyLearning) {
-                    magda::MidiLearnCoordinator::getInstance().cancelLearn();
-                } else {
-                    if (cbs.onMidiLearn)
-                        cbs.onMidiLearn(devicePath, paramIdx, {});
-                }
-            } else if (result == 6001) {
-                if (cbs.onMidiClear)
-                    cbs.onMidiClear(devicePath, paramIdx);
-            } else if (result == 6002) {
-                if (cbs.onMidiEdit)
-                    cbs.onMidiEdit(devicePath, paramIdx);
+                cbs.onMacroLinked(macroIndex, macroTarget);
             }
+        } else if (result == 5000) {
+            if (cbs.onShowAutomationLane)
+                cbs.onShowAutomationLane();
+        } else if (result == 5001 || result == 5002) {
+            performModulationBake(target, bakeable,
+                                  result == 5002 ? BakeDestination::Clip : BakeDestination::Points);
+            if (cbs.onShowAutomationLane)
+                cbs.onShowAutomationLane();
+        } else if (result == 6000) {
+            bool isCurrentlyLearning = magda::MidiLearnCoordinator::getInstance().isLearning(
+                magda::ControlTarget::pluginParam(devicePath, paramIdx));
+            if (isCurrentlyLearning) {
+                magda::MidiLearnCoordinator::getInstance().cancelLearn();
+            } else {
+                if (cbs.onMidiLearn)
+                    cbs.onMidiLearn(devicePath, paramIdx, {});
+            }
+        } else if (result == 6001) {
+            if (cbs.onMidiClear)
+                cbs.onMidiClear(devicePath, paramIdx);
+        } else if (result == 6002) {
+            if (cbs.onMidiEdit)
+                cbs.onMidiEdit(devicePath, paramIdx);
+        }
 
-            if (safeAnchor != nullptr)
-                safeAnchor->repaint();
-        });
+        if (safeAnchor != nullptr)
+            safeAnchor->repaint();
+    });
 }
 
 }  // namespace magda::daw::ui
