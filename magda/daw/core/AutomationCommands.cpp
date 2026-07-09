@@ -424,18 +424,15 @@ void DuplicateAutomationClipCommand::undo() {
 // BakeModulationCommand
 // ============================================================================
 
-void BakeModulationCommand::execute() {
-    auto& autoMgr = AutomationManager::getInstance();
-    const auto* lane = autoMgr.getLane(laneId_);
-    if (!lane || !lane->isAbsolute())
-        return;
+namespace {
 
-    removedPoints_ = autoMgr.replacePointsInRange(laneId_, startBeat_, endBeat_, bakedPoints_);
-
+/** Flip off the given links; returns the ones that were actually enabled. */
+std::vector<BakeModulationCommand::ModLinkRef> disableModLinks(
+    const std::vector<BakeModulationCommand::ModLinkRef>& refs) {
     auto& trackMgr = TrackManager::getInstance();
     const auto& constTrackMgr = trackMgr;
-    disabledLinks_.clear();
-    for (const auto& ref : linksToDisable_) {
+    std::vector<BakeModulationCommand::ModLinkRef> disabled;
+    for (const auto& ref : refs) {
         const auto node = constTrackMgr.resolveChainNode(ref.path);
         if (!node.valid() || ref.modIndex < 0 ||
             ref.modIndex >= static_cast<int>(node.mods->size()))
@@ -444,17 +441,61 @@ void BakeModulationCommand::execute() {
         if (link == nullptr || !link->enabled)
             continue;
         trackMgr.setModLinkEnabled(ref.path, ref.modIndex, ref.target, false);
-        disabledLinks_.push_back(ref);
+        disabled.push_back(ref);
     }
+    return disabled;
+}
+
+void enableModLinks(const std::vector<BakeModulationCommand::ModLinkRef>& refs) {
+    auto& trackMgr = TrackManager::getInstance();
+    for (const auto& ref : refs)
+        trackMgr.setModLinkEnabled(ref.path, ref.modIndex, ref.target, true);
+}
+
+}  // namespace
+
+void BakeModulationCommand::execute() {
+    auto& autoMgr = AutomationManager::getInstance();
+    const auto* lane = autoMgr.getLane(laneId_);
+    if (!lane || !lane->isAbsolute())
+        return;
+
+    removedPoints_ = autoMgr.replacePointsInRange(laneId_, startBeat_, endBeat_, bakedPoints_);
+    disabledLinks_ = disableModLinks(linksToDisable_);
 }
 
 void BakeModulationCommand::undo() {
     AutomationManager::getInstance().replacePointsInRange(laneId_, startBeat_, endBeat_,
                                                           removedPoints_);
+    enableModLinks(disabledLinks_);
+}
 
-    auto& trackMgr = TrackManager::getInstance();
-    for (const auto& ref : disabledLinks_)
-        trackMgr.setModLinkEnabled(ref.path, ref.modIndex, ref.target, true);
+void BakeModulationToClipCommand::execute() {
+    auto& autoMgr = AutomationManager::getInstance();
+    const auto* lane = autoMgr.getLane(laneId_);
+    if (!lane || !lane->isClipBased() || endBeat_ <= startBeat_)
+        return;
+
+    createdClipId_ = autoMgr.createClip(laneId_, startBeat_, endBeat_ - startBeat_);
+    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
+        return;
+
+    auto localPoints = bakedPoints_;
+    for (auto& point : localPoints)
+        point.beatPosition -= startBeat_;
+    autoMgr.setClipPoints(createdClipId_, std::move(localPoints));
+    autoMgr.moveClipToFront(createdClipId_);
+
+    disabledLinks_ = disableModLinks(linksToDisable_);
+}
+
+void BakeModulationToClipCommand::undo() {
+    if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID) {
+        AutomationManager::getInstance().deleteClip(createdClipId_);
+        createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+    }
+    enableModLinks(disabledLinks_);
+    disabledLinks_.clear();
 }
 
 bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {

@@ -798,6 +798,36 @@ void AutomationManager::setClipSnapEnabled(AutomationClipId clipId, bool enabled
     }
 }
 
+void AutomationManager::setClipPoints(AutomationClipId clipId,
+                                      std::vector<AutomationPoint> points) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr)
+        return;
+    std::sort(points.begin(), points.end(), [](const AutomationPoint& a, const AutomationPoint& b) {
+        return a.beatPosition < b.beatPosition;
+    });
+    for (auto& point : points)
+        point.id = nextPointId_++;
+    clip->points = std::move(points);
+    notifyClipsChanged(clip->laneId);
+}
+
+void AutomationManager::moveClipToFront(AutomationClipId clipId) {
+    const auto* clip = getClip(clipId);
+    if (clip == nullptr)
+        return;
+    auto* lane = getLane(clip->laneId);
+    if (lane == nullptr)
+        return;
+    auto& ids = lane->clipIds;
+    auto it = std::find(ids.begin(), ids.end(), clipId);
+    if (it == ids.end() || it == ids.begin())
+        return;
+    ids.erase(it);
+    ids.insert(ids.begin(), clipId);
+    notifyClipsChanged(lane->id);
+}
+
 // ============================================================================
 // Point Management
 // ============================================================================

@@ -526,6 +526,47 @@ class BakeModulationCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Bake modulation into a new automation clip (clip-based lanes).
+ *
+ * The clip spans [startBeat, endBeat) with the baked points converted to
+ * clip-local beats, and is moved to the FRONT of the lane's clipIds so it
+ * wins playback over any overlapping clip (first-in-clipIds rule). Undo
+ * deletes the clip and re-enables the baked links.
+ */
+class BakeModulationToClipCommand : public UndoableCommand {
+  public:
+    using ModLinkRef = BakeModulationCommand::ModLinkRef;
+
+    BakeModulationToClipCommand(AutomationLaneId laneId, double startBeat, double endBeat,
+                                std::vector<AutomationPoint> bakedPoints,
+                                std::vector<ModLinkRef> linksToDisable)
+        : laneId_(laneId),
+          startBeat_(startBeat),
+          endBeat_(endBeat),
+          bakedPoints_(std::move(bakedPoints)),
+          linksToDisable_(std::move(linksToDisable)) {}
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Bake Modulation to Automation Clip";
+    }
+
+    /// Valid after execute() has run.
+    AutomationClipId getCreatedClipId() const {
+        return createdClipId_;
+    }
+
+  private:
+    AutomationLaneId laneId_;
+    double startBeat_, endBeat_;
+    std::vector<AutomationPoint> bakedPoints_;  // id-less, timeline beats
+    std::vector<ModLinkRef> linksToDisable_;
+    std::vector<ModLinkRef> disabledLinks_;  // links actually flipped off by execute()
+    AutomationClipId createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+};
+
+/**
  * @brief Duplicate absolute automation points in a timeline beat range.
  *
  * Points in [startBeat, endBeat] are copied to destinationStartBeat on

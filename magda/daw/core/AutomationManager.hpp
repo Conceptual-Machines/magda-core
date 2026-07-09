@@ -313,6 +313,11 @@ class AutomationManager : public TrackManagerListener {
     void setClipGridSettings(AutomationClipId clipId, bool autoGrid, int numerator,
                              int denominator);
     void setClipSnapEnabled(AutomationClipId clipId, bool enabled);
+    /// Replace a clip's points wholesale (fresh ids, sorted, one notify).
+    void setClipPoints(AutomationClipId clipId, std::vector<AutomationPoint> points);
+    /// Move a clip to the front of its lane's clipIds: playback resolves
+    /// overlapping clips as first-in-clipIds, so the front clip wins.
+    void moveClipToFront(AutomationClipId clipId);
 
     // ========================================================================
     // Point Management (Absolute lanes)

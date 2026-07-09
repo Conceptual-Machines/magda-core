@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "core/AutomationManager.hpp"
+#include "core/ClipManager.hpp"
 #include "core/UndoManager.hpp"
 #include "state/TimelineController.hpp"
 
@@ -49,6 +50,25 @@ BakeableModLinks collectBakeableModLinks(const ParamLinkContext& ctx,
     return out;
 }
 
+namespace {
+
+/** End beat of the track's MIDI content (0 if the track has no MIDI clips). */
+double midiContentEndBeats(const magda::ControlTarget& target, double bpm) {
+    if (target.isEditScoped())
+        return 0.0;
+    auto& clipManager = magda::ClipManager::getInstance();
+    double end = 0.0;
+    for (magda::ClipId clipId : clipManager.getClipsOnTrack(target.devicePath.trackId)) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip == nullptr || !clip->isMidi() || clip->view == magda::ClipView::Session)
+            continue;
+        end = juce::jmax(end, clip->getStartBeats(bpm) + clip->getTimelineLength(bpm) * bpm / 60.0);
+    }
+    return end;
+}
+
+}  // namespace
+
 void performModulationBake(const magda::ControlTarget& target, BakeableModLinks links) {
     if (links.empty())
         return;
@@ -57,6 +77,17 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
     if (tc == nullptr || tc->tempoMap() == nullptr)
         return;
     const auto& state = tc->getState();
+
+    auto& autoMgr = magda::AutomationManager::getInstance();
+    const auto laneId = autoMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+    // getOrCreateLane returns the existing lane regardless of the requested
+    // type; clip-based lanes take the bake as a new clip instead of
+    // absolute points.
+    const auto* lane = autoMgr.getLane(laneId);
+    if (lane == nullptr)
+        return;
+    const bool clipBased = lane->isClipBased();
+    autoMgr.setLaneVisible(laneId, true);
 
     magda::ModulationBaker::Options opts;
     if (state.selection.isActive()) {
@@ -68,19 +99,14 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
     } else {
         opts.startBeat = 0.0;
         opts.endBeat = state.timelineLengthBeats;
+        if (clipBased) {
+            // A clip spanning the whole timeline is unusable; without a
+            // selection or loop, bake across the track's MIDI content.
+            const double contentEnd = midiContentEndBeats(target, state.tempo.bpm);
+            if (contentEnd > 0.0)
+                opts.endBeat = contentEnd;
+        }
     }
-
-    auto& autoMgr = magda::AutomationManager::getInstance();
-    const auto laneId = autoMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
-    // getOrCreateLane returns the existing lane regardless of the requested
-    // type: a clip-based lane can't take absolute-point bakes, and letting
-    // the command no-op would still disable nothing yet pollute undo
-    // history. The menu entry is disabled for that case; this guards the
-    // remaining races.
-    const auto* lane = autoMgr.getLane(laneId);
-    if (lane == nullptr || !lane->isAbsolute())
-        return;
-    autoMgr.setLaneVisible(laneId, true);
 
     opts.fallbackBaseValue = autoMgr.getCurrentTargetValue(target).value_or(0.5);
     const auto baseValueAt = [&autoMgr, laneId](double beat) {
@@ -91,8 +117,17 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
     if (points.empty())
         return;
 
-    magda::UndoManager::getInstance().executeCommand(std::make_unique<magda::BakeModulationCommand>(
-        laneId, opts.startBeat, opts.endBeat, std::move(points), std::move(links.linkRefs)));
+    if (clipBased) {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::BakeModulationToClipCommand>(laneId, opts.startBeat,
+                                                                 opts.endBeat, std::move(points),
+                                                                 std::move(links.linkRefs)));
+    } else {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::BakeModulationCommand>(laneId, opts.startBeat, opts.endBeat,
+                                                           std::move(points),
+                                                           std::move(links.linkRefs)));
+    }
 }
 
 }  // namespace magda::daw::ui

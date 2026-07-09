@@ -331,6 +331,46 @@ TEST_CASE("BakeModulationCommand no-ops on a clip-based lane", "[automation][cli
     REQUIRE(mgr.getClip(clipId)->points.size() == clipPointsBefore);
 }
 
+TEST_CASE("BakeModulationToClipCommand bakes into a front-priority clip",
+          "[automation][cliplane]") {
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+
+    // Existing clip overlapping the bake range; the baked clip must win
+    // playback over it (first-in-clipIds rule).
+    const auto existingId = fx.addRampClip(0.0, 8.0, 8.0);
+
+    std::vector<AutomationPoint> baked;
+    for (int i = 0; i <= 4; ++i) {
+        AutomationPoint p;
+        p.beatPosition = 2.0 + i;  // timeline beats [2, 6]
+        p.value = 0.25;
+        baked.push_back(p);
+    }
+
+    BakeModulationToClipCommand cmd(fx.laneId, 2.0, 6.0, std::move(baked), {});
+    cmd.execute();
+
+    const auto bakedClipId = cmd.getCreatedClipId();
+    REQUIRE(bakedClipId != INVALID_AUTOMATION_CLIP_ID);
+    const auto* bakedClip = mgr.getClip(bakedClipId);
+    REQUIRE(bakedClip != nullptr);
+    REQUIRE(bakedClip->startBeats == Approx(2.0));
+    REQUIRE(bakedClip->lengthBeats == Approx(4.0));
+    // Points converted to clip-local beats.
+    REQUIRE(bakedClip->points.front().beatPosition == Approx(0.0));
+    REQUIRE(bakedClip->points.back().beatPosition == Approx(4.0));
+    // Front of clipIds -> the baked value wins over the overlapping ramp.
+    REQUIRE(fx.lane().clipIds.front() == bakedClipId);
+    REQUIRE(mgr.getValueAtBeat(fx.laneId, 4.0) == Approx(0.25));
+
+    // Undo removes the clip and restores the ramp's playback.
+    cmd.undo();
+    REQUIRE(mgr.getClip(bakedClipId) == nullptr);
+    REQUIRE(fx.lane().clipIds == std::vector<AutomationClipId>{existingId});
+    REQUIRE(mgr.getValueAtBeat(fx.laneId, 4.0) == Approx(0.5));
+}
+
 TEST_CASE("Clip commands - create/move/resize/delete/duplicate with undo",
           "[automation][cliplane]") {
     ClipLaneFixture fx;
