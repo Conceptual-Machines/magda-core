@@ -621,46 +621,7 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
 double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& target,
                                                     te::AutomatableParameter* param,
                                                     float teValue) const {
-    switch (target.kind) {
-        case ControlTarget::Kind::DeviceMacro:
-            // Mirror of convertToTEValue: macros are 0..1 on both sides.
-            return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
-
-        case ControlTarget::Kind::TrackVolume:
-        case ControlTarget::Kind::SendLevel: {
-            // TE fader position → dB → MAGDA 0-1 (FaderDB scale). Mirror of
-            // the forward path; kept identical for TrackVolume and SendLevel.
-            auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
-            float dB = te::volumeFaderPositionToDB(teValue);
-            return ParameterUtils::realToNormalized(dB, paramInfo);
-        }
-        case ControlTarget::Kind::TrackPan: {
-            auto paramInfo = ParameterPresets::pan(-1, "Pan");
-            return ParameterUtils::realToNormalized(teValue, paramInfo);
-        }
-        default: {
-            // Inverse of convertToTEValue — keep the two symmetric or the
-            // round-trip (MAGDA normalized -> TE raw -> MAGDA normalized)
-            // will drift and the UI will fight the curve.
-            ParameterInfo info = getParameterInfoForTarget(target);
-            // Mirror of convertToTEValue: display-mapped internal params keep
-            // the lane normalized == TE native, so pass through directly.
-            if (ParameterUtils::isDisplayMappedInternalValue(info))
-                return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
-            const float teSpan = info.teMaxValue - info.teMinValue;
-            if (teSpan <= 0.0f) {
-                if (!param)
-                    return teValue;
-                auto range = param->getValueRange();
-                float span = range.getEnd() - range.getStart();
-                if (span <= 0.0f)
-                    return 0.0;
-                return juce::jlimit(0.0, 1.0,
-                                    static_cast<double>((teValue - range.getStart()) / span));
-            }
-            return ParameterUtils::modelToNormalizedValue(ParameterModelValue{teValue}, info).value;
-        }
-    }
+    return laneNormalizedFromTEValue(target, param, teValue);
 }
 
 void AutomationPlaybackEngine::syncParameterListeners() {

@@ -8,6 +8,7 @@
 #include "ParameterUtils.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/automation/ControlTargetResolver.hpp"
 #include "engine/AudioEngine.hpp"
 
 namespace magda {
@@ -85,6 +86,17 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             return 0.75;  // Default to unity when bus not found
         }
         case ControlTarget::Kind::PluginParam: {
+            // Prefer the live engine parameter: DeviceInfo::currentValue can
+            // go stale when a UI writes the engine without updating the model
+            // (observed with the compiled Faust custom UIs, #162 bake), and a
+            // stale value here seeds lanes and bake bases at the wrong height.
+            if (auto* audioEngine = TrackManager::getInstance().getAudioEngine()) {
+                if (const auto* bridge = audioEngine->getAudioBridge()) {
+                    if (auto* teParam = bridge->resolveControlTarget(target))
+                        return laneNormalizedFromTEValue(target, teParam,
+                                                         teParam->getCurrentValue());
+                }
+            }
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
                 return std::nullopt;
