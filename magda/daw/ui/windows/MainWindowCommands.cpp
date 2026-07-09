@@ -924,6 +924,16 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     selectionManager.clearAutomationPointSelection();
                 return true;
             }
+            // Selected automation clip: delete the whole clip.
+            if (selectionManager.getSelectionType() == SelectionType::AutomationClip) {
+                const auto autoClipSel = selectionManager.getAutomationClipSelection();
+                if (autoClipSel.isValid()) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<DeleteAutomationClipCommand>(autoClipSel.clipId));
+                    selectionManager.clearAutomationClipSelection();
+                    return true;
+                }
+            }
             // Note selection takes priority — user is actively editing in the piano roll
             const auto& noteSel = selectionManager.getNoteSelection();
             if (noteSel.isValid()) {

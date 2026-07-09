@@ -87,6 +87,7 @@ class AutomationClipEditorContent : public PanelContent,
     double viewSpanBeats(const magda::AutomationClipInfo& clip) const;
     double gridResolutionBeats() const;
     void gridSettingsChanged();
+    void updateTitle();
     void refreshFromSelection();
     void rebuildEditor();
     void updateView();

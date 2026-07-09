@@ -42,8 +42,21 @@ AutomationClipInspector::AutomationClipInspector() {
     typeIcon_->setTooltip("Automation clip");
     addChildComponent(*typeIcon_);
 
-    titleLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    // Editable clip name, MIDI-clip-inspector style. The lane target stays
+    // visible in the editor panel's title.
+    titleLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
     titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    titleLabel_.setColour(juce::Label::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+    titleLabel_.setEditable(true);
+    titleLabel_.onTextChange = [this]() {
+        const auto* clip = getClip();
+        const auto newName = titleLabel_.getText().trim();
+        if (clip == nullptr || newName.isEmpty() || newName == clip->name)
+            return;
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::RenameAutomationClipCommand>(clip->id, newName));
+    };
     addAndMakeVisible(titleLabel_);
 
     using F = magda::DraggableValueLabel::Format;
@@ -162,11 +175,6 @@ void AutomationClipInspector::updateFromSelection() {
     if (clip == nullptr)
         return;
 
-    juce::String title = clip->name;
-    if (const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId))
-        title = magda::getDisplayNameForTarget(lane->target) + "  -  " + clip->name;
-    titleLabel_.setText(title, juce::dontSendNotification);
-
     refreshDisplay();
     resized();
 }
@@ -178,6 +186,8 @@ void AutomationClipInspector::refreshDisplay() {
         return;
     }
 
+    if (!titleLabel_.isBeingEdited())
+        titleLabel_.setText(clip->name, juce::dontSendNotification);
     startValue_->setValue(clip->startBeats, juce::dontSendNotification);
     endValue_->setValue(clip->getEndBeats(), juce::dontSendNotification);
     lengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);

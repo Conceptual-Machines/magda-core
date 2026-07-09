@@ -354,6 +354,19 @@ void MoveAutomationClipCommand::undo() {
     AutomationManager::getInstance().moveClip(clipId_, oldStartBeats_);
 }
 
+void RenameAutomationClipCommand::captureOldName() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_))
+        oldName_ = clip->name;
+}
+
+void RenameAutomationClipCommand::execute() {
+    AutomationManager::getInstance().setClipName(clipId_, newName_);
+}
+
+void RenameAutomationClipCommand::undo() {
+    AutomationManager::getInstance().setClipName(clipId_, oldName_);
+}
+
 void ResizeAutomationClipCommand::captureOldBounds() {
     if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
         oldStartBeats_ = clip->startBeats;

@@ -378,6 +378,30 @@ class MoveAutomationClipCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Rename an automation clip (undoable, like MIDI clip renames).
+ */
+class RenameAutomationClipCommand : public UndoableCommand {
+  public:
+    RenameAutomationClipCommand(AutomationClipId clipId, const juce::String& newName)
+        : clipId_(clipId), newName_(newName) {
+        captureOldName();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Rename Automation Clip";
+    }
+
+  private:
+    void captureOldName();
+
+    AutomationClipId clipId_;
+    juce::String newName_;
+    juce::String oldName_;
+};
+
+/**
  * @brief Resize an automation clip (merges consecutive drag steps).
  */
 class ResizeAutomationClipCommand : public UndoableCommand {

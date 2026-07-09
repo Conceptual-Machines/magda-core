@@ -86,6 +86,16 @@ double AutomationClipEditorContent::viewSpanBeats(const magda::AutomationClipInf
     return juce::jmax(looped ? clip.loopLengthBeats : clip.lengthBeats, 0.25);
 }
 
+void AutomationClipEditorContent::updateTitle() {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return;
+    juce::String title = clip->name;
+    if (const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId))
+        title = magda::getDisplayNameForTarget(lane->target) + "  -  " + clip->name;
+    titleLabel_.setText(title, juce::dontSendNotification);
+}
+
 double AutomationClipEditorContent::gridResolutionBeats() const {
     const auto* clip = getClip();
     if (clip == nullptr)
@@ -167,10 +177,7 @@ void AutomationClipEditorContent::rebuildEditor() {
         return;
     }
 
-    juce::String title = clip->name;
-    if (const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId))
-        title = magda::getDisplayNameForTarget(lane->target) + "  -  " + clip->name;
-    titleLabel_.setText(title, juce::dontSendNotification);
+    updateTitle();
 
     editor_ = std::make_unique<magda::AutomationCurveEditor>(selection_.laneId);
     editor_->setClipId(selection_.clipId);
@@ -320,7 +327,8 @@ void AutomationClipEditorContent::automationClipsChanged(magda::AutomationLaneId
         rebuildEditor();
         return;
     }
-    // Length / loop / position changes update the view (offset, span, ruler).
+    // Length / loop / position / name changes update the view and title.
+    updateTitle();
     updateView();
     repaint();
     if (onClipStateChanged)
