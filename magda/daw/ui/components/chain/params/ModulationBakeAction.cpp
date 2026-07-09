@@ -154,9 +154,22 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
     }
 
     opts.fallbackBaseValue = autoMgr.getCurrentTargetValue(target).value_or(0.5);
-    const auto baseValueAt = [&autoMgr, laneId](double beat) {
-        return autoMgr.getValueAtBeat(laneId, beat);
-    };
+
+    // Ride on the lane's automation only when it actually HAS any: an empty
+    // lane's getValueAtBeat falls back to 0.5 (the gap default), which is
+    // NOT the knob — baking on it offsets the whole curve and clamps its
+    // top. With no lane data, fallbackBaseValue (the live target value)
+    // is the base.
+    const auto* laneNow = autoMgr.getLane(laneId);
+    const bool laneHasData =
+        laneNow != nullptr &&
+        (laneNow->isClipBased() ? !laneNow->clipIds.empty() : !laneNow->absolutePoints.empty());
+    std::function<double(double)> baseValueAt;
+    if (laneHasData) {
+        baseValueAt = [&autoMgr, laneId](double beat) {
+            return autoMgr.getValueAtBeat(laneId, beat);
+        };
+    }
 
     auto points = magda::ModulationBaker::bake(links.sources, opts, *tc->tempoMap(), baseValueAt);
     if (points.empty())
