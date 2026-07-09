@@ -5,6 +5,7 @@
 #include <iterator>
 
 #include "ClipLaneFlattener.hpp"
+#include "CurveMath.hpp"
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
 #include "TrackManager.hpp"
@@ -1134,56 +1135,60 @@ double AutomationManager::interpolateLinear(double t, double v1, double v2) cons
 
 double AutomationManager::interpolateBezier(double t, const AutomationPoint& p1,
                                             const AutomationPoint& p2) const {
-    // Cubic bezier interpolation
-    // P0 = (p1.beatPosition, p1.value)
-    // P1 = (p1.beatPosition + p1.outHandle.beatOffset, p1.value + p1.outHandle.value)
-    // P2 = (p2.beatPosition + p2.inHandle.beatOffset, p2.value + p2.inHandle.value)
-    // P3 = (p2.beatPosition, p2.value)
+    // The editor renders the PARAMETRIC cubic (handles offset the control
+    // points in x too), so evaluating the value cubic at t-linear-in-x
+    // drifts off the drawn line whenever a handle has a beat offset. Solve
+    // the x cubic for the parameter s where the curve crosses the queried
+    // beat, then evaluate the value cubic there.
+    const double x0 = p1.beatPosition;
+    const double x3 = p2.beatPosition;
+    const double x1 = x0 + p1.outHandle.beatOffset;
+    const double x2 = x3 + p2.inHandle.beatOffset;
+    const double target = x0 + t * (x3 - x0);
 
-    double t2 = t * t;
-    double t3 = t2 * t;
-    double mt = 1.0 - t;
-    double mt2 = mt * mt;
-    double mt3 = mt2 * mt;
+    const auto xAt = [&](double s) {
+        const double ms = 1.0 - s;
+        return ms * ms * ms * x0 + 3.0 * ms * ms * s * x1 + 3.0 * ms * s * s * x2 + s * s * s * x3;
+    };
+    const auto dxAt = [&](double s) {
+        const double ms = 1.0 - s;
+        return 3.0 * ms * ms * (x1 - x0) + 6.0 * ms * s * (x2 - x1) + 3.0 * s * s * (x3 - x2);
+    };
 
-    // Calculate control points
-    double cp1Value = p1.value + p1.outHandle.value;
-    double cp2Value = p2.value + p2.inHandle.value;
-
-    // Cubic bezier formula for value
-    return mt3 * p1.value + 3.0 * mt2 * t * cp1Value + 3.0 * mt * t2 * cp2Value + t3 * p2.value;
-}
-
-// Tension-based interpolation: power curve between two values
-// tension: -1 = concave (log-like), 0 = linear, +1 = convex (exp-like)
-static double interpolateWithTension(double t, double v1, double v2, double tension) {
-    if (std::abs(tension) < 0.001) {
-        // Linear interpolation for near-zero tension
-        return v1 + t * (v2 - v1);
+    // Newton with a t seed; clamped so overshooting handles can't escape the
+    // segment. A handful of iterations reaches sub-sample accuracy.
+    double s = t;
+    for (int i = 0; i < 12; ++i) {
+        const double err = xAt(s) - target;
+        if (std::abs(err) < 1.0e-6 * (x3 - x0 + 1.0))
+            break;
+        const double slope = dxAt(s);
+        if (std::abs(slope) < 1.0e-9)
+            break;
+        s = std::clamp(s - err / slope, 0.0, 1.0);
     }
 
-    // Use power curve for tension
-    // tension > 0: convex curve (slow start, fast end) - use t^(1+tension)
-    // tension < 0: concave curve (fast start, slow end) - use t^(1/(1-tension))
-    double curvedT;
-    if (tension > 0) {
-        // Convex: power > 1
-        curvedT = std::pow(t, 1.0 + tension * 2.0);
-    } else {
-        // Concave: power < 1
-        curvedT = 1.0 - std::pow(1.0 - t, 1.0 - tension * 2.0);
-    }
-
-    return v1 + curvedT * (v2 - v1);
+    const double s2 = s * s;
+    const double s3 = s2 * s;
+    const double ms = 1.0 - s;
+    const double ms2 = ms * ms;
+    const double ms3 = ms2 * ms;
+    const double cp1Value = p1.value + p1.outHandle.value;
+    const double cp2Value = p2.value + p2.inHandle.value;
+    return ms3 * p1.value + 3.0 * ms2 * s * cp1Value + 3.0 * ms * s2 * cp2Value + s3 * p2.value;
 }
 
-// Quadratic bezier through the segment shaper's apex (both handles point to it),
-// matching AutomationCurveEditor's quadraticTo rendering so what you see and
-// what plays back agree. t is the x-fraction along the segment.
-static double interpolateShaper(double t, const AutomationPoint& p1, const AutomationPoint& p2) {
-    const double apex = p1.value + p1.outHandle.value;
-    const double mt = 1.0 - t;
-    return mt * mt * p1.value + 2.0 * mt * t * apex + t * t * p2.value;
+// Linear-type segments (pure, tension, or shaper-bent) evaluate through the
+// SHARED curvemath::evalSegment — the same function the editor samples when
+// drawing and the modulator engine outputs — so the played value sits exactly
+// on the drawn curve. (The old local quadratic/power copies here had drifted
+// from the renderer.) t is the x-fraction along the segment.
+static double evalLinearSegment(double t, const AutomationPoint& p1, const AutomationPoint& p2) {
+    const bool hasShaper = !p1.outHandle.isZero() || !p2.inHandle.isZero();
+    const double controlY = p1.value + p1.outHandle.value;
+    return static_cast<double>(curvemath::evalSegment(
+        static_cast<float>(p1.value), static_cast<float>(p2.value), static_cast<float>(controlY),
+        static_cast<float>(p1.tension), hasShaper, static_cast<float>(t)));
 }
 
 double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& points,
@@ -1214,11 +1219,7 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
 
             switch (p1.curveType) {
                 case AutomationCurveType::Linear:
-                    // The shaper bends a Linear segment via bezier handles; fall
-                    // back to the tension scalar only when no handle is stored.
-                    if (!p1.outHandle.isZero() || !p2.inHandle.isZero())
-                        return interpolateShaper(t, p1, p2);
-                    return interpolateWithTension(t, p1.value, p2.value, p1.tension);
+                    return evalLinearSegment(t, p1, p2);
 
                 case AutomationCurveType::Bezier:
                     return interpolateBezier(t, p1, p2);
