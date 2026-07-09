@@ -315,6 +315,14 @@ TEST_CASE("Clip commands - create/move/resize/delete/duplicate with undo",
     const auto clipId = createPtr->getCreatedClipId();
     REQUIRE(mgr.getClip(clipId) != nullptr);
     REQUIRE(fx.lane().clipIds.size() == 1);
+    // The command seeds a straight hold line across the clip (two points at
+    // the target's current value); bare AutomationManager::createClip stays
+    // an empty primitive.
+    REQUIRE(mgr.getClip(clipId)->points.size() == 2);
+    REQUIRE(mgr.getClip(clipId)->points.front().beatPosition == Approx(0.0));
+    REQUIRE(mgr.getClip(clipId)->points.back().beatPosition == Approx(4.0));
+    REQUIRE(mgr.getClip(clipId)->points.front().value ==
+            Approx(mgr.getClip(clipId)->points.back().value));
 
     // Move (mergeable)
     undoMgr.executeCommand(std::make_unique<MoveAutomationClipCommand>(clipId, 8.0));
@@ -346,6 +354,6 @@ TEST_CASE("Clip commands - create/move/resize/delete/duplicate with undo",
     REQUIRE(fx.lane().clipIds.empty());
     REQUIRE(undoMgr.undo());
     REQUIRE(mgr.getClip(clipId) != nullptr);
-    REQUIRE(mgr.getClip(clipId)->points.size() == 1);
+    REQUIRE(mgr.getClip(clipId)->points.size() == 3);  // seeded line + added point
     REQUIRE(fx.lane().clipIds == std::vector<AutomationClipId>{clipId});
 }

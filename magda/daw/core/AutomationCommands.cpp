@@ -313,8 +313,21 @@ void ConvertAutomationLaneTypeCommand::undo() {
 // ============================================================================
 
 void CreateAutomationClipCommand::execute() {
-    createdClipId_ =
-        AutomationManager::getInstance().createClip(laneId_, startBeats_, lengthBeats_);
+    auto& mgr = AutomationManager::getInstance();
+    createdClipId_ = mgr.createClip(laneId_, startBeats_, lengthBeats_);
+    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
+        return;
+
+    // Seed a straight line across the clip at the target's current value, so
+    // a freshly drawn clip starts as "hold what the parameter is now"
+    // instead of empty. Model-level createClip stays a bare primitive.
+    double seedValue = 0.5;
+    if (const auto* lane = mgr.getLane(laneId_)) {
+        if (auto current = mgr.getCurrentTargetValue(lane->target))
+            seedValue = juce::jlimit(0.0, 1.0, *current);
+    }
+    mgr.addPointToClip(createdClipId_, 0.0, seedValue);
+    mgr.addPointToClip(createdClipId_, lengthBeats_, seedValue);
 }
 
 void CreateAutomationClipCommand::undo() {
