@@ -684,9 +684,9 @@ const AutomationClipInfo* AutomationManager::getClip(AutomationClipId clipId) co
     return nullptr;
 }
 
-void AutomationManager::moveClip(AutomationClipId clipId, double newStartTime) {
+void AutomationManager::moveClip(AutomationClipId clipId, double newStartBeats) {
     if (auto* clip = getClip(clipId)) {
-        clip->startBeats = juce::jmax(0.0, newStartTime);
+        clip->startBeats = juce::jmax(0.0, newStartBeats);
         notifyClipsChanged(clip->laneId);
     }
 }

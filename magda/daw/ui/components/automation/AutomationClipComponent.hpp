@@ -33,6 +33,7 @@ class AutomationClipComponent : public juce::Component,
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseEnter(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
 
@@ -91,6 +92,7 @@ class AutomationClipComponent : public juce::Component,
 
     // Helpers
     void showContextMenu();
+    void updateCursor(int x);
     bool isOnLeftEdge(int x) const {
         return x < RESIZE_EDGE_WIDTH;
     }

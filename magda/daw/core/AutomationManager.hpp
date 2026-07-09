@@ -284,7 +284,7 @@ class AutomationManager : public TrackManagerListener {
     /**
      * @brief Move a clip to a new position
      */
-    void moveClip(AutomationClipId clipId, double newStartTime);
+    void moveClip(AutomationClipId clipId, double newStartBeats);
 
     /**
      * @brief Resize a clip

@@ -66,14 +66,14 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
         g.fillRect(getWidth() - RESIZE_EDGE_WIDTH, 0, RESIZE_EDGE_WIDTH, getHeight());
     }
 
-    // Loop indicator
-    if (clip->looping) {
+    // Loop indicator. Positions computed per-line in double: accumulating a
+    // truncated int drifts off the beat grid within a few repetitions.
+    if (clip->looping && clip->loopLengthBeats > 0.0 && pixelsPerBeat_ > 0.0) {
         g.setColour(juce::Colour(0xAAFFFFFF));
-        int loopX = static_cast<int>(clip->loopLengthBeats * pixelsPerBeat_);
-        while (loopX < getWidth()) {
-            g.drawVerticalLine(loopX, 0.0f, static_cast<float>(getHeight()));
-            loopX += static_cast<int>(clip->loopLengthBeats * pixelsPerBeat_);
-        }
+        const double stride = clip->loopLengthBeats * pixelsPerBeat_;
+        for (double x = stride; x < getWidth(); x += stride)
+            g.drawVerticalLine(static_cast<int>(std::round(x)), 0.0f,
+                               static_cast<float>(getHeight()));
     }
 }
 
@@ -253,15 +253,28 @@ void AutomationClipComponent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void AutomationClipComponent::mouseEnter(const juce::MouseEvent& e) {
-    juce::ignoreUnused(e);
     isHovered_ = true;
+    updateCursor(e.x);
     repaint();
+}
+
+void AutomationClipComponent::mouseMove(const juce::MouseEvent& e) {
+    updateCursor(e.x);
 }
 
 void AutomationClipComponent::mouseExit(const juce::MouseEvent& e) {
     juce::ignoreUnused(e);
     isHovered_ = false;
+    setMouseCursor(juce::MouseCursor::NormalCursor);
     repaint();
+}
+
+void AutomationClipComponent::updateCursor(int x) {
+    // Resize cursor over the edge handles, hand elsewhere (drag-to-move).
+    if (isOnLeftEdge(x) || isOnRightEdge(x))
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    else
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
 }
 
 void AutomationClipComponent::mouseDoubleClick(const juce::MouseEvent& e) {

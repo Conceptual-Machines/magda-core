@@ -298,6 +298,11 @@ void AutomationLaneComponent::setPixelsPerBeat(double ppb) {
     if (curveEditor_) {
         curveEditor_->setPixelsPerBeat(ppb);
     }
+    // Clip components keep their own copy for loop-tick painting and drag
+    // deltas — a stale scale there leaves the clip body aligned but its
+    // internals off-grid.
+    for (auto& cc : clipComponents_)
+        cc->setPixelsPerBeat(ppb);
     updateClipPositions();
 }
 
