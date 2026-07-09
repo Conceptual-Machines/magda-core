@@ -19,6 +19,28 @@ void styleLabel(juce::Label& label, const juce::String& text) {
 }  // namespace
 
 AutomationClipInspector::AutomationClipInspector() {
+    // View icon (arrangement — automation clips are arrangement-only). The
+    // bold view icons fill with "currentColor" (JUCE renders that black), so
+    // recolor from black, matching the clip inspector.
+    viewIcon_ = std::make_unique<magda::SvgButton>("View", BinaryData::iconarrangementboldm_svg,
+                                                   BinaryData::iconarrangementboldm_svgSize);
+    viewIcon_->setOriginalColor(juce::Colour(0xFF000000));
+    viewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    viewIcon_->setIconPadding(1.0f);
+    viewIcon_->setInterceptsMouseClicks(false, false);
+    viewIcon_->setTooltip("Arrangement clip");
+    addChildComponent(*viewIcon_);
+
+    // Clip type icon (automation clip).
+    typeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::iconautomationboldm_svg,
+                                                   BinaryData::iconautomationboldm_svgSize);
+    typeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    typeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    typeIcon_->setIconPadding(1.0f);
+    typeIcon_->setInterceptsMouseClicks(false, false);
+    typeIcon_->setTooltip("Automation clip");
+    addChildComponent(*typeIcon_);
+
     titleLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addAndMakeVisible(titleLabel_);
@@ -165,6 +187,8 @@ void AutomationClipInspector::refreshDisplay() {
 }
 
 void AutomationClipInspector::showControls(bool show) {
+    viewIcon_->setVisible(show);
+    typeIcon_->setVisible(show);
     titleLabel_.setVisible(show);
     startLabel_.setVisible(show);
     startValue_->setVisible(show);
@@ -188,7 +212,20 @@ void AutomationClipInspector::resized() {
     constexpr int ROW_GAP = 8;
     constexpr int COL_GAP = 8;
 
-    titleLabel_.setBounds(bounds.removeFromTop(24));
+    // Header: view icon + type icon + title (same row layout as the clip
+    // inspector).
+    {
+        constexpr int ICON_SIZE = 20;
+        constexpr int ICON_GAP = 6;
+        auto headerRow = bounds.removeFromTop(24);
+        viewIcon_->setBounds(
+            headerRow.removeFromLeft(ICON_SIZE).withSizeKeepingCentre(ICON_SIZE, ICON_SIZE));
+        headerRow.removeFromLeft(ICON_GAP);
+        typeIcon_->setBounds(
+            headerRow.removeFromLeft(ICON_SIZE).withSizeKeepingCentre(ICON_SIZE, ICON_SIZE));
+        headerRow.removeFromLeft(ICON_GAP);
+        titleLabel_.setBounds(headerRow);
+    }
     bounds.removeFromTop(ROW_GAP);
 
     // Start | End | Length

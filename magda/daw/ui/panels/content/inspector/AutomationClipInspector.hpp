@@ -36,6 +36,10 @@ class AutomationClipInspector : public BaseInspector, private magda::AutomationM
   private:
     magda::AutomationClipSelection selection_;
 
+    // Header icons, matching the clip inspector: view (arrangement) + type
+    // (automation clip). Non-interactive.
+    std::unique_ptr<magda::SvgButton> viewIcon_;
+    std::unique_ptr<magda::SvgButton> typeIcon_;
     juce::Label titleLabel_;
     juce::Label startLabel_, endLabel_, lengthLabel_;
     std::unique_ptr<magda::DraggableValueLabel> startValue_;

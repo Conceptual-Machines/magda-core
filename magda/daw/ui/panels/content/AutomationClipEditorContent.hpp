@@ -62,6 +62,9 @@ class AutomationClipEditorContent : public PanelContent,
     void setSnapEnabledFromUI(bool enabled);
     // Fires when auto-grid recomputes from zoom so the num/den labels follow.
     std::function<void(int numerator, int denominator)> onAutoGridDisplayChanged;
+    // Fires on any clip change so BottomPanel can resync its header controls
+    // (loop toggle, grid labels) when the inspector or undo edits the clip.
+    std::function<void()> onClipStateChanged;
     // Re-emits the current grid state; BottomPanel calls this right after
     // wiring onAutoGridDisplayChanged (the initial updateView ran before the
     // callback existed, so auto mode would show the clip's stored num/den).

@@ -323,6 +323,8 @@ void AutomationClipEditorContent::automationClipsChanged(magda::AutomationLaneId
     // Length / loop / position changes update the view (offset, span, ruler).
     updateView();
     repaint();
+    if (onClipStateChanged)
+        onClipStateChanged();
 }
 
 }  // namespace magda::daw::ui

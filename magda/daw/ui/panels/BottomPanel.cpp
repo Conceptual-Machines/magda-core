@@ -514,6 +514,18 @@ void BottomPanel::setupHeaderControls() {
     loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     loopButton_->setClickingTogglesState(false);  // manual active state
     loopButton_->onClick = [this]() {
+        // Automation clip editor: loop lives on the automation clip (same
+        // toggle as the inspector's).
+        if (auto* autoEditor =
+                dynamic_cast<daw::ui::AutomationClipEditorContent*>(getActiveContent())) {
+            auto& mgr = AutomationManager::getInstance();
+            if (const auto* clip = mgr.getClip(autoEditor->getEditingClipId())) {
+                loopButton_->setActive(!clip->looping);
+                mgr.setClipLooping(clip->id, !clip->looping);
+            }
+            return;
+        }
+
         const auto clipId = getActiveEditingClipId();
         if (clipId == INVALID_CLIP_ID)
             return;
@@ -1156,6 +1168,10 @@ void BottomPanel::updateContentBasedOnSelection() {
     } else if (auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content)) {
         autoEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
         autoEditor->refreshGridDisplay();
+        autoEditor->onClipStateChanged = [this]() {
+            syncLoopButtonState();
+            syncGridControlsFromContent();
+        };
     }
 
     // Push multi-selection state into the waveform editor and the properties
@@ -1249,13 +1265,15 @@ void BottomPanel::addMidiControlsToHeader() {
 }
 
 void BottomPanel::addGridControlsToHeader() {
-    // The num/den + AUTO/SNAP subset of the MIDI header set (automation clip
-    // editor): no loop toggle, tabs, or note tools.
+    // The loop + num/den + AUTO/SNAP subset of the MIDI header set
+    // (automation clip editor): no tabs or note tools.
     gridNumeratorLabel_->setVisible(true);
     gridSlashLabel_->setVisible(true);
     gridDenominatorLabel_->setVisible(true);
     autoGridButton_->setVisible(true);
     snapButton_->setVisible(true);
+    loopButton_->setVisible(true);
+    syncLoopButtonState();
 }
 
 void BottomPanel::removeMidiControlsFromHeader() {
@@ -1300,6 +1318,12 @@ ClipId BottomPanel::getActiveEditingClipId() const {
 void BottomPanel::syncLoopButtonState() {
     if (!loopButton_)
         return;
+    if (auto* autoEditor =
+            dynamic_cast<daw::ui::AutomationClipEditorContent*>(getActiveContent())) {
+        const auto* clip = AutomationManager::getInstance().getClip(autoEditor->getEditingClipId());
+        loopButton_->setActive(clip != nullptr && clip->looping);
+        return;
+    }
     const auto clipId = getActiveEditingClipId();
     const auto* clip =
         (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
