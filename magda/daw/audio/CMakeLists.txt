@@ -403,6 +403,7 @@ target_sources(magda_daw PRIVATE
     automation/AutomationPlaybackEngine.cpp
     automation/AutomationRecordingEngine.cpp
     automation/AutomationCurveSimplifier.cpp
+    automation/ModulationBaker.cpp
     session/ArrangementClipSyncPlanner.cpp
     session/ClipEngineIdMap.cpp
     session/ClipLaunchQuantization.cpp

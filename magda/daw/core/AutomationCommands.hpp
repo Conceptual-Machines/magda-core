@@ -4,6 +4,7 @@
 
 #include "AutomationInfo.hpp"
 #include "AutomationManager.hpp"
+#include "ChainNodePath.hpp"
 #include "UndoManager.hpp"
 
 namespace magda {
@@ -262,6 +263,48 @@ class DeleteAutomationLaneCommand : public UndoableCommand {
     std::vector<AutomationClipInfo> storedClips_;
     size_t storedIndex_ = 0;
     bool captured_ = false;
+};
+
+/**
+ * @brief Bake modulation into an absolute lane (issue #162).
+ *
+ * Replaces the lane's points inside [startBeat, endBeat] with the baked
+ * points (sampled from the parameter's LFO links by ModulationBaker) and
+ * disables the baked mod links so the modulation isn't applied twice on top
+ * of its own bake. Undo restores the original points (ids preserved) and
+ * re-enables exactly the links this command disabled.
+ */
+class BakeModulationCommand : public UndoableCommand {
+  public:
+    /** Identifies one mod link to disable after the bake. */
+    struct ModLinkRef {
+        ChainNodePath path;  // Scope that owns the mod (device / rack / track)
+        int modIndex = -1;
+        ControlTarget target;  // The baked parameter
+    };
+
+    BakeModulationCommand(AutomationLaneId laneId, double startBeat, double endBeat,
+                          std::vector<AutomationPoint> bakedPoints,
+                          std::vector<ModLinkRef> linksToDisable)
+        : laneId_(laneId),
+          startBeat_(startBeat),
+          endBeat_(endBeat),
+          bakedPoints_(std::move(bakedPoints)),
+          linksToDisable_(std::move(linksToDisable)) {}
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Bake Modulation to Automation";
+    }
+
+  private:
+    AutomationLaneId laneId_;
+    double startBeat_, endBeat_;
+    std::vector<AutomationPoint> bakedPoints_;    // id-less template points
+    std::vector<AutomationPoint> removedPoints_;  // originals in range, ids preserved
+    std::vector<ModLinkRef> linksToDisable_;
+    std::vector<ModLinkRef> disabledLinks_;  // links actually flipped off by execute()
 };
 
 /**

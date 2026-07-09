@@ -2,6 +2,7 @@
 
 #include "core/AutomationInfo.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
+#include "params/ModulationBakeAction.hpp"
 
 namespace magda::daw::ui {
 
@@ -146,9 +147,13 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         }
     }
 
+    // Collected eagerly (copies) so the async menu callback doesn't rely on
+    // the ctx array pointers staying alive.
+    auto bakeable = collectBakeableModLinks(ctx, thisTarget);
     if (!ctx.devicePath.isPostFx()) {
         menu.addSeparator();
         menu.addItem(5000, "Show Automation Lane");
+        menu.addItem(5001, "Bake Modulation to Automation", !bakeable.empty());
     }
 
     // MIDI section
@@ -177,7 +182,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     auto cbs = callbacks;
 
     menu.showMenuAsync(
-        juce::PopupMenu::Options(), [safeAnchor, paramIdx, devicePath, cbs](int result) {
+        juce::PopupMenu::Options(), [safeAnchor, paramIdx, devicePath, cbs, bakeable](int result) {
             if (safeAnchor == nullptr || result == 0) {
                 return;
             }
@@ -239,6 +244,10 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                     cbs.onMacroLinked(macroIndex, macroTarget);
                 }
             } else if (result == 5000) {
+                if (cbs.onShowAutomationLane)
+                    cbs.onShowAutomationLane();
+            } else if (result == 5001) {
+                performModulationBake(target, bakeable);
                 if (cbs.onShowAutomationLane)
                     cbs.onShowAutomationLane();
             } else if (result == 6000) {

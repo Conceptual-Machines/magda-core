@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
@@ -748,6 +749,36 @@ void AutomationManager::replaceLanePoints(AutomationLaneId laneId,
     }
     sortPoints(lane->absolutePoints);
     notifyPointsChanged(laneId);
+}
+
+std::vector<AutomationPoint> AutomationManager::replacePointsInRange(
+    AutomationLaneId laneId, double startBeat, double endBeat,
+    const std::vector<AutomationPoint>& points) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isAbsolute())
+        return {};
+
+    auto& lanePoints = lane->absolutePoints;
+    const auto inRange = [startBeat, endBeat](const AutomationPoint& p) {
+        return p.beatPosition >= startBeat && p.beatPosition <= endBeat;
+    };
+
+    std::vector<AutomationPoint> removed;
+    std::copy_if(lanePoints.begin(), lanePoints.end(), std::back_inserter(removed), inRange);
+    lanePoints.erase(std::remove_if(lanePoints.begin(), lanePoints.end(), inRange),
+                     lanePoints.end());
+
+    lanePoints.reserve(lanePoints.size() + points.size());
+    for (auto p : points) {
+        if (p.id == INVALID_AUTOMATION_POINT_ID)
+            p.id = nextPointId_++;
+        p.beatPosition = juce::jmax(0.0, p.beatPosition);
+        p.value = juce::jlimit(0.0, 1.0, p.value);
+        lanePoints.push_back(p);
+    }
+    sortPoints(lanePoints);
+    notifyPointsChanged(laneId);
+    return removed;
 }
 
 void AutomationManager::deletePointFromClip(AutomationClipId clipId, AutomationPointId pointId) {

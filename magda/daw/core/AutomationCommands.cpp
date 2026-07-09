@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "TrackManager.hpp"
+
 namespace magda {
 namespace {
 
@@ -269,6 +271,43 @@ bool DuplicateAutomationTimeSelectionCommand::shouldDuplicateLane(
         return true;
     return std::find(trackIds_.begin(), trackIds_.end(), lane.target.devicePath.trackId) !=
            trackIds_.end();
+}
+
+// ============================================================================
+// BakeModulationCommand
+// ============================================================================
+
+void BakeModulationCommand::execute() {
+    auto& autoMgr = AutomationManager::getInstance();
+    const auto* lane = autoMgr.getLane(laneId_);
+    if (!lane || !lane->isAbsolute())
+        return;
+
+    removedPoints_ = autoMgr.replacePointsInRange(laneId_, startBeat_, endBeat_, bakedPoints_);
+
+    auto& trackMgr = TrackManager::getInstance();
+    const auto& constTrackMgr = trackMgr;
+    disabledLinks_.clear();
+    for (const auto& ref : linksToDisable_) {
+        const auto node = constTrackMgr.resolveChainNode(ref.path);
+        if (!node.valid() || ref.modIndex < 0 ||
+            ref.modIndex >= static_cast<int>(node.mods->size()))
+            continue;
+        const auto* link = (*node.mods)[static_cast<size_t>(ref.modIndex)].getLink(ref.target);
+        if (link == nullptr || !link->enabled)
+            continue;
+        trackMgr.setModLinkEnabled(ref.path, ref.modIndex, ref.target, false);
+        disabledLinks_.push_back(ref);
+    }
+}
+
+void BakeModulationCommand::undo() {
+    AutomationManager::getInstance().replacePointsInRange(laneId_, startBeat_, endBeat_,
+                                                          removedPoints_);
+
+    auto& trackMgr = TrackManager::getInstance();
+    for (const auto& ref : disabledLinks_)
+        trackMgr.setModLinkEnabled(ref.path, ref.modIndex, ref.target, true);
 }
 
 bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {

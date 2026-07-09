@@ -317,6 +317,20 @@ class AutomationManager : public TrackManagerListener {
     void replaceLanePoints(AutomationLaneId laneId, const std::vector<AutomationPoint>& points);
 
     /**
+     * @brief Replace the absolute points inside [startBeat, endBeat] in one
+     *        shot, leaving points outside the range untouched (ids preserved).
+     *
+     * Incoming points with a valid id keep it — that is how an undo restores
+     * the exact points it removed without invalidating ids referenced
+     * elsewhere in the undo stack — while id-less points get fresh ids.
+     * Notifies once. Returns the removed points (with their ids) for undo
+     * capture. Used by BakeModulationCommand.
+     */
+    std::vector<AutomationPoint> replacePointsInRange(AutomationLaneId laneId, double startBeat,
+                                                      double endBeat,
+                                                      const std::vector<AutomationPoint>& points);
+
+    /**
      * @brief Delete a point from a clip
      */
     void deletePointFromClip(AutomationClipId clipId, AutomationPointId pointId);
