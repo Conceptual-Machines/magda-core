@@ -37,6 +37,32 @@ AutomationClipEditorContent::AutomationClipEditorContent() {
         viewport_.setViewPosition(juce::jmax(0, viewport_.getViewPositionX() + deltaX),
                                   viewport_.getViewPositionY());
     };
+    // Loop marker drags set the clip's loop length. The loop always starts
+    // at the clip start in the automation model, so the start marker is
+    // pinned and only the end matters.
+    timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
+        juce::ignoreUnused(displayStart);
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->looping)
+            return;
+        timeRuler_->setLoopRegion(0.0, juce::jmax(0.0, displayEnd), true, true);
+    };
+    timeRuler_->onLoopDragEnded = [this](double displayStart, double displayEnd) {
+        juce::ignoreUnused(displayStart);
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->looping)
+            return;
+        double bpm = 120.0;
+        if (auto* tc = TimelineController::getCurrent())
+            bpm = tc->getState().tempo.bpm;
+        const double lengthBeats = displayEnd * bpm / 60.0;
+        if (lengthBeats > 0.0) {
+            magda::AutomationManager::getInstance().setClipLoopLength(selection_.clipId,
+                                                                      lengthBeats);
+        } else {
+            updateView();  // aborted drag: restore the strip from the model
+        }
+    };
     addChildComponent(*timeRuler_);
 
     viewport_.setViewedComponent(&canvas_, false);
@@ -443,6 +469,9 @@ void AutomationClipEditorContent::updateView() {
     timeRuler_->setClipLength(lengthSeconds);
     timeRuler_->setTimeOffset(looped ? 0.0 : startSeconds);
     timeRuler_->setRelativeMode(looped);
+    // Looped view shows exactly one loop cycle, so the loop strip spans the
+    // whole display; hidden for non-looped clips.
+    timeRuler_->setLoopRegion(0.0, looped ? lengthSeconds : 0.0, looped, looped);
     gridSettingsChanged();  // ruler grid + snap from the clip's settings
     timeRuler_->repaint();
 }
