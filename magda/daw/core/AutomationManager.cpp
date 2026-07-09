@@ -330,7 +330,9 @@ AutomationClipId AutomationManager::convertLaneToClipBased(AutomationLaneId lane
     clip.laneId = laneId;
     clip.startBeats = start;
     clip.lengthBeats = length;
-    clip.colour = AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
+    // Default colour inherits from the track (like other clips).
+    clip.colour = getLaneTrackColour(laneId).value_or(
+        AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size())));
     clip.name = "Automation " + juce::String(clip.id);
     clip.points = std::move(lane->absolutePoints);
     for (auto& point : clip.points)
@@ -639,7 +641,9 @@ AutomationClipId AutomationManager::createClip(AutomationLaneId laneId, double s
     clip.laneId = laneId;
     clip.startBeats = startBeats;
     clip.lengthBeats = lengthBeats;
-    clip.colour = AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
+    // Default colour inherits from the track (like other clips).
+    clip.colour = getLaneTrackColour(laneId).value_or(
+        AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size())));
     clip.name = "Automation " + juce::String(clip.id);
 
     clips_.push_back(clip);
@@ -752,6 +756,15 @@ void AutomationManager::setClipColour(AutomationClipId clipId, juce::Colour colo
         clip->colour = colour;
         notifyClipsChanged(clip->laneId);
     }
+}
+
+std::optional<juce::Colour> AutomationManager::getLaneTrackColour(AutomationLaneId laneId) const {
+    const auto* lane = getLane(laneId);
+    if (lane == nullptr || lane->target.isEditScoped())
+        return std::nullopt;
+    if (const auto* track = TrackManager::getInstance().getTrack(lane->target.devicePath.trackId))
+        return track->colour;
+    return std::nullopt;
 }
 
 void AutomationManager::setClipLooping(AutomationClipId clipId, bool looping) {

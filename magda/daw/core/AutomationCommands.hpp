@@ -402,6 +402,30 @@ class RenameAutomationClipCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Set an automation clip's colour (undoable, like MIDI clip colours).
+ */
+class SetAutomationClipColourCommand : public UndoableCommand {
+  public:
+    SetAutomationClipColourCommand(AutomationClipId clipId, juce::Colour newColour)
+        : clipId_(clipId), newColour_(newColour) {
+        captureOldColour();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Automation Clip Colour";
+    }
+
+  private:
+    void captureOldColour();
+
+    AutomationClipId clipId_;
+    juce::Colour newColour_;
+    juce::Colour oldColour_;
+};
+
+/**
  * @brief Resize an automation clip (merges consecutive drag steps).
  */
 class ResizeAutomationClipCommand : public UndoableCommand {

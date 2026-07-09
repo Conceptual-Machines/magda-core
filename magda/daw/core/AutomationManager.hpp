@@ -305,6 +305,9 @@ class AutomationManager : public TrackManagerListener {
 
     void setClipName(AutomationClipId clipId, const juce::String& name);
     void setClipColour(AutomationClipId clipId, juce::Colour colour);
+    /// Colour of the track the lane's target lives on; nullopt for
+    /// edit-scoped targets (tempo) with no owning track.
+    std::optional<juce::Colour> getLaneTrackColour(AutomationLaneId laneId) const;
     void setClipLooping(AutomationClipId clipId, bool looping);
     void setClipLoopLength(AutomationClipId clipId, double length);
     void setClipGridSettings(AutomationClipId clipId, bool autoGrid, int numerator,

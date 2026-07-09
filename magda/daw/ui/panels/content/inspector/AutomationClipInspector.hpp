@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../common/ColourSwatch.hpp"
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../common/SvgButton.hpp"
 #include "BaseInspector.hpp"
@@ -40,6 +41,7 @@ class AutomationClipInspector : public BaseInspector, private magda::AutomationM
     // (automation clip). Non-interactive.
     std::unique_ptr<magda::SvgButton> viewIcon_;
     std::unique_ptr<magda::SvgButton> typeIcon_;
+    std::unique_ptr<magda::ColourSwatch> colourSwatch_;
     juce::Label titleLabel_;
     juce::Label startLabel_, endLabel_, lengthLabel_;
     std::unique_ptr<magda::DraggableValueLabel> startValue_;

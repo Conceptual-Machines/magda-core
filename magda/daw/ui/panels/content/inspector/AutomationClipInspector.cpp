@@ -4,6 +4,7 @@
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "core/AutomationCommands.hpp"
+#include "core/Config.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda::daw::ui {
@@ -41,6 +42,78 @@ AutomationClipInspector::AutomationClipInspector() {
     typeIcon_->setInterceptsMouseClicks(false, false);
     typeIcon_->setTooltip("Automation clip");
     addChildComponent(*typeIcon_);
+
+    // Colour swatch: same menu as the clip inspector (None / Inherit from
+    // Track / palettes); sets the clip colour via an undoable command.
+    colourSwatch_ = std::make_unique<magda::ColourSwatch>();
+    colourSwatch_->onColourClicked = [this]() {
+        const auto* clip = getClip();
+        if (clip == nullptr)
+            return;
+
+        auto makeChip = [](juce::Colour colour) {
+            juce::Image chip(juce::Image::ARGB, 14, 14, true);
+            juce::Graphics cg(chip);
+            cg.setColour(colour);
+            cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
+            auto drawable = std::make_unique<juce::DrawableImage>();
+            drawable->setImage(chip);
+            return drawable;
+        };
+
+        juce::PopupMenu menu;
+        menu.addItem(1, "None");
+        menu.addSeparator();
+        menu.addItem(2, "Inherit from Track");
+        menu.addSeparator();
+        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
+            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
+            menu.addItem(static_cast<int>(i + 3), magda::Config::defaultColourPalette[i].name, true,
+                         false, makeChip(colour));
+        }
+        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
+        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
+        if (!customPalette.empty()) {
+            menu.addSeparator();
+            for (size_t i = 0; i < customPalette.size(); ++i) {
+                auto colour = juce::Colour(customPalette[i].colour);
+                menu.addItem(customOffset + static_cast<int>(i),
+                             juce::String(customPalette[i].name), true, false, makeChip(colour));
+            }
+        }
+
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(colourSwatch_.get()),
+            [this, customPalette, customOffset](int result) {
+                if (result == 0)
+                    return;
+                const auto* clip = getClip();
+                if (clip == nullptr)
+                    return;
+
+                juce::Colour newColour;
+                if (result == 1) {
+                    newColour = juce::Colour(0xFF444444);
+                } else if (result == 2) {
+                    const auto trackColour =
+                        magda::AutomationManager::getInstance().getLaneTrackColour(
+                            selection_.laneId);
+                    if (!trackColour)
+                        return;
+                    newColour = *trackColour;
+                } else if (result < customOffset) {
+                    newColour = juce::Colour(magda::Config::getDefaultColour(result - 3));
+                } else {
+                    const auto idx = static_cast<size_t>(result - customOffset);
+                    if (idx >= customPalette.size())
+                        return;
+                    newColour = juce::Colour(customPalette[idx].colour);
+                }
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetAutomationClipColourCommand>(clip->id, newColour));
+            });
+    };
+    addChildComponent(*colourSwatch_);
 
     // Editable clip name, MIDI-clip-inspector style. The lane target stays
     // visible in the editor panel's title.
@@ -188,6 +261,7 @@ void AutomationClipInspector::refreshDisplay() {
 
     if (!titleLabel_.isBeingEdited())
         titleLabel_.setText(clip->name, juce::dontSendNotification);
+    colourSwatch_->setColour(clip->colour);
     startValue_->setValue(clip->startBeats, juce::dontSendNotification);
     endValue_->setValue(clip->getEndBeats(), juce::dontSendNotification);
     lengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);
@@ -200,6 +274,7 @@ void AutomationClipInspector::refreshDisplay() {
 void AutomationClipInspector::showControls(bool show) {
     viewIcon_->setVisible(show);
     typeIcon_->setVisible(show);
+    colourSwatch_->setVisible(show);
     titleLabel_.setVisible(show);
     startLabel_.setVisible(show);
     startValue_->setVisible(show);
@@ -235,6 +310,8 @@ void AutomationClipInspector::resized() {
         typeIcon_->setBounds(
             headerRow.removeFromLeft(ICON_SIZE).withSizeKeepingCentre(ICON_SIZE, ICON_SIZE));
         headerRow.removeFromLeft(ICON_GAP);
+        colourSwatch_->setBounds(headerRow.removeFromRight(ICON_SIZE));
+        headerRow.removeFromRight(4);
         titleLabel_.setBounds(headerRow);
     }
     bounds.removeFromTop(ROW_GAP);

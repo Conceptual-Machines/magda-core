@@ -367,6 +367,19 @@ void RenameAutomationClipCommand::undo() {
     AutomationManager::getInstance().setClipName(clipId_, oldName_);
 }
 
+void SetAutomationClipColourCommand::captureOldColour() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_))
+        oldColour_ = clip->colour;
+}
+
+void SetAutomationClipColourCommand::execute() {
+    AutomationManager::getInstance().setClipColour(clipId_, newColour_);
+}
+
+void SetAutomationClipColourCommand::undo() {
+    AutomationManager::getInstance().setClipColour(clipId_, oldColour_);
+}
+
 void ResizeAutomationClipCommand::captureOldBounds() {
     if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
         oldStartBeats_ = clip->startBeats;
