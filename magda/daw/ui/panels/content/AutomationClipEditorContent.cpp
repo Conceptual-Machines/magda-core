@@ -1,11 +1,12 @@
 #include "AutomationClipEditorContent.hpp"
 
+#include <cmath>
+
 #include "../../components/waveform/ClipWaveformPainter.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/AutomationInfo.hpp"
-#include "core/ClipOperations.hpp"
 
 namespace magda::daw::ui {
 
@@ -144,17 +145,59 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
             continue;
 
         if (c->isMidi()) {
-            // Same display math as the piano roll's overlay-track ghosts.
-            const double visibleStart = magda::ClipOperations::getMidiVisibleRange(*c).startBeat;
-            for (auto note : c->midiNotes) {
-                if (!magda::ClipOperations::clipMidiNoteToVisibleRange(*c, note))
-                    continue;
-                const double displayBeat = cStart + note.startBeat - visibleStart;
-                if (displayBeat + note.lengthBeats <= arrStart || displayBeat >= arrEnd)
-                    continue;
-                ghostNotes.push_back({displayBeat, note.lengthBeats, note.noteNumber, c->colour});
-                minPitch = juce::jmin(minPitch, note.noteNumber);
-                maxPitch = juce::jmax(maxPitch, note.noteNumber);
+            // Mirror ClipComponent::paintMidiNotes' display math (loop
+            // unroll, loop window, MIDI offsets) so the ghost agrees with
+            // what the arrangement actually renders.
+            const double beatsPerSecond = tempo / 60.0;
+            const double clipLengthInBeats = cLenSeconds * beatsPerSecond;
+            const double midiSrcLength =
+                c->loopLength > 0.0 ? c->loopLength : cLenSeconds * c->speedRatio;
+            const double loopLengthBeats =
+                c->loopLengthBeats > 0.0
+                    ? c->loopLengthBeats
+                    : (midiSrcLength > 0.0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats);
+            const double midiOffset = c->loopEnabled ? c->midiOffset : c->midiTrimOffset;
+            const double loopStart = c->loopStart * beatsPerSecond;
+            const double loopEnd = loopStart + loopLengthBeats;
+
+            const auto emitGhost = [&](double displayStart, double displayEnd, int pitch) {
+                displayStart = juce::jmax(displayStart, 0.0);
+                displayEnd = juce::jmin(displayEnd, clipLengthInBeats);
+                if (displayEnd <= displayStart)
+                    return;
+                const double arrBeat = cStart + displayStart;
+                if (arrBeat + (displayEnd - displayStart) <= arrStart || arrBeat >= arrEnd)
+                    return;
+                ghostNotes.push_back({arrBeat, displayEnd - displayStart, pitch, c->colour});
+                minPitch = juce::jmin(minPitch, pitch);
+                maxPitch = juce::jmax(maxPitch, pitch);
+            };
+
+            if (c->loopEnabled && loopLengthBeats > 0.0) {
+                const int numReps =
+                    static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
+                for (int rep = 0; rep < numReps; ++rep) {
+                    for (const auto& note : c->midiNotes) {
+                        const double sourceStart = juce::jmax(note.startBeat, loopStart);
+                        const double sourceEnd =
+                            juce::jmin(note.startBeat + note.lengthBeats, loopEnd);
+                        const double sourceLength = sourceEnd - sourceStart;
+                        if (sourceLength <= 0.0)
+                            continue;
+                        const double noteBeat =
+                            loopStart +
+                            magda::wrapPhase(sourceStart - midiOffset - loopStart, loopLengthBeats);
+                        if (noteBeat < loopStart || noteBeat >= loopEnd)
+                            continue;
+                        const double displayStart = (noteBeat - loopStart) + rep * loopLengthBeats;
+                        emitGhost(displayStart, displayStart + sourceLength, note.noteNumber);
+                    }
+                }
+            } else {
+                for (const auto& note : c->midiNotes) {
+                    const double displayStart = note.startBeat - midiOffset;
+                    emitGhost(displayStart, displayStart + note.lengthBeats, note.noteNumber);
+                }
             }
         } else if (c->isAudio() && c->audio().source.filePath.isNotEmpty()) {
             const float x0 = beatToPixelF(cStart);
