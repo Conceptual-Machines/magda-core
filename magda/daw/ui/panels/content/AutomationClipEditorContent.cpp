@@ -171,25 +171,22 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
     if (ghostNotes.empty())
         return;
 
-    // Ghost piano roll: pitch rows fitted to the visible notes, at least an
-    // octave so rows keep a sane height.
-    while (maxPitch - minPitch < 12 && !(minPitch == 0 && maxPitch == 127)) {
-        if (minPitch > 0)
-            --minPitch;
-        if (maxPitch - minPitch < 12 && maxPitch < 127)
-            ++maxPitch;
-    }
-    const int rows = maxPitch - minPitch + 1;
-    const float rowH = static_cast<float>(editorH) / static_cast<float>(rows);
+    // Thin contour notes, not piano-roll rows: the ghost is for aligning the
+    // curve to events in time, not for reading pitches, so notes stay a few
+    // pixels tall and spread gently by relative pitch (centred, minimum
+    // one-octave span so sparse material doesn't blow up dramatically).
+    constexpr float kNoteH = 5.0f;
+    const double midPitch = (minPitch + maxPitch) * 0.5;
+    const double pitchSpan = juce::jmax(12.0, static_cast<double>(maxPitch - minPitch) + 6.0);
+    const float bandTop = kNoteH;
+    const float bandBottom = static_cast<float>(editorH) - kNoteH * 2.0f;
     for (const auto& n : ghostNotes) {
         const float x = beatToPixelF(n.beat);
         const float w = juce::jmax(2.0f, beatToPixelF(n.beat + n.length) - x);
-        const float y = static_cast<float>(maxPitch - n.pitch) * rowH;
-        const auto rect = juce::Rectangle<float>(x, y + 1.0f, w, juce::jmax(1.0f, rowH - 2.0f));
-        g.setColour(n.colour.withAlpha(0.2f));
-        g.fillRoundedRectangle(rect, 2.0f);
-        g.setColour(n.colour.withAlpha(0.4f));
-        g.drawRoundedRectangle(rect, 2.0f, 1.0f);
+        const double t = 0.5 - (n.pitch - midPitch) / pitchSpan;  // 0 top .. 1 bottom
+        const float y = bandTop + static_cast<float>(t) * (bandBottom - bandTop);
+        g.setColour(n.colour.withAlpha(0.35f));
+        g.fillRoundedRectangle(juce::Rectangle<float>(x, y, w, kNoteH), 1.5f);
     }
 }
 
