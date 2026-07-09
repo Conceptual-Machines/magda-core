@@ -159,6 +159,10 @@ juce::var ProjectSerializer::serializeAutomationClipInfo(const AutomationClipInf
     obj->setProperty("lengthBeats", clip.lengthBeats);
     obj->setProperty("looping", clip.looping);
     obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+    obj->setProperty("gridAutoGrid", clip.gridAutoGrid);
+    obj->setProperty("gridNumerator", clip.gridNumerator);
+    obj->setProperty("gridDenominator", clip.gridDenominator);
+    obj->setProperty("gridSnapEnabled", clip.gridSnapEnabled);
 
     // Points
     juce::Array<juce::var> pointsArray;
@@ -191,6 +195,14 @@ bool ProjectSerializer::deserializeAutomationClipInfo(const juce::var& json,
     outClip.loopLengthBeats = obj->hasProperty("loopLengthBeats")
                                   ? obj->getProperty("loopLengthBeats")
                                   : obj->getProperty("loopLength");
+    if (obj->hasProperty("gridAutoGrid"))
+        outClip.gridAutoGrid = obj->getProperty("gridAutoGrid");
+    if (obj->hasProperty("gridNumerator"))
+        outClip.gridNumerator = obj->getProperty("gridNumerator");
+    if (obj->hasProperty("gridDenominator"))
+        outClip.gridDenominator = obj->getProperty("gridDenominator");
+    if (obj->hasProperty("gridSnapEnabled"))
+        outClip.gridSnapEnabled = obj->getProperty("gridSnapEnabled");
 
     // Points
     auto pointsVar = obj->getProperty("points");

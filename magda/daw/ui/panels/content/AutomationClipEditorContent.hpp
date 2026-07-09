@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 
 #include "../../components/automation/AutomationCurveEditor.hpp"
@@ -45,8 +46,28 @@ class AutomationClipEditorContent : public PanelContent,
     void onActivated() override;
     void onDeactivated() override;
 
+    bool wantsHeader() const override {
+        return true;
+    }
+
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    // Header grid controls (BottomPanel's shared AUTO/SNAP + num/den set).
+    // Grid settings live on the automation clip, like MIDI clips.
+    magda::AutomationClipId getEditingClipId() const {
+        return selection_.clipId;
+    }
+    void setGridSettingsFromUI(bool autoGrid, int numerator, int denominator);
+    void setSnapEnabledFromUI(bool enabled);
+    // Fires when auto-grid recomputes from zoom so the num/den labels follow.
+    std::function<void(int numerator, int denominator)> onAutoGridDisplayChanged;
+    // Re-emits the current grid state; BottomPanel calls this right after
+    // wiring onAutoGridDisplayChanged (the initial updateView ran before the
+    // callback existed, so auto mode would show the clip's stored num/den).
+    void refreshGridDisplay() {
+        gridSettingsChanged();
+    }
 
   private:
     magda::AutomationClipSelection selection_;
@@ -61,6 +82,8 @@ class AutomationClipEditorContent : public PanelContent,
 
     const magda::AutomationClipInfo* getClip() const;
     double viewSpanBeats(const magda::AutomationClipInfo& clip) const;
+    double gridResolutionBeats() const;
+    void gridSettingsChanged();
     void refreshFromSelection();
     void rebuildEditor();
     void updateView();
@@ -70,6 +93,7 @@ class AutomationClipEditorContent : public PanelContent,
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
     void automationClipSelectionChanged(const magda::AutomationClipSelection& selection) override;
+    void automationPointSelectionChanged(const magda::AutomationPointSelection& selection) override;
 
     // AutomationManagerListener
     void automationLanesChanged() override;

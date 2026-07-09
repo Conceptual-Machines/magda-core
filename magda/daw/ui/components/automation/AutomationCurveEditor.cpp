@@ -89,6 +89,17 @@ void AutomationCurveEditor::automationPointsChanged(AutomationLaneId laneId) {
     }
 }
 
+void AutomationCurveEditor::automationClipsChanged(AutomationLaneId laneId) {
+    // Only clip-mode editors source their points from a clip; lane editors
+    // ignore clip traffic.
+    if (laneId == laneId_ && clipId_ != INVALID_AUTOMATION_CLIP_ID) {
+        previewPointId_ = INVALID_CURVE_POINT_ID;
+        pointsCacheDirty_ = true;
+        rebuildPointComponents();
+        repaint();
+    }
+}
+
 void AutomationCurveEditor::automationPointDragPreview(AutomationLaneId laneId,
                                                        AutomationPointId pointId,
                                                        double previewTime, double previewValue) {
@@ -174,15 +185,15 @@ void AutomationCurveEditor::setPixelsPerBeat(double ppb) {
 }
 
 double AutomationCurveEditor::pixelToX(int px) const {
-    return (static_cast<double>(px) / pixelsPerBeat_) + clipOffset_;
+    return (static_cast<double>(px - edgeInsetPx_) / pixelsPerBeat_) + clipOffset_;
 }
 
 int AutomationCurveEditor::xToPixel(double x) const {
-    return static_cast<int>(std::round((x - clipOffset_) * pixelsPerBeat_));
+    return static_cast<int>(std::round((x - clipOffset_) * pixelsPerBeat_)) + edgeInsetPx_;
 }
 
 double AutomationCurveEditor::xToPixelF(double x) const {
-    return (x - clipOffset_) * pixelsPerBeat_;
+    return (x - clipOffset_) * pixelsPerBeat_ + edgeInsetPx_;
 }
 
 void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
@@ -771,37 +782,21 @@ void AutomationCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& poi
     if (pointIds.empty())
         return;
 
-    CompoundOperationScope scope("Delete Automation Points");
-    for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
-        onPointDeleted(*it);
-    }
-}
-
-void AutomationCurveEditor::deleteSelectedPoints() {
-    auto& selectionManager = SelectionManager::getInstance();
-    if (!selectionManager.hasAutomationPointSelection())
-        return;
-
-    const auto& selection = selectionManager.getAutomationPointSelection();
-    if (selection.laneId != laneId_)
-        return;
-
-    // Delete in reverse order to maintain indices, grouped as one undo step
-    CompoundOperationScope scope("Delete Automation Points");
-    auto pointIds = selection.pointIds;
-    for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
-        if (selection.clipId != INVALID_AUTOMATION_CLIP_ID) {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<DeleteAutomationPointCommand>(
-                    laneId_, selection.clipId, static_cast<AutomationPointId>(*it)));
-        } else {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<DeleteAutomationPointCommand>(
-                    laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(*it)));
+    {
+        CompoundOperationScope scope("Delete Automation Points");
+        for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
+            onPointDeleted(*it);
         }
     }
 
-    selectionManager.clearAutomationPointSelection();
+    // The deleted points may still be the published selection. Points inside
+    // a clip fall back to the clip selection so the clip editor stays open;
+    // lane points clear to nothing (matches the global delete command).
+    auto& selectionManager = SelectionManager::getInstance();
+    if (clipId_ != INVALID_AUTOMATION_CLIP_ID)
+        selectionManager.selectAutomationClip(clipId_, laneId_);
+    else if (selectionManager.hasAutomationPointSelection())
+        selectionManager.clearAutomationPointSelection();
 }
 
 CurveType AutomationCurveEditor::toCurveType(AutomationCurveType type) {

@@ -122,6 +122,13 @@ struct AutomationClipInfo {
     bool looping = false;
     double loopLengthBeats = 4.0;  // Loop length in beats
 
+    // Editor grid settings, per clip (same model as MIDI clips: each clip
+    // remembers its own grid instead of sharing the arrangement's).
+    bool gridAutoGrid = true;
+    int gridNumerator = 1;
+    int gridDenominator = 4;
+    bool gridSnapEnabled = true;
+
     std::vector<AutomationPoint> points;
 
     // Helpers

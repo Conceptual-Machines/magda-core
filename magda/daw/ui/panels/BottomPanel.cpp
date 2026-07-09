@@ -13,6 +13,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
+#include "content/AutomationClipEditorContent.hpp"
 #include "content/ChordPanelContent.hpp"
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
@@ -359,8 +360,11 @@ void BottomPanel::setupHeaderControls() {
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+            auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
             if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
                 midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
+            } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
+                autoEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
             } else if (auto* controller = TimelineController::getCurrent()) {
                 controller->dispatch(
                     SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
@@ -413,8 +417,11 @@ void BottomPanel::setupHeaderControls() {
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+            auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
             if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
                 midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
+            } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
+                autoEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
             } else if (auto* controller = TimelineController::getCurrent()) {
                 controller->dispatch(
                     SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
@@ -448,8 +455,11 @@ void BottomPanel::setupHeaderControls() {
         gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+        auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
             midiEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
+        } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
+            autoEditor->setGridSettingsFromUI(isAutoGrid_, gridNumerator_, gridDenominator_);
         } else if (auto* controller = TimelineController::getCurrent()) {
             controller->dispatch(
                 SetGridQuantizeEvent{isAutoGrid_, gridNumerator_, gridDenominator_});
@@ -476,8 +486,11 @@ void BottomPanel::setupHeaderControls() {
         isSnapEnabled_ = snapButton_->getToggleState();
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+        auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
             midiEditor->setSnapEnabledFromUI(isSnapEnabled_);
+        } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
+            autoEditor->setSnapEnabledFromUI(isSnapEnabled_);
         } else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content)) {
             waveEditor->setSnapEnabledFromUI(isSnapEnabled_);
         } else if (auto* controller = TimelineController::getCurrent()) {
@@ -651,10 +664,12 @@ void BottomPanel::resized() {
         // Layout MIDI/audio grid controls in the header (if present)
         auto* content = getActiveContent();
         bool hasMidiControls =
-            content && (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
-                        content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
-                        content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
-                        content->getContentType() == daw::ui::PanelContentType::WaveformEditor);
+            content &&
+            (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
+             content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
+             content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
+             content->getContentType() == daw::ui::PanelContentType::WaveformEditor ||
+             content->getContentType() == daw::ui::PanelContentType::AutomationClipEditor);
         if (hasMidiControls)
             layoutMidiHeaderControls(headerBar_->getLocalBounds());
 
@@ -1049,6 +1064,13 @@ void BottomPanel::updateContentBasedOnSelection() {
                    SelectionType::AutomationClip &&
                SelectionManager::getInstance().getAutomationClipSelection().isValid()) {
         targetContent = daw::ui::PanelContentType::AutomationClipEditor;
+    } else if (SelectionManager::getInstance().getSelectionType() ==
+                   SelectionType::AutomationPoint &&
+               SelectionManager::getInstance().getAutomationPointSelection().clipId !=
+                   INVALID_AUTOMATION_CLIP_ID) {
+        // Selecting a point INSIDE an automation clip keeps the clip editor
+        // open (like note selection keeps the piano roll).
+        targetContent = daw::ui::PanelContentType::AutomationClipEditor;
     } else if (selectedTrack != INVALID_TRACK_ID) {
         targetContent = daw::ui::PanelContentType::TrackChain;
     }
@@ -1119,17 +1141,21 @@ void BottomPanel::updateContentBasedOnSelection() {
 
     // Connect auto-grid display callback so num/den labels update during zoom
     auto* content = getActiveContent();
+    auto autoGridDisplayChanged = [this](int numerator, int denominator) {
+        gridNumerator_ = numerator;
+        gridDenominator_ = denominator;
+        if (!gridNumeratorLabel_->isDragging())
+            gridNumeratorLabel_->setValue(static_cast<double>(numerator),
+                                          juce::dontSendNotification);
+        if (!gridDenominatorLabel_->isDragging())
+            gridDenominatorLabel_->setValue(static_cast<double>(denominator),
+                                            juce::dontSendNotification);
+    };
     if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content)) {
-        midiEditor->onAutoGridDisplayChanged = [this](int numerator, int denominator) {
-            gridNumerator_ = numerator;
-            gridDenominator_ = denominator;
-            if (!gridNumeratorLabel_->isDragging())
-                gridNumeratorLabel_->setValue(static_cast<double>(numerator),
-                                              juce::dontSendNotification);
-            if (!gridDenominatorLabel_->isDragging())
-                gridDenominatorLabel_->setValue(static_cast<double>(denominator),
-                                                juce::dontSendNotification);
-        };
+        midiEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
+    } else if (auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content)) {
+        autoEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
+        autoEditor->refreshGridDisplay();
     }
 
     // Push multi-selection state into the waveform editor and the properties
@@ -1168,8 +1194,12 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
                      incoming->getContentType() == daw::ui::PanelContentType::ChordClipView);
     const bool isWaveformEditor =
         incoming && incoming->getContentType() == daw::ui::PanelContentType::WaveformEditor;
+    const bool isAutomationEditor =
+        incoming && incoming->getContentType() == daw::ui::PanelContentType::AutomationClipEditor;
     if (isMidiEditor || isWaveformEditor)
         addMidiControlsToHeader();  // Grid controls are shared between MIDI and audio
+    else if (isAutomationEditor)
+        addGridControlsToHeader();  // Grid controls only — loop lives in the inspector
 
     // Fullscreen toggle: enabled for any clip editor (piano roll, drum grid,
     // waveform). Hidden for track chain and empty content (issue #1282).
@@ -1216,6 +1246,16 @@ void BottomPanel::addMidiControlsToHeader() {
     }
     overlayTracksButton_->setVisible(showEditorTabs_);
     updateOverlayTracksButtonState();
+}
+
+void BottomPanel::addGridControlsToHeader() {
+    // The num/den + AUTO/SNAP subset of the MIDI header set (automation clip
+    // editor): no loop toggle, tabs, or note tools.
+    gridNumeratorLabel_->setVisible(true);
+    gridSlashLabel_->setVisible(true);
+    gridDenominatorLabel_->setVisible(true);
+    autoGridButton_->setVisible(true);
+    snapButton_->setVisible(true);
 }
 
 void BottomPanel::removeMidiControlsFromHeader() {
@@ -1481,9 +1521,19 @@ void BottomPanel::applyTimeModeToContent() {
 void BottomPanel::syncGridControlsFromContent() {
     auto* content = getActiveContent();
     auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
+    auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content);
     if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
         // Read grid state from the clip
         const auto* clip = ClipManager::getInstance().getClip(midiEditor->getEditingClipId());
+        if (clip) {
+            isAutoGrid_ = clip->gridAutoGrid;
+            gridNumerator_ = clip->gridNumerator;
+            gridDenominator_ = clip->gridDenominator;
+            isSnapEnabled_ = clip->gridSnapEnabled;
+        }
+    } else if (autoEditor && autoEditor->getEditingClipId() != INVALID_AUTOMATION_CLIP_ID) {
+        // Automation clips carry their own grid settings, like MIDI clips
+        const auto* clip = AutomationManager::getInstance().getClip(autoEditor->getEditingClipId());
         if (clip) {
             isAutoGrid_ = clip->gridAutoGrid;
             gridNumerator_ = clip->gridNumerator;

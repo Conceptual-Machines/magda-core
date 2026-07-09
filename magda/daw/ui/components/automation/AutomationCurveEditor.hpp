@@ -41,6 +41,9 @@ class AutomationCurveEditor : public CurveEditorBase,
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
     void automationPointsChanged(AutomationLaneId laneId) override;
+    // Clip-mode editors: point edits inside a clip notify clips-changed,
+    // not points-changed.
+    void automationClipsChanged(AutomationLaneId laneId) override;
     void automationPointDragPreview(AutomationLaneId laneId, AutomationPointId pointId,
                                     double previewTime, double previewValue) override;
 
@@ -68,6 +71,18 @@ class AutomationCurveEditor : public CurveEditorBase,
         tempoBPM_ = bpm;
     }
 
+    // Horizontal inset (pixels) between the component edges and the beat
+    // range, so edge points (the clip's first/last beat) render fully inside
+    // the component instead of being cut in half. Zero for timeline lanes,
+    // which must stay pixel-aligned with the arrangement grid.
+    void setEdgeInsetPx(int px) {
+        if (edgeInsetPx_ == px)
+            return;
+        edgeInsetPx_ = px;
+        updatePointPositions();
+        repaint();
+    }
+
     // CurveEditorBase coordinate interface
     double getPixelsPerX() const override {
         return pixelsPerBeat_;
@@ -82,7 +97,14 @@ class AutomationCurveEditor : public CurveEditorBase,
 
     // Clip mode (for clip-based automation)
     void setClipId(AutomationClipId clipId) {
+        if (clipId_ == clipId)
+            return;
         clipId_ = clipId;
+        // The points cache was built for the previous source (lane or other
+        // clip) — typically in the constructor, before setClipId ran.
+        pointsCacheDirty_ = true;
+        rebuildPointComponents();
+        repaint();
     }
     AutomationClipId getClipId() const {
         return clipId_;
@@ -133,6 +155,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     double clipOffset_ = 0.0;
     double pixelsPerBeat_ = 10.0;
     double tempoBPM_ = 120.0;
+    int edgeInsetPx_ = 0;
 
     // Cached curve points (converted from AutomationPoints)
     mutable std::vector<CurvePoint> cachedPoints_;
@@ -140,7 +163,6 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Note: right-click pending is tracked via CurveEditorBase::isRightClickPending_
 
     void updatePointsCache() const;
-    void deleteSelectedPoints();
     // Shown on right-click anywhere in the curve body, or forwarded from a
     // CurvePointComponent right-click so the menu isn't swallowed by points.
     void showContextMenu();

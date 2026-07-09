@@ -307,6 +307,9 @@ class AutomationManager : public TrackManagerListener {
     void setClipColour(AutomationClipId clipId, juce::Colour colour);
     void setClipLooping(AutomationClipId clipId, bool looping);
     void setClipLoopLength(AutomationClipId clipId, double length);
+    void setClipGridSettings(AutomationClipId clipId, bool autoGrid, int numerator,
+                             int denominator);
+    void setClipSnapEnabled(AutomationClipId clipId, bool enabled);
 
     // ========================================================================
     // Point Management (Absolute lanes)

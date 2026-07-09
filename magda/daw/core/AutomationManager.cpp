@@ -768,6 +768,23 @@ void AutomationManager::setClipLoopLength(AutomationClipId clipId, double length
     }
 }
 
+void AutomationManager::setClipGridSettings(AutomationClipId clipId, bool autoGrid, int numerator,
+                                            int denominator) {
+    if (auto* clip = getClip(clipId)) {
+        clip->gridAutoGrid = autoGrid;
+        clip->gridNumerator = juce::jmax(1, numerator);
+        clip->gridDenominator = juce::jmax(1, denominator);
+        notifyClipsChanged(clip->laneId);
+    }
+}
+
+void AutomationManager::setClipSnapEnabled(AutomationClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        clip->gridSnapEnabled = enabled;
+        notifyClipsChanged(clip->laneId);
+    }
+}
+
 // ============================================================================
 // Point Management
 // ============================================================================

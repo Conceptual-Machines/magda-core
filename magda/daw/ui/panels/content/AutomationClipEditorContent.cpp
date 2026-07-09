@@ -86,11 +86,66 @@ double AutomationClipEditorContent::viewSpanBeats(const magda::AutomationClipInf
     return juce::jmax(looped ? clip.loopLengthBeats : clip.lengthBeats, 0.25);
 }
 
+double AutomationClipEditorContent::gridResolutionBeats() const {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return 1.0;
+    if (clip->gridAutoGrid) {
+        // Auto: densest readable subdivision at the current zoom.
+        constexpr int minPixelSpacing = 20;
+        const double zoom = horizontalZoom_ > 0.0 ? horizontalZoom_ : kMinZoom;
+        const double frac = magda::GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+        return frac > 0.0 ? frac : 1.0;
+    }
+    return (4.0 * clip->gridNumerator) / static_cast<double>(clip->gridDenominator);
+}
+
+void AutomationClipEditorContent::gridSettingsChanged() {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return;
+    const double res = gridResolutionBeats();
+    timeRuler_->setGridResolution(res);
+    timeRuler_->setSnapEnabled(clip->gridSnapEnabled);
+    timeRuler_->repaint();
+    if (editor_ != nullptr)
+        editor_->repaint();
+    if (clip->gridAutoGrid && onAutoGridDisplayChanged) {
+        // Mirror the MIDI editor's display convention: auto grid reads 1/den.
+        const int den = juce::jmax(1, static_cast<int>(std::round(4.0 / res)));
+        onAutoGridDisplayChanged(1, den);
+    }
+}
+
+void AutomationClipEditorContent::setGridSettingsFromUI(bool autoGrid, int numerator,
+                                                        int denominator) {
+    if (selection_.clipId == magda::INVALID_AUTOMATION_CLIP_ID)
+        return;
+    // Notifies clips-changed, which routes back through updateView().
+    magda::AutomationManager::getInstance().setClipGridSettings(selection_.clipId, autoGrid,
+                                                                numerator, denominator);
+}
+
+void AutomationClipEditorContent::setSnapEnabledFromUI(bool enabled) {
+    if (selection_.clipId == magda::INVALID_AUTOMATION_CLIP_ID)
+        return;
+    magda::AutomationManager::getInstance().setClipSnapEnabled(selection_.clipId, enabled);
+}
+
 void AutomationClipEditorContent::refreshFromSelection() {
     auto& sm = magda::SelectionManager::getInstance();
     magda::AutomationClipSelection selection;
-    if (sm.getSelectionType() == magda::SelectionType::AutomationClip)
+    if (sm.getSelectionType() == magda::SelectionType::AutomationClip) {
         selection = sm.getAutomationClipSelection();
+    } else if (sm.getSelectionType() == magda::SelectionType::AutomationPoint) {
+        // Point selection inside a clip: stay on that clip (touching the
+        // curve selects points; the editor must not reset mid-gesture).
+        const auto& pointSel = sm.getAutomationPointSelection();
+        if (pointSel.clipId != magda::INVALID_AUTOMATION_CLIP_ID) {
+            selection.clipId = pointSel.clipId;
+            selection.laneId = pointSel.laneId;
+        }
+    }
 
     if (selection.clipId == selection_.clipId && selection.laneId == selection_.laneId &&
         editor_ != nullptr)
@@ -120,16 +175,18 @@ void AutomationClipEditorContent::rebuildEditor() {
     editor_ = std::make_unique<magda::AutomationCurveEditor>(selection_.laneId);
     editor_->setClipId(selection_.clipId);
     editor_->setDrawMode(magda::AutomationDrawMode::Pencil);
-    editor_->snapBeatToGrid = [](double beats) {
-        if (auto* tc = TimelineController::getCurrent())
-            return tc->getState().snapBeatsToGrid(beats);
-        return beats;
+    // Grid and snap come from the clip's own settings (header controls),
+    // not the arrangement's — same model as the piano roll.
+    editor_->snapBeatToGrid = [this](double beats) {
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->gridSnapEnabled)
+            return beats;
+        const double res = gridResolutionBeats();
+        if (res <= 0.0)
+            return beats;
+        return std::round(beats / res) * res;
     };
-    editor_->getGridSpacingBeats = []() -> double {
-        if (auto* tc = TimelineController::getCurrent())
-            return tc->getState().getSnapBeatFraction();
-        return 1.0;
-    };
+    editor_->getGridSpacingBeats = [this]() { return gridResolutionBeats(); };
     canvas_.addAndMakeVisible(*editor_);
     updateView();
     repaint();
@@ -172,7 +229,6 @@ void AutomationClipEditorContent::updateView() {
         startSeconds = state.beatsToSeconds(clip->startBeats);
         lengthSeconds =
             state.beatsToSeconds(clip->startBeats + span) - state.beatsToSeconds(clip->startBeats);
-        timeRuler_->setGridResolution(state.getSnapBeatFraction());
     }
     timeRuler_->setTempo(bpm);
     timeRuler_->setBarOrigin(0.0);
@@ -180,6 +236,7 @@ void AutomationClipEditorContent::updateView() {
     timeRuler_->setClipLength(lengthSeconds);
     timeRuler_->setTimeOffset(looped ? 0.0 : startSeconds);
     timeRuler_->setRelativeMode(looped);
+    gridSettingsChanged();  // ruler grid + snap from the clip's settings
     timeRuler_->repaint();
 }
 
@@ -196,7 +253,11 @@ void AutomationClipEditorContent::layoutCanvas() {
     const int height = juce::jmax(1, viewport_.getMaximumVisibleHeight());
     canvas_.setSize(juce::jmax(contentWidth + 2 * kEdgePad, viewport_.getMaximumVisibleWidth()),
                     height);
-    editor_->setBounds(kEdgePad, 0, contentWidth, height);
+    // The editor spans the pads too, with the beat range inset by kEdgePad:
+    // if it started at beat 0 exactly, points on the clip's first beat would
+    // be clipped in half by the component edge.
+    editor_->setBounds(0, 0, contentWidth + 2 * kEdgePad, height);
+    editor_->setEdgeInsetPx(kEdgePad);
     editor_->setPixelsPerBeat(horizontalZoom_);
 }
 
@@ -214,6 +275,7 @@ void AutomationClipEditorContent::performAnchorPointZoom(double newZoom, double 
     horizontalZoom_ = clamped;
     layoutCanvas();
     timeRuler_->setZoom(horizontalZoom_);
+    gridSettingsChanged();  // auto grid follows zoom
 
     // Keep the beat under the pointer stationary while zooming.
     const int newAnchorX = static_cast<int>(std::round(anchorBeat * horizontalZoom_)) + kEdgePad;
@@ -229,6 +291,12 @@ void AutomationClipEditorContent::selectionTypeChanged(magda::SelectionType newT
 
 void AutomationClipEditorContent::automationClipSelectionChanged(
     const magda::AutomationClipSelection& selection) {
+    juce::ignoreUnused(selection);
+    refreshFromSelection();
+}
+
+void AutomationClipEditorContent::automationPointSelectionChanged(
+    const magda::AutomationPointSelection& selection) {
     juce::ignoreUnused(selection);
     refreshFromSelection();
 }
