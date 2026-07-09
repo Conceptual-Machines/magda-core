@@ -17,6 +17,10 @@ constexpr int kInset = 8;
 // aren't clipped by the viewport; the ruler's left padding matches, keeping
 // beat 0 aligned between ruler and curve.
 constexpr int kEdgePad = 10;
+// Width of the left value-scale strip; wide enough for labels like
+// "18000Hz". (The lanes' SCALE_LABEL_WIDTH is the 8px timeline padding —
+// their labels render in the headers column, not in that sliver.)
+constexpr int kScaleStripWidth = 52;
 constexpr double kMinZoom = 2.0;
 constexpr double kMaxZoom = 500.0;
 }  // namespace
@@ -122,7 +126,7 @@ void AutomationClipEditorContent::resized() {
     // Value scale strip on the left (same width as the lanes'), spanning the
     // curve area; the ruler and viewport shift right together so beat 0
     // stays aligned between them.
-    auto scaleCol = bounds.removeFromLeft(magda::AutomationLaneComponent::SCALE_LABEL_WIDTH);
+    auto scaleCol = bounds.removeFromLeft(kScaleStripWidth);
     scaleCol.removeFromTop(timeRuler_->getPreferredHeight());
     scaleStripArea_ = scaleCol;
     timeRuler_->setBounds(bounds.removeFromTop(timeRuler_->getPreferredHeight()));
