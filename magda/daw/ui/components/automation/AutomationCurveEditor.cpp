@@ -197,6 +197,8 @@ double AutomationCurveEditor::xToPixelF(double x) const {
 }
 
 void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
+    paintClipBorders(g);
+
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     if (!lane) {
         CurveEditorBase::paintGrid(g);
@@ -257,6 +259,27 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
         g.setColour(isZeroLine ? juce::Colour(0x50FFFFFF) : juce::Colour(0x18FFFFFF));
         g.drawHorizontalLine(y, 0.0f, width);
     }
+}
+
+void AutomationCurveEditor::paintClipBorders(juce::Graphics& g) {
+    if (!showClipBorders_ || clipId_ == INVALID_AUTOMATION_CLIP_ID)
+        return;
+    const auto* clip = AutomationManager::getInstance().getClip(clipId_);
+    if (clip == nullptr)
+        return;
+
+    // The view span starts at clipOffset_ (0 in the looped one-cycle view,
+    // the clip's arrangement start in the absolute view).
+    const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+    const double span = looped ? clip->loopLengthBeats : clip->lengthBeats;
+    const auto startX = static_cast<float>(xToPixelF(clipOffset_));
+    const auto endX = static_cast<float>(xToPixelF(clipOffset_ + span));
+
+    // Same 2px marker language as the piano roll's clip boundaries.
+    constexpr juce::uint32 kClipBoundaryColour = 0xFF6A7280;
+    g.setColour(juce::Colour(kClipBoundaryColour));
+    g.fillRect(startX - 1.0f, 0.0f, 2.0f, static_cast<float>(getHeight()));
+    g.fillRect(endX - 1.0f, 0.0f, 2.0f, static_cast<float>(getHeight()));
 }
 
 juce::String AutomationCurveEditor::formatValueLabel(double y) const {

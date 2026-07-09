@@ -83,6 +83,16 @@ class AutomationCurveEditor : public CurveEditorBase,
         repaint();
     }
 
+    // Vertical markers on the clip's start/end (loop-cycle end when looped).
+    // Enabled by the bottom-panel clip editor; timeline lanes show clip
+    // bounds as the clip component itself, so they keep this off.
+    void setShowClipBorders(bool show) {
+        if (showClipBorders_ == show)
+            return;
+        showClipBorders_ = show;
+        repaint();
+    }
+
     // CurveEditorBase coordinate interface
     double getPixelsPerX() const override {
         return pixelsPerBeat_;
@@ -156,6 +166,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     double pixelsPerBeat_ = 10.0;
     double tempoBPM_ = 120.0;
     int edgeInsetPx_ = 0;
+    bool showClipBorders_ = false;
 
     // Cached curve points (converted from AutomationPoints)
     mutable std::vector<CurvePoint> cachedPoints_;
@@ -167,6 +178,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     // CurvePointComponent right-click so the menu isn't swallowed by points.
     void showContextMenu();
     void paintOverrideOverlay(juce::Graphics& g);
+    void paintClipBorders(juce::Graphics& g);
 
     // Right-click a point to type its value inline (real units).
     uint32_t pointIdAt(int x, int y) const;

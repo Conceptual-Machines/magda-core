@@ -174,6 +174,7 @@ void AutomationClipEditorContent::rebuildEditor() {
 
     editor_ = std::make_unique<magda::AutomationCurveEditor>(selection_.laneId);
     editor_->setClipId(selection_.clipId);
+    editor_->setShowClipBorders(true);
     editor_->setDrawMode(magda::AutomationDrawMode::Pencil);
     // Grid and snap come from the clip's own settings (header controls),
     // not the arrangement's — same model as the piano roll.
