@@ -69,11 +69,16 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
     // Loop indicator. Positions computed per-line in double: accumulating a
     // truncated int drifts off the beat grid within a few repetitions.
     if (clip->looping && clip->loopLengthBeats > 0.0 && pixelsPerBeat_ > 0.0) {
-        g.setColour(juce::Colour(0xAAFFFFFF));
         const double stride = clip->loopLengthBeats * pixelsPerBeat_;
-        for (double x = stride; x < getWidth(); x += stride)
-            g.drawVerticalLine(static_cast<int>(std::round(x)), 0.0f,
-                               static_cast<float>(getHeight()));
+        // Below this per-cycle pixel width the markers pack into a barcode —
+        // hide them entirely (same threshold as MIDI/audio clip loop markers).
+        constexpr double MIN_LOOP_MARKER_PIXEL_WIDTH = 32.0;
+        if (stride >= MIN_LOOP_MARKER_PIXEL_WIDTH) {
+            g.setColour(juce::Colour(0xAAFFFFFF));
+            for (double x = stride; x < getWidth(); x += stride)
+                g.drawVerticalLine(static_cast<int>(std::round(x)), 0.0f,
+                                   static_cast<float>(getHeight()));
+        }
     }
 }
 
