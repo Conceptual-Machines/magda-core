@@ -72,7 +72,13 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
 
     auto& autoMgr = magda::AutomationManager::getInstance();
     const auto laneId = autoMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
-    if (laneId == magda::INVALID_AUTOMATION_LANE_ID)
+    // getOrCreateLane returns the existing lane regardless of the requested
+    // type: a clip-based lane can't take absolute-point bakes, and letting
+    // the command no-op would still disable nothing yet pollute undo
+    // history. The menu entry is disabled for that case; this guards the
+    // remaining races.
+    const auto* lane = autoMgr.getLane(laneId);
+    if (lane == nullptr || !lane->isAbsolute())
         return;
     autoMgr.setLaneVisible(laneId, true);
 

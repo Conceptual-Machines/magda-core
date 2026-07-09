@@ -301,6 +301,36 @@ TEST_CASE("ConvertAutomationLaneTypeCommand - undo restores exact state",
     REQUIRE(mgr.getClip(clipIds.front()) != nullptr);
 }
 
+TEST_CASE("BakeModulationCommand no-ops on a clip-based lane", "[automation][cliplane]") {
+    // getOrCreateLane returns the existing lane regardless of the requested
+    // type, so a bake can be pointed at a clip-based lane. It must not touch
+    // the lane: no absolute points written, clip content intact. (The bake
+    // menu entry is disabled for these targets; this covers the guard.)
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+    const auto clipId = fx.addRampClip(0.0, 4.0, 4.0);
+    const auto clipPointsBefore = mgr.getClip(clipId)->points.size();
+
+    std::vector<AutomationPoint> baked;
+    AutomationPoint p;
+    p.beatPosition = 0.0;
+    p.value = 0.25;
+    baked.push_back(p);
+    p.beatPosition = 4.0;
+    baked.push_back(p);
+
+    BakeModulationCommand cmd(fx.laneId, 0.0, 4.0, std::move(baked), {});
+    cmd.execute();
+
+    REQUIRE(fx.lane().absolutePoints.empty());
+    REQUIRE(mgr.getClip(clipId)->points.size() == clipPointsBefore);
+
+    // Undo must also be a no-op (nothing was captured or replaced).
+    cmd.undo();
+    REQUIRE(fx.lane().absolutePoints.empty());
+    REQUIRE(mgr.getClip(clipId)->points.size() == clipPointsBefore);
+}
+
 TEST_CASE("Clip commands - create/move/resize/delete/duplicate with undo",
           "[automation][cliplane]") {
     ClipLaneFixture fx;

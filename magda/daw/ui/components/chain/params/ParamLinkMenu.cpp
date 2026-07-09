@@ -1,6 +1,7 @@
 #include "params/ParamLinkMenu.hpp"
 
 #include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "params/ModulationBakeAction.hpp"
 
@@ -151,9 +152,15 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     // the ctx array pointers staying alive.
     auto bakeable = collectBakeableModLinks(ctx, thisTarget);
     if (!ctx.devicePath.isPostFx()) {
+        // Baking writes absolute lane points; a clip-based lane for this
+        // target can't take them (convert the lane back to a curve first).
+        auto& autoMgr = magda::AutomationManager::getInstance();
+        const auto existingLaneId = autoMgr.getLaneForTarget(thisTarget);
+        const auto* existingLane = autoMgr.getLane(existingLaneId);
+        const bool laneTakesBake = existingLane == nullptr || existingLane->isAbsolute();
         menu.addSeparator();
         menu.addItem(5000, "Show Automation Lane");
-        menu.addItem(5001, "Bake Modulation to Automation", !bakeable.empty());
+        menu.addItem(5001, "Bake Modulation to Automation", !bakeable.empty() && laneTakesBake);
     }
 
     // MIDI section
