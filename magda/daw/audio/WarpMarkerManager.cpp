@@ -138,9 +138,10 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
 void WarpMarkerManager::transientDetectionFinished(te::WarpTimeManager& warpManager,
                                                    bool completedOk) {
     if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
-        juce::MessageManager::callAsync([this, warpManagerPtr = &warpManager, completedOk]() {
-            if (warpManagerPtr != nullptr)
-                transientDetectionFinished(*warpManagerPtr, completedOk);
+        juce::WeakReference<WarpMarkerManager> weakThis(this);
+        juce::MessageManager::callAsync([weakThis, warpManagerPtr = &warpManager, completedOk]() {
+            if (auto* self = weakThis.get(); self != nullptr && warpManagerPtr != nullptr)
+                self->transientDetectionFinished(*warpManagerPtr, completedOk);
         });
         return;
     }
