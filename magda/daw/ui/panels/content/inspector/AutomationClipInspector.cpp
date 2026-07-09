@@ -31,9 +31,10 @@ AutomationClipInspector::AutomationClipInspector() {
     viewIcon_->setTooltip("Arrangement clip");
     addChildComponent(*viewIcon_);
 
-    // Clip type icon (automation clip).
-    typeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::iconautomationboldm_svg,
-                                                   BinaryData::iconautomationboldm_svgSize);
+    // Clip type icon: the app-wide automation glyph (track header / track
+    // inspector use the same one).
+    typeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::automation_svg,
+                                                   BinaryData::automation_svgSize);
     typeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     typeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     typeIcon_->setIconPadding(1.0f);
