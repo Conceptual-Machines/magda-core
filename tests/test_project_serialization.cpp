@@ -978,6 +978,8 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(clipId != INVALID_AUTOMATION_CLIP_ID);
     automation.setClipLooping(clipId, true);
     automation.setClipLoopLength(clipId, 2.0);
+    automation.setClipGridSettings(clipId, false, 1, 16);
+    automation.setClipSnapEnabled(clipId, false);
     auto pointId = automation.addPointToClip(clipId, 1.5, 0.75, AutomationCurveType::Bezier);
     REQUIRE(pointId != INVALID_AUTOMATION_POINT_ID);
     BezierHandle inHandle;
@@ -1020,6 +1022,10 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(static_cast<double>(obj->getProperty("startBeats")) == Approx(4.0));
     REQUIRE(static_cast<double>(obj->getProperty("lengthBeats")) == Approx(8.0));
     REQUIRE(static_cast<double>(obj->getProperty("loopLengthBeats")) == Approx(2.0));
+    REQUIRE(static_cast<bool>(obj->getProperty("gridAutoGrid")) == false);
+    REQUIRE(static_cast<int>(obj->getProperty("gridNumerator")) == 1);
+    REQUIRE(static_cast<int>(obj->getProperty("gridDenominator")) == 16);
+    REQUIRE(static_cast<bool>(obj->getProperty("gridSnapEnabled")) == false);
 
     auto* points = obj->getProperty("points").getArray();
     REQUIRE(points != nullptr);
@@ -1047,6 +1053,10 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(restoredClips[0].startBeats == Approx(4.0));
     REQUIRE(restoredClips[0].lengthBeats == Approx(8.0));
     REQUIRE(restoredClips[0].loopLengthBeats == Approx(2.0));
+    REQUIRE(restoredClips[0].gridAutoGrid == false);
+    REQUIRE(restoredClips[0].gridNumerator == 1);
+    REQUIRE(restoredClips[0].gridDenominator == 16);
+    REQUIRE(restoredClips[0].gridSnapEnabled == false);
     REQUIRE(restoredClips[0].points.size() == 1);
     REQUIRE(restoredClips[0].points[0].beatPosition == Approx(1.5));
     REQUIRE(restoredClips[0].points[0].inHandle.beatOffset == Approx(-0.25));

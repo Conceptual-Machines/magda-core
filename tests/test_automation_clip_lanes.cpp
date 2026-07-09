@@ -331,6 +331,68 @@ TEST_CASE("BakeModulationCommand no-ops on a clip-based lane", "[automation][cli
     REQUIRE(mgr.getClip(clipId)->points.size() == clipPointsBefore);
 }
 
+TEST_CASE("retypeEmptyLane flips only data-less lanes", "[automation][cliplane]") {
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+
+    SECTION("empty lane flips both ways") {
+        REQUIRE(mgr.retypeEmptyLane(fx.laneId, AutomationLaneType::Absolute));
+        REQUIRE(fx.lane().isAbsolute());
+        REQUIRE(mgr.retypeEmptyLane(fx.laneId, AutomationLaneType::ClipBased));
+        REQUIRE(fx.lane().isClipBased());
+    }
+    SECTION("matching type is a no-op success") {
+        REQUIRE(mgr.retypeEmptyLane(fx.laneId, AutomationLaneType::ClipBased));
+        REQUIRE(fx.lane().isClipBased());
+    }
+    SECTION("a lane with clips refuses") {
+        fx.addRampClip(0.0, 4.0, 4.0);
+        REQUIRE_FALSE(mgr.retypeEmptyLane(fx.laneId, AutomationLaneType::Absolute));
+        REQUIRE(fx.lane().isClipBased());
+    }
+    SECTION("a lane with absolute points refuses") {
+        REQUIRE(mgr.retypeEmptyLane(fx.laneId, AutomationLaneType::Absolute));
+        mgr.addPoint(fx.laneId, 0.0, 0.5);
+        REQUIRE_FALSE(mgr.retypeEmptyLane(fx.laneId, AutomationLaneType::ClipBased));
+        REQUIRE(fx.lane().isAbsolute());
+    }
+}
+
+TEST_CASE("Rename and colour clip commands with undo", "[automation][cliplane]") {
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+    const auto clipId = fx.addRampClip(0.0, 4.0, 4.0);
+    const auto originalName = mgr.getClip(clipId)->name;
+    const auto originalColour = mgr.getClip(clipId)->colour;
+
+    RenameAutomationClipCommand rename(clipId, "Sweep");
+    rename.execute();
+    REQUIRE(mgr.getClip(clipId)->name == "Sweep");
+    rename.undo();
+    REQUIRE(mgr.getClip(clipId)->name == originalName);
+
+    SetAutomationClipColourCommand colour(clipId, juce::Colour(0xFF123456));
+    colour.execute();
+    REQUIRE(mgr.getClip(clipId)->colour == juce::Colour(0xFF123456));
+    colour.undo();
+    REQUIRE(mgr.getClip(clipId)->colour == originalColour);
+}
+
+TEST_CASE("New clips inherit the track colour", "[automation][cliplane]") {
+    auto& mgr = AutomationManager::getInstance();
+    auto& trackMgr = TrackManager::getInstance();
+    mgr.clearAll();
+    trackMgr.clearAllTracks();
+
+    const auto trackId = trackMgr.createTrack("T", TrackType::Audio);
+    trackMgr.setTrackColour(trackId, juce::Colour(0xFFAB4321));
+    const auto laneId =
+        mgr.getOrCreateLane(ControlTarget::trackVolume(trackId), AutomationLaneType::ClipBased);
+
+    const auto clipId = mgr.createClip(laneId, 0.0, 4.0);
+    REQUIRE(mgr.getClip(clipId)->colour == juce::Colour(0xFFAB4321));
+}
+
 TEST_CASE("BakeModulationToClipCommand bakes into a front-priority clip",
           "[automation][cliplane]") {
     ClipLaneFixture fx;
