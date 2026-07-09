@@ -1,6 +1,7 @@
 target_sources(magda_daw_app PRIVATE
     TrackInspector.cpp
     NoteInspector.cpp
+    AutomationClipInspector.cpp
     AutomationPointInspector.cpp
     DeviceInspector.cpp
     InspectorFactory.cpp
