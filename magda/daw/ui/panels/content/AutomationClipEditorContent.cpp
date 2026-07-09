@@ -48,12 +48,16 @@ AutomationClipEditorContent::~AutomationClipEditorContent() {
     magda::SelectionManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::ClipManager::getInstance().removeListener(this);
+    if (auto* tc = TimelineController::getCurrent())
+        tc->removeListener(this);
 }
 
 void AutomationClipEditorContent::onActivated() {
     magda::SelectionManager::getInstance().addListener(this);
     magda::AutomationManager::getInstance().addListener(this);
     magda::ClipManager::getInstance().addListener(this);
+    if (auto* tc = TimelineController::getCurrent())
+        tc->addListener(this);
     refreshFromSelection();
 }
 
@@ -61,6 +65,8 @@ void AutomationClipEditorContent::onDeactivated() {
     magda::SelectionManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::ClipManager::getInstance().removeListener(this);
+    if (auto* tc = TimelineController::getCurrent())
+        tc->removeListener(this);
 }
 
 void AutomationClipEditorContent::paint(juce::Graphics& g) {
@@ -234,6 +240,37 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
         g.setColour(n.colour.withAlpha(0.35f));
         g.fillRoundedRectangle(juce::Rectangle<float>(x, y, w, kNoteH), 1.5f);
     }
+}
+
+void AutomationClipEditorContent::timelineStateChanged(const magda::TimelineState& state,
+                                                       magda::ChangeFlags changes) {
+    if (!magda::hasFlag(changes, magda::ChangeFlags::Playhead))
+        return;
+    const auto* clip = getClip();
+    if (editor_ == nullptr || clip == nullptr)
+        return;
+
+    // Playhead over the curve, playback only (matching the MIDI editors).
+    // Looped view: the position wraps into the displayed loop cycle.
+    double editorBeat = -1.0;
+    double rulerSeconds = -1.0;
+    const double playBeats = state.playhead.playbackPositionBeats;
+    if (state.playhead.isPlaying && playBeats >= clip->startBeats &&
+        playBeats < clip->getEndBeats()) {
+        const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+        if (looped) {
+            const double local =
+                magda::wrapPhase(playBeats - clip->startBeats, clip->loopLengthBeats);
+            editorBeat = local;
+            rulerSeconds = state.beatsToSeconds(clip->startBeats + local) -
+                           state.beatsToSeconds(clip->startBeats);
+        } else {
+            editorBeat = playBeats;
+            rulerSeconds = state.playhead.playbackPosition;
+        }
+    }
+    editor_->setPlayheadBeat(editorBeat);
+    timeRuler_->setPlayheadHandlePosition(rulerSeconds);
 }
 
 void AutomationClipEditorContent::clipsChanged() {

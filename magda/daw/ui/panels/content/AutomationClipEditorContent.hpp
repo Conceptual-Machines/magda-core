@@ -7,6 +7,7 @@
 
 #include "../../components/automation/AutomationCurveEditor.hpp"
 #include "../../components/timeline/TimeRuler.hpp"
+#include "../../state/TimelineController.hpp"
 #include "PanelContent.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
@@ -32,7 +33,8 @@ namespace magda::daw::ui {
 class AutomationClipEditorContent : public PanelContent,
                                     private magda::SelectionManagerListener,
                                     private magda::AutomationManagerListener,
-                                    private magda::ClipManagerListener {
+                                    private magda::ClipManagerListener,
+                                    private magda::TimelineStateListener {
   public:
     AutomationClipEditorContent();
     ~AutomationClipEditorContent() override;
@@ -111,6 +113,10 @@ class AutomationClipEditorContent : public PanelContent,
     // ClipManagerListener — the track ghost must follow MIDI/audio edits.
     void clipsChanged() override;
     void clipPropertyChanged(magda::ClipId clipId) override;
+
+    // TimelineStateListener — playhead over the curve while playing.
+    void timelineStateChanged(const magda::TimelineState& state,
+                              magda::ChangeFlags changes) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AutomationClipEditorContent)
 };

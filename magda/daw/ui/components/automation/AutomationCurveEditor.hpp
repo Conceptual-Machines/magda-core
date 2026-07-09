@@ -93,6 +93,16 @@ class AutomationCurveEditor : public CurveEditorBase,
         repaint();
     }
 
+    // Playback position in editor x-domain beats; < 0 hides it. Driven by
+    // the bottom-panel clip editor (timeline lanes sit under the
+    // arrangement's global playhead already).
+    void setPlayheadBeat(double editorBeat) {
+        if (playheadBeat_ == editorBeat)
+            return;
+        playheadBeat_ = editorBeat;
+        repaint();
+    }
+
     // CurveEditorBase coordinate interface
     double getPixelsPerX() const override {
         return pixelsPerBeat_;
@@ -174,6 +184,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     double tempoBPM_ = 120.0;
     int edgeInsetPx_ = 0;
     bool showClipBorders_ = false;
+    double playheadBeat_ = -1.0;
 
     // Cached curve points (converted from AutomationPoints)
     mutable std::vector<CurvePoint> cachedPoints_;

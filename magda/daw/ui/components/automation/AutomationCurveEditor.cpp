@@ -430,6 +430,14 @@ void AutomationCurveEditor::mouseUp(const juce::MouseEvent& e) {
 
 void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
     paintOverrideOverlay(g);
+
+    // Playhead (same 2px line language as the piano roll grid).
+    if (playheadBeat_ >= 0.0) {
+        const int x = xToPixel(playheadBeat_);
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.fillRect(x - 1, 0, 2, getHeight());
+    }
+
     CurveEditorBase::paintOverChildren(g);
 }
 
