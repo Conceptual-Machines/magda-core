@@ -82,6 +82,12 @@ double resolveTimelineBpm(double tempo) {
     return currentProjectBpm();
 }
 
+double timelineSecondsForBeat(double beat, const TempoMap* tempoMap) {
+    if (tempoMap != nullptr)
+        return tempoMap->beatToTime(beat);
+    return beat * 60.0 / currentProjectBpm();
+}
+
 /**
  * Progress window for offline rendering that runs on a background thread
  * while pumping the message loop (via runThread()) so the UI stays responsive.
@@ -202,6 +208,121 @@ struct InsertCaptureScope {
 };
 
 }  // namespace
+
+BounceRange resolveBounceSelectionRange(const BounceRange& timeSelection,
+                                        bool hasActiveTimeSelection,
+                                        const std::vector<ClipInfo>& selectedClips) {
+    if (hasActiveTimeSelection && timeSelection.isValid())
+        return timeSelection;
+
+    BounceRange range;
+    for (const auto& clip : selectedClips) {
+        if (clip.view != ClipView::Arrangement)
+            continue;
+
+        if (!range.isValid()) {
+            range = {clip.placement.startBeat, clip.placement.endBeat()};
+        } else {
+            range.startBeats = std::min(range.startBeats, clip.placement.startBeat);
+            range.endBeats = std::max(range.endBeats, clip.placement.endBeat());
+        }
+    }
+    return range;
+}
+
+BounceRenderRange resolveBounceRenderRange(const ClipInfo& clip, const BounceRange& requestedRange,
+                                           const TempoMap* tempoMap, bool constrainToClip) {
+    double startBeats = clip.placement.startBeat;
+    double endBeats = clip.placement.endBeat();
+
+    if (requestedRange.isValid()) {
+        startBeats = requestedRange.startBeats;
+        endBeats = requestedRange.endBeats;
+
+        if (constrainToClip) {
+            startBeats = std::max(startBeats, clip.placement.startBeat);
+            endBeats = std::min(endBeats, clip.placement.endBeat());
+        }
+    }
+
+    // A requested range that does not overlap the source clip must not turn an
+    // in-place bounce into an invalid render. Retain the clip-range behaviour.
+    if (endBeats <= startBeats) {
+        startBeats = clip.placement.startBeat;
+        endBeats = clip.placement.endBeat();
+    }
+
+    return {startBeats, endBeats, timelineSecondsForBeat(startBeats, tempoMap),
+            timelineSecondsForBeat(endBeats, tempoMap)};
+}
+
+void BounceInPlaceReplacement::setOriginalClip(const ClipInfo& originalClip) {
+    originalClip_ = originalClip;
+    sourceFragmentIds_.clear();
+    newClipId_ = INVALID_CLIP_ID;
+}
+
+bool BounceInPlaceReplacement::replace(ClipManager& clipManager, ClipId sourceClipId,
+                                       const BounceRenderRange& range,
+                                       const juce::String& renderedFilePath, double projectBPM) {
+    if (!range.isValid() || sourceClipId == INVALID_CLIP_ID)
+        return false;
+
+    sourceFragmentIds_.clear();
+    newClipId_ = INVALID_CLIP_ID;
+    sourceFragmentIds_.push_back(sourceClipId);
+
+    ClipId replacementSourceId = sourceClipId;
+    constexpr double beatEpsilon = 1.0e-9;
+    if (range.startBeats > originalClip_.placement.startBeat + beatEpsilon) {
+        replacementSourceId =
+            clipManager.splitClipAtBeat(replacementSourceId, range.startBeats, projectBPM);
+        if (replacementSourceId == INVALID_CLIP_ID) {
+            restoreOriginalClip(clipManager);
+            return false;
+        }
+        sourceFragmentIds_.push_back(replacementSourceId);
+    }
+
+    if (range.endBeats < originalClip_.placement.endBeat() - beatEpsilon) {
+        const auto tailId =
+            clipManager.splitClipAtBeat(replacementSourceId, range.endBeats, projectBPM);
+        if (tailId == INVALID_CLIP_ID) {
+            restoreOriginalClip(clipManager);
+            return false;
+        }
+        sourceFragmentIds_.push_back(tailId);
+    }
+
+    clipManager.deleteClip(replacementSourceId);
+    newClipId_ = clipManager.createAudioClipBeats(originalClip_.trackId, range.startBeats,
+                                                  range.lengthBeats(), renderedFilePath,
+                                                  ClipView::Arrangement, projectBPM);
+    if (newClipId_ == INVALID_CLIP_ID) {
+        restoreOriginalClip(clipManager);
+        return false;
+    }
+
+    return true;
+}
+
+void BounceInPlaceReplacement::undo(ClipManager& clipManager) {
+    if (newClipId_ != INVALID_CLIP_ID) {
+        clipManager.deleteClip(newClipId_);
+        newClipId_ = INVALID_CLIP_ID;
+    }
+    restoreOriginalClip(clipManager);
+}
+
+void BounceInPlaceReplacement::restoreOriginalClip(ClipManager& clipManager) {
+    for (const auto sourceId : sourceFragmentIds_) {
+        if (clipManager.getClip(sourceId))
+            clipManager.deleteClip(sourceId);
+    }
+    clipManager.restoreClip(originalClip_);
+    clipManager.forceNotifyClipsChanged();
+    sourceFragmentIds_.clear();
+}
 
 // ============================================================================
 // SplitClipCommand
@@ -1920,13 +2041,15 @@ void RippleDeleteRangeCommand::undo() {
 // BounceInPlaceCommand
 // ============================================================================
 
-BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine)
-    : clipId_(clipId), engine_(engine) {}
+BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine,
+                                           BounceRange range)
+    : clipId_(clipId), engine_(engine), range_(range) {}
 
 void BounceInPlaceCommand::execute() {
     // Reset per-run so a stale failure message can't leak into a later
     // success/cancel (redo re-invokes execute() on the same object).
     errorMessage_.clear();
+    success_ = false;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || !clip->isMidi() || !engine_) {
@@ -1942,7 +2065,12 @@ void BounceInPlaceCommand::execute() {
     }
 
     // Snapshot original clip for undo
-    originalClipSnapshot_ = *clip;
+    replacement_.setOriginalClip(*clip);
+    const double projectBPM = currentProjectBpm();
+    const auto* tempoMap =
+        TimelineController::getCurrent() ? TimelineController::getCurrent()->tempoMap() : nullptr;
+    const auto bounceRange =
+        resolveBounceRenderRange(replacement_.getOriginalClip(), range_, tempoMap, true);
 
     auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
@@ -2011,11 +2139,10 @@ void BounceInPlaceCommand::execute() {
     // with the chain still fully enabled (#1623). The taps substitute the
     // captured returns during the offline render below.
     const double bounceTailSeconds = 2.0;
-    const double bounceBpm = currentProjectBpm();
     InsertCaptureScope captureScope;
     if (trackNeedsInsertCapture(*teTrack)) {
-        if (!runInsertCapturePass(*engine_, clip->getTimelineStart(bounceBpm),
-                                  clip->getTimelineEnd(bounceBpm) + bounceTailSeconds)) {
+        if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
+                                  bounceRange.endSeconds + bounceTailSeconds)) {
             restoreTransport();
             return;
         }
@@ -2084,13 +2211,11 @@ void BounceInPlaceCommand::execute() {
     params.useMasterPlugins = false;
     params.checkNodesForAudio = false;  // MIDI→synth generates audio
 
-    // Time range = clip timeline range + tail allowance
-    double endAllowance = 2.0;
-    const double projectBPM = currentProjectBpm();
-    const double clipStart = clip->getTimelineStart(projectBPM);
-    const double clipEnd = clip->getTimelineEnd(projectBPM);
-    params.time = te::TimeRange(te::TimePosition::fromSeconds(clipStart),
-                                te::TimePosition::fromSeconds(clipEnd + endAllowance));
+    // Renderer accepts seconds, but the selection stays in beats until this
+    // boundary so tempo changes within the range are respected.
+    params.time =
+        te::TimeRange(te::TimePosition::fromSeconds(bounceRange.startSeconds),
+                      te::TimePosition::fromSeconds(bounceRange.endSeconds + bounceTailSeconds));
 
     juce::BigInteger trackBits;
     trackBits.setBit(trackIndex);
@@ -2119,22 +2244,22 @@ void BounceInPlaceCommand::execute() {
         return;
     }
 
-    // Replace MIDI clip with audio clip using the original snapshot
-    // (clip pointer may be invalidated by render/transport operations)
-    double startTime = originalClipSnapshot_.getTimelineStart(projectBPM);
-    double length = originalClipSnapshot_.getTimelineLength(projectBPM);
-    TrackId trackId = originalClipSnapshot_.trackId;
-    juce::Colour colour = originalClipSnapshot_.colour;
-    juce::String name = originalClipSnapshot_.name;
+    // Replace only the selected portion. The helper retains source material on
+    // either side of a partial bounce and keeps its undo bookkeeping local.
+    if (!replacement_.replace(clipManager, clipId_, bounceRange, renderedFile_.getFullPathName(),
+                              projectBPM)) {
+        renderedFile_.deleteFile();
+        errorMessage_ = "Bounce failed: couldn't replace the source clip with bounced audio.";
+        restoreTransport();
+        return;
+    }
 
-    clipManager.deleteClip(clipId_);
-
-    newClipId_ =
-        clipManager.createAudioClip(trackId, startTime, length, renderedFile_.getFullPathName());
-
-    if (auto* newClip = clipManager.getClip(newClipId_)) {
-        newClip->colour = colour;
-        newClip->name = name.isNotEmpty() ? name : renderedFile_.getFileNameWithoutExtension();
+    if (auto* newClip = clipManager.getClip(replacement_.getNewClipId())) {
+        const auto& originalClip = replacement_.getOriginalClip();
+        newClip->colour = originalClip.colour;
+        newClip->name = originalClip.name.isNotEmpty()
+                            ? originalClip.name
+                            : renderedFile_.getFileNameWithoutExtension();
         clipManager.forceNotifyClipsChanged();
     }
 
@@ -2148,14 +2273,7 @@ void BounceInPlaceCommand::undo() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    // Delete the replacement audio clip
-    if (newClipId_ != INVALID_CLIP_ID) {
-        clipManager.deleteClip(newClipId_);
-        newClipId_ = INVALID_CLIP_ID;
-    }
-
-    // Restore original MIDI clip
-    clipManager.restoreClip(originalClipSnapshot_);
+    replacement_.undo(clipManager);
 
     // Delete the rendered file
     if (renderedFile_.existsAsFile()) {
@@ -2169,13 +2287,17 @@ void BounceInPlaceCommand::undo() {
 // BounceToNewTrackCommand
 // ============================================================================
 
-BounceToNewTrackCommand::BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine)
-    : clipId_(clipId), engine_(engine) {}
+BounceToNewTrackCommand::BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine,
+                                                 BounceRange range)
+    : clipId_(clipId), engine_(engine), range_(range) {}
 
 void BounceToNewTrackCommand::execute() {
     // Reset per-run so a stale failure message can't leak into a later
     // success/cancel (redo re-invokes execute() on the same object).
     errorMessage_.clear();
+    success_ = false;
+    newClipId_ = INVALID_CLIP_ID;
+    newTrackId_ = INVALID_TRACK_ID;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || !engine_) {
@@ -2196,6 +2318,14 @@ void BounceToNewTrackCommand::execute() {
         DBG("BounceToNewTrackCommand: TE clip not found");
         return;
     }
+
+    const double projectBPM = currentProjectBpm();
+    const auto* tempoMap =
+        TimelineController::getCurrent() ? TimelineController::getCurrent()->tempoMap() : nullptr;
+    const auto bounceRange = resolveBounceRenderRange(*clip, range_, tempoMap, false);
+    const auto sourceClipName = clip->name;
+    const auto sourceClipColour = clip->colour;
+    const auto sourceTrackId = clip->trackId;
 
     // Determine output file path — always the project's bounces directory.
     // A bounce file is referenced by a clip inside the project, so it must live
@@ -2274,17 +2404,16 @@ void BounceToNewTrackCommand::execute() {
     params.useMasterPlugins = false;
     params.checkNodesForAudio = false;
 
-    double endAllowance = 2.0;
-    const double projectBPM = currentProjectBpm();
-    const double clipStart = clip->getTimelineStart(projectBPM);
-    const double clipEnd = clip->getTimelineEnd(projectBPM);
-    params.time = te::TimeRange(te::TimePosition::fromSeconds(clipStart),
-                                te::TimePosition::fromSeconds(clipEnd + endAllowance));
+    const double bounceTailSeconds = 2.0;
+    params.time =
+        te::TimeRange(te::TimePosition::fromSeconds(bounceRange.startSeconds),
+                      te::TimePosition::fromSeconds(bounceRange.endSeconds + bounceTailSeconds));
 
     // External insert returns only exist live — capture them first (#1623).
     InsertCaptureScope captureScope;
     if (trackNeedsInsertCapture(*teTrack)) {
-        if (!runInsertCapturePass(*engine_, clipStart, clipEnd + endAllowance)) {
+        if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
+                                  bounceRange.endSeconds + bounceTailSeconds)) {
             restoreTransport();
             return;
         }
@@ -2313,33 +2442,27 @@ void BounceToNewTrackCommand::execute() {
         return;
     }
 
-    // Save clip properties before createTrack/createAudioClip, which trigger
-    // listener callbacks that may invalidate the clip pointer
-    const auto clipName = clip->name;
-    const auto clipColour = clip->colour;
-    const auto clipStartTime = clipStart;
-    const auto clipLength = clip->getTimelineLength(projectBPM);
-    const auto clipTrackId = clip->trackId;
-
     // Create new audio track after the source track
     auto& trackManager = TrackManager::getInstance();
-    juce::String trackName = clipName.isNotEmpty() ? clipName + " (bounced)" : "Bounced";
+    juce::String trackName =
+        sourceClipName.isNotEmpty() ? sourceClipName + " (bounced)" : "Bounced";
     newTrackId_ = trackManager.createTrack(trackName, TrackType::Audio);
 
     // Move new track to position after source track
-    int sourceIndex = trackManager.getTrackIndex(clipTrackId);
+    int sourceIndex = trackManager.getTrackIndex(sourceTrackId);
     if (sourceIndex >= 0) {
         trackManager.moveTrack(newTrackId_, sourceIndex + 1);
     }
 
     // Create audio clip on new track
-    newClipId_ = clipManager.createAudioClip(newTrackId_, clipStartTime, clipLength,
-                                             renderedFile_.getFullPathName());
+    newClipId_ = clipManager.createAudioClipBeats(
+        newTrackId_, bounceRange.startBeats, bounceRange.lengthBeats(),
+        renderedFile_.getFullPathName(), ClipView::Arrangement, projectBPM);
 
     if (auto* newClip = clipManager.getClip(newClipId_)) {
-        newClip->colour = clipColour;
-        newClip->name =
-            clipName.isNotEmpty() ? clipName : renderedFile_.getFileNameWithoutExtension();
+        newClip->colour = sourceClipColour;
+        newClip->name = sourceClipName.isNotEmpty() ? sourceClipName
+                                                    : renderedFile_.getFileNameWithoutExtension();
         clipManager.forceNotifyClipsChanged();
     }
 

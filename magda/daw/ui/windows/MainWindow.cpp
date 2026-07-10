@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 
+#include <vector>
+
 #include "../../api/magda_api_live.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
@@ -704,14 +706,38 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         getCommandManager().invokeDirectly(CommandIDs::pasteRipple, false);
     };
 
+    // Time selections and clip placement are authoritative in beats. Keep the
+    // bounce range in beats until ClipCommands converts it for Tracktion's
+    // seconds-based renderer.
+    auto getBounceRange = [this]() -> BounceRange {
+        BounceRange timeSelection;
+        bool hasActiveTimeSelection = false;
+        if (mainView) {
+            const auto& selection = mainView->getTimelineController().getState().selection;
+            hasActiveTimeSelection = selection.isVisuallyActive() && !selection.automationOnly;
+            if (hasActiveTimeSelection)
+                timeSelection = {selection.startBeats, selection.endBeats};
+        }
+
+        std::vector<ClipInfo> selectedArrangementClips;
+        for (const auto clipId : SelectionManager::getInstance().getSelectedClips()) {
+            const auto* clip = ClipManager::getInstance().getClip(clipId);
+            if (!clip || clip->view != ClipView::Arrangement)
+                continue;
+            selectedArrangementClips.push_back(*clip);
+        }
+        return resolveBounceSelectionRange(timeSelection, hasActiveTimeSelection,
+                                           selectedArrangementClips);
+    };
+
     // Wire bounce callbacks
-    mainView->onBounceInPlaceRequested = [this](ClipId clipId) {
+    mainView->onBounceInPlaceRequested = [this, getBounceRange](ClipId clipId) {
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
         if (!engine) {
             DBG("BounceInPlace: no TracktionEngineWrapper available");
             return;
         }
-        auto cmd = std::make_unique<BounceInPlaceCommand>(clipId, engine);
+        auto cmd = std::make_unique<BounceInPlaceCommand>(clipId, engine, getBounceRange());
         // executeCommand always retains the command (undo stack), so reading
         // its error message back afterwards is safe.
         auto* cmdPtr = cmd.get();
@@ -720,7 +746,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             daw::ui::Toast::showGlobal(err, 5000);
     };
 
-    mainView->onBounceToNewTrackRequested = [this](ClipId clipId) {
+    mainView->onBounceToNewTrackRequested = [this, getBounceRange](ClipId clipId) {
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
         if (!engine) {
             DBG("BounceToNewTrack: no TracktionEngineWrapper available");
@@ -729,8 +755,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
         // Runs one bounce and returns its error message (empty on success).
         // executeCommand retains the command, so the raw pointer stays valid.
-        auto runBounce = [](ClipId cid, TracktionEngineWrapper* eng) -> juce::String {
-            auto cmd = std::make_unique<BounceToNewTrackCommand>(cid, eng);
+        const auto bounceRange = getBounceRange();
+        auto runBounce = [bounceRange](ClipId cid, TracktionEngineWrapper* eng) -> juce::String {
+            auto cmd = std::make_unique<BounceToNewTrackCommand>(cid, eng, bounceRange);
             auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
             return cmdPtr->getErrorMessage();
