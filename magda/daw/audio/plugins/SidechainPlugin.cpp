@@ -52,9 +52,17 @@ SidechainPlugin::SidechainPlugin(const te::PluginCreationInfo& info) : te::Plugi
             return s.upToFirstOccurrenceOf(" ", false, false).getFloatValue();
         });
 
+    static const juce::Identifier channelModeId("channelMode");
+    channelModeValue.referTo(state, channelModeId, um, 0.0f);
+    channelModeParam = addParam(
+        "channelMode", "Channel Mode", {0.0f, 1.0f, 1.0f},
+        [](float v) { return v >= 0.5f ? "Sides" : "Stereo"; },
+        [](const juce::String& s) { return s.equalsIgnoreCase("sides") ? 1.0f : 0.0f; });
+
     gainParam->attachToCurrentValue(gainValue);
     attackParam->attachToCurrentValue(attackValue);
     releaseParam->attachToCurrentValue(releaseValue);
+    channelModeParam->attachToCurrentValue(channelModeValue);
 }
 
 SidechainPlugin::~SidechainPlugin() {
@@ -62,6 +70,7 @@ SidechainPlugin::~SidechainPlugin() {
     gainParam->detachFromCurrentValue();
     attackParam->detachFromCurrentValue();
     releaseParam->detachFromCurrentValue();
+    channelModeParam->detachFromCurrentValue();
 }
 
 void SidechainPlugin::initialise(const te::PluginInitialisationInfo& info) {
@@ -126,6 +135,9 @@ void SidechainPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     }
     samplesSinceChange_ += fc.bufferNumSamples;
 
+    const bool sidesOnly = juce::roundToInt(channelModeParam->getCurrentValue()) ==
+                               static_cast<int>(ChannelMode::Sides) &&
+                           usedChannels >= 2;
     float gain = currentGain_;
     for (int i = 0; i < fc.bufferNumSamples; ++i) {
         if (rampSamplesLeft_ > 0) {
@@ -137,18 +149,28 @@ void SidechainPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         // Attack when ducking (gain falling), release when recovering.
         const float coeff = rampValue_ < gain ? attackCoeff : releaseCoeff;
         gain += coeff * (rampValue_ - gain);
-        for (int ch = 0; ch < usedChannels; ++ch)
-            channels[ch][i] *= gain;
+        if (sidesOnly) {
+            const float left = channels[0][i];
+            const float right = channels[1][i];
+            const float mid = 0.5f * (left + right);
+            const float side = 0.5f * (left - right) * gain;
+            channels[0][i] = mid + side;
+            channels[1][i] = mid - side;
+        } else {
+            for (int ch = 0; ch < usedChannels; ++ch)
+                channels[ch][i] *= gain;
+        }
     }
     currentGain_ = gain;
 }
 
 void SidechainPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    te::copyPropertiesToCachedValues(v, gainValue, attackValue, releaseValue);
+    te::copyPropertiesToCachedValues(v, gainValue, attackValue, releaseValue, channelModeValue);
 
     gainValue = clampToParamRange(gainParam, gainValue.get());
     attackValue = clampToParamRange(attackParam, attackValue.get());
     releaseValue = clampToParamRange(releaseParam, releaseValue.get());
+    channelModeValue = clampToParamRange(channelModeParam, channelModeValue.get());
 
     for (auto p : getAutomatableParameters())
         p->updateFromAttachedValue();

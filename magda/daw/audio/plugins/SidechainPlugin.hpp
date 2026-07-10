@@ -36,6 +36,9 @@ class SidechainPlugin : public te::Plugin {
     static constexpr int kGainParamIndex = 0;
     static constexpr int kAttackParamIndex = 1;
     static constexpr int kReleaseParamIndex = 2;
+    static constexpr int kChannelModeParamIndex = 3;
+
+    enum class ChannelMode { Stereo = 0, Sides };
 
     static const char* getPluginName() {
         return "Sidechain";
@@ -76,8 +79,8 @@ class SidechainPlugin : public te::Plugin {
 
     void restorePluginStateFromValueTree(const juce::ValueTree& v) override;
 
-    juce::CachedValue<float> gainValue, attackValue, releaseValue;
-    te::AutomatableParameter::Ptr gainParam, attackParam, releaseParam;
+    juce::CachedValue<float> gainValue, attackValue, releaseValue, channelModeValue;
+    te::AutomatableParameter::Ptr gainParam, attackParam, releaseParam, channelModeParam;
 
   private:
     double sampleRate_ = 44100.0;

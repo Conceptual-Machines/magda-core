@@ -68,16 +68,33 @@ struct DeviceTargetLookup : TargetPluginLookup {
 void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     auto* teTrack = trackController_.getAudioTrack(trackId);
-    if (!trackInfo || !teTrack)
+    if (!trackInfo)
         return;
+
+    std::function<void(const std::function<void(te::Plugin*)>&)> visitHostPlugins;
+    if (teTrack) {
+        visitHostPlugins = [teTrack](const std::function<void(te::Plugin*)>& visit) {
+            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+                if (auto* plugin = teTrack->pluginList[pi])
+                    visit(plugin);
+            }
+        };
+    } else if (trackId == MASTER_TRACK_ID && edit_.getMasterTrack()) {
+        visitHostPlugins = [this](const std::function<void(te::Plugin*)>& visit) {
+            const auto& masterList = edit_.getMasterPluginList();
+            for (int pi = 0; pi < masterList.size(); ++pi) {
+                if (auto* plugin = masterList[pi])
+                    visit(plugin);
+            }
+        };
+    } else {
+        return;
+    }
 
     DeviceTargetLookup lookup(*this);
 
     auto forEachPlugin = [&, this](const std::function<void(te::Plugin*)>& visit) {
-        for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
-            if (auto* plugin = teTrack->pluginList[pi])
-                visit(plugin);
-        }
+        visitHostPlugins(visit);
         for (const auto& el : trackInfo->chain.fxChainElements) {
             if (!isDevice(el))
                 continue;
@@ -158,9 +175,11 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     ModifierSyncWalker::syncProperties(trackNode, ctx, trackState);
 }
 
-void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack) {
+void PluginManager::syncDeviceModifiers(
+    TrackId trackId, te::ModifierList* defaultModifierList, te::MacroParameterList* macroList,
+    const std::function<void(const std::function<void(te::Plugin*)>&)>& visitHostPlugins) {
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-    if (!trackInfo || !teTrack)
+    if (!trackInfo || !defaultModifierList)
         return;
 
     // This is the full teardown path: it destroys and recreates every TE modifier
@@ -194,10 +213,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     // though pre-step-2 syncDeviceModifiers didn't scrub them; over-scrubbing
     // is a no-op and matches what syncDeviceMacros has always done.
     auto forEachPlugin = [&, this](const std::function<void(te::Plugin*)>& visit) {
-        for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
-            if (auto* plugin = teTrack->pluginList[pi])
-                visit(plugin);
-        }
+        visitHostPlugins(visit);
         for (const auto& el : trackInfo->chain.fxChainElements) {
             if (!isDevice(el))
                 continue;
@@ -242,7 +258,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                 modList = &rackType->getModifierList();
         }
         if (!modList)
-            modList = teTrack->getModifierList();
+            modList = defaultModifierList;
 
         // Bypassed devices: tear down any existing TE state, no rebuild.
         // Walker handles this uniformly when node.mods/macros are nullptr.
@@ -258,7 +274,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
         ModifierSyncContext ctx;
         ctx.modifierList = modList;
-        ctx.macroList = &teTrack->getMacroParameterListForWriting();
+        ctx.macroList = macroList;
         ctx.lookup = &lookup;
         ctx.forEachScopePlugin = forEachPlugin;
         ctx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
@@ -279,8 +295,8 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     trackNode.macros = &trackInfo->macros;
 
     ModifierSyncContext trackCtx;
-    trackCtx.modifierList = teTrack->getModifierList();
-    trackCtx.macroList = &teTrack->getMacroParameterListForWriting();
+    trackCtx.modifierList = defaultModifierList;
+    trackCtx.macroList = macroList;
     trackCtx.lookup = &lookup;
     trackCtx.forEachScopePlugin = forEachPlugin;
     trackCtx.hasCrossTrackSidechain = false;
@@ -626,6 +642,7 @@ void PluginManager::prepareForRendering() {
         updateDeviceModifierProperties(track.id);
         rackSyncManager_.updateAllModifierProperties(track.id);
     }
+    updateDeviceModifierProperties(MASTER_TRACK_ID);
 
     // Log assignment state after update
     {
@@ -869,12 +886,12 @@ void PluginManager::rebuildSidechainLFOCache() {
         // 2. Cross-track LFOs: for each OTHER track that has a device or rack
         //    sidechained from this track, collect only the destination LFOs
         //    whose sidechain source resolves to this track.
-        for (const auto& otherTrack : tm.getTracks()) {
+        auto collectCrossTrackLFOs = [&](const TrackInfo& otherTrack) {
             if (otherTrack.id == track.id)
-                continue;
+                return;
 
             if (!sidechain::elementsUseSource(otherTrack.chain.fxChainElements, track.id))
-                continue;
+                return;
 
             // Collect LFO modifiers only from devices on the destination track
             // that are actually sidechained from this source track.
@@ -889,7 +906,11 @@ void PluginManager::rebuildSidechainLFOCache() {
             }
             rackSyncManager_.collectLFOModifiersWithModesForSidechainSource(otherTrack.id, track.id,
                                                                             lfos, modes);
-        }
+        };
+        for (const auto& otherTrack : tm.getTracks())
+            collectCrossTrackLFOs(otherTrack);
+        if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID))
+            collectCrossTrackLFOs(*masterTrack);
 
         // Write to cache entry (capped at kMaxLFOs)
         // Self-track LFOs come first (indices 0..selfTrackCount-1),
@@ -1017,9 +1038,35 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
 
 // =============================================================================
 void PluginManager::resyncDeviceModifiers(TrackId trackId) {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     auto* teTrack = trackController_.getAudioTrack(trackId);
+    te::ModifierList* defaultModifierList = nullptr;
+    te::MacroParameterList* macroList = nullptr;
+    std::function<void(const std::function<void(te::Plugin*)>&)> visitHostPlugins;
+
     if (teTrack) {
-        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        defaultModifierList = teTrack->getModifierList();
+        macroList = &teTrack->getMacroParameterListForWriting();
+        visitHostPlugins = [teTrack](const std::function<void(te::Plugin*)>& visit) {
+            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+                if (auto* plugin = teTrack->pluginList[pi])
+                    visit(plugin);
+            }
+        };
+    } else if (trackId == MASTER_TRACK_ID) {
+        if (auto* masterTrack = edit_.getMasterTrack()) {
+            defaultModifierList = masterTrack->getModifierList();
+            visitHostPlugins = [this](const std::function<void(te::Plugin*)>& visit) {
+                const auto& masterList = edit_.getMasterPluginList();
+                for (int pi = 0; pi < masterList.size(); ++pi) {
+                    if (auto* plugin = masterList[pi])
+                        visit(plugin);
+                }
+            };
+        }
+    }
+
+    if (trackInfo && defaultModifierList) {
         auto currentFP = computeModLinkFingerprint(trackId, trackInfo);
         auto& storedFP = modLinkFingerprints_[trackId];
 
@@ -1034,14 +1081,15 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
             } else {
                 // Link structure changed — full rebuild
                 storedFP = currentFP;
-                syncDeviceModifiers(trackId, teTrack);
+                syncDeviceModifiers(trackId, defaultModifierList, macroList, visitHostPlugins);
             }
         } else {
             // Properties only changed (rate, waveform, etc.) — update in-place
             updateDeviceModifierProperties(trackId);
         }
     }
-    rackSyncManager_.resyncAllModifiers(trackId);
+    if (trackId != MASTER_TRACK_ID)
+        rackSyncManager_.resyncAllModifiers(trackId);
     rebuildSidechainLFOCache();
 }
 

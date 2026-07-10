@@ -110,6 +110,11 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
 // =============================================================================
 
 bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
+    // The master owns modifiers but has no AudioTrack/plugin list to host a
+    // MIDI monitor. It can be a sidechain destination, never a source.
+    if (trackId == MASTER_TRACK_ID)
+        return false;
+
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (!trackInfo)
         return false;
@@ -132,12 +137,16 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
         }
     }
 
-    // Check if this track is a MIDI sidechain source for any other track
-    for (const auto& track : TrackManager::getInstance().getTracks()) {
+    // Check if this track is a MIDI sidechain source for any other track,
+    // including master (which is stored separately from getTracks()).
+    bool usedAsSource = false;
+    TrackManager::getInstance().forEachTrackIncludingMaster([&](const TrackInfo& track) {
         if (sidechain::elementsUseSource(track.chain.fxChainElements, trackId,
                                          SidechainConfig::Type::MIDI))
-            return true;
-    }
+            usedAsSource = true;
+    });
+    if (usedAsSource)
+        return true;
 
     return false;
 }

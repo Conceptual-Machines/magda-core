@@ -320,6 +320,10 @@ void PluginManager::syncAllPlugins() {
                     }
                     auto* teTrack = trackController_.getAudioTrack(it->second.trackId);
                     auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
+                    if (!modifierList && it->second.trackId == MASTER_TRACK_ID) {
+                        if (auto* masterTrack = edit_.getMasterTrack())
+                            modifierList = masterTrack->getModifierList();
+                    }
                     auto* macroList =
                         teTrack ? &teTrack->getMacroParameterListForWriting() : nullptr;
 
@@ -770,7 +774,14 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Sync device-level + track-level modifiers AND macros via the
     // ModifierSyncWalker (issue #1131 step 2).
-    syncDeviceModifiers(trackId, teTrack);
+    syncDeviceModifiers(trackId, teTrack->getModifierList(),
+                        &teTrack->getMacroParameterListForWriting(),
+                        [teTrack](const std::function<void(te::Plugin*)>& visit) {
+                            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+                                if (auto* plugin = teTrack->pluginList[pi])
+                                    visit(plugin);
+                            }
+                        });
 
     // Update mod link fingerprint so resyncDeviceModifiers doesn't rebuild immediately after
     if (auto* info = TrackManager::getInstance().getTrack(trackId))
@@ -1712,6 +1723,8 @@ void PluginManager::syncMasterPlugins() {
         return;
 
     auto& masterList = edit_.getMasterPluginList();
+    auto* masterTrack = edit_.getMasterTrack();
+    auto* masterModifierList = masterTrack ? masterTrack->getModifierList() : nullptr;
 
     // Collect current MAGDA device paths on master (fx chain + flat post-fx list)
     std::vector<ChainNodePath> magdaDevices;
@@ -1752,10 +1765,19 @@ void PluginManager::syncMasterPlugins() {
             }
         }
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
+        std::vector<te::Plugin*> scopePlugins;
+        scopePlugins.reserve(masterList.size());
+        for (int i = 0; i < masterList.size(); ++i) {
+            if (auto* plugin = masterList[i])
+                scopePlugins.push_back(plugin);
+        }
         for (const auto& devicePath : toRemove) {
             auto it = findSyncedDevice(devicePath);
             if (it != syncedDevices_.end()) {
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                teardownMacroMap(it->second.macroParams, it->second.modifiers, scopePlugins,
+                                 nullptr);
+                teardownModifierMap(it->second.modifiers, scopePlugins, masterModifierList);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
                     dg->removeListener(this);
@@ -1907,6 +1929,11 @@ void PluginManager::syncMasterPlugins() {
             }
         }
     }
+
+    // The master owns a Tracktion ModifierList despite not being an
+    // AudioTrack. Rebuild after plugins are mapped so Sidechain links can
+    // resolve their master-device targets.
+    resyncDeviceModifiers(MASTER_TRACK_ID);
 }
 
 // =============================================================================

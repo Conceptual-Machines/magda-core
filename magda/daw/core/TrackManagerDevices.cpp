@@ -1927,6 +1927,10 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
             return;
         }
     }
+
+    if (updateElements(updateElements, masterTrack_.chain.fxChainElements)) {
+        notifyDeviceModifiersChanged(MASTER_TRACK_ID);
+    }
 }
 
 void TrackManager::clearSidechain(DeviceId targetDevice) {
