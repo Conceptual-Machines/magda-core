@@ -8,6 +8,7 @@
 #include "../../components/automation/AutomationCurveEditor.hpp"
 #include "../../components/automation/AutomationLaneComponent.hpp"
 #include "../../components/common/DraggableValueLabel.hpp"
+#include "../../components/common/SvgButton.hpp"
 #include "../../components/timeline/TimeRuler.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -90,6 +91,9 @@ class AutomationClipEditorContent : public PanelContent,
     std::unique_ptr<juce::TextButton> snapXButton_, snapYButton_;
     std::unique_ptr<magda::DraggableValueLabel> snapXNum_, snapXDen_, snapYNum_, snapYDen_;
     juce::Label snapXSlash_, snapYSlash_;
+    // Track content ghost toggle (the MIDI editor's layer icon)
+    std::unique_ptr<magda::SvgButton> ghostButton_;
+    bool showTrackGhost_ = true;
 
     const magda::AutomationClipInfo* getClip() const;
     double viewSpanBeats(const magda::AutomationClipInfo& clip) const;

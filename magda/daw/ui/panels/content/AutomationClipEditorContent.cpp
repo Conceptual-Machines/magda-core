@@ -6,6 +6,7 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 
 namespace magda::daw::ui {
@@ -139,6 +140,20 @@ void AutomationClipEditorContent::buildHeaderControls() {
     makeSlash(snapYSlash_);
     snapYDen_ = makeNumLabel(32.0, 8.0);
 
+    // Track content ghost toggle — the MIDI editor's layer icon.
+    ghostButton_ = std::make_unique<magda::SvgButton>("TrackGhost", BinaryData::stacks_svg,
+                                                      BinaryData::stacks_svgSize);
+    ghostButton_->setTooltip("Overlay track content");
+    ghostButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    ghostButton_->setActive(showTrackGhost_);
+    ghostButton_->onClick = [this]() {
+        showTrackGhost_ = !showTrackGhost_;
+        ghostButton_->setActive(showTrackGhost_);
+        if (editor_ != nullptr)
+            editor_->repaint();
+    };
+    addChildComponent(ghostButton_.get());
+
     snapXButton_->onClick = [this]() {
         if (const auto* clip = getClip())
             magda::AutomationManager::getInstance().setClipSnapX(
@@ -183,7 +198,8 @@ void AutomationClipEditorContent::populateHeader(juce::Component& headerBar) {
                                static_cast<juce::Component*>(snapYButton_.get()),
                                static_cast<juce::Component*>(snapYNum_.get()),
                                static_cast<juce::Component*>(&snapYSlash_),
-                               static_cast<juce::Component*>(snapYDen_.get())})
+                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(ghostButton_.get())})
         headerBar.addAndMakeVisible(c);
     syncSnapControls();
 }
@@ -197,7 +213,8 @@ void AutomationClipEditorContent::depopulateHeader(juce::Component& headerBar) {
                                static_cast<juce::Component*>(snapYButton_.get()),
                                static_cast<juce::Component*>(snapYNum_.get()),
                                static_cast<juce::Component*>(&snapYSlash_),
-                               static_cast<juce::Component*>(snapYDen_.get())})
+                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(ghostButton_.get())})
         addChildComponent(c);
 }
 
@@ -206,6 +223,9 @@ void AutomationClipEditorContent::layoutHeader(juce::Rectangle<int> headerBounds
     area.removeFromRight(30);
     const int y = area.getY() + 4;
     const int h = area.getHeight() - 8;
+
+    // Ghost toggle on the left, just after the shared loop column.
+    ghostButton_->setBounds(headerBounds.getX() + 40, y, h, h);
 
     int x = area.getRight();
     // Rightmost group: SNAP Y [n]/[d]
@@ -332,6 +352,8 @@ double AutomationClipEditorContent::viewSpanBeats(const magda::AutomationClipInf
 }
 
 void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
+    if (!showTrackGhost_)
+        return;
     const auto* clip = getClip();
     if (clip == nullptr || editor_ == nullptr)
         return;
