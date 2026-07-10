@@ -156,6 +156,8 @@ void SidechainPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             const float side = 0.5f * (left - right) * gain;
             channels[0][i] = mid + side;
             channels[1][i] = mid - side;
+            for (int ch = 2; ch < usedChannels; ++ch)
+                channels[ch][i] *= gain;
         } else {
             for (int ch = 0; ch < usedChannels; ++ch)
                 channels[ch][i] *= gain;

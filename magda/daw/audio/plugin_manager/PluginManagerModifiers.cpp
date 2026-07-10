@@ -1056,6 +1056,9 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
     } else if (trackId == MASTER_TRACK_ID) {
         if (auto* masterTrack = edit_.getMasterTrack()) {
             defaultModifierList = masterTrack->getModifierList();
+            // MasterTrack is not a MacroParameterElement, so it has no
+            // MacroParameterList. ModifierSyncWalker deliberately treats the
+            // null macro host as unsupported master macros.
             visitHostPlugins = [this](const std::function<void(te::Plugin*)>& visit) {
                 const auto& masterList = edit_.getMasterPluginList();
                 for (int pi = 0; pi < masterList.size(); ++pi) {

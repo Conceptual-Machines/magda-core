@@ -95,18 +95,65 @@ class MasterSidechainTest final : public juce::UnitTest {
         }
 
         auto* sourceTrack = bridge->getAudioTrack(sourceTrackId);
-        bool hasSourceMonitor = false;
+        magda::SidechainMonitorPlugin* sourceMonitor = nullptr;
         if (sourceTrack) {
             for (int i = 0; i < sourceTrack->pluginList.size(); ++i) {
                 if (dynamic_cast<magda::SidechainMonitorPlugin*>(sourceTrack->pluginList[i])) {
-                    hasSourceMonitor = true;
+                    sourceMonitor =
+                        dynamic_cast<magda::SidechainMonitorPlugin*>(sourceTrack->pluginList[i]);
                     break;
                 }
             }
         }
-        expect(hasSourceMonitor, "A master sidechain destination should retain its source monitor");
+        expect(sourceMonitor != nullptr,
+               "A master sidechain destination should retain its source monitor");
 
-        bridge->getPluginManager().triggerSidechainNoteOn(sourceTrackId);
+        auto* sidechainPlugin = dynamic_cast<magda::daw::audio::SidechainPlugin*>(sidechain.get());
+        if (sourceMonitor && sidechainPlugin && wrapper.getEdit()) {
+            beginTest("Master sidechain ducks audio from a source MIDI note");
+
+            constexpr int numSamples = 1024;
+            juce::AudioBuffer<float> sourceBuffer(2, numSamples);
+            sourceBuffer.clear();
+            te::MidiMessageArray sourceMidi;
+            sourceMidi.addMidiMessage(
+                juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 0.0,
+                te::MPESourceID{});
+            te::PluginRenderContext sourceContext(&sourceBuffer,
+                                                  juce::AudioChannelSet::canonicalChannelSet(2), 0,
+                                                  numSamples, &sourceMidi, 0.0,
+                                                  te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                                                te::TimePosition::fromSeconds(1.0)),
+                                                  false, false, false, false);
+
+            sidechainPlugin->reset();
+            sourceMonitor->applyToBuffer(sourceContext);
+            wrapper.getEdit()->updateModifierTimers(te::TimePosition::fromSeconds(0.0), numSamples);
+            sidechainPlugin->updateParameterStreams(te::TimePosition::fromSeconds(0.0));
+
+            expectWithinAbsoluteError(sidechainPlugin->gainParam->getCurrentValue(), 0.0f, 0.0001f,
+                                      "Source note should drive the master Sidechain gain target");
+
+            juce::AudioBuffer<float> masterBuffer(2, numSamples);
+            masterBuffer.clear();
+            for (int sample = 0; sample < numSamples; ++sample) {
+                masterBuffer.setSample(0, sample, 1.0f);
+                masterBuffer.setSample(1, sample, 1.0f);
+            }
+            te::MidiMessageArray masterMidi;
+            te::PluginRenderContext masterContext(&masterBuffer,
+                                                  juce::AudioChannelSet::canonicalChannelSet(2), 0,
+                                                  numSamples, &masterMidi, 0.0,
+                                                  te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                                                te::TimePosition::fromSeconds(1.0)),
+                                                  false, false, false, false);
+            sidechainPlugin->applyToBuffer(masterContext);
+
+            expect(masterBuffer.getSample(0, numSamples - 1) < 0.1f,
+                   "Master Sidechain should duck the left channel after the source note");
+            expect(masterBuffer.getSample(1, numSamples - 1) < 0.1f,
+                   "Master Sidechain should duck the right channel after the source note");
+        }
 
         trackManager.removeDeviceFromChainByPath(path);
         bridge->syncTrackPlugins(magda::MASTER_TRACK_ID);
@@ -138,17 +185,20 @@ class MasterSidechainTest final : public juce::UnitTest {
             juce::dontSendNotification);
         sidechain->reset();
 
-        juce::AudioBuffer<float> buffer(2, 3);
+        juce::AudioBuffer<float> buffer(4, 3);
+        buffer.clear();
         buffer.setSample(0, 0, 1.0f);
         buffer.setSample(1, 0, 1.0f);
         buffer.setSample(0, 1, 1.0f);
         buffer.setSample(1, 1, -1.0f);
         buffer.setSample(0, 2, 0.75f);
         buffer.setSample(1, 2, 0.25f);
+        buffer.setSample(2, 0, 0.8f);
+        buffer.setSample(3, 0, -0.6f);
 
         te::MidiMessageArray midi;
         te::PluginRenderContext context(
-            &buffer, juce::AudioChannelSet::canonicalChannelSet(2), 0, buffer.getNumSamples(),
+            &buffer, juce::AudioChannelSet::canonicalChannelSet(4), 0, buffer.getNumSamples(),
             &midi, 0.0,
             te::TimeRange(te::TimePosition::fromSeconds(0.0), te::TimePosition::fromSeconds(1.0)),
             false, false, false, false);
@@ -166,6 +216,10 @@ class MasterSidechainTest final : public juce::UnitTest {
                                   "Mixed signal should retain only its mid component");
         expectWithinAbsoluteError(buffer.getSample(1, 2), 0.5f, 0.0001f,
                                   "Mixed signal should retain only its mid component");
+        expectWithinAbsoluteError(buffer.getSample(2, 0), 0.0f, 0.0001f,
+                                  "Additional channels should receive the normal duck gain");
+        expectWithinAbsoluteError(buffer.getSample(3, 0), 0.0f, 0.0001f,
+                                  "Additional channels should receive the normal duck gain");
     }
 };
 
