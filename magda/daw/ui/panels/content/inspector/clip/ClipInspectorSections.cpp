@@ -395,13 +395,18 @@ void ClipInspector::initClipPropertiesSection() {
     addChildComponent(*clipViewIcon_);
 
     // Ghost indicator (same link glyph as the clip header). Shown next to the
-    // name only when the selected clip mirrors a link group.
+    // name only when the selected clip mirrors a link group. Drawn as a chip
+    // (bg + border) so it reads as a state badge; mouse events stay enabled
+    // so the tooltip shows, but there is no click action.
     clipGhostIcon_ = std::make_unique<magda::SvgButton>("Ghost", BinaryData::link_flat_svg,
                                                         BinaryData::link_flat_svgSize);
     clipGhostIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     clipGhostIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipGhostIcon_->setIconPadding(1.0f);
-    clipGhostIcon_->setInterceptsMouseClicks(false, false);
+    clipGhostIcon_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
+    clipGhostIcon_->setBorderColor(juce::Colour(0xff555555));
+    clipGhostIcon_->setBorderThickness(1.0f);
+    clipGhostIcon_->setCornerRadius(4.0f);
+    clipGhostIcon_->setIconPadding(3.0f);
     clipGhostIcon_->setTooltip("Ghost clip");
     addChildComponent(*clipGhostIcon_);
 
