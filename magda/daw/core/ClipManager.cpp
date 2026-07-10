@@ -518,6 +518,20 @@ void ClipManager::restoreClip(const ClipInfo& clipInfo) {
         nextLinkGroupId_ = clipInfo.linkGroupId + 1;
     }
 
+    // A restored group member's snapshot may be stale: delete ghost B, edit
+    // sibling A, undo the delete — B would rejoin with pre-delete content and
+    // the next edit would silently clobber one side. The live group is
+    // authoritative, so the restored clip adopts its current shared content.
+    // (Project load is unaffected: members are saved consistent, so the copy
+    // is a no-op there.)
+    if (clipInfo.linkGroupId != 0) {
+        const auto siblings = getLinkGroupSiblings(clipInfo.id);
+        if (!siblings.empty()) {
+            if (const auto* source = getClip(siblings.front()))
+                clips_[clipInfo.id].copySharedContentFrom(*source);
+        }
+    }
+
     notifyClipsChanged();
 }
 

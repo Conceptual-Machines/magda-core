@@ -264,6 +264,27 @@ TEST_CASE("Make unique detaches a member", "[clip][ghost]") {
     }
 }
 
+TEST_CASE("Delete-undo rejoins with the group's current content", "[clip][ghost][undo]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+    ClipId a = createMidi(track, 0.0, 2.0, {0.0});
+    ClipId b = cm.duplicateClipAsGhostAtBeats(a, 8.0);
+
+    // Delete B, then edit A while B is gone.
+    const ClipInfo snapshotB = *cm.getClip(b);
+    cm.deleteClip(b);
+    auto* clipA = cm.getClip(a);
+    clipA->midiNotes[0].noteNumber = 65;
+    cm.forceNotifyClipPropertyChanged(a);
+
+    // Undo the delete: B rejoins with the group's CURRENT content, not its
+    // stale pre-delete snapshot (which would clobber A on the next edit).
+    cm.restoreClip(snapshotB);
+    REQUIRE(cm.getClip(b)->midiNotes[0].noteNumber == 65);
+    REQUIRE(cm.isGhostClip(b));
+}
+
 TEST_CASE("Deleting members keeps survivors intact", "[clip][ghost]") {
     resetState();
     auto& cm = ClipManager::getInstance();
