@@ -948,7 +948,8 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                    juce::Justification::centred, false);
     }
 
-    // Loop indicator (infinito/infinity icon).
+    // Loop indicator: the transport's circular-arrows loop glyph, so "loop"
+    // reads the same everywhere (and stays distinct from the ghost link icon).
     // Cache one drawable per foreground variant — selection flips foreground,
     // so we can't bake a single colour at construction.
     if (clip.loopEnabled && headerArea.getWidth() > 16) {
@@ -956,10 +957,10 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         auto loopArea = headerArea.removeFromRight(14).reduced(1);
         if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
             static auto makeIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
-                                                                BinaryData::infinito_svgSize);
+                auto icon = juce::Drawable::createFromImageData(BinaryData::loop_icon_svg,
+                                                                BinaryData::loop_icon_svgSize);
                 if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
+                    icon->replaceColour(juce::Colour(0xFFBCBCBC), fg);
                 return icon;
             };
             static auto normalIcon = makeIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
