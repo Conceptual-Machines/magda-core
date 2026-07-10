@@ -38,6 +38,11 @@ void ClipInspector::resized() {
         headerRow.removeFromLeft(gap);
         colourSwatch_->setBounds(headerRow.removeFromRight(iconSize));
         headerRow.removeFromRight(4);
+        if (clipGhostIcon_->isVisible()) {
+            clipGhostIcon_->setBounds(
+                headerRow.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            headerRow.removeFromRight(4);
+        }
         clipNameValue_.setBounds(headerRow);
     }
     bounds.removeFromTop(8);

@@ -394,6 +394,17 @@ void ClipInspector::initClipPropertiesSection() {
     clipViewIcon_->setTooltip("Arrangement clip");
     addChildComponent(*clipViewIcon_);
 
+    // Ghost indicator (same link glyph as the clip header). Shown next to the
+    // name only when the selected clip mirrors a link group.
+    clipGhostIcon_ = std::make_unique<magda::SvgButton>("Ghost", BinaryData::link_flat_svg,
+                                                        BinaryData::link_flat_svgSize);
+    clipGhostIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipGhostIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipGhostIcon_->setIconPadding(1.0f);
+    clipGhostIcon_->setInterceptsMouseClicks(false, false);
+    clipGhostIcon_->setTooltip("Ghost clip");
+    addChildComponent(*clipGhostIcon_);
+
     // Source BPM (editable — shown at bottom with WARP/BEAT buttons)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
