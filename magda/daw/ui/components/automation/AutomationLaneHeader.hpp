@@ -52,7 +52,7 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons, const Automa
  *                 its resize handle on the top edge); 0 for bottom-handle hosts.
  */
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
-                                 int laneTopY, int topInset = 0);
+                                 int laneTopY, int headerWidth, int topInset = 0);
 
 /**
  * @brief Paint a single automation lane header: background, parameter name, and

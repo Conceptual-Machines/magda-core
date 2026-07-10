@@ -288,10 +288,11 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons,
 }
 
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
-                                 int laneTopY, int topInset) {
+                                 int laneTopY, int headerWidth, int topInset) {
     constexpr int kBtnSize = 20;
     constexpr int kBtnGap = 3;
     constexpr int kLeftMargin = 6;
+    constexpr int kRightMargin = 6;
     constexpr int kTopMargin = 4;
 
     const bool inView = lane.expanded;
@@ -313,8 +314,12 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
     place(*buttons.snapEditGridBtn);
     place(*buttons.snapValueBtn);
     place(*buttons.bypassBtn);
-    place(*buttons.modeBtn);
     place(*buttons.deleteBtn);
+
+    // The lane mode toggle sits alone on the far right: it converts the
+    // lane's data (clips <-> free-drawn curve), so it must not be a
+    // near-miss inside the everyday toggle cluster.
+    buttons.modeBtn->setBounds(headerWidth - kRightMargin - kBtnSize, btnY, kBtnSize, kBtnSize);
 }
 
 void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane, int laneTopY,
