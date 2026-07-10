@@ -6,6 +6,7 @@
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipPropertyCommands.hpp"
+#include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 
@@ -62,6 +63,30 @@ static BeatPosition secondsToBeatPosition(double seconds, double bpm = 120.0) {
 
 static BeatDuration secondsToBeatDuration(double seconds, double bpm = 120.0) {
     return BeatDuration{seconds * bpm / 60.0};
+}
+
+class TestTempoMap final : public TempoMap {
+  public:
+    double beatToTime(double beat) const override {
+        return 3.0 + beat * 1.5;
+    }
+
+    double timeToBeat(double seconds) const override {
+        return (seconds - 3.0) / 1.5;
+    }
+
+    double bpmAt(double beat) const override {
+        juce::ignoreUnused(beat);
+        return 40.0;
+    }
+};
+
+static ClipInfo makeBounceClip(double startBeats, double lengthBeats) {
+    ClipInfo clip;
+    clip.view = ClipView::Arrangement;
+    clip.setMidiContent();
+    clip.setPlacementBeats(startBeats, lengthBeats);
+    return clip;
 }
 
 struct RecordingClipListener : ClipManagerListener {
@@ -1442,4 +1467,105 @@ TEST_CASE("resolveOverlaps - dropping a clip inside a longer one splits it, no d
     REQUIRE(foundRight);
 
     proj.setTempo(originalTempo);
+}
+
+// ============================================================================
+// Bounce ranges (#1731)
+// ============================================================================
+
+TEST_CASE("Bounce selection range prioritizes time selection over clip selection",
+          "[clip][command][bounce]") {
+    const std::vector<ClipInfo> selectedClips = {makeBounceClip(4.0, 4.0),
+                                                 makeBounceClip(12.0, 6.0)};
+
+    const auto timeRange = resolveBounceSelectionRange({2.0, 10.0}, true, selectedClips);
+    REQUIRE(timeRange.startBeats == Catch::Approx(2.0));
+    REQUIRE(timeRange.endBeats == Catch::Approx(10.0));
+
+    const auto clipRange = resolveBounceSelectionRange({}, false, selectedClips);
+    REQUIRE(clipRange.startBeats == Catch::Approx(4.0));
+    REQUIRE(clipRange.endBeats == Catch::Approx(18.0));
+
+    REQUIRE_FALSE(resolveBounceSelectionRange({}, false, {}).isValid());
+}
+
+TEST_CASE("Bounce render range keeps beats authoritative through tempo conversion",
+          "[clip][command][bounce]") {
+    const TestTempoMap tempoMap;
+    const auto sourceClip = makeBounceClip(4.0, 12.0);
+
+    SECTION("in-place bounce constrains the selection to the source clip") {
+        const auto range = resolveBounceRenderRange(sourceClip, {2.0, 10.0}, &tempoMap, true);
+
+        REQUIRE(range.startBeats == Catch::Approx(4.0));
+        REQUIRE(range.endBeats == Catch::Approx(10.0));
+        REQUIRE(range.startSeconds == Catch::Approx(9.0));
+        REQUIRE(range.endSeconds == Catch::Approx(18.0));
+    }
+
+    SECTION("bounce to a new track keeps the requested range intact") {
+        const auto range = resolveBounceRenderRange(sourceClip, {2.0, 18.0}, &tempoMap, false);
+
+        REQUIRE(range.startBeats == Catch::Approx(2.0));
+        REQUIRE(range.endBeats == Catch::Approx(18.0));
+        REQUIRE(range.startSeconds == Catch::Approx(6.0));
+        REQUIRE(range.endSeconds == Catch::Approx(30.0));
+    }
+
+    SECTION("a non-overlapping in-place selection falls back to the source clip") {
+        const auto range = resolveBounceRenderRange(sourceClip, {20.0, 24.0}, &tempoMap, true);
+
+        REQUIRE(range.startBeats == Catch::Approx(4.0));
+        REQUIRE(range.endBeats == Catch::Approx(16.0));
+    }
+}
+
+TEST_CASE("BounceInPlaceReplacement preserves unselected source and undo restores it",
+          "[clip][command][bounce][undo]") {
+    resetState();
+    auto& clipManager = ClipManager::getInstance();
+    const auto trackId = createTrack();
+    const auto sourceClipId = clipManager.createMidiClipBeats(trackId, 0.0, 16.0);
+    const auto* sourceClip = clipManager.getClip(sourceClipId);
+    REQUIRE(sourceClip != nullptr);
+
+    BounceInPlaceReplacement replacement;
+    replacement.setOriginalClip(*sourceClip);
+    const BounceRenderRange range{4.0, 12.0, 2.0, 6.0};
+    REQUIRE(replacement.replace(clipManager, sourceClipId, range, "bounced.wav", 120.0));
+
+    const auto bouncedClipId = replacement.getNewClipId();
+    const auto* bouncedClip = clipManager.getClip(bouncedClipId);
+    REQUIRE(bouncedClip != nullptr);
+    REQUIRE(bouncedClip->isAudio());
+    REQUIRE(bouncedClip->placement.startBeat == Catch::Approx(4.0));
+    REQUIRE(bouncedClip->placement.lengthBeats == Catch::Approx(8.0));
+
+    const auto* leftSource = clipManager.getClip(sourceClipId);
+    REQUIRE(leftSource != nullptr);
+    REQUIRE(leftSource->isMidi());
+    REQUIRE(leftSource->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(leftSource->placement.lengthBeats == Catch::Approx(4.0));
+
+    bool foundRightSource = false;
+    for (const auto clipId : clipManager.getClipsOnTrack(trackId)) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip == nullptr || clipId == sourceClipId || clipId == bouncedClipId)
+            continue;
+        REQUIRE(clip->isMidi());
+        REQUIRE(clip->placement.startBeat == Catch::Approx(12.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
+        foundRightSource = true;
+    }
+    REQUIRE(foundRightSource);
+
+    replacement.undo(clipManager);
+
+    const auto clipsAfterUndo = clipManager.getClipsOnTrack(trackId);
+    REQUIRE(clipsAfterUndo.size() == 1);
+    const auto* restoredClip = clipManager.getClip(sourceClipId);
+    REQUIRE(restoredClip != nullptr);
+    REQUIRE(restoredClip->isMidi());
+    REQUIRE(restoredClip->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(restoredClip->placement.lengthBeats == Catch::Approx(16.0));
 }
