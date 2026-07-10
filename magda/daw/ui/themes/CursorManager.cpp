@@ -15,6 +15,41 @@ CursorManager::CursorManager() {
     eraseCursor = createEraseCursor();
     noteRepeatCursor = createNoteRepeatCursor();
     bladeCursor = createBladeCursor();
+    ghostCopyCursor = createGhostCopyCursor();
+}
+
+juce::MouseCursor CursorManager::createGhostCopyCursor() {
+    // Ghost-copy drag (Alt+Shift): two interlocked chain links on the 45°
+    // diagonal — the same link vocabulary as the ghost-clip header glyph.
+    // White outline + black body for contrast, like the other tool cursors.
+    const int size = 28;
+    juce::Image img(juce::Image::ARGB, size, size, true);
+    juce::Graphics g(img);
+
+    juce::Path link;
+    link.addRoundedRectangle(-6.0f, -3.5f, 12.0f, 7.0f, 3.5f);
+
+    const auto place = [](float cx, float cy) {
+        return juce::AffineTransform::rotation(-juce::MathConstants<float>::pi / 4.0f)
+            .translated(cx, cy);
+    };
+
+    juce::Path links;
+    links.addPath(link, place(10.5f, 17.5f));
+    links.addPath(link, place(17.5f, 10.5f));
+
+    const auto outlineStroke =
+        juce::PathStrokeType(4.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    const auto bodyStroke =
+        juce::PathStrokeType(2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+
+    g.setColour(juce::Colours::white);
+    g.strokePath(links, outlineStroke);
+    g.setColour(juce::Colours::black);
+    g.strokePath(links, bodyStroke);
+
+    // Hotspot at the joint between the two links (glyph centre).
+    return juce::MouseCursor(img, 14, 14);
 }
 
 juce::MouseCursor CursorManager::createBladeCursor() {

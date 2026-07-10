@@ -293,9 +293,9 @@ TEST_CASE("Clip: modifier tools override every zone", "[hit-tester]") {
     REQUIRE(clipCursor(body, false, ERASE) == CursorKind::Erase);
     REQUIRE(clipCursor(body, true, COPY) == CursorKind::Copying);
     REQUIRE(clipCursor(body, true, BLADE) == CursorKind::Blade);
-    // Shift+Alt is not a tool (Alt requires no Shift): falls through to the
-    // zone table.
-    REQUIRE(clipCursor(body, true, SHIFT_ALT) == CursorKind::DraggingHand);
+    // Shift+Alt = ghost-copy drag (link cursor).
+    REQUIRE(clipCursor(body, true, SHIFT_ALT) == CursorKind::GhostCopy);
+    REQUIRE(clipCursor(body, false, SHIFT_ALT) == CursorKind::GhostCopy);
 
     // Tools also override the handles.
     const auto onHandle = clipHit(51, 20, s);
