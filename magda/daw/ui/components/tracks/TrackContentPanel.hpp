@@ -241,7 +241,7 @@ class TrackContentPanel : public juce::Component,
         return isOnSelectionEdge(x, y, isLeft);
     }
 
-    bool duplicateSelectedArrangementClips(bool includeAutomation);
+    bool duplicateSelectedArrangementClips(bool includeAutomation, bool asGhost = false);
 
     // Ghost clip methods (for Alt+drag visual feedback)
     void setClipGhost(ClipId clipId, const juce::Rectangle<int>& bounds,
@@ -467,6 +467,7 @@ class TrackContentPanel : public juce::Component,
 
     // Multi-clip Alt+drag duplicate state
     bool isMultiClipDuplicating_ = false;
+    bool isMultiClipGhosting_ = false;  // the copies join their sources' link groups
     std::vector<ClipId> multiClipDuplicateIds_;
 
     // Ghost clip rendering during Alt+drag

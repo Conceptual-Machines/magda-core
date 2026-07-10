@@ -44,6 +44,8 @@ set(TEST_SOURCES
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
     test_clip_crossfades.cpp
+    # Ghost clips / link groups (issue #12)
+    test_ghost_clips.cpp
     test_clip_resize_operations.cpp
     test_midi_clip_resize_left.cpp
     test_looped_waveform_tile.cpp

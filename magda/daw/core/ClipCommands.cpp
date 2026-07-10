@@ -549,21 +549,23 @@ void CreateClipCommand::undo() {
 // DuplicateClipCommand
 // ============================================================================
 
-DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId)
+DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, bool asGhost)
     : sourceClipId_(sourceClipId),
       targetTrackId_(INVALID_TRACK_ID),
       tempo_(0.0),
-      targetSceneIndex_(-1) {}
+      targetSceneIndex_(-1),
+      asGhost_(asGhost) {}
 
 DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, BeatPosition startBeat,
                                            TrackId targetTrackId, double tempo,
-                                           int targetSceneIndex)
+                                           int targetSceneIndex, bool asGhost)
     : sourceClipId_(sourceClipId),
       hasExplicitStartBeat_(true),
       startBeat_(startBeat.value),
       targetTrackId_(targetTrackId),
       tempo_(tempo),
-      targetSceneIndex_(targetSceneIndex) {}
+      targetSceneIndex_(targetSceneIndex),
+      asGhost_(asGhost) {}
 
 std::unique_ptr<DuplicateClipCommand> DuplicateClipCommand::forSessionSlot(ClipId sourceClipId,
                                                                            TrackId targetTrackId,
@@ -584,7 +586,16 @@ void DuplicateClipCommand::execute() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    if (!hasExplicitStartBeat_) {
+    if (asGhost_) {
+        const auto* source = clipManager.getClip(sourceClipId_);
+        sourceWasUnlinked_ = source != nullptr && source->linkGroupId == 0;
+        if (!hasExplicitStartBeat_) {
+            duplicatedClipId_ = clipManager.duplicateClipAsGhost(sourceClipId_);
+        } else {
+            duplicatedClipId_ = clipManager.duplicateClipAsGhostAtBeats(sourceClipId_, startBeat_,
+                                                                        targetTrackId_, tempo_);
+        }
+    } else if (!hasExplicitStartBeat_) {
         duplicatedClipId_ = clipManager.duplicateClip(sourceClipId_);
     } else {
         duplicatedClipId_ =
@@ -610,12 +621,50 @@ void DuplicateClipCommand::undo() {
     if (duplicatedClipId_ != INVALID_CLIP_ID)
         clipManager.deleteClip(duplicatedClipId_);
 
+    // If the ghost duplicate created the source's link group, revert the
+    // source to unlinked — unless the group gained other members meanwhile.
+    if (asGhost_ && sourceWasUnlinked_ && !clipManager.isGhostClip(sourceClipId_)) {
+        if (auto* source = clipManager.getClip(sourceClipId_))
+            source->linkGroupId = 0;
+    }
+
     duplicatedClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();
 }
 
+// ============================================================================
+// MakeClipUniqueCommand
+// ============================================================================
+
+MakeClipUniqueCommand::MakeClipUniqueCommand(ClipId clipId) : clipId_(clipId) {}
+
+bool MakeClipUniqueCommand::canExecute() const {
+    return ClipManager::getInstance().isGhostClip(clipId_);
+}
+
+void MakeClipUniqueCommand::execute() {
+    if (!canExecute())
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    prevLinkGroupId_ = clipManager.getClip(clipId_)->linkGroupId;
+    clipManager.makeClipUnique(clipId_);
+    executed_ = true;
+}
+
+void MakeClipUniqueCommand::undo() {
+    if (!executed_)
+        return;
+    auto& clipManager = ClipManager::getInstance();
+    if (auto* clip = clipManager.getClip(clipId_)) {
+        clip->linkGroupId = prevLinkGroupId_;
+        // The funnel re-propagates this clip's content to the rejoined group
+        // and repaints former lone members.
+        clipManager.forceNotifyClipPropertyChanged(clipId_);
+    }
+}
+
 std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplicateCommands(
-    const std::unordered_set<ClipId>& clipIds, double tempo) {
+    const std::unordered_set<ClipId>& clipIds, double tempo, bool asGhost) {
     auto& clipManager = ClipManager::getInstance();
     const double bpm = resolveTimelineBpm(tempo);
 
@@ -650,7 +699,8 @@ std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplica
     commands.reserve(arrangementClipIds.size());
 
     if (arrangementClipIds.size() == 1) {
-        commands.push_back(std::make_unique<DuplicateClipCommand>(arrangementClipIds.front()));
+        commands.push_back(
+            std::make_unique<DuplicateClipCommand>(arrangementClipIds.front(), asGhost));
         return commands;
     }
 
@@ -676,7 +726,7 @@ std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplica
             continue;
         const double newStartBeat = clip->getStartBeats(bpm) + blockLength * bpm / 60.0;
         commands.push_back(std::make_unique<DuplicateClipCommand>(
-            clipId, BeatPosition{newStartBeat}, INVALID_TRACK_ID, tempo));
+            clipId, BeatPosition{newStartBeat}, INVALID_TRACK_ID, tempo, -1, asGhost));
     }
 
     return commands;

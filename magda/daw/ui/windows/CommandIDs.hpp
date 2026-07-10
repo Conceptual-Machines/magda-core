@@ -41,6 +41,8 @@ enum {
     cutLoopRange = 0x1019,            // Copy the loop region, then ripple-delete it (all tracks)
     deleteLoopRange = 0x101A,         // Ripple-delete the loop region (all tracks)
     pasteRipple = 0x101B,             // Ripple-insert the clipboard span, then paste into it
+    duplicateClipAsGhost = 0x101C,    // Copy joins the source's link group (mirrors content)
+    makeClipUnique = 0x101D,          // Detach selected ghost clips from their link groups
 
     // Transport menu
     play = 0x2000,  // Space: toggles play/stop (perform() already toggles)

@@ -203,6 +203,13 @@ void GestureRouter::installDefaults() {
                {GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical, GestureMod_Alt},
                {GestureActionType::DuplicateOnDrag, 1.0f, false});
 
+    // Ghost-copy-on-drag: Alt+Shift drags off a ghost copy — the duplicate
+    // joins the source's link group and mirrors its content.
+    setBinding(GestureContext::Arrangement,
+               {GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
+                static_cast<uint8_t>(GestureMod_Alt | GestureMod_Shift)},
+               {GestureActionType::DuplicateAsGhostOnDrag, 1.0f, false});
+
     for (auto context : {GestureContext::PianoRoll, GestureContext::DrumGrid}) {
         setBinding(
             context,
@@ -337,6 +344,14 @@ bool GestureRouter::isDuplicateOnDrag(GestureContext context,
                              gestureModifierMaskFrom(mods)};
     const auto* binding = findBinding(context, input);
     return binding != nullptr && binding->action == GestureActionType::DuplicateOnDrag;
+}
+
+bool GestureRouter::isDuplicateAsGhostOnDrag(GestureContext context,
+                                             const juce::ModifierKeys& mods) const {
+    const GestureInput input{GestureInputKind::Drag, GestureArea::Body, GestureAxis::Vertical,
+                             gestureModifierMaskFrom(mods)};
+    const auto* binding = findBinding(context, input);
+    return binding != nullptr && binding->action == GestureActionType::DuplicateAsGhostOnDrag;
 }
 
 juce::var GestureRouter::toVar() const {

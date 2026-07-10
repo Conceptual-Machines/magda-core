@@ -153,6 +153,7 @@ class ClipComponent : public juce::Component,
     bool shouldDeselectOnMouseUp_ = false;  // Delayed deselection for multi-selection
     bool pendingCopyDragAction_ =
         false;  // copy-drag modifier: copy on drag, edit cursor on release
+    bool pendingCopyDragIsGhost_ = false;  // the pending copy is a ghost copy
 
     // Audio clip drag state
     double dragStartSpeedRatio_ = 1.0;
@@ -171,6 +172,7 @@ class ClipComponent : public juce::Component,
 
     // Alt+drag duplicate state
     bool isDuplicating_ = false;
+    bool isDuplicatingGhost_ = false;  // Alt+Shift: the copy joins the link group
     ClipId duplicateClipId_ = INVALID_CLIP_ID;
 
     // Magnetic snap threshold in pixels (higher = snappier)

@@ -91,10 +91,11 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
-        duplicateClipWithoutAutomation, deleteCmd, selectAll, splitOrTrim, joinClips, renderClip,
-        renderTimeSelection, setLoopFromClip, toggleClipLoop, escapeAction, insertTime,
-        duplicateTimeRange, duplicateLoopRange, splitAllTracksAtCursor, copyTimeRange, cutTimeRange,
-        deleteTimeRange, copyLoopRange, cutLoopRange, deleteLoopRange, pasteRipple,
+        duplicateClipWithoutAutomation, duplicateClipAsGhost, makeClipUnique, deleteCmd, selectAll,
+        splitOrTrim, joinClips, renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
+        escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange, splitAllTracksAtCursor,
+        copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange, cutLoopRange, deleteLoopRange,
+        pasteRipple,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -158,6 +159,15 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case duplicateClipWithoutAutomation:
             result.setInfo("Duplicate Clip Without Automation",
                            "Duplicate selected clips without copying automation", "Edit", 0);
+            break;
+        case duplicateClipAsGhost:
+            result.setInfo("Duplicate Clip as Ghost",
+                           "Duplicate selected clips as ghosts that mirror the source's content",
+                           "Edit", 0);
+            break;
+        case makeClipUnique:
+            result.setInfo("Make Clip Unique", "Detach selected ghost clips from their link groups",
+                           "Edit", 0);
             break;
 
         case deleteCmd:
@@ -495,21 +505,24 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         return sel.isActive() && !sel.visuallyHidden;
     };
 
-    auto duplicateSelectedArrangementClips = [&](bool includeAutomation) -> bool {
+    auto duplicateSelectedArrangementClips = [&](bool includeAutomation,
+                                                 bool asGhost = false) -> bool {
         if (selectedClips.empty())
             return false;
 
         std::vector<ClipId> newClips;
         const double tempo = mainView ? mainView->getTimelineController().getState().tempo.bpm
                                       : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
+        auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo, asGhost);
         if (commands.empty())
             return false;
 
         const bool compoundOperation = commands.size() > 1 || includeAutomation;
         if (compoundOperation) {
             UndoManager::getInstance().beginCompoundOperation(
-                includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips");
+                asGhost
+                    ? "Duplicate Clips as Ghosts"
+                    : (includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips"));
         }
 
         for (auto& cmd : commands) {
@@ -895,6 +908,27 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         case duplicateClipWithoutAutomation:
             duplicateSelectedArrangementClips(false);
             return true;
+
+        case duplicateClipAsGhost:
+            duplicateSelectedArrangementClips(false, true);
+            return true;
+
+        case makeClipUnique: {
+            std::vector<ClipId> targets;
+            for (auto cid : selectedClips)
+                if (clipManager.isGhostClip(cid))
+                    targets.push_back(cid);
+            if (targets.empty())
+                return true;
+            if (targets.size() > 1)
+                UndoManager::getInstance().beginCompoundOperation("Make Clips Unique");
+            for (auto cid : targets)
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<MakeClipUniqueCommand>(cid));
+            if (targets.size() > 1)
+                UndoManager::getInstance().endCompoundOperation();
+            return true;
+        }
 
         case deleteCmd: {
             // Automation-point selection takes priority — the user is editing a
