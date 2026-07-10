@@ -161,6 +161,8 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener {
     std::set<ClipId> detectionInFlight_;
     std::map<ClipId, ActiveDetection> activeDetections_;
     std::map<te::WarpTimeManager*, ClipId> clipByWarpManager_;
+
+    JUCE_DECLARE_WEAK_REFERENCEABLE(WarpMarkerManager)
 };
 
 }  // namespace magda
