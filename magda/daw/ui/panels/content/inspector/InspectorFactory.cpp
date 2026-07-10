@@ -1,5 +1,6 @@
 #include "InspectorFactory.hpp"
 
+#include "AutomationClipInspector.hpp"
 #include "AutomationPointInspector.hpp"
 #include "ClipInspector.hpp"
 #include "DeviceInspector.hpp"
@@ -30,6 +31,9 @@ std::unique_ptr<BaseInspector> InspectorFactory::createInspector(magda::Selectio
 
         case magda::SelectionType::AutomationPoint:
             return std::make_unique<AutomationPointInspector>();
+
+        case magda::SelectionType::AutomationClip:
+            return std::make_unique<AutomationClipInspector>();
 
         case magda::SelectionType::None:
         default:

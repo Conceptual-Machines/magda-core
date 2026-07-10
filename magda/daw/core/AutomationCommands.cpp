@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "TrackManager.hpp"
+
 namespace magda {
 namespace {
 
@@ -269,6 +271,235 @@ bool DuplicateAutomationTimeSelectionCommand::shouldDuplicateLane(
         return true;
     return std::find(trackIds_.begin(), trackIds_.end(), lane.target.devicePath.trackId) !=
            trackIds_.end();
+}
+
+// ============================================================================
+// ConvertAutomationLaneTypeCommand
+// ============================================================================
+
+void ConvertAutomationLaneTypeCommand::captureLane() {
+    auto& mgr = AutomationManager::getInstance();
+    const auto* lane = mgr.getLane(laneId_);
+    if (!lane)
+        return;
+
+    storedLane_ = *lane;
+    storedClips_.clear();
+    for (auto clipId : lane->clipIds) {
+        if (const auto* clip = mgr.getClip(clipId))
+            storedClips_.push_back(*clip);
+    }
+    captured_ = true;
+}
+
+void ConvertAutomationLaneTypeCommand::execute() {
+    if (!captured_)
+        return;
+    auto& mgr = AutomationManager::getInstance();
+    if (storedLane_.isAbsolute())
+        mgr.convertLaneToClipBased(laneId_, clipMinLengthBeats_);
+    else
+        mgr.convertLaneToAbsolute(laneId_);
+}
+
+void ConvertAutomationLaneTypeCommand::undo() {
+    if (!captured_)
+        return;
+    AutomationManager::getInstance().restoreLaneState(storedLane_, storedClips_);
+}
+
+// ============================================================================
+// Clip commands
+// ============================================================================
+
+void CreateAutomationClipCommand::execute() {
+    auto& mgr = AutomationManager::getInstance();
+    createdClipId_ = mgr.createClip(laneId_, startBeats_, lengthBeats_);
+    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
+        return;
+
+    // Seed a straight line across the clip at the target's current value, so
+    // a freshly drawn clip starts as "hold what the parameter is now"
+    // instead of empty. Model-level createClip stays a bare primitive.
+    double seedValue = 0.5;
+    if (const auto* lane = mgr.getLane(laneId_)) {
+        if (auto current = mgr.getCurrentTargetValue(lane->target))
+            seedValue = juce::jlimit(0.0, 1.0, *current);
+    }
+    mgr.addPointToClip(createdClipId_, 0.0, seedValue);
+    mgr.addPointToClip(createdClipId_, lengthBeats_, seedValue);
+}
+
+void CreateAutomationClipCommand::undo() {
+    if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID)
+        AutomationManager::getInstance().deleteClip(createdClipId_);
+}
+
+void DeleteAutomationClipCommand::captureClip() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
+        storedClip_ = *clip;
+        captured_ = true;
+    }
+}
+
+void DeleteAutomationClipCommand::execute() {
+    if (captured_)
+        AutomationManager::getInstance().deleteClip(clipId_);
+}
+
+void DeleteAutomationClipCommand::undo() {
+    if (!captured_)
+        return;
+    AutomationClipInfo clipCopy = storedClip_;
+    AutomationManager::getInstance().restoreClip(clipCopy);
+}
+
+void MoveAutomationClipCommand::captureOldStart() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_))
+        oldStartBeats_ = clip->startBeats;
+}
+
+void MoveAutomationClipCommand::execute() {
+    AutomationManager::getInstance().moveClip(clipId_, newStartBeats_);
+}
+
+void MoveAutomationClipCommand::undo() {
+    AutomationManager::getInstance().moveClip(clipId_, oldStartBeats_);
+}
+
+void RenameAutomationClipCommand::captureOldName() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_))
+        oldName_ = clip->name;
+}
+
+void RenameAutomationClipCommand::execute() {
+    AutomationManager::getInstance().setClipName(clipId_, newName_);
+}
+
+void RenameAutomationClipCommand::undo() {
+    AutomationManager::getInstance().setClipName(clipId_, oldName_);
+}
+
+void SetAutomationClipColourCommand::captureOldColour() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_))
+        oldColour_ = clip->colour;
+}
+
+void SetAutomationClipColourCommand::execute() {
+    AutomationManager::getInstance().setClipColour(clipId_, newColour_);
+}
+
+void SetAutomationClipColourCommand::undo() {
+    AutomationManager::getInstance().setClipColour(clipId_, oldColour_);
+}
+
+void ResizeAutomationClipCommand::captureOldBounds() {
+    if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
+        oldStartBeats_ = clip->startBeats;
+        oldLengthBeats_ = clip->lengthBeats;
+    }
+}
+
+void ResizeAutomationClipCommand::execute() {
+    AutomationManager::getInstance().resizeClip(clipId_, newLengthBeats_, fromStart_);
+}
+
+void ResizeAutomationClipCommand::undo() {
+    // Restore both bounds: a fromStart resize moved the start too.
+    auto& mgr = AutomationManager::getInstance();
+    mgr.moveClip(clipId_, oldStartBeats_);
+    mgr.resizeClip(clipId_, oldLengthBeats_, false);
+}
+
+void DuplicateAutomationClipCommand::execute() {
+    createdClipId_ = AutomationManager::getInstance().duplicateClip(sourceClipId_);
+}
+
+void DuplicateAutomationClipCommand::undo() {
+    if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID)
+        AutomationManager::getInstance().deleteClip(createdClipId_);
+}
+
+// ============================================================================
+// BakeModulationCommand
+// ============================================================================
+
+namespace {
+
+/** Flip off the given links; returns the ones that were actually enabled. */
+std::vector<BakeModulationCommand::ModLinkRef> disableModLinks(
+    const std::vector<BakeModulationCommand::ModLinkRef>& refs) {
+    auto& trackMgr = TrackManager::getInstance();
+    const auto& constTrackMgr = trackMgr;
+    std::vector<BakeModulationCommand::ModLinkRef> disabled;
+    for (const auto& ref : refs) {
+        const auto node = constTrackMgr.resolveChainNode(ref.path);
+        if (!node.valid() || ref.modIndex < 0 ||
+            ref.modIndex >= static_cast<int>(node.mods->size()))
+            continue;
+        const auto* link = (*node.mods)[static_cast<size_t>(ref.modIndex)].getLink(ref.target);
+        if (link == nullptr || !link->enabled)
+            continue;
+        trackMgr.setModLinkEnabled(ref.path, ref.modIndex, ref.target, false);
+        disabled.push_back(ref);
+    }
+    return disabled;
+}
+
+void enableModLinks(const std::vector<BakeModulationCommand::ModLinkRef>& refs) {
+    auto& trackMgr = TrackManager::getInstance();
+    for (const auto& ref : refs)
+        trackMgr.setModLinkEnabled(ref.path, ref.modIndex, ref.target, true);
+}
+
+}  // namespace
+
+void BakeModulationCommand::execute() {
+    auto& autoMgr = AutomationManager::getInstance();
+    const auto* lane = autoMgr.getLane(laneId_);
+    if (!lane || !lane->isAbsolute())
+        return;
+
+    removedPoints_ = autoMgr.replacePointsInRange(laneId_, startBeat_, endBeat_, bakedPoints_);
+    disabledLinks_ = disableModLinks(linksToDisable_);
+}
+
+void BakeModulationCommand::undo() {
+    AutomationManager::getInstance().replacePointsInRange(laneId_, startBeat_, endBeat_,
+                                                          removedPoints_);
+    enableModLinks(disabledLinks_);
+}
+
+void BakeModulationToClipCommand::execute() {
+    auto& autoMgr = AutomationManager::getInstance();
+    const auto* lane = autoMgr.getLane(laneId_);
+    if (!lane || !lane->isClipBased() || endBeat_ <= startBeat_)
+        return;
+
+    createdClipId_ = autoMgr.createClip(laneId_, startBeat_, endBeat_ - startBeat_);
+    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
+        return;
+
+    auto localPoints = bakedPoints_;
+    for (auto& point : localPoints)
+        point.beatPosition -= startBeat_;
+    autoMgr.setClipPoints(createdClipId_, std::move(localPoints));
+    if (loopLengthBeats_ > 0.0) {
+        autoMgr.setClipLooping(createdClipId_, true);
+        autoMgr.setClipLoopLength(createdClipId_, loopLengthBeats_);
+    }
+    autoMgr.moveClipToFront(createdClipId_);
+
+    disabledLinks_ = disableModLinks(linksToDisable_);
+}
+
+void BakeModulationToClipCommand::undo() {
+    if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID) {
+        AutomationManager::getInstance().deleteClip(createdClipId_);
+        createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+    }
+    enableModLinks(disabledLinks_);
+    disabledLinks_.clear();
 }
 
 bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {

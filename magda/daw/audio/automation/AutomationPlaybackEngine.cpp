@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "../../core/AutomationManager.hpp"
+#include "../../core/ClipLaneFlattener.hpp"
 #include "../../core/ParameterInfo.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TrackManager.hpp"
@@ -213,6 +214,11 @@ void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId laneId) 
     needsRebake_ = false;
 }
 
+void AutomationPlaybackEngine::automationClipsChanged(AutomationLaneId laneId) {
+    // Same semantics as a point edit: the lane's baked data changed.
+    automationPointsChanged(laneId);
+}
+
 void AutomationPlaybackEngine::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
     needsRebake_ = true;
 }
@@ -408,9 +414,19 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // couple of helper points so TE's linear-only iterator still matches
     // the MAGDA shape.
     const std::vector<AutomationPoint>* sourcePoints = nullptr;
-    if (lane.isAbsolute())
+    std::vector<AutomationPoint> clipFlattened;
+    if (lane.isAbsolute()) {
         sourcePoints = &lane.absolutePoints;
-    // TODO: handle clip-based lanes similarly
+    } else if (lane.isClipBased()) {
+        // Unroll the lane's clips (loop iterations, gap holds, wrap jumps)
+        // into an absolute-style breakpoint list; the emission loop below
+        // then treats it exactly like an absolute lane. Its tessellation
+        // queries go through getValueAtBeat, which resolves clips natively.
+        clipFlattened = flattenClipLane(
+            lane, [&](AutomationClipId clipId) { return autoMgr.getClip(clipId); },
+            [&](double beat) { return autoMgr.getValueAtBeat(lane.id, beat); });
+        sourcePoints = &clipFlattened;
+    }
 
     auto addTEPoint = [&](double beat, double normalizedValue) {
         float teValue = convertValue(normalizedValue);
@@ -621,46 +637,7 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
 double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& target,
                                                     te::AutomatableParameter* param,
                                                     float teValue) const {
-    switch (target.kind) {
-        case ControlTarget::Kind::DeviceMacro:
-            // Mirror of convertToTEValue: macros are 0..1 on both sides.
-            return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
-
-        case ControlTarget::Kind::TrackVolume:
-        case ControlTarget::Kind::SendLevel: {
-            // TE fader position → dB → MAGDA 0-1 (FaderDB scale). Mirror of
-            // the forward path; kept identical for TrackVolume and SendLevel.
-            auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
-            float dB = te::volumeFaderPositionToDB(teValue);
-            return ParameterUtils::realToNormalized(dB, paramInfo);
-        }
-        case ControlTarget::Kind::TrackPan: {
-            auto paramInfo = ParameterPresets::pan(-1, "Pan");
-            return ParameterUtils::realToNormalized(teValue, paramInfo);
-        }
-        default: {
-            // Inverse of convertToTEValue — keep the two symmetric or the
-            // round-trip (MAGDA normalized -> TE raw -> MAGDA normalized)
-            // will drift and the UI will fight the curve.
-            ParameterInfo info = getParameterInfoForTarget(target);
-            // Mirror of convertToTEValue: display-mapped internal params keep
-            // the lane normalized == TE native, so pass through directly.
-            if (ParameterUtils::isDisplayMappedInternalValue(info))
-                return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
-            const float teSpan = info.teMaxValue - info.teMinValue;
-            if (teSpan <= 0.0f) {
-                if (!param)
-                    return teValue;
-                auto range = param->getValueRange();
-                float span = range.getEnd() - range.getStart();
-                if (span <= 0.0f)
-                    return 0.0;
-                return juce::jlimit(0.0, 1.0,
-                                    static_cast<double>((teValue - range.getStart()) / span));
-            }
-            return ParameterUtils::modelToNormalizedValue(ParameterModelValue{teValue}, info).value;
-        }
-    }
+    return laneNormalizedFromTEValue(target, param, teValue);
 }
 
 void AutomationPlaybackEngine::syncParameterListeners() {
@@ -725,7 +702,12 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         return;
     }
 
-    double normalized = convertFromTEValue(target, &param, param.getCurrentValue());
+    // Base value, NOT getCurrentValue(): TE fires this listener for modifier
+    // (LFO) movement too, and the current value includes the modifier output.
+    // Broadcasting it made every UI follower dance with the modulation as
+    // soon as a lane existed for the target (mod range indicators own that
+    // display); the automation curve only ever writes the base.
+    double normalized = convertFromTEValue(target, &param, param.getCurrentBaseValue());
     AutomationManager::getInstance().notifyValueChanged(it->second.laneId, normalized);
 
     // Keep MAGDA's TrackInfo cache in sync with what TE just wrote, so any UI

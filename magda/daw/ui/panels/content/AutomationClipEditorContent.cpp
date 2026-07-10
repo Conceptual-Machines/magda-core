@@ -1,0 +1,772 @@
+#include "AutomationClipEditorContent.hpp"
+
+#include <cmath>
+
+#include "../../components/waveform/ClipWaveformPainter.hpp"
+#include "../../state/TimelineController.hpp"
+#include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
+#include "BinaryData.h"
+#include "core/AutomationInfo.hpp"
+
+namespace magda::daw::ui {
+
+namespace {
+constexpr int kTitleHeight = 22;
+constexpr int kInset = 8;
+// Horizontal breathing room inside the canvas so points at the clip edges
+// aren't clipped by the viewport; the ruler's left padding matches, keeping
+// beat 0 aligned between ruler and curve.
+constexpr int kEdgePad = 10;
+// Width of the left value-scale strip; wide enough for labels like
+// "18000Hz". (The lanes' SCALE_LABEL_WIDTH is the 8px timeline padding —
+// their labels render in the headers column, not in that sliver.)
+constexpr int kScaleStripWidth = 52;
+constexpr double kMinZoom = 2.0;
+constexpr double kMaxZoom = 500.0;
+}  // namespace
+
+AutomationClipEditorContent::AutomationClipEditorContent() {
+    titleLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addAndMakeVisible(titleLabel_);
+
+    timeRuler_ = std::make_unique<magda::TimeRuler>();
+    timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
+    timeRuler_->setLeftPadding(kEdgePad);
+    timeRuler_->setLinkedViewport(&viewport_);
+    timeRuler_->onZoomChanged = [this](double newZoom, double anchorTime, int anchorScreenX) {
+        performAnchorPointZoom(newZoom, anchorTime, anchorScreenX);
+    };
+    timeRuler_->onScrollRequested = [this](int deltaX) {
+        viewport_.setViewPosition(juce::jmax(0, viewport_.getViewPositionX() + deltaX),
+                                  viewport_.getViewPositionY());
+    };
+    // Loop marker drags set the clip's loop length. The loop always starts
+    // at the clip start in the automation model, so the start marker is
+    // pinned and only the end matters.
+    timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
+        juce::ignoreUnused(displayStart);
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->looping)
+            return;
+        timeRuler_->setLoopRegion(0.0, juce::jmax(0.0, displayEnd), true, true);
+    };
+    timeRuler_->onLoopDragEnded = [this](double displayStart, double displayEnd) {
+        juce::ignoreUnused(displayStart);
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->looping)
+            return;
+        double bpm = 120.0;
+        if (auto* tc = TimelineController::getCurrent())
+            bpm = tc->getState().tempo.bpm;
+        const double lengthBeats = displayEnd * bpm / 60.0;
+        if (lengthBeats > 0.0) {
+            magda::AutomationManager::getInstance().setClipLoopLength(selection_.clipId,
+                                                                      lengthBeats);
+        } else {
+            updateView();  // aborted drag: restore the strip from the model
+        }
+    };
+    addChildComponent(*timeRuler_);
+
+    viewport_.setViewedComponent(&canvas_, false);
+    viewport_.setScrollBarsShown(false, true);
+    addAndMakeVisible(viewport_);
+
+    buildHeaderControls();
+}
+
+void AutomationClipEditorContent::buildHeaderControls() {
+    // Allowed denominators (multiples of 2 and 3), shared by both axes.
+    static constexpr int kAllowedDen[] = {2, 3, 4, 6, 8, 12, 16, 24, 32};
+    const auto constrainDen = [](double raw) {
+        int best = kAllowedDen[0];
+        int bestDist = std::abs(static_cast<int>(std::round(raw)) - best);
+        for (int candidate : kAllowedDen) {
+            const int dist = std::abs(static_cast<int>(std::round(raw)) - candidate);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = candidate;
+            }
+        }
+        return best;
+    };
+
+    const auto makeSnapButton = [this](const juce::String& text) {
+        auto button = std::make_unique<juce::TextButton>(text);
+        button->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+        button->setColour(juce::TextButton::buttonOnColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+        button->setColour(juce::TextButton::textColourOffId,
+                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        button->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+        button->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+        button->setWantsKeyboardFocus(false);
+        button->setClickingTogglesState(false);  // state mirrors the clip
+        button->setLookAndFeel(&smallButtonLF_);
+        addChildComponent(button.get());
+        return button;
+    };
+    const auto makeNumLabel = [this](double maxValue, double defaultValue) {
+        auto label = std::make_unique<magda::DraggableValueLabel>(
+            magda::DraggableValueLabel::Format::Integer);
+        label->setRange(1.0, maxValue, defaultValue);
+        label->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        label->setShowFillIndicator(false);
+        label->setFontSize(12.0f);
+        label->setDoubleClickResetsValue(true);
+        label->setDrawBorder(false);
+        addChildComponent(label.get());
+        return label;
+    };
+    const auto makeSlash = [this](juce::Label& slash) {
+        slash.setText("/", juce::dontSendNotification);
+        slash.setFont(FontManager::getInstance().getUIFont(12.0f));
+        slash.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        slash.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        slash.setJustificationType(juce::Justification::centred);
+        addChildComponent(slash);
+    };
+
+    snapXButton_ = makeSnapButton("SNAP X");
+    snapXNum_ = makeNumLabel(128.0, 1.0);
+    makeSlash(snapXSlash_);
+    snapXDen_ = makeNumLabel(32.0, 4.0);
+    snapYButton_ = makeSnapButton("SNAP Y");
+    snapYNum_ = makeNumLabel(32.0, 1.0);
+    makeSlash(snapYSlash_);
+    snapYDen_ = makeNumLabel(32.0, 8.0);
+
+    // Track content ghost toggle — the MIDI editor's layer icon.
+    ghostButton_ = std::make_unique<magda::SvgButton>("TrackGhost", BinaryData::stacks_svg,
+                                                      BinaryData::stacks_svgSize);
+    ghostButton_->setTooltip("Overlay track content");
+    ghostButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    ghostButton_->setActive(showTrackGhost_);
+    ghostButton_->onClick = [this]() {
+        showTrackGhost_ = !showTrackGhost_;
+        ghostButton_->setActive(showTrackGhost_);
+        if (editor_ != nullptr)
+            editor_->repaint();
+    };
+    addChildComponent(ghostButton_.get());
+
+    snapXButton_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapX(
+                clip->id, !clip->snapXEnabled, clip->snapXNumerator, clip->snapXDenominator);
+    };
+    snapYButton_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapY(
+                clip->id, !clip->snapYEnabled, clip->snapYNumerator, clip->snapYDenominator);
+    };
+    snapXNum_->onValueChange = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapX(
+                clip->id, clip->snapXEnabled, static_cast<int>(std::round(snapXNum_->getValue())),
+                clip->snapXDenominator);
+    };
+    snapXDen_->onValueChange = [this, constrainDen]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapX(
+                clip->id, clip->snapXEnabled, clip->snapXNumerator,
+                constrainDen(snapXDen_->getValue()));
+    };
+    snapYNum_->onValueChange = [this]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapY(
+                clip->id, clip->snapYEnabled, static_cast<int>(std::round(snapYNum_->getValue())),
+                clip->snapYDenominator);
+    };
+    snapYDen_->onValueChange = [this, constrainDen]() {
+        if (const auto* clip = getClip())
+            magda::AutomationManager::getInstance().setClipSnapY(
+                clip->id, clip->snapYEnabled, clip->snapYNumerator,
+                constrainDen(snapYDen_->getValue()));
+    };
+}
+
+void AutomationClipEditorContent::populateHeader(juce::Component& headerBar) {
+    for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
+                               static_cast<juce::Component*>(snapXNum_.get()),
+                               static_cast<juce::Component*>(&snapXSlash_),
+                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapYButton_.get()),
+                               static_cast<juce::Component*>(snapYNum_.get()),
+                               static_cast<juce::Component*>(&snapYSlash_),
+                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(ghostButton_.get())})
+        headerBar.addAndMakeVisible(c);
+    syncSnapControls();
+}
+
+void AutomationClipEditorContent::depopulateHeader(juce::Component& headerBar) {
+    juce::ignoreUnused(headerBar);
+    for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
+                               static_cast<juce::Component*>(snapXNum_.get()),
+                               static_cast<juce::Component*>(&snapXSlash_),
+                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapYButton_.get()),
+                               static_cast<juce::Component*>(snapYNum_.get()),
+                               static_cast<juce::Component*>(&snapYSlash_),
+                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(ghostButton_.get())})
+        addChildComponent(c);
+}
+
+void AutomationClipEditorContent::layoutHeader(juce::Rectangle<int> headerBounds) {
+    auto area = headerBounds;
+    area.removeFromRight(30);
+    const int y = area.getY() + 4;
+    const int h = area.getHeight() - 8;
+
+    // Ghost toggle on the left, just after the shared loop column.
+    ghostButton_->setBounds(headerBounds.getX() + 40, y, h, h);
+
+    int x = area.getRight();
+    // Rightmost group: SNAP Y [n]/[d]
+    x -= 24;
+    snapYDen_->setBounds(x, y, 24, h);
+    x -= 8;
+    snapYSlash_.setBounds(x, area.getY(), 8, area.getHeight());
+    x -= 24;
+    snapYNum_->setBounds(x, y, 24, h);
+    x -= 52;
+    snapYButton_->setBounds(x, y, 48, h);
+    x -= 16;
+    // Left group: SNAP X [n]/[d]
+    x -= 24;
+    snapXDen_->setBounds(x, y, 24, h);
+    x -= 8;
+    snapXSlash_.setBounds(x, area.getY(), 8, area.getHeight());
+    x -= 24;
+    snapXNum_->setBounds(x, y, 24, h);
+    x -= 52;
+    snapXButton_->setBounds(x, y, 48, h);
+}
+
+void AutomationClipEditorContent::syncSnapControls() {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return;
+    snapXButton_->setToggleState(clip->snapXEnabled, juce::dontSendNotification);
+    snapYButton_->setToggleState(clip->snapYEnabled, juce::dontSendNotification);
+    if (!snapXNum_->isDragging())
+        snapXNum_->setValue(clip->snapXNumerator, juce::dontSendNotification);
+    if (!snapXDen_->isDragging())
+        snapXDen_->setValue(clip->snapXDenominator, juce::dontSendNotification);
+    if (!snapYNum_->isDragging())
+        snapYNum_->setValue(clip->snapYNumerator, juce::dontSendNotification);
+    if (!snapYDen_->isDragging())
+        snapYDen_->setValue(clip->snapYDenominator, juce::dontSendNotification);
+    const auto dim = [](juce::Component& c, bool on) {
+        c.setEnabled(on);
+        c.setAlpha(on ? 1.0f : 0.6f);
+    };
+    dim(*snapXNum_, clip->snapXEnabled);
+    dim(*snapXDen_, clip->snapXEnabled);
+    dim(snapXSlash_, clip->snapXEnabled);
+    dim(*snapYNum_, clip->snapYEnabled);
+    dim(*snapYDen_, clip->snapYEnabled);
+    dim(snapYSlash_, clip->snapYEnabled);
+}
+
+AutomationClipEditorContent::~AutomationClipEditorContent() {
+    if (snapXButton_)
+        snapXButton_->setLookAndFeel(nullptr);
+    if (snapYButton_)
+        snapYButton_->setLookAndFeel(nullptr);
+    magda::SelectionManager::getInstance().removeListener(this);
+    magda::AutomationManager::getInstance().removeListener(this);
+    magda::ClipManager::getInstance().removeListener(this);
+    if (auto* tc = TimelineController::getCurrent())
+        tc->removeListener(this);
+}
+
+void AutomationClipEditorContent::onActivated() {
+    magda::SelectionManager::getInstance().addListener(this);
+    magda::AutomationManager::getInstance().addListener(this);
+    magda::ClipManager::getInstance().addListener(this);
+    if (auto* tc = TimelineController::getCurrent())
+        tc->addListener(this);
+    refreshFromSelection();
+}
+
+void AutomationClipEditorContent::onDeactivated() {
+    magda::SelectionManager::getInstance().removeListener(this);
+    magda::AutomationManager::getInstance().removeListener(this);
+    magda::ClipManager::getInstance().removeListener(this);
+    if (auto* tc = TimelineController::getCurrent())
+        tc->removeListener(this);
+}
+
+void AutomationClipEditorContent::paint(juce::Graphics& g) {
+    g.fillAll(DarkTheme::getBackgroundColour());
+    if (editor_ == nullptr) {
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(13.0f));
+        g.drawText("No automation clip selected", getLocalBounds(), juce::Justification::centred);
+        return;
+    }
+
+    // Unit value scale on the left (the lanes' scale painter). The y mapping
+    // mirrors the editor's own value mapping so labels line up with the
+    // curve regardless of its content padding.
+    if (const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId)) {
+        if (!scaleStripArea_.isEmpty()) {
+            magda::AutomationLaneComponent::paintScaleLabelsFor(
+                g, scaleStripArea_, lane->target,
+                [this](double normalized) { return editor_->yToPixel(normalized); });
+        }
+    }
+}
+
+void AutomationClipEditorContent::resized() {
+    auto bounds = getLocalBounds().reduced(kInset);
+    titleLabel_.setBounds(bounds.removeFromTop(kTitleHeight));
+    // Value scale strip on the left (same width as the lanes'), spanning the
+    // curve area; the ruler and viewport shift right together so beat 0
+    // stays aligned between them.
+    auto scaleCol = bounds.removeFromLeft(kScaleStripWidth);
+    scaleCol.removeFromTop(timeRuler_->getPreferredHeight());
+    scaleStripArea_ = scaleCol;
+    timeRuler_->setBounds(bounds.removeFromTop(timeRuler_->getPreferredHeight()));
+    viewport_.setBounds(bounds);
+    updateView();
+}
+
+const magda::AutomationClipInfo* AutomationClipEditorContent::getClip() const {
+    if (!selection_.isValid())
+        return nullptr;
+    return magda::AutomationManager::getInstance().getClip(selection_.clipId);
+}
+
+double AutomationClipEditorContent::viewSpanBeats(const magda::AutomationClipInfo& clip) const {
+    // Looped -> one loop cycle (the clip's own timeline); else content length.
+    const bool looped = clip.looping && clip.loopLengthBeats > 0.0;
+    return juce::jmax(looped ? clip.loopLengthBeats : clip.lengthBeats, 0.25);
+}
+
+void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
+    if (!showTrackGhost_)
+        return;
+    const auto* clip = getClip();
+    if (clip == nullptr || editor_ == nullptr)
+        return;
+    const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId);
+    if (lane == nullptr || lane->target.isEditScoped())
+        return;
+    const auto trackId = lane->target.devicePath.trackId;
+    if (trackId == magda::INVALID_TRACK_ID)
+        return;
+
+    double tempo = 120.0;
+    if (auto* tc = TimelineController::getCurrent())
+        tempo = tc->getState().tempo.bpm;
+
+    // Absolute view only: in the looped (relative) view every automation
+    // cycle plays against DIFFERENT arrangement content, so any single
+    // ghost would be wrong from the second cycle on.
+    const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+    if (looped)
+        return;
+
+    const double span = viewSpanBeats(*clip);
+    const double arrStart = clip->startBeats;
+    const double arrEnd = arrStart + span;
+    // Editor x-domain is timeline beats in the absolute view.
+    const auto beatToPixelF = [&](double arrBeat) {
+        return static_cast<float>(editor_->xToPixelF(arrBeat));
+    };
+
+    const int editorH = editor_->getHeight();
+    auto& clipManager = magda::ClipManager::getInstance();
+
+    // MIDI ghosts get collected across all clips first so every note shares
+    // ONE pitch axis (a per-clip fit would put the same pitch on different
+    // rows for different clips).
+    struct GhostNote {
+        double beat, length;
+        int pitch;
+        juce::Colour colour;
+    };
+    std::vector<GhostNote> ghostNotes;
+    int minPitch = 127;
+    int maxPitch = 0;
+
+    for (magda::ClipId cid : clipManager.getClipsOnTrack(trackId)) {
+        const auto* c = clipManager.getClip(cid);
+        if (c == nullptr || c->view == magda::ClipView::Session)
+            continue;
+        const double cStart = c->getStartBeats(tempo);
+        const double cLenSeconds = c->getTimelineLength(tempo);
+        const double cEnd = cStart + cLenSeconds * tempo / 60.0;
+        if (cEnd <= arrStart || cStart >= arrEnd)
+            continue;
+
+        if (c->isMidi()) {
+            // Mirror ClipComponent::paintMidiNotes' display math (loop
+            // unroll, loop window, MIDI offsets) so the ghost agrees with
+            // what the arrangement actually renders.
+            const double beatsPerSecond = tempo / 60.0;
+            const double clipLengthInBeats = cLenSeconds * beatsPerSecond;
+            const double midiSrcLength =
+                c->loopLength > 0.0 ? c->loopLength : cLenSeconds * c->speedRatio;
+            const double loopLengthBeats =
+                c->loopLengthBeats > 0.0
+                    ? c->loopLengthBeats
+                    : (midiSrcLength > 0.0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats);
+            const double midiOffset = c->loopEnabled ? c->midiOffset : c->midiTrimOffset;
+            const double loopStart = c->loopStart * beatsPerSecond;
+            const double loopEnd = loopStart + loopLengthBeats;
+
+            const auto emitGhost = [&](double displayStart, double displayEnd, int pitch) {
+                displayStart = juce::jmax(displayStart, 0.0);
+                displayEnd = juce::jmin(displayEnd, clipLengthInBeats);
+                if (displayEnd <= displayStart)
+                    return;
+                const double arrBeat = cStart + displayStart;
+                if (arrBeat + (displayEnd - displayStart) <= arrStart || arrBeat >= arrEnd)
+                    return;
+                ghostNotes.push_back({arrBeat, displayEnd - displayStart, pitch, c->colour});
+                minPitch = juce::jmin(minPitch, pitch);
+                maxPitch = juce::jmax(maxPitch, pitch);
+            };
+
+            if (c->loopEnabled && loopLengthBeats > 0.0) {
+                const int numReps =
+                    static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
+                for (int rep = 0; rep < numReps; ++rep) {
+                    for (const auto& note : c->midiNotes) {
+                        const double sourceStart = juce::jmax(note.startBeat, loopStart);
+                        const double sourceEnd =
+                            juce::jmin(note.startBeat + note.lengthBeats, loopEnd);
+                        const double sourceLength = sourceEnd - sourceStart;
+                        if (sourceLength <= 0.0)
+                            continue;
+                        const double noteBeat =
+                            loopStart +
+                            magda::wrapPhase(sourceStart - midiOffset - loopStart, loopLengthBeats);
+                        if (noteBeat < loopStart || noteBeat >= loopEnd)
+                            continue;
+                        const double displayStart = (noteBeat - loopStart) + rep * loopLengthBeats;
+                        emitGhost(displayStart, displayStart + sourceLength, note.noteNumber);
+                    }
+                }
+            } else {
+                for (const auto& note : c->midiNotes) {
+                    const double displayStart = note.startBeat - midiOffset;
+                    emitGhost(displayStart, displayStart + note.lengthBeats, note.noteNumber);
+                }
+            }
+        } else if (c->isAudio() && c->audio().source.filePath.isNotEmpty()) {
+            const float x0 = beatToPixelF(cStart);
+            const float x1 = beatToPixelF(cEnd);
+            const auto area = juce::Rectangle<int>(
+                juce::roundToInt(x0), 0, juce::jmax(1, juce::roundToInt(x1 - x0)), editorH);
+            ClipWaveformSpec spec;
+            spec.tempo = tempo;
+            spec.colour = c->colour.withAlpha(0.3f);
+            paintClipWaveform(g, *c, cid, area, cLenSeconds, spec);
+        }
+    }
+
+    if (ghostNotes.empty())
+        return;
+
+    // Thin contour notes, not piano-roll rows: the ghost is for aligning the
+    // curve to events in time, not for reading pitches, so notes stay a few
+    // pixels tall and spread gently by relative pitch (centred, minimum
+    // one-octave span so sparse material doesn't blow up dramatically).
+    constexpr float kNoteH = 5.0f;
+    const double midPitch = (minPitch + maxPitch) * 0.5;
+    const double pitchSpan = juce::jmax(12.0, static_cast<double>(maxPitch - minPitch) + 6.0);
+    const float bandTop = kNoteH;
+    const float bandBottom = static_cast<float>(editorH) - kNoteH * 2.0f;
+    for (const auto& n : ghostNotes) {
+        const float x = beatToPixelF(n.beat);
+        const float w = juce::jmax(2.0f, beatToPixelF(n.beat + n.length) - x);
+        const double t = 0.5 - (n.pitch - midPitch) / pitchSpan;  // 0 top .. 1 bottom
+        const float y = bandTop + static_cast<float>(t) * (bandBottom - bandTop);
+        g.setColour(n.colour.withAlpha(0.35f));
+        g.fillRoundedRectangle(juce::Rectangle<float>(x, y, w, kNoteH), 1.5f);
+    }
+}
+
+void AutomationClipEditorContent::timelineStateChanged(const magda::TimelineState& state,
+                                                       magda::ChangeFlags changes) {
+    if (!magda::hasFlag(changes, magda::ChangeFlags::Playhead))
+        return;
+    const auto* clip = getClip();
+    if (editor_ == nullptr || clip == nullptr)
+        return;
+
+    // Playback dot over the curve, playback only. Looped view: the position
+    // wraps into the displayed loop cycle. The dot is the only indicator —
+    // no ruler triangle.
+    double editorBeat = -1.0;
+    const double playBeats = state.playhead.playbackPositionBeats;
+    if (state.playhead.isPlaying && playBeats >= clip->startBeats &&
+        playBeats < clip->getEndBeats()) {
+        const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+        editorBeat = looped ? magda::wrapPhase(playBeats - clip->startBeats, clip->loopLengthBeats)
+                            : playBeats;
+    }
+    editor_->setPlayheadBeat(editorBeat);
+}
+
+void AutomationClipEditorContent::clipsChanged() {
+    if (editor_ != nullptr)
+        editor_->repaint();
+}
+
+void AutomationClipEditorContent::clipPropertyChanged(magda::ClipId clipId) {
+    juce::ignoreUnused(clipId);
+    if (editor_ != nullptr)
+        editor_->repaint();
+}
+
+void AutomationClipEditorContent::updateTitle() {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return;
+    juce::String title = clip->name;
+    if (const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId))
+        title = magda::getDisplayNameForTarget(lane->target) + "  -  " + clip->name;
+    titleLabel_.setText(title, juce::dontSendNotification);
+}
+
+double AutomationClipEditorContent::gridResolutionBeats() const {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return 1.0;
+    return (4.0 * clip->snapXNumerator) /
+           static_cast<double>(juce::jmax(1, clip->snapXDenominator));
+}
+
+void AutomationClipEditorContent::gridSettingsChanged() {
+    const auto* clip = getClip();
+    if (clip == nullptr)
+        return;
+    timeRuler_->setGridResolution(gridResolutionBeats());
+    timeRuler_->setSnapEnabled(clip->snapXEnabled);
+    timeRuler_->repaint();
+    if (editor_ != nullptr)
+        editor_->repaint();
+}
+
+void AutomationClipEditorContent::refreshFromSelection() {
+    auto& sm = magda::SelectionManager::getInstance();
+    magda::AutomationClipSelection selection;
+    if (sm.getSelectionType() == magda::SelectionType::AutomationClip) {
+        selection = sm.getAutomationClipSelection();
+    } else if (sm.getSelectionType() == magda::SelectionType::AutomationPoint) {
+        // Point selection inside a clip: stay on that clip (touching the
+        // curve selects points; the editor must not reset mid-gesture).
+        const auto& pointSel = sm.getAutomationPointSelection();
+        if (pointSel.clipId != magda::INVALID_AUTOMATION_CLIP_ID) {
+            selection.clipId = pointSel.clipId;
+            selection.laneId = pointSel.laneId;
+        }
+    }
+
+    if (selection.clipId == selection_.clipId && selection.laneId == selection_.laneId &&
+        editor_ != nullptr)
+        return;
+
+    selection_ = selection;
+    horizontalZoom_ = 0.0;  // refit for the new clip
+    rebuildEditor();
+}
+
+void AutomationClipEditorContent::rebuildEditor() {
+    editor_.reset();
+
+    const auto* clip = getClip();
+    if (clip == nullptr) {
+        titleLabel_.setText("", juce::dontSendNotification);
+        timeRuler_->setVisible(false);
+        repaint();
+        return;
+    }
+
+    updateTitle();
+
+    editor_ = std::make_unique<magda::AutomationCurveEditor>(selection_.laneId);
+    editor_->setClipId(selection_.clipId);
+    editor_->setShowClipBorders(true);
+    editor_->setShowBeatGrid(true);
+    editor_->setDrawMode(magda::AutomationDrawMode::Pencil);
+    editor_->paintUnderlay = [this](juce::Graphics& g) { paintTrackGhost(g); };
+    // Snap comes from the clip's own settings (header controls), not the
+    // arrangement's. X = time grid; Y = fraction of the normalized range.
+    editor_->snapBeatToGrid = [this](double beats) {
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->snapXEnabled)
+            return beats;
+        const double res = gridResolutionBeats();
+        if (res <= 0.0)
+            return beats;
+        return std::round(beats / res) * res;
+    };
+    editor_->getGridSpacingBeats = [this]() { return gridResolutionBeats(); };
+    editor_->snapValueToGrid = [this](double value) {
+        const auto* clip = getClip();
+        if (clip == nullptr || !clip->snapYEnabled)
+            return value;
+        const double step = static_cast<double>(clip->snapYNumerator) /
+                            static_cast<double>(juce::jmax(1, clip->snapYDenominator));
+        if (step <= 0.0)
+            return value;
+        return juce::jlimit(0.0, 1.0, std::round(value / step) * step);
+    };
+    canvas_.addAndMakeVisible(*editor_);
+    updateView();
+    repaint();
+}
+
+void AutomationClipEditorContent::updateView() {
+    const auto* clip = getClip();
+    if (clip == nullptr || editor_ == nullptr)
+        return;
+
+    const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+    const double span = viewSpanBeats(*clip);
+
+    // Abs view: coordinates in real timeline beats; loop view: the clip's own
+    // timeline from 0.
+    editor_->setClipOffset(looped ? 0.0 : clip->startBeats);
+
+    // Fit once per clip; ruler gestures own the zoom afterwards.
+    if (horizontalZoom_ <= 0.0) {
+        const int fitWidth = viewport_.getMaximumVisibleWidth() - 2 * kEdgePad;
+        if (fitWidth <= 0)
+            return;  // not laid out yet; resized() comes back here
+        horizontalZoom_ = juce::jlimit(kMinZoom, kMaxZoom, fitWidth / span);
+    }
+
+    layoutCanvas();
+
+    // Ruler: looped clips read in the clip's own timeline from bar 1 (rel
+    // mode); non-looped clips read in real arrangement time (abs).
+    timeRuler_->setVisible(true);
+    double bpm = 120.0;
+    double startSeconds = 0.0;
+    double lengthSeconds = span * 60.0 / bpm;
+    if (auto* tc = TimelineController::getCurrent()) {
+        const auto& state = tc->getState();
+        bpm = state.tempo.bpm;
+        timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
+                                     state.tempo.timeSignatureDenominator);
+        timeRuler_->setTimelineLength(state.timelineLength);
+        startSeconds = state.beatsToSeconds(clip->startBeats);
+        lengthSeconds =
+            state.beatsToSeconds(clip->startBeats + span) - state.beatsToSeconds(clip->startBeats);
+    }
+    timeRuler_->setTempo(bpm);
+    timeRuler_->setBarOrigin(0.0);
+    timeRuler_->setZoom(horizontalZoom_);
+    timeRuler_->setClipLength(lengthSeconds);
+    timeRuler_->setTimeOffset(looped ? 0.0 : startSeconds);
+    timeRuler_->setRelativeMode(looped);
+    // Looped view shows exactly one loop cycle, so the loop strip spans the
+    // whole display; hidden for non-looped clips.
+    timeRuler_->setLoopRegion(0.0, looped ? lengthSeconds : 0.0, looped, looped);
+    gridSettingsChanged();  // ruler grid + snap from the clip's settings
+    timeRuler_->repaint();
+}
+
+void AutomationClipEditorContent::layoutCanvas() {
+    const auto* clip = getClip();
+    if (clip == nullptr || editor_ == nullptr || horizontalZoom_ <= 0.0) {
+        canvas_.setSize(juce::jmax(1, viewport_.getMaximumVisibleWidth()),
+                        juce::jmax(1, viewport_.getMaximumVisibleHeight()));
+        return;
+    }
+
+    const double span = viewSpanBeats(*clip);
+    const int contentWidth = static_cast<int>(std::round(span * horizontalZoom_));
+    const int height = juce::jmax(1, viewport_.getMaximumVisibleHeight());
+    canvas_.setSize(juce::jmax(contentWidth + 2 * kEdgePad, viewport_.getMaximumVisibleWidth()),
+                    height);
+    // The editor spans the pads too, with the beat range inset by kEdgePad:
+    // if it started at beat 0 exactly, points on the clip's first beat would
+    // be clipped in half by the component edge.
+    editor_->setBounds(0, 0, contentWidth + 2 * kEdgePad, height);
+    editor_->setEdgeInsetPx(kEdgePad);
+    editor_->setPixelsPerBeat(horizontalZoom_);
+}
+
+void AutomationClipEditorContent::performAnchorPointZoom(double newZoom, double anchorTime,
+                                                         int anchorScreenX) {
+    double bpm = 120.0;
+    if (auto* tc = TimelineController::getCurrent())
+        bpm = tc->getState().tempo.bpm;
+
+    const double clamped = juce::jlimit(kMinZoom, kMaxZoom, newZoom);
+    if (clamped == horizontalZoom_)
+        return;
+
+    const double anchorBeat = anchorTime * bpm / 60.0;
+    horizontalZoom_ = clamped;
+    layoutCanvas();
+    timeRuler_->setZoom(horizontalZoom_);
+    gridSettingsChanged();  // auto grid follows zoom
+
+    // Keep the beat under the pointer stationary while zooming.
+    const int newAnchorX = static_cast<int>(std::round(anchorBeat * horizontalZoom_)) + kEdgePad;
+    viewport_.setViewPosition(juce::jmax(0, newAnchorX - anchorScreenX),
+                              viewport_.getViewPositionY());
+    timeRuler_->repaint();
+}
+
+void AutomationClipEditorContent::selectionTypeChanged(magda::SelectionType newType) {
+    juce::ignoreUnused(newType);
+    refreshFromSelection();
+}
+
+void AutomationClipEditorContent::automationClipSelectionChanged(
+    const magda::AutomationClipSelection& selection) {
+    juce::ignoreUnused(selection);
+    refreshFromSelection();
+}
+
+void AutomationClipEditorContent::automationPointSelectionChanged(
+    const magda::AutomationPointSelection& selection) {
+    juce::ignoreUnused(selection);
+    refreshFromSelection();
+}
+
+void AutomationClipEditorContent::automationLanesChanged() {
+    // The lane (and its clips) may be gone entirely.
+    if (selection_.isValid() &&
+        magda::AutomationManager::getInstance().getLane(selection_.laneId) == nullptr) {
+        selection_ = {};
+        rebuildEditor();
+    }
+}
+
+void AutomationClipEditorContent::automationClipsChanged(magda::AutomationLaneId laneId) {
+    if (!selection_.isValid() || laneId != selection_.laneId)
+        return;
+    if (getClip() == nullptr) {
+        // Our clip was deleted.
+        selection_ = {};
+        rebuildEditor();
+        return;
+    }
+    // Length / loop / position / name / snap changes update the view, title,
+    // and header controls.
+    updateTitle();
+    updateView();
+    syncSnapControls();
+    repaint();
+    if (onClipStateChanged)
+        onClipStateChanged();
+}
+
+}  // namespace magda::daw::ui

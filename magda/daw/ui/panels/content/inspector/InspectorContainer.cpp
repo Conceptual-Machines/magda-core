@@ -2,6 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "AutomationClipInspector.hpp"
 #include "AutomationPointInspector.hpp"
 #include "ClipInspector.hpp"
 #include "DeviceInspector.hpp"
@@ -139,6 +140,14 @@ void InspectorContainer::chainNodeSelectionChanged(const magda::ChainNodePath& p
     }
 }
 
+void InspectorContainer::automationClipSelectionChanged(
+    const magda::AutomationClipSelection& selection) {
+    auto* inspector = dynamic_cast<AutomationClipInspector*>(currentInspector_.get());
+    if (inspector) {
+        inspector->setSelectedClip(selection);
+    }
+}
+
 void InspectorContainer::automationPointSelectionChanged(
     const magda::AutomationPointSelection& selection) {
     auto* inspector = dynamic_cast<AutomationPointInspector*>(currentInspector_.get());
@@ -199,6 +208,10 @@ void InspectorContainer::switchToInspector(magda::SelectionType type) {
             auto* inspector = dynamic_cast<AutomationPointInspector*>(currentInspector_.get());
             if (inspector)
                 inspector->setSelectedPoints(sm.getAutomationPointSelection());
+        } else if (type == magda::SelectionType::AutomationClip) {
+            auto* inspector = dynamic_cast<AutomationClipInspector*>(currentInspector_.get());
+            if (inspector)
+                inspector->setSelectedClip(sm.getAutomationClipSelection());
         }
     }
 

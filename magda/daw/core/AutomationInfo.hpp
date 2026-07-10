@@ -4,6 +4,7 @@
 #include <juce_graphics/juce_graphics.h>
 
 #include <array>
+#include <cmath>
 #include <vector>
 
 #include "AutomationTypes.hpp"
@@ -121,6 +122,16 @@ struct AutomationClipInfo {
     bool looping = false;
     double loopLengthBeats = 4.0;  // Loop length in beats
 
+    // Editor snap settings, per clip (each clip remembers its own instead of
+    // sharing the arrangement's). X = time grid, num/den of a whole note
+    // (like MIDI grids); Y = value grid, num/den of the normalized range.
+    bool snapXEnabled = true;
+    int snapXNumerator = 1;
+    int snapXDenominator = 4;
+    bool snapYEnabled = false;
+    int snapYNumerator = 1;
+    int snapYDenominator = 8;
+
     std::vector<AutomationPoint> points;
 
     // Helpers
@@ -147,6 +158,20 @@ struct AutomationClipInfo {
                 localBeatPosition += loopLengthBeats;
         }
         return localBeatPosition;
+    }
+
+    /**
+     * @brief Local beat corresponding to the clip's end, as a limit from the
+     *        left: the wrapped loop position that is sounding as the clip
+     *        runs out. Used to hold a clip's final value across the gap that
+     *        follows it.
+     */
+    double getEndLocalBeat() const {
+        if (looping && loopLengthBeats > 0.0) {
+            double local = std::fmod(lengthBeats, loopLengthBeats);
+            return (local == 0.0 && lengthBeats > 0.0) ? loopLengthBeats : local;
+        }
+        return lengthBeats;
     }
 
     // Default automation clip colors

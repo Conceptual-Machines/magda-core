@@ -428,10 +428,13 @@ class TrackContentPanel : public juce::Component,
     // (#1719), which drives the cursor (and, later, gesture dispatch).
     interaction::PanelSnapshot makePanelHitSnapshot(int x, int y) const;
     void updateCursorForPosition(int x, int y);
+    // True where an Alt+drag would start drawing a clip (empty lane area).
+    bool canDrawClipAt(int x, int y);
     // Reactive recompute (#1720): re-derive the cursor from the current
     // mouse position when hit-test inputs change without a mouse event
     // (time selection). No-op unless idle-hovering the panel.
     void refreshCursorFromMouse();
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
 
     // Marquee methods
     void startMarqueeSelection(const juce::Point<int>& startPoint);

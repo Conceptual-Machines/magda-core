@@ -3515,7 +3515,7 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                                             : AutomationLaneComponent::HEADER_HEIGHT;
 
             if (auto* entry = findLaneHeaderButtons(laneId))
-                layoutAutoLaneHeaderButtons(*entry, *lane, y);
+                layoutAutoLaneHeaderButtons(*entry, *lane, y, getWidth());
 
             y += laneHeight;
         }

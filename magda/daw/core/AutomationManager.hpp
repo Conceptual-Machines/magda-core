@@ -92,6 +92,32 @@ class AutomationManager : public TrackManagerListener {
     AutomationLaneId getOrCreateLane(const AutomationTarget& target, AutomationLaneType type);
 
     /**
+     * @brief Convert an absolute lane to clip-based: wrap its points into
+     *        one clip spanning the data range (point positions become
+     *        clip-local). minLengthBeats floors the clip length — callers
+     *        pass one bar from the current time signature so a lane with a
+     *        single seed point yields a bar-long clip, not a sliver. An
+     *        empty lane just flips type. Returns the created clip id,
+     *        INVALID when no clip was needed.
+     */
+    AutomationClipId convertLaneToClipBased(AutomationLaneId laneId, double minLengthBeats = 4.0);
+
+    /**
+     * @brief Convert a clip-based lane to absolute: flatten its clips
+     *        (loops unrolled, gap holds baked in) into absolutePoints and
+     *        delete the clips.
+     */
+    void convertLaneToAbsolute(AutomationLaneId laneId);
+
+    /**
+     * @brief Restore a lane's full state (type + points + clips) in place.
+     *        Undo support for lane type conversion: `clips` replaces every
+     *        clip currently owned by the lane, ids preserved.
+     */
+    void restoreLaneState(const AutomationLaneInfo& laneState,
+                          const std::vector<AutomationClipInfo>& clips);
+
+    /**
      * @brief Delete an automation lane
      */
     void deleteLane(AutomationLaneId laneId);
@@ -261,7 +287,7 @@ class AutomationManager : public TrackManagerListener {
     /**
      * @brief Move a clip to a new position
      */
-    void moveClip(AutomationClipId clipId, double newStartTime);
+    void moveClip(AutomationClipId clipId, double newStartBeats);
 
     /**
      * @brief Resize a clip
@@ -279,8 +305,22 @@ class AutomationManager : public TrackManagerListener {
 
     void setClipName(AutomationClipId clipId, const juce::String& name);
     void setClipColour(AutomationClipId clipId, juce::Colour colour);
+    /// Colour of the track the lane's target lives on; nullopt for
+    /// edit-scoped targets (tempo) with no owning track.
+    std::optional<juce::Colour> getLaneTrackColour(AutomationLaneId laneId) const;
     void setClipLooping(AutomationClipId clipId, bool looping);
     void setClipLoopLength(AutomationClipId clipId, double length);
+    void setClipSnapX(AutomationClipId clipId, bool enabled, int numerator, int denominator);
+    void setClipSnapY(AutomationClipId clipId, bool enabled, int numerator, int denominator);
+    /// Replace a clip's points wholesale (fresh ids, sorted, one notify).
+    void setClipPoints(AutomationClipId clipId, std::vector<AutomationPoint> points);
+    /// Flip an EMPTY lane (no points, no clips) to the given type; lanes
+    /// with data keep their type. Returns true when the lane ends up with
+    /// the requested type.
+    bool retypeEmptyLane(AutomationLaneId laneId, AutomationLaneType type);
+    /// Move a clip to the front of its lane's clipIds: playback resolves
+    /// overlapping clips as first-in-clipIds, so the front clip wins.
+    void moveClipToFront(AutomationClipId clipId);
 
     // ========================================================================
     // Point Management (Absolute lanes)
@@ -315,6 +355,20 @@ class AutomationManager : public TrackManagerListener {
      *        te::Edit::tempoSequence into the lane without per-point churn.
      */
     void replaceLanePoints(AutomationLaneId laneId, const std::vector<AutomationPoint>& points);
+
+    /**
+     * @brief Replace the absolute points inside [startBeat, endBeat] in one
+     *        shot, leaving points outside the range untouched (ids preserved).
+     *
+     * Incoming points with a valid id keep it — that is how an undo restores
+     * the exact points it removed without invalidating ids referenced
+     * elsewhere in the undo stack — while id-less points get fresh ids.
+     * Notifies once. Returns the removed points (with their ids) for undo
+     * capture. Used by BakeModulationCommand.
+     */
+    std::vector<AutomationPoint> replacePointsInRange(AutomationLaneId laneId, double startBeat,
+                                                      double endBeat,
+                                                      const std::vector<AutomationPoint>& points);
 
     /**
      * @brief Delete a point from a clip
@@ -387,6 +441,13 @@ class AutomationManager : public TrackManagerListener {
      * @return Normalized value 0-1
      */
     double getClipValueAtBeat(AutomationClipId clipId, double localBeatPosition) const;
+
+    /**
+     * @brief Interpolate a raw point list at a beat, curve-type aware
+     *        (linear/tension, bezier, step, hard corner) — the model's exact
+     *        curve for renderers working outside lane/clip lookups.
+     */
+    double interpolatePoints(const std::vector<AutomationPoint>& points, double beatPosition) const;
 
     // ========================================================================
     // Listener Management
@@ -549,7 +610,6 @@ class AutomationManager : public TrackManagerListener {
     // Interpolation helpers
     double interpolateLinear(double t, double v1, double v2) const;
     double interpolateBezier(double t, const AutomationPoint& p1, const AutomationPoint& p2) const;
-    double interpolatePoints(const std::vector<AutomationPoint>& points, double beatPosition) const;
 
     // Point management helpers
     AutomationPoint* findPoint(std::vector<AutomationPoint>& points, AutomationPointId pointId);

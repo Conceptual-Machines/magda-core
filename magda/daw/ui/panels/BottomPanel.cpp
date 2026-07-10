@@ -13,6 +13,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
+#include "content/AutomationClipEditorContent.hpp"
 #include "content/ChordPanelContent.hpp"
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
@@ -501,6 +502,18 @@ void BottomPanel::setupHeaderControls() {
     loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     loopButton_->setClickingTogglesState(false);  // manual active state
     loopButton_->onClick = [this]() {
+        // Automation clip editor: loop lives on the automation clip (same
+        // toggle as the inspector's).
+        if (auto* autoEditor =
+                dynamic_cast<daw::ui::AutomationClipEditorContent*>(getActiveContent())) {
+            auto& mgr = AutomationManager::getInstance();
+            if (const auto* clip = mgr.getClip(autoEditor->getEditingClipId())) {
+                loopButton_->setActive(!clip->looping);
+                mgr.setClipLooping(clip->id, !clip->looping);
+            }
+            return;
+        }
+
         const auto clipId = getActiveEditingClipId();
         if (clipId == INVALID_CLIP_ID)
             return;
@@ -651,10 +664,12 @@ void BottomPanel::resized() {
         // Layout MIDI/audio grid controls in the header (if present)
         auto* content = getActiveContent();
         bool hasMidiControls =
-            content && (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
-                        content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
-                        content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
-                        content->getContentType() == daw::ui::PanelContentType::WaveformEditor);
+            content &&
+            (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
+             content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
+             content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
+             content->getContentType() == daw::ui::PanelContentType::WaveformEditor ||
+             content->getContentType() == daw::ui::PanelContentType::AutomationClipEditor);
         if (hasMidiControls)
             layoutMidiHeaderControls(headerBar_->getLocalBounds());
 
@@ -1045,6 +1060,17 @@ void BottomPanel::updateContentBasedOnSelection() {
                 targetContent = daw::ui::PanelContentType::WaveformEditor;
             }
         }
+    } else if (SelectionManager::getInstance().getSelectionType() ==
+                   SelectionType::AutomationClip &&
+               SelectionManager::getInstance().getAutomationClipSelection().isValid()) {
+        targetContent = daw::ui::PanelContentType::AutomationClipEditor;
+    } else if (SelectionManager::getInstance().getSelectionType() ==
+                   SelectionType::AutomationPoint &&
+               SelectionManager::getInstance().getAutomationPointSelection().clipId !=
+                   INVALID_AUTOMATION_CLIP_ID) {
+        // Selecting a point INSIDE an automation clip keeps the clip editor
+        // open (like note selection keeps the piano roll).
+        targetContent = daw::ui::PanelContentType::AutomationClipEditor;
     } else if (selectedTrack != INVALID_TRACK_ID) {
         targetContent = daw::ui::PanelContentType::TrackChain;
     }
@@ -1115,17 +1141,22 @@ void BottomPanel::updateContentBasedOnSelection() {
 
     // Connect auto-grid display callback so num/den labels update during zoom
     auto* content = getActiveContent();
+    auto autoGridDisplayChanged = [this](int numerator, int denominator) {
+        gridNumerator_ = numerator;
+        gridDenominator_ = denominator;
+        if (!gridNumeratorLabel_->isDragging())
+            gridNumeratorLabel_->setValue(static_cast<double>(numerator),
+                                          juce::dontSendNotification);
+        if (!gridDenominatorLabel_->isDragging())
+            gridDenominatorLabel_->setValue(static_cast<double>(denominator),
+                                            juce::dontSendNotification);
+    };
     if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content)) {
-        midiEditor->onAutoGridDisplayChanged = [this](int numerator, int denominator) {
-            gridNumerator_ = numerator;
-            gridDenominator_ = denominator;
-            if (!gridNumeratorLabel_->isDragging())
-                gridNumeratorLabel_->setValue(static_cast<double>(numerator),
-                                              juce::dontSendNotification);
-            if (!gridDenominatorLabel_->isDragging())
-                gridDenominatorLabel_->setValue(static_cast<double>(denominator),
-                                                juce::dontSendNotification);
-        };
+        midiEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
+    } else if (auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content)) {
+        // The automation editor owns its snap controls; only the shared loop
+        // toggle needs resyncing on clip changes.
+        autoEditor->onClipStateChanged = [this]() { syncLoopButtonState(); };
     }
 
     // Push multi-selection state into the waveform editor and the properties
@@ -1164,8 +1195,12 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
                      incoming->getContentType() == daw::ui::PanelContentType::ChordClipView);
     const bool isWaveformEditor =
         incoming && incoming->getContentType() == daw::ui::PanelContentType::WaveformEditor;
+    const bool isAutomationEditor =
+        incoming && incoming->getContentType() == daw::ui::PanelContentType::AutomationClipEditor;
     if (isMidiEditor || isWaveformEditor)
         addMidiControlsToHeader();  // Grid controls are shared between MIDI and audio
+    else if (isAutomationEditor)
+        addGridControlsToHeader();  // Grid controls only — loop lives in the inspector
 
     // Fullscreen toggle: enabled for any clip editor (piano roll, drum grid,
     // waveform). Hidden for track chain and empty content (issue #1282).
@@ -1214,6 +1249,13 @@ void BottomPanel::addMidiControlsToHeader() {
     updateOverlayTracksButtonState();
 }
 
+void BottomPanel::addGridControlsToHeader() {
+    // Automation clip editor: only the shared loop toggle — the snap
+    // controls are content-owned (populateHeader).
+    loopButton_->setVisible(true);
+    syncLoopButtonState();
+}
+
 void BottomPanel::removeMidiControlsFromHeader() {
     hideMidiHeaderControls();
 }
@@ -1256,6 +1298,12 @@ ClipId BottomPanel::getActiveEditingClipId() const {
 void BottomPanel::syncLoopButtonState() {
     if (!loopButton_)
         return;
+    if (auto* autoEditor =
+            dynamic_cast<daw::ui::AutomationClipEditorContent*>(getActiveContent())) {
+        const auto* clip = AutomationManager::getInstance().getClip(autoEditor->getEditingClipId());
+        loopButton_->setActive(clip != nullptr && clip->looping);
+        return;
+    }
     const auto clipId = getActiveEditingClipId();
     const auto* clip =
         (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;

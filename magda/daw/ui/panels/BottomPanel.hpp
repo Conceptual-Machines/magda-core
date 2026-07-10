@@ -120,6 +120,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<HeaderBar> headerBar_;
 
     void addMidiControlsToHeader();
+    void addGridControlsToHeader();
     void removeMidiControlsFromHeader();
     void hideMidiHeaderControls();
     void layoutMidiHeaderControls(juce::Rectangle<int> headerBounds);

@@ -41,6 +41,9 @@ class AutomationCurveEditor : public CurveEditorBase,
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
     void automationPointsChanged(AutomationLaneId laneId) override;
+    // Clip-mode editors: point edits inside a clip notify clips-changed,
+    // not points-changed.
+    void automationClipsChanged(AutomationLaneId laneId) override;
     void automationPointDragPreview(AutomationLaneId laneId, AutomationPointId pointId,
                                     double previewTime, double previewValue) override;
 
@@ -68,6 +71,49 @@ class AutomationCurveEditor : public CurveEditorBase,
         tempoBPM_ = bpm;
     }
 
+    // Horizontal inset (pixels) between the component edges and the beat
+    // range, so edge points (the clip's first/last beat) render fully inside
+    // the component instead of being cut in half. Zero for timeline lanes,
+    // which must stay pixel-aligned with the arrangement grid.
+    void setEdgeInsetPx(int px) {
+        if (edgeInsetPx_ == px)
+            return;
+        edgeInsetPx_ = px;
+        updatePointPositions();
+        repaint();
+    }
+
+    // Vertical markers on the clip's start/end (loop-cycle end when looped).
+    // Enabled by the bottom-panel clip editor; timeline lanes show clip
+    // bounds as the clip component itself, so they keep this off.
+    void setShowClipBorders(bool show) {
+        if (showClipBorders_ == show)
+            return;
+        showClipBorders_ = show;
+        repaint();
+    }
+
+    // Vertical beat gridlines at getGridSpacingBeats' resolution. Enabled by
+    // the bottom-panel clip editor; timeline lanes sit over the
+    // arrangement's own grid.
+    void setShowBeatGrid(bool show) {
+        if (showBeatGrid_ == show)
+            return;
+        showBeatGrid_ = show;
+        repaint();
+    }
+
+    // Playback position in editor x-domain beats; < 0 hides it. Drawn as a
+    // dot riding the curve at the playing value. Driven by the bottom-panel
+    // clip editor (timeline lanes sit under the arrangement's global
+    // playhead already).
+    void setPlayheadBeat(double editorBeat) {
+        if (playheadBeat_ == editorBeat)
+            return;
+        playheadBeat_ = editorBeat;
+        repaint();
+    }
+
     // CurveEditorBase coordinate interface
     double getPixelsPerX() const override {
         return pixelsPerBeat_;
@@ -79,16 +125,36 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Snapping (uses base class snapXToGrid)
     std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;  // Grid step in beats
+    // Optional value-snap override (the clip editor's Y grid); when unset,
+    // Y snap falls back to the lane's parameter-natural ticks (snapValue).
+    std::function<double(double)> snapValueToGrid;
+
+    // Optional background painter drawn beneath the grid and curve — the
+    // bottom-panel clip editor uses it for the track's MIDI/audio ghost.
+    std::function<void(juce::Graphics&)> paintUnderlay;
 
     // Clip mode (for clip-based automation)
     void setClipId(AutomationClipId clipId) {
+        if (clipId_ == clipId)
+            return;
         clipId_ = clipId;
+        // The points cache was built for the previous source (lane or other
+        // clip) — typically in the constructor, before setClipId ran.
+        pointsCacheDirty_ = true;
+        rebuildPointComponents();
+        repaint();
     }
     AutomationClipId getClipId() const {
         return clipId_;
     }
     void setClipOffset(double offset) {
+        if (clipOffset_ == offset)
+            return;
         clipOffset_ = offset;
+        // Cached editor-space positions bake the offset in.
+        pointsCacheDirty_ = true;
+        rebuildPointComponents();
+        repaint();
     }
 
     // CurveEditorBase data access
@@ -118,6 +184,9 @@ class AutomationCurveEditor : public CurveEditorBase,
     void onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
                        double prevValue) override;
     void paintGrid(juce::Graphics& g) override;
+    // With an edge inset, the base's hold-line extension to the component
+    // edges would overhang the clip borders into the pads — clip it out.
+    void paintCurve(juce::Graphics& g) override;
     void syncSelectionState() override;
     void rebuildPointComponents() override;
 
@@ -127,6 +196,10 @@ class AutomationCurveEditor : public CurveEditorBase,
     double clipOffset_ = 0.0;
     double pixelsPerBeat_ = 10.0;
     double tempoBPM_ = 120.0;
+    int edgeInsetPx_ = 0;
+    bool showClipBorders_ = false;
+    bool showBeatGrid_ = false;
+    double playheadBeat_ = -1.0;
 
     // Cached curve points (converted from AutomationPoints)
     mutable std::vector<CurvePoint> cachedPoints_;
@@ -134,11 +207,11 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Note: right-click pending is tracked via CurveEditorBase::isRightClickPending_
 
     void updatePointsCache() const;
-    void deleteSelectedPoints();
     // Shown on right-click anywhere in the curve body, or forwarded from a
     // CurvePointComponent right-click so the menu isn't swallowed by points.
     void showContextMenu();
     void paintOverrideOverlay(juce::Graphics& g);
+    void paintClipBorders(juce::Graphics& g);
 
     // Right-click a point to type its value inline (real units).
     uint32_t pointIdAt(int x, int y) const;

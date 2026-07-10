@@ -40,6 +40,7 @@ target_sources(magda_daw_app PRIVATE
     params/ParamLinkResolver.cpp
     params/ParamModulationPainter.cpp
     params/ParamLinkMenu.cpp
+    params/ModulationBakeAction.cpp
     params/ParamWidgetSetup.cpp
     params/PagedControlPanel.cpp
     layout/StandardDeviceLayout.cpp
@@ -151,6 +152,7 @@ target_sources(magda_daw_app PRIVATE
     params/ParamLinkResolver.hpp
     params/ParamModulationPainter.hpp
     params/ParamLinkMenu.hpp
+    params/ModulationBakeAction.hpp
     params/ParamWidgetSetup.hpp
     params/PagedControlPanel.hpp
     layout/DeviceParamLayout.hpp

@@ -902,7 +902,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // editor's keyPressed) is robust: selecting a point publishes to the
             // SelectionManager, but the editor loses keyboard focus when the
             // inspector relayouts, so the key never reaches its keyPressed.
-            const auto& autoPtSel = selectionManager.getAutomationPointSelection();
+            // Copy: the commands notify listeners that may touch the live
+            // selection while we iterate it.
+            const auto autoPtSel = selectionManager.getAutomationPointSelection();
             if (autoPtSel.isValid()) {
                 auto& undo = UndoManager::getInstance();
                 const bool many = autoPtSel.pointIds.size() > 1;
@@ -913,8 +915,24 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         autoPtSel.laneId, autoPtSel.clipId, *it));
                 if (many)
                     undo.endCompoundOperation();
-                selectionManager.clearAutomationPointSelection();
+                // Points inside a clip: fall back to the clip selection so the
+                // clip editor stays open; clearing to nothing would switch the
+                // bottom panel away mid-edit.
+                if (autoPtSel.clipId != INVALID_AUTOMATION_CLIP_ID)
+                    selectionManager.selectAutomationClip(autoPtSel.clipId, autoPtSel.laneId);
+                else
+                    selectionManager.clearAutomationPointSelection();
                 return true;
+            }
+            // Selected automation clip: delete the whole clip.
+            if (selectionManager.getSelectionType() == SelectionType::AutomationClip) {
+                const auto autoClipSel = selectionManager.getAutomationClipSelection();
+                if (autoClipSel.isValid()) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<DeleteAutomationClipCommand>(autoClipSel.clipId));
+                    selectionManager.clearAutomationClipSelection();
+                    return true;
+                }
             }
             // Note selection takes priority — user is actively editing in the piano roll
             const auto& noteSel = selectionManager.getNoteSelection();
