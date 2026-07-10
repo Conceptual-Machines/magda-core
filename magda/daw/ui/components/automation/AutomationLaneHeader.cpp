@@ -287,12 +287,19 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons,
     buttons.modeBtn->repaint();
 }
 
+// The lane mode toggle lives in the title row's right slot, walled off by a
+// vertical divider: it converts the lane's data (clips <-> free-drawn
+// curve), so it must not sit in the everyday toggle cluster — and the lane
+// content area's right edge belongs to the value scale labels.
+constexpr int kModeBtnSize = 16;
+constexpr int kModeSlotMargin = 5;
+constexpr int kModeSlotWidth = kModeBtnSize + kModeSlotMargin * 2;
+
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
                                  int laneTopY, int headerWidth, int topInset) {
     constexpr int kBtnSize = 20;
     constexpr int kBtnGap = 3;
     constexpr int kLeftMargin = 6;
-    constexpr int kRightMargin = 6;
     constexpr int kTopMargin = 4;
 
     const bool inView = lane.expanded;
@@ -316,10 +323,11 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
     place(*buttons.bypassBtn);
     place(*buttons.deleteBtn);
 
-    // The lane mode toggle sits alone on the far right: it converts the
-    // lane's data (clips <-> free-drawn curve), so it must not be a
-    // near-miss inside the everyday toggle cluster.
-    buttons.modeBtn->setBounds(headerWidth - kRightMargin - kBtnSize, btnY, kBtnSize, kBtnSize);
+    // Mode toggle: title-row right slot (see kModeSlotWidth above).
+    const int titleY = laneTopY + topInset;
+    buttons.modeBtn->setBounds(headerWidth - kModeSlotMargin - kModeBtnSize,
+                               titleY + (AutomationLaneComponent::HEADER_HEIGHT - kModeBtnSize) / 2,
+                               kModeBtnSize, kModeBtnSize);
 }
 
 void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane, int laneTopY,
@@ -338,10 +346,17 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     g.drawHorizontalLine(headerArea.getBottom() - 1, static_cast<float>(headerArea.getX()),
                          static_cast<float>(headerArea.getRight()));
 
+    // Right slot: the lane mode toggle sits here (layout above); wall it off
+    // from the name/watermark with a vertical divider.
+    auto nameArea = headerArea.reduced(4, 2);
+    nameArea.removeFromRight(kModeSlotWidth);
+    g.setColour(juce::Colour(0xFF3A3A3A));
+    g.drawVerticalLine(width - kModeSlotWidth, static_cast<float>(headerArea.getY() + 3),
+                       static_cast<float>(headerArea.getBottom() - 3));
+
     // Parameter name
     g.setColour(juce::Colour(0xFFCCCCCC));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    auto nameArea = headerArea.reduced(4, 2);
     g.drawText(lane.getDisplayName(), nameArea, juce::Justification::centredLeft);
 
     // Track-name watermark on the right edge so a lane reads which track /
