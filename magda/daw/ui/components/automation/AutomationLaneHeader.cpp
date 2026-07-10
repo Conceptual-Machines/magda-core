@@ -179,6 +179,29 @@ class LaneModeButton : public LaneHeaderButton {
   public:
     LaneModeButton() : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {}
 
+    // Not an on/off toggle — both modes are first-class states with their
+    // own hue: clips = blue (the arrangement-object language), free-drawn
+    // curve = purple (the automation curve colour). Overrides the base's
+    // on/off scheme, which left curve mode looking inactive.
+    void paintButton(juce::Graphics& g, bool isMouseOver, bool isButtonDown) override {
+        auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        constexpr float corner = 3.0f;
+        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto accent = getToggleState() ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                             : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+        juce::Colour bg = accent.interpolatedWith(surface, 0.62f);
+        if (isButtonDown)
+            bg = bg.darker(0.2f);
+        else if (isMouseOver)
+            bg = bg.brighter(0.1f);
+
+        g.setColour(bg);
+        g.fillRoundedRectangle(bounds, corner);
+        g.setColour(bg.darker(0.15f));
+        g.drawRoundedRectangle(bounds, corner, 1.0f);
+        paintGlyph(g, accent.brighter(0.5f));
+    }
+
     void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
         auto bounds = getLocalBounds().toFloat();
         auto glyph = bounds.reduced(bounds.getWidth() * 0.2f, bounds.getHeight() * 0.28f);
