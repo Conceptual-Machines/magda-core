@@ -636,9 +636,9 @@ void ClipInspector::initClipPropertiesSection() {
     // Loop toggle: borderless single icon, recoloured by state. Off = grey
     // glyph, no fill; engaged = solid blue chip with a white glyph. Matches the
     // clip-editor header loop toggle (both drive the same clip loop).
-    clipLoopToggle_ =
-        std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
-    clipLoopToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
+                                                         BinaryData::loop_icon_svgSize);
+    clipLoopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipLoopToggle_->setActiveColor(juce::Colours::white);
     clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));

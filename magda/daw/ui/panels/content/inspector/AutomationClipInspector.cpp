@@ -187,9 +187,9 @@ AutomationClipInspector::AutomationClipInspector() {
     // grey glyph; engaged = solid blue chip with a white glyph.
     styleLabel(loopLabel_, "Loop");
     addChildComponent(loopLabel_);
-    loopToggle_ =
-        std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
-    loopToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    loopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
+                                                     BinaryData::loop_icon_svgSize);
+    loopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     loopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     loopToggle_->setActiveColor(juce::Colours::white);
     loopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
