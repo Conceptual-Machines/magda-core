@@ -296,9 +296,10 @@ void ClipInspector::updateFromSelectedClip() {
         const auto ghostSiblings = magda::ClipManager::getInstance().getLinkGroupSiblings(clip->id);
         clipGhostIcon_->setVisible(!ghostSiblings.empty());
         if (!ghostSiblings.empty()) {
-            clipGhostIcon_->setTooltip("Ghost clip: content linked with " +
-                                       juce::String(static_cast<int>(ghostSiblings.size())) +
-                                       " other clip" + (ghostSiblings.size() == 1 ? "" : "s"));
+            const int groupIndex = magda::ClipManager::getInstance().getLinkGroupIndex(clip->id);
+            clipGhostIcon_->setTooltip("Ghost clip " + juce::String(groupIndex) + " of " +
+                                       juce::String(static_cast<int>(ghostSiblings.size()) + 1) +
+                                       ": content and name mirror the other members");
         }
 
         // Show BPM for audio clips (at bottom with WARP)

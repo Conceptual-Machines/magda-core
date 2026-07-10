@@ -141,20 +141,38 @@ TEST_CASE("Content edits propagate to link-group siblings", "[clip][ghost]") {
         REQUIRE(listener.sawPropertyChangeFor(b));
     }
 
+    SECTION("Rename propagates to siblings") {
+        cm.setClipName(b, "Renamed");
+        REQUIRE(cm.getClip(a)->name == "Renamed");
+    }
+
     SECTION("Per-instance fields do not propagate") {
         auto* clipA = cm.getClip(a);
         auto* clipB = cm.getClip(b);
-        clipB->name = "Renamed";
         clipB->colour = juce::Colour(0xFF123456);
         clipB->loopEnabled = true;
         clipB->loopLengthBeats = 2.0;
         clipB->volumeDB = -6.0f;
         cm.forceNotifyClipPropertyChanged(b);
 
-        REQUIRE(clipA->name != "Renamed");
         REQUIRE(clipA->colour != juce::Colour(0xFF123456));
         REQUIRE_FALSE(clipA->loopEnabled);
         REQUIRE(clipA->volumeDB == Catch::Approx(0.0f));
+    }
+
+    SECTION("Group index is 1-based in creation order, 0 when unlinked") {
+        REQUIRE(cm.getLinkGroupIndex(a) == 1);
+        REQUIRE(cm.getLinkGroupIndex(b) == 2);
+        ClipId c = cm.duplicateClipAsGhostAtBeats(a, 24.0);
+        REQUIRE(cm.getLinkGroupIndex(c) == 3);
+
+        ClipId lone = createMidi(track, 40.0, 2.0);
+        REQUIRE(cm.getLinkGroupIndex(lone) == 0);
+
+        // Deleting a member re-packs the indices.
+        cm.deleteClip(a);
+        REQUIRE(cm.getLinkGroupIndex(b) == 1);
+        REQUIRE(cm.getLinkGroupIndex(c) == 2);
     }
 
     SECTION("Placement stays per-instance") {

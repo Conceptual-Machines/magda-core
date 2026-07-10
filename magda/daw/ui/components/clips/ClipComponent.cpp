@@ -928,14 +928,21 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
-    // Clip name (italic for ghost clips)
+    // Clip name (italic for ghost clips, with the instance index appended —
+    // group members share their name, the #index tells them apart)
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
         auto nameArea = headerArea.withWidth(juce::jmin(headerArea.getWidth(), 300)).reduced(4, 0);
         if (nameArea.intersects(g.getClipBounds())) {
             g.setColour(headerForeground);
             auto nameFont = FontManager::getInstance().getUIFont(10.0f);
             g.setFont(ghosted ? nameFont.italicised() : nameFont);
-            g.drawText(clip.name, nameArea, juce::Justification::centredLeft, true);
+            auto displayName = clip.name;
+            if (ghosted) {
+                const int groupIndex = ClipManager::getInstance().getLinkGroupIndex(clipId_);
+                if (groupIndex > 0)
+                    displayName += " #" + juce::String(groupIndex);
+            }
+            g.drawText(displayName, nameArea, juce::Justification::centredLeft, true);
         }
     }
 

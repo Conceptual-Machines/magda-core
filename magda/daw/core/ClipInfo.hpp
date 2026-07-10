@@ -514,8 +514,9 @@ struct ClipInfo {
 
     /// Copy the content-defining fields from a link-group sibling (ghost-clip
     /// mirroring). Everything that says WHAT the clip contains and how the
-    /// source is interpreted is shared; everything that says WHERE it sits and
-    /// how it mixes stays per-instance: id, trackId, name, colour, view,
+    /// source is interpreted is shared — including the name (the UI appends a
+    /// per-instance #index for display); everything that says WHERE it sits
+    /// and how it mixes stays per-instance: id, trackId, colour, view,
     /// placement (+ derived mirrors), offsets (placement-coupled: left-resize
     /// trims only that instance), volume/gain/pan, fades, channels, launch and
     /// grid settings. Loop fields and speedRatio are per-instance too: for
@@ -523,6 +524,7 @@ struct ClipInfo {
     /// offset/length, and stretch-resize writes speedRatio — sharing either
     /// would let one ghost's resize corrupt its siblings.
     void copySharedContentFrom(const ClipInfo& src) {
+        name = src.name;
         content = src.content;
         midiNotes = src.midiNotes;
         midiCCData = src.midiCCData;

@@ -884,7 +884,9 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
 
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
-    newClip.name = original->name + " Copy";
+    // Link-group members share their name (the UI adds a per-instance #index),
+    // so only unlinked duplicates get the " Copy" suffix.
+    newClip.name = original->linkGroupId != 0 ? original->name : original->name + " Copy";
 
     if (newClip.view == ClipView::Arrangement) {
         // Beats are authoritative for clip positioning: place the duplicate one
@@ -922,7 +924,7 @@ ClipId ClipManager::duplicateClipAtBeats(ClipId clipId, double startBeat, TrackI
 
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
-    newClip.name = original->name + " Copy";
+    newClip.name = original->linkGroupId != 0 ? original->name : original->name + " Copy";
 
     // Use specified track or keep same track
     if (trackId != INVALID_TRACK_ID) {
@@ -971,15 +973,9 @@ ClipId ClipManager::duplicateClipAsGhost(ClipId clipId) {
     if (original == nullptr)
         return INVALID_CLIP_ID;
     ensureLinkGroup(*original);
-    // duplicateClip is a full struct copy, so the copy inherits linkGroupId.
-    const ClipId newId = duplicateClip(clipId);
-    // Ghosts keep the original's name — they are the same content, and the
-    // ghost visuals already mark them. (Re-fetch: the map may have rehashed.)
-    if (auto* copy = getClip(newId)) {
-        if (const auto* src = getClip(clipId))
-            copy->name = src->name;
-    }
-    return newId;
+    // duplicateClip is a full struct copy, so the copy inherits linkGroupId
+    // (and, being grouped, keeps the shared name instead of " Copy").
+    return duplicateClip(clipId);
 }
 
 ClipId ClipManager::duplicateClipAsGhostAtBeats(ClipId clipId, double startBeat, TrackId trackId,
@@ -988,12 +984,7 @@ ClipId ClipManager::duplicateClipAsGhostAtBeats(ClipId clipId, double startBeat,
     if (original == nullptr)
         return INVALID_CLIP_ID;
     ensureLinkGroup(*original);
-    const ClipId newId = duplicateClipAtBeats(clipId, startBeat, trackId, tempo);
-    if (auto* copy = getClip(newId)) {
-        if (const auto* src = getClip(clipId))
-            copy->name = src->name;
-    }
-    return newId;
+    return duplicateClipAtBeats(clipId, startBeat, trackId, tempo);
 }
 
 void ClipManager::makeClipUnique(ClipId clipId) {
@@ -1030,6 +1021,22 @@ bool ClipManager::isGhostClip(ClipId clipId) const {
             return true;
     }
     return false;
+}
+
+int ClipManager::getLinkGroupIndex(ClipId clipId) const {
+    auto it = clips_.find(clipId);
+    if (it == clips_.end() || it->second.linkGroupId == 0)
+        return 0;
+    int index = 1;
+    int members = 1;
+    for (const auto& [id, other] : clips_) {
+        if (id == clipId || other.linkGroupId != it->second.linkGroupId)
+            continue;
+        ++members;
+        if (id < clipId)
+            ++index;
+    }
+    return members > 1 ? index : 0;
 }
 
 std::vector<ClipId> ClipManager::propagateLinkGroupContent(ClipId clipId) {

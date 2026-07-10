@@ -262,6 +262,13 @@ class ClipManager {
      */
     bool isGhostClip(ClipId clipId) const;
 
+    /**
+     * @brief 1-based display index of the clip within its link group,
+     * ordered by clip id (creation order). 0 when the clip is unlinked or
+     * the group's only member. Display-only — never stored.
+     */
+    int getLinkGroupIndex(ClipId clipId) const;
+
     // ========================================================================
     // Clip Manipulation
     // ========================================================================
