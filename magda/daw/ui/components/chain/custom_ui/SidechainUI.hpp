@@ -54,8 +54,9 @@ class SidechainUI : public juce::Component {
 
     magda::LFOCurveEditor curveEditor_;
 
-    juce::Label depthLabel_, divisionLabel_, modeLabel_, attackLabel_, releaseLabel_;
+    juce::Label depthLabel_, divisionLabel_, modeLabel_, channelLabel_, attackLabel_, releaseLabel_;
     juce::TextButton modeButton_;  // Loop vs 1-Shot (ModInfo::oneShot)
+    juce::TextButton stereoButton_, sidesButton_;
     TextSlider depthSlider_;
     TextSlider divisionSlider_;
     LinkableTextSlider attackSlider_, releaseSlider_;

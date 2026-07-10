@@ -614,8 +614,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Rack audio routing (MAGDA RackInfo → TE RackType)
     RackSyncManager rackSyncManager_;
 
-    // Device-level modifier sync (for standalone devices, not inside MAGDA racks)
-    void syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack);
+    // Device-level modifier sync (for standalone devices, not inside MAGDA racks).
+    // The master bus owns a ModifierList but is not an AudioTrack, so the
+    // plugin scope and macro host are supplied independently.
+    void syncDeviceModifiers(
+        TrackId trackId, te::ModifierList* defaultModifierList, te::MacroParameterList* macroList,
+        const std::function<void(const std::function<void(te::Plugin*)>&)>& visitHostPlugins);
 
     // Update existing modifier properties in-place (rate, waveform, sync, phase)
     // without destroying/recreating modifiers. Used for non-structural changes.

@@ -1079,14 +1079,16 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         return changed;
     };
 
-    // Update mods in all tracks, collect those needing TE assignment sync
+    // Update mods in all tracks, collect those needing TE assignment sync.
+    // The master is not in tracks_, but its device mods can be driven by a
+    // regular source track, so it needs the same message-thread mirror.
     std::vector<TrackId> tracksNeedingSync;
-    for (auto& track : tracks_) {
+    auto updateTrackMods = [&](TrackInfo& track, bool hasBusEntry) {
         if (track.id < 0 || track.id >= kMaxBusTracks)
-            continue;
-        bool trackMidiTriggered = midiNoteOnTracks.count(track.id) > 0;
-        bool trackMidiNoteOff = midiAllNotesOffTracks.count(track.id) > 0;
-        float trackAudioPeak = audioPeakLevels[track.id];
+            hasBusEntry = false;
+        bool trackMidiTriggered = hasBusEntry && midiNoteOnTracks.count(track.id) > 0;
+        bool trackMidiNoteOff = hasBusEntry && midiAllNotesOffTracks.count(track.id) > 0;
+        float trackAudioPeak = hasBusEntry ? audioPeakLevels[track.id] : 0.0f;
         bool trackChanged = false;
 
         // Track-level mods (global scope)
@@ -1102,7 +1104,11 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         }
         if (trackChanged)
             tracksNeedingSync.push_back(track.id);
-    }
+    };
+
+    for (auto& track : tracks_)
+        updateTrackMods(track, true);
+    updateTrackMods(masterTrack_, false);
 
     // Notify TE to sync assignment values for tracks where running state changed
     for (auto trackId : tracksNeedingSync) {

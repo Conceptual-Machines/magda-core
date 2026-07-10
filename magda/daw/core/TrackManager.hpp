@@ -271,6 +271,16 @@ class TrackManager {
     const std::vector<TrackInfo>& getTracks() const {
         return tracks_;
     }
+    template <typename Fn> void forEachTrackIncludingMaster(Fn&& fn) {
+        for (auto& track : tracks_)
+            fn(track);
+        fn(masterTrack_);
+    }
+    template <typename Fn> void forEachTrackIncludingMaster(Fn&& fn) const {
+        for (const auto& track : tracks_)
+            fn(track);
+        fn(masterTrack_);
+    }
     TrackInfo* getTrack(TrackId trackId);
     const TrackInfo* getTrack(TrackId trackId) const;
     int getTrackIndex(TrackId trackId) const;

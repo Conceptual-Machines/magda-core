@@ -93,6 +93,32 @@ SidechainUI::SidechainUI() {
     };
     addAndMakeVisible(modeButton_);
 
+    // Stereo gain ducking, or side-only ducking via an M/S round trip.
+    setupSmallLabel(channelLabel_, "CH", this);
+    auto configureChannelButton = [this](juce::TextButton& button, const juce::String& text,
+                                         const juce::String& tooltip, int mode) {
+        button.setButtonText(text);
+        button.setTooltip(tooltip);
+        button.setClickingTogglesState(true);
+        button.setRadioGroupId(0x5343);
+        button.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+        button.setColour(juce::TextButton::buttonColourId,
+                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+        button.setColour(juce::TextButton::buttonOnColourId,
+                         DarkTheme::getAccentColour().withAlpha(0.6f));
+        button.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+        button.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+        button.onClick = [this, mode]() {
+            if (onParameterChanged)
+                onParameterChanged(daw::audio::SidechainPlugin::kChannelModeParamIndex,
+                                   static_cast<float>(mode));
+        };
+        addAndMakeVisible(button);
+    };
+    configureChannelButton(stereoButton_, "ST", "Duck the stereo signal", 0);
+    configureChannelButton(sidesButton_, "SD", "Duck the side channel only", 1);
+    stereoButton_.setToggleState(true, juce::dontSendNotification);
+
     // Attack / release gain smoothing — real plugin params, macro/mod linkable.
     setupSmallLabel(attackLabel_, "ATK", this);
     attackSlider_.setParamIndex(daw::audio::SidechainPlugin::kAttackParamIndex);
@@ -164,12 +190,18 @@ void SidechainUI::refreshFromModel() {
 void SidechainUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     constexpr int attackIdx = daw::audio::SidechainPlugin::kAttackParamIndex;
     constexpr int releaseIdx = daw::audio::SidechainPlugin::kReleaseParamIndex;
+    constexpr int channelModeIdx = daw::audio::SidechainPlugin::kChannelModeParamIndex;
     if (static_cast<int>(params.size()) > attackIdx)
         attackSlider_.setValue(params[static_cast<size_t>(attackIdx)].currentValue,
                                juce::dontSendNotification);
     if (static_cast<int>(params.size()) > releaseIdx)
         releaseSlider_.setValue(params[static_cast<size_t>(releaseIdx)].currentValue,
                                 juce::dontSendNotification);
+    if (static_cast<int>(params.size()) > channelModeIdx) {
+        const bool sides = params[static_cast<size_t>(channelModeIdx)].currentValue >= 0.5f;
+        stereoButton_.setToggleState(!sides, juce::dontSendNotification);
+        sidesButton_.setToggleState(sides, juce::dontSendNotification);
+    }
 }
 
 std::vector<LinkableTextSlider*> SidechainUI::getLinkableSliders() {
@@ -200,7 +232,7 @@ void SidechainUI::resized() {
         curveEditor_.setGridDivisionsY(juce::jlimit(2, 10, squareY));
     }
 
-    const int colWidth = controlRow.getWidth() / 5;
+    const int colWidth = controlRow.getWidth() / 6;
     auto layoutColumn = [&](juce::Label& label, juce::Component& control) {
         auto col = controlRow.removeFromLeft(colWidth).reduced(2, 0);
         label.setBounds(col.removeFromTop(labelHeight));
@@ -209,6 +241,13 @@ void SidechainUI::resized() {
     layoutColumn(depthLabel_, depthSlider_);
     layoutColumn(divisionLabel_, divisionSlider_);
     layoutColumn(modeLabel_, modeButton_);
+    {
+        auto col = controlRow.removeFromLeft(colWidth).reduced(2, 0);
+        channelLabel_.setBounds(col.removeFromTop(labelHeight));
+        auto buttons = col.removeFromTop(controlHeight);
+        stereoButton_.setBounds(buttons.removeFromLeft(buttons.getWidth() / 2));
+        sidesButton_.setBounds(buttons);
+    }
     layoutColumn(attackLabel_, attackSlider_);
     layoutColumn(releaseLabel_, releaseSlider_);
 }

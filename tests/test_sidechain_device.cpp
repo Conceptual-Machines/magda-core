@@ -115,18 +115,42 @@ TEST_CASE("Sidechain device - creation-time mod seeding", "[sidechain][device]")
     }
 }
 
-TEST_CASE("Sidechain device - rejected where its modulator cannot run", "[sidechain][device]") {
+TEST_CASE("Sidechain device - supported locations", "[sidechain][device]") {
     auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
 
     DeviceInfo device;
     device.pluginId = "sidechain";
     device.name = "Sidechain";
     device.format = PluginFormat::Internal;
 
-    SECTION("master track: outside tracks_, so trigger cache and source "
-            "resolution never see it") {
-        REQUIRE(tm.addDeviceToTrack(MASTER_TRACK_ID, device) == INVALID_DEVICE_ID);
-        REQUIRE(tm.addDeviceToTrack(MASTER_TRACK_ID, device, 0) == INVALID_DEVICE_ID);
+    SECTION("master track seeds modifiers and retains its sidechain source") {
+        const auto sourceTrack = tm.createTrack("SC source");
+        REQUIRE(sourceTrack != INVALID_TRACK_ID);
+
+        const auto appendedId = tm.addDeviceToTrack(MASTER_TRACK_ID, device);
+        const auto insertedId = tm.addDeviceToTrack(MASTER_TRACK_ID, device, 0);
+        REQUIRE(appendedId != INVALID_DEVICE_ID);
+        REQUIRE(insertedId != INVALID_DEVICE_ID);
+
+        const auto appendedPath = ChainNodePath::topLevelDevice(MASTER_TRACK_ID, appendedId);
+        const auto insertedPath = ChainNodePath::topLevelDevice(MASTER_TRACK_ID, insertedId);
+        const auto* appended = tm.getDeviceInChainByPath(appendedPath);
+        const auto* inserted = tm.getDeviceInChainByPath(insertedPath);
+        REQUIRE(appended != nullptr);
+        REQUIRE(inserted != nullptr);
+        REQUIRE(appended->mods.size() == 1);
+        REQUIRE(inserted->mods.size() == 1);
+        REQUIRE(
+            appended->mods.front().links.front().target ==
+            ControlTarget::pluginParam(appendedPath, daw::audio::SidechainPlugin::kGainParamIndex));
+
+        tm.setSidechainSource(appendedId, sourceTrack, SidechainConfig::Type::MIDI);
+        appended = tm.getDeviceInChainByPath(appendedPath);
+        REQUIRE(appended->sidechain.sourceTrackId == sourceTrack);
+        REQUIRE(appended->sidechain.type == SidechainConfig::Type::MIDI);
+
+        tm.clearAllTracks();
     }
 
     SECTION("post-fader FX: device mods only sync for main-chain devices") {

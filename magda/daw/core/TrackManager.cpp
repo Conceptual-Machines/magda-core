@@ -1938,14 +1938,6 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             DBG("Cannot add MIDI generator to master track");
             return INVALID_DEVICE_ID;
         }
-        // The Sidechain device cannot work on master: the master lives outside
-        // tracks_, so the modifier sync and the sidechain trigger cache never
-        // see its devices, and setSidechainSource cannot resolve it either.
-        if (track->type == TrackType::Master &&
-            classifyInternalDevice(device.pluginId) == InternalDeviceKind::Sidechain) {
-            DBG("Cannot add Sidechain device to master track");
-            return INVALID_DEVICE_ID;
-        }
         DeviceInfo newDevice = prepareNewDevice(device);
         seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
         track->chain.fxChainElements.push_back(makeDeviceElement(newDevice));
@@ -1968,14 +1960,6 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
         if (track->type == TrackType::Master &&
             (device.deviceType == DeviceType::MIDI || isMidiGeneratorDevice(device.pluginId))) {
             DBG("Cannot add MIDI generator to master track");
-            return INVALID_DEVICE_ID;
-        }
-        // The Sidechain device cannot work on master: the master lives outside
-        // tracks_, so the modifier sync and the sidechain trigger cache never
-        // see its devices, and setSidechainSource cannot resolve it either.
-        if (track->type == TrackType::Master &&
-            classifyInternalDevice(device.pluginId) == InternalDeviceKind::Sidechain) {
-            DBG("Cannot add Sidechain device to master track");
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = prepareNewDevice(device);
