@@ -1586,7 +1586,7 @@ void BottomPanel::updateGridDivisionFace() {
         return;
     gridDivisionButton_->setDivision(gridNumerator_, gridDenominator_);
     gridDivisionButton_->setEnabled(!isAutoGrid_);
-    gridDivisionButton_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+    gridDivisionButton_->setAlpha(isAutoGrid_ ? 0.8f : 1.0f);
 }
 
 void BottomPanel::setGridDivisionFromPicker(int numerator, int denominator) {

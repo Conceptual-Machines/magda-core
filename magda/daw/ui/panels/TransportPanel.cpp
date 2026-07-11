@@ -1024,7 +1024,7 @@ void TransportPanel::setupTempoAndQuantize() {
         gridDenominatorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
         gridDivisionButton->setDivision(gridNumerator, gridDenominator);
         gridDivisionButton->setEnabled(!isAutoGrid);
-        gridDivisionButton->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+        gridDivisionButton->setAlpha(isAutoGrid ? 0.8f : 1.0f);
         if (onGridQuantizeChange)
             onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
     };
@@ -1389,7 +1389,7 @@ void TransportPanel::setGridQuantize(bool autoGrid, int numerator, int denominat
     gridDenominatorLabel->setAlpha(autoGrid ? 0.4f : 1.0f);
     gridDivisionButton->setDivision(numerator, denominator);
     gridDivisionButton->setEnabled(!autoGrid);
-    gridDivisionButton->setAlpha(autoGrid ? 0.4f : 1.0f);
+    gridDivisionButton->setAlpha(autoGrid ? 0.8f : 1.0f);
 }
 
 void TransportPanel::setSnapEnabled(bool enabled) {
