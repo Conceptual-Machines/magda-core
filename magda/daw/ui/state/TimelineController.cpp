@@ -1,9 +1,9 @@
 #include "TimelineController.hpp"
 
 #include <algorithm>
-#include <numeric>
 
 #include "../../core/ClipManager.hpp"
+#include "../../core/GridDivision.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
@@ -990,11 +990,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQua
         }
     }
 
-    newNum = juce::jlimit(1, 999, newNum);
-    newDen = juce::jlimit(1, 64, newDen);
-    const int divisor = std::gcd(newNum, newDen);
-    newNum /= divisor;
-    newDen /= divisor;
+    const auto [normalisedNum, normalisedDen] = grid::normaliseFraction(newNum, newDen);
+    newNum = normalisedNum;
+    newDen = normalisedDen;
 
     if (gq.autoGrid == e.autoGrid && gq.numerator == newNum && gq.denominator == newDen) {
         return ChangeFlags::None;

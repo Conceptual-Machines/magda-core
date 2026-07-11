@@ -322,8 +322,8 @@ void TransportPanel::resized() {
     selectionEndLabel->setVisible(selLoopTimesVisible_);
     loopStartLabel->setVisible(selLoopTimesVisible_);
     loopEndLabel->setVisible(selLoopTimesVisible_);
-    gridNumeratorLabel->setVisible(gridVisible_);
-    gridDenominatorLabel->setVisible(gridVisible_);
+    gridNumeratorLabel->setVisible(false);
+    gridDenominatorLabel->setVisible(false);
     gridDivisionButton->setVisible(gridVisible_);
     autoGridButton->setVisible(gridVisible_);
     snapButton->setVisible(gridVisible_);
@@ -434,8 +434,6 @@ void TransportPanel::resized() {
         const int btnWidth = 44;
         int gridX = x + 6;
         gridDivisionButton->setBounds(gridX, rowY1, 56, rowHeight * 2 + 2);
-        gridNumeratorLabel->setBounds(0, 0, 0, 0);
-        gridDenominatorLabel->setBounds(0, 0, 0, 0);
         const int gridBtnX = gridX + 56 + gridGap;
         autoGridButton->setBounds(gridBtnX, rowY1, btnWidth, rowHeight);
         snapButton->setBounds(gridBtnX, rowY2, btnWidth, rowHeight);
@@ -1103,7 +1101,7 @@ void TransportPanel::setupTempoAndQuantize() {
         daw::ui::showGridDivisionMenu(
             *gridDivisionButton, gridNumerator, gridDenominator,
             [this](int numerator, int denominator) {
-                const auto [num, den] = daw::ui::normaliseGridDivision(numerator, denominator);
+                const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
                 gridNumerator = num;
                 gridDenominator = den;
                 gridNumeratorLabel->setValue(num, juce::dontSendNotification);

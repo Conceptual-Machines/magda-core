@@ -5,12 +5,11 @@
 #include <array>
 #include <cmath>
 #include <functional>
-#include <numeric>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
-#include "DraggableValueLabel.hpp"
+#include "core/GridDivision.hpp"
 
 namespace magda::daw::ui {
 
@@ -40,15 +39,8 @@ inline constexpr std::array<GridDivision, 15> kStandardGridDivisions{{
     {"1/32.", 3, 64},
 }};
 
-inline std::pair<int, int> normaliseGridDivision(int numerator, int denominator) {
-    numerator = juce::jlimit(1, 999, numerator);
-    denominator = juce::jlimit(1, 64, denominator);
-    const int divisor = std::gcd(numerator, denominator);
-    return {numerator / divisor, denominator / divisor};
-}
-
 inline juce::String gridDivisionLabel(int numerator, int denominator) {
-    const auto [num, den] = normaliseGridDivision(numerator, denominator);
+    const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
     for (const auto& division : kStandardGridDivisions)
         if (division.numerator == num && division.denominator == den)
             return division.label;
@@ -56,7 +48,7 @@ inline juce::String gridDivisionLabel(int numerator, int denominator) {
 }
 
 inline juce::String nearestGridDivisionLabel(int numerator, int denominator) {
-    const auto [num, den] = normaliseGridDivision(numerator, denominator);
+    const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
     const double value = static_cast<double>(num) / den;
     const GridDivision* nearest = &kStandardGridDivisions.front();
     double distance =
@@ -82,7 +74,7 @@ class GridDivisionButton final : public juce::Button {
     }
 
     void setDivision(int numerator, int denominator) {
-        const auto [num, den] = normaliseGridDivision(numerator, denominator);
+        const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
         if (numerator_ == num && denominator_ == den)
             return;
         numerator_ = num;
@@ -164,7 +156,7 @@ class GridDivisionCustomEditor final : public juce::Component {
         numerator_ = std::make_unique<juce::TextEditor>();
         denominator_ = std::make_unique<juce::TextEditor>();
         for (auto* control : {numerator_.get(), denominator_.get()}) {
-            control->setInputRestrictions(3, "");
+            control->setInputRestrictions(3, "0123456789");
             control->setJustification(juce::Justification::centred);
             control->setFont(FontManager::getInstance().getUIFont(12.0f));
             control->setColour(juce::TextEditor::textColourId,
@@ -175,7 +167,7 @@ class GridDivisionCustomEditor final : public juce::Component {
                                DarkTheme::getColour(DarkTheme::BORDER));
             addAndMakeVisible(control);
         }
-        const auto [num, den] = normaliseGridDivision(numerator, denominator);
+        const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
         lastNumerator_ = num;
         lastDenominator_ = den;
         numerator_->setText(juce::String(num), false);
@@ -193,7 +185,7 @@ class GridDivisionCustomEditor final : public juce::Component {
         hint_.setFont(FontManager::getInstance().getUIFont(11.0f));
         hint_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
         addAndMakeVisible(hint_);
-        changed();
+        refreshHint();
     }
 
     void resized() override {
@@ -227,16 +219,23 @@ class GridDivisionCustomEditor final : public juce::Component {
             }
             return juce::jlimit(1, maximum, value);
         };
-        const int enteredNum = parseOrRestore(*numerator_, lastNumerator_, 999);
-        const int enteredDen = parseOrRestore(*denominator_, lastDenominator_, 64);
-        const auto [num, den] = normaliseGridDivision(enteredNum, enteredDen);
+        const int enteredNum =
+            parseOrRestore(*numerator_, lastNumerator_, magda::grid::maxNumerator);
+        const int enteredDen =
+            parseOrRestore(*denominator_, lastDenominator_, magda::grid::maxDenominator);
+        const auto [num, den] = magda::grid::normaliseFraction(enteredNum, enteredDen);
         lastNumerator_ = num;
         lastDenominator_ = den;
         numerator_->setText(juce::String(num), false);
         denominator_->setText(juce::String(den), false);
-        hint_.setText("Nearest: " + nearestGridDivisionLabel(num, den), juce::dontSendNotification);
+        refreshHint();
         if (onChanged_)
             onChanged_(num, den);
+    }
+
+    void refreshHint() {
+        hint_.setText("Nearest: " + nearestGridDivisionLabel(lastNumerator_, lastDenominator_),
+                      juce::dontSendNotification);
     }
 };
 

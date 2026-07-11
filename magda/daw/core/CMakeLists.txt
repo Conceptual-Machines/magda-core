@@ -72,6 +72,7 @@ target_sources(magda_daw PRIVATE
     controllers/MidiLearnCoordinator.cpp
     # Headers (listed for IDE visibility)
     Config.hpp
+    GridDivision.hpp
     AppPaths.hpp
     UIScale.hpp
     DeviceInfo.hpp

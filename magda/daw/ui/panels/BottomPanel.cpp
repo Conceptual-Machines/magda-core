@@ -1291,9 +1291,11 @@ void BottomPanel::syncHeaderVisibility(daw::ui::PanelContent* content) {
 }
 
 void BottomPanel::addMidiControlsToHeader() {
-    gridNumeratorLabel_->setVisible(true);
-    gridSlashLabel_->setVisible(true);
-    gridDenominatorLabel_->setVisible(true);
+    // The legacy numeric labels retain the backing state for the picker but
+    // never appear in the header; GridDivisionButton is the sole face.
+    gridNumeratorLabel_->setVisible(false);
+    gridSlashLabel_->setVisible(false);
+    gridDenominatorLabel_->setVisible(false);
     gridDivisionButton_->setVisible(true);
     autoGridButton_->setVisible(true);
     snapButton_->setVisible(true);
@@ -1429,9 +1431,6 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     x -= 4;
     x -= 64;
     gridDivisionButton_->setBounds(x, y + vPad, 64, h - vPad * 2);
-    gridNumeratorLabel_->setVisible(false);
-    gridSlashLabel_->setVisible(false);
-    gridDenominatorLabel_->setVisible(false);
     // ABS/REL toggle: only shown for MIDI editors, so only reserve its slot when
     // visible (otherwise the audio editor would show a gap left of num/den).
     if (timeModeButton_->isVisible()) {
@@ -1656,7 +1655,7 @@ void BottomPanel::updateGridDivisionFace() {
 }
 
 void BottomPanel::setGridDivisionFromPicker(int numerator, int denominator) {
-    const auto [num, den] = daw::ui::normaliseGridDivision(numerator, denominator);
+    const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
     gridNumerator_ = num;
     gridDenominator_ = den;
     gridNumeratorLabel_->setValue(num, juce::dontSendNotification);

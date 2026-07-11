@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "../magda/daw/core/GridDivision.hpp"
 #include "../magda/daw/ui/components/common/GridDivisionMenu.hpp"
 #include "../magda/daw/ui/state/TimelineController.hpp"
 #include "../magda/daw/ui/state/TimelineEvents.hpp"
@@ -18,10 +19,9 @@ TEST_CASE("Grid division labels use reduced stored fractions", "[grid_constants]
 
 TEST_CASE("Grid division normalisation clamps and reduces custom values",
           "[grid_constants][grid_division]") {
-    using namespace magda::daw::ui;
-    REQUIRE(normaliseGridDivision(4, 2) == std::pair{2, 1});
-    REQUIRE(normaliseGridDivision(0, 0) == std::pair{1, 1});
-    REQUIRE(normaliseGridDivision(2000, 128) == std::pair{999, 64});
+    REQUIRE(magda::grid::normaliseFraction(4, 2) == std::pair{2, 1});
+    REQUIRE(magda::grid::normaliseFraction(0, 0) == std::pair{1, 1});
+    REQUIRE(magda::grid::normaliseFraction(2000, 128) == std::pair{999, 64});
 }
 
 // ============================================================================

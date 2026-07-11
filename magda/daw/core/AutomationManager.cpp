@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
-#include <numeric>
 
 #include "ClipLaneFlattener.hpp"
 #include "CurveMath.hpp"
+#include "GridDivision.hpp"
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
 #include "TrackManager.hpp"
@@ -786,12 +786,10 @@ void AutomationManager::setClipLoopLength(AutomationClipId clipId, double length
 void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int numerator,
                                      int denominator) {
     if (auto* clip = getClip(clipId)) {
-        numerator = juce::jlimit(1, 999, numerator);
-        denominator = juce::jlimit(1, 64, denominator);
-        const int divisor = std::gcd(numerator, denominator);
+        const auto [num, den] = grid::normaliseFraction(numerator, denominator);
         clip->snapXEnabled = enabled;
-        clip->snapXNumerator = numerator / divisor;
-        clip->snapXDenominator = denominator / divisor;
+        clip->snapXNumerator = num;
+        clip->snapXDenominator = den;
         notifyClipsChanged(clip->laneId);
     }
 }
@@ -799,12 +797,10 @@ void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int 
 void AutomationManager::setClipSnapY(AutomationClipId clipId, bool enabled, int numerator,
                                      int denominator) {
     if (auto* clip = getClip(clipId)) {
-        numerator = juce::jlimit(1, 999, numerator);
-        denominator = juce::jlimit(1, 64, denominator);
-        const int divisor = std::gcd(numerator, denominator);
+        const auto [num, den] = grid::normaliseFraction(numerator, denominator);
         clip->snapYEnabled = enabled;
-        clip->snapYNumerator = numerator / divisor;
-        clip->snapYDenominator = denominator / divisor;
+        clip->snapYNumerator = num;
+        clip->snapYDenominator = den;
         notifyClipsChanged(clip->laneId);
     }
 }
