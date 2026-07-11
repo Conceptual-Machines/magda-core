@@ -1,6 +1,7 @@
 #include "BottomPanel.hpp"
 
 #include "../components/common/DraggableValueLabel.hpp"
+#include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
@@ -357,6 +358,7 @@ void BottomPanel::setupHeaderControls() {
     gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridNumeratorLabel_->onValueChange = [this]() {
         gridNumerator_ = static_cast<int>(std::round(gridNumeratorLabel_->getValue()));
+        updateGridDivisionFace();
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
@@ -411,6 +413,7 @@ void BottomPanel::setupHeaderControls() {
         gridDenominator_ = best;
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
+        updateGridDivisionFace();
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
@@ -423,6 +426,20 @@ void BottomPanel::setupHeaderControls() {
         }
     };
     headerBar_->addChildComponent(gridDenominatorLabel_.get());
+
+    // A musical-notation view over the stored numerator/denominator pair.
+    // The numeric controls stay as the custom editor's implementation detail;
+    // this is the only collapsed face in the header.
+    gridDivisionButton_ = std::make_unique<daw::ui::GridDivisionButton>();
+    gridDivisionButton_->setTooltip("Grid division");
+    gridDivisionButton_->onClick = [this]() {
+        daw::ui::showGridDivisionMenu(*gridDivisionButton_, gridNumerator_, gridDenominator_,
+                                      [this](int numerator, int denominator) {
+                                          setGridDivisionFromPicker(numerator, denominator);
+                                      });
+    };
+    headerBar_->addChildComponent(gridDivisionButton_.get());
+    updateGridDivisionFace();
 
     // AUTO toggle
     autoGridButton_ = std::make_unique<juce::TextButton>("AUTO");
@@ -447,6 +464,7 @@ void BottomPanel::setupHeaderControls() {
         gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+        updateGridDivisionFace();
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
@@ -1231,6 +1249,7 @@ void BottomPanel::addMidiControlsToHeader() {
     gridNumeratorLabel_->setVisible(true);
     gridSlashLabel_->setVisible(true);
     gridDenominatorLabel_->setVisible(true);
+    gridDivisionButton_->setVisible(true);
     autoGridButton_->setVisible(true);
     snapButton_->setVisible(true);
     loopButton_->setVisible(true);
@@ -1266,6 +1285,8 @@ void BottomPanel::hideMidiHeaderControls() {
     gridNumeratorLabel_->setVisible(false);
     gridSlashLabel_->setVisible(false);
     gridDenominatorLabel_->setVisible(false);
+    if (gridDivisionButton_)
+        gridDivisionButton_->setVisible(false);
     autoGridButton_->setVisible(false);
     snapButton_->setVisible(false);
     if (loopButton_)
@@ -1339,12 +1360,11 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     x -= 36;
     autoGridButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
     x -= 4;
-    x -= 24;
-    gridDenominatorLabel_->setBounds(x, y + vPad, 24, h - vPad * 2);
-    x -= 8;
-    gridSlashLabel_->setBounds(x, y, 8, h);
-    x -= 24;
-    gridNumeratorLabel_->setBounds(x, y + vPad, 24, h - vPad * 2);
+    x -= 64;
+    gridDivisionButton_->setBounds(x, y + vPad, 64, h - vPad * 2);
+    gridNumeratorLabel_->setVisible(false);
+    gridSlashLabel_->setVisible(false);
+    gridDenominatorLabel_->setVisible(false);
     // ABS/REL toggle: only shown for MIDI editors, so only reserve its slot when
     // visible (otherwise the audio editor would show a gap left of num/den).
     if (timeModeButton_->isVisible()) {
@@ -1557,6 +1577,30 @@ void BottomPanel::syncGridControlsFromContent() {
     gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+    updateGridDivisionFace();
+}
+
+void BottomPanel::updateGridDivisionFace() {
+    if (!gridDivisionButton_)
+        return;
+    gridDivisionButton_->setDivision(gridNumerator_, gridDenominator_);
+    gridDivisionButton_->setEnabled(!isAutoGrid_);
+    gridDivisionButton_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+}
+
+void BottomPanel::setGridDivisionFromPicker(int numerator, int denominator) {
+    const auto [num, den] = daw::ui::normaliseGridDivision(numerator, denominator);
+    gridNumerator_ = num;
+    gridDenominator_ = den;
+    gridNumeratorLabel_->setValue(num, juce::dontSendNotification);
+    gridDenominatorLabel_->setValue(den, juce::dontSendNotification);
+    updateGridDivisionFace();
+    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent());
+        midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+        midiEditor->setGridSettingsFromUI(isAutoGrid_, num, den);
+    } else if (auto* controller = TimelineController::getCurrent()) {
+        controller->dispatch(SetGridQuantizeEvent{isAutoGrid_, num, den});
+    }
 }
 
 void BottomPanel::syncGridStateFromTimeline() {

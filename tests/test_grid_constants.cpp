@@ -1,12 +1,28 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "../magda/daw/ui/components/common/GridDivisionMenu.hpp"
 #include "../magda/daw/ui/state/TimelineController.hpp"
 #include "../magda/daw/ui/state/TimelineEvents.hpp"
 #include "../magda/daw/ui/state/TimelineState.hpp"
 
 using magda::GridConstants;
 using magda::GridQuantize;
+
+TEST_CASE("Grid division labels use reduced stored fractions", "[grid_constants][grid_division]") {
+    using namespace magda::daw::ui;
+    REQUIRE(gridDivisionLabel(4, 16) == "1/4");
+    REQUIRE(gridDivisionLabel(2, 12) == "1/4T");
+    REQUIRE(gridDivisionLabel(32, 3) == "32 / 3");
+}
+
+TEST_CASE("Grid division normalisation clamps and reduces custom values",
+          "[grid_constants][grid_division]") {
+    using namespace magda::daw::ui;
+    REQUIRE(normaliseGridDivision(4, 2) == std::pair{2, 1});
+    REQUIRE(normaliseGridDivision(0, 0) == std::pair{1, 1});
+    REQUIRE(normaliseGridDivision(2000, 128) == std::pair{999, 64});
+}
 
 // ============================================================================
 // gridAlignsWithBars

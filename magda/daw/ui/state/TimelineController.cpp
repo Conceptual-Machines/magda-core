@@ -1,6 +1,7 @@
 #include "TimelineController.hpp"
 
 #include <algorithm>
+#include <numeric>
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/TempoUtils.hpp"
@@ -988,6 +989,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQua
             newDen = 1;
         }
     }
+
+    newNum = juce::jlimit(1, 999, newNum);
+    newDen = juce::jlimit(1, 64, newDen);
+    const int divisor = std::gcd(newNum, newDen);
+    newNum /= divisor;
+    newDen /= divisor;
 
     if (gq.autoGrid == e.autoGrid && gq.numerator == newNum && gq.denominator == newDen) {
         return ChangeFlags::None;

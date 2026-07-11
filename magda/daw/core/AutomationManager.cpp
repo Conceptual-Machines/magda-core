@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <numeric>
 
 #include "ClipLaneFlattener.hpp"
 #include "CurveMath.hpp"
@@ -785,9 +786,12 @@ void AutomationManager::setClipLoopLength(AutomationClipId clipId, double length
 void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int numerator,
                                      int denominator) {
     if (auto* clip = getClip(clipId)) {
+        numerator = juce::jlimit(1, 999, numerator);
+        denominator = juce::jlimit(1, 64, denominator);
+        const int divisor = std::gcd(numerator, denominator);
         clip->snapXEnabled = enabled;
-        clip->snapXNumerator = juce::jmax(1, numerator);
-        clip->snapXDenominator = juce::jmax(1, denominator);
+        clip->snapXNumerator = numerator / divisor;
+        clip->snapXDenominator = denominator / divisor;
         notifyClipsChanged(clip->laneId);
     }
 }
@@ -795,9 +799,12 @@ void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int 
 void AutomationManager::setClipSnapY(AutomationClipId clipId, bool enabled, int numerator,
                                      int denominator) {
     if (auto* clip = getClip(clipId)) {
+        numerator = juce::jlimit(1, 999, numerator);
+        denominator = juce::jlimit(1, 64, denominator);
+        const int divisor = std::gcd(numerator, denominator);
         clip->snapYEnabled = enabled;
-        clip->snapYNumerator = juce::jmax(1, numerator);
-        clip->snapYDenominator = juce::jmax(1, denominator);
+        clip->snapYNumerator = numerator / divisor;
+        clip->snapYDenominator = denominator / divisor;
         notifyClipsChanged(clip->laneId);
     }
 }

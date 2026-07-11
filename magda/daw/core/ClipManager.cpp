@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numeric>
 #include <unordered_map>
 
 #include "../project/ProjectManager.hpp"
@@ -2485,9 +2486,12 @@ void ClipManager::setRightChannelActive(ClipId clipId, bool active) {
 void ClipManager::setClipGridSettings(ClipId clipId, bool autoGrid, int numerator,
                                       int denominator) {
     if (auto* clip = getClip(clipId)) {
+        numerator = juce::jlimit(1, 999, numerator);
+        denominator = juce::jlimit(1, 64, denominator);
+        const int divisor = std::gcd(numerator, denominator);
         clip->gridAutoGrid = autoGrid;
-        clip->gridNumerator = numerator;
-        clip->gridDenominator = denominator;
+        clip->gridNumerator = numerator / divisor;
+        clip->gridDenominator = denominator / divisor;
         notifyClipPropertyChanged(clipId);
     }
 }

@@ -7,6 +7,7 @@
 #include "../../audio/automation/AutomationRecordingEngine.hpp"  // for AutomationMode
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
+#include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "core/MixAnalysisService.hpp"
 #include "core/TempoUtils.hpp"
@@ -174,6 +175,7 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     std::unique_ptr<DraggableValueLabel> gridNumeratorLabel;
     std::unique_ptr<DraggableValueLabel> gridDenominatorLabel;
     std::unique_ptr<juce::Label> gridSlashLabel;
+    std::unique_ptr<daw::ui::GridDivisionButton> gridDivisionButton;
 
     // Metronome, snap, time signature
     std::unique_ptr<SvgButton> metronomeButton;

@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "../../components/common/GridDivisionMenu.hpp"
 #include "../../components/waveform/ClipWaveformPainter.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -140,6 +141,31 @@ void AutomationClipEditorContent::buildHeaderControls() {
     makeSlash(snapYSlash_);
     snapYDen_ = makeNumLabel(32.0, 8.0);
 
+    const auto makeDivisionButton = [this]() {
+        auto button = std::make_unique<GridDivisionButton>();
+        button->setTooltip("Snap division");
+        addChildComponent(button.get());
+        return button;
+    };
+    snapXDivision_ = makeDivisionButton();
+    snapYDivision_ = makeDivisionButton();
+    snapXDivision_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            showGridDivisionMenu(*snapXDivision_, clip->snapXNumerator, clip->snapXDenominator,
+                                 [clipId = clip->id](int numerator, int denominator) {
+                                     AutomationManager::getInstance().setClipSnapX(
+                                         clipId, true, numerator, denominator);
+                                 });
+    };
+    snapYDivision_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            showGridDivisionMenu(*snapYDivision_, clip->snapYNumerator, clip->snapYDenominator,
+                                 [clipId = clip->id](int numerator, int denominator) {
+                                     AutomationManager::getInstance().setClipSnapY(
+                                         clipId, true, numerator, denominator);
+                                 });
+    };
+
     // Track content ghost toggle — the MIDI editor's layer icon.
     ghostButton_ = std::make_unique<magda::SvgButton>("TrackGhost", BinaryData::stacks_svg,
                                                       BinaryData::stacks_svgSize);
@@ -192,13 +218,9 @@ void AutomationClipEditorContent::buildHeaderControls() {
 
 void AutomationClipEditorContent::populateHeader(juce::Component& headerBar) {
     for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
-                               static_cast<juce::Component*>(snapXNum_.get()),
-                               static_cast<juce::Component*>(&snapXSlash_),
-                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapXDivision_.get()),
                                static_cast<juce::Component*>(snapYButton_.get()),
-                               static_cast<juce::Component*>(snapYNum_.get()),
-                               static_cast<juce::Component*>(&snapYSlash_),
-                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(snapYDivision_.get()),
                                static_cast<juce::Component*>(ghostButton_.get())})
         headerBar.addAndMakeVisible(c);
     syncSnapControls();
@@ -207,13 +229,9 @@ void AutomationClipEditorContent::populateHeader(juce::Component& headerBar) {
 void AutomationClipEditorContent::depopulateHeader(juce::Component& headerBar) {
     juce::ignoreUnused(headerBar);
     for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
-                               static_cast<juce::Component*>(snapXNum_.get()),
-                               static_cast<juce::Component*>(&snapXSlash_),
-                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapXDivision_.get()),
                                static_cast<juce::Component*>(snapYButton_.get()),
-                               static_cast<juce::Component*>(snapYNum_.get()),
-                               static_cast<juce::Component*>(&snapYSlash_),
-                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(snapYDivision_.get()),
                                static_cast<juce::Component*>(ghostButton_.get())})
         addChildComponent(c);
 }
@@ -228,23 +246,15 @@ void AutomationClipEditorContent::layoutHeader(juce::Rectangle<int> headerBounds
     ghostButton_->setBounds(headerBounds.getX() + 40, y, h, h);
 
     int x = area.getRight();
-    // Rightmost group: SNAP Y [n]/[d]
-    x -= 24;
-    snapYDen_->setBounds(x, y, 24, h);
-    x -= 8;
-    snapYSlash_.setBounds(x, area.getY(), 8, area.getHeight());
-    x -= 24;
-    snapYNum_->setBounds(x, y, 24, h);
+    // Rightmost group: SNAP Y [division]
+    x -= 56;
+    snapYDivision_->setBounds(x, y, 56, h);
     x -= 52;
     snapYButton_->setBounds(x, y, 48, h);
     x -= 16;
-    // Left group: SNAP X [n]/[d]
-    x -= 24;
-    snapXDen_->setBounds(x, y, 24, h);
-    x -= 8;
-    snapXSlash_.setBounds(x, area.getY(), 8, area.getHeight());
-    x -= 24;
-    snapXNum_->setBounds(x, y, 24, h);
+    // Left group: SNAP X [division]
+    x -= 56;
+    snapXDivision_->setBounds(x, y, 56, h);
     x -= 52;
     snapXButton_->setBounds(x, y, 48, h);
 }
@@ -263,6 +273,8 @@ void AutomationClipEditorContent::syncSnapControls() {
         snapYNum_->setValue(clip->snapYNumerator, juce::dontSendNotification);
     if (!snapYDen_->isDragging())
         snapYDen_->setValue(clip->snapYDenominator, juce::dontSendNotification);
+    snapXDivision_->setDivision(clip->snapXNumerator, clip->snapXDenominator);
+    snapYDivision_->setDivision(clip->snapYNumerator, clip->snapYDenominator);
     const auto dim = [](juce::Component& c, bool on) {
         c.setEnabled(on);
         c.setAlpha(on ? 1.0f : 0.6f);
@@ -270,9 +282,11 @@ void AutomationClipEditorContent::syncSnapControls() {
     dim(*snapXNum_, clip->snapXEnabled);
     dim(*snapXDen_, clip->snapXEnabled);
     dim(snapXSlash_, clip->snapXEnabled);
+    dim(*snapXDivision_, clip->snapXEnabled);
     dim(*snapYNum_, clip->snapYEnabled);
     dim(*snapYDen_, clip->snapYEnabled);
     dim(snapYSlash_, clip->snapYEnabled);
+    dim(*snapYDivision_, clip->snapYEnabled);
 }
 
 AutomationClipEditorContent::~AutomationClipEditorContent() {

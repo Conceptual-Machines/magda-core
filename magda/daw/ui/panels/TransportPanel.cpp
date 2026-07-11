@@ -1,6 +1,7 @@
 #include "TransportPanel.hpp"
 
 #include "../../audio/midi/QwertyMidiKeyboard.hpp"
+#include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/QwertyKeyboardPopup.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
@@ -165,9 +166,8 @@ void TransportPanel::paint(juce::Graphics& g) {
                          .getUnion(metronomeButton->getBounds()),
                      "", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     if (gridVisible_) {
-        drawGroupWrapper(
-            gridNumeratorLabel->getBounds().getUnion(gridDenominatorLabel->getBounds()), "",
-            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        drawGroupWrapper(gridDivisionButton->getBounds(), "",
+                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
         drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     }
@@ -324,6 +324,7 @@ void TransportPanel::resized() {
     loopEndLabel->setVisible(selLoopTimesVisible_);
     gridNumeratorLabel->setVisible(gridVisible_);
     gridDenominatorLabel->setVisible(gridVisible_);
+    gridDivisionButton->setVisible(gridVisible_);
     autoGridButton->setVisible(gridVisible_);
     snapButton->setVisible(gridVisible_);
 
@@ -429,13 +430,13 @@ void TransportPanel::resized() {
     // Grid quantize cluster
     int gridRight = x;
     if (gridVisible_) {
-        const int numDenWidth = 30;
         const int gridGap = 4;
         const int btnWidth = 44;
         int gridX = x + 6;
-        gridNumeratorLabel->setBounds(gridX, rowY1, numDenWidth, rowHeight);
-        gridDenominatorLabel->setBounds(gridX, rowY2, numDenWidth, rowHeight);
-        const int gridBtnX = gridX + numDenWidth + gridGap;
+        gridDivisionButton->setBounds(gridX, rowY1, 56, rowHeight * 2 + 2);
+        gridNumeratorLabel->setBounds(0, 0, 0, 0);
+        gridDenominatorLabel->setBounds(0, 0, 0, 0);
+        const int gridBtnX = gridX + 56 + gridGap;
         autoGridButton->setBounds(gridBtnX, rowY1, btnWidth, rowHeight);
         snapButton->setBounds(gridBtnX, rowY2, btnWidth, rowHeight);
         gridRight = gridBtnX + btnWidth;
@@ -1021,6 +1022,9 @@ void TransportPanel::setupTempoAndQuantize() {
         gridDenominatorLabel->setEnabled(!isAutoGrid);
         gridNumeratorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
         gridDenominatorLabel->setAlpha(isAutoGrid ? 0.4f : 1.0f);
+        gridDivisionButton->setDivision(gridNumerator, gridDenominator);
+        gridDivisionButton->setEnabled(!isAutoGrid);
+        gridDivisionButton->setAlpha(isAutoGrid ? 0.4f : 1.0f);
         if (onGridQuantizeChange)
             onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
     };
@@ -1091,6 +1095,25 @@ void TransportPanel::setupTempoAndQuantize() {
             onGridQuantizeChange(isAutoGrid, gridNumerator, gridDenominator);
     };
     addAndMakeVisible(*gridDenominatorLabel);
+
+    gridDivisionButton = std::make_unique<daw::ui::GridDivisionButton>();
+    gridDivisionButton->setTooltip("Grid division");
+    gridDivisionButton->setDivision(gridNumerator, gridDenominator);
+    gridDivisionButton->onClick = [this]() {
+        daw::ui::showGridDivisionMenu(
+            *gridDivisionButton, gridNumerator, gridDenominator,
+            [this](int numerator, int denominator) {
+                const auto [num, den] = daw::ui::normaliseGridDivision(numerator, denominator);
+                gridNumerator = num;
+                gridDenominator = den;
+                gridNumeratorLabel->setValue(num, juce::dontSendNotification);
+                gridDenominatorLabel->setValue(den, juce::dontSendNotification);
+                gridDivisionButton->setDivision(num, den);
+                if (!isAutoGrid && onGridQuantizeChange)
+                    onGridQuantizeChange(false, num, den);
+            });
+    };
+    addAndMakeVisible(*gridDivisionButton);
 
     // Metronome button
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
@@ -1364,6 +1387,9 @@ void TransportPanel::setGridQuantize(bool autoGrid, int numerator, int denominat
     gridDenominatorLabel->setEnabled(!autoGrid);
     gridNumeratorLabel->setAlpha(autoGrid ? 0.4f : 1.0f);
     gridDenominatorLabel->setAlpha(autoGrid ? 0.4f : 1.0f);
+    gridDivisionButton->setDivision(numerator, denominator);
+    gridDivisionButton->setEnabled(!autoGrid);
+    gridDivisionButton->setAlpha(autoGrid ? 0.4f : 1.0f);
 }
 
 void TransportPanel::setSnapEnabled(bool enabled) {
