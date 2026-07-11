@@ -476,6 +476,14 @@ void ClipComponent::paint(juce::Graphics& g) {
                                CORNER_RADIUS);
     }
 
+    // Disabled overlay (#1736) — heavier than the ghost treatment and the
+    // frozen/session dims, and it covers the header too, so a disabled clip
+    // reads as "off" at a glance (ghosts keep a full-colour header).
+    if (!clip->enabled) {
+        fillClippedRoundedRect(g, bounds, visibleBounds, juce::Colours::black.withAlpha(0.55f),
+                               CORNER_RADIUS);
+    }
+
     // Frozen overlay — dim clip on frozen tracks
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
     if (trackInfo && trackInfo->frozen) {
@@ -3194,6 +3202,10 @@ void ClipComponent::showContextMenu() {
         }
     }
 
+    // Enable/disable (#1736): disabled clips do not play.
+    if (clipForMenu)
+        menu.addItem(27, clipForMenu->enabled ? "Disable Clip" : "Enable Clip", canEdit);
+
     // Delete
     menu.addItem(6, "Delete", canEdit);
     menu.addSeparator();
@@ -3506,6 +3518,35 @@ void ClipComponent::showContextMenu() {
                     undoManager.beginCompoundOperation("Make Clips Unique");
                 for (auto cid : targets)
                     undoManager.executeCommand(std::make_unique<MakeClipUniqueCommand>(cid));
+                if (compound)
+                    undoManager.endCompoundOperation();
+                break;
+            }
+
+            case 27: {  // Enable/Disable Clip(s) (#1736)
+                std::vector<ClipId> targets;
+                if (selectionManager.getSelectedClipCount() > 1 &&
+                    selectionManager.isClipSelected(clipId_)) {
+                    for (auto cid : selectionManager.getSelectedClips())
+                        targets.push_back(cid);
+                } else {
+                    targets.push_back(clipId_);
+                }
+                auto& undoManager = UndoManager::getInstance();
+                const bool compound = targets.size() > 1;
+                if (compound)
+                    undoManager.beginCompoundOperation("Enable/Disable Clips");
+                for (auto cid : targets) {
+                    const auto* c = clipManager.getClip(cid);
+                    if (!c)
+                        continue;
+                    const bool newState = !c->enabled;
+                    undoManager.executeCommand(std::make_unique<SetClipPropertyCommand>(
+                        cid, newState ? "Enable Clip" : "Disable Clip",
+                        [newState](auto& manager, ClipId id) {
+                            manager.setClipEnabled(id, newState);
+                        }));
+                }
                 if (compound)
                     undoManager.endCompoundOperation();
                 break;

@@ -310,6 +310,8 @@ class ClipManager {
 
     void setClipName(ClipId clipId, const juce::String& name);
     void setClipColour(ClipId clipId, juce::Colour colour);
+    /** @brief Enable/disable a clip (#1736). Disabled clips do not play. */
+    void setClipEnabled(ClipId clipId, bool enabled);
     void setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM = 120.0);
     void setClipMidiOffset(ClipId clipId, double offsetBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);

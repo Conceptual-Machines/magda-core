@@ -1319,10 +1319,11 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
         }
 
         if (loaded) {
-            // Apply bypass state
+            // Apply bypass state (device flag gated by the track chain power)
             plugin->setEnabled(true);
             if (auto* devInfo = getDeviceInfoForPath(devicePath)) {
-                plugin->setEnabled(!devInfo->bypassed);
+                plugin->setEnabled(
+                    TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath, *devInfo));
             }
 
             // Apply an imported .vstpreset (DAWproject device state) now that the
@@ -1372,7 +1373,9 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
                     }
 
                     if (rackPlugin) {
-                        rackPlugin->setEnabled(!devInfo->bypassed);
+                        rackPlugin->setEnabled(
+                            TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath,
+                                                                                   *devInfo));
 
                         // Insert the rack instance back at the original position
                         if (track)
@@ -1941,8 +1944,6 @@ void PluginManager::syncMasterPlugins() {
 // =============================================================================
 
 te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInfo& device) {
-    juce::ignoreUnused(trackId);
-
     te::Plugin::Ptr plugin;
 
     if (device.format == PluginFormat::Internal) {
@@ -2049,7 +2050,9 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
     }
 
     if (plugin) {
-        plugin->setEnabled(!device.bypassed);
+        // Rack inner devices always live in the insert chain, so the chain
+        // power gates them (no full path available here, only the track).
+        plugin->setEnabled(!device.bypassed && TrackManager::getInstance().isChainEnabled(trackId));
     }
 
     return plugin;
@@ -2319,8 +2322,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             syncedDevices_[devicePath].processor = std::move(processor);
         }
 
-        // Apply device state
-        plugin->setEnabled(!device.bypassed);
+        // Apply device state (device flag gated by the track chain power)
+        plugin->setEnabled(
+            TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath, device));
         daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
         // Wrap instruments in a RackType with audio passthrough so both synth
@@ -2356,7 +2360,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             }
 
             if (rackPlugin) {
-                rackPlugin->setEnabled(!device.bypassed);
+                rackPlugin->setEnabled(
+                    TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath, device));
 
                 // Insert the rack instance back on the track at the original position
                 track->pluginList.insertPlugin(rackPlugin, pluginIdx, nullptr);

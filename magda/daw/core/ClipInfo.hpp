@@ -249,6 +249,12 @@ struct ClipInfo {
     // Timeline position. This is the canonical placement model for every clip type.
     ClipPlacement placement;
 
+    // Enable/disable toggle (#1736). Disabled clips do not play — synced to
+    // te::Clip::disabled, which excludes the clip from the playback graph.
+    // Per-instance (NOT ghost-shared): disabling one link-group member must
+    // not silence its siblings.
+    bool enabled = true;
+
     ClipType getType() const {
         return std::holds_alternative<AudioClipModel>(content) ? ClipType::Audio : ClipType::MIDI;
     }

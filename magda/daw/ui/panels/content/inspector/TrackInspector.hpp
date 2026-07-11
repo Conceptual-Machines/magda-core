@@ -97,6 +97,7 @@ class TrackInspector : public BaseInspector,
     std::unique_ptr<ChordAuditionControl> chordSpeakerButton_;  // 3-state chord audition control
     bool isChordTrack_ = false;                                 // selected track is the chord track
     std::unique_ptr<SvgButton> soloButton_;
+    std::unique_ptr<SvgButton> enableButton_;  // track enable/disable switch
     std::unique_ptr<SvgButton> recordButton_;
     MonitorControl monitorButton_;
     std::unique_ptr<SvgButton>

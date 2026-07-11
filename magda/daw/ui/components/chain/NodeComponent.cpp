@@ -487,8 +487,9 @@ void NodeComponent::paint(juce::Graphics& g) {
 }
 
 void NodeComponent::paintOverChildren(juce::Graphics& g) {
-    // Dim if bypassed or frozen (over everything including side panels)
-    if (!bypassButton_->getToggleState() || frozen_) {  // Toggle OFF = bypassed
+    // Dim if bypassed, frozen, or the track's chain power is off (over
+    // everything including side panels)
+    if (!bypassButton_->getToggleState() || frozen_ || chainDisabled_) {  // Toggle OFF = bypassed
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
     }
@@ -755,6 +756,13 @@ void NodeComponent::setBypassed(bool bypassed) {
     bypassButton_->setToggleState(!bypassed, juce::dontSendNotification);  // Active = not bypassed
     bypassButton_->setActive(!bypassed);
     repaint();  // Redraw bypass overlay in paintOverChildren
+}
+
+void NodeComponent::setChainDisabled(bool disabled) {
+    if (chainDisabled_ == disabled)
+        return;
+    chainDisabled_ = disabled;
+    repaint();  // Redraw dim overlay in paintOverChildren
 }
 
 bool NodeComponent::isBypassed() const {

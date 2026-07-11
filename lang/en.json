@@ -105,6 +105,7 @@
     "mute.tooltip": "Mute",
     "solo.tooltip": "Solo",
     "record.tooltip": "Arm for recording",
+    "enable.tooltip": "Enable/disable track",
     "chord_audition.tooltip": "Chord preview",
     "chord_audition.silent": "Silent",
     "chord_audition.audible": "Audible",
