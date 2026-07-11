@@ -406,7 +406,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     deltaButton_->setClickingTogglesState(true);
     deltaButton_->setToggleState(device.deltaSolo, juce::dontSendNotification);
     deltaButton_->setTooltip("Delta Solo: processed signal minus dry input");
-    deltaButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    deltaButton_->setLookAndFeel(&node_header::getDeltaSoloButtonLookAndFeel());
     deltaButton_->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     deltaButton_->setColour(juce::TextButton::buttonOnColourId,
