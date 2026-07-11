@@ -2135,21 +2135,22 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     });
 }
 
-bool TrackContentPanel::duplicateSelectedArrangementClips(bool includeAutomation) {
+bool TrackContentPanel::duplicateSelectedArrangementClips(bool includeAutomation, bool asGhost) {
     auto& selectionManager = SelectionManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
     const auto selectedClips = selectionManager.getSelectedClips();
     if (selectedClips.empty())
         return false;
 
-    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
+    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM, asGhost);
     if (commands.empty())
         return false;
 
     const bool compoundOperation = commands.size() > 1 || includeAutomation;
     if (compoundOperation) {
         UndoManager::getInstance().beginCompoundOperation(
-            includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips");
+            asGhost ? "Duplicate Clips as Ghosts"
+                    : (includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips"));
     }
 
     std::unordered_set<ClipId> newClipIds;

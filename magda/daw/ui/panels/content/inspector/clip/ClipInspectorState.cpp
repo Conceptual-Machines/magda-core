@@ -291,6 +291,17 @@ void ClipInspector::updateFromSelectedClip() {
             clipViewIcon_->setTooltip("Arrangement clip");
         }
 
+        // Ghost indicator: link glyph next to the name when the clip mirrors
+        // a link group.
+        const auto ghostSiblings = magda::ClipManager::getInstance().getLinkGroupSiblings(clip->id);
+        clipGhostIcon_->setVisible(!ghostSiblings.empty());
+        if (!ghostSiblings.empty()) {
+            const int groupIndex = magda::ClipManager::getInstance().getLinkGroupIndex(clip->id);
+            clipGhostIcon_->setTooltip("Ghost clip " + juce::String(groupIndex) + " of " +
+                                       juce::String(static_cast<int>(ghostSiblings.size()) + 1) +
+                                       ": content and name mirror the other members");
+        }
+
         // Show BPM for audio clips (at bottom with WARP)
         // Prefer clip's source interpretation BPM (may be user-edited), fall back to detected BPM
         if (showAudioProps && !isMulti) {
@@ -665,6 +676,8 @@ void ClipInspector::showClipControls(bool show) {
     clipPropsViewport_.setVisible(show);
 
     if (!show) {
+        // Ghost indicator is per-clip (set in the update path); only hide here.
+        clipGhostIcon_->setVisible(false);
         // Hide everything managed by viewport container
         audioPropsCollapseToggle_.setVisible(false);
         audioPropsLabel_.setVisible(false);

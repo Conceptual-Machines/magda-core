@@ -56,16 +56,16 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
     auto curveBounds = bounds.reduced(4);
     paintMiniCurve(g, curveBounds);
 
-    // Header row: name on the left, loop glyph (same infinity icon as
+    // Header row: name on the left, loop glyph (same transport loop icon as
     // MIDI/audio clips) on the right when looping.
     auto headerArea = bounds.reduced(4).removeFromTop(14);
     if (clip->looping && headerArea.getWidth() > 30) {
         auto loopArea = headerArea.removeFromRight(14).reduced(1);
         static const auto loopIcon = []() {
-            auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
-                                                            BinaryData::infinito_svgSize);
+            auto icon = juce::Drawable::createFromImageData(BinaryData::loop_icon_svg,
+                                                            BinaryData::loop_icon_svgSize);
             if (icon)
-                icon->replaceColour(juce::Colour(0xFFB3B3B3), juce::Colours::white);
+                icon->replaceColour(juce::Colour(0xFFBCBCBC), juce::Colours::white);
             return icon;
         }();
         if (loopIcon)

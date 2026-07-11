@@ -93,6 +93,9 @@ enum class GestureActionType {
     // modifier while dragging a clip duplicates it instead of moving it.
     // New values must be appended so persisted integer codes stay stable.
     DuplicateOnDrag,
+    // Like DuplicateOnDrag, but the copy is a ghost clip: it joins the
+    // source's link group and mirrors its content.
+    DuplicateAsGhostOnDrag,
 };
 
 /** Normalized modifier bitmask. Command is the platform primary modifier
@@ -166,6 +169,10 @@ class GestureRouter {
      *  copy-vs-move through the customisable binding instead of a hardcoded
      *  modifier, for both single- and multi-clip drags. */
     bool isDuplicateOnDrag(GestureContext context, const juce::ModifierKeys& mods) const;
+
+    /** True when the given modifier set is bound to DuplicateAsGhostOnDrag
+     *  for a clip-body drag in this context (default Alt+Shift). */
+    bool isDuplicateAsGhostOnDrag(GestureContext context, const juce::ModifierKeys& mods) const;
 
     /** Look up the binding for an exact (context, axis, modifiers) key, or
      *  nullptr if none is bound. */

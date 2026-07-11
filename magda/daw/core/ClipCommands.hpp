@@ -299,15 +299,15 @@ class CreateClipCommand : public ValidatedCommand {
  */
 class DuplicateClipCommand : public ValidatedCommand {
   public:
-    explicit DuplicateClipCommand(ClipId sourceClipId);
+    explicit DuplicateClipCommand(ClipId sourceClipId, bool asGhost = false);
     DuplicateClipCommand(ClipId sourceClipId, BeatPosition startBeat,
                          TrackId targetTrackId = INVALID_TRACK_ID, double tempo = 0.0,
-                         int targetSceneIndex = -1);
+                         int targetSceneIndex = -1, bool asGhost = false);
     static std::unique_ptr<DuplicateClipCommand> forSessionSlot(
         ClipId sourceClipId, TrackId targetTrackId = INVALID_TRACK_ID, int targetSceneIndex = -1);
 
     juce::String getDescription() const override {
-        return "Duplicate Clip";
+        return asGhost_ ? "Duplicate Clip as Ghost" : "Duplicate Clip";
     }
 
     bool canExecute() const override;
@@ -325,14 +325,36 @@ class DuplicateClipCommand : public ValidatedCommand {
     ClipId sourceClipId_;
     bool hasExplicitStartBeat_ = false;
     double startBeat_ = 0.0;
-    TrackId targetTrackId_;  // INVALID = same track
-    double tempo_;           // BPM for derived seconds cache (0 = project tempo)
-    int targetSceneIndex_;   // -1 = keep/unplaced; session clips only
+    TrackId targetTrackId_;           // INVALID = same track
+    double tempo_;                    // BPM for derived seconds cache (0 = project tempo)
+    int targetSceneIndex_;            // -1 = keep/unplaced; session clips only
+    bool asGhost_ = false;            // copy joins the source's link group (ghost clip)
+    bool sourceWasUnlinked_ = false;  // execute created the source's link group
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
 };
 
 std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplicateCommands(
-    const std::unordered_set<ClipId>& clipIds, double tempo);
+    const std::unordered_set<ClipId>& clipIds, double tempo, bool asGhost = false);
+
+/**
+ * @brief Command for detaching a ghost clip from its link group
+ */
+class MakeClipUniqueCommand : public ValidatedCommand {
+  public:
+    explicit MakeClipUniqueCommand(ClipId clipId);
+
+    juce::String getDescription() const override {
+        return "Make Clip Unique";
+    }
+
+    bool canExecute() const override;
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    int prevLinkGroupId_ = 0;
+};
 
 /**
  * @brief Command for pasting clips from clipboard

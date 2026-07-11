@@ -489,14 +489,15 @@ void BottomPanel::setupHeaderControls() {
 
     // Loop toggle (dual icon: off/on). Toggles the clip's source loop, the same
     // clip->loopEnabled the editors render (mirrors the Clip Inspector toggle).
-    loopButton_ =
-        std::make_unique<SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
+    // Same transport loop glyph as the clip headers.
+    loopButton_ = std::make_unique<SvgButton>("Loop", BinaryData::loop_icon_svg,
+                                              BinaryData::loop_icon_svgSize);
     loopButton_->setTooltip("Loop clip");
-    // Borderless icon; recolour its baked #B3B3B3 fill by state. Off = grey
+    // Borderless icon; recolour its baked #BCBCBC fill by state. Off = grey
     // glyph, no fill; engaged = solid blue chip with a white glyph. Matches the
     // Clip Inspector loop toggle (both drive the same clip loop). Green stays the
     // ruler's range-marker language.
-    loopButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    loopButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     loopButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     loopButton_->setActiveColor(juce::Colours::white);
     loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));

@@ -238,6 +238,14 @@ struct ClipInfo {
     ClipView view = ClipView::Arrangement;  // Which view this clip belongs to
     ClipContent content = MidiClipModel{};
 
+    // Ghost clips. Clips sharing a non-zero linkGroupId mirror their
+    // content-defining fields (see copySharedContentFrom): editing any member
+    // updates all of them. Symmetric — there is no "original". 0 = unlinked.
+    // A group with a single remaining member is inert (no propagation, no
+    // ghost visuals); groups are never auto-dissolved so delete-undo restores
+    // membership cleanly.
+    int linkGroupId = 0;
+
     // Timeline position. This is the canonical placement model for every clip type.
     ClipPlacement placement;
 
@@ -502,6 +510,41 @@ struct ClipInfo {
         placement.lengthBeats = juce::jmax(0.0, beatLength);
         startBeats = placement.startBeat;
         lengthBeats = placement.lengthBeats;
+    }
+
+    /// Copy the content-defining fields from a link-group sibling (ghost-clip
+    /// mirroring). Everything that says WHAT the clip contains and how the
+    /// source is interpreted is shared — including the name (the UI appends a
+    /// per-instance #index for display); everything that says WHERE it sits
+    /// and how it mixes stays per-instance: id, trackId, colour, view,
+    /// placement (+ derived mirrors), offsets (placement-coupled: left-resize
+    /// trims only that instance), volume/gain/pan, fades, channels, launch and
+    /// grid settings. Loop fields and speedRatio are per-instance too: for
+    /// non-looped audio, resize keeps loopStart/loopLength mirroring
+    /// offset/length, and stretch-resize writes speedRatio — sharing either
+    /// would let one ghost's resize corrupt its siblings.
+    void copySharedContentFrom(const ClipInfo& src) {
+        name = src.name;
+        content = src.content;
+        midiNotes = src.midiNotes;
+        midiCCData = src.midiCCData;
+        midiPitchBendData = src.midiPitchBendData;
+        chordAnnotations = src.chordAnnotations;
+        nextChordGroupId = src.nextChordGroupId;
+        warpEnabled = src.warpEnabled;
+        timeStretchMode = src.timeStretchMode;
+        warpMarkers = src.warpMarkers;
+        autoTempo = src.autoTempo;
+        autoPitch = src.autoPitch;
+        analogPitch = src.analogPitch;
+        autoPitchMode = src.autoPitchMode;
+        pitchChange = src.pitchChange;
+        transpose = src.transpose;
+        autoDetectBeats = src.autoDetectBeats;
+        beatSensitivity = src.beatSensitivity;
+        isReversed = src.isReversed;
+        grooveTemplate = src.grooveTemplate;
+        grooveStrength = src.grooveStrength;
     }
 
     /// Derive startTime/length from placement beats using the given BPM.

@@ -39,6 +39,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
 
     obj->setProperty("id", clip.id);
     obj->setProperty("trackId", clip.trackId);
+    if (clip.linkGroupId != 0)
+        obj->setProperty("linkGroupId", clip.linkGroupId);
     obj->setProperty("name", clip.name);
     obj->setProperty("colour", colourToString(clip.colour));
     obj->setProperty("type", static_cast<int>(clip.getType()));
@@ -293,6 +295,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
     outClip.id = obj->getProperty("id");
     outClip.trackId = obj->getProperty("trackId");
+    outClip.linkGroupId = obj->getProperty("linkGroupId");  // void -> 0 (unlinked)
     outClip.name = obj->getProperty("name").toString();
     outClip.colour = stringToColour(obj->getProperty("colour").toString());
     const auto typeVar = obj->getProperty("type");

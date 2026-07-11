@@ -571,11 +571,17 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Draw directly — no offscreen cache.  AudioThumbnail is already a
     // pre-computed waveform cache (512 samples/point) so drawing from it is fast.
+    // Ghost clips paint a translucent body + dimmed waveform so link-group
+    // members read as mirrors of shared content.
+    const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
     auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    if (ghosted)
+        bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     if (clip.audio().source.filePath.isNotEmpty())
-        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
+        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength,
+                             ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colour());
 
     strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
                              CORNER_RADIUS, 1.0f);
@@ -621,11 +627,16 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     if (visibleBounds.isEmpty())
         return;
 
+    // Ghost clips paint a translucent body + dimmed notes (see paintAudioClip).
+    const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
     auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    if (ghosted)
+        bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
-    paintMidiNotes(g, clip, noteArea, juce::Colours::black);
+    paintMidiNotes(g, clip, noteArea,
+                   ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colours::black);
 
     strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
                              CORNER_RADIUS, 1.0f);
@@ -877,6 +888,27 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     fillClippedRoundedRect(g, headerArea.withBottom(headerArea.getBottom() + 2), visibleHeaderArea,
                            headerColour, CORNER_RADIUS);
 
+    // Ghost clips (link-group members) show a link glyph at the left of the
+    // header and an italicised name.
+    const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
+    if (ghosted && headerArea.getWidth() > HEADER_HEIGHT + 4) {
+        auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
+        if (iconArea.intersects(g.getClipBounds())) {
+            static auto makeLinkIcon = [](juce::Colour fg) {
+                auto icon = juce::Drawable::createFromImageData(BinaryData::link_flat_svg,
+                                                                BinaryData::link_flat_svgSize);
+                if (icon)
+                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
+                return icon;
+            };
+            static auto normalLink = makeLinkIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            static auto selectedLink = makeLinkIcon(juce::Colours::white);
+            const auto& icon = selected ? selectedLink : normalLink;
+            if (icon)
+                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+    }
+
     // Chord clips show the chord glyph at the left of the header.
     if (isChordClip(clip) && headerArea.getWidth() > HEADER_HEIGHT + 4) {
         auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
@@ -896,13 +928,21 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
-    // Clip name
+    // Clip name (italic for ghost clips, with the instance index appended —
+    // group members share their name, the #index tells them apart)
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
         auto nameArea = headerArea.withWidth(juce::jmin(headerArea.getWidth(), 300)).reduced(4, 0);
         if (nameArea.intersects(g.getClipBounds())) {
             g.setColour(headerForeground);
-            g.setFont(FontManager::getInstance().getUIFont(10.0f));
-            g.drawText(clip.name, nameArea, juce::Justification::centredLeft, true);
+            auto nameFont = FontManager::getInstance().getUIFont(10.0f);
+            g.setFont(ghosted ? nameFont.italicised() : nameFont);
+            auto displayName = clip.name;
+            if (ghosted) {
+                const int groupIndex = ClipManager::getInstance().getLinkGroupIndex(clipId_);
+                if (groupIndex > 0)
+                    displayName += " #" + juce::String(groupIndex);
+            }
+            g.drawText(displayName, nameArea, juce::Justification::centredLeft, true);
         }
     }
 
@@ -915,18 +955,21 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                    juce::Justification::centred, false);
     }
 
-    // Loop indicator (infinito/infinity icon).
+    // Loop indicator: the transport's circular-arrows loop glyph, so "loop"
+    // reads the same everywhere (and stays distinct from the ghost link icon).
     // Cache one drawable per foreground variant — selection flips foreground,
     // so we can't bake a single colour at construction.
     if (clip.loopEnabled && headerArea.getWidth() > 16) {
         headerArea.removeFromRight(2);  // right padding
-        auto loopArea = headerArea.removeFromRight(14).reduced(1);
+        // Same box as the ghost link icon on the left (HEADER_HEIGHT reduced
+        // by 3) so the two header glyphs read at the same size.
+        auto loopArea = headerArea.removeFromRight(HEADER_HEIGHT).reduced(3);
         if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
             static auto makeIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
-                                                                BinaryData::infinito_svgSize);
+                auto icon = juce::Drawable::createFromImageData(BinaryData::loop_icon_svg,
+                                                                BinaryData::loop_icon_svgSize);
                 if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
+                    icon->replaceColour(juce::Colour(0xFFBCBCBC), fg);
                 return icon;
             };
             static auto normalIcon = makeIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -1348,7 +1391,15 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // the selected range via the multi-drag path.
     bool didRangeSelect = false;
     pendingCopyDragAction_ = false;
-    if (e.mods.isShiftDown()) {
+    pendingCopyDragIsGhost_ = false;
+    if (magda::GestureRouter::getInstance().isDuplicateAsGhostOnDrag(
+            magda::GestureContext::Arrangement, e.mods)) {
+        // Ghost-copy modifier (default Alt+Shift): checked before the Shift
+        // branch, which would otherwise swallow the combination. The copy
+        // joins the source's link group and mirrors its content.
+        pendingCopyDragAction_ = true;
+        pendingCopyDragIsGhost_ = true;
+    } else if (e.mods.isShiftDown()) {
         if (magda::isRangeSelectClick(e.mods)) {
             logArrangeRangeSelect("ClipComponent range branch: extending to clip=" +
                                   juce::String(static_cast<int>(clipId_)) + " edgeHit=" +
@@ -1680,6 +1731,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 }
             }
             isDuplicating_ = true;
+            isDuplicatingGhost_ = pendingCopyDragIsGhost_;
         }
     }
 
@@ -2194,6 +2246,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
     // position (the documented gesture; Cmd+Alt is the blade, Alt+drag copies)
     if (pendingCopyDragAction_) {
         pendingCopyDragAction_ = false;
+        pendingCopyDragIsGhost_ = false;
         if (!isDragging_) {
             if (parentPanel_) {
                 auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
@@ -2273,7 +2326,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     double dupTempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                     auto cmd = std::make_unique<DuplicateClipCommand>(
                         clipId_, BeatPosition{finalStartTime * dupTempo / 60.0}, targetTrackId,
-                        dupTempo);
+                        dupTempo, -1, isDuplicatingGhost_);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     // Select the duplicate — must happen before SafePointer check
@@ -2287,6 +2340,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         return;
                     // Reset duplication state
                     isDuplicating_ = false;
+                    isDuplicatingGhost_ = false;
                     duplicateClipId_ = INVALID_CLIP_ID;
                 } else {
                     // Clear cross-track ghost before committing
@@ -2996,6 +3050,11 @@ void ClipComponent::showContextMenu() {
         menu.addItem(18, "Duplicate With Automation", canEdit);
         menu.addItem(19, "Duplicate Without Automation", canEdit);
         menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
+        // Ghost clips: the copy joins the source's link group and mirrors
+        // its content; Make Unique detaches a member from its group.
+        menu.addItem(25, "Duplicate as Ghost", canEdit);
+        if (clipManager.isGhostClip(clipId_))
+            menu.addItem(26, "Make Unique", canEdit);
     }
     menu.addSeparator();
 
@@ -3420,6 +3479,35 @@ void ClipComponent::showContextMenu() {
             case 19: {  // Duplicate Without Automation
                 if (parentPanel_)
                     parentPanel_->duplicateSelectedArrangementClips(false);
+                break;
+            }
+
+            case 25: {  // Duplicate as Ghost
+                if (parentPanel_)
+                    parentPanel_->duplicateSelectedArrangementClips(false, true);
+                break;
+            }
+
+            case 26: {  // Make Unique (detach from link group)
+                std::vector<ClipId> targets;
+                if (selectionManager.getSelectedClipCount() > 1 &&
+                    selectionManager.isClipSelected(clipId_)) {
+                    for (auto cid : selectionManager.getSelectedClips())
+                        if (clipManager.isGhostClip(cid))
+                            targets.push_back(cid);
+                } else if (clipManager.isGhostClip(clipId_)) {
+                    targets.push_back(clipId_);
+                }
+                if (targets.empty())
+                    break;
+                auto& undoManager = UndoManager::getInstance();
+                const bool compound = targets.size() > 1;
+                if (compound)
+                    undoManager.beginCompoundOperation("Make Clips Unique");
+                for (auto cid : targets)
+                    undoManager.executeCommand(std::make_unique<MakeClipUniqueCommand>(cid));
+                if (compound)
+                    undoManager.endCompoundOperation();
                 break;
             }
 

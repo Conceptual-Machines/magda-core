@@ -171,6 +171,8 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          hasSelection_, false);
             menu.addItem(DuplicateClipWithoutAutomation, "Duplicate Clip Without Automation",
                          hasSelection_, false);
+            menu.addItem(DuplicateClipAsGhost, "Duplicate Clip as Ghost", hasSelection_, false);
+            menu.addItem(MakeClipUnique, "Make Clip Unique", hasSelection_, false);
             menu.addItem(Delete, tr("menu.edit.delete") + keyHint(CommandIDs::deleteCmd),
                          hasSelection_, false);
             menu.addSeparator();
@@ -438,6 +440,14 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case DuplicateClipWithoutAutomation:
             if (callbacks_.onDuplicateClipWithoutAutomation)
                 callbacks_.onDuplicateClipWithoutAutomation();
+            break;
+        case DuplicateClipAsGhost:
+            if (callbacks_.onDuplicateClipAsGhost)
+                callbacks_.onDuplicateClipAsGhost();
+            break;
+        case MakeClipUnique:
+            if (callbacks_.onMakeClipUnique)
+                callbacks_.onMakeClipUnique();
             break;
         case Delete:
             if (callbacks_.onDelete)

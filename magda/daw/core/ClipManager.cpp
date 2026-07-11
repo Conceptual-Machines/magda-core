@@ -513,6 +513,24 @@ void ClipManager::restoreClip(const ClipInfo& clipInfo) {
     if (clipInfo.id >= nextClipId_) {
         nextClipId_ = clipInfo.id + 1;
     }
+    // Same for link groups (project load and delete-undo both land here).
+    if (clipInfo.linkGroupId >= nextLinkGroupId_) {
+        nextLinkGroupId_ = clipInfo.linkGroupId + 1;
+    }
+
+    // A restored group member's snapshot may be stale: delete ghost B, edit
+    // sibling A, undo the delete — B would rejoin with pre-delete content and
+    // the next edit would silently clobber one side. The live group is
+    // authoritative, so the restored clip adopts its current shared content.
+    // (Project load is unaffected: members are saved consistent, so the copy
+    // is a no-op there.)
+    if (clipInfo.linkGroupId != 0) {
+        const auto siblings = getLinkGroupSiblings(clipInfo.id);
+        if (!siblings.empty()) {
+            if (const auto* source = getClip(siblings.front()))
+                clips_[clipInfo.id].copySharedContentFrom(*source);
+        }
+    }
 
     notifyClipsChanged();
 }
@@ -880,7 +898,9 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
 
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
-    newClip.name = original->name + " Copy";
+    // Link-group members share their name (the UI adds a per-instance #index),
+    // so only unlinked duplicates get the " Copy" suffix.
+    newClip.name = original->linkGroupId != 0 ? original->name : original->name + " Copy";
 
     if (newClip.view == ClipView::Arrangement) {
         // Beats are authoritative for clip positioning: place the duplicate one
@@ -918,7 +938,7 @@ ClipId ClipManager::duplicateClipAtBeats(ClipId clipId, double startBeat, TrackI
 
     ClipInfo newClip = *original;
     newClip.id = nextClipId_++;
-    newClip.name = original->name + " Copy";
+    newClip.name = original->linkGroupId != 0 ? original->name : original->name + " Copy";
 
     // Use specified track or keep same track
     if (trackId != INVALID_TRACK_ID) {
@@ -950,6 +970,101 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
                                     double tempo) {
     const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
     return duplicateClipAtBeats(clipId, startTime * bpm / 60.0, trackId, bpm);
+}
+
+// ============================================================================
+// Ghost clips (link groups)
+// ============================================================================
+
+int ClipManager::ensureLinkGroup(ClipInfo& clip) {
+    if (clip.linkGroupId == 0)
+        clip.linkGroupId = nextLinkGroupId_++;
+    return clip.linkGroupId;
+}
+
+ClipId ClipManager::duplicateClipAsGhost(ClipId clipId) {
+    auto* original = getClip(clipId);
+    if (original == nullptr)
+        return INVALID_CLIP_ID;
+    ensureLinkGroup(*original);
+    // duplicateClip is a full struct copy, so the copy inherits linkGroupId
+    // (and, being grouped, keeps the shared name instead of " Copy").
+    return duplicateClip(clipId);
+}
+
+ClipId ClipManager::duplicateClipAsGhostAtBeats(ClipId clipId, double startBeat, TrackId trackId,
+                                                double tempo) {
+    auto* original = getClip(clipId);
+    if (original == nullptr)
+        return INVALID_CLIP_ID;
+    ensureLinkGroup(*original);
+    return duplicateClipAtBeats(clipId, startBeat, trackId, tempo);
+}
+
+void ClipManager::makeClipUnique(ClipId clipId) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || clip->linkGroupId == 0)
+        return;
+    const auto siblings = getLinkGroupSiblings(clipId);
+    clip->linkGroupId = 0;
+    notifyClipPropertyChanged(clipId);
+    // If exactly one member remains, its group is now inert: repaint it so the
+    // ghost visuals disappear.
+    if (siblings.size() == 1)
+        notifyClipPropertyChanged(siblings.front());
+}
+
+std::vector<ClipId> ClipManager::getLinkGroupSiblings(ClipId clipId) const {
+    auto it = clips_.find(clipId);
+    if (it == clips_.end() || it->second.linkGroupId == 0)
+        return {};
+    std::vector<ClipId> siblings;
+    for (const auto& [id, other] : clips_) {
+        if (id != clipId && other.linkGroupId == it->second.linkGroupId)
+            siblings.push_back(id);
+    }
+    return siblings;
+}
+
+bool ClipManager::isGhostClip(ClipId clipId) const {
+    auto it = clips_.find(clipId);
+    if (it == clips_.end() || it->second.linkGroupId == 0)
+        return false;
+    for (const auto& [id, other] : clips_) {
+        if (id != clipId && other.linkGroupId == it->second.linkGroupId)
+            return true;
+    }
+    return false;
+}
+
+int ClipManager::getLinkGroupIndex(ClipId clipId) const {
+    auto it = clips_.find(clipId);
+    if (it == clips_.end() || it->second.linkGroupId == 0)
+        return 0;
+    int index = 1;
+    int members = 1;
+    for (const auto& [id, other] : clips_) {
+        if (id == clipId || other.linkGroupId != it->second.linkGroupId)
+            continue;
+        ++members;
+        if (id < clipId)
+            ++index;
+    }
+    return members > 1 ? index : 0;
+}
+
+std::vector<ClipId> ClipManager::propagateLinkGroupContent(ClipId clipId) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || clip->linkGroupId == 0)
+        return {};
+    std::vector<ClipId> siblings;
+    for (auto& [id, other] : clips_) {
+        if (id == clipId || other.linkGroupId != clip->linkGroupId)
+            continue;
+        other.copySharedContentFrom(*clip);
+        siblings.push_back(id);
+    }
+    return siblings;
 }
 
 void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
@@ -1112,6 +1227,13 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
 
             clip->midiNotes = leftNotes;
             rightClip.midiNotes = rightNotes;
+
+            // Partitioning rewrites shared content, so ghost halves cannot
+            // stay in their link group: the next propagation would truncate
+            // every sibling. Looped-MIDI and audio splits are pure windowing
+            // (midiOffset / offset) and keep their group.
+            clip->linkGroupId = 0;
+            rightClip.linkGroupId = 0;
         }
     }
 
@@ -2714,6 +2836,13 @@ void ClipManager::clearAllClips() {
     sessionSlotIndex_.clear();
     selectedClipId_ = INVALID_CLIP_ID;
     nextClipId_ = 1;
+    nextLinkGroupId_ = 1;
+    // The clipboard survives project switches, but link-group ids are
+    // project-scoped: a stale id pasted into the next project could collide
+    // with an unrelated group and get overwritten by its propagation. Ghosts
+    // paste as unique clips across projects.
+    for (auto& entry : clipboard_)
+        entry.linkGroupId = 0;
     notifyClipsChanged();
 }
 
@@ -2909,18 +3038,30 @@ void ClipManager::notifyClipPropertyChanged(ClipId clipId) {
     if (auto* clip = getClip(clipId))
         syncActiveMidiTake(*clip);
 
+    // Ghost clips: every content edit funnels through here, so mirror the
+    // shared fields to the link-group siblings and notify them in the same
+    // pass (no recursion — siblings are notified directly below/batched).
+    const auto siblings = propagateLinkGroupContent(clipId);
+
     if (batchDepth_ > 0) {
         // Coalesce: record once, fire at end of outermost batch.
-        if (std::find(batchedClipIds_.begin(), batchedClipIds_.end(), clipId) ==
-            batchedClipIds_.end()) {
-            batchedClipIds_.push_back(clipId);
-        }
+        auto append = [this](ClipId id) {
+            if (std::find(batchedClipIds_.begin(), batchedClipIds_.end(), id) ==
+                batchedClipIds_.end()) {
+                batchedClipIds_.push_back(id);
+            }
+        };
+        append(clipId);
+        for (auto siblingId : siblings)
+            append(siblingId);
         return;
     }
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
         if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
             listener->clipPropertyChanged(clipId);
+            for (auto siblingId : siblings)
+                listener->clipPropertyChanged(siblingId);
         }
     }
 }
@@ -3152,6 +3293,12 @@ void ClipManager::copyBeatRangeToClipboard(double startBeat, double endBeat,
             trimmed.midiNotes = filteredNotes;
         }
 
+        // Range copies rewrite content (note partition, loop/offset re-base),
+        // so they can never paste back into the link group: a later
+        // propagation would push the trimmed content over every sibling.
+        // Whole-clip copyToClipboard keeps membership; range copies detach.
+        trimmed.linkGroupId = 0;
+
         clipboard_.push_back(trimmed);
     }
 }
@@ -3214,7 +3361,13 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
             // Copy properties
             auto* newClip = getClip(newClipId);
             if (newClip) {
-                newClip->name = clipData.name + " (copy)";
+                // Ghost membership survives whole-clip copy/paste. Range
+                // copies cleared it at copy time, and clearAllClips scrubs the
+                // clipboard so cross-project pastes come in unlinked. Ghosts
+                // keep the source name (they are the same content).
+                newClip->linkGroupId = clipData.linkGroupId;
+                newClip->name =
+                    clipData.linkGroupId != 0 ? clipData.name : clipData.name + " (copy)";
                 if (clipData.trackId != INVALID_TRACK_ID) {
                     newClip->colour = clipData.colour;
                 } else if (const auto* targetTrack =
