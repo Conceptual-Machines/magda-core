@@ -1228,6 +1228,13 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
 }
 
 void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
+    // Chain power off: dim the strip as a visual cue that the track's insert
+    // chain is gated (the fader and mute stay live).
+    if (!isMaster_ && !TrackManager::getInstance().isChainEnabled(trackId_)) {
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRect(getLocalBounds());
+    }
+
     // The group is indicated by its coloured header banner only; the full-height
     // coloured envelope border around the children is intentionally omitted so
     // the colour stays on the top strip rather than the whole group.

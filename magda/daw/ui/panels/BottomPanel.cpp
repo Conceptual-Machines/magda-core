@@ -623,6 +623,21 @@ void BottomPanel::setCollapsed(bool collapsed) {
     daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Bottom, collapsed);
 }
 
+void BottomPanel::paintOverChildren(juce::Graphics& g) {
+    // Disabled-clip dim over the editor content (#1736), mirroring the
+    // arrangement clip overlay. The header bar stays undimmed so the power
+    // switch and grid controls read normally.
+    const auto clipId = getActiveEditingClipId();
+    const auto* clip =
+        (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
+    if (clip && !clip->enabled) {
+        if (auto* content = getActiveContent(); content != nullptr && content->isVisible()) {
+            g.setColour(juce::Colours::black.withAlpha(0.4f));
+            g.fillRect(getLocalArea(content, content->getLocalBounds()));
+        }
+    }
+}
+
 void BottomPanel::paint(juce::Graphics& g) {
     TabbedPanel::paint(g);
 
@@ -846,6 +861,7 @@ void BottomPanel::clipPropertyChanged(ClipId clipId) {
         applyTimeModeToContent();
         syncLoopButtonState();
         syncClipEnabledButtonState();
+        repaint();  // disabled-clip dim overlay (paintOverChildren)
     }
 }
 

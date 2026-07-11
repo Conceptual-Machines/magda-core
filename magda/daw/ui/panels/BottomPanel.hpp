@@ -44,6 +44,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ~BottomPanel() override;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // Legacy API for compatibility
