@@ -431,6 +431,7 @@ void BottomPanel::setupHeaderControls() {
     // The numeric controls stay as the custom editor's implementation detail;
     // this is the only collapsed face in the header.
     gridDivisionButton_ = std::make_unique<daw::ui::GridDivisionButton>();
+    gridDivisionButton_->setHorizontal(true);
     gridDivisionButton_->setTooltip("Grid division");
     gridDivisionButton_->onClick = [this]() {
         daw::ui::showGridDivisionMenu(*gridDivisionButton_, gridNumerator_, gridDenominator_,

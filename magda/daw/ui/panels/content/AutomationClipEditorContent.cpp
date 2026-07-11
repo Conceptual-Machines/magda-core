@@ -143,6 +143,7 @@ void AutomationClipEditorContent::buildHeaderControls() {
 
     const auto makeDivisionButton = [this]() {
         auto button = std::make_unique<GridDivisionButton>();
+        button->setHorizontal(true);
         button->setTooltip("Snap division");
         addChildComponent(button.get());
         return button;

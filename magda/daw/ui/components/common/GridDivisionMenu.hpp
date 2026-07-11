@@ -72,8 +72,9 @@ inline juce::String nearestGridDivisionLabel(int numerator, int denominator) {
     return nearest->label;
 }
 
-// A compact, stacked numerator/denominator face. The menu provides musical
-// notation; the face deliberately preserves the familiar stored-fraction view.
+// A view over the stored numerator/denominator pair. Standard values are
+// reverse-mapped to musical notation; only unmatched (custom) values show the
+// reduced mathematical fraction.
 class GridDivisionButton final : public juce::Button {
   public:
     GridDivisionButton() : juce::Button("GridDivision") {
@@ -89,6 +90,13 @@ class GridDivisionButton final : public juce::Button {
         repaint();
     }
 
+    void setHorizontal(bool horizontal) {
+        if (horizontal_ == horizontal)
+            return;
+        horizontal_ = horizontal;
+        repaint();
+    }
+
     void paintButton(juce::Graphics& g, bool highlighted, bool down) override {
         auto bounds = getLocalBounds().toFloat().reduced(0.5f);
         auto background = DarkTheme::getColour(DarkTheme::SURFACE).darker(down ? 0.35f : 0.2f);
@@ -99,19 +107,53 @@ class GridDivisionButton final : public juce::Button {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
 
-        auto top = getLocalBounds().reduced(2);
-        auto bottom = top.removeFromBottom(top.getHeight() / 2);
         const auto alpha = isEnabled() ? 1.0f : 0.5f;
         g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withMultipliedAlpha(alpha));
-        g.drawText(juce::String(numerator_), top, juce::Justification::centred, false);
-        g.setColour(DarkTheme::getSecondaryTextColour().withMultipliedAlpha(alpha));
-        g.drawText(juce::String(denominator_), bottom, juce::Justification::centred, false);
+        const auto label = gridDivisionLabel(numerator_, denominator_);
+        const int slash = label.indexOfChar('/');
+        const auto numeratorText = label.substring(0, slash).trim();
+        const auto denominatorText = label.substring(slash + 1).trim();
+
+        const auto drawFraction = [&](juce::Rectangle<int> area) {
+            const auto numberColour =
+                DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withMultipliedAlpha(alpha);
+            const auto slashColour = DarkTheme::getSecondaryTextColour().withMultipliedAlpha(alpha);
+            const int numWidth =
+                static_cast<int>(std::ceil(g.getCurrentFont().getStringWidthFloat(numeratorText)));
+            const int slashWidth =
+                static_cast<int>(std::ceil(g.getCurrentFont().getStringWidthFloat("/")));
+            const int denWidth = static_cast<int>(
+                std::ceil(g.getCurrentFont().getStringWidthFloat(denominatorText)));
+            int x = area.getCentreX() - (numWidth + slashWidth + denWidth) / 2;
+            g.setColour(numberColour);
+            g.drawText(numeratorText, x, area.getY(), numWidth, area.getHeight(),
+                       juce::Justification::centred, false);
+            x += numWidth;
+            g.setColour(slashColour);
+            g.drawText("/", x, area.getY(), slashWidth, area.getHeight(),
+                       juce::Justification::centred, false);
+            x += slashWidth;
+            g.setColour(numberColour);
+            g.drawText(denominatorText, x, area.getY(), denWidth, area.getHeight(),
+                       juce::Justification::centred, false);
+        };
+
+        if (horizontal_) {
+            drawFraction(getLocalBounds().reduced(2));
+        } else {
+            auto top = getLocalBounds().reduced(2);
+            auto bottom = top.removeFromBottom(top.getHeight() / 2);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withMultipliedAlpha(alpha));
+            g.drawText(numeratorText, top, juce::Justification::centred, false);
+            g.setColour(DarkTheme::getSecondaryTextColour().withMultipliedAlpha(alpha));
+            g.drawText(denominatorText, bottom, juce::Justification::centred, false);
+        }
     }
 
   private:
     int numerator_ = 1;
     int denominator_ = 4;
+    bool horizontal_ = false;
 };
 
 class GridDivisionCustomEditor final : public juce::Component {
