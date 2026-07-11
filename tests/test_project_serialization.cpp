@@ -2059,6 +2059,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     param.gateSlotIndex = 7;
     param.gateNegated = true;
     param.hidden = true;
+    param.momentary = true;
     param.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
 
     DeviceInfo device;
@@ -2100,6 +2101,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(paramObj->hasProperty("gateSlotIndex"));
     REQUIRE(paramObj->hasProperty("gateNegated"));
     REQUIRE(paramObj->hasProperty("hidden"));
+    REQUIRE(paramObj->hasProperty("momentary"));
 
     ProjectInfo loadedInfo;
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
@@ -2135,6 +2137,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(loaded.gateSlotIndex == 7);
     REQUIRE(loaded.gateNegated);
     REQUIRE(loaded.hidden);
+    REQUIRE(loaded.momentary);
     REQUIRE_FALSE(static_cast<bool>(loaded.displayText));
 }
 

@@ -35,7 +35,8 @@ struct FaustParamSlot {
     enum class Kind {
         Continuous,  // hslider / vslider / numentry without a [style:menu|radio]
         Discrete,    // slider with [style:menu{…}] or [style:radio{…}]
-        Boolean,     // checkbox / button
+        Boolean,     // checkbox
+        Trigger,     // momentary button
     };
 
     int index = -1;       // 0..63 within the pool
@@ -49,7 +50,7 @@ struct FaustParamSlot {
     Kind kind = Kind::Continuous;
 
     // Real-units range. For Continuous: from the Faust slider min/max/step.
-    // For Boolean: 0/1/1. For Discrete: 0..(N-1) over the choice list.
+    // For Boolean/Trigger: 0/1/1. For Discrete: 0..(N-1) over the choice list.
     float minValue = 0.0f;
     float maxValue = 1.0f;
     float stepValue = 0.0f;

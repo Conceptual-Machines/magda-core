@@ -10,6 +10,7 @@
 #include "core/TypeIds.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
+#include "params/MomentaryParamButton.hpp"
 #include "params/ParamLinkResolver.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -237,7 +238,8 @@ class ParamSlotComponent : public juce::Component,
     TextSlider valueSlider_{TextSlider::Format::Decimal};
     std::unique_ptr<juce::ComboBox> discreteCombo_;   // For discrete/choice parameters
     std::unique_ptr<juce::ToggleButton> boolToggle_;  // For boolean parameters
-    magda::ParameterInfo paramInfo_;                  // Parameter metadata for formatting
+    std::unique_ptr<MomentaryParamButton> momentaryButton_;
+    magda::ParameterInfo paramInfo_;  // Parameter metadata for formatting
 
     // Shift+drag state for mod amount editing
     bool isModAmountDrag_ = false;
