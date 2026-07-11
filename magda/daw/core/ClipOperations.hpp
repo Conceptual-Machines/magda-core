@@ -991,10 +991,12 @@ class ClipOperations {
 
         if (clip.loopEnabled && clip.loopLengthBeats > 0.0) {
             double loopLen = clip.loopLengthBeats;
-            double phase = clip.midiOffset;
+            double phase = std::fmod(clip.midiOffset, loopLen);
 
-            // Number of full loop cycles that fit in the clip
-            int numCycles = static_cast<int>(std::ceil(clipLen / loopLen));
+            // Include the final partial cycle introduced by the phase offset.
+            // A clip starting one beat into a two-beat loop needs the cycle
+            // beginning at clipLen - 1 to render its final beat.
+            int numCycles = static_cast<int>(std::ceil((clipLen + phase) / loopLen));
 
             for (int cycle = 0; cycle < numCycles; ++cycle) {
                 double cycleStart = cycle * loopLen - phase;

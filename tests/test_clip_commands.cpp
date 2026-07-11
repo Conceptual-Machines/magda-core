@@ -593,6 +593,122 @@ TEST_CASE("JoinClipsCommand - basic MIDI join", "[clip][command][join]") {
     }
 }
 
+// ============================================================================
+// FlattenMidiClipCommand
+// ============================================================================
+
+TEST_CASE("FlattenMidiClipCommand - renders a looped MIDI clip across its full length",
+          "[clip][command][flatten]") {
+    resetState();
+    const TrackId track = createTrack();
+    auto& cm = ClipManager::getInstance();
+    const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 10.0, ClipView::Arrangement);
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    for (const double startBeat : {0.0, 1.0}) {
+        MidiNote note;
+        note.noteNumber = 60;
+        note.startBeat = startBeat;
+        note.lengthBeats = 1.0;
+        note.velocity = 100;
+        clip->midiNotes.push_back(note);
+    }
+
+    // A two-beat pattern with one beat phase offset renders at beats 0..9,
+    // including controller data and pitch bends.
+    clip->loopEnabled = true;
+    clip->loopLengthBeats = 2.0;
+    clip->loopLength = 1.0;
+    clip->midiOffset = 1.0;
+    MidiCCData cc;
+    cc.controller = 1;
+    cc.value = 64;
+    cc.beatPosition = 0.5;
+    clip->midiCCData.push_back(cc);
+    MidiPitchBendData pitchBend;
+    pitchBend.value = 4096;
+    pitchBend.beatPosition = 0.5;
+    clip->midiPitchBendData.push_back(pitchBend);
+
+    const ClipInfo original = *clip;
+    FlattenMidiClipCommand cmd(clipId);
+    cmd.execute();
+
+    REQUIRE_FALSE(clip->loopEnabled);
+    REQUIRE(clip->loopLengthBeats == Catch::Approx(0.0));
+    REQUIRE(clip->loopLength == Catch::Approx(0.0));
+    REQUIRE(clip->midiOffset == Catch::Approx(0.0));
+    REQUIRE(clip->midiNotes.size() == 10);
+    for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+        REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i)));
+        REQUIRE(clip->midiNotes[i].lengthBeats == Catch::Approx(1.0));
+    }
+    REQUIRE(clip->midiCCData.size() == 5);
+    REQUIRE(clip->midiPitchBendData.size() == 5);
+    for (size_t i = 0; i < 5; ++i) {
+        const double expectedBeat = 1.5 + static_cast<double>(i) * 2.0;
+        REQUIRE(clip->midiCCData[i].beatPosition == Catch::Approx(expectedBeat));
+        REQUIRE(clip->midiPitchBendData[i].beatPosition == Catch::Approx(expectedBeat));
+    }
+
+    cmd.undo();
+    REQUIRE(clip->loopEnabled == original.loopEnabled);
+    REQUIRE(clip->loopLengthBeats == Catch::Approx(original.loopLengthBeats));
+    REQUIRE(clip->midiOffset == Catch::Approx(original.midiOffset));
+    REQUIRE(clip->midiNotes.size() == original.midiNotes.size());
+    REQUIRE(clip->midiCCData.size() == original.midiCCData.size());
+    REQUIRE(clip->midiPitchBendData.size() == original.midiPitchBendData.size());
+}
+
+TEST_CASE("FlattenMidiClipCommand - respects loop and clip boundaries",
+          "[clip][command][flatten]") {
+    resetState();
+    const TrackId track = createTrack();
+    auto& cm = ClipManager::getInstance();
+
+    SECTION("an exact number of cycles does not add an extra repetition") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 8.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        MidiNote note;
+        note.startBeat = 0.0;
+        clip->midiNotes.push_back(note);
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 4);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i) * 2.0));
+    }
+
+    SECTION("notes crossing a loop boundary are trimmed in every repetition") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 6.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        MidiNote note;
+        note.startBeat = 1.5;
+        clip->midiNotes.push_back(note);
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 3);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            REQUIRE(clip->midiNotes[i].startBeat ==
+                    Catch::Approx(1.5 + static_cast<double>(i) * 2.0));
+            REQUIRE(clip->midiNotes[i].lengthBeats == Catch::Approx(0.5));
+        }
+    }
+}
+
 TEST_CASE("JoinClipsCommand - canExecute validation", "[clip][command][join]") {
     resetState();
     TrackId track1 = createTrack("T1");

@@ -3214,6 +3214,7 @@ void ClipComponent::showContextMenu() {
     {
         bool hasMidi = false;
         bool canSaveMidi = false;
+        bool canRenderMidiLoop = false;
         if (isMultiSelection) {
             for (auto cid : selectionManager.getSelectedClips()) {
                 auto* c = clipManager.getClip(cid);
@@ -3226,6 +3227,7 @@ void ClipComponent::showContextMenu() {
             const auto* ci = getClipInfo();
             hasMidi = ci && ci->isMidi() && !ci->midiNotes.empty();
             canSaveMidi = ci && ci->isMidi() && clipManager.canSaveClipToLibrary(ci->id);
+            canRenderMidiLoop = ci && ci->isMidi() && ci->loopEnabled && ci->loopLengthBeats > 0.0;
         }
 
         if (hasMidi) {
@@ -3293,6 +3295,11 @@ void ClipComponent::showContextMenu() {
                 quantizeMenu.addSubMenu(grid.name, modeMenu, canEdit);
             }
             menu.addSubMenu("Quantize", quantizeMenu, canEdit);
+            menu.addSeparator();
+        }
+
+        if (canRenderMidiLoop) {
+            menu.addItem(28, "Flatten MIDI Loop", canEdit);
             menu.addSeparator();
         }
     }
@@ -3549,6 +3556,15 @@ void ClipComponent::showContextMenu() {
                 }
                 if (compound)
                     undoManager.endCompoundOperation();
+                break;
+            }
+
+            case 28: {  // Flatten MIDI Loop (#1737)
+                const auto* clip = clipManager.getClip(clipId_);
+                if (clip && clip->isMidi() && clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<FlattenMidiClipCommand>(clipId_));
+                }
                 break;
             }
 
