@@ -555,6 +555,33 @@ void BottomPanel::setupHeaderControls() {
     };
     headerBar_->addChildComponent(loopButton_.get());
 
+    // Clip enable/disable toggle (#1736). Same power language as the device
+    // bypass button: on = green chip with a white glyph, off = red glyph.
+    // Mirrors the Clip Inspector toggle; disabled clips do not play.
+    clipEnabledButton_ = std::make_unique<SvgButton>("ClipEnabled", BinaryData::power_on_svg,
+                                                     BinaryData::power_on_svgSize);
+    clipEnabledButton_->setTooltip("Enable/disable clip");
+    clipEnabledButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    clipEnabledButton_->setActiveColor(juce::Colours::white);
+    clipEnabledButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    clipEnabledButton_->setClickingTogglesState(false);  // manual active state
+    clipEnabledButton_->onClick = [this]() {
+        const auto clipId = getActiveEditingClipId();
+        if (clipId == INVALID_CLIP_ID)
+            return;
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip == nullptr)
+            return;
+
+        const bool newState = !clip->enabled;
+        clipEnabledButton_->setActive(newState);
+        UndoManager::getInstance().executeCommand(std::make_unique<SetClipPropertyCommand>(
+            clipId, newState ? "Enable Clip" : "Disable Clip",
+            [newState](auto& manager, ClipId id) { manager.setClipEnabled(id, newState); }));
+    };
+    headerBar_->addChildComponent(clipEnabledButton_.get());
+
     // Note slice button (dual icon: off=grey, on=blue when notes selected)
     sliceButton_ = std::make_unique<SvgButton>(
         "NoteSlice", BinaryData::note_slice_off_svg, BinaryData::note_slice_off_svgSize,
@@ -613,6 +640,21 @@ void BottomPanel::setupHeaderControls() {
 
 void BottomPanel::setCollapsed(bool collapsed) {
     daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Bottom, collapsed);
+}
+
+void BottomPanel::paintOverChildren(juce::Graphics& g) {
+    // Disabled-clip dim over the editor content (#1736), mirroring the
+    // arrangement clip overlay. The header bar stays undimmed so the power
+    // switch and grid controls read normally.
+    const auto clipId = getActiveEditingClipId();
+    const auto* clip =
+        (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
+    if (clip && !clip->enabled) {
+        if (auto* content = getActiveContent(); content != nullptr && content->isVisible()) {
+            g.setColour(juce::Colours::black.withAlpha(0.4f));
+            g.fillRect(getLocalArea(content, content->getLocalBounds()));
+        }
+    }
 }
 
 void BottomPanel::paint(juce::Graphics& g) {
@@ -837,6 +879,8 @@ void BottomPanel::clipPropertyChanged(ClipId clipId) {
     if (getActiveEditingClipId() == clipId) {
         applyTimeModeToContent();
         syncLoopButtonState();
+        syncClipEnabledButtonState();
+        repaint();  // disabled-clip dim overlay (paintOverChildren)
     }
 }
 
@@ -1255,6 +1299,8 @@ void BottomPanel::addMidiControlsToHeader() {
     snapButton_->setVisible(true);
     loopButton_->setVisible(true);
     syncLoopButtonState();
+    clipEnabledButton_->setVisible(true);
+    syncClipEnabledButtonState();
     if (showEditorTabs_) {
         pianoRollTab_->setVisible(true);
         drumGridTab_->setVisible(true);
@@ -1292,6 +1338,8 @@ void BottomPanel::hideMidiHeaderControls() {
     snapButton_->setVisible(false);
     if (loopButton_)
         loopButton_->setVisible(false);
+    if (clipEnabledButton_)
+        clipEnabledButton_->setVisible(false);
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
     sliceButton_->setVisible(false);
@@ -1334,6 +1382,15 @@ void BottomPanel::syncLoopButtonState() {
     loopButton_->setActive(clip != nullptr && (clip->loopEnabled || clip->autoTempo));
 }
 
+void BottomPanel::syncClipEnabledButtonState() {
+    if (!clipEnabledButton_)
+        return;
+    const auto clipId = getActiveEditingClipId();
+    const auto* clip =
+        (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
+    clipEnabledButton_->setActive(clip != nullptr && clip->enabled);
+}
+
 void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     auto controlsArea = headerBounds;
     controlsArea.removeFromRight(8);
@@ -1354,6 +1411,15 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     int y = controlsArea.getY();
     int h = controlsArea.getHeight();
     int vPad = 4;
+
+    // Clip enable/disable power toggle — far right of the control strip,
+    // mirroring the track chain header's chain-bypass power.
+    if (clipEnabledButton_ && clipEnabledButton_->isVisible()) {
+        const int sz = h - 8;
+        x -= sz;
+        clipEnabledButton_->setBounds(x, y + (h - sz) / 2, sz, sz);
+        x -= 8;
+    }
 
     x -= 36;
     snapButton_->setBounds(x, y + vPad, 36, h - vPad * 2);

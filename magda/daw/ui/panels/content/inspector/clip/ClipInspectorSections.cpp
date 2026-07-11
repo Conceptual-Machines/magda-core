@@ -410,6 +410,40 @@ void ClipInspector::initClipPropertiesSection() {
     clipGhostIcon_->setTooltip("Ghost clip");
     addChildComponent(*clipGhostIcon_);
 
+    // Clip enable/disable toggle (#1736). Classic switch glyph in dual-icon
+    // mode: knob left / outline = off, knob right / filled = on — state
+    // reads from the icon itself, no colour coding. Drives the same clip
+    // state as the clip-editor header power toggle.
+    clipEnabledToggle_ = std::make_unique<magda::SvgButton>(
+        "ClipEnabled", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
+        BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
+    // Chip-style bordered button, matching the view|type chip next to it.
+    clipEnabledToggle_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
+    clipEnabledToggle_->setBorderColor(juce::Colour(0xff555555));
+    clipEnabledToggle_->setBorderThickness(1.0f);
+    clipEnabledToggle_->setIconPadding(2.0f);
+    clipEnabledToggle_->setClickingTogglesState(false);
+    clipEnabledToggle_->setTooltip("Enable/disable clip");
+    clipEnabledToggle_->onClick = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
+        if (!clip)
+            return;
+
+        const bool newState = !clip->enabled;
+        clipEnabledToggle_->setActive(newState);
+        magda::ClipBatchEdit batch("Enable/Disable Clips", selectedClipIds_.size());
+        for (auto cid : selectedClipIds_) {
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, newState ? "Enable Clip" : "Disable Clip",
+                [newState](auto& manager, magda::ClipId id) {
+                    manager.setClipEnabled(id, newState);
+                }));
+        }
+    };
+    addChildComponent(*clipEnabledToggle_);
+
     // Source BPM (editable — shown at bottom with WARP/BEAT buttons)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());

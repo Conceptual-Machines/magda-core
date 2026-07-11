@@ -1371,6 +1371,15 @@ void ClipManager::setClipColour(ClipId clipId, juce::Colour colour) {
     }
 }
 
+void ClipManager::setClipEnabled(ClipId clipId, bool enabled) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->enabled == enabled)
+            return;
+        clip->enabled = enabled;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
     if (auto* clip = getClip(clipId)) {
         // Invariant: autoTempo (beat mode) requires loopEnabled. TE's

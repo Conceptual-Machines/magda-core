@@ -384,7 +384,6 @@ class TrackManager {
     // Path-based variant — preferred for new code; sections will become
     // id-scoped, at which point the bare-id version goes away.
     void setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
-    void setChainBypassed(TrackId trackId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
     // Drum-kit row metadata lives on the device instance — it's a physical
@@ -458,6 +457,18 @@ class TrackManager {
     ChainInfo* getChainByPath(const ChainNodePath& chainPath);  // Nested-chain lookup
     const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const;
     void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex);
+    /** @brief Chain power: the state behind the chain header's power button
+        and the track inspector's enable switch. When off, every insert-chain
+        device is gated off in the engine without touching the devices' own
+        bypassed flags. */
+    bool isChainEnabled(TrackId trackId) const;
+    void setChainEnabled(TrackId trackId, bool enabled);
+
+    /** @brief A device's engine enablement: its own bypassed flag combined
+        with the owning track's chain power (insert-chain devices only). */
+    bool isDeviceEffectivelyEnabled(const ChainNodePath& devicePath,
+                                    const DeviceInfo& device) const;
+
     void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted);
     void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId, bool bypassed);
     void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo);

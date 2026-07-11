@@ -45,6 +45,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ~BottomPanel() override;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // Legacy API for compatibility
@@ -133,6 +134,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void syncLoopButtonState();
     void setGridDivisionFromPicker(int numerator, int denominator);
     void updateGridDivisionFace();
+    void syncClipEnabledButtonState();
 
     bool showEditorTabs_ = false;
     bool updatingTabs_ = false;  // Guard against re-entrancy
@@ -158,7 +160,8 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<daw::ui::GridDivisionButton> gridDivisionButton_;
     std::unique_ptr<juce::TextButton> autoGridButton_;
     std::unique_ptr<juce::TextButton> snapButton_;
-    std::unique_ptr<SvgButton> loopButton_;  // toggles the clip's source loop
+    std::unique_ptr<SvgButton> loopButton_;         // toggles the clip's source loop
+    std::unique_ptr<SvgButton> clipEnabledButton_;  // enable/disable the edited clip (#1736)
     std::unique_ptr<SvgButton> sliceButton_;
     std::unique_ptr<SvgButton> bendButton_;
 

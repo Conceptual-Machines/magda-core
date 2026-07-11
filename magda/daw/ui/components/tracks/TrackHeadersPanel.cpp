@@ -2050,6 +2050,13 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         int stripX = headersOnRight_ ? bgArea.getRight() - 3 : bgArea.getX();
         g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
     }
+
+    // Chain power off — dim the header like the mixer strip (visual cue that
+    // the track's insert chain is gated; mute/solo/fader stay live).
+    if (!header.isMaster && !TrackManager::getInstance().isChainEnabled(header.trackId)) {
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRect(bgArea);
+    }
 }
 
 void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area) {

@@ -1,6 +1,7 @@
 #include "../../core/AutomationCommands.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/ClipPropertyCommands.hpp"
 #include "../../core/Config.hpp"
 #include "../../core/MidiNoteCommands.hpp"
 #include "../../core/PasteTargetResolver.hpp"
@@ -93,9 +94,9 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
         duplicateClipWithoutAutomation, duplicateClipAsGhost, makeClipUnique, deleteCmd, selectAll,
         splitOrTrim, joinClips, renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
-        escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange, splitAllTracksAtCursor,
-        copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange, cutLoopRange, deleteLoopRange,
-        pasteRipple,
+        toggleClipEnabled, escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange,
+        splitAllTracksAtCursor, copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange,
+        cutLoopRange, deleteLoopRange, pasteRipple,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -296,6 +297,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case toggleClipLoop:
             result.setInfo("Toggle Clip Loop", "Toggle loop on/off for selected clip", "Edit", 0);
             result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier);
+            break;
+
+        case toggleClipEnabled:
+            result.setInfo("Enable/Disable Clip", "Enable or disable selected clips", "Edit", 0);
+            result.addDefaultKeypress('0', 0);
             break;
 
         case escapeAction:
@@ -1643,6 +1649,26 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     if (clip)
                         clipManager.setClipLoopEnabled(clipId, !clip->loopEnabled, bpm);
                 }
+            }
+            return true;
+        }
+
+        case toggleClipEnabled: {
+            const auto selectedClips = selectionManager.getSelectedClips();
+            if (!selectedClips.empty()) {
+                UndoManager::getInstance().beginCompoundOperation("Enable/Disable Clips");
+                for (auto clipId : selectedClips) {
+                    if (const auto* clip = clipManager.getClip(clipId)) {
+                        const bool newState = !clip->enabled;
+                        UndoManager::getInstance().executeCommand(
+                            std::make_unique<SetClipPropertyCommand>(
+                                clipId, newState ? "Enable Clip" : "Disable Clip",
+                                [newState](auto& manager, ClipId id) {
+                                    manager.setClipEnabled(id, newState);
+                                }));
+                    }
+                }
+                UndoManager::getInstance().endCompoundOperation();
             }
             return true;
         }

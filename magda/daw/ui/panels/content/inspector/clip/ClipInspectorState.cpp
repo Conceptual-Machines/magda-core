@@ -291,6 +291,9 @@ void ClipInspector::updateFromSelectedClip() {
             clipViewIcon_->setTooltip("Arrangement clip");
         }
 
+        // Enable/disable switch: reflects the primary clip's state.
+        clipEnabledToggle_->setActive(clip->enabled);
+
         // Ghost indicator: link glyph next to the name when the clip mirrors
         // a link group.
         const auto ghostSiblings = magda::ClipManager::getInstance().getLinkGroupSiblings(clip->id);
@@ -670,6 +673,7 @@ void ClipInspector::updateFromSelectedClip() {
 void ClipInspector::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
     colourSwatch_->setVisible(show);
+    clipEnabledToggle_->setVisible(show);
     clipFilePathLabel_.setVisible(show);
     clipTypeIcon_->setVisible(show);
     clipViewIcon_->setVisible(show);

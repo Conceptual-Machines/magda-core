@@ -190,6 +190,24 @@ ChainNodePath childRackPath(const ChainNodePath& parentPath, RackId rackId) {
                                    : parentPath.withRack(rackId);
 }
 
+// Collect the device paths of every device in the given chain tree (racks
+// recursed), without mutating anything. Path construction mirrors
+// setChainElementsBypassed below.
+void collectChainDevicePaths(const std::vector<ChainElement>& elements,
+                             const ChainNodePath& parentPath,
+                             std::vector<ChainNodePath>& outDevices) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            outDevices.push_back(childDevicePath(parentPath, magda::getDevice(element).id));
+            continue;
+        }
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = childRackPath(parentPath, rack.id);
+        for (const auto& chain : rack.chains)
+            collectChainDevicePaths(chain.elements, rackPath.withChain(chain.id), outDevices);
+    }
+}
+
 void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                               bool bypassed, std::vector<ChainNodePath>& affectedDevices) {
     for (auto& element : elements) {
@@ -2177,15 +2195,38 @@ void TrackManager::setDeviceBypassedByPath(const ChainNodePath& devicePath, bool
     }
 }
 
-void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
-    if (auto* track = getTrack(trackId)) {
-        std::vector<ChainNodePath> affectedDevices;
-        setChainElementsBypassed(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
-                                 bypassed, affectedDevices);
-        for (const auto& devicePath : affectedDevices)
-            notifyDevicePropertyChanged(devicePath);
-        notifyTrackDevicesChanged(trackId);
-    }
+bool TrackManager::isChainEnabled(TrackId trackId) const {
+    const auto* track = getTrack(trackId);
+    return track == nullptr || track->chain.enabled;
+}
+
+bool TrackManager::isDeviceEffectivelyEnabled(const ChainNodePath& devicePath,
+                                              const DeviceInfo& device) const {
+    if (device.bypassed)
+        return false;
+    // Post-FX and mixer-analysis devices sit outside the insert chain, so the
+    // chain power does not gate them.
+    if (devicePath.isPostFx() || devicePath.isMixerAnalysis())
+        return true;
+    return isChainEnabled(devicePath.trackId);
+}
+
+void TrackManager::setChainEnabled(TrackId trackId, bool enabled) {
+    auto* track = getTrack(trackId);
+    if (!track || track->chain.enabled == enabled)
+        return;
+    track->chain.enabled = enabled;
+
+    // Re-apply effective enablement on every insert-chain device through the
+    // regular device sync path (AudioBridge::devicePropertyChanged applies the
+    // chain gate on top of each device's own bypassed flag). The flags
+    // themselves are untouched, so per-device bypass survives an off/on cycle.
+    std::vector<ChainNodePath> devicePaths;
+    collectChainDevicePaths(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                            devicePaths);
+    for (const auto& devicePath : devicePaths)
+        notifyDevicePropertyChanged(devicePath);
+    notifyTrackDevicesChanged(trackId);
 }
 
 DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {

@@ -567,14 +567,19 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     if (!device)
         return;
 
+    // Engine enablement = the device's own bypass flag gated by the track's
+    // chain power (insert-chain devices only).
+    const bool effectiveEnabled =
+        TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath, *device);
+
     if (processor) {
         processor->syncFromDeviceInfo(*device);
-    } else {
-        // For plugins without a processor (e.g. Chord Engine), sync bypass directly.
-        auto tePlugin = pluginManager_.getPlugin(devicePath);
-        if (tePlugin)
-            tePlugin->setEnabled(!device->bypassed);
     }
+    // Apply enablement directly on the TE plugin: syncFromDeviceInfo only
+    // knows the device's own bypassed flag, not the chain gate; and plugins
+    // without a processor (e.g. Chord Engine) have no other sync path.
+    if (auto tePlugin = pluginManager_.getPlugin(devicePath))
+        tePlugin->setEnabled(effectiveEnabled);
 
     if (auto tePlugin = pluginManager_.getPlugin(devicePath))
         daw::audio::syncPluginMidiInThru(tePlugin.get(), device->midiInThru);
@@ -585,7 +590,7 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     if (devicePath.getType() == ChainNodeType::TopLevelDevice) {
         auto& rackManager = pluginManager_.getInstrumentRackManager();
         if (auto* rackInstance = rackManager.getRackInstance(deviceId)) {
-            rackInstance->setEnabled(!device->bypassed);
+            rackInstance->setEnabled(effectiveEnabled);
         }
         // Keep the wrapper's raw-MIDI passthrough in sync with the routing model
         // (always on for a plain instrument; midiInThru-controlled for a
@@ -599,7 +604,7 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // unity while bypassed so the slider stops attenuating signal that isn't going
     // through the plugin (#1189). The user's gainValue is preserved on DeviceInfo
     // and gets re-pushed when the device is re-enabled.
-    deviceMetering_.setGain(devicePath, device->bypassed ? 1.0f : device->gainValue);
+    deviceMetering_.setGain(devicePath, effectiveEnabled ? device->gainValue : 1.0f);
 
     // When bypass changes, resync modifiers so they are removed/restored
     pluginManager_.resyncDeviceModifiers(devicePath.trackId);
