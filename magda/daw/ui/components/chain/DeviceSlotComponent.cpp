@@ -391,12 +391,40 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         bool active = onButton_->getToggleState();
         onButton_->setActive(active);
         setBypassed(!active);
+        if (!active) {
+            device_.deltaSolo = false;
+            deltaButton_->setToggleState(false, juce::dontSendNotification);
+        }
         magda::TrackManager::getInstance().setDeviceInChainBypassedByPath(nodePath_, !active);
         if (onDeviceBypassChanged) {
             onDeviceBypassChanged(!active);
         }
     };
     addAndMakeVisible(*onButton_);
+
+    deltaButton_ = std::make_unique<juce::TextButton>(juce::String::fromUTF8("\xce\x94"));
+    deltaButton_->setClickingTogglesState(true);
+    deltaButton_->setToggleState(device.deltaSolo, juce::dontSendNotification);
+    deltaButton_->setTooltip("Delta Solo: processed signal minus dry input");
+    deltaButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    deltaButton_->setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    deltaButton_->setColour(juce::TextButton::buttonOnColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
+    deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    deltaButton_->onClick = [this]() {
+        const bool enabled = deltaButton_->getToggleState();
+        device_.deltaSolo = enabled;
+        if (enabled) {
+            device_.bypassed = false;
+            setBypassed(false);
+            onButton_->setToggleState(true, juce::dontSendNotification);
+            onButton_->setActive(true);
+        }
+        magda::TrackManager::getInstance().setDeviceDeltaSoloByPath(nodePath_, enabled);
+    };
+    addAndMakeVisible(*deltaButton_);
 
     // Export as MIDI clip button
     if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
@@ -821,6 +849,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
+    deltaButton_->setToggleState(device.deltaSolo, juce::dontSendNotification);
     syncGainControlsFromDevice();
     if (midiThruButton_ != nullptr && midiThruButton_->isActive() != device.midiInThru)
         midiThruButton_->setActive(device.midiInThru);
@@ -1112,6 +1141,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .sidechainButton = scButton_.get(),
          .multiOutButton = multiOutButton_.get(),
          .uiButton = uiButton_.get(),
+         .deltaButton = deltaButton_.get(),
          .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
          .presetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
          .exportClipButton = exportClipButton_.get(),
@@ -1142,6 +1172,7 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
                             .aiButton = aiButton_.get(),
                             .multiOutButton = multiOutButton_.get(),
                             .uiButton = uiButton_.get(),
+                            .deltaButton = deltaButton_.get(),
                             .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
                             .exportClipButton = exportClipButton_.get(),
                             .randomButton = randomButton_.get(),

@@ -578,8 +578,10 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // Apply enablement directly on the TE plugin: syncFromDeviceInfo only
     // knows the device's own bypassed flag, not the chain gate; and plugins
     // without a processor (e.g. Chord Engine) have no other sync path.
-    if (auto tePlugin = pluginManager_.getPlugin(devicePath))
+    if (auto tePlugin = pluginManager_.getPlugin(devicePath)) {
         tePlugin->setEnabled(effectiveEnabled);
+        tePlugin->setDeltaSoloEnabled(device->deltaSolo);
+    }
 
     if (auto tePlugin = pluginManager_.getPlugin(devicePath))
         daw::audio::syncPluginMidiInThru(tePlugin.get(), device->midiInThru);

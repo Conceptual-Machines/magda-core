@@ -2225,3 +2225,38 @@ TEST_CASE("RackInfo panel UI state roundtrip", "[project][serialization][rack][u
     REQUIRE(loaded.paramPanelOpen == true);
     REQUIRE(loaded.chains.size() == 1);
 }
+
+TEST_CASE("Delta solo state roundtrips and defaults off for older projects",
+          "[project][serialization][delta_solo]") {
+    DeviceInfo device;
+    device.id = 11;
+    device.name = "Delta Effect";
+    device.deltaSolo = true;
+
+    auto deviceJson = ProjectSerializer::serializeDeviceInfo(device);
+    DeviceInfo loadedDevice;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(deviceJson, loadedDevice));
+    CHECK(loadedDevice.deltaSolo);
+
+    deviceJson.getDynamicObject()->removeProperty("deltaSolo");
+    DeviceInfo legacyDevice;
+    legacyDevice.deltaSolo = false;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(deviceJson, legacyDevice));
+    CHECK_FALSE(legacyDevice.deltaSolo);
+
+    RackInfo rack;
+    rack.id = 12;
+    rack.name = "Delta Rack";
+    rack.deltaSolo = true;
+
+    auto rackJson = ProjectSerializer::serializeRackInfo(rack);
+    RackInfo loadedRack;
+    REQUIRE(ProjectSerializer::deserializeRackInfo(rackJson, loadedRack));
+    CHECK(loadedRack.deltaSolo);
+
+    rackJson.getDynamicObject()->removeProperty("deltaSolo");
+    RackInfo legacyRack;
+    legacyRack.deltaSolo = false;
+    REQUIRE(ProjectSerializer::deserializeRackInfo(rackJson, legacyRack));
+    CHECK_FALSE(legacyRack.deltaSolo);
+}

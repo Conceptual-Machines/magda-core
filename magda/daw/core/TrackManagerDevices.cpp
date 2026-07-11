@@ -1106,6 +1106,17 @@ const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devi
 void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
+        if (bypassed)
+            device->deltaSolo = false;
+        notifyDevicePropertyChanged(devicePath);
+    }
+}
+
+void TrackManager::setDeviceDeltaSoloByPath(const ChainNodePath& devicePath, bool deltaSolo) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        device->deltaSolo = deltaSolo;
+        if (deltaSolo)
+            device->bypassed = false;
         notifyDevicePropertyChanged(devicePath);
     }
 }
