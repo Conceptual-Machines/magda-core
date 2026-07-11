@@ -6,6 +6,7 @@
 
 #include "ClipLaneFlattener.hpp"
 #include "CurveMath.hpp"
+#include "GridDivision.hpp"
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
 #include "TrackManager.hpp"
@@ -785,9 +786,10 @@ void AutomationManager::setClipLoopLength(AutomationClipId clipId, double length
 void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int numerator,
                                      int denominator) {
     if (auto* clip = getClip(clipId)) {
+        const auto [num, den] = grid::normaliseFraction(numerator, denominator);
         clip->snapXEnabled = enabled;
-        clip->snapXNumerator = juce::jmax(1, numerator);
-        clip->snapXDenominator = juce::jmax(1, denominator);
+        clip->snapXNumerator = num;
+        clip->snapXDenominator = den;
         notifyClipsChanged(clip->laneId);
     }
 }
@@ -795,9 +797,10 @@ void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int 
 void AutomationManager::setClipSnapY(AutomationClipId clipId, bool enabled, int numerator,
                                      int denominator) {
     if (auto* clip = getClip(clipId)) {
+        const auto [num, den] = grid::normaliseFraction(numerator, denominator);
         clip->snapYEnabled = enabled;
-        clip->snapYNumerator = juce::jmax(1, numerator);
-        clip->snapYDenominator = juce::jmax(1, denominator);
+        clip->snapYNumerator = num;
+        clip->snapYDenominator = den;
         notifyClipsChanged(clip->laneId);
     }
 }

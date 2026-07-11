@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../../core/ClipManager.hpp"
+#include "../../core/GridDivision.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
@@ -988,6 +989,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQua
             newDen = 1;
         }
     }
+
+    const auto [normalisedNum, normalisedDen] = grid::normaliseFraction(newNum, newDen);
+    newNum = normalisedNum;
+    newDen = normalisedDen;
 
     if (gq.autoGrid == e.autoGrid && gq.numerator == newNum && gq.denominator == newDen) {
         return ChangeFlags::None;

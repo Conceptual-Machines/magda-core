@@ -11,6 +11,7 @@
 #include "ClipOperations.hpp"
 #include "CompSectionMath.hpp"
 #include "Config.hpp"
+#include "GridDivision.hpp"
 #include "MidiFileWriter.hpp"
 #include "TempoUtils.hpp"
 #include "TrackManager.hpp"
@@ -2494,9 +2495,10 @@ void ClipManager::setRightChannelActive(ClipId clipId, bool active) {
 void ClipManager::setClipGridSettings(ClipId clipId, bool autoGrid, int numerator,
                                       int denominator) {
     if (auto* clip = getClip(clipId)) {
+        const auto [num, den] = grid::normaliseFraction(numerator, denominator);
         clip->gridAutoGrid = autoGrid;
-        clip->gridNumerator = numerator;
-        clip->gridDenominator = denominator;
+        clip->gridNumerator = num;
+        clip->gridDenominator = den;
         notifyClipPropertyChanged(clipId);
     }
 }

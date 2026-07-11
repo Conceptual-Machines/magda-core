@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "../../components/common/GridDivisionMenu.hpp"
 #include "../../components/waveform/ClipWaveformPainter.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -78,21 +79,6 @@ AutomationClipEditorContent::AutomationClipEditorContent() {
 }
 
 void AutomationClipEditorContent::buildHeaderControls() {
-    // Allowed denominators (multiples of 2 and 3), shared by both axes.
-    static constexpr int kAllowedDen[] = {2, 3, 4, 6, 8, 12, 16, 24, 32};
-    const auto constrainDen = [](double raw) {
-        int best = kAllowedDen[0];
-        int bestDist = std::abs(static_cast<int>(std::round(raw)) - best);
-        for (int candidate : kAllowedDen) {
-            const int dist = std::abs(static_cast<int>(std::round(raw)) - candidate);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = candidate;
-            }
-        }
-        return best;
-    };
-
     const auto makeSnapButton = [this](const juce::String& text) {
         auto button = std::make_unique<juce::TextButton>(text);
         button->setColour(juce::TextButton::buttonColourId,
@@ -110,35 +96,34 @@ void AutomationClipEditorContent::buildHeaderControls() {
         addChildComponent(button.get());
         return button;
     };
-    const auto makeNumLabel = [this](double maxValue, double defaultValue) {
-        auto label = std::make_unique<magda::DraggableValueLabel>(
-            magda::DraggableValueLabel::Format::Integer);
-        label->setRange(1.0, maxValue, defaultValue);
-        label->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-        label->setShowFillIndicator(false);
-        label->setFontSize(12.0f);
-        label->setDoubleClickResetsValue(true);
-        label->setDrawBorder(false);
-        addChildComponent(label.get());
-        return label;
-    };
-    const auto makeSlash = [this](juce::Label& slash) {
-        slash.setText("/", juce::dontSendNotification);
-        slash.setFont(FontManager::getInstance().getUIFont(12.0f));
-        slash.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-        slash.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-        slash.setJustificationType(juce::Justification::centred);
-        addChildComponent(slash);
-    };
-
     snapXButton_ = makeSnapButton("SNAP X");
-    snapXNum_ = makeNumLabel(128.0, 1.0);
-    makeSlash(snapXSlash_);
-    snapXDen_ = makeNumLabel(32.0, 4.0);
     snapYButton_ = makeSnapButton("SNAP Y");
-    snapYNum_ = makeNumLabel(32.0, 1.0);
-    makeSlash(snapYSlash_);
-    snapYDen_ = makeNumLabel(32.0, 8.0);
+
+    const auto makeDivisionButton = [this]() {
+        auto button = std::make_unique<GridDivisionButton>();
+        button->setHorizontal(true);
+        button->setTooltip("Snap division");
+        addChildComponent(button.get());
+        return button;
+    };
+    snapXDivision_ = makeDivisionButton();
+    snapYDivision_ = makeDivisionButton();
+    snapXDivision_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            showGridDivisionMenu(*snapXDivision_, clip->snapXNumerator, clip->snapXDenominator,
+                                 [clipId = clip->id](int numerator, int denominator) {
+                                     AutomationManager::getInstance().setClipSnapX(
+                                         clipId, true, numerator, denominator);
+                                 });
+    };
+    snapYDivision_->onClick = [this]() {
+        if (const auto* clip = getClip())
+            showGridDivisionMenu(*snapYDivision_, clip->snapYNumerator, clip->snapYDenominator,
+                                 [clipId = clip->id](int numerator, int denominator) {
+                                     AutomationManager::getInstance().setClipSnapY(
+                                         clipId, true, numerator, denominator);
+                                 });
+    };
 
     // Track content ghost toggle — the MIDI editor's layer icon.
     ghostButton_ = std::make_unique<magda::SvgButton>("TrackGhost", BinaryData::stacks_svg,
@@ -164,41 +149,13 @@ void AutomationClipEditorContent::buildHeaderControls() {
             magda::AutomationManager::getInstance().setClipSnapY(
                 clip->id, !clip->snapYEnabled, clip->snapYNumerator, clip->snapYDenominator);
     };
-    snapXNum_->onValueChange = [this]() {
-        if (const auto* clip = getClip())
-            magda::AutomationManager::getInstance().setClipSnapX(
-                clip->id, clip->snapXEnabled, static_cast<int>(std::round(snapXNum_->getValue())),
-                clip->snapXDenominator);
-    };
-    snapXDen_->onValueChange = [this, constrainDen]() {
-        if (const auto* clip = getClip())
-            magda::AutomationManager::getInstance().setClipSnapX(
-                clip->id, clip->snapXEnabled, clip->snapXNumerator,
-                constrainDen(snapXDen_->getValue()));
-    };
-    snapYNum_->onValueChange = [this]() {
-        if (const auto* clip = getClip())
-            magda::AutomationManager::getInstance().setClipSnapY(
-                clip->id, clip->snapYEnabled, static_cast<int>(std::round(snapYNum_->getValue())),
-                clip->snapYDenominator);
-    };
-    snapYDen_->onValueChange = [this, constrainDen]() {
-        if (const auto* clip = getClip())
-            magda::AutomationManager::getInstance().setClipSnapY(
-                clip->id, clip->snapYEnabled, clip->snapYNumerator,
-                constrainDen(snapYDen_->getValue()));
-    };
 }
 
 void AutomationClipEditorContent::populateHeader(juce::Component& headerBar) {
     for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
-                               static_cast<juce::Component*>(snapXNum_.get()),
-                               static_cast<juce::Component*>(&snapXSlash_),
-                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapXDivision_.get()),
                                static_cast<juce::Component*>(snapYButton_.get()),
-                               static_cast<juce::Component*>(snapYNum_.get()),
-                               static_cast<juce::Component*>(&snapYSlash_),
-                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(snapYDivision_.get()),
                                static_cast<juce::Component*>(ghostButton_.get())})
         headerBar.addAndMakeVisible(c);
     syncSnapControls();
@@ -207,13 +164,9 @@ void AutomationClipEditorContent::populateHeader(juce::Component& headerBar) {
 void AutomationClipEditorContent::depopulateHeader(juce::Component& headerBar) {
     juce::ignoreUnused(headerBar);
     for (juce::Component* c : {static_cast<juce::Component*>(snapXButton_.get()),
-                               static_cast<juce::Component*>(snapXNum_.get()),
-                               static_cast<juce::Component*>(&snapXSlash_),
-                               static_cast<juce::Component*>(snapXDen_.get()),
+                               static_cast<juce::Component*>(snapXDivision_.get()),
                                static_cast<juce::Component*>(snapYButton_.get()),
-                               static_cast<juce::Component*>(snapYNum_.get()),
-                               static_cast<juce::Component*>(&snapYSlash_),
-                               static_cast<juce::Component*>(snapYDen_.get()),
+                               static_cast<juce::Component*>(snapYDivision_.get()),
                                static_cast<juce::Component*>(ghostButton_.get())})
         addChildComponent(c);
 }
@@ -228,23 +181,15 @@ void AutomationClipEditorContent::layoutHeader(juce::Rectangle<int> headerBounds
     ghostButton_->setBounds(headerBounds.getX() + 40, y, h, h);
 
     int x = area.getRight();
-    // Rightmost group: SNAP Y [n]/[d]
-    x -= 24;
-    snapYDen_->setBounds(x, y, 24, h);
-    x -= 8;
-    snapYSlash_.setBounds(x, area.getY(), 8, area.getHeight());
-    x -= 24;
-    snapYNum_->setBounds(x, y, 24, h);
+    // Rightmost group: SNAP Y [division]
+    x -= 56;
+    snapYDivision_->setBounds(x, y, 56, h);
     x -= 52;
     snapYButton_->setBounds(x, y, 48, h);
     x -= 16;
-    // Left group: SNAP X [n]/[d]
-    x -= 24;
-    snapXDen_->setBounds(x, y, 24, h);
-    x -= 8;
-    snapXSlash_.setBounds(x, area.getY(), 8, area.getHeight());
-    x -= 24;
-    snapXNum_->setBounds(x, y, 24, h);
+    // Left group: SNAP X [division]
+    x -= 56;
+    snapXDivision_->setBounds(x, y, 56, h);
     x -= 52;
     snapXButton_->setBounds(x, y, 48, h);
 }
@@ -255,24 +200,14 @@ void AutomationClipEditorContent::syncSnapControls() {
         return;
     snapXButton_->setToggleState(clip->snapXEnabled, juce::dontSendNotification);
     snapYButton_->setToggleState(clip->snapYEnabled, juce::dontSendNotification);
-    if (!snapXNum_->isDragging())
-        snapXNum_->setValue(clip->snapXNumerator, juce::dontSendNotification);
-    if (!snapXDen_->isDragging())
-        snapXDen_->setValue(clip->snapXDenominator, juce::dontSendNotification);
-    if (!snapYNum_->isDragging())
-        snapYNum_->setValue(clip->snapYNumerator, juce::dontSendNotification);
-    if (!snapYDen_->isDragging())
-        snapYDen_->setValue(clip->snapYDenominator, juce::dontSendNotification);
+    snapXDivision_->setDivision(clip->snapXNumerator, clip->snapXDenominator);
+    snapYDivision_->setDivision(clip->snapYNumerator, clip->snapYDenominator);
     const auto dim = [](juce::Component& c, bool on) {
         c.setEnabled(on);
         c.setAlpha(on ? 1.0f : 0.6f);
     };
-    dim(*snapXNum_, clip->snapXEnabled);
-    dim(*snapXDen_, clip->snapXEnabled);
-    dim(snapXSlash_, clip->snapXEnabled);
-    dim(*snapYNum_, clip->snapYEnabled);
-    dim(*snapYDen_, clip->snapYEnabled);
-    dim(snapYSlash_, clip->snapYEnabled);
+    dim(*snapXDivision_, clip->snapXEnabled);
+    dim(*snapYDivision_, clip->snapYEnabled);
 }
 
 AutomationClipEditorContent::~AutomationClipEditorContent() {

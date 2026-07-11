@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include "../components/common/GridDivisionMenu.hpp"
 #include "../state/TimelineController.hpp"
 #include "TabbedPanel.hpp"
 #include "core/ClipManager.hpp"
@@ -131,6 +132,8 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ClipId getActiveEditingClipId() const;
     // Reflect the active clip's source-loop state on the header loop toggle.
     void syncLoopButtonState();
+    void setGridDivisionFromPicker(int numerator, int denominator);
+    void updateGridDivisionFace();
     void syncClipEnabledButtonState();
 
     bool showEditorTabs_ = false;
@@ -154,6 +157,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
     std::unique_ptr<juce::Label> gridSlashLabel_;
     std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
+    std::unique_ptr<daw::ui::GridDivisionButton> gridDivisionButton_;
     std::unique_ptr<juce::TextButton> autoGridButton_;
     std::unique_ptr<juce::TextButton> snapButton_;
     std::unique_ptr<SvgButton> loopButton_;         // toggles the clip's source loop
