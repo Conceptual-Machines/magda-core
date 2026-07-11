@@ -85,9 +85,19 @@ bool DeviceProcessor::isBypassed() const {
     return plugin_ ? !plugin_->isEnabled() : true;
 }
 
+void DeviceProcessor::setDeltaSolo(bool deltaSolo) {
+    if (plugin_)
+        plugin_->setDeltaSoloEnabled(deltaSolo);
+}
+
+bool DeviceProcessor::isDeltaSolo() const {
+    return plugin_ && plugin_->isDeltaSoloEnabled();
+}
+
 void DeviceProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
     setGainDb(info.gainDb);
     setBypassed(info.bypassed);
+    setDeltaSolo(info.deltaSolo);
 
     // ParameterInfo::paramIndex is the stable plugin/slot index. This keeps
     // restore semantics aligned with live UI writes and supports processors
@@ -103,6 +113,7 @@ void DeviceProcessor::syncToDeviceInfo(DeviceInfo& info) const {
     info.gainDb = gainDb_;
     info.gainValue = gainLinear_;
     info.bypassed = isBypassed();
+    info.deltaSolo = isDeltaSolo();
 }
 
 void DeviceProcessor::applyGain() {

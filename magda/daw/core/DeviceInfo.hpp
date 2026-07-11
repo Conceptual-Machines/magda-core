@@ -117,8 +117,9 @@ struct DeviceInfo {
     juce::String uniqueId;
     juce::String fileOrIdentifier;  // Path to plugin file or AU identifier
 
-    bool bypassed = false;  // Device bypass state
-    bool expanded = true;   // UI expanded state
+    bool bypassed = false;   // Device bypass state
+    bool deltaSolo = false;  // Hear the processed signal minus its latency-aligned dry input
+    bool expanded = true;    // UI expanded state
 
     // UI panel visibility states
     bool modPanelOpen = false;    // Modulator panel visible

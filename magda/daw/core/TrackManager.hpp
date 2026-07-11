@@ -384,6 +384,7 @@ class TrackManager {
     // Path-based variant — preferred for new code; sections will become
     // id-scoped, at which point the bare-id version goes away.
     void setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
+    void setDeviceDeltaSoloByPath(const ChainNodePath& devicePath, bool deltaSolo);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
     // Drum-kit row metadata lives on the device instance — it's a physical
@@ -442,6 +443,8 @@ class TrackManager {
     RackInfo* getRack(TrackId trackId, RackId rackId);
     const RackInfo* getRack(TrackId trackId, RackId rackId) const;
     void setRackBypassed(TrackId trackId, RackId rackId, bool bypassed);
+    void setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed);
+    void setRackDeltaSoloByPath(const ChainNodePath& rackPath, bool deltaSolo);
     void setRackExpanded(TrackId trackId, RackId rackId, bool expanded);
 
     // Path-based rack lookup (works for nested racks at any depth)

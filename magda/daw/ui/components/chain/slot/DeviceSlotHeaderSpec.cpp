@@ -30,6 +30,8 @@ bool getExpandedVisibility(HeaderControlId id, const HeaderControlVisibility& vi
             return visibility.sidechain;
         case HeaderControlId::ExportClip:
             return visibility.exportClip;
+        case HeaderControlId::Delta:
+            return visibility.delta;
     }
 
     return false;
@@ -61,6 +63,8 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
             return visibility.multiOut;
         case HeaderControlId::ExportClip:
             return visibility.exportClip;
+        case HeaderControlId::Delta:
+            return visibility.delta;
         case HeaderControlId::Learn:
         case HeaderControlId::Sidechain:
             return false;
@@ -89,6 +93,7 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     visibility.random = traits.isStepSequencer || traits.isPolyStepSequencer;
     visibility.stepRecord = visibility.random;
     visibility.midiThru = supportsMidiSourceToggle(device);
+    visibility.delta = device.deviceType == magda::DeviceType::Effect;
 
     if (isMidiUtilityDeviceSlot(traits)) {
         visibility.learn = false;
@@ -127,6 +132,7 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
         {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 100, 90},
         {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 110, 0},
         {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 120, 80},
+        {HeaderControlId::Delta, HeaderControlSide::Right, controls.deltaButton, 130, 100},
     };
 
     for (auto& spec : specs) {
