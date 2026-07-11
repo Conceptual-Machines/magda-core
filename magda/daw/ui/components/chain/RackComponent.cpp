@@ -114,7 +114,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     deltaButton_->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
+                            DarkTheme::getColour(DarkTheme::ACCENT_CYAN).darker(0.3f));
     deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     deltaButton_->onClick = [this]() {
