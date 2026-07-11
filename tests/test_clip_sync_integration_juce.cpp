@@ -79,6 +79,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce();
         testPropertyChangeCreatesMissingReversedArrangementClipSynchronously();
         testBatchSessionSlotCreationReallocatesOnce();
+        testDisabledSessionClipSyncsDisabled();
         testSessionClipMoveToTrackClearsVacatedSlot();
         testSessionClipMovePreservesEngineIdentity();
         testSessionClipDeleteRemovesMappedSlotClip();
@@ -505,6 +506,39 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (canObserveReallocation)
             expectEquals(reallocationCount, 1,
                          "Batch-created session slots should share one graph reallocation");
+    }
+
+    void testDisabledSessionClipSyncsDisabled() {
+        beginTest("Disabled session clip enters the engine disabled on first sync");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+
+        // Disable before the first engine sync (sceneIndex is still unset, so
+        // there is no TE counterpart yet) — mirrors loading a project that
+        // contains a disabled session clip.
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr);
+        if (!clip)
+            return;
+        clip->enabled = false;
+
+        cm.setClipSceneIndex(clipId, 0);
+
+        auto* teClip = f.clipSync->getSessionTeClip(clipId);
+        expect(teClip != nullptr, "Session clip should be synced into its slot");
+        if (!teClip)
+            return;
+        expect(teClip->disabled.get(),
+               "Disabled session clip must be disabled in TE on first sync (#1736)");
+
+        // Re-enabling through the manager clears it via the property-change path.
+        cm.setClipEnabled(clipId, true);
+        expect(!teClip->disabled.get(), "Re-enabling must clear the TE disabled flag");
     }
 
     void testSessionClipMoveToTrackClearsVacatedSlot() {
