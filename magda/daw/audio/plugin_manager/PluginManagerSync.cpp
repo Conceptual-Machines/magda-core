@@ -2053,6 +2053,7 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
         // Rack inner devices always live in the insert chain, so the chain
         // power gates them (no full path available here, only the track).
         plugin->setEnabled(!device.bypassed && TrackManager::getInstance().isChainEnabled(trackId));
+        plugin->setDeltaSoloEnabled(device.deltaSolo);
     }
 
     return plugin;

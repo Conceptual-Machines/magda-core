@@ -231,6 +231,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> learnButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
+    std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize
     std::unique_ptr<magda::SvgButton> midiThruButton_;    // MIDI source/thru toggle

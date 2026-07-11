@@ -578,11 +578,11 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // Apply enablement directly on the TE plugin: syncFromDeviceInfo only
     // knows the device's own bypassed flag, not the chain gate; and plugins
     // without a processor (e.g. Chord Engine) have no other sync path.
-    if (auto tePlugin = pluginManager_.getPlugin(devicePath))
+    if (auto tePlugin = pluginManager_.getPlugin(devicePath)) {
         tePlugin->setEnabled(effectiveEnabled);
-
-    if (auto tePlugin = pluginManager_.getPlugin(devicePath))
+        tePlugin->setDeltaSoloEnabled(device->deltaSolo);
         daw::audio::syncPluginMidiInThru(tePlugin.get(), device->midiInThru);
+    }
 
     // Wrapped instruments consume MIDI while active. Only top-level devices own
     // instrument wrapper racks; post-fx/mixer-analysis ids are section-local and

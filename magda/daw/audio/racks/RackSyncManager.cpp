@@ -37,6 +37,8 @@ void applyRackInstanceState(te::Plugin::Ptr rackPlugin, const RackInfo& rackInfo
     if (!rackInstance)
         return;
 
+    rackInstance->setDeltaSoloEnabled(rackInfo.deltaSolo);
+
     if (rackInfo.bypassed) {
         rackInstance->wetGain->setParameterFromHost(0.0f, juce::dontSendNotification);
         rackInstance->dryGain->setParameterFromHost(1.0f, juce::dontSendNotification);
@@ -743,6 +745,7 @@ void RackSyncManager::loadRackContents(SyncedRack& synced, TrackId trackId,
 
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
+                        plugin->setDeltaSoloEnabled(device.deltaSolo);
                         daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
                     } else {
@@ -1052,6 +1055,7 @@ void RackSyncManager::updateElementPropertiesRecursive(SyncedRack& synced, const
                 auto pluginIt = synced.innerPlugins.find(device.id);
                 if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
                     pluginIt->second->setEnabled(!device.bypassed);
+                    pluginIt->second->setDeltaSoloEnabled(device.deltaSolo);
                     daw::audio::syncPluginMidiInThru(pluginIt->second.get(), device.midiInThru);
                 }
             } else if (isRack(element)) {

@@ -16,6 +16,7 @@ struct DeviceSlotHeaderControls {
     juce::Component* sidechainButton = nullptr;
     juce::Component* multiOutButton = nullptr;
     juce::Component* uiButton = nullptr;
+    juce::Component* deltaButton = nullptr;
     juce::Component* powerButton = nullptr;
     juce::Component* presetButton = nullptr;
     juce::Component* exportClipButton = nullptr;

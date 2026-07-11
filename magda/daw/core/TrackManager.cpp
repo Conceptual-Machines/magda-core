@@ -2184,6 +2184,8 @@ void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
 void TrackManager::setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed) {
     if (auto* device = getDevice(trackId, deviceId)) {
         device->bypassed = bypassed;
+        if (bypassed)
+            device->deltaSolo = false;
         notifyTrackDevicesChanged(trackId);
     }
 }
@@ -2191,6 +2193,8 @@ void TrackManager::setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool by
 void TrackManager::setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
+        if (bypassed)
+            device->deltaSolo = false;
         notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
@@ -2315,7 +2319,27 @@ const RackInfo* TrackManager::getRack(TrackId trackId, RackId rackId) const {
 void TrackManager::setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) {
     if (auto* rack = getRack(trackId, rackId)) {
         rack->bypassed = bypassed;
+        if (bypassed)
+            rack->deltaSolo = false;
         notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->bypassed = bypassed;
+        if (bypassed)
+            rack->deltaSolo = false;
+        notifyTrackDevicesChanged(rackPath.trackId);
+    }
+}
+
+void TrackManager::setRackDeltaSoloByPath(const ChainNodePath& rackPath, bool deltaSolo) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->deltaSolo = deltaSolo;
+        if (deltaSolo)
+            rack->bypassed = false;
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 

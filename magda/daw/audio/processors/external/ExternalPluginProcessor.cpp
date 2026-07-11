@@ -135,6 +135,7 @@ void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
 void ExternalPluginProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
     setGainDb(info.gainDb);
     setBypassed(info.bypassed);
+    setDeltaSolo(info.deltaSolo);
 
     settingParameterFromUI_ = true;
 
