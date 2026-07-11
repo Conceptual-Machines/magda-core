@@ -69,3 +69,37 @@ TEST_CASE("Delta solo aligns dry input to plugin latency", "[delta_solo][audio][
     CHECK(wet.getSample(0, 2) == Approx(1.0f));
     CHECK(wet.getSample(0, 3) == Approx(0.0f));
 }
+
+TEST_CASE("Delta latency history remains aligned while monitoring is off",
+          "[delta_solo][audio][latency]") {
+    constexpr int latencySamples = 2;
+    constexpr int blockSize = 4;
+
+    tracktion::graph::LatencyProcessor dryDelay;
+    dryDelay.setLatencyNumSamples(latencySamples);
+    dryDelay.prepareToPlay(48000.0, blockSize, 1);
+
+    juce::AudioBuffer<float> disabledBlock(1, blockSize);
+    disabledBlock.clear();
+    disabledBlock.setSample(0, 3, 1.0f);
+    dryDelay.writeAudio(tracktion::graph::toBufferView(disabledBlock));
+    dryDelay.clearAudio(blockSize);
+
+    juce::AudioBuffer<float> enabledBlock(1, blockSize);
+    enabledBlock.clear();
+    dryDelay.writeAudio(tracktion::graph::toBufferView(enabledBlock));
+
+    juce::AudioBuffer<float> alignedDry(1, blockSize);
+    dryDelay.readAudioOverwriting(tracktion::graph::toBufferView(alignedDry));
+
+    juce::AudioBuffer<float> wet(1, blockSize);
+    wet.clear();
+    wet.setSample(0, 1, 2.0f);
+    tracktion::engine::plugin_node_detail::applyDeltaSolo(
+        tracktion::graph::toBufferView(wet), tracktion::graph::toBufferView(alignedDry), true);
+
+    CHECK(wet.getSample(0, 0) == Approx(0.0f));
+    CHECK(wet.getSample(0, 1) == Approx(1.0f));
+    CHECK(wet.getSample(0, 2) == Approx(0.0f));
+    CHECK(wet.getSample(0, 3) == Approx(0.0f));
+}
