@@ -581,10 +581,8 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     if (auto tePlugin = pluginManager_.getPlugin(devicePath)) {
         tePlugin->setEnabled(effectiveEnabled);
         tePlugin->setDeltaSoloEnabled(device->deltaSolo);
-    }
-
-    if (auto tePlugin = pluginManager_.getPlugin(devicePath))
         daw::audio::syncPluginMidiInThru(tePlugin.get(), device->midiInThru);
+    }
 
     // Wrapped instruments consume MIDI while active. Only top-level devices own
     // instrument wrapper racks; post-fx/mixer-analysis ids are section-local and
