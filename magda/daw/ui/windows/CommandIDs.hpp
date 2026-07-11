@@ -43,6 +43,7 @@ enum {
     pasteRipple = 0x101B,             // Ripple-insert the clipboard span, then paste into it
     duplicateClipAsGhost = 0x101C,    // Copy joins the source's link group (mirrors content)
     makeClipUnique = 0x101D,          // Detach selected ghost clips from their link groups
+    toggleClipEnabled = 0x101E,       // 0: enable/disable selected clips (disabled = no playback)
 
     // Transport menu
     play = 0x2000,  // Space: toggles play/stop (perform() already toggles)

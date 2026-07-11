@@ -1145,12 +1145,16 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->onClick = [this]() {
         bool active = chainBypassButton_->getToggleState();
         chainBypassButton_->setActive(active);
+        // Chain power is a real track-level state: it gates every insert-chain
+        // device in the engine without touching their own bypassed flags, so
+        // per-device bypass survives an off/on cycle (and it works on an empty
+        // chain too). Mirrored by the track inspector's enable switch.
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setChainBypassed(selectedTrackId_, !active);
+            magda::TrackManager::getInstance().setChainEnabled(selectedTrackId_, active);
         }
-        // Update all node components to reflect bypass state
+        // Grey the nodes immediately (also re-applied on every node rebuild)
         for (auto& node : nodeComponents_) {
-            node->setBypassed(!active);
+            node->setChainDisabled(!active);
         }
     };
     addChildComponent(*chainBypassButton_);
@@ -1989,6 +1993,13 @@ void TrackChainContent::trackSelectionChanged(magda::TrackId trackId) {
 
 void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
+        // Resync the chain power button — setChainEnabled notifies through
+        // this callback, so the inspector's enable switch and this button
+        // stay mirrored whichever one was pressed.
+        const bool chainEnabled = magda::TrackManager::getInstance().isChainEnabled(trackId);
+        chainBypassButton_->setToggleState(chainEnabled, juce::dontSendNotification);
+        chainBypassButton_->setActive(chainEnabled);
+
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         const int previousElementCount = static_cast<int>(nodeComponents_.size());
         const int nextElementCount =
@@ -2382,21 +2393,10 @@ void TrackChainContent::updateFromSelectedTrack() {
             panLabel_.setAutomationTarget(panTarget);
 
             // Check if any device in the chain is not bypassed
-            const auto& elements =
-                magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
-            bool anyActive = elements.empty();  // Empty chain = active (not bypassed)
-            for (const auto& element : elements) {
-                if (magda::isDevice(element) && !magda::getDevice(element).bypassed) {
-                    anyActive = true;
-                    break;
-                }
-                if (magda::isRack(element) && !magda::getRack(element).bypassed) {
-                    anyActive = true;
-                    break;
-                }
-            }
-            chainBypassButton_->setToggleState(anyActive, juce::dontSendNotification);
-            chainBypassButton_->setActive(anyActive);
+            const bool chainEnabled =
+                magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_);
+            chainBypassButton_->setToggleState(chainEnabled, juce::dontSendNotification);
+            chainBypassButton_->setActive(chainEnabled);
 
             const bool isMaster = track->type == magda::TrackType::Master;
             const bool isChord = track->type == magda::TrackType::Chord;
@@ -2805,11 +2805,14 @@ void TrackChainContent::rebuildNodeComponents() {
         }
     }
 
-    // Set frozen state on all nodes
+    // Set frozen + chain-power state on all nodes. Chain power off greys the
+    // nodes without touching their own bypass buttons.
     auto* trackInfo = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     bool trackFrozen = trackInfo && trackInfo->frozen;
+    const bool chainDisabled = !magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_);
     for (auto& node : nodeComponents_) {
         node->setFrozen(trackFrozen);
+        node->setChainDisabled(chainDisabled);
     }
 
     // Restore node states (collapsed, expanded chains) for ALL nodes

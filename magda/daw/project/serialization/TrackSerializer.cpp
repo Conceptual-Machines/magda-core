@@ -107,6 +107,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
         chainArray.add(serializeChainElement(element));
     }
     obj->setProperty("chainElements", juce::var(chainArray));
+    obj->setProperty("chainEnabled", track.chain.enabled);
 
     // Post-fader FX chain elements
     juce::Array<juce::var> postFxArray;
@@ -264,6 +265,10 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     }
 
     // Chain elements
+    // Missing in projects saved before the chain power flag -> default true
+    if (!obj->getProperty("chainEnabled").isVoid())
+        outTrack.chain.enabled = static_cast<bool>(obj->getProperty("chainEnabled"));
+
     auto chainVar = obj->getProperty("chainElements");
     if (chainVar.isArray()) {
         auto* arr = chainVar.getArray();

@@ -586,6 +586,52 @@ TEST_CASE("Session clip follow action settings roundtrip", "[project][serializat
     REQUIRE(restored->followActionLoopCount == 3);
 }
 
+TEST_CASE("Clip enabled state roundtrips and missing property defaults to enabled",
+          "[project][serialization][clip]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Audio);
+
+    ClipInfo clip;
+    clip.id = 93;
+    clip.trackId = trackId;
+    clip.name = "Disabled";
+    clip.setMidiContent();
+    clip.view = ClipView::Arrangement;
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.enabled = false;
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    info.name = "Enabled Toggle";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    auto* clips = rootObj->getProperty("clips").getArray();
+    REQUIRE(clips != nullptr);
+    REQUIRE(clips->size() == 1);
+    auto* clipObj = clips->getReference(0).getDynamicObject();
+    REQUIRE(clipObj != nullptr);
+    REQUIRE(static_cast<bool>(clipObj->getProperty("enabled")) == false);
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    auto* restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE_FALSE(restored->enabled);
+
+    // Projects saved before the flag existed have no "enabled" property —
+    // they must load with the clip enabled.
+    clipObj->removeProperty("enabled");
+    ProjectInfo legacy;
+    REQUIRE(ProjectSerializer::deserializeProject(json, legacy));
+    restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->enabled);
+}
+
 TEST_CASE("Looped MIDI clip serialization preserves loop region separate from placement",
           "[project][serialization][midi][loop]") {
     ProjectTestFixture fixture;

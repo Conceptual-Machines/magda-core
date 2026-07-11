@@ -309,6 +309,14 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                 // disrupting a playing LaunchHandle.
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
+                    // Enabled toggle (#1736) — same guarded write as the
+                    // arrangement path in syncArrangementClipToEngine.
+                    {
+                        const bool wantDisabled = !clip->enabled;
+                        if (teClip->disabled.get() != wantDisabled)
+                            teClip->disabled = wantDisabled;
+                    }
+
                     // Push the length to TE in beats and let the engine resolve
                     // the seconds from its tempo sequence. This stays correct
                     // under a tempo ramp with no re-push, and avoids the
@@ -493,15 +501,28 @@ bool ClipSynchronizer::syncArrangementClipToEngine(ClipId clipId) {
     }
 
     // Route to appropriate sync method by type
+    bool needsGraphReallocation = false;
     if (clip->isMidi()) {
-        return syncMidiClipToEngine(clipId, clip);
+        needsGraphReallocation = syncMidiClipToEngine(clipId, clip);
     } else if (clip->isAudio()) {
-        return syncAudioClipToEngine(clipId, clip);
+        needsGraphReallocation = syncAudioClipToEngine(clipId, clip);
     } else {
         DBG("syncClipToEngine: Unknown clip type for clip " << clipId);
+        return false;
     }
 
-    return false;
+    // Enabled toggle (#1736). TE skips disabled clips when building the
+    // playback graph and restarts playback itself on IDs::disabled changes,
+    // so no reallocation is needed here. Guarded read-before-write: assigning
+    // an equal value to a CachedValue still using its default would create
+    // the property and trigger a spurious restart on first sync.
+    if (auto* teClip = getArrangementTeClip(clipId)) {
+        const bool wantDisabled = !clip->enabled;
+        if (teClip->disabled.get() != wantDisabled)
+            teClip->disabled = wantDisabled;
+    }
+
+    return needsGraphReallocation;
 }
 
 void ClipSynchronizer::removeTeClipByEngineId(const std::string& engineId) {
