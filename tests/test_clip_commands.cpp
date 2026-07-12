@@ -621,6 +621,7 @@ TEST_CASE("FlattenMidiClipCommand - renders a looped MIDI clip across its full l
     clip->loopLengthBeats = 2.0;
     clip->loopLength = 1.0;
     clip->midiOffset = 1.0;
+    clip->midiTrimOffset = 1.25;
     MidiCCData cc;
     cc.controller = 1;
     cc.value = 64;
@@ -639,6 +640,7 @@ TEST_CASE("FlattenMidiClipCommand - renders a looped MIDI clip across its full l
     REQUIRE(clip->loopLengthBeats == Catch::Approx(0.0));
     REQUIRE(clip->loopLength == Catch::Approx(0.0));
     REQUIRE(clip->midiOffset == Catch::Approx(0.0));
+    REQUIRE(clip->midiTrimOffset == Catch::Approx(0.0));
     REQUIRE(clip->midiNotes.size() == 10);
     for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
         REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i)));
@@ -656,6 +658,7 @@ TEST_CASE("FlattenMidiClipCommand - renders a looped MIDI clip across its full l
     REQUIRE(clip->loopEnabled == original.loopEnabled);
     REQUIRE(clip->loopLengthBeats == Catch::Approx(original.loopLengthBeats));
     REQUIRE(clip->midiOffset == Catch::Approx(original.midiOffset));
+    REQUIRE(clip->midiTrimOffset == Catch::Approx(original.midiTrimOffset));
     REQUIRE(clip->midiNotes.size() == original.midiNotes.size());
     REQUIRE(clip->midiCCData.size() == original.midiCCData.size());
     REQUIRE(clip->midiPitchBendData.size() == original.midiPitchBendData.size());
@@ -706,6 +709,50 @@ TEST_CASE("FlattenMidiClipCommand - respects loop and clip boundaries",
                     Catch::Approx(1.5 + static_cast<double>(i) * 2.0));
             REQUIRE(clip->midiNotes[i].lengthBeats == Catch::Approx(0.5));
         }
+    }
+
+    SECTION("phase offsets are wrapped into the loop range") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 6.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        clip->midiOffset = 3.0;
+        for (const double startBeat : {0.0, 1.0}) {
+            MidiNote note;
+            note.startBeat = startBeat;
+            clip->midiNotes.push_back(note);
+        }
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 6);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i)));
+    }
+
+    SECTION("negative serialized phase offsets wrap without dropping the clip head") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 6.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        clip->midiOffset = -1.0;
+        for (const double startBeat : {0.0, 1.0}) {
+            MidiNote note;
+            note.startBeat = startBeat;
+            clip->midiNotes.push_back(note);
+        }
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 6);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i)));
     }
 }
 

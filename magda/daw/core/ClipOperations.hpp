@@ -991,7 +991,7 @@ class ClipOperations {
 
         if (clip.loopEnabled && clip.loopLengthBeats > 0.0) {
             double loopLen = clip.loopLengthBeats;
-            double phase = std::fmod(clip.midiOffset, loopLen);
+            double phase = wrapPhase(clip.midiOffset, loopLen);
 
             // Include the final partial cycle introduced by the phase offset.
             // A clip starting one beat into a two-beat loop needs the cycle
@@ -1070,6 +1070,7 @@ class ClipOperations {
 
             clip.loopEnabled = false;
             clip.midiOffset = 0.0;
+            clip.midiTrimOffset = 0.0;
             clip.loopLengthBeats = 0.0;
             clip.loopLength = 0.0;
             clip.loopStart = 0.0;
