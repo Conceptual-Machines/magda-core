@@ -89,6 +89,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testTrimAudioFromLeft();
         testTrimAudioFromRight();
         testSpeedRatio();
+        testBeatModeStretchEngineChangesReallocateGraph();
         testLoopEnableDisable();
         testBeatModeRoundTripPreservesTrimmedLength();
         testLoopTimeBased();
@@ -399,6 +400,94 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(static_cast<double>(secondTeClip->getPan()), 0.35, 0.01);
         expectEquals(reallocationCount, 0,
                      "Pure arrangement property batch should not reallocate the graph");
+    }
+
+    void testBeatModeStretchEngineChangesReallocateGraph() {
+        beginTest("172 BPM beat-mode clip switches between all stretch engines");
+
+        Fixture f;
+        ProjectManager::getInstance().setTempo(120.0);
+        if (auto* tempo = f.edit->tempoSequence.getTempo(0))
+            tempo->setBpm(120.0);
+
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 120.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr);
+        if (!clip)
+            return;
+
+        constexpr double sourceBpm = 172.0;
+        const double sourceBeats = clip->audio().source.durationSeconds * sourceBpm / 60.0;
+        clip->autoTempo = true;
+        clip->audio().interpretation.bpm = sourceBpm;
+        clip->audio().interpretation.totalBeats = sourceBeats;
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        clip->setPlacementBeats(0.0, sourceBeats);
+        clip->deriveTimesFromBeats(120.0);
+
+        f.clipSync->syncClipToEngine(clipId);
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr);
+        if (!teClip)
+            return;
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchNormal));
+
+        int reallocations = 0;
+        f.edit->getTransport().ensureContextAllocated();
+        const bool canObserveReallocation = f.edit->getCurrentPlaybackContext() != nullptr;
+        f.clipSync->onGraphReallocated = [&reallocations] { ++reallocations; };
+
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::signalsmith));
+        if (canObserveReallocation)
+            expectEquals(reallocations, 1,
+                         "Signalsmith selection should rebuild the playback graph");
+
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchBetter);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchBetter));
+        if (canObserveReallocation)
+            expectEquals(reallocations, 2,
+                         "SoundTouch HQ selection should rebuild the playback graph");
+
+        auto sessionClipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Session, 120.0);
+        auto* sessionClip = cm.getClip(sessionClipId);
+        expect(sessionClip != nullptr);
+        if (!sessionClip)
+            return;
+
+        sessionClip->autoTempo = true;
+        sessionClip->audio().interpretation.bpm = sourceBpm;
+        sessionClip->audio().interpretation.totalBeats = sourceBeats;
+        sessionClip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        cm.setClipSceneIndex(sessionClipId, 0);
+        if (f.clipSync->getSessionTeClip(sessionClipId) == nullptr)
+            f.clipSync->syncSessionClipToSlot(sessionClipId);
+
+        auto* sessionTeClip =
+            dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(sessionClipId));
+        expect(sessionTeClip != nullptr);
+        if (!sessionTeClip)
+            return;
+
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchNormal),
+                     "Session creation should honour an explicit SoundTouch selection");
+
+        cm.setTimeStretchMode(sessionClipId, static_cast<int>(te::TimeStretcher::signalsmith));
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::signalsmith));
+
+        cm.setTimeStretchMode(sessionClipId, static_cast<int>(te::TimeStretcher::soundtouchBetter));
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchBetter));
     }
 
     void testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce() {
@@ -1040,7 +1129,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Enable warp (this routes sync through the auto-tempo/warp code path)
         clip->warpEnabled = true;
-        // Set a valid time-stretch mode (SoundTouch HQ = mode 4, but defaultMode works)
+        // Set the current default time-stretch mode.
         clip->timeStretchMode = static_cast<int>(te::TimeStretcher::defaultMode);
 
         // Verify model state

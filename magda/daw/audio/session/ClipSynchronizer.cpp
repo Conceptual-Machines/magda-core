@@ -432,6 +432,21 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
 
                             if (audioClip->getLaunchFadeSamples() != clip->launchFadeSamples)
                                 audioClip->setLaunchFadeSamples(clip->launchFadeSamples);
+
+                            auto desiredMode =
+                                static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+                            if (!isAnalog && desiredMode == te::TimeStretcher::disabled &&
+                                (clip->autoTempo || clip->warpEnabled ||
+                                 std::abs(clip->speedRatio - 1.0) > 0.001))
+                                desiredMode = te::TimeStretcher::defaultMode;
+                            if (isAnalog)
+                                desiredMode = te::TimeStretcher::disabled;
+
+                            if (audioClip->getTimeStretchMode() != desiredMode) {
+                                audioClip->setUsesProxy(false);
+                                audioClip->setTimeStretchMode(desiredMode);
+                                needsGraphReallocation = true;
+                            }
                         }
                     }
 
@@ -1129,9 +1144,16 @@ void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
     // source beat count to map source time to timeline beats.
     syncAudioSourceInterpretationToLoopInfo(*audioClip, *clip);
 
-    // Ensure valid stretch mode (autoTempo requires time-stretching)
-    if (audioClip->getTimeStretchMode() == te::TimeStretcher::disabled)
-        audioClip->setTimeStretchMode(te::TimeStretcher::defaultMode);
+    // Auto-tempo requires stretching, but it must still honour the user's
+    // explicit SoundTouch/Signalsmith selection. Fresh slot clips otherwise
+    // retain TE's default mode, making the old modes sound identical to
+    // Signalsmith until a later property edit happens to rebuild the graph.
+    auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+    if (desiredMode == te::TimeStretcher::disabled)
+        desiredMode = te::TimeStretcher::defaultMode;
+
+    if (audioClip->getTimeStretchMode() != desiredMode)
+        audioClip->setTimeStretchMode(desiredMode);
 
     // Force speedRatio to 1.0 (TE requirement for autoTempo)
     if (std::abs(audioClip->getSpeedRatio() - 1.0) > 0.001)
@@ -1806,6 +1828,24 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     // Timeline placement is always stored in project beats, but TE should only
     // use source-beat audio processing when MAGDA beat/warp mode requires it.
     const bool useSourceBeatProcessing = clip->autoTempo || clip->warpEnabled;
+
+    // Apply engine changes in both beat-based and time-based processing modes.
+    // The stretcher is captured in the playback graph, so changing this property
+    // must explicitly request a graph rebuild.
+    auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+    const bool isAnalog = clip->isAnalogPitchActive();
+    if (!isAnalog && desiredMode == te::TimeStretcher::disabled &&
+        (useSourceBeatProcessing || std::abs(clip->speedRatio - 1.0) > 0.001))
+        desiredMode = te::TimeStretcher::defaultMode;
+    if (isAnalog)
+        desiredMode = te::TimeStretcher::disabled;
+
+    if (audioClipPtr->getTimeStretchMode() != desiredMode) {
+        audioClipPtr->setUsesProxy(false);
+        audioClipPtr->setTimeStretchMode(desiredMode);
+        needsGraphReallocation = true;
+    }
+
     if (useSourceBeatProcessing) {
         // ========================================================================
         // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
@@ -1827,11 +1867,6 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             audioClipPtr->setSpeedRatio(1.0);
         }
 
-        // Auto-tempo requires a valid stretch mode for TE to time-stretch audio
-        if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
-            audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
-        }
-
     } else {
         // ========================================================================
         // TIME-BASED MODE (Fixed absolute time, current default behavior)
@@ -1844,19 +1879,6 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         double teSpeedRatio = clip->speedRatio;
         double currentSpeedRatio = audioClipPtr->getSpeedRatio();
-
-        // Sync time stretch mode — warp also requires a valid stretcher
-        auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        bool isAnalog = clip->isAnalogPitchActive();
-        if (!isAnalog && desiredMode == te::TimeStretcher::disabled &&
-            (std::abs(teSpeedRatio - 1.0) > 0.001 || clip->warpEnabled))
-            desiredMode = te::TimeStretcher::defaultMode;
-        // When analog: force disabled mode (pure resampling)
-        if (isAnalog)
-            desiredMode = te::TimeStretcher::disabled;
-        if (audioClipPtr->getTimeStretchMode() != desiredMode) {
-            audioClipPtr->setTimeStretchMode(desiredMode);
-        }
 
         if (std::abs(currentSpeedRatio - teSpeedRatio) > 0.001) {
             audioClipPtr->setUsesProxy(false);

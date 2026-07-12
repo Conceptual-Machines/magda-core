@@ -1,9 +1,12 @@
+#include <tracktion_engine/tracktion_engine.h>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/core/TimeStretchModes.hpp"
 
 /**
  * Tests for audio clip time-stretching and trimming operations
@@ -328,7 +331,7 @@ TEST_CASE("Audio Clip - Effective time-stretch mode", "[audio][clip][stretch][mo
     // getEffectiveTimeStretchMode() reports the mode that TE actually applies so
     // the inspector and the audio editor show the same value. When the raw mode
     // is "Off" (0) but beat mode / warp / speed / pitch silently engages the
-    // stretcher, it reports SoundTouch HQ (4 = soundtouchBetter).
+    // stretcher, it reports the default Signalsmith mode.
 
     auto makeAudioClip = []() {
         ClipInfo clip;
@@ -343,28 +346,28 @@ TEST_CASE("Audio Clip - Effective time-stretch mode", "[audio][clip][stretch][mo
         REQUIRE(clip.getEffectiveTimeStretchMode() == 0);
     }
 
-    SECTION("Beat mode upgrades Off to SoundTouch HQ") {
+    SECTION("Beat mode upgrades Off to Signalsmith") {
         ClipInfo clip = makeAudioClip();
         clip.autoTempo = true;
-        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+        REQUIRE(clip.getEffectiveTimeStretchMode() == time_stretch_mode::kSignalsmith);
     }
 
-    SECTION("Warp upgrades Off to SoundTouch HQ") {
+    SECTION("Warp upgrades Off to Signalsmith") {
         ClipInfo clip = makeAudioClip();
         clip.warpEnabled = true;
-        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+        REQUIRE(clip.getEffectiveTimeStretchMode() == time_stretch_mode::kSignalsmith);
     }
 
-    SECTION("Non-unity speed ratio upgrades Off to SoundTouch HQ") {
+    SECTION("Non-unity speed ratio upgrades Off to Signalsmith") {
         ClipInfo clip = makeAudioClip();
         clip.speedRatio = 1.5;
-        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+        REQUIRE(clip.getEffectiveTimeStretchMode() == time_stretch_mode::kSignalsmith);
     }
 
-    SECTION("Pitch change upgrades Off to SoundTouch HQ") {
+    SECTION("Pitch change upgrades Off to Signalsmith") {
         ClipInfo clip = makeAudioClip();
         clip.pitchChange = -3.0f;
-        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+        REQUIRE(clip.getEffectiveTimeStretchMode() == time_stretch_mode::kSignalsmith);
     }
 
     SECTION("Active analog pitch keeps mode at Off (resamples, no stretch)") {
@@ -381,18 +384,132 @@ TEST_CASE("Audio Clip - Effective time-stretch mode", "[audio][clip][stretch][mo
         clip.autoTempo = true;  // autoTempo disables analog pitch in TE
         clip.pitchChange = -12.0f;
         REQUIRE_FALSE(clip.isAnalogPitchActive());
-        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+        REQUIRE(clip.getEffectiveTimeStretchMode() == time_stretch_mode::kSignalsmith);
     }
 
     SECTION("Explicitly chosen mode is preserved, never overridden") {
         ClipInfo clip = makeAudioClip();
-        clip.timeStretchMode = 3;  // SoundTouch (normal)
+        clip.timeStretchMode = time_stretch_mode::kSoundTouchNormal;
         clip.autoTempo = true;
-        REQUIRE(clip.getEffectiveTimeStretchMode() == 3);
+        REQUIRE(clip.getEffectiveTimeStretchMode() == time_stretch_mode::kSoundTouchNormal);
 
-        clip.timeStretchMode = 4;  // SoundTouch HQ
-        REQUIRE(clip.getEffectiveTimeStretchMode() == 4);
+        clip.timeStretchMode = time_stretch_mode::kSoundTouchBetter;
+        REQUIRE(clip.getEffectiveTimeStretchMode() == time_stretch_mode::kSoundTouchBetter);
     }
+}
+
+TEST_CASE("Signalsmith is the default time-stretch engine", "[audio][clip][stretch][signalsmith]") {
+    namespace te = tracktion::engine;
+    using namespace magda;
+
+    STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::disabled) == time_stretch_mode::kDisabled);
+    STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::soundtouchNormal) ==
+                   time_stretch_mode::kSoundTouchNormal);
+    STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::soundtouchBetter) ==
+                   time_stretch_mode::kSoundTouchBetter);
+    STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::signalsmith) ==
+                   time_stretch_mode::kSignalsmith);
+    STATIC_REQUIRE(te::TimeStretcher::defaultMode == te::TimeStretcher::signalsmith);
+
+    REQUIRE(te::TimeStretcher::checkModeIsAvailable(te::TimeStretcher::signalsmith) ==
+            te::TimeStretcher::signalsmith);
+    REQUIRE(te::TimeStretcher::getNameOfMode(te::TimeStretcher::signalsmith) ==
+            "Signalsmith Stretch");
+}
+
+TEST_CASE("Auto-tempo selects the default quality tier",
+          "[audio][clip][stretch][signalsmith][auto-tempo]") {
+    using namespace magda;
+
+    auto makeAudioClip = [] {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.audio().source.filePath = "test.wav";
+        clip.length = 4.0;
+        return clip;
+    };
+
+    SECTION("Off upgrades to Signalsmith") {
+        auto clip = makeAudioClip();
+        ClipOperations::setAutoTempo(clip, true, 120.0);
+        REQUIRE(clip.timeStretchMode == time_stretch_mode::kSignalsmith);
+    }
+
+    SECTION("Explicit SoundTouch remains selected") {
+        auto clip = makeAudioClip();
+        clip.timeStretchMode = time_stretch_mode::kSoundTouchNormal;
+        ClipOperations::setAutoTempo(clip, true, 120.0);
+        REQUIRE(clip.timeStretchMode == time_stretch_mode::kSoundTouchNormal);
+    }
+
+    SECTION("Explicit SoundTouch HQ remains selected") {
+        auto clip = makeAudioClip();
+        clip.timeStretchMode = time_stretch_mode::kSoundTouchBetter;
+        ClipOperations::setAutoTempo(clip, true, 120.0);
+        REQUIRE(clip.timeStretchMode == time_stretch_mode::kSoundTouchBetter);
+    }
+}
+
+TEST_CASE("Signalsmith adapter honours Tracktion's pull contract",
+          "[audio][clip][stretch][signalsmith]") {
+    namespace te = tracktion::engine;
+
+    constexpr double sampleRate = 48000.0;
+    constexpr int blockSize = 480;
+    constexpr int sourceSamples = 12000;
+    float speedRatio = 1.5f;
+
+    juce::AudioBuffer<float> source(2, sourceSamples);
+    for (int sample = 0; sample < sourceSamples; ++sample) {
+        const auto value =
+            std::sin(juce::MathConstants<double>::twoPi * 440.0 * sample / sampleRate);
+        source.setSample(0, sample, static_cast<float>(value));
+        source.setSample(1, sample, static_cast<float>(value));
+    }
+
+    juce::AudioBuffer<float> result(2, sourceSamples * 3);
+    te::TimeStretcher stretcher;
+    stretcher.initialise(sampleRate, blockSize, 2, te::TimeStretcher::signalsmith, {}, true);
+    REQUIRE(stretcher.isInitialised());
+    REQUIRE(stretcher.setSpeedAndPitch(speedRatio, 0.0f));
+
+    int inputPosition = 0;
+    int outputPosition = 0;
+    double expectedOutputSamples = 0.0;
+    bool changedSpeed = false;
+    while (inputPosition + stretcher.getFramesNeeded() <= sourceSamples) {
+        const auto framesNeeded = stretcher.getFramesNeeded();
+        const float* inputs[] = {source.getReadPointer(0, inputPosition),
+                                 source.getReadPointer(1, inputPosition)};
+        float* outputs[] = {result.getWritePointer(0, outputPosition),
+                            result.getWritePointer(1, outputPosition)};
+
+        const auto produced = stretcher.processData(inputs, framesNeeded, outputs);
+        REQUIRE(produced == blockSize);
+        inputPosition += framesNeeded;
+        outputPosition += produced;
+        expectedOutputSamples += framesNeeded * speedRatio;
+
+        if (!changedSpeed && inputPosition >= sourceSamples / 2) {
+            speedRatio = 0.75f;
+            REQUIRE(stretcher.setSpeedAndPitch(speedRatio, 0.0f));
+            changedSpeed = true;
+        }
+    }
+
+    for (int guard = 0; guard < 100; ++guard) {
+        float* outputs[] = {result.getWritePointer(0, outputPosition),
+                            result.getWritePointer(1, outputPosition)};
+        const auto produced = stretcher.flush(outputs);
+        if (produced == 0)
+            break;
+        REQUIRE(produced <= blockSize);
+        outputPosition += produced;
+    }
+
+    REQUIRE(changedSpeed);
+    REQUIRE(outputPosition == Catch::Approx(expectedOutputSamples).margin(2.0));
+    REQUIRE(result.getRMSLevel(0, 0, outputPosition) > 0.1f);
 }
 
 TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
