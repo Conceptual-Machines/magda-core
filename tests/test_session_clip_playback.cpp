@@ -1,3 +1,5 @@
+#include <tracktion_engine/tracktion_engine.h>
+
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -9,6 +11,7 @@
 #include "magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
+namespace te = tracktion::engine;
 
 /**
  * Tests for session clip playback scheduling and loop behavior.
@@ -149,6 +152,39 @@ TEST_CASE("Session playhead returns -1 when no clip is active", "[session][playh
 TEST_CASE("Session playhead treats negative elapsed as zero", "[session][playhead]") {
     REQUIRE(computeSessionPlayhead(-1.0, 2.0, 8.0, true) == Catch::Approx(0.0));
     REQUIRE(computeSessionPlayhead(-5.0, 2.0, 8.0, false) == Catch::Approx(0.0));
+}
+
+TEST_CASE("Session launch distinguishes loop wraps from explicit retriggers",
+          "[session][launch][loop][retrigger][regression]") {
+    te::LaunchHandle handle;
+    te::SyncRange syncRange;
+
+    auto advance = [&](double beats) {
+        const auto duration = tracktion::BeatDuration::fromBeats(beats);
+        auto newEnd = syncRange.end;
+        newEnd.monotonicBeat.v = newEnd.monotonicBeat.v + duration;
+        newEnd.beat = newEnd.beat + duration;
+        syncRange = te::SyncRange{syncRange.end, newEnd};
+        return handle.advance(syncRange);
+    };
+
+    handle.setLooping(tracktion::BeatDuration::fromBeats(1.0));
+    handle.play({});
+
+    REQUIRE_FALSE(advance(0.75).retriggered);
+
+    const auto naturalLoop = advance(0.5);
+    REQUIRE(naturalLoop.isSplit);
+    REQUIRE_FALSE(naturalLoop.retriggered);
+
+    handle.play({});
+    const auto explicitRetrigger = advance(0.25);
+    REQUIRE(explicitRetrigger.retriggered);
+    REQUIRE_FALSE(explicitRetrigger.isSplit);
+
+    const auto nextNaturalLoop = advance(1.0);
+    REQUIRE(nextNaturalLoop.isSplit);
+    REQUIRE_FALSE(nextNaturalLoop.retriggered);
 }
 
 // =============================================================================

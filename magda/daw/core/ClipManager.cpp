@@ -1540,8 +1540,8 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             ClipOperations::setAutoTempo(*clip, enabled, bpm);
 
             // Ensure time-stretching is enabled when beat mode is on
-            if (enabled && clip->timeStretchMode == 0)
-                clip->timeStretchMode = 4;  // soundtouchBetter
+            if (enabled && clip->timeStretchMode == time_stretch_mode::kDisabled)
+                clip->timeStretchMode = time_stretch_mode::kSignalsmith;
 
             // Issue #1157: ClipOperations::setAutoTempo already wrote
             // lengthBeats from clip.length × bpm / 60 (the legitimate

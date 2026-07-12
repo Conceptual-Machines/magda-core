@@ -937,9 +937,10 @@ void ClipInspector::initClipPropertiesSection() {
     stretchModeCombo_.setColour(juce::ComboBox::outlineColourId,
                                 DarkTheme::getColour(DarkTheme::BORDER));
     // Mode values match TimeStretcher::Mode enum (combo ID = mode + 1)
-    stretchModeCombo_.addItem("Off", 1);            // disabled = 0
-    stretchModeCombo_.addItem("SoundTouch", 4);     // soundtouchNormal = 3
-    stretchModeCombo_.addItem("SoundTouch HQ", 5);  // soundtouchBetter = 4
+    stretchModeCombo_.addItem("Off", time_stretch_mode::kDisabled + 1);
+    stretchModeCombo_.addItem("Signalsmith", time_stretch_mode::kSignalsmith + 1);
+    stretchModeCombo_.addItem("SoundTouch", time_stretch_mode::kSoundTouchNormal + 1);
+    stretchModeCombo_.addItem("SoundTouch HQ", time_stretch_mode::kSoundTouchBetter + 1);
     stretchModeCombo_.setSelectedId(1, juce::dontSendNotification);
     stretchModeCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())

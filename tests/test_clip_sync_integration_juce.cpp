@@ -58,6 +58,34 @@ std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate, double
     return f;
 }
 
+std::unique_ptr<juce::TemporaryFile> createAttackWavFile(double sampleRate,
+                                                         double durationSeconds) {
+    const int numSamples = static_cast<int>(sampleRate * durationSeconds);
+    juce::AudioBuffer<float> buffer(1, numSamples);
+    buffer.clear();
+
+    const int attackSamples = std::min(numSamples, static_cast<int>(sampleRate * 0.08));
+    for (int sample = 0; sample < attackSamples; ++sample) {
+        const auto envelope = std::exp(-static_cast<double>(sample) / (sampleRate * 0.012));
+        const auto carrier =
+            std::sin(juce::MathConstants<double>::twoPi * 1000.0 * sample / sampleRate);
+        buffer.setSample(0, sample, static_cast<float>(envelope * carrier));
+    }
+
+    auto targetFile = testScratchDirectory().getNonexistentChildFile("clip_sync_attack", ".wav");
+    auto f = std::make_unique<juce::TemporaryFile>(targetFile);
+    juce::WavAudioFormat wavFormat;
+    JUCE_BEGIN_IGNORE_WARNINGS_MSVC(4996)
+    JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
+    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
+        new juce::FileOutputStream(f->getFile()), sampleRate, 1, 16, {}, 0));
+    JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+    JUCE_END_IGNORE_WARNINGS_MSVC
+    if (writer)
+        writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
+    return f;
+}
+
 }  // namespace
 
 /**
@@ -89,8 +117,10 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testTrimAudioFromLeft();
         testTrimAudioFromRight();
         testSpeedRatio();
+        testBeatModeStretchEngineChangesReallocateGraph();
         testLoopEnableDisable();
         testBeatModeRoundTripPreservesTrimmedLength();
+        testSignalsmithLoopKeepsFirstAttack();
         testLoopTimeBased();
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
@@ -399,6 +429,94 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(static_cast<double>(secondTeClip->getPan()), 0.35, 0.01);
         expectEquals(reallocationCount, 0,
                      "Pure arrangement property batch should not reallocate the graph");
+    }
+
+    void testBeatModeStretchEngineChangesReallocateGraph() {
+        beginTest("172 BPM beat-mode clip switches between all stretch engines");
+
+        Fixture f;
+        ProjectManager::getInstance().setTempo(120.0);
+        if (auto* tempo = f.edit->tempoSequence.getTempo(0))
+            tempo->setBpm(120.0);
+
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 120.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr);
+        if (!clip)
+            return;
+
+        constexpr double sourceBpm = 172.0;
+        const double sourceBeats = clip->audio().source.durationSeconds * sourceBpm / 60.0;
+        clip->autoTempo = true;
+        clip->audio().interpretation.bpm = sourceBpm;
+        clip->audio().interpretation.totalBeats = sourceBeats;
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        clip->setPlacementBeats(0.0, sourceBeats);
+        clip->deriveTimesFromBeats(120.0);
+
+        f.clipSync->syncClipToEngine(clipId);
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr);
+        if (!teClip)
+            return;
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchNormal));
+
+        int reallocations = 0;
+        f.edit->getTransport().ensureContextAllocated();
+        const bool canObserveReallocation = f.edit->getCurrentPlaybackContext() != nullptr;
+        f.clipSync->onGraphReallocated = [&reallocations] { ++reallocations; };
+
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::signalsmith));
+        if (canObserveReallocation)
+            expectEquals(reallocations, 1,
+                         "Signalsmith selection should rebuild the playback graph");
+
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchBetter);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchBetter));
+        if (canObserveReallocation)
+            expectEquals(reallocations, 2,
+                         "SoundTouch HQ selection should rebuild the playback graph");
+
+        auto sessionClipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Session, 120.0);
+        auto* sessionClip = cm.getClip(sessionClipId);
+        expect(sessionClip != nullptr);
+        if (!sessionClip)
+            return;
+
+        sessionClip->autoTempo = true;
+        sessionClip->audio().interpretation.bpm = sourceBpm;
+        sessionClip->audio().interpretation.totalBeats = sourceBeats;
+        sessionClip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        cm.setClipSceneIndex(sessionClipId, 0);
+        if (f.clipSync->getSessionTeClip(sessionClipId) == nullptr)
+            f.clipSync->syncSessionClipToSlot(sessionClipId);
+
+        auto* sessionTeClip =
+            dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(sessionClipId));
+        expect(sessionTeClip != nullptr);
+        if (!sessionTeClip)
+            return;
+
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchNormal),
+                     "Session creation should honour an explicit SoundTouch selection");
+
+        cm.setTimeStretchMode(sessionClipId, static_cast<int>(te::TimeStretcher::signalsmith));
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::signalsmith));
+
+        cm.setTimeStretchMode(sessionClipId, static_cast<int>(te::TimeStretcher::soundtouchBetter));
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchBetter));
     }
 
     void testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce() {
@@ -1017,6 +1135,55 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         }
     }
 
+    void testSignalsmithLoopKeepsFirstAttack() {
+        beginTest("Signalsmith identity-warp 172-to-120 loop keeps a decisive first attack");
+
+        Fixture f;
+        constexpr double projectBpm = 120.0;
+        constexpr double sourceBpm = 172.0;
+        constexpr double loopBeats = 8.0;
+        constexpr double sourceDuration = loopBeats * 60.0 / sourceBpm;
+
+        ProjectManager::getInstance().setTempo(projectBpm);
+        if (auto* tempo = f.edit->tempoSequence.getTempo(0))
+            tempo->setBpm(projectBpm);
+        f.sinFile = createAttackWavFile(44100.0, sourceDuration);
+
+        auto clipId = ClipManager::getInstance().createAudioClip(
+            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Arrangement, projectBpm);
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        expect(clip != nullptr, "Attack clip should exist");
+        if (clip == nullptr)
+            return;
+
+        configureBeatModeLoop(*clip, projectBpm, sourceBpm, sourceDuration, 0.0, loopBeats,
+                              loopBeats * 3.0);
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
+        clip->warpEnabled = true;
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto result = f.renderToSeconds(8.2);
+        if (!hasRenderableBuffer(result, "Signalsmith loop attack"))
+            return;
+
+        const auto peakAt = [&](double seconds) {
+            const int startSample = static_cast<int>(seconds * result.sampleRate);
+            const int numSamples = static_cast<int>(0.05 * result.sampleRate);
+            return result.buffer.getMagnitude(0, startSample, numSamples);
+        };
+
+        const auto firstPeak = peakAt(0.0);
+        const auto secondPeak = peakAt(4.0);
+        const auto thirdPeak = peakAt(8.0);
+        expect(firstPeak > 0.1f, "First cycle should contain the attack");
+        expect(secondPeak >= firstPeak * 0.65f,
+               "Second-cycle attack was softened: first=" + juce::String(firstPeak) +
+                   ", second=" + juce::String(secondPeak));
+        expect(thirdPeak >= firstPeak * 0.65f,
+               "Third-cycle attack was softened: first=" + juce::String(firstPeak) +
+                   ", third=" + juce::String(thirdPeak));
+    }
+
     void testLoopTimeBasedWarpEnabled() {
         beginTest("Time-based loop with warp enabled: partial second cycle should play");
 
@@ -1040,7 +1207,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Enable warp (this routes sync through the auto-tempo/warp code path)
         clip->warpEnabled = true;
-        // Set a valid time-stretch mode (SoundTouch HQ = mode 4, but defaultMode works)
+        // Set the current default time-stretch mode.
         clip->timeStretchMode = static_cast<int>(te::TimeStretcher::defaultMode);
 
         // Verify model state

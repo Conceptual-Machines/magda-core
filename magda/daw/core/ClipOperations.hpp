@@ -759,9 +759,10 @@ class ClipOperations {
         if (enabled) {
             clip.analogPitch = false;  // Analog pitch is incompatible with autoTempo
 
-            // Auto-tempo requires time-stretching — enable SoundTouch if disabled
-            if (clip.timeStretchMode == 0 || clip.timeStretchMode == 3)
-                clip.timeStretchMode = 4;  // soundtouchBetter
+            // Auto-tempo requires time-stretching. Preserve any explicitly selected
+            // engine, otherwise enable the default quality engine.
+            if (clip.timeStretchMode == time_stretch_mode::kDisabled)
+                clip.timeStretchMode = time_stretch_mode::kSignalsmith;
 
             // Convert current offset to beats
             if (clip.audio().interpretation.bpm > 0.0)
