@@ -14,6 +14,7 @@
 #include "GridDivision.hpp"
 #include "MidiFileWriter.hpp"
 #include "TempoUtils.hpp"
+#include "TimeStretchModes.hpp"
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"

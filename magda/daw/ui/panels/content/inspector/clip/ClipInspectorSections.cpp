@@ -21,6 +21,7 @@
 #include "core/Config.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TempoUtils.hpp"
+#include "core/TimeStretchModes.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"

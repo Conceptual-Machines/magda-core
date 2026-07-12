@@ -1009,26 +1009,6 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
                           ? clip_launch::computeQuantizedBeat(edit_, clip->launchQuantize)
                           : std::optional<te::MonotonicBeat>{};
 
-    if (clip) {
-        const auto queuedState = launchHandle->getQueuedStatus();
-        juce::String trace;
-        trace << "[StretchTrace][LaunchRequest] clip=" << static_cast<int64_t>(clipId)
-              << " handle=0x"
-              << juce::String::toHexString(
-                     reinterpret_cast<juce::pointer_sized_int>(launchHandle.get()))
-              << " playing="
-              << static_cast<int>(launchHandle->getPlayingStatus() ==
-                                  te::LaunchHandle::PlayState::playing)
-              << " queued=" << (queuedState ? static_cast<int>(*queuedState) : -1)
-              << " immediate=" << static_cast<int>(!targetBeat)
-              << " targetBeat=" << (targetBeat ? targetBeat->v.inBeats() : -1.0)
-              << " loop=" << static_cast<int>(clip->loopEnabled)
-              << " autoTempo=" << static_cast<int>(clip->autoTempo)
-              << " warp=" << static_cast<int>(clip->warpEnabled)
-              << " mode=" << clip->getEffectiveTimeStretchMode() << " speed=" << clip->speedRatio;
-        juce::Logger::writeToLog(trace);
-    }
-
     // Store the precise quantized launch time for SessionRecorder
     if (targetBeat && clip) {
         if (auto quantizedTime = clip_launch::toEditTimeSeconds(edit_, *targetBeat))

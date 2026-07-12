@@ -402,6 +402,11 @@ TEST_CASE("Signalsmith is the default time-stretch engine", "[audio][clip][stret
     namespace te = tracktion::engine;
     using namespace magda;
 
+    STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::disabled) == time_stretch_mode::kDisabled);
+    STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::soundtouchNormal) ==
+                   time_stretch_mode::kSoundTouchNormal);
+    STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::soundtouchBetter) ==
+                   time_stretch_mode::kSoundTouchBetter);
     STATIC_REQUIRE(static_cast<int>(te::TimeStretcher::signalsmith) ==
                    time_stretch_mode::kSignalsmith);
     STATIC_REQUIRE(te::TimeStretcher::defaultMode == te::TimeStretcher::signalsmith);

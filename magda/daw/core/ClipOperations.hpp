@@ -7,6 +7,7 @@
 
 #include "ClipInfo.hpp"
 #include "TempoUtils.hpp"
+#include "TimeStretchModes.hpp"
 
 namespace magda {
 
