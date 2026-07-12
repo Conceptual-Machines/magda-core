@@ -670,6 +670,7 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     SER(gateSlotIndex);
     SER(gateNegated);
     SER(hidden);
+    SER(momentary);
 
     // Choices (vector of strings — stays manual)
     juce::Array<juce::var> choicesArray;
@@ -728,6 +729,8 @@ bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, Paramete
         DESER(gateNegated);
     if (obj->hasProperty("hidden"))
         DESER(hidden);
+    if (obj->hasProperty("momentary"))
+        DESER(momentary);
 
     // Choices (vector of strings — stays manual)
     auto choicesVar = obj->getProperty("choices");

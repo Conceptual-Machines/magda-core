@@ -148,6 +148,7 @@ target_sources(magda_daw_app PRIVATE
     drum_grid/PadChainRangeRowComponent.hpp
     drum_grid/PadChainRowComponent.hpp
     params/ParamHostComponent.hpp
+    params/MomentaryParamButton.hpp
     params/ParamSlotComponent.hpp
     params/ParamLinkResolver.hpp
     params/ParamModulationPainter.hpp

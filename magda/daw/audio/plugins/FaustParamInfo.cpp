@@ -55,6 +55,12 @@ magda::ParameterInfo booleanInfo(const FaustParamSlot& slot) {
     return info;
 }
 
+magda::ParameterInfo triggerInfo(const FaustParamSlot& slot) {
+    auto info = booleanInfo(slot);
+    info.momentary = true;
+    return info;
+}
+
 magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
     magda::ParameterInfo info;
     info.paramIndex = slot.index;
@@ -119,6 +125,8 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
             return continuousInfo(slot);
         case FaustParamSlot::Kind::Boolean:
             return booleanInfo(slot);
+        case FaustParamSlot::Kind::Trigger:
+            return triggerInfo(slot);
         case FaustParamSlot::Kind::Discrete:
             return discreteInfo(slot);
     }

@@ -92,7 +92,7 @@ class FaustParamPool {
         /// For Kind::Discrete only: real-unit values indexed by sorted
         /// choice order. The audio thread maps `round(normalized *
         /// (size-1))` to an index here, then writes the result to
-        /// `zone`. Empty for Continuous / Boolean.
+        /// `zone`. Empty for Continuous / Boolean / Trigger.
         std::vector<float> discreteValues;
         /// Gate condition mirrored from the slot. -1 = no gate.
         int gateSlotIndex = -1;
