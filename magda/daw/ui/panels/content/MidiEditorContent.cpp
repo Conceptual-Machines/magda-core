@@ -537,6 +537,11 @@ void MidiEditorContent::performAnchorPointZoom(double newZoom, double anchorTime
 }
 
 void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport) {
+    // A wheel gesture can originate left of the grid (e.g. over the piano
+    // keyboard or drum row labels), giving a negative offset. Clamp so the
+    // zoom anchors at the start of the visible content rather than a fictitious
+    // negative beat.
+    mouseXInViewport = juce::jmax(0, mouseXInViewport);
     int mouseXInContent = mouseXInViewport + viewport_->getViewPositionX();
     double anchorBeat = static_cast<double>(mouseXInContent - GRID_LEFT_PADDING) / horizontalZoom_;
 
