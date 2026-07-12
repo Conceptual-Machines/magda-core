@@ -1862,6 +1862,24 @@ class ShortcutsPage : public juce::Component {
                                       {GestureInputKind::Wheel, GestureArea::Main, axis, mods});
                 }
 
+                if (context == GestureContext::EqCurveEditor) {
+                    for (auto axis : {GestureAxis::Vertical, GestureAxis::Horizontal}) {
+                        for (auto mods : modifiers()) {
+                            addGestureRow(context, {GestureInputKind::SmoothWheel,
+                                                    GestureArea::Main, axis, mods});
+                        }
+                    }
+                }
+
+                if (hasRulerWheelBindings(context)) {
+                    for (auto axis : {GestureAxis::Vertical, GestureAxis::Horizontal}) {
+                        for (auto mods : modifiers()) {
+                            addGestureRow(
+                                context, {GestureInputKind::Wheel, GestureArea::Ruler, axis, mods});
+                        }
+                    }
+                }
+
                 for (const auto& row : dragRows()) {
                     if (row.context == context)
                         addGestureRow(row.context, row.input);
@@ -1904,8 +1922,10 @@ class ShortcutsPage : public juce::Component {
             const GestureAxis axis = std::abs(wheel.deltaX) > std::abs(wheel.deltaY)
                                          ? GestureAxis::Horizontal
                                          : GestureAxis::Vertical;
-            setRowInput(*capturingRow_, {GestureInputKind::Wheel, GestureArea::Main, axis,
-                                         gestureModifierMaskFrom(e.mods)});
+            const auto kind =
+                wheel.isSmooth ? GestureInputKind::SmoothWheel : GestureInputKind::Wheel;
+            setRowInput(*capturingRow_,
+                        {kind, GestureArea::Main, axis, gestureModifierMaskFrom(e.mods)});
             setCapturingRow(nullptr);
             return true;
         }
@@ -2010,9 +2030,12 @@ class ShortcutsPage : public juce::Component {
             GestureInput input;
         };
 
-        static std::array<GestureContext, 4> contexts() {
-            return {GestureContext::Arrangement, GestureContext::PianoRoll,
-                    GestureContext::DrumGrid, GestureContext::Waveform};
+        static std::array<GestureContext, 9> contexts() {
+            return {GestureContext::Arrangement,  GestureContext::PianoRoll,
+                    GestureContext::DrumGrid,     GestureContext::Waveform,
+                    GestureContext::CurveEditor,  GestureContext::Chain,
+                    GestureContext::Sampler,      GestureContext::StepSequencer,
+                    GestureContext::EqCurveEditor};
         }
 
         static std::array<uint8_t, 8> modifiers() {
@@ -2067,6 +2090,11 @@ class ShortcutsPage : public juce::Component {
             };
         }
 
+        static bool hasRulerWheelBindings(GestureContext context) {
+            return context == GestureContext::PianoRoll || context == GestureContext::DrumGrid ||
+                   context == GestureContext::CurveEditor || context == GestureContext::Waveform;
+        }
+
         static juce::String contextName(GestureContext context) {
             switch (context) {
                 case GestureContext::Arrangement:
@@ -2077,6 +2105,20 @@ class ShortcutsPage : public juce::Component {
                     return "Drum grid";
                 case GestureContext::Waveform:
                     return "Waveform";
+                case GestureContext::CurveEditor:
+                    return "Curve editor";
+                case GestureContext::ValueLabel:
+                    return "Value label";
+                case GestureContext::Chain:
+                    return "Chain";
+                case GestureContext::Sampler:
+                    return "Sampler";
+                case GestureContext::StepSequencer:
+                    return "Step sequencer";
+                case GestureContext::EqCurveEditor:
+                    return "EQ curve editor";
+                case GestureContext::Unknown:
+                    return "Unknown";
                 default:
                     return "Unknown";
             }
@@ -2091,9 +2133,13 @@ class ShortcutsPage : public juce::Component {
             std::vector<GestureInput> candidates;
             auto add = [&candidates](GestureInput input) { candidates.push_back(input); };
 
-            for (auto axis : {GestureAxis::Vertical, GestureAxis::Horizontal}) {
-                for (auto mods : modifiers())
-                    add({GestureInputKind::Wheel, GestureArea::Main, axis, mods});
+            for (auto kind : {GestureInputKind::Wheel, GestureInputKind::SmoothWheel}) {
+                for (auto area : {GestureArea::Main, GestureArea::Ruler}) {
+                    for (auto axis : {GestureAxis::Vertical, GestureAxis::Horizontal}) {
+                        for (auto mods : modifiers())
+                            add({kind, area, axis, mods});
+                    }
+                }
             }
 
             for (auto area : {GestureArea::Ruler, GestureArea::Body, GestureArea::Header,
@@ -2145,6 +2191,9 @@ class ShortcutsPage : public juce::Component {
             juce::String base;
             if (input.kind == GestureInputKind::Wheel)
                 base = input.axis == GestureAxis::Vertical ? "wheel" : "horizontal wheel";
+            else if (input.kind == GestureInputKind::SmoothWheel)
+                base = input.axis == GestureAxis::Vertical ? "smooth wheel"
+                                                           : "horizontal smooth wheel";
             else
                 base = "drag";
 
@@ -2163,7 +2212,8 @@ class ShortcutsPage : public juce::Component {
         }
 
         static juce::String inputLabelName(const GestureInput& input) {
-            if (input.kind == GestureInputKind::Wheel)
+            if (input.kind == GestureInputKind::Wheel ||
+                input.kind == GestureInputKind::SmoothWheel)
                 return "wheel: " + inputName(input);
 
             juce::String dragText;
@@ -2207,6 +2257,16 @@ class ShortcutsPage : public juce::Component {
                     return "Pan gesture";
                 case GestureActionType::DuplicateOnDrag:
                     return "Duplicate clips on drag";
+                case GestureActionType::DuplicateAsGhostOnDrag:
+                    return "Ghost-copy clips on drag";
+                case GestureActionType::AdjustValue:
+                    return "Adjust value gesture";
+                case GestureActionType::AdjustValueFine:
+                    return "Fine value adjustment";
+                case GestureActionType::AdjustSecondaryValue:
+                    return "Adjust secondary value";
+                case GestureActionType::AdjustSecondaryValueFine:
+                    return "Fine secondary adjustment";
                 case GestureActionType::None:
                     return "Unassigned gesture";
             }
@@ -2217,7 +2277,8 @@ class ShortcutsPage : public juce::Component {
         // sensitivity and invert columns are meaningless for them.
         static bool actionHasMagnitude(GestureActionType action) {
             return action != GestureActionType::None &&
-                   action != GestureActionType::DuplicateOnDrag;
+                   action != GestureActionType::DuplicateOnDrag &&
+                   action != GestureActionType::DuplicateAsGhostOnDrag;
         }
 
         static GestureArea defaultDragAreaFor(GestureContext context, GestureActionType action) {

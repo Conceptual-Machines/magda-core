@@ -1063,7 +1063,7 @@ void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,
     const auto gesture = GestureRouter::getInstance().resolve(GestureContext::PianoRoll, wheel,
                                                               e.mods, e.getPosition());
     if (gesture.type == GestureActionType::ZoomVertical && onVerticalZoomRequested) {
-        onVerticalZoomRequested(e.y, wheel);
+        onVerticalZoomRequested(e.y, gesture.magnitude);
         return;
     }
 

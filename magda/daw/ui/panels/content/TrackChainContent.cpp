@@ -18,6 +18,7 @@
 #include "PluginBrowserContent.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/PresetManager.hpp"
@@ -392,9 +393,10 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
-        // Alt/Option + scroll wheel also works for zoom
-        if (e.mods.isAltDown()) {
-            owner_.setZoomLevel(owner_.zoomLevel_ + (wheel.deltaY > 0 ? 0.1f : -0.1f));
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::Chain, wheel, e.mods, e.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+            owner_.setZoomLevel(owner_.zoomLevel_ + gesture.magnitude);
         } else {
             Component::mouseWheelMove(e, wheel);
         }
@@ -738,14 +740,11 @@ class TrackChainContent::ZoomableViewport : public juce::Viewport {
 
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override {
-        // Alt/Option + scroll wheel = zoom
-        if (event.mods.isAltDown()) {
-            float delta =
-                wheel.deltaY > 0 ? TrackChainContent::ZOOM_STEP : -TrackChainContent::ZOOM_STEP;
-            DBG("  -> Zooming by " << delta);
-            owner_.setZoomLevel(owner_.zoomLevel_ + delta);
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::Chain, wheel, event.mods, event.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+            owner_.setZoomLevel(owner_.zoomLevel_ + gesture.magnitude);
         } else {
-            // Normal scroll - let viewport handle horizontal scrolling
             Viewport::mouseWheelMove(event, wheel);
         }
     }
@@ -1806,12 +1805,11 @@ void TrackChainContent::mouseUp(const juce::MouseEvent&) {
 
 void TrackChainContent::mouseWheelMove(const juce::MouseEvent& e,
                                        const juce::MouseWheelDetails& wheel) {
-    // Alt/Option + scroll wheel = zoom
-    if (e.mods.isAltDown()) {
-        float delta = wheel.deltaY > 0 ? ZOOM_STEP : -ZOOM_STEP;
-        setZoomLevel(zoomLevel_ + delta);
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Chain, wheel, e.mods, e.getPosition());
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+        setZoomLevel(zoomLevel_ + gesture.magnitude);
     } else {
-        // Forward to viewport for scrolling
         chainViewport_->mouseWheelMove(e, wheel);
     }
 }

@@ -217,7 +217,7 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, std::vector<size_t>)> onDuplicateNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onDeleteNotes;
     std::function<void(double)> onEditCursorSet;
-    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
+    std::function<void(int, float)> onVerticalZoomRequested;
 
     // Refresh note components from clip data
     void refreshNotes() {
@@ -774,7 +774,7 @@ class DrumGridClipGrid : public juce::Component,
         const auto gesture = magda::GestureRouter::getInstance().resolve(
             magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
         if (gesture.type == magda::GestureActionType::ZoomVertical && onVerticalZoomRequested) {
-            onVerticalZoomRequested(e.y, wheel);
+            onVerticalZoomRequested(e.y, gesture.magnitude);
             return;
         }
 
@@ -1758,7 +1758,7 @@ class DrumGridRowLabels : public juce::Component {
 
     // Callback: noteNumber, isNoteOn
     std::function<void(int, bool)> onNotePreview;
-    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
+    std::function<void(int, float)> onVerticalZoomRequested;
     std::function<void(int /*noteNumber*/, juce::String /*newLabel*/)> onRowLabelCommitted;
     std::function<void(int /*noteNumber*/, juce::Point<int> /*screenPos*/)> onRowContextMenu;
 
@@ -1971,7 +1971,7 @@ class DrumGridRowLabels : public juce::Component {
         const auto gesture = magda::GestureRouter::getInstance().resolve(
             magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
         if (gesture.type == magda::GestureActionType::ZoomVertical && onVerticalZoomRequested) {
-            onVerticalZoomRequested(e.y, wheel);
+            onVerticalZoomRequested(e.y, gesture.magnitude);
             return;
         }
 
@@ -2156,12 +2156,13 @@ DrumGridClipContent::DrumGridClipContent() {
                                                            isNoteOn ? 100 : 0, isNoteOn);
         }
     };
-    rowLabels_->onVerticalZoomRequested = [this](int labelsY,
-                                                 const juce::MouseWheelDetails& wheel) {
+    rowLabels_->onVerticalZoomRequested = [this](int labelsY, float magnitude) {
         const int anchorContentY = labelsY + viewport_->getViewPositionY();
         const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
                                            anchorContentY / juce::jmax(1, rowHeight_));
-        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        const int heightDelta = magda::quantizedGestureStep(magnitude);
+        if (heightDelta == 0)
+            return;
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, labelsY, true);
     };
     rowLabels_->getRowLabel = [this](int noteNumber) -> juce::String {
@@ -2198,12 +2199,13 @@ DrumGridClipContent::DrumGridClipContent() {
     gridComponent_->setSnapEnabled(snapEnabled_);
     // Apply any overlay tracks chosen in another editor session
     applyOverlayTracks();
-    gridComponent_->onVerticalZoomRequested = [this](int gridY,
-                                                     const juce::MouseWheelDetails& wheel) {
+    gridComponent_->onVerticalZoomRequested = [this](int gridY, float magnitude) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();
         const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
                                            gridY / juce::jmax(1, rowHeight_));
-        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        const int heightDelta = magda::quantizedGestureStep(magnitude);
+        if (heightDelta == 0)
+            return;
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, anchorScreenY, true);
     };
     if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -2576,8 +2578,12 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     // Modifier-driven zoom is resolved through GestureRouter (#1350) so the
     // bindings are configurable; each branch keeps its own zoom math, and the
     // positional plain-wheel scrolling below stays in this handler.
+    const bool overTimeRuler = e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH +
+                                                                labelWidth_ + LABEL_DIVIDER_WIDTH;
     const auto gesture = magda::GestureRouter::getInstance().resolve(
-        magda::GestureContext::DrumGrid, wheel, e.mods, e.getPosition());
+        magda::GestureContext::DrumGrid,
+        overTimeRuler ? magda::GestureArea::Ruler : magda::GestureArea::Main, wheel, e.mods,
+        e.getPosition());
 
     // Horizontal (timebase) zoom about the cursor.
     if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
@@ -2593,13 +2599,13 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
         const int mouseYInContent = e.y - RULER_HEIGHT + viewport_->getViewPositionY();
         const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
                                            mouseYInContent / juce::jmax(1, rowHeight_));
-        const int heightDelta = gesture.magnitude > 0.0f ? 2 : -2;
+        const int heightDelta = magda::quantizedGestureStep(gesture.magnitude);
+        if (heightDelta == 0)
+            return;
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, e.y - RULER_HEIGHT, true);
         return;
     }
 
-    const bool overTimeRuler = e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH +
-                                                                labelWidth_ + LABEL_DIVIDER_WIDTH;
     if (gesture.type == magda::GestureActionType::ScrollHorizontal && overTimeRuler) {
         if (timeRuler_->onScrollRequested) {
             int scrollAmount = static_cast<int>(-gesture.magnitude);

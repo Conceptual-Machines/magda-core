@@ -2,6 +2,7 @@
 
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/transport/StepClock.hpp"
+#include "core/GestureRouter.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
@@ -248,11 +249,15 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
-        // Modifier + wheel zooms the pitch axis; plain wheel scrolls it.
-        if (e.mods.isCommandDown() || e.mods.isCtrlDown())
-            zoomBy(wheel.deltaY > 0 ? -2 : 2);  // scroll up = zoom in (fewer rows)
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::StepSequencer, wheel, e.mods, e.getPosition());
+        const int steps = magda::quantizedGestureStep(gesture.magnitude);
+        if (gesture.type == magda::GestureActionType::ZoomVertical)
+            zoomBy(-2 * steps);  // scroll up = zoom in (fewer rows)
+        else if (gesture.type == magda::GestureActionType::ScrollVertical)
+            shiftWindow(2 * steps);
         else
-            shiftWindow(wheel.deltaY > 0 ? 2 : -2);
+            juce::Component::mouseWheelMove(e, wheel);
     }
 
   private:
@@ -606,8 +611,13 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         repaint();
     }
 
-    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override {
-        scrollBy(wheel.deltaY > 0 ? 1 : -1);
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::StepSequencer, wheel, e.mods, e.getPosition());
+        if (gesture.type == magda::GestureActionType::ScrollVertical)
+            scrollBy(magda::quantizedGestureStep(gesture.magnitude));
+        else
+            juce::Component::mouseWheelMove(e, wheel);
     }
 
   private:

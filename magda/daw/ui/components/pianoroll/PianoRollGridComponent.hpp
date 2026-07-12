@@ -220,7 +220,7 @@ class PianoRollGridComponent : public juce::Component,
     // Request a note to be selected after the next refresh
     void selectNoteAfterRefresh(ClipId clipId, int noteIndex);
 
-    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
+    std::function<void(int, float)> onVerticalZoomRequested;
 
     // Update visual selection to match SelectionManager state
     void syncSelectionFromManager();
