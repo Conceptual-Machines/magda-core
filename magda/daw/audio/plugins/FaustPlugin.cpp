@@ -93,7 +93,7 @@ struct UIHarvester : public ::UI {
 
     // Active widgets
     void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);
+        emitControl(FaustParamSlot::Kind::Trigger, label, zone, 0, 0, 1, 1);
     }
     void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
         emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);
