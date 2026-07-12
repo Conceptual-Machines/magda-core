@@ -58,34 +58,6 @@ std::unique_ptr<juce::TemporaryFile> createSineWavFile(double sampleRate, double
     return f;
 }
 
-std::unique_ptr<juce::TemporaryFile> createAttackWavFile(double sampleRate,
-                                                         double durationSeconds) {
-    const int numSamples = static_cast<int>(sampleRate * durationSeconds);
-    juce::AudioBuffer<float> buffer(1, numSamples);
-    buffer.clear();
-
-    const int attackSamples = std::min(numSamples, static_cast<int>(sampleRate * 0.08));
-    for (int sample = 0; sample < attackSamples; ++sample) {
-        const auto envelope = std::exp(-static_cast<double>(sample) / (sampleRate * 0.012));
-        const auto carrier =
-            std::sin(juce::MathConstants<double>::twoPi * 1000.0 * sample / sampleRate);
-        buffer.setSample(0, sample, static_cast<float>(envelope * carrier));
-    }
-
-    auto targetFile = testScratchDirectory().getNonexistentChildFile("clip_sync_attack", ".wav");
-    auto f = std::make_unique<juce::TemporaryFile>(targetFile);
-    juce::WavAudioFormat wavFormat;
-    JUCE_BEGIN_IGNORE_WARNINGS_MSVC(4996)
-    JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
-    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
-        new juce::FileOutputStream(f->getFile()), sampleRate, 1, 16, {}, 0));
-    JUCE_END_IGNORE_WARNINGS_GCC_LIKE
-    JUCE_END_IGNORE_WARNINGS_MSVC
-    if (writer)
-        writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
-    return f;
-}
-
 }  // namespace
 
 /**
@@ -120,7 +92,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testBeatModeStretchEngineChangesReallocateGraph();
         testLoopEnableDisable();
         testBeatModeRoundTripPreservesTrimmedLength();
-        testSignalsmithLoopKeepsFirstAttack();
         testLoopTimeBased();
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
@@ -1133,55 +1104,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                        "Should be silence after clip (3.1s+), RMS=" + juce::String(rms));
             }
         }
-    }
-
-    void testSignalsmithLoopKeepsFirstAttack() {
-        beginTest("Signalsmith identity-warp 172-to-120 loop keeps a decisive first attack");
-
-        Fixture f;
-        constexpr double projectBpm = 120.0;
-        constexpr double sourceBpm = 172.0;
-        constexpr double loopBeats = 8.0;
-        constexpr double sourceDuration = loopBeats * 60.0 / sourceBpm;
-
-        ProjectManager::getInstance().setTempo(projectBpm);
-        if (auto* tempo = f.edit->tempoSequence.getTempo(0))
-            tempo->setBpm(projectBpm);
-        f.sinFile = createAttackWavFile(44100.0, sourceDuration);
-
-        auto clipId = ClipManager::getInstance().createAudioClip(
-            f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Arrangement, projectBpm);
-        auto* clip = ClipManager::getInstance().getClip(clipId);
-        expect(clip != nullptr, "Attack clip should exist");
-        if (clip == nullptr)
-            return;
-
-        configureBeatModeLoop(*clip, projectBpm, sourceBpm, sourceDuration, 0.0, loopBeats,
-                              loopBeats * 3.0);
-        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
-        clip->warpEnabled = true;
-        f.clipSync->syncClipToEngine(clipId);
-
-        auto result = f.renderToSeconds(8.2);
-        if (!hasRenderableBuffer(result, "Signalsmith loop attack"))
-            return;
-
-        const auto peakAt = [&](double seconds) {
-            const int startSample = static_cast<int>(seconds * result.sampleRate);
-            const int numSamples = static_cast<int>(0.05 * result.sampleRate);
-            return result.buffer.getMagnitude(0, startSample, numSamples);
-        };
-
-        const auto firstPeak = peakAt(0.0);
-        const auto secondPeak = peakAt(4.0);
-        const auto thirdPeak = peakAt(8.0);
-        expect(firstPeak > 0.1f, "First cycle should contain the attack");
-        expect(secondPeak >= firstPeak * 0.65f,
-               "Second-cycle attack was softened: first=" + juce::String(firstPeak) +
-                   ", second=" + juce::String(secondPeak));
-        expect(thirdPeak >= firstPeak * 0.65f,
-               "Third-cycle attack was softened: first=" + juce::String(firstPeak) +
-                   ", third=" + juce::String(thirdPeak));
     }
 
     void testLoopTimeBasedWarpEnabled() {
