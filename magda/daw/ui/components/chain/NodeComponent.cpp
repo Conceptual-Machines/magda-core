@@ -5,6 +5,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "ai/AIPanelComponent.hpp"
 #include "core/AutomationInfo.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -1404,15 +1405,11 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
 void NodeComponent::mouseWheelMove(const juce::MouseEvent& e,
                                    const juce::MouseWheelDetails& wheel) {
-    // Alt/Option (or Cmd/Ctrl) + scroll wheel = zoom (forward to parent chain
-    // panel). Alt matches ChainPanel/RackComponent — Cmd+scroll is intercepted
-    // by macOS, so Alt is the live modifier there; we accept both so the gesture
-    // is consistent whether the pointer is over a device or empty chain space.
-    if ((e.mods.isAltDown() || e.mods.isCommandDown()) && onZoomDelta) {
-        float delta = wheel.deltaY > 0 ? 0.1f : -0.1f;
-        onZoomDelta(delta);
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Chain, wheel, e.mods, e.getPosition());
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal && onZoomDelta) {
+        onZoomDelta(gesture.magnitude);
     } else {
-        // Let parent handle normal scrolling
         Component::mouseWheelMove(e, wheel);
     }
 }

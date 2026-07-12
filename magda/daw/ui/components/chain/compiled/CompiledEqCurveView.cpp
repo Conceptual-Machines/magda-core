@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
+#include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -622,6 +623,13 @@ void CompiledEqCurveView::mouseUp(const juce::MouseEvent& e) {
 
 void CompiledEqCurveView::mouseWheelMove(const juce::MouseEvent& e,
                                          const juce::MouseWheelDetails& wheel) {
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::EqCurveEditor, wheel, e.mods, e.getPosition());
+    if (!magda::isValueAdjustmentAction(gesture.type)) {
+        juce::Component::mouseWheelMove(e, wheel);
+        return;
+    }
+
     // Wheel always targets a band — use the dragged one if any, else the
     // band closest to the cursor regardless of hit radius (a generous gate
     // because the trackpad rarely lands the cursor inside the 12 px dot).
@@ -639,19 +647,14 @@ void CompiledEqCurveView::mouseWheelMove(const juce::MouseEvent& e,
     if (band == -1)
         return;
 
-    // Q is on a log scale (0.1 .. 10). Trackpads emit many tiny deltaY
-    // events (~0.01 each) so isSmooth scrolls need a much larger per-event
-    // step than a discrete mouse wheel notch where deltaY is ±1.
+    // Q is on a log scale (0.1 .. 10). The router binding turns discrete and
+    // smooth wheel deltas into the established log-domain adjustment.
     constexpr float kQMin = 0.1f;
     constexpr float kQMax = 10.0f;
     const float logMin = std::log10(kQMin);
     const float logMax = std::log10(kQMax);
     const float currentLog = std::log10(juce::jlimit(kQMin, kQMax, bands_[band].q));
-    // Smooth: one event ≈ 12 % Q change at typical trackpad granularity.
-    // Discrete: one mouse-wheel notch ≈ 2× Q change.
-    const float multiplier = wheel.isSmooth ? 0.5f : 0.15f;
-    const float step = (logMax - logMin) * multiplier;
-    const float newLog = juce::jlimit(logMin, logMax, currentLog + wheel.deltaY * step);
+    const float newLog = juce::jlimit(logMin, logMax, currentLog + gesture.magnitude);
     const float newQ = std::pow(10.0f, newLog);
 
     bands_[band].q = newQ;

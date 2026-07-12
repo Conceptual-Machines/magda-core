@@ -34,6 +34,7 @@ AutomationClipEditorContent::AutomationClipEditorContent() {
 
     timeRuler_ = std::make_unique<magda::TimeRuler>();
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
+    timeRuler_->setGestureContext(magda::GestureContext::CurveEditor);
     timeRuler_->setLeftPadding(kEdgePad);
     timeRuler_->setLinkedViewport(&viewport_);
     timeRuler_->onZoomChanged = [this](double newZoom, double anchorTime, int anchorScreenX) {

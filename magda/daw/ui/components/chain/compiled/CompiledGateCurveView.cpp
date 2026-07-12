@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaGateExpanderCompiledPlugin.hpp"
+#include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -164,10 +165,20 @@ void CompiledGateCurveView::mouseUp(const juce::MouseEvent& e) {
 void CompiledGateCurveView::mouseWheelMove(const juce::MouseEvent& e,
                                            const juce::MouseWheelDetails& wheel) {
     using Gate = magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin;
-    if (!plotArea_.contains(e.position))
+    if (!plotArea_.contains(e.position)) {
+        juce::Component::mouseWheelMove(e, wheel);
         return;
+    }
 
-    const float newRatio = juce::jlimit(1.0f, 50.0f, ratio_ * std::pow(2.0f, wheel.deltaY * 1.5f));
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::CurveEditor, wheel, e.mods, e.getPosition());
+    if (!magda::isValueAdjustmentAction(gesture.type)) {
+        juce::Component::mouseWheelMove(e, wheel);
+        return;
+    }
+
+    const float newRatio =
+        juce::jlimit(1.0f, 50.0f, ratio_ * std::pow(2.0f, gesture.magnitude * 1.5f));
     if (std::fabs(newRatio - ratio_) > 0.01f) {
         ratio_ = newRatio;
         if (onParameterChanged)

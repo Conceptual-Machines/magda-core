@@ -437,17 +437,16 @@ void TimeRuler::mouseExit(const juce::MouseEvent& /*event*/) {
     }
 }
 
-void TimeRuler::mouseWheelMove(const juce::MouseEvent& /*event*/,
+void TimeRuler::mouseWheelMove(const juce::MouseEvent& event,
                                const juce::MouseWheelDetails& wheel) {
-    // Scroll horizontally when wheel is used over the ruler
-    if (onScrollRequested) {
-        // Use deltaX if available (trackpad horizontal swipe), otherwise use deltaY (mouse wheel)
-        float delta = (wheel.deltaX != 0.0f) ? wheel.deltaX : wheel.deltaY;
-        int scrollAmount = static_cast<int>(-delta * 800.0f);
-        if (scrollAmount != 0) {
-            onScrollRequested(scrollAmount);
-        }
-    }
+    const auto gesture = GestureRouter::getInstance().resolve(
+        gestureContext_, GestureArea::Ruler, wheel, event.mods, event.getPosition());
+    if (gesture.type != GestureActionType::ScrollHorizontal || !onScrollRequested)
+        return;
+
+    const int scrollAmount = static_cast<int>(-gesture.magnitude);
+    if (scrollAmount != 0)
+        onScrollRequested(scrollAmount);
 }
 
 void TimeRuler::drawSecondsMode(juce::Graphics& g) {

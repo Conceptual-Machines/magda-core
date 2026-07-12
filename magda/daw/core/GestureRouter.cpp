@@ -35,6 +35,26 @@ constexpr float kMidiEditorScrollSensitivity = 100.0f;
 // MIDI editor wheel zoom previously used 1 + deltaY * 0.1. Expressed as a
 // power-of-two exponent, this is roughly 0.14 for JUCE's normal wheel delta.
 constexpr float kMidiEditorZoomSensitivity = 0.14f;
+// Row-height zoom is an integer-pixel operation. At JUCE's usual 0.195 wheel
+// delta this reproduces the historical two-pixel step while making the step
+// user-tunable instead of sign-only.
+constexpr float kMidiRowZoomSensitivity = 10.0f;
+// Editor rulers historically scrolled horizontally by raw delta * 800.
+constexpr float kEditorRulerScrollSensitivity = 800.0f;
+// Parameter curves keep their domain mapping in the component; the router
+// contributes a configurable normalized input scale.
+constexpr float kCurveAdjustSensitivity = 1.0f;
+// EQ Q editing historically used separate discrete/smooth multipliers. Its
+// logarithmic range is two decades, so the old 0.15/0.5 multipliers become
+// final log-domain sensitivities of 0.3 and 1.0 respectively.
+constexpr float kEqCurveAdjustSensitivity = 0.3f;
+constexpr float kEqCurveSmoothAdjustSensitivity = 1.0f;
+// Chain zoom previously stepped by roughly 0.1 for JUCE's usual 0.195 delta.
+constexpr float kChainZoomSensitivity = 0.5f;
+// Sampler zoom used 1 + raw delta * 0.15.
+constexpr float kSamplerZoomSensitivity = 0.15f;
+// Sequencer wheels move roughly one row for a normal JUCE wheel event.
+constexpr float kSequencerScrollSensitivity = 5.0f;
 // Drag zoom sensitivity: pixels per power-of-two zoom step. Existing ruler and
 // zoom-strip drag paths mostly used 30 px per double/halve, while "turbo" shift
 // zoom used 8 px.
@@ -127,6 +147,26 @@ GestureInput GestureRouter::makeWheelInput(GestureAxis axis, uint8_t modifierMas
 void GestureRouter::installDefaults() {
     bindings_.clear();
 
+    const auto setWheelBinding = [this](GestureContext context, GestureArea area, GestureAxis axis,
+                                        uint8_t modifiers, GestureBinding binding) {
+        setBinding(context, {GestureInputKind::Wheel, area, axis, modifiers}, binding);
+    };
+    const auto setSmoothWheelBinding = [this](GestureContext context, GestureArea area,
+                                              GestureAxis axis, uint8_t modifiers,
+                                              GestureBinding binding) {
+        setBinding(context, {GestureInputKind::SmoothWheel, area, axis, modifiers}, binding);
+    };
+    constexpr uint8_t kAllModifierMasks[] = {
+        GestureMod_None,
+        GestureMod_Shift,
+        GestureMod_Command,
+        GestureMod_Alt,
+        static_cast<uint8_t>(GestureMod_Shift | GestureMod_Command),
+        static_cast<uint8_t>(GestureMod_Shift | GestureMod_Alt),
+        static_cast<uint8_t>(GestureMod_Command | GestureMod_Alt),
+        static_cast<uint8_t>(GestureMod_Shift | GestureMod_Command | GestureMod_Alt),
+    };
+
     // Arrangement defaults. A plain wheel scrolls the tracks vertically, the
     // same as the headers and as every system default, so it never surprises a
     // trackpad or a mouse user. A trackpad horizontal swipe (deltaX) scrolls
@@ -160,7 +200,7 @@ void GestureRouter::installDefaults() {
     setBinding(GestureContext::PianoRoll, GestureAxis::Vertical, GestureMod_Command,
                {GestureActionType::ZoomHorizontal, kMidiEditorZoomSensitivity, false});
     setBinding(GestureContext::PianoRoll, GestureAxis::Vertical, GestureMod_Alt,
-               {GestureActionType::ZoomVertical, kZoomSensitivity, false});
+               {GestureActionType::ZoomVertical, kMidiRowZoomSensitivity, false});
 
     setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_None,
                {GestureActionType::ScrollVertical, kMidiEditorScrollSensitivity, false});
@@ -171,7 +211,7 @@ void GestureRouter::installDefaults() {
     setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Command,
                {GestureActionType::ZoomHorizontal, kMidiEditorZoomSensitivity, false});
     setBinding(GestureContext::DrumGrid, GestureAxis::Vertical, GestureMod_Alt,
-               {GestureActionType::ZoomVertical, kZoomSensitivity, false});
+               {GestureActionType::ZoomVertical, kMidiRowZoomSensitivity, false});
 
     // Waveform editor: the wheel scrolls the sample view horizontally. The
     // sensitivity preserves the editor's original step (raw delta * 800).
@@ -181,6 +221,58 @@ void GestureRouter::installDefaults() {
                {GestureActionType::ScrollHorizontal, kWaveformScrollSensitivity, false});
     setBinding(GestureContext::Waveform, GestureAxis::Vertical, GestureMod_Command,
                {GestureActionType::ZoomHorizontal, kZoomSensitivity, false});
+
+    // A ruler consumes a wheel as horizontal navigation regardless of the
+    // editor body's vertical-scroll default. This replaces TimeRuler's local
+    // *800 constant and makes ruler behavior independently bindable.
+    for (auto context : {GestureContext::PianoRoll, GestureContext::DrumGrid,
+                         GestureContext::CurveEditor, GestureContext::Waveform}) {
+        for (auto modifiers : kAllModifierMasks) {
+            setWheelBinding(
+                context, GestureArea::Ruler, GestureAxis::Vertical, modifiers,
+                {GestureActionType::ScrollHorizontal, kEditorRulerScrollSensitivity, false});
+            setWheelBinding(
+                context, GestureArea::Ruler, GestureAxis::Horizontal, modifiers,
+                {GestureActionType::ScrollHorizontal, kEditorRulerScrollSensitivity, false});
+        }
+    }
+
+    // Parameter editors use one normalized adjustment action. Components own
+    // the target selection and parameter-domain conversion, while modifiers,
+    // inversion, natural scrolling and input scale come from the router.
+    for (auto modifiers : kAllModifierMasks) {
+        const bool secondary = (modifiers & GestureMod_Shift) != 0;
+        const bool fine = (modifiers & GestureMod_Alt) != 0;
+        const auto action = secondary && fine ? GestureActionType::AdjustSecondaryValueFine
+                            : secondary       ? GestureActionType::AdjustSecondaryValue
+                            : fine            ? GestureActionType::AdjustValueFine
+                                              : GestureActionType::AdjustValue;
+        setBinding(GestureContext::CurveEditor, GestureAxis::Vertical, modifiers,
+                   {action, kCurveAdjustSensitivity, false});
+        setBinding(GestureContext::EqCurveEditor, GestureAxis::Vertical, modifiers,
+                   {action, kEqCurveAdjustSensitivity, false});
+        setSmoothWheelBinding(GestureContext::EqCurveEditor, GestureArea::Main,
+                              GestureAxis::Vertical, modifiers,
+                              {action, kEqCurveSmoothAdjustSensitivity, false});
+    }
+
+    // Both modifiers worked across the nested chain components before this
+    // migration (Alt on panels/racks, Command on viewports/nodes).
+    for (auto modifiers : kAllModifierMasks) {
+        if ((modifiers & (GestureMod_Alt | GestureMod_Command)) != 0) {
+            setBinding(GestureContext::Chain, GestureAxis::Vertical, modifiers,
+                       {GestureActionType::ZoomHorizontal, kChainZoomSensitivity, false});
+        }
+
+        setBinding(GestureContext::Sampler, GestureAxis::Vertical, modifiers,
+                   {GestureActionType::ZoomHorizontal, kSamplerZoomSensitivity, false});
+
+        const bool zoomSequencer = (modifiers & GestureMod_Command) != 0;
+        setBinding(
+            GestureContext::StepSequencer, GestureAxis::Vertical, modifiers,
+            {zoomSequencer ? GestureActionType::ZoomVertical : GestureActionType::ScrollVertical,
+             kSequencerScrollSensitivity, false});
+    }
 
     // Drag zoom defaults. These make the existing ruler/body/keyboard/strip
     // click-drag zoom paths visible to preferences and routeable through the
@@ -283,6 +375,13 @@ const GestureBinding* GestureRouter::findDefaultBinding(GestureContext context,
 ResolvedGesture GestureRouter::resolve(GestureContext context, const juce::MouseWheelDetails& wheel,
                                        const juce::ModifierKeys& mods,
                                        juce::Point<int> position) const {
+    return resolve(context, GestureArea::Main, wheel, mods, position);
+}
+
+ResolvedGesture GestureRouter::resolve(GestureContext context, GestureArea area,
+                                       const juce::MouseWheelDetails& wheel,
+                                       const juce::ModifierKeys& mods,
+                                       juce::Point<int> position) const {
     // Pick the dominant input axis. A plain mouse wheel only carries deltaY
     // (X11 never sets deltaX); a trackpad may carry both, so the larger
     // magnitude wins.
@@ -290,7 +389,16 @@ ResolvedGesture GestureRouter::resolve(GestureContext context, const juce::Mouse
     const GestureAxis axis = horizontalInput ? GestureAxis::Horizontal : GestureAxis::Vertical;
     const float rawDelta = horizontalInput ? wheel.deltaX : wheel.deltaY;
 
-    const auto* binding = findBinding(context, axis, gestureModifierMaskFrom(mods));
+    GestureInput input{wheel.isSmooth ? GestureInputKind::SmoothWheel : GestureInputKind::Wheel,
+                       area, axis, gestureModifierMaskFrom(mods)};
+    auto* binding = findBinding(context, input);
+    // Existing contexts intentionally need no duplicate smooth rows. They use
+    // the ordinary wheel binding unless a context provides a distinct smooth
+    // default/override (currently the EQ curve editor).
+    if (binding == nullptr && input.kind == GestureInputKind::SmoothWheel) {
+        input.kind = GestureInputKind::Wheel;
+        binding = findBinding(context, input);
+    }
     if (binding == nullptr || binding->action == GestureActionType::None)
         return {};
 

@@ -1,5 +1,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/core/Config.hpp"
@@ -11,12 +12,13 @@ namespace {
 
 // Build a MouseWheelDetails with the given axis deltas. A plain X11 mouse wheel
 // only sets deltaY (deltaX stays 0); a trackpad horizontal swipe sets deltaX.
-juce::MouseWheelDetails wheel(float deltaX, float deltaY, bool reversed = false) {
+juce::MouseWheelDetails wheel(float deltaX, float deltaY, bool reversed = false,
+                              bool smooth = false) {
     juce::MouseWheelDetails w;
     w.deltaX = deltaX;
     w.deltaY = deltaY;
     w.isReversed = reversed;
-    w.isSmooth = false;
+    w.isSmooth = smooth;
     w.isInertial = false;
     return w;
 }
@@ -104,6 +106,94 @@ TEST_CASE("GestureRouter: editor context defaults (#1350)", "[gesture]") {
         REQUIRE(std::abs(g.magnitude) == 800.0f);  // raw delta 1.0 * sensitivity 800
         REQUIRE(router.resolve(GestureContext::Waveform, wheel(0.0f, 0.2f), cmd, kAnchor).type ==
                 GestureActionType::ZoomHorizontal);
+    }
+
+    SECTION("editor rulers use their own horizontal-scroll binding") {
+        const auto body = router.resolve(GestureContext::PianoRoll, wheel(0.0f, 1.0f),
+                                         juce::ModifierKeys(), kAnchor);
+        const auto ruler = router.resolve(GestureContext::PianoRoll, GestureArea::Ruler,
+                                          wheel(0.0f, 1.0f), juce::ModifierKeys(), kAnchor);
+        REQUIRE(body.type == GestureActionType::ScrollVertical);
+        REQUIRE(std::abs(body.magnitude) == 100.0f);
+        REQUIRE(ruler.type == GestureActionType::ScrollHorizontal);
+        REQUIRE(std::abs(ruler.magnitude) == 800.0f);
+        REQUIRE(router
+                    .resolve(GestureContext::PianoRoll, GestureArea::Ruler, wheel(0.0f, 0.2f), cmd,
+                             kAnchor)
+                    .type == GestureActionType::ScrollHorizontal);
+    }
+
+    SECTION("MIDI row-height zoom exposes its former two-pixel step as sensitivity") {
+        const auto g = router.resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f), alt, kAnchor);
+        REQUIRE(g.type == GestureActionType::ZoomVertical);
+        REQUIRE(g.magnitude == 2.0f);
+    }
+
+    SECTION("curve editors route parameter adjustment for fine/range modifiers") {
+        const auto coarse = router.resolve(GestureContext::CurveEditor, wheel(0.0f, 0.2f),
+                                           juce::ModifierKeys(), kAnchor);
+        const auto fine =
+            router.resolve(GestureContext::CurveEditor, wheel(0.0f, 0.2f), alt, kAnchor);
+        const auto secondary =
+            router.resolve(GestureContext::CurveEditor, wheel(0.0f, 0.2f),
+                           juce::ModifierKeys(juce::ModifierKeys::shiftModifier), kAnchor);
+        const auto secondaryFine = router.resolve(
+            GestureContext::CurveEditor, wheel(0.0f, 0.2f),
+            juce::ModifierKeys(juce::ModifierKeys::shiftModifier | juce::ModifierKeys::altModifier),
+            kAnchor);
+        REQUIRE(coarse.type == GestureActionType::AdjustValue);
+        REQUIRE(fine.type == GestureActionType::AdjustValueFine);
+        REQUIRE(secondary.type == GestureActionType::AdjustSecondaryValue);
+        REQUIRE(secondaryFine.type == GestureActionType::AdjustSecondaryValueFine);
+        REQUIRE(coarse.magnitude == 0.2f);
+        REQUIRE(fine.magnitude == 0.2f);
+        REQUIRE(secondary.magnitude == 0.2f);
+        REQUIRE(secondaryFine.magnitude == 0.2f);
+    }
+
+    SECTION("EQ curve keeps discrete and smooth sensitivities in router defaults") {
+        const auto discrete = router.resolve(GestureContext::EqCurveEditor, wheel(0.0f, 1.0f),
+                                             juce::ModifierKeys(), kAnchor);
+        const auto smooth =
+            router.resolve(GestureContext::EqCurveEditor, wheel(0.0f, 0.01f, false, true),
+                           juce::ModifierKeys(), kAnchor);
+        REQUIRE(discrete.type == GestureActionType::AdjustValue);
+        REQUIRE(discrete.magnitude == Catch::Approx(0.3f));
+        REQUIRE(smooth.type == GestureActionType::AdjustValue);
+        REQUIRE(smooth.magnitude == Catch::Approx(0.01f));
+
+        const auto fallback =
+            router.resolve(GestureContext::PianoRoll, wheel(0.0f, 0.2f, false, true),
+                           juce::ModifierKeys(), kAnchor);
+        REQUIRE(fallback.type == GestureActionType::ScrollVertical);
+        REQUIRE(fallback.magnitude == 20.0f);
+    }
+
+    SECTION("chain, sampler and sequencer defaults preserve their established vocabulary") {
+        const auto chain = router.resolve(GestureContext::Chain, wheel(0.0f, 0.2f), alt, kAnchor);
+        REQUIRE(chain.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(chain.magnitude == 0.1f);
+        REQUIRE(router
+                    .resolve(GestureContext::Chain, wheel(0.0f, 0.2f),
+                             juce::ModifierKeys(juce::ModifierKeys::shiftModifier |
+                                                juce::ModifierKeys::altModifier),
+                             kAnchor)
+                    .type == GestureActionType::ZoomHorizontal);
+
+        const auto sampler = router.resolve(GestureContext::Sampler, wheel(0.0f, 0.2f),
+                                            juce::ModifierKeys(), kAnchor);
+        REQUIRE(sampler.type == GestureActionType::ZoomHorizontal);
+        REQUIRE(sampler.magnitude == Catch::Approx(0.03f));
+        REQUIRE(router.resolve(GestureContext::Sampler, wheel(0.0f, 0.2f), alt, kAnchor).type ==
+                GestureActionType::ZoomHorizontal);
+
+        REQUIRE(router
+                    .resolve(GestureContext::StepSequencer, wheel(0.0f, 0.2f), juce::ModifierKeys(),
+                             kAnchor)
+                    .type == GestureActionType::ScrollVertical);
+        REQUIRE(
+            router.resolve(GestureContext::StepSequencer, wheel(0.0f, 0.2f), cmd, kAnchor).type ==
+            GestureActionType::ZoomVertical);
     }
 }
 
@@ -238,6 +328,14 @@ TEST_CASE("GestureRouter: magnitude sign and reversal", "[gesture]") {
     }
 }
 
+TEST_CASE("GestureRouter: integer-step magnitude quantization", "[gesture]") {
+    REQUIRE(quantizedGestureStep(0.0f) == 0);
+    REQUIRE(quantizedGestureStep(0.1f) == 1);
+    REQUIRE(quantizedGestureStep(-0.1f) == -1);
+    REQUIRE(quantizedGestureStep(2.4f) == 2);
+    REQUIRE(quantizedGestureStep(-2.6f) == -3);
+}
+
 TEST_CASE("GestureRouter: persistence stores only overrides", "[gesture]") {
     auto& router = GestureRouter::getInstance();
     router.resetToDefaults();
@@ -292,6 +390,25 @@ TEST_CASE("GestureRouter: persistence stores only overrides", "[gesture]") {
         REQUIRE(b->action == GestureActionType::ZoomHorizontal);
         REQUIRE(b->sensitivity == 44.0f);
         REQUIRE(b->invert);
+
+        router.resetToDefaults();
+    }
+
+    SECTION("area-aware wheel and appended adjustment actions round-trip") {
+        const GestureInput rulerWheel{GestureInputKind::Wheel, GestureArea::Ruler,
+                                      GestureAxis::Vertical, GestureMod_Alt};
+        router.setBinding(GestureContext::CurveEditor, rulerWheel,
+                          {GestureActionType::AdjustSecondaryValueFine, 2.5f, true});
+
+        const auto blob = router.toVar();
+        router.resetToDefaults();
+        router.loadFromVar(blob);
+
+        const auto* binding = router.findBinding(GestureContext::CurveEditor, rulerWheel);
+        REQUIRE(binding != nullptr);
+        REQUIRE(binding->action == GestureActionType::AdjustSecondaryValueFine);
+        REQUIRE(binding->sensitivity == 2.5f);
+        REQUIRE(binding->invert);
 
         router.resetToDefaults();
     }
