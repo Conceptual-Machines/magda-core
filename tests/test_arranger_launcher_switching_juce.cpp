@@ -1,14 +1,16 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
+#include <tracktion_graph/tracktion_graph.h>
 
 #include <algorithm>
 
 #include "SharedTestEngine.hpp"
+// clang-format off
 #include "third_party/tracktion_engine/modules/tracktion_engine/playback/graph/tracktion_ArrangerClipControlNode.h"
-#include "third_party/tracktion_engine/modules/tracktion_engine/playback/graph/tracktion_ArrangerLauncherSwitchingNode.h"
 #include "third_party/tracktion_engine/modules/tracktion_engine/playback/graph/tracktion_TracktionEngineNode.h"
+#include "third_party/tracktion_engine/modules/tracktion_engine/playback/graph/tracktion_ArrangerLauncherSwitchingNode.h"
+// clang-format on
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
-#include "third_party/tracktion_engine/modules/tracktion_graph/tracktion_graph.h"
 
 namespace te = tracktion;
 
