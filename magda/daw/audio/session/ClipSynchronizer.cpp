@@ -142,6 +142,90 @@ bool syncFollowActionToTracktionClip(te::Clip& teClip, const ClipInfo& clip, dou
     return changed;
 }
 
+constexpr double warpMarkerSyncEpsilonSeconds = 1.0e-6;
+
+bool warpMarkerMapsMatch(const juce::Array<te::WarpMarker*>& engineMarkers,
+                         const std::vector<ClipInfo::WarpMarker>& savedMarkers) {
+    if (engineMarkers.size() != static_cast<int>(savedMarkers.size()))
+        return false;
+
+    for (size_t i = 0; i < savedMarkers.size(); ++i) {
+        const auto* engineMarker = engineMarkers[static_cast<int>(i)];
+        const auto& savedMarker = savedMarkers[i];
+        if (engineMarker == nullptr ||
+            std::abs(engineMarker->sourceTime.inSeconds() - savedMarker.sourceTime) >
+                warpMarkerSyncEpsilonSeconds ||
+            std::abs(engineMarker->warpTime.inSeconds() - savedMarker.warpTime) >
+                warpMarkerSyncEpsilonSeconds) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool restoreWarpMarkersIfNeeded(te::WarpTimeManager& warpManager,
+                                const std::vector<ClipInfo::WarpMarker>& markers) {
+    // A valid map needs both boundary markers. In particular, do not insert a
+    // lone saved marker on top of TE's recreated boundaries: that can create a
+    // zero-length segment in WarpTimeManager's stretch-ratio calculation.
+    if (markers.size() < 2)
+        return false;
+
+    const auto& existingMarkers = warpManager.getMarkers();
+
+    // More than the two default boundaries means the live map has already been
+    // edited. Never overwrite it from an older model snapshot.
+    if (existingMarkers.size() > 2 || warpMarkerMapsMatch(existingMarkers, markers))
+        return false;
+
+    // removeAllMarkers deliberately recreates TE's start/end boundaries, so
+    // inserting the complete saved list would duplicate both boundaries.
+    warpManager.removeAllMarkers();
+
+    auto& defaultMarkers = warpManager.getMarkers();
+    warpManager.moveMarker(0, te::TimePosition::fromSeconds(markers.front().warpTime));
+    warpManager.moveMarker(defaultMarkers.size() - 1,
+                           te::TimePosition::fromSeconds(markers.back().warpTime));
+
+    for (size_t i = 1; i + 1 < markers.size(); ++i) {
+        warpManager.insertMarker(
+            te::WarpMarker(te::TimePosition::fromSeconds(markers[i].sourceTime),
+                           te::TimePosition::fromSeconds(markers[i].warpTime)));
+    }
+
+    return true;
+}
+
+bool syncWarpStateToTracktionClip(te::WaveAudioClip& audioClip, const ClipInfo& clip) {
+    bool changed = false;
+
+    if (!clip.warpEnabled) {
+        if (audioClip.getWarpTime()) {
+            audioClip.setWarpTime(false);
+            changed = true;
+        }
+        return changed;
+    }
+
+    if (!audioClip.getWarpTime()) {
+        audioClip.setWarpTime(true);
+        changed = true;
+    }
+
+    if (!clip.warpMarkers.empty()) {
+        auto& warpManager = audioClip.getWarpTimeManager();
+
+        // A newly-created WarpTimeManager contains only its two default
+        // boundary markers. Replace those with the marker map copied from the
+        // source clip, but never overwrite an already-live edited map.
+        if (restoreWarpMarkersIfNeeded(warpManager, clip.warpMarkers))
+            changed = true;
+    }
+
+    return changed;
+}
+
 }  // namespace
 
 void ClipSynchronizer::reallocateAndNotify() {
@@ -447,6 +531,10 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                                 audioClip->setTimeStretchMode(desiredMode);
                                 needsGraphReallocation = true;
                             }
+
+                            needsGraphReallocation =
+                                syncWarpStateToTracktionClip(*audioClip, *clip) ||
+                                needsGraphReallocation;
                         }
                     }
 
@@ -848,8 +936,10 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         // Force WarpTimeManager creation now so its constructor's warp marker
         // insertions (which trigger TreeWatcher → restartPlayback) happen during
-        // initial sync rather than lazily during playback (which causes a click).
+        // initial sync rather than lazily during playback (which causes a click),
+        // then restore any marker map carried by a copied/project-loaded clip.
         audioClipPtr->getWarpTimeManager();
+        syncWarpStateToTracktionClip(*audioClipPtr, *clip);
 
         return true;
 
@@ -1900,15 +1990,8 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // Restore saved warp markers if TE has no user markers yet
         if (!clip->warpMarkers.empty()) {
             auto& warpManager = audioClipPtr->getWarpTimeManager();
-            auto existingMarkers = warpManager.getMarkers();
             // TE creates 2 default boundary markers; if only those exist, restore saved
-            if (existingMarkers.size() <= 2) {
-                warpManager.removeAllMarkers();
-                for (const auto& wm : clip->warpMarkers) {
-                    warpManager.insertMarker(
-                        te::WarpMarker(te::TimePosition::fromSeconds(wm.sourceTime),
-                                       te::TimePosition::fromSeconds(wm.warpTime)));
-                }
+            if (restoreWarpMarkersIfNeeded(warpManager, clip->warpMarkers)) {
                 DBG("ClipSynchronizer: Restored " << clip->warpMarkers.size()
                                                   << " warp markers for clip " << clipId);
             }

@@ -3423,10 +3423,16 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                     // Don't overwrite startBeats — createMidiClip/createAudioClip already
                     // computed the correct value from newStartTime
                 }
-                if (!crossViewToSession) {
+                if (!crossViewToSession || clipData.warpEnabled) {
                     newClip->warpEnabled = clipData.warpEnabled;
                     newClip->timeStretchMode = clipData.timeStretchMode;
                 }
+
+                // Warp markers describe the source mapping, not arrangement
+                // placement. Preserve them when copying between either view so
+                // ClipSynchronizer can restore the map into the destination TE clip.
+                if (clipData.isAudio())
+                    newClip->warpMarkers = clipData.warpMarkers;
 
                 // Source file metadata describes audio files only.
                 if (clipData.isAudio()) {

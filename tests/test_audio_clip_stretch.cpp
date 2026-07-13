@@ -1,3 +1,4 @@
+#include <tracktion_engine/playback/graph/tracktion_LaunchDeClick.h>
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <catch2/catch_approx.hpp>
@@ -510,6 +511,127 @@ TEST_CASE("Signalsmith adapter honours Tracktion's pull contract",
     REQUIRE(changedSpeed);
     REQUIRE(outputPosition == Catch::Approx(expectedOutputSamples).margin(2.0));
     REQUIRE(result.getRMSLevel(0, 0, outputPosition) > 0.1f);
+}
+
+TEST_CASE("Session launch de-click preserves the leading transient",
+          "[audio][clip][session][transient]") {
+    constexpr int numSamples = 256;
+    juce::AudioBuffer<float> transient(1, numSamples);
+    juce::AudioBuffer<float> baseline(1, numSamples);
+    juce::AudioBuffer<float> combined(1, numSamples);
+
+    for (int sample = 0; sample < numSamples; ++sample) {
+        const auto attack =
+            static_cast<float>(std::sin(juce::MathConstants<double>::twoPi * sample / 37.0) *
+                               std::exp(-static_cast<double>(sample) / 80.0));
+        transient.setSample(0, sample, attack);
+        baseline.setSample(0, sample, 0.5f);
+        combined.setSample(0, sample, 0.5f + attack);
+    }
+
+    auto baselineView = tracktion::engine::toBufferView(baseline);
+    auto combinedView = tracktion::engine::toBufferView(combined);
+    tracktion::engine::applyAudioStartDeClick(baselineView, numSamples);
+    tracktion::engine::applyAudioStartDeClick(combinedView, numSamples);
+
+    REQUIRE(baseline.getSample(0, 0) == Catch::Approx(0.0f).margin(1.0e-6f));
+    REQUIRE(combined.getSample(0, 0) == Catch::Approx(0.0f).margin(1.0e-6f));
+    REQUIRE(baseline.getSample(0, numSamples - 1) == Catch::Approx(0.5f).margin(1.0e-6f));
+
+    for (int sample = 0; sample < numSamples; ++sample) {
+        const auto preservedTransient =
+            combined.getSample(0, sample) - baseline.getSample(0, sample);
+        REQUIRE(preservedTransient ==
+                Catch::Approx(transient.getSample(0, sample)).margin(1.0e-6f));
+    }
+
+    auto transientView = tracktion::engine::toBufferView(transient);
+    const juce::AudioBuffer<float> originalTransient(transient);
+    tracktion::engine::applyAudioStartDeClick(transientView, numSamples);
+
+    for (int sample = 0; sample < numSamples; ++sample)
+        REQUIRE(transient.getSample(0, sample) ==
+                Catch::Approx(originalTransient.getSample(0, sample)).margin(1.0e-6f));
+}
+
+TEST_CASE("Signalsmith preserves a transient at the start of a stream",
+          "[audio][clip][stretch][signalsmith][transient]") {
+    namespace te = tracktion::engine;
+
+    constexpr double sampleRate = 48000.0;
+    constexpr int blockSize = 480;
+    constexpr int hitSpacing = 9600;
+    constexpr int hitLength = 1600;
+    constexpr int sourceSamples = hitSpacing * 5;
+    constexpr float speedRatio = 1.25f;
+
+    juce::AudioBuffer<float> source(1, sourceSamples);
+    source.clear();
+
+    for (int hit = 0; hit < 5; ++hit) {
+        const auto hitStart = hit * hitSpacing;
+
+        for (int sample = 0; sample < hitLength; ++sample) {
+            const auto envelope = std::exp(-static_cast<double>(sample) / 260.0);
+            const auto body =
+                std::sin(juce::MathConstants<double>::twoPi * 95.0 * sample / sampleRate);
+            source.setSample(0, hitStart + sample, static_cast<float>(envelope * body));
+        }
+    }
+
+    juce::AudioBuffer<float> result(1, sourceSamples * 2);
+    result.clear();
+
+    te::TimeStretcher stretcher;
+    stretcher.initialise(sampleRate, blockSize, 1, te::TimeStretcher::signalsmith, {}, true);
+    REQUIRE(stretcher.isInitialised());
+    REQUIRE(stretcher.setSpeedAndPitch(speedRatio, 0.0f));
+
+    int inputPosition = 0;
+    int outputPosition = 0;
+
+    while (inputPosition + stretcher.getFramesNeeded() <= sourceSamples) {
+        const auto framesNeeded = stretcher.getFramesNeeded();
+        const float* inputs[] = {source.getReadPointer(0, inputPosition)};
+        float* outputs[] = {result.getWritePointer(0, outputPosition)};
+
+        const auto produced = stretcher.processData(inputs, framesNeeded, outputs);
+        REQUIRE(produced == blockSize);
+        inputPosition += framesNeeded;
+        outputPosition += produced;
+    }
+
+    for (int guard = 0; guard < 100; ++guard) {
+        float* outputs[] = {result.getWritePointer(0, outputPosition)};
+        const auto produced = stretcher.flush(outputs);
+        if (produced == 0)
+            break;
+        outputPosition += produced;
+    }
+
+    const auto peakAround = [&result, outputPosition](int centre) {
+        const auto start = std::max(0, centre - 1000);
+        const auto end =
+            std::min(outputPosition, centre + juce::roundToInt(hitLength * speedRatio) + 1000);
+        return result.getMagnitude(0, start, end - start);
+    };
+
+    const auto firstPeak = peakAround(0);
+    float laterPeak = 0.0f;
+    for (int hit = 1; hit < 4; ++hit)
+        laterPeak += peakAround(juce::roundToInt(hit * hitSpacing * speedRatio));
+    laterPeak /= 3.0f;
+
+    const auto attackRms = [&result](int start) { return result.getRMSLevel(0, start, blockSize); };
+    const auto firstAttackRms = attackRms(0);
+    float laterAttackRms = 0.0f;
+    for (int hit = 1; hit < 4; ++hit)
+        laterAttackRms += attackRms(juce::roundToInt(hit * hitSpacing * speedRatio));
+    laterAttackRms /= 3.0f;
+
+    CAPTURE(firstPeak, laterPeak, firstAttackRms, laterAttackRms, outputPosition);
+    REQUIRE(firstPeak >= laterPeak * 0.9f);
+    REQUIRE(firstAttackRms >= laterAttackRms * 0.9f);
 }
 
 TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",

@@ -912,6 +912,7 @@ void MainWindow::MainComponent::setupViewModeListener() {
 
     // Listen to track property changes for playback mode updates
     TrackManager::getInstance().addListener(this);
+    trackPropertyChanged(INVALID_TRACK_ID);
 }
 
 void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
@@ -1458,6 +1459,10 @@ void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
     MenuManager::getInstance().updateMenuStates(
         false, false, hasSelection, hasEditCursor, leftPanelVisible, rightPanelVisible,
         bottomPanelVisible, isPlaying, isRecording, isLooping);
+}
+
+void MainWindow::MainComponent::tracksChanged() {
+    trackPropertyChanged(INVALID_TRACK_ID);
 }
 
 void MainWindow::MainComponent::trackPropertyChanged(int /*trackId*/) {
