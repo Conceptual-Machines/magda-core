@@ -229,6 +229,13 @@ TEST_CASE("GestureRouter: drag zoom defaults", "[gesture]") {
                     .type == GestureActionType::ZoomVertical);
     }
 
+    SECTION("automation clip ruler drag zooms horizontally") {
+        REQUIRE(router
+                    .resolveDrag(GestureContext::CurveEditor, GestureArea::Ruler,
+                                 GestureAxis::Vertical, juce::ModifierKeys(), 30.0f, kAnchor)
+                    .type == GestureActionType::ZoomHorizontal);
+    }
+
     SECTION("waveform ruler/header/body drag zones zoom horizontally") {
         for (auto area : {GestureArea::Ruler, GestureArea::Header, GestureArea::Body}) {
             REQUIRE(router
