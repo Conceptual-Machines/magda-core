@@ -42,10 +42,35 @@ Each lane header carries a row of toggles:
 
 | Control | Function |
 |---|---|
+| **Lane mode** | Switch the lane between one free-drawn curve and discrete [automation clips](#automation-clips) (tooltip *Lane mode: clips / free draw*) |
 | **Snap edits to beat grid** | Snap point positions to the bar/beat grid while editing |
 | **Snap values to parameter grid** | Snap point values to the parameter's natural steps |
 | **Automation on/off** | Bypass the lane without deleting it; the parameter ignores the curve while off |
 | **Delete automation lane** | Remove the lane and its curve |
+
+## Automation Clips
+
+A lane can hold its automation as discrete **automation clips** instead of one continuous curve. Switch a lane to clip mode with the **Lane mode** toggle in its header. Clip-based automation is handy when you want the same move to repeat, to loop, or to move and copy a shaped gesture around the timeline like any other clip.
+
+On a clip-based lane:
+
+- **Double-click** an empty part of the lane to drop a one-bar automation clip.
+- Hold ++alt++ and **drag** to draw a clip of a specific length (a plain ++alt++-click makes the default one-bar clip).
+- **Right-click** a clip for **Edit Curve**, **Duplicate**, **Loop** (a checkmark toggle that repeats the clip's curve to fill its length), and **Delete**.
+
+**Double-click a clip** to open the automation-clip editor. Its header carries:
+
+| Control | Function |
+|---|---|
+| **SNAP X** | Snap edits to the time grid; the adjacent division button (tooltip *Snap division*) sets the resolution |
+| **SNAP Y** | Snap edits to the value grid; its division button sets the value step |
+| **Overlay track content** | Show the underlying track's clips behind the curve for reference |
+
+Inside the editor, left-click an empty spot to add a point and drag points to move them. Right-click a point to type its exact value; right-click a segment for **Hard Corner** and **Simplify Selected Points**.
+
+### Baking Modulation
+
+You can convert a live modulator (an LFO or envelope linked to a parameter) into automation you can edit by hand. Right-click the linked parameter and choose **Bake Modulation to Automation** to write the modulator's movement into lane points, or **Bake Modulation to Automation Clip** to capture it as an automation clip.
 
 ## Master Automation
 
