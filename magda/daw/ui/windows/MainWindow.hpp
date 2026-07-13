@@ -115,7 +115,7 @@ class MainWindow::MainComponent : public juce::Component,
     void selectionTypeChanged(SelectionType newType) override;
 
     // TrackManagerListener
-    void tracksChanged() override {}
+    void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
 
     // MidiLearnCoordinatorListener

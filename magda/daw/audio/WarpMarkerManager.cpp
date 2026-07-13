@@ -41,6 +41,22 @@ te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
         return nullptr;
     return findWaveAudioClipByEngineId(edit, it->second);
 }
+
+void storeWarpMarkersInClipModel(ClipId clipId, te::WarpTimeManager& warpManager) {
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr)
+        return;
+
+    const auto& markers = warpManager.getMarkers();
+    clip->warpMarkers.clear();
+    clip->warpMarkers.reserve(static_cast<size_t>(markers.size()));
+    for (auto* marker : markers) {
+        if (marker != nullptr) {
+            clip->warpMarkers.push_back(
+                {marker->sourceTime.inSeconds(), marker->warpTime.inSeconds()});
+        }
+    }
+}
 }  // namespace
 
 WarpMarkerManager::~WarpMarkerManager() {
@@ -230,6 +246,10 @@ void WarpMarkerManager::enableWarp(te::Edit& edit,
 
     audioClipPtr->setWarpTime(true);
 
+    // ClipInfo is the source copied to MAGDA's clipboard. Keep it current as
+    // markers are created/edited instead of waiting for the project-save pass.
+    storeWarpMarkersInClipModel(clipId, warpManager);
+
     DBG("WarpMarkerManager::enableWarp clip " << clipId << " -> " << warpManager.getMarkers().size()
                                               << " markers");
 }
@@ -244,6 +264,9 @@ void WarpMarkerManager::disableWarp(te::Edit& edit,
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     warpManager.removeAllMarkers();
     audioClipPtr->setWarpTime(false);
+
+    if (auto* clip = ClipManager::getInstance().getClip(clipId))
+        clip->warpMarkers.clear();
 
     DBG("WarpMarkerManager::disableWarp clip " << clipId);
 }
@@ -288,6 +311,8 @@ int WarpMarkerManager::addWarpMarker(te::Edit& edit,
     int teIndex = warpManager.insertMarker(te::WarpMarker(te::TimePosition::fromSeconds(sourceTime),
                                                           te::TimePosition::fromSeconds(warpTime)));
 
+    storeWarpMarkersInClipModel(clipId, warpManager);
+
     int markerCountAfter = warpManager.getMarkers().size();
     DBG("WarpMarkerManager::addWarpMarker clip "
         << clipId << " src=" << sourceTime << " warp=" << warpTime << " -> teIndex=" << teIndex
@@ -307,6 +332,7 @@ double WarpMarkerManager::moveWarpMarker(te::Edit& edit,
     // Use TE index directly - UI now uses the same index space
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     auto result = warpManager.moveMarker(index, te::TimePosition::fromSeconds(newWarpTime));
+    storeWarpMarkersInClipModel(clipId, warpManager);
     return result.inSeconds();
 }
 
@@ -320,6 +346,7 @@ void WarpMarkerManager::removeWarpMarker(te::Edit& edit,
     // Use TE index directly - UI now uses the same index space
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     warpManager.removeMarker(index);
+    storeWarpMarkersInClipModel(clipId, warpManager);
 }
 
 }  // namespace magda
