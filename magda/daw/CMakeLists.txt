@@ -451,6 +451,18 @@ target_link_libraries(magda_daw
     $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>>
     $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>>
 )
+
+# Signalsmith's FFT-heavy processing cannot reliably meet real-time audio
+# deadlines at -O0. Keep the rest of Debug builds fully debuggable, but compile
+# Tracktion's dedicated time-stretch translation unit with optimisation so the
+# local app exercises representative DSP performance.
+set_source_files_properties(
+    "${CMAKE_SOURCE_DIR}/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp"
+    TARGET_DIRECTORY magda_daw
+    PROPERTIES COMPILE_OPTIONS
+        "$<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/O2>;$<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O2>"
+)
+
 # Re-export JUCE/TE compile usage (include dirs + defines, NO sources) so
 # dependents can still #include JUCE headers. magda_daw's own resolved
 # INCLUDE_DIRECTORIES / COMPILE_DEFINITIONS already hold the full transitive

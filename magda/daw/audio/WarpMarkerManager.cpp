@@ -60,6 +60,7 @@ void storeWarpMarkersInClipModel(ClipId clipId, te::WarpTimeManager& warpManager
 }  // namespace
 
 WarpMarkerManager::~WarpMarkerManager() {
+    stopTimer();
     for (auto& [_, active] : activeDetections_) {
         if (active.warpManager != nullptr)
             active.warpManager->removeListener(this);
@@ -71,16 +72,27 @@ void WarpMarkerManager::setTransientSensitivity(
     float sensitivity) {
     // Resolve the engineId at queue time (a single map lookup) instead
     // of snapshotting the whole clipIdToEngineId map per call.
-    PendingDetection det;
-    det.sensitivity = sensitivity;
+    auto& pending = pendingDetections_[clipId];
+    pending.sensitivity = sensitivity;
     auto it = clipIdToEngineId.find(clipId);
-    det.engineId = (it != clipIdToEngineId.end()) ? it->second : std::string{};
-    det.edit = &edit;
+    pending.engineId = (it != clipIdToEngineId.end()) ? it->second : std::string{};
+    pending.edit = &edit;
 
-    // Restart immediately so the latest sensitivity doesn't wait behind an old
-    // detection job. WarpTimeManager::detectTransients detaches/cancels the
-    // previous job before submitting the replacement.
-    applySensitivityNow(edit, det.engineId, clipId, sensitivity);
+    // A drag can generate dozens of values per second. Restart the quiet-period
+    // timer so only the final value clears the cache and launches detection.
+    startTimer(150);
+}
+
+void WarpMarkerManager::timerCallback() {
+    stopTimer();
+
+    auto pending = std::move(pendingDetections_);
+    pendingDetections_.clear();
+
+    for (const auto& [clipId, detection] : pending) {
+        if (detection.edit != nullptr && !detection.engineId.empty())
+            applySensitivityNow(*detection.edit, detection.engineId, clipId, detection.sensitivity);
+    }
 }
 
 void WarpMarkerManager::applySensitivityNow(te::Edit& edit, const std::string& engineId,
@@ -139,6 +151,9 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
     if (thumbnailManager.getCachedTransients(clip->audio().source.filePath) != nullptr)
         return true;
 
+    if (pendingDetections_.count(clipId))
+        return false;
+
     if (detectionInFlight_.count(clipId))
         return false;
 
@@ -171,6 +186,7 @@ void WarpMarkerManager::transientDetectionFinished(te::WarpTimeManager& warpMana
 
 void WarpMarkerManager::finishDetection(ClipId clipId, te::WarpTimeManager& warpManager,
                                         bool completedOk) {
+    const bool replacementPending = pendingDetections_.count(clipId) != 0;
     warpManager.removeListener(this);
     clipByWarpManager_.erase(&warpManager);
     detectionInFlight_.erase(clipId);
@@ -181,7 +197,7 @@ void WarpMarkerManager::finishDetection(ClipId clipId, te::WarpTimeManager& warp
     activeDetections_.erase(clipId);
 
     auto [complete, transientPositions] = warpManager.getTransientTimes();
-    if (!completedOk || !complete || filePath.isEmpty())
+    if (replacementPending || !completedOk || !complete || filePath.isEmpty())
         return;
 
     juce::Array<double> times;

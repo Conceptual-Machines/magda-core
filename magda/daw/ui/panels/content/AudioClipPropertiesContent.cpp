@@ -527,7 +527,6 @@ void AudioClipPropertiesContent::createControls() {
             return;
         bridge->setTransientSensitivity(clipId_,
                                         static_cast<float>(transientSensValue_->getValue()));
-        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
     };
     addAndMakeVisible(*transientSensValue_);
 

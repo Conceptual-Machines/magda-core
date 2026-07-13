@@ -1861,8 +1861,6 @@ void ClipInspector::initPlaybackSection() {
         if (bridge) {
             bridge->setTransientSensitivity(
                 primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
-            // Notify listeners so WaveformEditorContent requests fresh callback-driven transients.
-            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
         }
     };
     clipPropsContainer_.addChildComponent(*transientSensitivityValue_);
