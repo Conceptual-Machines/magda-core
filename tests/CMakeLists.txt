@@ -57,6 +57,7 @@ set(TEST_SOURCES
     test_sidechain_triggers.cpp
     test_sidechain_device.cpp
     test_curve_snapshot.cpp
+    test_curve_editor_preview.cpp
     test_automation_curve_simplifier.cpp
     # Bake modulation to automation (issue #162)
     test_modulation_baker.cpp
