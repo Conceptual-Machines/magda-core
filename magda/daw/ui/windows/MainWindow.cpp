@@ -45,6 +45,15 @@
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
+#if JUCE_WINDOWS
+#include <dwmapi.h>
+#include <windows.h>
+#pragma comment(lib, "dwmapi.lib")
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+#endif
+
 namespace magda {
 
 // Non-blocking notification shown during device initialization
@@ -265,6 +274,20 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     juce::Logger::writeToLog("[MainWindow] Calling setVisible(true)...");
     setVisible(true);
     juce::Logger::writeToLog("[MainWindow] Window is now visible");
+
+#if JUCE_WINDOWS
+    // The native title bar (setUsingNativeTitleBar(true) above) renders with
+    // Windows' light chrome by default, which shows up as a white strip above
+    // MAGDA's dark UI. Opting the HWND into immersive dark mode makes DWM draw
+    // the title bar/frame dark to match.
+    if (auto* peer = getPeer()) {
+        if (auto hwnd = static_cast<HWND>(peer->getNativeHandle())) {
+            BOOL useDarkMode = TRUE;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode,
+                                  sizeof(useDarkMode));
+        }
+    }
+#endif
 
     // Listen for project changes to update window title
     ProjectManager::getInstance().addListener(this);
