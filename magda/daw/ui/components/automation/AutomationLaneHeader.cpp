@@ -10,6 +10,7 @@
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../../core/UndoManager.hpp"
+#include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AutomationLaneComponent.hpp"
@@ -170,6 +171,59 @@ class PowerGlyphButton : public LaneHeaderButton {
     }
 };
 
+// Lane mode toggle: a lane hosts EITHER automation clips OR a free-drawn
+// curve (issue #1087). Off = curve mode (wave glyph), On = clip mode (two
+// blocks glyph). Clicking converts the lane's data to the other mode
+// (undoable ConvertAutomationLaneTypeCommand).
+class LaneModeButton : public LaneHeaderButton {
+  public:
+    LaneModeButton() : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {}
+
+    // Not an on/off toggle — both modes are first-class states with their
+    // own hue: clips = blue (the arrangement-object language), free-drawn
+    // curve = purple (the automation curve colour). Overrides the base's
+    // on/off scheme, which left curve mode looking inactive.
+    void paintButton(juce::Graphics& g, bool isMouseOver, bool isButtonDown) override {
+        auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        constexpr float corner = 3.0f;
+        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto accent = getToggleState() ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                             : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+        juce::Colour bg = accent.interpolatedWith(surface, 0.62f);
+        if (isButtonDown)
+            bg = bg.darker(0.2f);
+        else if (isMouseOver)
+            bg = bg.brighter(0.1f);
+
+        g.setColour(bg);
+        g.fillRoundedRectangle(bounds, corner);
+        g.setColour(bg.darker(0.15f));
+        g.drawRoundedRectangle(bounds, corner, 1.0f);
+        paintGlyph(g, accent.brighter(0.5f));
+    }
+
+    void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
+        auto bounds = getLocalBounds().toFloat();
+        auto glyph = bounds.reduced(bounds.getWidth() * 0.2f, bounds.getHeight() * 0.28f);
+        g.setColour(colour);
+
+        if (getToggleState()) {
+            // Clip mode: two blocks on the lane.
+            const float w = glyph.getWidth() * 0.44f;
+            g.fillRoundedRectangle(glyph.getX(), glyph.getY(), w, glyph.getHeight(), 1.5f);
+            g.fillRoundedRectangle(glyph.getRight() - w, glyph.getY(), w, glyph.getHeight(), 1.5f);
+        } else {
+            // Curve mode: a free-drawn ramp.
+            juce::Path curve;
+            curve.startNewSubPath(glyph.getX(), glyph.getBottom());
+            curve.cubicTo(glyph.getCentreX(), glyph.getBottom(), glyph.getCentreX(), glyph.getY(),
+                          glyph.getRight(), glyph.getY());
+            g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+        }
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneId laneId,
@@ -188,13 +242,18 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
     entry->snapValueBtn->setTooltip("Snap values to parameter grid");
     host.addAndMakeVisible(*entry->snapValueBtn);
 
-    // Bypass button uses a power glyph, so the "on" visual (cyan fill)
-    // represents automation-enabled — not automation-bypassed. Toggle
-    // state is the inverse of lane->bypass, and the click handler flips
-    // the underlying bypass flag accordingly.
+    // The power glyph controls the stable Reading/Disabled state. Transient
+    // Touching/Writing states still show as powered because they return to
+    // Reading when the gesture ends.
     entry->bypassBtn = std::make_unique<PowerGlyphButton>();
     entry->bypassBtn->setTooltip("Automation on/off");
     host.addAndMakeVisible(*entry->bypassBtn);
+
+    // Mode toggle: clip lane vs free-drawn curve lane. Converts the lane's
+    // existing data to the other representation (undoable).
+    entry->modeBtn = std::make_unique<LaneModeButton>();
+    entry->modeBtn->setTooltip("Lane mode: clips / free draw");
+    host.addAndMakeVisible(*entry->modeBtn);
 
     // Delete button: matches the device-header × in NodeComponent — same
     // reddish-purple fill, same × glyph. Replaces the old "lane options"
@@ -220,7 +279,16 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
     entry->bypassBtn->onClick = [id]() {
         auto& mgr = AutomationManager::getInstance();
         if (const auto* lane = mgr.getLane(id))
-            mgr.setLaneBypass(id, !lane->bypass);
+            mgr.setLaneEnabled(id, isAutomationPersistentlyDisabled(lane->authorityState));
+    };
+    entry->modeBtn->onClick = [id]() {
+        // A lane whose curve spans less than a bar (e.g. just the seed
+        // point) converts into a one-bar clip, per the time signature.
+        double barBeats = 4.0;
+        if (auto* tc = TimelineController::getCurrent())
+            barBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<ConvertAutomationLaneTypeCommand>(id, barBeats));
     };
     entry->deleteBtn->onClick = [id]() {
         UndoManager::getInstance().executeCommand(
@@ -234,12 +302,23 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons,
                                     const AutomationLaneInfo& lane) {
     buttons.snapEditGridBtn->setToggleState(lane.snapEditsToBeatGrid, juce::dontSendNotification);
     buttons.snapValueBtn->setToggleState(lane.snapValue, juce::dontSendNotification);
-    // Power glyph: inverted — "on" means automation active, not bypassed.
-    buttons.bypassBtn->setToggleState(!lane.bypass, juce::dontSendNotification);
+    buttons.bypassBtn->setToggleState(!isAutomationPersistentlyDisabled(lane.authorityState),
+                                      juce::dontSendNotification);
+    // Mode glyph: on = clip lane, off = free-drawn curve lane.
+    buttons.modeBtn->setToggleState(lane.isClipBased(), juce::dontSendNotification);
+    buttons.modeBtn->repaint();
 }
 
+// The lane mode toggle lives in the title row's right slot, walled off by a
+// vertical divider: it converts the lane's data (clips <-> free-drawn
+// curve), so it must not sit in the everyday toggle cluster — and the lane
+// content area's right edge belongs to the value scale labels.
+constexpr int kModeBtnSize = 16;
+constexpr int kModeSlotMargin = 5;
+constexpr int kModeSlotWidth = kModeBtnSize + kModeSlotMargin * 2;
+
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
-                                 int laneTopY, int topInset) {
+                                 int laneTopY, int headerWidth, int topInset) {
     constexpr int kBtnSize = 20;
     constexpr int kBtnGap = 3;
     constexpr int kLeftMargin = 6;
@@ -249,6 +328,7 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
     buttons.snapEditGridBtn->setVisible(inView);
     buttons.snapValueBtn->setVisible(inView);
     buttons.bypassBtn->setVisible(inView);
+    buttons.modeBtn->setVisible(inView);
     buttons.deleteBtn->setVisible(inView);
 
     if (!inView)
@@ -264,6 +344,12 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
     place(*buttons.snapValueBtn);
     place(*buttons.bypassBtn);
     place(*buttons.deleteBtn);
+
+    // Mode toggle: title-row right slot (see kModeSlotWidth above).
+    const int titleY = laneTopY + topInset;
+    buttons.modeBtn->setBounds(headerWidth - kModeSlotMargin - kModeBtnSize,
+                               titleY + (AutomationLaneComponent::HEADER_HEIGHT - kModeBtnSize) / 2,
+                               kModeBtnSize, kModeBtnSize);
 }
 
 void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane, int laneTopY,
@@ -282,10 +368,17 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     g.drawHorizontalLine(headerArea.getBottom() - 1, static_cast<float>(headerArea.getX()),
                          static_cast<float>(headerArea.getRight()));
 
+    // Right slot: the lane mode toggle sits here (layout above); wall it off
+    // from the name/watermark with a vertical divider.
+    auto nameArea = headerArea.reduced(4, 2);
+    nameArea.removeFromRight(kModeSlotWidth);
+    g.setColour(juce::Colour(0xFF3A3A3A));
+    g.drawVerticalLine(width - kModeSlotWidth, static_cast<float>(headerArea.getY() + 3),
+                       static_cast<float>(headerArea.getBottom() - 3));
+
     // Parameter name
     g.setColour(juce::Colour(0xFFCCCCCC));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    auto nameArea = headerArea.reduced(4, 2);
     g.drawText(lane.getDisplayName(), nameArea, juce::Justification::centredLeft);
 
     // Track-name watermark on the right edge so a lane reads which track /

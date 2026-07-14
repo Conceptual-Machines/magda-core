@@ -143,7 +143,7 @@ void MasterAutomationHeaderPanel::layoutButtons() {
             buttons_.begin(), buttons_.end(),
             [&](const std::unique_ptr<AutoLaneHeaderButtons>& e) { return e->laneId == laneId; });
         if (it != buttons_.end())
-            layoutAutoLaneHeaderButtons(**it, *lane, y,
+            layoutAutoLaneHeaderButtons(**it, *lane, y, getWidth(),
                                         AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);
         y += laneHeightPx(*lane, verticalZoom_);
     }

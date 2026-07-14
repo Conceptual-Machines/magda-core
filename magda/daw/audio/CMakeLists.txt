@@ -403,14 +403,19 @@ target_sources(magda_daw PRIVATE
     automation/AutomationPlaybackEngine.cpp
     automation/AutomationRecordingEngine.cpp
     automation/AutomationCurveSimplifier.cpp
+    automation/ModulationBaker.cpp
     session/ArrangementClipSyncPlanner.cpp
     session/ClipEngineIdMap.cpp
     session/ClipLaunchQuantization.cpp
     session/ClipSynchronizer.cpp
     session/ClipWarpSynchronizer.cpp
     plugins/SidechainMonitorPlugin.cpp
+    plugins/SidechainPlugin.cpp
     plugins/AudioSidechainMonitorPlugin.cpp
     plugins/FollowerSourceTapPlugin.cpp
+    plugins/InsertCapturePlugin.cpp
+    insert_capture/InsertRenderCaptureService.cpp
+    ExternalInsertDeviceEnablement.cpp
     plugins/MidiReceivePlugin.cpp
     plugins/MagdaSamplerPlugin.cpp
     plugins/mutable/MutableElementsPlugin.cpp

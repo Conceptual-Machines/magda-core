@@ -31,6 +31,8 @@ set(TEST_SOURCES
     test_update_checker.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp
+    test_external_insert_registry.cpp
+    test_insert_capture.cpp
     test_plugin_window_manager.cpp
     test_plugin_capabilities.cpp
     test_plugin_preferences.cpp
@@ -38,10 +40,14 @@ set(TEST_SOURCES
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp
     test_device_ui_context.cpp
+    test_momentary_param_button.cpp
+    test_delta_solo.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_batch_edit.cpp
     test_clip_commands.cpp
     test_clip_crossfades.cpp
+    # Ghost clips / link groups (issue #12)
+    test_ghost_clips.cpp
     test_clip_resize_operations.cpp
     test_midi_clip_resize_left.cpp
     test_looped_waveform_tile.cpp
@@ -49,8 +55,14 @@ set(TEST_SOURCES
     test_project_document_adapters.cpp
     test_session_clip_playback.cpp
     test_sidechain_triggers.cpp
+    test_sidechain_device.cpp
     test_curve_snapshot.cpp
+    test_curve_editor_preview.cpp
     test_automation_curve_simplifier.cpp
+    # Bake modulation to automation (issue #162)
+    test_modulation_baker.cpp
+    # Clip-based automation lanes: gap-hold + bake flattener (issue #1087)
+    test_automation_clip_lanes.cpp
     test_scan_report.cpp
     test_drum_grid_plugin.cpp
     test_velocity_lane_utils.cpp
@@ -224,11 +236,14 @@ target_sources(magda_juce_tests PRIVATE
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
+    test_signalsmith_loop_juce.cpp
+    test_arranger_launcher_switching_juce.cpp
     test_session_slot_recording_juce.cpp
     test_input_monitor_track_routing_juce.cpp
     test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
+    test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
     test_clip_inspector_juce.cpp

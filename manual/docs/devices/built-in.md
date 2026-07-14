@@ -25,7 +25,7 @@ MAGDA ships with its own native MIDI devices, instruments, and effects. All buil
 
 ## Effects
 
-The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped with every MAGDA installation. See [Effects](effects.md) for the full list, grouped by category.
+The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped with every MAGDA installation. See [Effects](effects.md) for the full list, grouped by category. The bank is joined by the native **[Sidechain](effects.md#sidechain)** device, a MIDI-triggered volume shaper keyed from another track.
 
 ## Analysis
 

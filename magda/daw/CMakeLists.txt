@@ -68,6 +68,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/server_stop.svg
     ../../assets/icons/general/open_in_new.svg
     ../../assets/icons/general/power_on.svg
+    ../../assets/icons/general/toggle_off.svg
+    ../../assets/icons/general/toggle_on.svg
     ../../assets/icons/general/input-output.svg
     ../../assets/icons/general/save.svg
     ../../assets/icons/general/folder-open.svg
@@ -449,6 +451,18 @@ target_link_libraries(magda_daw
     $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>>
     $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>>
 )
+
+# Signalsmith's FFT-heavy processing cannot reliably meet real-time audio
+# deadlines at -O0. Keep the rest of Debug builds fully debuggable, but compile
+# Tracktion's dedicated time-stretch translation unit with optimisation so the
+# local app exercises representative DSP performance.
+set_source_files_properties(
+    "${CMAKE_SOURCE_DIR}/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp"
+    TARGET_DIRECTORY magda_daw
+    PROPERTIES COMPILE_OPTIONS
+        "$<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/O2>;$<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O2>"
+)
+
 # Re-export JUCE/TE compile usage (include dirs + defines, NO sources) so
 # dependents can still #include JUCE headers. magda_daw's own resolved
 # INCLUDE_DIRECTORIES / COMPILE_DEFINITIONS already hold the full transitive
@@ -466,6 +480,7 @@ target_compile_definitions(magda_daw
     JUCE_PLUGINHOST_AU=1
     JUCE_MODAL_LOOPS_PERMITTED=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
     PRIVATE
@@ -496,6 +511,7 @@ target_compile_definitions(magda_daw_app
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
@@ -607,6 +623,7 @@ target_compile_definitions(magda_cli
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     JUCE_WEB_BROWSER=0
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )

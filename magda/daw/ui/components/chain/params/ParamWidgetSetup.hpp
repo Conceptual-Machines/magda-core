@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "MomentaryParamButton.hpp"
 #include "core/ParameterInfo.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -23,6 +24,9 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
  */
 void configureBoolToggle(juce::ToggleButton& toggle, const magda::ParameterInfo& info,
                          std::function<void(double)> onValueChanged);
+
+void configureMomentaryButton(MomentaryParamButton& button,
+                              std::function<void(double)> onValueChanged);
 
 /**
  * @brief Create/configure a combo box for a discrete parameter with named choices.

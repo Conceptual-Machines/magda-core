@@ -107,6 +107,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
         chainArray.add(serializeChainElement(element));
     }
     obj->setProperty("chainElements", juce::var(chainArray));
+    obj->setProperty("chainEnabled", track.chain.enabled);
 
     // Post-fader FX chain elements
     juce::Array<juce::var> postFxArray;
@@ -264,6 +265,10 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     }
 
     // Chain elements
+    // Missing in projects saved before the chain power flag -> default true
+    if (!obj->getProperty("chainEnabled").isVoid())
+        outTrack.chain.enabled = static_cast<bool>(obj->getProperty("chainEnabled"));
+
     auto chainVar = obj->getProperty("chainElements");
     if (chainVar.isArray()) {
         auto* arr = chainVar.getArray();
@@ -404,6 +409,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("uniqueId", device.uniqueId);
     obj->setProperty("fileOrIdentifier", device.fileOrIdentifier);
     obj->setProperty("bypassed", device.bypassed);
+    obj->setProperty("deltaSolo", device.deltaSolo);
     obj->setProperty("expanded", device.expanded);
     obj->setProperty("modPanelOpen", device.modPanelOpen);
     obj->setProperty("gainPanelOpen", device.gainPanelOpen);
@@ -540,6 +546,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.uniqueId = obj->getProperty("uniqueId").toString();
     outDevice.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
     outDevice.bypassed = obj->getProperty("bypassed");
+    if (obj->hasProperty("deltaSolo"))
+        outDevice.deltaSolo = static_cast<bool>(obj->getProperty("deltaSolo"));
     outDevice.expanded = obj->getProperty("expanded");
     outDevice.modPanelOpen = obj->getProperty("modPanelOpen");
     outDevice.gainPanelOpen = obj->getProperty("gainPanelOpen");
@@ -695,6 +703,7 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     obj->setProperty("id", rack.id);
     obj->setProperty("name", rack.name);
     obj->setProperty("bypassed", rack.bypassed);
+    obj->setProperty("deltaSolo", rack.deltaSolo);
     obj->setProperty("expanded", rack.expanded);
     obj->setProperty("modPanelOpen", rack.modPanelOpen);
     obj->setProperty("paramPanelOpen", rack.paramPanelOpen);
@@ -744,6 +753,8 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
     outRack.id = obj->getProperty("id");
     outRack.name = obj->getProperty("name").toString();
     outRack.bypassed = obj->getProperty("bypassed");
+    if (obj->hasProperty("deltaSolo"))
+        outRack.deltaSolo = static_cast<bool>(obj->getProperty("deltaSolo"));
     outRack.expanded = obj->getProperty("expanded");
     if (obj->hasProperty("modPanelOpen"))
         outRack.modPanelOpen = static_cast<bool>(obj->getProperty("modPanelOpen"));

@@ -23,21 +23,39 @@ void ClipInspector::resized() {
         bounds.removeFromTop(4);
     }
 
-    // Clip name as header with view icon, type icon, and name (outside viewport)
+    // Clip name header row (outside viewport): colour spine on the left
+    // (doubles as the colour swatch), name, ghost badge, view|type indicator
+    // chip (background painted in paint()), enable/disable switch.
     {
         const int iconSize = 20;
         const int gap = 6;
         auto headerRow = bounds.removeFromTop(24);
-        if (clipViewIcon_->isVisible()) {
+
+        colourSwatch_->setBounds(headerRow.removeFromLeft(6));
+        headerRow.removeFromLeft(gap);
+
+        if (clipEnabledToggle_->isVisible()) {
+            clipEnabledToggle_->setBounds(headerRow.removeFromRight(28));
+            headerRow.removeFromRight(gap);
+        }
+
+        const int cellW = 24;
+        const bool hasViewIcon = clipViewIcon_->isVisible();
+        auto chip = headerRow.removeFromRight(cellW * (hasViewIcon ? 2 : 1));
+        viewTypeChipBounds_ = chip;
+        if (hasViewIcon) {
             clipViewIcon_->setBounds(
-                headerRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-            headerRow.removeFromLeft(gap);
+                chip.removeFromLeft(cellW).withSizeKeepingCentre(iconSize, iconSize));
         }
         clipTypeIcon_->setBounds(
-            headerRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-        headerRow.removeFromLeft(gap);
-        colourSwatch_->setBounds(headerRow.removeFromRight(iconSize));
-        headerRow.removeFromRight(4);
+            chip.removeFromLeft(cellW).withSizeKeepingCentre(iconSize, iconSize));
+        headerRow.removeFromRight(gap);
+
+        if (clipGhostIcon_->isVisible()) {
+            clipGhostIcon_->setBounds(
+                headerRow.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            headerRow.removeFromRight(4);
+        }
         clipNameValue_.setBounds(headerRow);
     }
     bounds.removeFromTop(8);

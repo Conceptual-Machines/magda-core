@@ -37,6 +37,8 @@ void applyRackInstanceState(te::Plugin::Ptr rackPlugin, const RackInfo& rackInfo
     if (!rackInstance)
         return;
 
+    rackInstance->setDeltaSoloEnabled(rackInfo.deltaSolo);
+
     if (rackInfo.bypassed) {
         rackInstance->wetGain->setParameterFromHost(0.0f, juce::dontSendNotification);
         rackInstance->dryGain->setParameterFromHost(1.0f, juce::dontSendNotification);
@@ -743,6 +745,7 @@ void RackSyncManager::loadRackContents(SyncedRack& synced, TrackId trackId,
 
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
+                        plugin->setDeltaSoloEnabled(device.deltaSolo);
                         daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
                     } else {
@@ -1052,6 +1055,7 @@ void RackSyncManager::updateElementPropertiesRecursive(SyncedRack& synced, const
                 auto pluginIt = synced.innerPlugins.find(device.id);
                 if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
                     pluginIt->second->setEnabled(!device.bypassed);
+                    pluginIt->second->setDeltaSoloEnabled(device.deltaSolo);
                     daw::audio::syncPluginMidiInThru(pluginIt->second.get(), device.midiInThru);
                 }
             } else if (isRack(element)) {
@@ -1564,7 +1568,12 @@ void RackSyncManager::syncLFOValuesToVisuals() {
                 overlayModifierVisuals(magdaMod, it->second.get());
                 continue;
             }
-            const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running;
+            // Level-curve mods overlay unconditionally too: the one-shot
+            // latch in the curve holder keeps the TE value meaningful at
+            // idle, and the sim's separately integrated phase would fight
+            // the overlay's (dot jumping backwards).
+            const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) ||
+                                 magdaMod.running || magdaMod.invertOutput;
             if (!running)
                 continue;
             overlayModifierVisuals(magdaMod, it->second.get());

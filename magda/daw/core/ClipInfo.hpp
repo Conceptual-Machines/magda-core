@@ -12,6 +12,7 @@
 #include "ClipTypes.hpp"
 #include "TempoMap.hpp"
 #include "TempoUtils.hpp"
+#include "TimeStretchModes.hpp"
 #include "TrackTypes.hpp"
 #include "TypeIds.hpp"
 
@@ -238,8 +239,22 @@ struct ClipInfo {
     ClipView view = ClipView::Arrangement;  // Which view this clip belongs to
     ClipContent content = MidiClipModel{};
 
+    // Ghost clips. Clips sharing a non-zero linkGroupId mirror their
+    // content-defining fields (see copySharedContentFrom): editing any member
+    // updates all of them. Symmetric — there is no "original". 0 = unlinked.
+    // A group with a single remaining member is inert (no propagation, no
+    // ghost visuals); groups are never auto-dissolved so delete-undo restores
+    // membership cleanly.
+    int linkGroupId = 0;
+
     // Timeline position. This is the canonical placement model for every clip type.
     ClipPlacement placement;
+
+    // Enable/disable toggle (#1736). Disabled clips do not play — synced to
+    // te::Clip::disabled, which excludes the clip from the playback graph.
+    // Per-instance (NOT ghost-shared): disabling one link-group member must
+    // not silence its siblings.
+    bool enabled = true;
 
     ClipType getType() const {
         return std::holds_alternative<AudioClipModel>(content) ? ClipType::Audio : ClipType::MIDI;
@@ -401,14 +416,14 @@ struct ClipInfo {
     // The time-stretch mode that is actually applied at playback. When the mode
     // is left at "Off" (0) but the clip is in beat mode, warped, sped up, or
     // pitch-shifted (without analog pitch), TE silently stretches using its
-    // default SoundTouch HQ engine. UI readouts must show this effective mode,
+    // default quality engine. UI readouts must show this effective mode,
     // not the raw field, so the inspector and the audio editor agree — e.g.
-    // after a session drop auto-enables beat mode. (4 = soundtouchBetter.)
+    // after a session drop auto-enables beat mode.
     int getEffectiveTimeStretchMode() const {
         if (timeStretchMode == 0 && !isAnalogPitchActive() &&
             (autoTempo || warpEnabled || std::abs(speedRatio - 1.0) > 0.001 ||
              std::abs(pitchChange) > 0.001f)) {
-            return 4;  // soundtouchBetter (TE's defaultMode)
+            return time_stretch_mode::kSignalsmith;
         }
         return timeStretchMode;
     }
@@ -502,6 +517,41 @@ struct ClipInfo {
         placement.lengthBeats = juce::jmax(0.0, beatLength);
         startBeats = placement.startBeat;
         lengthBeats = placement.lengthBeats;
+    }
+
+    /// Copy the content-defining fields from a link-group sibling (ghost-clip
+    /// mirroring). Everything that says WHAT the clip contains and how the
+    /// source is interpreted is shared — including the name (the UI appends a
+    /// per-instance #index for display); everything that says WHERE it sits
+    /// and how it mixes stays per-instance: id, trackId, colour, view,
+    /// placement (+ derived mirrors), offsets (placement-coupled: left-resize
+    /// trims only that instance), volume/gain/pan, fades, channels, launch and
+    /// grid settings. Loop fields and speedRatio are per-instance too: for
+    /// non-looped audio, resize keeps loopStart/loopLength mirroring
+    /// offset/length, and stretch-resize writes speedRatio — sharing either
+    /// would let one ghost's resize corrupt its siblings.
+    void copySharedContentFrom(const ClipInfo& src) {
+        name = src.name;
+        content = src.content;
+        midiNotes = src.midiNotes;
+        midiCCData = src.midiCCData;
+        midiPitchBendData = src.midiPitchBendData;
+        chordAnnotations = src.chordAnnotations;
+        nextChordGroupId = src.nextChordGroupId;
+        warpEnabled = src.warpEnabled;
+        timeStretchMode = src.timeStretchMode;
+        warpMarkers = src.warpMarkers;
+        autoTempo = src.autoTempo;
+        autoPitch = src.autoPitch;
+        analogPitch = src.analogPitch;
+        autoPitchMode = src.autoPitchMode;
+        pitchChange = src.pitchChange;
+        transpose = src.transpose;
+        autoDetectBeats = src.autoDetectBeats;
+        beatSensitivity = src.beatSensitivity;
+        isReversed = src.isReversed;
+        grooveTemplate = src.grooveTemplate;
+        grooveStrength = src.grooveStrength;
     }
 
     /// Derive startTime/length from placement beats using the given BPM.

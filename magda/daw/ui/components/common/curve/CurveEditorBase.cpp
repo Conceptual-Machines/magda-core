@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 
+#include "CurveRenderOrder.hpp"
 #include "core/CurveMath.hpp"
 #include "core/UndoManager.hpp"
 #include "magda/daw/ui/themes/FontManager.hpp"
@@ -140,25 +141,29 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         }
     }
 
+    const auto renderPoints = getRenderOrderedPoints();
+
     // Create path for curve
     juce::Path curvePath;
     bool pathStarted = false;
+    float pathStartX = 0.0f;  // where the fill's left edge closes (kept vertical)
 
     // Handle edge behavior based on loop mode
     if (shouldLoop()) {
         // For looping (LFO): Edge points are pinned at x=0 and x=1
         // Just start at the first point - no extra wrap segment needed
-        if (!points.empty()) {
-            auto [firstX, firstY] = getEffectivePosition(points.front());
+        if (!renderPoints.empty()) {
+            auto [firstX, firstY] = getEffectivePosition(*renderPoints.front());
             float firstPixelX = static_cast<float>(xToPixelF(firstX));
             float firstPixelY = static_cast<float>(yToPixelF(firstY));
             curvePath.startNewSubPath(firstPixelX, firstPixelY);
             pathStarted = true;
+            pathStartX = firstPixelX;
         }
     } else {
         // For non-looping (automation): Extend from left edge at first point's value
-        if (!points.empty()) {
-            auto [firstX, firstY] = getEffectivePosition(points.front());
+        if (!renderPoints.empty()) {
+            auto [firstX, firstY] = getEffectivePosition(*renderPoints.front());
             float firstPixelX = static_cast<float>(xToPixelF(firstX));
             float firstPixelY = static_cast<float>(yToPixelF(firstY));
 
@@ -166,13 +171,14 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
                 curvePath.startNewSubPath(0.0f, firstPixelY);
                 curvePath.lineTo(firstPixelX, firstPixelY);
                 pathStarted = true;
+                pathStartX = 0.0f;
             }
         }
     }
 
     // Draw between points
-    for (size_t i = 0; i < points.size(); ++i) {
-        const auto& p = points[i];
+    for (size_t i = 0; i < renderPoints.size(); ++i) {
+        const auto& p = *renderPoints[i];
         auto [x, y] = getEffectivePosition(p);
         float pixelX = static_cast<float>(xToPixelF(x));
         float pixelY = static_cast<float>(yToPixelF(y));
@@ -180,8 +186,9 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         if (!pathStarted) {
             curvePath.startNewSubPath(pixelX, pixelY);
             pathStarted = true;
+            pathStartX = pixelX;
         } else if (i > 0) {
-            const auto& prevP = points[i - 1];
+            const auto& prevP = *renderPoints[i - 1];
 
             // Get effective tension (use preview if dragging this segment)
             double effectiveTension = prevP.tension;
@@ -200,8 +207,8 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         // The curve ends at the last point - no extra segment needed
     } else {
         // For non-looping: Extend to right edge at last point's value
-        if (!points.empty()) {
-            auto [lastX, lastY] = getEffectivePosition(points.back());
+        if (!renderPoints.empty()) {
+            auto [lastX, lastY] = getEffectivePosition(*renderPoints.back());
             juce::ignoreUnused(lastX);
             float lastPixelY = static_cast<float>(yToPixelF(lastY));
             float width = static_cast<float>(getWidth());
@@ -223,11 +230,15 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     // get the fill baseline at the padded y=0 position, while the base/
     // automation editor continues to use content.getBottom() (same result
     // because the base yToPixelF(0) == content.getBottom()).
+    // Close the fill straight down from the curve's actual end and start x
+    // (which sit kEdgePadding inside the content bounds for the LFO editor):
+    // closing to the content corners instead draws the fill's side edges as
+    // visible diagonals across that offset.
     juce::Path fillPath = curvePath;
-    auto content = getContentBounds();
+    const auto curveEnd = curvePath.getCurrentPosition();
     float fillBaseY = static_cast<float>(yToPixelF(0.0));
-    fillPath.lineTo(static_cast<float>(content.getRight()), fillBaseY);
-    fillPath.lineTo(static_cast<float>(content.getX()), fillBaseY);
+    fillPath.lineTo(curveEnd.x, fillBaseY);
+    fillPath.lineTo(pathStartX, fillBaseY);
     fillPath.closeSubPath();
     g.setColour(curveColour_.withAlpha(0.13f));
     g.fillPath(fillPath);
@@ -818,6 +829,12 @@ std::pair<double, double> CurveEditorBase::getEffectivePosition(const CurvePoint
     return {p.x, p.y};
 }
 
+std::vector<const CurvePoint*> CurveEditorBase::getRenderOrderedPoints() const {
+    return getCurveRenderOrder(
+        getPoints(), previewPointId_ != INVALID_CURVE_POINT_ID,
+        [this](const CurvePoint& point) { return getEffectivePosition(point).first; });
+}
+
 void CurveEditorBase::rebuildPointComponents() {
     // Clear preview state when structure changes
     previewPointId_ = INVALID_CURVE_POINT_ID;
@@ -1063,24 +1080,33 @@ void CurveEditorBase::updatePointPositions() {
 }
 
 void CurveEditorBase::updateTensionHandlePositions() {
-    const auto& points = getPoints();
+    const auto points = getRenderOrderedPoints();
+    for (auto& handle : tensionHandles_)
+        handle->setVisible(false);
+
     if (points.size() < 2)
         return;
 
     constexpr int MIN_SEGMENT_PIXELS = 30;
-    size_t tensionIdx = 0;
-    for (size_t i = 0; i < points.size() - 1 && tensionIdx < tensionHandles_.size(); ++i) {
-        const auto& p1 = points[i];
-        const auto& p2 = points[i + 1];
+    for (size_t i = 0; i < points.size() - 1; ++i) {
+        const auto& p1 = *points[i];
+        const auto& p2 = *points[i + 1];
 
         if (p1.curveType == CurveType::Linear || p1.curveType == CurveType::HardCorner) {
+            auto handleIt =
+                std::find_if(tensionHandles_.begin(), tensionHandles_.end(),
+                             [&p1](const auto& handle) { return handle->getPointId() == p1.id; });
+            if (handleIt == tensionHandles_.end())
+                continue;
+            auto& handle = **handleIt;
+
             auto [x1, y1] = getEffectivePosition(p1);
             auto [x2, y2] = getEffectivePosition(p2);
 
             int segPixels = xToPixel(x2) - xToPixel(x1);
             bool hasRoom = segPixels >= MIN_SEGMENT_PIXELS;
-            tensionHandles_[tensionIdx]->setVisible(hasRoom);
-            tensionHandles_[tensionIdx]->setHardCorner(p1.curveType == CurveType::HardCorner);
+            handle.setVisible(hasRoom);
+            handle.setHardCorner(p1.curveType == CurveType::HardCorner);
 
             if (hasRoom) {
                 double tension = p1.tension;
@@ -1095,9 +1121,8 @@ void CurveEditorBase::updateTensionHandlePositions() {
                 int px = xToPixel(midX);
                 int py = yToPixel(midY);
 
-                tensionHandles_[tensionIdx]->setCentrePosition(px, py);
+                handle.setCentrePosition(px, py);
             }
-            ++tensionIdx;
         }
     }
 }

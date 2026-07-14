@@ -257,6 +257,15 @@ struct ModInfo {
     bool oneShot = false;          // If true, play once and hold at end value
     bool oneShotComplete = false;  // Runtime: true after one-shot finishes, cleared on gate reset
 
+    // The drawn curve is a level envelope (1 = full level) and the applied
+    // modulator output is (1 - curve). TE treats output 0 as "modifier
+    // inactive" (gated / not yet triggered), so a level curve must be flipped
+    // on the way out for inactive to mean "no attenuation". Used by the
+    // Sidechain device: the user draws the audible gain shape, the engine
+    // receives duck amount. Display (curve editor, phase dot) stays on the
+    // drawn curve.
+    bool invertOutput = false;
+
     // MSEG loop region (for Custom waveform)
     bool useLoopRegion = false;  // Enable loop between loopStart and loopEnd
     float loopStart = 0.0f;      // Loop region start phase (0-1)

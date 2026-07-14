@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -414,6 +415,13 @@ void DrumVoiceUI::mouseUp(const juce::MouseEvent&) {
 }
 
 void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::CurveEditor, wheel, e.mods, e.getPosition());
+    if (!magda::isValueAdjustmentAction(gesture.type)) {
+        juce::Component::mouseWheelMove(e, wheel);
+        return;
+    }
+
     // Scroll over a section's envelope graph to set its Curve.
     for (int i = 0;
          i < static_cast<int>(sectionEnvAreas_.size()) && i < static_cast<int>(sections_.size());
@@ -426,12 +434,14 @@ void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWhe
         const float cur =
             static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
         // Scroll down bends the curve down (toward fast/negative); up = swelled/positive.
-        const float delta = (wheel.isReversed ? -wheel.deltaY : wheel.deltaY) * 60.0f;
+        const float delta = gesture.magnitude * 60.0f;
         setSlotValue(s.curveSlot,
                      juce::jlimit(slotMin_[static_cast<size_t>(s.curveSlot)],
                                   slotMax_[static_cast<size_t>(s.curveSlot)], cur + delta));
         return;
     }
+
+    juce::Component::mouseWheelMove(e, wheel);
 }
 
 }  // namespace magda::daw::ui

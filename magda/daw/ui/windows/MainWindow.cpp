@@ -1,5 +1,7 @@
 #include "MainWindow.hpp"
 
+#include <vector>
+
 #include "../../api/magda_api_live.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
@@ -42,6 +44,15 @@
 #include "engine/PlaybackPositionTimer.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
+
+#if JUCE_WINDOWS
+#include <dwmapi.h>
+#include <windows.h>
+#pragma comment(lib, "dwmapi.lib")
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+#endif
 
 namespace magda {
 
@@ -263,6 +274,20 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     juce::Logger::writeToLog("[MainWindow] Calling setVisible(true)...");
     setVisible(true);
     juce::Logger::writeToLog("[MainWindow] Window is now visible");
+
+#if JUCE_WINDOWS
+    // The native title bar (setUsingNativeTitleBar(true) above) renders with
+    // Windows' light chrome by default, which shows up as a white strip above
+    // MAGDA's dark UI. Opting the HWND into immersive dark mode makes DWM draw
+    // the title bar/frame dark to match.
+    if (auto* peer = getPeer()) {
+        if (auto hwnd = static_cast<HWND>(peer->getNativeHandle())) {
+            BOOL useDarkMode = TRUE;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode,
+                                  sizeof(useDarkMode));
+        }
+    }
+#endif
 
     // Listen for project changes to update window title
     ProjectManager::getInstance().addListener(this);
@@ -704,14 +729,38 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         getCommandManager().invokeDirectly(CommandIDs::pasteRipple, false);
     };
 
+    // Time selections and clip placement are authoritative in beats. Keep the
+    // bounce range in beats until ClipCommands converts it for Tracktion's
+    // seconds-based renderer.
+    auto getBounceRange = [this]() -> BounceRange {
+        BounceRange timeSelection;
+        bool hasActiveTimeSelection = false;
+        if (mainView) {
+            const auto& selection = mainView->getTimelineController().getState().selection;
+            hasActiveTimeSelection = selection.isVisuallyActive() && !selection.automationOnly;
+            if (hasActiveTimeSelection)
+                timeSelection = {selection.startBeats, selection.endBeats};
+        }
+
+        std::vector<ClipInfo> selectedArrangementClips;
+        for (const auto clipId : SelectionManager::getInstance().getSelectedClips()) {
+            const auto* clip = ClipManager::getInstance().getClip(clipId);
+            if (!clip || clip->view != ClipView::Arrangement)
+                continue;
+            selectedArrangementClips.push_back(*clip);
+        }
+        return resolveBounceSelectionRange(timeSelection, hasActiveTimeSelection,
+                                           selectedArrangementClips);
+    };
+
     // Wire bounce callbacks
-    mainView->onBounceInPlaceRequested = [this](ClipId clipId) {
+    mainView->onBounceInPlaceRequested = [this, getBounceRange](ClipId clipId) {
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
         if (!engine) {
             DBG("BounceInPlace: no TracktionEngineWrapper available");
             return;
         }
-        auto cmd = std::make_unique<BounceInPlaceCommand>(clipId, engine);
+        auto cmd = std::make_unique<BounceInPlaceCommand>(clipId, engine, getBounceRange());
         // executeCommand always retains the command (undo stack), so reading
         // its error message back afterwards is safe.
         auto* cmdPtr = cmd.get();
@@ -720,7 +769,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             daw::ui::Toast::showGlobal(err, 5000);
     };
 
-    mainView->onBounceToNewTrackRequested = [this](ClipId clipId) {
+    mainView->onBounceToNewTrackRequested = [this, getBounceRange](ClipId clipId) {
         auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
         if (!engine) {
             DBG("BounceToNewTrack: no TracktionEngineWrapper available");
@@ -729,8 +778,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
         // Runs one bounce and returns its error message (empty on success).
         // executeCommand retains the command, so the raw pointer stays valid.
-        auto runBounce = [](ClipId cid, TracktionEngineWrapper* eng) -> juce::String {
-            auto cmd = std::make_unique<BounceToNewTrackCommand>(cid, eng);
+        const auto bounceRange = getBounceRange();
+        auto runBounce = [bounceRange](ClipId cid, TracktionEngineWrapper* eng) -> juce::String {
+            auto cmd = std::make_unique<BounceToNewTrackCommand>(cid, eng, bounceRange);
             auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
             return cmdPtr->getErrorMessage();
@@ -885,6 +935,7 @@ void MainWindow::MainComponent::setupViewModeListener() {
 
     // Listen to track property changes for playback mode updates
     TrackManager::getInstance().addListener(this);
+    trackPropertyChanged(INVALID_TRACK_ID);
 }
 
 void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
@@ -1431,6 +1482,10 @@ void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
     MenuManager::getInstance().updateMenuStates(
         false, false, hasSelection, hasEditCursor, leftPanelVisible, rightPanelVisible,
         bottomPanelVisible, isPlaying, isRecording, isLooping);
+}
+
+void MainWindow::MainComponent::tracksChanged() {
+    trackPropertyChanged(INVALID_TRACK_ID);
 }
 
 void MainWindow::MainComponent::trackPropertyChanged(int /*trackId*/) {

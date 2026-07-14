@@ -1,6 +1,7 @@
 #include "BottomPanel.hpp"
 
 #include "../components/common/DraggableValueLabel.hpp"
+#include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
@@ -13,6 +14,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
+#include "content/AutomationClipEditorContent.hpp"
 #include "content/ChordPanelContent.hpp"
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
@@ -356,6 +358,7 @@ void BottomPanel::setupHeaderControls() {
     gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridNumeratorLabel_->onValueChange = [this]() {
         gridNumerator_ = static_cast<int>(std::round(gridNumeratorLabel_->getValue()));
+        updateGridDivisionFace();
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
@@ -410,6 +413,7 @@ void BottomPanel::setupHeaderControls() {
         gridDenominator_ = best;
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
+        updateGridDivisionFace();
         if (!isAutoGrid_) {
             auto* content = getActiveContent();
             auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
@@ -422,6 +426,21 @@ void BottomPanel::setupHeaderControls() {
         }
     };
     headerBar_->addChildComponent(gridDenominatorLabel_.get());
+
+    // A musical-notation view over the stored numerator/denominator pair.
+    // The numeric controls stay as the custom editor's implementation detail;
+    // this is the only collapsed face in the header.
+    gridDivisionButton_ = std::make_unique<daw::ui::GridDivisionButton>();
+    gridDivisionButton_->setHorizontal(true);
+    gridDivisionButton_->setTooltip("Grid division");
+    gridDivisionButton_->onClick = [this]() {
+        daw::ui::showGridDivisionMenu(*gridDivisionButton_, gridNumerator_, gridDenominator_,
+                                      [this](int numerator, int denominator) {
+                                          setGridDivisionFromPicker(numerator, denominator);
+                                      });
+    };
+    headerBar_->addChildComponent(gridDivisionButton_.get());
+    updateGridDivisionFace();
 
     // AUTO toggle
     autoGridButton_ = std::make_unique<juce::TextButton>("AUTO");
@@ -446,6 +465,7 @@ void BottomPanel::setupHeaderControls() {
         gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
         gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+        updateGridDivisionFace();
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
@@ -488,19 +508,32 @@ void BottomPanel::setupHeaderControls() {
 
     // Loop toggle (dual icon: off/on). Toggles the clip's source loop, the same
     // clip->loopEnabled the editors render (mirrors the Clip Inspector toggle).
-    loopButton_ =
-        std::make_unique<SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
+    // Same transport loop glyph as the clip headers.
+    loopButton_ = std::make_unique<SvgButton>("Loop", BinaryData::loop_icon_svg,
+                                              BinaryData::loop_icon_svgSize);
     loopButton_->setTooltip("Loop clip");
-    // Borderless icon; recolour its baked #B3B3B3 fill by state. Off = grey
+    // Borderless icon; recolour its baked #BCBCBC fill by state. Off = grey
     // glyph, no fill; engaged = solid blue chip with a white glyph. Matches the
     // Clip Inspector loop toggle (both drive the same clip loop). Green stays the
     // ruler's range-marker language.
-    loopButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    loopButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     loopButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     loopButton_->setActiveColor(juce::Colours::white);
     loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     loopButton_->setClickingTogglesState(false);  // manual active state
     loopButton_->onClick = [this]() {
+        // Automation clip editor: loop lives on the automation clip (same
+        // toggle as the inspector's).
+        if (auto* autoEditor =
+                dynamic_cast<daw::ui::AutomationClipEditorContent*>(getActiveContent())) {
+            auto& mgr = AutomationManager::getInstance();
+            if (const auto* clip = mgr.getClip(autoEditor->getEditingClipId())) {
+                loopButton_->setActive(!clip->looping);
+                mgr.setClipLooping(clip->id, !clip->looping);
+            }
+            return;
+        }
+
         const auto clipId = getActiveEditingClipId();
         if (clipId == INVALID_CLIP_ID)
             return;
@@ -521,6 +554,33 @@ void BottomPanel::setupHeaderControls() {
             }));
     };
     headerBar_->addChildComponent(loopButton_.get());
+
+    // Clip enable/disable toggle (#1736). Same power language as the device
+    // bypass button: on = green chip with a white glyph, off = red glyph.
+    // Mirrors the Clip Inspector toggle; disabled clips do not play.
+    clipEnabledButton_ = std::make_unique<SvgButton>("ClipEnabled", BinaryData::power_on_svg,
+                                                     BinaryData::power_on_svgSize);
+    clipEnabledButton_->setTooltip("Enable/disable clip");
+    clipEnabledButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    clipEnabledButton_->setActiveColor(juce::Colours::white);
+    clipEnabledButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    clipEnabledButton_->setClickingTogglesState(false);  // manual active state
+    clipEnabledButton_->onClick = [this]() {
+        const auto clipId = getActiveEditingClipId();
+        if (clipId == INVALID_CLIP_ID)
+            return;
+        const auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip == nullptr)
+            return;
+
+        const bool newState = !clip->enabled;
+        clipEnabledButton_->setActive(newState);
+        UndoManager::getInstance().executeCommand(std::make_unique<SetClipPropertyCommand>(
+            clipId, newState ? "Enable Clip" : "Disable Clip",
+            [newState](auto& manager, ClipId id) { manager.setClipEnabled(id, newState); }));
+    };
+    headerBar_->addChildComponent(clipEnabledButton_.get());
 
     // Note slice button (dual icon: off=grey, on=blue when notes selected)
     sliceButton_ = std::make_unique<SvgButton>(
@@ -580,6 +640,21 @@ void BottomPanel::setupHeaderControls() {
 
 void BottomPanel::setCollapsed(bool collapsed) {
     daw::ui::PanelController::getInstance().setCollapsed(daw::ui::PanelLocation::Bottom, collapsed);
+}
+
+void BottomPanel::paintOverChildren(juce::Graphics& g) {
+    // Disabled-clip dim over the editor content (#1736), mirroring the
+    // arrangement clip overlay. The header bar stays undimmed so the power
+    // switch and grid controls read normally.
+    const auto clipId = getActiveEditingClipId();
+    const auto* clip =
+        (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
+    if (clip && !clip->enabled) {
+        if (auto* content = getActiveContent(); content != nullptr && content->isVisible()) {
+            g.setColour(juce::Colours::black.withAlpha(0.4f));
+            g.fillRect(getLocalArea(content, content->getLocalBounds()));
+        }
+    }
 }
 
 void BottomPanel::paint(juce::Graphics& g) {
@@ -651,10 +726,12 @@ void BottomPanel::resized() {
         // Layout MIDI/audio grid controls in the header (if present)
         auto* content = getActiveContent();
         bool hasMidiControls =
-            content && (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
-                        content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
-                        content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
-                        content->getContentType() == daw::ui::PanelContentType::WaveformEditor);
+            content &&
+            (content->getContentType() == daw::ui::PanelContentType::PianoRoll ||
+             content->getContentType() == daw::ui::PanelContentType::DrumGridClipView ||
+             content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
+             content->getContentType() == daw::ui::PanelContentType::WaveformEditor ||
+             content->getContentType() == daw::ui::PanelContentType::AutomationClipEditor);
         if (hasMidiControls)
             layoutMidiHeaderControls(headerBar_->getLocalBounds());
 
@@ -802,6 +879,8 @@ void BottomPanel::clipPropertyChanged(ClipId clipId) {
     if (getActiveEditingClipId() == clipId) {
         applyTimeModeToContent();
         syncLoopButtonState();
+        syncClipEnabledButtonState();
+        repaint();  // disabled-clip dim overlay (paintOverChildren)
     }
 }
 
@@ -1045,6 +1124,17 @@ void BottomPanel::updateContentBasedOnSelection() {
                 targetContent = daw::ui::PanelContentType::WaveformEditor;
             }
         }
+    } else if (SelectionManager::getInstance().getSelectionType() ==
+                   SelectionType::AutomationClip &&
+               SelectionManager::getInstance().getAutomationClipSelection().isValid()) {
+        targetContent = daw::ui::PanelContentType::AutomationClipEditor;
+    } else if (SelectionManager::getInstance().getSelectionType() ==
+                   SelectionType::AutomationPoint &&
+               SelectionManager::getInstance().getAutomationPointSelection().clipId !=
+                   INVALID_AUTOMATION_CLIP_ID) {
+        // Selecting a point INSIDE an automation clip keeps the clip editor
+        // open (like note selection keeps the piano roll).
+        targetContent = daw::ui::PanelContentType::AutomationClipEditor;
     } else if (selectedTrack != INVALID_TRACK_ID) {
         targetContent = daw::ui::PanelContentType::TrackChain;
     }
@@ -1115,17 +1205,22 @@ void BottomPanel::updateContentBasedOnSelection() {
 
     // Connect auto-grid display callback so num/den labels update during zoom
     auto* content = getActiveContent();
+    auto autoGridDisplayChanged = [this](int numerator, int denominator) {
+        gridNumerator_ = numerator;
+        gridDenominator_ = denominator;
+        if (!gridNumeratorLabel_->isDragging())
+            gridNumeratorLabel_->setValue(static_cast<double>(numerator),
+                                          juce::dontSendNotification);
+        if (!gridDenominatorLabel_->isDragging())
+            gridDenominatorLabel_->setValue(static_cast<double>(denominator),
+                                            juce::dontSendNotification);
+    };
     if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content)) {
-        midiEditor->onAutoGridDisplayChanged = [this](int numerator, int denominator) {
-            gridNumerator_ = numerator;
-            gridDenominator_ = denominator;
-            if (!gridNumeratorLabel_->isDragging())
-                gridNumeratorLabel_->setValue(static_cast<double>(numerator),
-                                              juce::dontSendNotification);
-            if (!gridDenominatorLabel_->isDragging())
-                gridDenominatorLabel_->setValue(static_cast<double>(denominator),
-                                                juce::dontSendNotification);
-        };
+        midiEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
+    } else if (auto* autoEditor = dynamic_cast<daw::ui::AutomationClipEditorContent*>(content)) {
+        // The automation editor owns its snap controls; only the shared loop
+        // toggle needs resyncing on clip changes.
+        autoEditor->onClipStateChanged = [this]() { syncLoopButtonState(); };
     }
 
     // Push multi-selection state into the waveform editor and the properties
@@ -1164,8 +1259,12 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
                      incoming->getContentType() == daw::ui::PanelContentType::ChordClipView);
     const bool isWaveformEditor =
         incoming && incoming->getContentType() == daw::ui::PanelContentType::WaveformEditor;
+    const bool isAutomationEditor =
+        incoming && incoming->getContentType() == daw::ui::PanelContentType::AutomationClipEditor;
     if (isMidiEditor || isWaveformEditor)
         addMidiControlsToHeader();  // Grid controls are shared between MIDI and audio
+    else if (isAutomationEditor)
+        addGridControlsToHeader();  // Grid controls only — loop lives in the inspector
 
     // Fullscreen toggle: enabled for any clip editor (piano roll, drum grid,
     // waveform). Hidden for track chain and empty content (issue #1282).
@@ -1192,13 +1291,18 @@ void BottomPanel::syncHeaderVisibility(daw::ui::PanelContent* content) {
 }
 
 void BottomPanel::addMidiControlsToHeader() {
-    gridNumeratorLabel_->setVisible(true);
-    gridSlashLabel_->setVisible(true);
-    gridDenominatorLabel_->setVisible(true);
+    // The legacy numeric labels retain the backing state for the picker but
+    // never appear in the header; GridDivisionButton is the sole face.
+    gridNumeratorLabel_->setVisible(false);
+    gridSlashLabel_->setVisible(false);
+    gridDenominatorLabel_->setVisible(false);
+    gridDivisionButton_->setVisible(true);
     autoGridButton_->setVisible(true);
     snapButton_->setVisible(true);
     loopButton_->setVisible(true);
     syncLoopButtonState();
+    clipEnabledButton_->setVisible(true);
+    syncClipEnabledButtonState();
     if (showEditorTabs_) {
         pianoRollTab_->setVisible(true);
         drumGridTab_->setVisible(true);
@@ -1214,6 +1318,13 @@ void BottomPanel::addMidiControlsToHeader() {
     updateOverlayTracksButtonState();
 }
 
+void BottomPanel::addGridControlsToHeader() {
+    // Automation clip editor: only the shared loop toggle — the snap
+    // controls are content-owned (populateHeader).
+    loopButton_->setVisible(true);
+    syncLoopButtonState();
+}
+
 void BottomPanel::removeMidiControlsFromHeader() {
     hideMidiHeaderControls();
 }
@@ -1223,10 +1334,14 @@ void BottomPanel::hideMidiHeaderControls() {
     gridNumeratorLabel_->setVisible(false);
     gridSlashLabel_->setVisible(false);
     gridDenominatorLabel_->setVisible(false);
+    if (gridDivisionButton_)
+        gridDivisionButton_->setVisible(false);
     autoGridButton_->setVisible(false);
     snapButton_->setVisible(false);
     if (loopButton_)
         loopButton_->setVisible(false);
+    if (clipEnabledButton_)
+        clipEnabledButton_->setVisible(false);
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
     sliceButton_->setVisible(false);
@@ -1256,11 +1371,26 @@ ClipId BottomPanel::getActiveEditingClipId() const {
 void BottomPanel::syncLoopButtonState() {
     if (!loopButton_)
         return;
+    if (auto* autoEditor =
+            dynamic_cast<daw::ui::AutomationClipEditorContent*>(getActiveContent())) {
+        const auto* clip = AutomationManager::getInstance().getClip(autoEditor->getEditingClipId());
+        loopButton_->setActive(clip != nullptr && clip->looping);
+        return;
+    }
     const auto clipId = getActiveEditingClipId();
     const auto* clip =
         (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
     // autoTempo forces looping on; reflect that even though it can't be toggled.
     loopButton_->setActive(clip != nullptr && (clip->loopEnabled || clip->autoTempo));
+}
+
+void BottomPanel::syncClipEnabledButtonState() {
+    if (!clipEnabledButton_)
+        return;
+    const auto clipId = getActiveEditingClipId();
+    const auto* clip =
+        (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
+    clipEnabledButton_->setActive(clip != nullptr && clip->enabled);
 }
 
 void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
@@ -1284,18 +1414,23 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     int h = controlsArea.getHeight();
     int vPad = 4;
 
+    // Clip enable/disable power toggle — far right of the control strip,
+    // mirroring the track chain header's chain-bypass power.
+    if (clipEnabledButton_ && clipEnabledButton_->isVisible()) {
+        const int sz = h - 8;
+        x -= sz;
+        clipEnabledButton_->setBounds(x, y + (h - sz) / 2, sz, sz);
+        x -= 8;
+    }
+
     x -= 36;
     snapButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
     x -= 4;
     x -= 36;
     autoGridButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
     x -= 4;
-    x -= 24;
-    gridDenominatorLabel_->setBounds(x, y + vPad, 24, h - vPad * 2);
-    x -= 8;
-    gridSlashLabel_->setBounds(x, y, 8, h);
-    x -= 24;
-    gridNumeratorLabel_->setBounds(x, y + vPad, 24, h - vPad * 2);
+    x -= 64;
+    gridDivisionButton_->setBounds(x, y + vPad, 64, h - vPad * 2);
     // ABS/REL toggle: only shown for MIDI editors, so only reserve its slot when
     // visible (otherwise the audio editor would show a gap left of num/den).
     if (timeModeButton_->isVisible()) {
@@ -1508,6 +1643,30 @@ void BottomPanel::syncGridControlsFromContent() {
     gridNumeratorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridDenominatorLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
     gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
+    updateGridDivisionFace();
+}
+
+void BottomPanel::updateGridDivisionFace() {
+    if (!gridDivisionButton_)
+        return;
+    gridDivisionButton_->setDivision(gridNumerator_, gridDenominator_);
+    gridDivisionButton_->setEnabled(!isAutoGrid_);
+    gridDivisionButton_->setAlpha(isAutoGrid_ ? 0.8f : 1.0f);
+}
+
+void BottomPanel::setGridDivisionFromPicker(int numerator, int denominator) {
+    const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
+    gridNumerator_ = num;
+    gridDenominator_ = den;
+    gridNumeratorLabel_->setValue(num, juce::dontSendNotification);
+    gridDenominatorLabel_->setValue(den, juce::dontSendNotification);
+    updateGridDivisionFace();
+    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent());
+        midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
+        midiEditor->setGridSettingsFromUI(isAutoGrid_, num, den);
+    } else if (auto* controller = TimelineController::getCurrent()) {
+        controller->dispatch(SetGridQuantizeEvent{isAutoGrid_, num, den});
+    }
 }
 
 void BottomPanel::syncGridStateFromTimeline() {

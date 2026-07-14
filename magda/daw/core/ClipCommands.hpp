@@ -14,6 +14,7 @@ namespace magda {
 
 // Forward declarations
 class TracktionEngineWrapper;
+class TempoMap;
 
 struct BeatPosition {
     double value = 0.0;
@@ -21,6 +22,81 @@ struct BeatPosition {
 
 struct BeatDuration {
     double value = 0.0;
+};
+
+/**
+ * @brief Inclusive-start, exclusive-end arrangement range in musical beats.
+ *
+ * Bounce operations keep this in the project's authoritative timeline unit
+ * until the renderer needs seconds.
+ */
+struct BounceRange {
+    double startBeats = 0.0;
+    double endBeats = 0.0;
+
+    bool isValid() const {
+        return endBeats > startBeats;
+    }
+};
+
+/**
+ * @brief A bounce range resolved for Tracktion's seconds-based renderer.
+ *
+ * Placement remains beat-based; seconds are derived from a TempoMap only for
+ * the renderer and external-insert capture pass.
+ */
+struct BounceRenderRange {
+    double startBeats = 0.0;
+    double endBeats = 0.0;
+    double startSeconds = 0.0;
+    double endSeconds = 0.0;
+
+    bool isValid() const {
+        return endBeats > startBeats;
+    }
+
+    double lengthBeats() const {
+        return endBeats - startBeats;
+    }
+};
+
+/** Resolve the active time range or, when absent, the range of selected clips. */
+BounceRange resolveBounceSelectionRange(const BounceRange& timeSelection,
+                                        bool hasActiveTimeSelection,
+                                        const std::vector<ClipInfo>& selectedClips);
+
+/** Resolve a requested bounce range against a source clip and tempo map. */
+BounceRenderRange resolveBounceRenderRange(const ClipInfo& clip, const BounceRange& requestedRange,
+                                           const TempoMap* tempoMap, bool constrainToClip);
+
+/**
+ * @brief Replaces a MIDI clip range with a bounced audio file and restores it on undo.
+ *
+ * The helper owns the source-fragment bookkeeping needed when only the middle
+ * of a clip is bounced, so it can be tested independently of offline rendering.
+ */
+class BounceInPlaceReplacement {
+  public:
+    void setOriginalClip(const ClipInfo& originalClip);
+
+    const ClipInfo& getOriginalClip() const {
+        return originalClip_;
+    }
+
+    ClipId getNewClipId() const {
+        return newClipId_;
+    }
+
+    bool replace(ClipManager& clipManager, ClipId sourceClipId, const BounceRenderRange& range,
+                 const juce::String& renderedFilePath, double projectBPM);
+    void undo(ClipManager& clipManager);
+
+  private:
+    void restoreOriginalClip(ClipManager& clipManager);
+
+    ClipInfo originalClip_;
+    std::vector<ClipId> sourceFragmentIds_;
+    ClipId newClipId_ = INVALID_CLIP_ID;
 };
 
 /**
@@ -223,15 +299,15 @@ class CreateClipCommand : public ValidatedCommand {
  */
 class DuplicateClipCommand : public ValidatedCommand {
   public:
-    explicit DuplicateClipCommand(ClipId sourceClipId);
+    explicit DuplicateClipCommand(ClipId sourceClipId, bool asGhost = false);
     DuplicateClipCommand(ClipId sourceClipId, BeatPosition startBeat,
                          TrackId targetTrackId = INVALID_TRACK_ID, double tempo = 0.0,
-                         int targetSceneIndex = -1);
+                         int targetSceneIndex = -1, bool asGhost = false);
     static std::unique_ptr<DuplicateClipCommand> forSessionSlot(
         ClipId sourceClipId, TrackId targetTrackId = INVALID_TRACK_ID, int targetSceneIndex = -1);
 
     juce::String getDescription() const override {
-        return "Duplicate Clip";
+        return asGhost_ ? "Duplicate Clip as Ghost" : "Duplicate Clip";
     }
 
     bool canExecute() const override;
@@ -249,14 +325,36 @@ class DuplicateClipCommand : public ValidatedCommand {
     ClipId sourceClipId_;
     bool hasExplicitStartBeat_ = false;
     double startBeat_ = 0.0;
-    TrackId targetTrackId_;  // INVALID = same track
-    double tempo_;           // BPM for derived seconds cache (0 = project tempo)
-    int targetSceneIndex_;   // -1 = keep/unplaced; session clips only
+    TrackId targetTrackId_;           // INVALID = same track
+    double tempo_;                    // BPM for derived seconds cache (0 = project tempo)
+    int targetSceneIndex_;            // -1 = keep/unplaced; session clips only
+    bool asGhost_ = false;            // copy joins the source's link group (ghost clip)
+    bool sourceWasUnlinked_ = false;  // execute created the source's link group
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
 };
 
 std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplicateCommands(
-    const std::unordered_set<ClipId>& clipIds, double tempo);
+    const std::unordered_set<ClipId>& clipIds, double tempo, bool asGhost = false);
+
+/**
+ * @brief Command for detaching a ghost clip from its link group
+ */
+class MakeClipUniqueCommand : public ValidatedCommand {
+  public:
+    explicit MakeClipUniqueCommand(ClipId clipId);
+
+    juce::String getDescription() const override {
+        return "Make Clip Unique";
+    }
+
+    bool canExecute() const override;
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    int prevLinkGroupId_ = 0;
+};
 
 /**
  * @brief Command for pasting clips from clipboard
@@ -657,7 +755,7 @@ class RippleDeleteRangeCommand : public UndoableCommand {
  */
 class BounceInPlaceCommand : public UndoableCommand {
   public:
-    BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine);
+    BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine, BounceRange range = {});
 
     juce::String getDescription() const override {
         return "Bounce In Place";
@@ -671,14 +769,14 @@ class BounceInPlaceCommand : public UndoableCommand {
     }
 
     ClipId getNewClipId() const {
-        return newClipId_;
+        return replacement_.getNewClipId();
     }
 
   private:
     ClipId clipId_;
     TracktionEngineWrapper* engine_;
-    ClipInfo originalClipSnapshot_;
-    ClipId newClipId_ = INVALID_CLIP_ID;
+    BounceRange range_;
+    BounceInPlaceReplacement replacement_;
     juce::File renderedFile_;
     bool success_ = false;
     juce::String errorMessage_;
@@ -701,7 +799,7 @@ class BounceInPlaceCommand : public UndoableCommand {
  */
 class BounceToNewTrackCommand : public UndoableCommand {
   public:
-    BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine);
+    BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine, BounceRange range = {});
 
     juce::String getDescription() const override {
         return "Bounce To New Track";
@@ -721,6 +819,7 @@ class BounceToNewTrackCommand : public UndoableCommand {
   private:
     ClipId clipId_;
     TracktionEngineWrapper* engine_;
+    BounceRange range_;
     ClipId newClipId_ = INVALID_CLIP_ID;
     TrackId newTrackId_ = INVALID_TRACK_ID;
     juce::File renderedFile_;

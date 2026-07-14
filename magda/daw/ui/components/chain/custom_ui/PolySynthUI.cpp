@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "BinaryData.h"
+#include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -239,6 +240,7 @@ PolySynthUI::PolySynthUI() {
 }
 
 PolySynthUI::~PolySynthUI() {
+    stopTimer();
     for (auto& btn : typeButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
@@ -254,6 +256,22 @@ PolySynthUI::~PolySynthUI() {
     for (auto& btn : oscEnableButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
+}
+
+void PolySynthUI::setLivePlugin(magda::daw::audio::compiled::MagdaPolySynthCompiledPlugin* plugin) {
+    if (livePlugin_ == plugin)
+        return;
+
+    livePlugin_ = plugin;
+    liveCurveInitialised_ = false;
+    liveCurveRefreshPending_ = plugin != nullptr;
+    if (livePlugin_ != nullptr) {
+        timerCallback();
+        startTimerHz(60);
+    } else {
+        stopTimer();
+        pushFilterCurve();
+    }
 }
 
 void PolySynthUI::setFilterType(int type) {
@@ -392,15 +410,55 @@ void PolySynthUI::updateWaveSelectors() {
 }
 
 void PolySynthUI::pushFilterCurve() {
+    pushFilterCurve(filterType_, filterCutoffHz_, filterRes_, filterDrive_, filterSlope_);
+}
+
+void PolySynthUI::pushFilterCurve(int type, float cutoffHz, float resonance, float drive,
+                                  int slope) {
     if (!filterCurve_)
         return;
     // Synth filter Type order (0=LP 1=HP 2=BP 3=Notch) -> the curve view's order
     // (0=LP 1=BP 2=HP 3=Notch).
     static constexpr int kTypeToViewMode[4] = {0, 2, 1, 3};
-    const int mode = kTypeToViewMode[juce::jlimit(0, 3, filterType_)];
+    const int mode = kTypeToViewMode[juce::jlimit(0, 3, type)];
     // Engine 0 = SVF (the synth's only filter family).
-    filterCurve_->setRawState(0, mode, filterCutoffHz_, filterRes_, filterDrive_,
-                              filterSlope_ == 1);
+    filterCurve_->setRawState(0, mode, cutoffHz, resonance, drive, slope == 1);
+}
+
+void PolySynthUI::timerCallback() {
+    if (livePlugin_ == nullptr)
+        return;
+
+    const auto readDisplayValue = [this](int slot, float fallback) {
+        if (auto* parameter = livePlugin_->getSlotParameter(slot)) {
+            return livePlugin_->nativeValueToDisplayValue(slot, parameter->getCurrentValue());
+        }
+        return fallback;
+    };
+
+    const int type = static_cast<int>(
+        std::round(readDisplayValue(kFilterTypeSlot, static_cast<float>(filterType_))));
+    const float cutoff = readDisplayValue(kCutoffSlot, filterCutoffHz_);
+    const float resonance = readDisplayValue(kResonanceSlot, filterRes_);
+    const float drive = readDisplayValue(kFilterDriveSlot, filterDrive_);
+    const int slope = static_cast<int>(
+        std::round(readDisplayValue(kFilterSlopeSlot, static_cast<float>(filterSlope_))));
+
+    const bool changed = !liveCurveInitialised_ || type != liveFilterType_ ||
+                         std::abs(cutoff - liveFilterCutoffHz_) > 0.01f ||
+                         std::abs(resonance - liveFilterRes_) > 0.0001f ||
+                         std::abs(drive - liveFilterDrive_) > 0.0001f || slope != liveFilterSlope_;
+    if (!changed && !liveCurveRefreshPending_)
+        return;
+
+    liveFilterType_ = type;
+    liveFilterCutoffHz_ = cutoff;
+    liveFilterRes_ = resonance;
+    liveFilterDrive_ = drive;
+    liveFilterSlope_ = slope;
+    liveCurveInitialised_ = true;
+    liveCurveRefreshPending_ = false;
+    pushFilterCurve(type, cutoff, resonance, drive, slope);
 }
 
 void PolySynthUI::syncFilterCurveFromParam(int paramIndex, float value) {
@@ -425,7 +483,10 @@ void PolySynthUI::syncFilterCurveFromParam(int paramIndex, float value) {
         default:
             return;  // not a filter-curve param
     }
-    pushFilterCurve();
+    if (livePlugin_ != nullptr)
+        liveCurveRefreshPending_ = true;
+    else
+        pushFilterCurve();
 }
 
 void PolySynthUI::syncGraphFromParam(int paramIndex, float value) {

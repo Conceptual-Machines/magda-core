@@ -72,7 +72,9 @@ juce::var ProjectSerializer::serializeAutomationLaneInfo(const AutomationLaneInf
     obj->setProperty("name", lane.name);
     obj->setProperty("visible", lane.visible);
     obj->setProperty("expanded", lane.expanded);
-    obj->setProperty("bypass", lane.bypass);
+    // Keep the existing project key for backward compatibility. Runtime
+    // Touching/Writing states are intentionally normalized to enabled.
+    obj->setProperty("bypass", isAutomationPersistentlyDisabled(lane.authorityState));
     obj->setProperty("snapEditsToBeatGrid", lane.snapEditsToBeatGrid);
     obj->setProperty("snapValue", lane.snapValue);
     obj->setProperty("height", lane.height);
@@ -111,8 +113,11 @@ bool ProjectSerializer::deserializeAutomationLaneInfo(const juce::var& json,
     outLane.name = obj->getProperty("name").toString();
     outLane.visible = obj->getProperty("visible");
     outLane.expanded = obj->getProperty("expanded");
-    if (obj->hasProperty("bypass"))
-        outLane.bypass = obj->getProperty("bypass");
+    if (obj->hasProperty("bypass")) {
+        outLane.authorityState = static_cast<bool>(obj->getProperty("bypass"))
+                                     ? AutomationAuthorityState::Disabled
+                                     : AutomationAuthorityState::Reading;
+    }
     if (obj->hasProperty("snapEditsToBeatGrid"))
         outLane.snapEditsToBeatGrid = obj->getProperty("snapEditsToBeatGrid");
     else if (obj->hasProperty("snapToBeatGrid"))
@@ -159,6 +164,12 @@ juce::var ProjectSerializer::serializeAutomationClipInfo(const AutomationClipInf
     obj->setProperty("lengthBeats", clip.lengthBeats);
     obj->setProperty("looping", clip.looping);
     obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+    obj->setProperty("snapXEnabled", clip.snapXEnabled);
+    obj->setProperty("snapXNumerator", clip.snapXNumerator);
+    obj->setProperty("snapXDenominator", clip.snapXDenominator);
+    obj->setProperty("snapYEnabled", clip.snapYEnabled);
+    obj->setProperty("snapYNumerator", clip.snapYNumerator);
+    obj->setProperty("snapYDenominator", clip.snapYDenominator);
 
     // Points
     juce::Array<juce::var> pointsArray;
@@ -191,6 +202,18 @@ bool ProjectSerializer::deserializeAutomationClipInfo(const juce::var& json,
     outClip.loopLengthBeats = obj->hasProperty("loopLengthBeats")
                                   ? obj->getProperty("loopLengthBeats")
                                   : obj->getProperty("loopLength");
+    if (obj->hasProperty("snapXEnabled"))
+        outClip.snapXEnabled = obj->getProperty("snapXEnabled");
+    if (obj->hasProperty("snapXNumerator"))
+        outClip.snapXNumerator = obj->getProperty("snapXNumerator");
+    if (obj->hasProperty("snapXDenominator"))
+        outClip.snapXDenominator = obj->getProperty("snapXDenominator");
+    if (obj->hasProperty("snapYEnabled"))
+        outClip.snapYEnabled = obj->getProperty("snapYEnabled");
+    if (obj->hasProperty("snapYNumerator"))
+        outClip.snapYNumerator = obj->getProperty("snapYNumerator");
+    if (obj->hasProperty("snapYDenominator"))
+        outClip.snapYDenominator = obj->getProperty("snapYDenominator");
 
     // Points
     auto pointsVar = obj->getProperty("points");
@@ -452,6 +475,7 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     SER(syncDivision);
     SER(triggerMode);
     SER(oneShot);
+    SER(invertOutput);
     SER(useLoopRegion);
     SER(loopStart);
     SER(loopEnd);
@@ -526,6 +550,8 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
     DESER(syncDivision);
     DESER(triggerMode);
     DESER(oneShot);
+    if (obj->hasProperty("invertOutput"))
+        DESER(invertOutput);
     DESER(useLoopRegion);
     DESER(loopStart);
     DESER(loopEnd);
@@ -649,6 +675,7 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     SER(gateSlotIndex);
     SER(gateNegated);
     SER(hidden);
+    SER(momentary);
 
     // Choices (vector of strings — stays manual)
     juce::Array<juce::var> choicesArray;
@@ -707,6 +734,8 @@ bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, Paramete
         DESER(gateNegated);
     if (obj->hasProperty("hidden"))
         DESER(hidden);
+    if (obj->hasProperty("momentary"))
+        DESER(momentary);
 
     // Choices (vector of strings — stays manual)
     auto choicesVar = obj->getProperty("choices");

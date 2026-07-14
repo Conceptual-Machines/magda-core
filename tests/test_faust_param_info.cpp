@@ -36,6 +36,12 @@ FaustParamSlot makeBooleanSlot(int index, const juce::String& label) {
     return s;
 }
 
+FaustParamSlot makeTriggerSlot(int index, const juce::String& label) {
+    auto s = makeBooleanSlot(index, label);
+    s.kind = FaustParamSlot::Kind::Trigger;
+    return s;
+}
+
 FaustParamSlot makeDiscreteSlot(int index, const juce::String& label,
                                 std::vector<std::pair<float, juce::String>> choices,
                                 float defaultValue = 0.0f) {
@@ -121,6 +127,13 @@ TEST_CASE("paramInfoFromSlot - boolean default rounded", "[faust][paraminfo]") {
     slot.defaultValue = 0.7f;  // Faust sometimes emits non-binary defaults
     auto info = paramInfoFromSlot(slot);
     REQUIRE(info.defaultValue == 1.0f);
+}
+
+TEST_CASE("paramInfoFromSlot - trigger is a momentary boolean", "[faust][paraminfo]") {
+    auto info = paramInfoFromSlot(makeTriggerSlot(4, "Trigger"));
+    REQUIRE(info.scale == ParameterScale::Boolean);
+    REQUIRE(info.momentary);
+    REQUIRE_FALSE(info.modulatable);
 }
 
 // ============================================================================

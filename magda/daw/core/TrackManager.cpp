@@ -7,6 +7,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
+#include "../audio/plugins/SidechainPlugin.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ClipManager.hpp"
@@ -187,6 +188,24 @@ ChainNodePath childDevicePath(const ChainNodePath& parentPath, DeviceId deviceId
 ChainNodePath childRackPath(const ChainNodePath& parentPath, RackId rackId) {
     return parentPath.isTrackLevel ? ChainNodePath::rack(parentPath.trackId, rackId)
                                    : parentPath.withRack(rackId);
+}
+
+// Collect the device paths of every device in the given chain tree (racks
+// recursed), without mutating anything. Path construction mirrors
+// setChainElementsBypassed below.
+void collectChainDevicePaths(const std::vector<ChainElement>& elements,
+                             const ChainNodePath& parentPath,
+                             std::vector<ChainNodePath>& outDevices) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            outDevices.push_back(childDevicePath(parentPath, magda::getDevice(element).id));
+            continue;
+        }
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = childRackPath(parentPath, rack.id);
+        for (const auto& chain : rack.chains)
+            collectChainDevicePaths(chain.elements, rackPath.withChain(chain.id), outDevices);
+    }
 }
 
 void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
@@ -1817,6 +1836,44 @@ std::vector<std::string> TrackManager::getChainSummary(TrackId trackId) const {
     return out;
 }
 
+TrackManager::ExternalInstrumentRouting TrackManager::getExternalInstrumentRouting(
+    TrackId trackId) const {
+    ExternalInstrumentRouting routing;
+    const auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return routing;
+
+    // Inserts can't live inside racks (canCreateDetached=false), so only the
+    // top-level chain elements need checking.
+    for (const auto& e : track->chain.fxChainElements) {
+        if (!magda::isDevice(e))
+            continue;
+        const auto& d = magda::getDevice(e);
+        if (!(d.isInstrument &&
+              classifyInternalDevice(d.pluginId) == InternalDeviceKind::ExternalInsert))
+            continue;
+
+        routing.present = true;
+        // Mirror the live insert's chosen send/return devices so the track-level
+        // selectors can display them. The plugin may not be resolvable yet
+        // (path invalid during load); present stays true regardless.
+        if (audioEngine_ != nullptr) {
+            if (auto* bridge = audioEngine_->getAudioBridge()) {
+                auto path = ChainNodePath::topLevelDevice(trackId, d.id);
+                if (auto plugin = bridge->getPlugin(path)) {
+                    if (auto* insert =
+                            dynamic_cast<tracktion::engine::InsertPlugin*>(plugin.get())) {
+                        routing.midiOut = insert->outputDevice.get();
+                        routing.audioReturn = insert->inputDevice.get();
+                    }
+                }
+            }
+        }
+        break;
+    }
+    return routing;
+}
+
 void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
     DBG("TrackManager::moveNode trackId=" << trackId << " from=" << fromIndex << " to=" << toIndex);
     if (auto* track = getTrack(trackId)) {
@@ -1850,6 +1907,44 @@ void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
     dev.kitRows = PluginPreferences::getInstance().defaultKitRows(identifier);
 }
 
+void TrackManager::seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath) {
+    if (classifyInternalDevice(dev.pluginId) != InternalDeviceKind::Sidechain)
+        return;
+    if (!dev.mods.empty())
+        return;
+
+    ModInfo mod(0);
+    mod.name = "Duck";
+    mod.waveform = LFOWaveform::Custom;
+    mod.curvePreset = CurvePreset::Custom;
+    // The drawn curve is the audible gain envelope: 0 at note-on (fully
+    // ducked) easing back up to 1 (full level) over one cycle - the classic
+    // sidechain shape. Positive tension keeps it low early and steepens into
+    // the recovery. One-shot holds the end value (full level) between notes.
+    CurvePointData start;
+    start.phase = 0.0f;
+    start.value = 0.0f;
+    start.tension = 1.0f;
+    CurvePointData end;
+    end.phase = 1.0f;
+    end.value = 1.0f;
+    mod.curvePoints = {start, end};
+    // Applied output is (1 - curve): the engine receives duck amount, so an
+    // inactive modifier (untriggered/gated forces output 0) means unity gain.
+    mod.invertOutput = true;
+    mod.triggerMode = LFOTriggerMode::MIDI;
+    mod.tempoSync = true;
+    mod.syncDivision = SyncDivision::Quarter;
+    mod.oneShot = true;
+    // Full negative depth on the duck output: gain = 1 - depth * (1 - curve),
+    // i.e. at full depth the gain follows the drawn curve exactly. The
+    // faceplate's depth control edits this link amount.
+    mod.addLink(
+        ControlTarget::pluginParam(devicePath, daw::audio::SidechainPlugin::kGainParamIndex),
+        -1.0f);
+    dev.mods.push_back(mod);
+}
+
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
         if (!track->canHostInstrument() && device.isInstrument) {
@@ -1862,6 +1957,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
         track->chain.fxChainElements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         notifyDeviceAdded(ChainNodePath::topLevelDevice(trackId, newDevice.id), newDevice);
@@ -1885,6 +1981,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(track->chain.fxChainElements.size());
@@ -1931,6 +2028,14 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     // unrepresentable because PostFxChainElement holds a bare DeviceInfo.
     if (device.isInstrument) {
         DBG("Cannot add instrument plugin to post-fx chain");
+        return INVALID_DEVICE_ID;
+    }
+
+    // The Sidechain device cannot work post-fader: device mods only sync for
+    // main-chain devices, so its bundled duck modulator would never run (and
+    // this path does not seed it). Reject instead of creating a dead insert.
+    if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::Sidechain) {
+        DBG("Cannot add Sidechain device to post-fx chain");
         return INVALID_DEVICE_ID;
     }
 
@@ -2079,6 +2184,8 @@ void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
 void TrackManager::setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed) {
     if (auto* device = getDevice(trackId, deviceId)) {
         device->bypassed = bypassed;
+        if (bypassed)
+            device->deltaSolo = false;
         notifyTrackDevicesChanged(trackId);
     }
 }
@@ -2086,19 +2193,44 @@ void TrackManager::setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool by
 void TrackManager::setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
+        if (bypassed)
+            device->deltaSolo = false;
         notifyTrackDevicesChanged(devicePath.trackId);
     }
 }
 
-void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
-    if (auto* track = getTrack(trackId)) {
-        std::vector<ChainNodePath> affectedDevices;
-        setChainElementsBypassed(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
-                                 bypassed, affectedDevices);
-        for (const auto& devicePath : affectedDevices)
-            notifyDevicePropertyChanged(devicePath);
-        notifyTrackDevicesChanged(trackId);
-    }
+bool TrackManager::isChainEnabled(TrackId trackId) const {
+    const auto* track = getTrack(trackId);
+    return track == nullptr || track->chain.enabled;
+}
+
+bool TrackManager::isDeviceEffectivelyEnabled(const ChainNodePath& devicePath,
+                                              const DeviceInfo& device) const {
+    if (device.bypassed)
+        return false;
+    // Post-FX and mixer-analysis devices sit outside the insert chain, so the
+    // chain power does not gate them.
+    if (devicePath.isPostFx() || devicePath.isMixerAnalysis())
+        return true;
+    return isChainEnabled(devicePath.trackId);
+}
+
+void TrackManager::setChainEnabled(TrackId trackId, bool enabled) {
+    auto* track = getTrack(trackId);
+    if (!track || track->chain.enabled == enabled)
+        return;
+    track->chain.enabled = enabled;
+
+    // Re-apply effective enablement on every insert-chain device through the
+    // regular device sync path (AudioBridge::devicePropertyChanged applies the
+    // chain gate on top of each device's own bypassed flag). The flags
+    // themselves are untouched, so per-device bypass survives an off/on cycle.
+    std::vector<ChainNodePath> devicePaths;
+    collectChainDevicePaths(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                            devicePaths);
+    for (const auto& devicePath : devicePaths)
+        notifyDevicePropertyChanged(devicePath);
+    notifyTrackDevicesChanged(trackId);
 }
 
 DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
@@ -2187,7 +2319,27 @@ const RackInfo* TrackManager::getRack(TrackId trackId, RackId rackId) const {
 void TrackManager::setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) {
     if (auto* rack = getRack(trackId, rackId)) {
         rack->bypassed = bypassed;
+        if (bypassed)
+            rack->deltaSolo = false;
         notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->bypassed = bypassed;
+        if (bypassed)
+            rack->deltaSolo = false;
+        notifyTrackDevicesChanged(rackPath.trackId);
+    }
+}
+
+void TrackManager::setRackDeltaSoloByPath(const ChainNodePath& rackPath, bool deltaSolo) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->deltaSolo = deltaSolo;
+        if (deltaSolo)
+            rack->bypassed = false;
+        notifyTrackDevicesChanged(rackPath.trackId);
     }
 }
 

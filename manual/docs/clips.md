@@ -92,12 +92,46 @@ Follow actions chain session clips together for generative arrangement. Once the
 - **Split** — Position the playhead and use **Edit > Split Clip** or press ++cmd+e++
 - **Delete** — Select the clip and press ++delete++ or ++backspace++
 - **Erase under cursor** — ++shift+ctrl++ **+ click** a clip to delete it directly without selecting first. If the clip is part of a multi-selection, the whole group is erased. Acts as a rubber tool.
+- **Duplicate as ghost** — Right-click and choose **Duplicate as Ghost**, or hold ++alt+shift++ and drag, to create a linked copy. See [Linked (Ghost) Clips](#linked-ghost-clips).
+- **Enable / disable** — Right-click and choose **Disable Clip** or **Enable Clip**, or press ++0++. See [Enabling and Disabling Clips](#enabling-and-disabling-clips).
 
 ## Cut, Copy, and Paste
 
 - ++cmd+x++ — Cut the selected clip(s)
 - ++cmd+c++ — Copy the selected clip(s)
 - ++cmd+v++ — Paste at the playhead position on the same track
+
+## Linked (Ghost) Clips
+
+A ghost clip is a linked copy: every clip in a link group shares the same underlying content, so editing one updates them all. Use them for a chorus that repeats, a drum pattern reused across a song, or a riff you want to develop in one place and hear everywhere.
+
+Create one by right-clicking a clip and choosing **Duplicate as Ghost**, or by holding ++alt+shift++ and dragging a copy off the original. (Plain ++alt++-drag makes an ordinary, independent duplicate.) The same command is available from the Edit menu as **Duplicate Clip as Ghost**.
+
+Ghost clips are drawn translucently, with their waveform or notes dimmed, a small link glyph in the header, and an italic name with a per-instance index appended (e.g. *Riff #2*). A link group with only one clip left is inert and shows no ghost styling.
+
+**What is shared, and what is not:**
+
+| Shared across the group | Independent per clip |
+|---|---|
+| Notes and audio content, name | Position, length, and offset |
+| Warp markers and time-stretch mode | Playback speed (speed ratio) and loop settings |
+| Pitch, transpose, and auto-pitch | Colour |
+| Groove, reverse, beat detection | Volume, gain, pan, and fades |
+| | Launch and grid settings, enabled/disabled state |
+
+Editing any shared field on one member mirrors instantly to the rest; the independent fields let each ghost sit in its own place, at its own level, without disturbing its siblings.
+
+To detach a clip from its group, right-click it and choose **Make Unique**. The clip keeps its current content but stops tracking, and future edits to it (or to its former siblings) no longer propagate. Splitting a ghost clip detaches both halves automatically.
+
+## Enabling and Disabling Clips
+
+Disabling a clip removes it from playback without deleting it. Right-click a clip and choose **Disable Clip** (or **Enable Clip** to bring it back), or press ++0++ with clips selected. A disabled clip is covered by a heavy dark overlay, including its header, so it reads as "off" at a glance, and it is excluded from the playback graph so it produces no sound.
+
+The enabled state is per-clip: disabling one member of a [link group](#linked-ghost-clips) does not silence its ghost siblings.
+
+## Flatten MIDI Loop
+
+When a MIDI clip is looping, right-click it and choose **Flatten MIDI Loop** to write the repetitions out as real notes. The loop cycles (including any offset phase) are baked into actual MIDI across the clip's full length, looping is switched off, and the offset resets to zero. The clip stays a MIDI clip in place, ready for per-note editing in the [Piano Roll](panels/piano-roll.md); the operation is a single undoable step.
 
 ## Audio Clip Modes
 
@@ -134,9 +168,18 @@ Right-click an audio clip to access slice operations. These split the clip into 
 - **Slice at Warp Markers to Drum Grid** — Create a new Drum Grid track where each slice between warp markers becomes a pad, with a MIDI pattern that reproduces the original timing.
 - **Slice at Grid to Drum Grid** — Same as above but slicing at grid intervals instead of warp markers.
 
-### Time-Stretch Algorithm
+### Time-Stretch Engine
 
-When Beat or Warp mode is active, MAGDA uses the **SoundTouch** algorithm for time-stretching.
+When Beat or Warp mode is active (or whenever a clip is otherwise stretched or pitched), the audio is time-stretched by a selectable engine, set per clip:
+
+| Engine | Notes |
+|---|---|
+| **Signalsmith** | Default. Modern, general-purpose stretcher with clean transients. |
+| **SoundTouch** | Lighter-weight classic algorithm. |
+| **SoundTouch HQ** | Higher-quality SoundTouch variant at more CPU cost. |
+| **Off** | No stretch engine; the clip is left unprocessed. |
+
+Choose the engine from the stretch mode dropdown in the clip **Inspector** (next to the WARP and BEAT toggles) or from the **Mode** dropdown in the [Waveform Editor](panels/waveform-editor.md)'s audio-clip properties. New clips default to **Signalsmith** as soon as stretching becomes active.
 
 ## Groove & Swing
 

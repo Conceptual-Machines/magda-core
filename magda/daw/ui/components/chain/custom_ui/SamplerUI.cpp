@@ -4,6 +4,7 @@
 
 #include <cmath>
 
+#include "core/GestureRouter.hpp"
 #include "ui/themes/CursorManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -832,6 +833,13 @@ void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
         return;
     }
 
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Sampler, wheel, e.mods, e.getPosition());
+    if (gesture.type != magda::GestureActionType::ZoomHorizontal) {
+        Component::mouseWheelMove(e, wheel);
+        return;
+    }
+
     // Minimum zoom: entire sample fits in view
     double minPPS = static_cast<double>(waveArea.getWidth()) / sampleLength_;
 
@@ -839,7 +847,7 @@ void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
     double anchorTime = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
 
     // Apply zoom factor
-    double zoomFactor = 1.0 + static_cast<double>(wheel.deltaY) * 0.15;
+    double zoomFactor = 1.0 + static_cast<double>(gesture.magnitude);
     double newPPS = pixelsPerSecond_ * zoomFactor;
     newPPS = juce::jlimit(minPPS, kMaxPixelsPerSecond, newPPS);
     pixelsPerSecond_ = newPPS;

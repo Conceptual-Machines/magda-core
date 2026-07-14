@@ -254,21 +254,23 @@ void PianoRollKeyboard::mouseWheelMove(const juce::MouseEvent& event,
                                                               event.mods, event.getPosition());
     if (gesture.type == GestureActionType::ZoomVertical && onZoomChanged) {
         const int anchorNote = yToNoteNumber(event.y);
-        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        const int heightDelta = quantizedGestureStep(gesture.magnitude);
+        if (heightDelta == 0)
+            return;
         onZoomChanged(juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT,
                                    ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT, noteHeight_ + heightDelta),
                       anchorNote, event.y);
         return;
     }
 
-    // Scroll vertically when wheel is used over the keyboard
-    if (onScrollRequested) {
-        // Convert wheel delta to pixels
-        int scrollAmount = static_cast<int>(-wheel.deltaY * 100.0f);
-        if (scrollAmount != 0) {
+    if (gesture.type == GestureActionType::ScrollVertical && onScrollRequested) {
+        const int scrollAmount = static_cast<int>(-gesture.magnitude);
+        if (scrollAmount != 0)
             onScrollRequested(scrollAmount);
-        }
+        return;
     }
+
+    juce::Component::mouseWheelMove(event, wheel);
 }
 
 }  // namespace magda

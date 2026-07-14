@@ -30,6 +30,12 @@ HarvestedControl makeBoolean(const juce::String& label) {
     return h;
 }
 
+HarvestedControl makeTrigger(const juce::String& label) {
+    auto h = makeBoolean(label);
+    h.kind = FaustParamSlot::Kind::Trigger;
+    return h;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -181,6 +187,12 @@ TEST_CASE("FaustParamPool - boolean kind preserved", "[faust][pool]") {
     FaustParamPool pool;
     pool.rebindFromHarvest({makeBoolean("Toggle")});
     REQUIRE(pool.slot(0).kind == FaustParamSlot::Kind::Boolean);
+}
+
+TEST_CASE("FaustParamPool - trigger kind preserved", "[faust][pool]") {
+    FaustParamPool pool;
+    pool.rebindFromHarvest({makeTrigger("Trigger")});
+    REQUIRE(pool.slot(0).kind == FaustParamSlot::Kind::Trigger);
 }
 
 TEST_CASE("FaustParamPool - menu metadata promotes Continuous to Discrete", "[faust][pool]") {

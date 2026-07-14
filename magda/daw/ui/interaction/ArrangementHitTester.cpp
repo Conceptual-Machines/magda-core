@@ -242,6 +242,9 @@ CursorKind clipCursor(const ClipHit& hit, bool selected, const ModifierSnapshot&
     // Modifier tools first (ClipComponent::updateCursor order).
     if (mods.shift && mods.ctrl)
         return CursorKind::Erase;
+    // Alt+Shift = ghost-copy drag (link cursor).
+    if (mods.alt && mods.shift)
+        return CursorKind::GhostCopy;
     // Cmd+Alt = blade (scissors), Alt alone = copy-drag.
     if (mods.alt && !mods.shift)
         return mods.command ? CursorKind::Blade : CursorKind::Copying;

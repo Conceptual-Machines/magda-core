@@ -39,10 +39,13 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
 
     obj->setProperty("id", clip.id);
     obj->setProperty("trackId", clip.trackId);
+    if (clip.linkGroupId != 0)
+        obj->setProperty("linkGroupId", clip.linkGroupId);
     obj->setProperty("name", clip.name);
     obj->setProperty("colour", colourToString(clip.colour));
     obj->setProperty("type", static_cast<int>(clip.getType()));
     obj->setProperty("view", static_cast<int>(clip.view));
+    obj->setProperty("enabled", clip.enabled);
     obj->setProperty("loopEnabled", clip.loopEnabled);
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
@@ -293,6 +296,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
     outClip.id = obj->getProperty("id");
     outClip.trackId = obj->getProperty("trackId");
+    outClip.linkGroupId = obj->getProperty("linkGroupId");  // void -> 0 (unlinked)
     outClip.name = obj->getProperty("name").toString();
     outClip.colour = stringToColour(obj->getProperty("colour").toString());
     const auto typeVar = obj->getProperty("type");
@@ -334,6 +338,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         return false;
     }
     outClip.deriveTimesFromBeats(projectTempo);
+
+    // Enabled state (missing in projects saved before #1736 → default true)
+    if (!obj->getProperty("enabled").isVoid())
+        outClip.enabled = static_cast<bool>(obj->getProperty("enabled"));
 
     // Loop settings
     outClip.loopEnabled = static_cast<bool>(obj->getProperty("loopEnabled"));

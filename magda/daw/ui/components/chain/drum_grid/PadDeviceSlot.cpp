@@ -5,6 +5,7 @@
 
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/ParameterUtils.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
@@ -323,9 +324,14 @@ bool PadDeviceSlot::setupForSharedDeviceUi(te::Plugin* plugin, const magda::Devi
         if (plugin_ == nullptr)
             return;
         auto params = plugin_->getAutomatableParameters();
-        if (paramIndex >= 0 && paramIndex < params.size())
-            params[paramIndex]->setParameter(value, juce::sendNotificationSync);
-        if (auto* info = device_.findParameterByIndex(paramIndex))
+        auto* info = device_.findParameterByIndex(paramIndex);
+        if (paramIndex >= 0 && paramIndex < params.size()) {
+            const float teValue = info != nullptr ? magda::ParameterUtils::modelToTeValue(
+                                                        magda::ParameterModelValue{value}, *info)
+                                                  : value;
+            params[paramIndex]->setParameterFromHost(teValue, juce::sendNotificationSync);
+        }
+        if (info != nullptr)
             info->currentValue = value;
     };
     callbacks.onLayoutChanged = [this]() {

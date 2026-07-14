@@ -586,6 +586,52 @@ TEST_CASE("Session clip follow action settings roundtrip", "[project][serializat
     REQUIRE(restored->followActionLoopCount == 3);
 }
 
+TEST_CASE("Clip enabled state roundtrips and missing property defaults to enabled",
+          "[project][serialization][clip]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Audio);
+
+    ClipInfo clip;
+    clip.id = 93;
+    clip.trackId = trackId;
+    clip.name = "Disabled";
+    clip.setMidiContent();
+    clip.view = ClipView::Arrangement;
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.enabled = false;
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    info.name = "Enabled Toggle";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    auto* clips = rootObj->getProperty("clips").getArray();
+    REQUIRE(clips != nullptr);
+    REQUIRE(clips->size() == 1);
+    auto* clipObj = clips->getReference(0).getDynamicObject();
+    REQUIRE(clipObj != nullptr);
+    REQUIRE(static_cast<bool>(clipObj->getProperty("enabled")) == false);
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    auto* restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE_FALSE(restored->enabled);
+
+    // Projects saved before the flag existed have no "enabled" property —
+    // they must load with the clip enabled.
+    clipObj->removeProperty("enabled");
+    ProjectInfo legacy;
+    REQUIRE(ProjectSerializer::deserializeProject(json, legacy));
+    restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->enabled);
+}
+
 TEST_CASE("Looped MIDI clip serialization preserves loop region separate from placement",
           "[project][serialization][midi][loop]") {
     ProjectTestFixture fixture;
@@ -971,13 +1017,17 @@ TEST_CASE("Automation serialization uses beat-domain property names",
 
     auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Audio);
     auto& automation = AutomationManager::getInstance();
-    auto laneId =
-        automation.createLane(ControlTarget::trackVolume(trackId), AutomationLaneType::ClipBased);
+    const auto target = ControlTarget::trackVolume(trackId);
+    auto laneId = automation.createLane(target, AutomationLaneType::ClipBased);
     automation.setLaneSnapEditsToBeatGrid(laneId, false);
+    automation.beginTargetGesture(target);
+    REQUIRE(automation.getLane(laneId)->authorityState == AutomationAuthorityState::Touching);
     auto clipId = automation.createClip(laneId, 4.0, 8.0);
     REQUIRE(clipId != INVALID_AUTOMATION_CLIP_ID);
     automation.setClipLooping(clipId, true);
     automation.setClipLoopLength(clipId, 2.0);
+    automation.setClipSnapX(clipId, false, 1, 16);
+    automation.setClipSnapY(clipId, true, 1, 12);
     auto pointId = automation.addPointToClip(clipId, 1.5, 0.75, AutomationCurveType::Bezier);
     REQUIRE(pointId != INVALID_AUTOMATION_POINT_ID);
     BezierHandle inHandle;
@@ -1001,6 +1051,8 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     auto* laneObj = lanes->getReference(0).getDynamicObject();
     REQUIRE(laneObj != nullptr);
     REQUIRE(laneObj->hasProperty("snapEditsToBeatGrid"));
+    REQUIRE(laneObj->hasProperty("bypass"));
+    REQUIRE_FALSE(static_cast<bool>(laneObj->getProperty("bypass")));
     REQUIRE_FALSE(laneObj->hasProperty("snapToBeatGrid"));
     REQUIRE_FALSE(laneObj->hasProperty("snapTime"));
     REQUIRE(static_cast<bool>(laneObj->getProperty("snapEditsToBeatGrid")) == false);
@@ -1020,6 +1072,12 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(static_cast<double>(obj->getProperty("startBeats")) == Approx(4.0));
     REQUIRE(static_cast<double>(obj->getProperty("lengthBeats")) == Approx(8.0));
     REQUIRE(static_cast<double>(obj->getProperty("loopLengthBeats")) == Approx(2.0));
+    REQUIRE(static_cast<bool>(obj->getProperty("snapXEnabled")) == false);
+    REQUIRE(static_cast<int>(obj->getProperty("snapXNumerator")) == 1);
+    REQUIRE(static_cast<int>(obj->getProperty("snapXDenominator")) == 16);
+    REQUIRE(static_cast<bool>(obj->getProperty("snapYEnabled")) == true);
+    REQUIRE(static_cast<int>(obj->getProperty("snapYNumerator")) == 1);
+    REQUIRE(static_cast<int>(obj->getProperty("snapYDenominator")) == 12);
 
     auto* points = obj->getProperty("points").getArray();
     REQUIRE(points != nullptr);
@@ -1047,6 +1105,12 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     REQUIRE(restoredClips[0].startBeats == Approx(4.0));
     REQUIRE(restoredClips[0].lengthBeats == Approx(8.0));
     REQUIRE(restoredClips[0].loopLengthBeats == Approx(2.0));
+    REQUIRE(restoredClips[0].snapXEnabled == false);
+    REQUIRE(restoredClips[0].snapXNumerator == 1);
+    REQUIRE(restoredClips[0].snapXDenominator == 16);
+    REQUIRE(restoredClips[0].snapYEnabled == true);
+    REQUIRE(restoredClips[0].snapYNumerator == 1);
+    REQUIRE(restoredClips[0].snapYDenominator == 12);
     REQUIRE(restoredClips[0].points.size() == 1);
     REQUIRE(restoredClips[0].points[0].beatPosition == Approx(1.5));
     REQUIRE(restoredClips[0].points[0].inHandle.beatOffset == Approx(-0.25));
@@ -1054,6 +1118,36 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     const auto* restoredLane = AutomationManager::getInstance().getLane(laneId);
     REQUIRE(restoredLane != nullptr);
     REQUIRE_FALSE(restoredLane->snapEditsToBeatGrid);
+    REQUIRE(restoredLane->authorityState == AutomationAuthorityState::Reading);
+}
+
+TEST_CASE("Automation serialization persists only explicit disablement",
+          "[project][serialization][automation][authority]") {
+    ProjectTestFixture fixture;
+
+    const auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Audio);
+    auto& automation = AutomationManager::getInstance();
+    const auto laneId =
+        automation.createLane(ControlTarget::trackVolume(trackId), AutomationLaneType::Absolute);
+    automation.setLaneEnabled(laneId, false);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    auto* automationObj = rootObj->getProperty("automation").getDynamicObject();
+    REQUIRE(automationObj != nullptr);
+    auto* lanes = automationObj->getProperty("lanes").getArray();
+    REQUIRE(lanes != nullptr);
+    REQUIRE(lanes->size() == 1);
+    auto* laneObj = lanes->getReference(0).getDynamicObject();
+    REQUIRE(laneObj != nullptr);
+    REQUIRE(static_cast<bool>(laneObj->getProperty("bypass")));
+
+    REQUIRE(ProjectSerializer::deserializeProject(json, info));
+    const auto* restoredLane = AutomationManager::getInstance().getLane(laneId);
+    REQUIRE(restoredLane != nullptr);
+    REQUIRE(restoredLane->authorityState == AutomationAuthorityState::Disabled);
 }
 
 TEST_CASE("Automation serialization reads legacy time-named beat properties",
@@ -1999,6 +2093,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     param.gateSlotIndex = 7;
     param.gateNegated = true;
     param.hidden = true;
+    param.momentary = true;
     param.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
 
     DeviceInfo device;
@@ -2040,6 +2135,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(paramObj->hasProperty("gateSlotIndex"));
     REQUIRE(paramObj->hasProperty("gateNegated"));
     REQUIRE(paramObj->hasProperty("hidden"));
+    REQUIRE(paramObj->hasProperty("momentary"));
 
     ProjectInfo loadedInfo;
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
@@ -2075,6 +2171,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(loaded.gateSlotIndex == 7);
     REQUIRE(loaded.gateNegated);
     REQUIRE(loaded.hidden);
+    REQUIRE(loaded.momentary);
     REQUIRE_FALSE(static_cast<bool>(loaded.displayText));
 }
 
@@ -2164,4 +2261,39 @@ TEST_CASE("RackInfo panel UI state roundtrip", "[project][serialization][rack][u
     REQUIRE(loaded.modPanelOpen == true);
     REQUIRE(loaded.paramPanelOpen == true);
     REQUIRE(loaded.chains.size() == 1);
+}
+
+TEST_CASE("Delta solo state roundtrips and defaults off for older projects",
+          "[project][serialization][delta_solo]") {
+    DeviceInfo device;
+    device.id = 11;
+    device.name = "Delta Effect";
+    device.deltaSolo = true;
+
+    auto deviceJson = ProjectSerializer::serializeDeviceInfo(device);
+    DeviceInfo loadedDevice;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(deviceJson, loadedDevice));
+    CHECK(loadedDevice.deltaSolo);
+
+    deviceJson.getDynamicObject()->removeProperty("deltaSolo");
+    DeviceInfo legacyDevice;
+    legacyDevice.deltaSolo = false;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(deviceJson, legacyDevice));
+    CHECK_FALSE(legacyDevice.deltaSolo);
+
+    RackInfo rack;
+    rack.id = 12;
+    rack.name = "Delta Rack";
+    rack.deltaSolo = true;
+
+    auto rackJson = ProjectSerializer::serializeRackInfo(rack);
+    RackInfo loadedRack;
+    REQUIRE(ProjectSerializer::deserializeRackInfo(rackJson, loadedRack));
+    CHECK(loadedRack.deltaSolo);
+
+    rackJson.getDynamicObject()->removeProperty("deltaSolo");
+    RackInfo legacyRack;
+    legacyRack.deltaSolo = false;
+    REQUIRE(ProjectSerializer::deserializeRackInfo(rackJson, legacyRack));
+    CHECK_FALSE(legacyRack.deltaSolo);
 }

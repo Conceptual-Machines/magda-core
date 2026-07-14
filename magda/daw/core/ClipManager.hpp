@@ -232,6 +232,44 @@ class ClipManager {
                            double tempo = 120.0);
 
     // ========================================================================
+    // Ghost clips (link groups)
+    // ========================================================================
+
+    /**
+     * @brief Duplicate a clip as a ghost: the copy joins the original's link
+     * group (creating one if the original is unlinked), so content edits
+     * mirror between all members. The copy keeps the original's name.
+     * @return The ID of the new clip
+     */
+    ClipId duplicateClipAsGhost(ClipId clipId);
+
+    /** @brief Ghost-duplicate at a specific beat position (drag-copy path). */
+    ClipId duplicateClipAsGhostAtBeats(ClipId clipId, double startBeat,
+                                       TrackId trackId = INVALID_TRACK_ID, double tempo = 0.0);
+
+    /** @brief Detach a clip from its link group (no-op if unlinked). */
+    void makeClipUnique(ClipId clipId);
+
+    /**
+     * @brief IDs of the other members of this clip's link group.
+     * Empty when unlinked or when the clip is the group's only member.
+     */
+    std::vector<ClipId> getLinkGroupSiblings(ClipId clipId) const;
+
+    /**
+     * @brief True when the clip shares a link group with at least one other
+     * clip (drives ghost visuals and content propagation).
+     */
+    bool isGhostClip(ClipId clipId) const;
+
+    /**
+     * @brief 1-based display index of the clip within its link group,
+     * ordered by clip id (creation order). 0 when the clip is unlinked or
+     * the group's only member. Display-only — never stored.
+     */
+    int getLinkGroupIndex(ClipId clipId) const;
+
+    // ========================================================================
     // Clip Manipulation
     // ========================================================================
 
@@ -272,6 +310,8 @@ class ClipManager {
 
     void setClipName(ClipId clipId, const juce::String& name);
     void setClipColour(ClipId clipId, juce::Colour colour);
+    /** @brief Enable/disable a clip (#1736). Disabled clips do not play. */
+    void setClipEnabled(ClipId clipId, bool enabled);
     void setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM = 120.0);
     void setClipMidiOffset(ClipId clipId, double offsetBeats);
     void setClipLaunchMode(ClipId clipId, LaunchMode mode);
@@ -880,8 +920,17 @@ class ClipManager {
     std::vector<ClipId> batchedClipIds_;  // kept in insertion order, deduped
 
     int nextClipId_ = 1;
+    int nextLinkGroupId_ = 1;
     ClipId selectedClipId_ = INVALID_CLIP_ID;
     ClipId lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
+
+    /// Assign a fresh link group to the clip if it has none. Returns the group id.
+    int ensureLinkGroup(ClipInfo& clip);
+
+    /// Mirror the clip's shared content to all link-group siblings (no-op when
+    /// unlinked). Returns the sibling ids that were updated so the notify
+    /// funnel can include them in the same pass.
+    std::vector<ClipId> propagateLinkGroupContent(ClipId clipId);
 
     // Notification helpers (public so scheduler can emit state changes)
   public:

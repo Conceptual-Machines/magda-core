@@ -68,6 +68,16 @@ ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
                                                 const ParameterInfo& info);
 
 /**
+ * @brief Convert a DeviceInfo/model value to the raw value stored by the
+ *        owning Tracktion AutomatableParameter.
+ *
+ * Display-mapped internal parameters (for example a compiled snare decay in
+ * milliseconds backed by a 0..1 host parameter) are projected into the TE
+ * range. Parameters whose model and TE ranges already match pass through.
+ */
+float modelToTeValue(ParameterModelValue model, const ParameterInfo& info);
+
+/**
  * @brief Apply modulation to a base normalized value
  *
  * @param baseNormalized Base parameter value (0-1)

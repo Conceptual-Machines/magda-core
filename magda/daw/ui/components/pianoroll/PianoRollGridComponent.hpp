@@ -58,6 +58,7 @@ class PianoRollGridComponent : public juce::Component,
     void mouseExit(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
@@ -219,7 +220,7 @@ class PianoRollGridComponent : public juce::Component,
     // Request a note to be selected after the next refresh
     void selectNoteAfterRefresh(ClipId clipId, int noteIndex);
 
-    std::function<void(int, const juce::MouseWheelDetails&)> onVerticalZoomRequested;
+    std::function<void(int, float)> onVerticalZoomRequested;
 
     // Update visual selection to match SelectionManager state
     void syncSelectionFromManager();

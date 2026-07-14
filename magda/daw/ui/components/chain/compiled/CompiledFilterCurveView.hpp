@@ -73,6 +73,7 @@ class CompiledFilterCurveView final : public juce::Component,
     float targetDrive_ = 0.0f;
     int targetModeIndex_ = 0;
     bool initialised_ = false;
+    float minPlotFrequencyHz_ = 20.0f;
     juce::Colour curveColour_;
     bool hasCurveColour_ = false;
     magda::DeviceInfo deviceSnapshot_;

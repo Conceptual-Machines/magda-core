@@ -1248,7 +1248,8 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     bool selectionEdgeIsLeft = false;
     onSelectionEdge = isOnSelectionEdge(event.x, event.y, selectionEdgeIsLeft);
 
-    if (!onClip && event.mods.isShiftDown() && isInSelectableArea(event.x, event.y) &&
+    // Alt is the clip pencil (Shift is the scroll modifier now).
+    if (!onClip && event.mods.isAltDown() && isInSelectableArea(event.x, event.y) &&
         !onSelectionEdge && !isOnExistingSelection(event.x, event.y)) {
         int trackIndex = getTrackIndexAtY(event.y);
         if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
@@ -2134,21 +2135,22 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
     });
 }
 
-bool TrackContentPanel::duplicateSelectedArrangementClips(bool includeAutomation) {
+bool TrackContentPanel::duplicateSelectedArrangementClips(bool includeAutomation, bool asGhost) {
     auto& selectionManager = SelectionManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
     const auto selectedClips = selectionManager.getSelectedClips();
     if (selectedClips.empty())
         return false;
 
-    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
+    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM, asGhost);
     if (commands.empty())
         return false;
 
     const bool compoundOperation = commands.size() > 1 || includeAutomation;
     if (compoundOperation) {
         UndoManager::getInstance().beginCompoundOperation(
-            includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips");
+            asGhost ? "Duplicate Clips as Ghosts"
+                    : (includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips"));
     }
 
     std::unordered_set<ClipId> newClipIds;
@@ -2265,13 +2267,38 @@ interaction::PanelSnapshot TrackContentPanel::makePanelHitSnapshot(int x, int y)
 }
 
 void TrackContentPanel::updateCursorForPosition(int x, int y) {
+    // Alt is the clip pencil: hovering a drawable empty lane area with Alt
+    // held shows the pen before the gesture starts. (Shift can't advertise —
+    // it's the Shift+wheel scroll modifier, and flashing the pen on every
+    // Shift press read as noise.)
+    if (juce::ModifierKeys::currentModifiers.isAltDown() && canDrawClipAt(x, y)) {
+        setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
+        return;
+    }
     // Zone model + cursor policy live in the shared hit tester (#1719), so
-    // the cursor and the mouseDown gesture can never disagree. The hover
-    // cursor is modifier-independent: the pen appears only once a Shift-draw
-    // actually starts (see mouseDown), so Shift stays free for Shift+wheel
-    // horizontal scroll instead of flashing the pen on every Shift press.
+    // the cursor and the mouseDown gesture can never disagree.
     const auto zone = interaction::panelZone(x, y, makePanelHitSnapshot(x, y));
     setMouseCursor(interaction::toJuceCursor(interaction::panelCursor(zone)));
+}
+
+bool TrackContentPanel::canDrawClipAt(int x, int y) {
+    // Mirrors the mouseDown pencil branch's eligibility checks.
+    if (getClipComponentAt(x, y) != nullptr)
+        return false;
+    if (!isInSelectableArea(x, y) || isOnExistingSelection(x, y))
+        return false;
+    bool edgeIsLeft = false;
+    if (isOnSelectionEdge(x, y, edgeIsLeft))
+        return false;
+    const int trackIndex = getTrackIndexAtY(y);
+    return trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size());
+}
+
+void TrackContentPanel::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    juce::ignoreUnused(modifiers);
+    // Pressing/releasing Alt while hovering must swap the pencil cursor
+    // without waiting for a mouse move.
+    refreshCursorFromMouse();
 }
 
 void TrackContentPanel::refreshCursorFromMouse() {

@@ -78,6 +78,7 @@ float denormalizeForBinding(const FaustParamPool::ActiveBindingDescriptor& b, fl
     const float n = juce::jlimit(0.0f, 1.0f, normalized);
     switch (b.kind) {
         case FaustParamSlot::Kind::Boolean:
+        case FaustParamSlot::Kind::Trigger:
             return n >= 0.5f ? 1.0f : 0.0f;
         case FaustParamSlot::Kind::Discrete: {
             if (b.discreteValues.empty())
@@ -115,6 +116,7 @@ float denormalizeForBinding(const FaustParamPool::ActiveBindingDescriptor& b, fl
 float normaliseDefaultForSlot(const FaustParamSlot& slot) {
     switch (slot.kind) {
         case FaustParamSlot::Kind::Boolean:
+        case FaustParamSlot::Kind::Trigger:
             return slot.defaultValue >= 0.5f ? 1.0f : 0.0f;
         case FaustParamSlot::Kind::Discrete: {
             if (slot.choices.empty())
@@ -289,7 +291,7 @@ struct VoiceHarvester : public ::UI {
     }
 
     void addButton(const char* label, FAUSTFLOAT* zone) override {
-        emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);
+        emitControl(FaustParamSlot::Kind::Trigger, label, zone, 0, 0, 1, 1);
     }
     void addCheckButton(const char* label, FAUSTFLOAT* zone) override {
         emitControl(FaustParamSlot::Kind::Boolean, label, zone, 0, 0, 1, 1);

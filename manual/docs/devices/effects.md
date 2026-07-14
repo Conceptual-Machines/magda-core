@@ -67,6 +67,27 @@ The MAGDA FX bank is a set of native effects compiled from Faust DSP and shipped
 !!! note
     Devices that bundle multiple engines (Compressor, Reverb, Dimension, Filter, Pitch) expose an engine selector at the top of the editor and switch DSP in place. Macros and modulator links survive the switch.
 
+## Sidechain
+
+The **Sidechain** device is a native MAGDA device (not part of the Faust FX bank) that sits under **Dynamics** in the Plugin Browser. It is a MIDI-triggered volume shaper: the device holds its own gain at unity and a retriggerable curve ducks it toward silence, keyed from the notes of another track. This is the classic "sidechain pump" effect without a compressor — the curve *is* the gain envelope, so you draw exactly the ducking shape you want.
+
+**Choosing the trigger source.** The device faceplate has no source picker; pick the source from the **sidechain button in the device header** (tooltip *Sidechain source*). It turns orange once a source is routed. Clicking it opens a menu with **None**, an **Audio Sidechain** section, and a **MIDI Source** section listing the other tracks; the Sidechain device keys off a track chosen under **MIDI Source**.
+
+**Controls:**
+
+| Control | Description |
+|---|---|
+| **Curve** | The gain envelope. Edit it directly to shape how the level ducks and recovers on each trigger. |
+| **DEPTH** | How far the curve pulls the gain down, 0–100%. |
+| **SYNC** | Trigger sync division, which also sets the length of the duck curve. |
+| **MODE** | **1-Shot** (run the curve once per trigger) or **Loop** (repeat it). |
+| **CH** | **ST** ducks the full stereo signal; **SD** ducks the side channel only. |
+| **ATK** | Attack, 0–50 ms. |
+| **REL** | Release, 0–500 ms. |
+
+!!! note "Placement"
+    The Sidechain device can go on the master track as a *destination*, but the master can never be a *source* (it has no notes to key from). The device cannot run in the post-FX area, since ducking has to happen before the fader.
+
 ## Faust (Custom DSP)
 
 The **Faust** device hosts a [Faust](https://faust.grame.fr) DSP that you compile and load at runtime. Unlike the rest of the MAGDA FX bank, where each device wraps a fixed pre-compiled `.dsp` source, this device accepts any Faust program.

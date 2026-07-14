@@ -20,7 +20,8 @@ enum class HeaderControlId {
     UI,
     MultiOut,
     Sidechain,
-    ExportClip
+    ExportClip,
+    Delta
 };
 
 enum class HeaderControlSide { Left, Right };
@@ -37,6 +38,7 @@ struct HeaderControlComponents {
     juce::Component* randomButton = nullptr;
     juce::Component* stepRecordButton = nullptr;
     juce::Component* midiThruButton = nullptr;
+    juce::Component* deltaButton = nullptr;
 };
 
 struct HeaderControlVisibility {
@@ -51,6 +53,7 @@ struct HeaderControlVisibility {
     bool multiOut = false;
     bool sidechain = false;
     bool exportClip = false;
+    bool delta = false;
     bool power = true;
     bool preset = true;
 };

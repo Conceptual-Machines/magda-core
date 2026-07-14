@@ -16,6 +16,7 @@ target_sources(magda_daw_app PRIVATE
     PianoRollContent.cpp
     DrumGridClipContent.cpp
     ChordClipContent.cpp
+    AutomationClipEditorContent.cpp
     WaveformEditorContent.cpp
     AudioClipPropertiesContent.cpp
     ChordPanelContent.cpp

@@ -271,6 +271,16 @@ class TrackManager {
     const std::vector<TrackInfo>& getTracks() const {
         return tracks_;
     }
+    template <typename Fn> void forEachTrackIncludingMaster(Fn&& fn) {
+        for (auto& track : tracks_)
+            fn(track);
+        fn(masterTrack_);
+    }
+    template <typename Fn> void forEachTrackIncludingMaster(Fn&& fn) const {
+        for (const auto& track : tracks_)
+            fn(track);
+        fn(masterTrack_);
+    }
     TrackInfo* getTrack(TrackId trackId);
     const TrackInfo* getTrack(TrackId trackId) const;
     int getTrackIndex(TrackId trackId) const;
@@ -332,6 +342,19 @@ class TrackManager {
     /// raw-vs-worked signal (#886).
     std::vector<std::string> getChainSummary(TrackId trackId) const;
 
+    /// Routing owned by an External Instrument insert on a track. When such a
+    /// device is present it owns the track's MIDI send and audio return, so the
+    /// track-level MIDI-out / audio-in selectors are shown read-only and mirror
+    /// these values (the live insert's outputDevice / inputDevice). `present` is
+    /// false when there's no External Instrument on the track. Inserts are not
+    /// rack-hostable, so only the top-level chain is checked.
+    struct ExternalInstrumentRouting {
+        bool present = false;
+        juce::String midiOut;      // insert send (MIDI output device name)
+        juce::String audioReturn;  // insert return (audio input device name)
+    };
+    ExternalInstrumentRouting getExternalInstrumentRouting(TrackId trackId) const;
+
     // Post-fader FX chain (flat device list; never racks or instruments).
     // Getting/removing a post-fx device goes through the path-based APIs
     // (getDeviceInChainByPath / removeDeviceFromChainByPath with a
@@ -361,7 +384,7 @@ class TrackManager {
     // Path-based variant — preferred for new code; sections will become
     // id-scoped, at which point the bare-id version goes away.
     void setDeviceBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
-    void setChainBypassed(TrackId trackId, bool bypassed);
+    void setDeviceDeltaSoloByPath(const ChainNodePath& devicePath, bool deltaSolo);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
     // Drum-kit row metadata lives on the device instance — it's a physical
@@ -391,6 +414,15 @@ class TrackManager {
     // addDevice* and isn't affected.
     static void stampDefaultKitIfMissing(DeviceInfo& dev);
 
+    // Seed a fresh Sidechain device (issue #1591) with its bundled curve
+    // modulator: an LFO with a one-shot duck curve, MIDI-triggered, linked to
+    // the device's own gain param at full negative depth. Needs the device's
+    // final ChainNodePath for the link target, so it runs at the add sites
+    // (after prepareNewDevice assigns the id), not inside prepareNewDevice.
+    // No-op for other devices or when mods already exist (duplication keeps
+    // the user's curve). Deserialized projects never pass through here.
+    static void seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath);
+
     // Common prep for the FX-chain and rack-chain add paths: assign a fresh
     // DeviceId from nextFxDeviceId_, stamp the default kit, and tag analysis
     // devices. Returns the prepared copy; callers insert it, then fire
@@ -411,6 +443,8 @@ class TrackManager {
     RackInfo* getRack(TrackId trackId, RackId rackId);
     const RackInfo* getRack(TrackId trackId, RackId rackId) const;
     void setRackBypassed(TrackId trackId, RackId rackId, bool bypassed);
+    void setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed);
+    void setRackDeltaSoloByPath(const ChainNodePath& rackPath, bool deltaSolo);
     void setRackExpanded(TrackId trackId, RackId rackId, bool expanded);
 
     // Path-based rack lookup (works for nested racks at any depth)
@@ -426,6 +460,18 @@ class TrackManager {
     ChainInfo* getChainByPath(const ChainNodePath& chainPath);  // Nested-chain lookup
     const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const;
     void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex);
+    /** @brief Chain power: the state behind the chain header's power button
+        and the track inspector's enable switch. When off, every insert-chain
+        device is gated off in the engine without touching the devices' own
+        bypassed flags. */
+    bool isChainEnabled(TrackId trackId) const;
+    void setChainEnabled(TrackId trackId, bool enabled);
+
+    /** @brief A device's engine enablement: its own bypassed flag combined
+        with the owning track's chain power (insert-chain devices only). */
+    bool isDeviceEffectivelyEnabled(const ChainNodePath& devicePath,
+                                    const DeviceInfo& device) const;
+
     void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted);
     void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId, bool bypassed);
     void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo);
@@ -637,6 +683,7 @@ class TrackManager {
     void setModPhaseOffset(const ChainNodePath& path, int modIndex, float phaseOffset);
     void setModTempoSync(const ChainNodePath& path, int modIndex, bool tempoSync);
     void setModSyncDivision(const ChainNodePath& path, int modIndex, SyncDivision division);
+    void setModOneShot(const ChainNodePath& path, int modIndex, bool oneShot);
     void setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode);
     void setModCurvePreset(const ChainNodePath& path, int modIndex, CurvePreset preset);
     void setModCurveState(const ChainNodePath& path, int modIndex, CurvePreset preset,
@@ -802,6 +849,11 @@ class TrackManager {
     // structure (e.g. creating a track together with a device) can force the
     // UI to rebuild once the final state is in place.
     void notifyTracksChanged();
+    // Broadcast that a device changed one of its own properties (UI-only refresh,
+    // no engine resync). Public so a device's custom UI (e.g. the External
+    // Instrument send/return picker) can refresh dependent views such as the
+    // track-level read-only routing mirror.
+    void notifyDevicePropertyChanged(const ChainNodePath& devicePath);
 
     /**
      * @brief Suspend and coalesce structural tracksChanged() notifications.
@@ -928,7 +980,6 @@ class TrackManager {
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyAudioSidechainTriggered(TrackId sourceTrackId);
-    void notifyDevicePropertyChanged(const ChainNodePath& devicePath);
     void notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
                                       float newValue);
     void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,

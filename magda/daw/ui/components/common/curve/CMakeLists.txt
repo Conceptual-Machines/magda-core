@@ -4,6 +4,7 @@ target_sources(magda_daw_app PRIVATE
     CurveTensionHandle.cpp
     CurveBezierHandle.cpp
     CurveTypes.hpp
+    CurveRenderOrder.hpp
     CurveEditorBase.hpp
     CurvePointComponent.hpp
     CurveTensionHandle.hpp

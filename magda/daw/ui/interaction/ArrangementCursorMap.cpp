@@ -31,6 +31,8 @@ juce::MouseCursor toJuceCursor(CursorKind kind) {
             return CursorManager::getInstance().getEraseCursor();
         case CursorKind::Blade:
             return CursorManager::getInstance().getBladeCursor();
+        case CursorKind::GhostCopy:
+            return CursorManager::getInstance().getGhostCopyCursor();
     }
     return juce::MouseCursor::NormalCursor;
 }

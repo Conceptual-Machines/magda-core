@@ -24,10 +24,12 @@
 #include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
+#include "audio/plugins/SidechainPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
+#include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
@@ -60,6 +62,7 @@
 #include "custom_ui/PolySynthUI.hpp"
 #include "custom_ui/ReverbUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
+#include "custom_ui/SidechainUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "custom_ui/StruckInstrumentUI.hpp"
@@ -74,6 +77,7 @@
 #include "media_db/RobertaTokenizer.hpp"
 #include "processors/internal/NativeDeviceProcessors.hpp"
 #include "project/ProjectManager.hpp"
+#include "slot/ExternalInsertUI.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
@@ -441,6 +445,8 @@ DeviceCustomUIManager::~DeviceCustomUIManager() {
 juce::Component* DeviceCustomUIManager::getActiveUI() const {
     if (toneGeneratorUI_)
         return toneGeneratorUI_.get();
+    if (externalInsertUI_)
+        return externalInsertUI_.get();
     if (samplerUI_)
         return samplerUI_.get();
     if (drumGridUI_)
@@ -477,6 +483,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return phaserUI_.get();
     if (filterUI_)
         return filterUI_.get();
+    if (sidechainUI_)
+        return sidechainUI_.get();
     if (pitchShiftUI_)
         return pitchShiftUI_.get();
     if (impulseResponseUI_)
@@ -537,6 +545,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return phaserUI_->getLinkableSliders();
     if (filterUI_)
         return filterUI_->getLinkableSliders();
+    if (sidechainUI_)
+        return sidechainUI_->getLinkableSliders();
     if (pitchShiftUI_)
         return pitchShiftUI_->getLinkableSliders();
     if (impulseResponseUI_)
@@ -555,14 +565,18 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 }
 
 bool DeviceCustomUIManager::hasAnyUI() const {
-    return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || faustInstrumentUI_ ||
-           polySynthUI_ || fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || eqUI_ || compressorUI_ ||
+    return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
+           faustInstrumentUI_ || polySynthUI_ || fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ ||
+           eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
+           pitchShiftUI_ || impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
+           stepSequencerUI_ || polySynthUI_ || fmUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ ||
            reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
            impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
            polySynthUI_ || fmUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ || reverbUI_ ||
            delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ ||
            faustUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_ || struckUI_;
+           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_ ||
+           struckUI_ || sidechainUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -598,6 +612,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 300;
     if (filterUI_)
         return 250;
+    if (sidechainUI_)
+        return 500;  // curve editor + depth/sync/mode/atk/rel control row
     if (pitchShiftUI_)
         return 200;
     if (impulseResponseUI_)
@@ -618,6 +634,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 800;  // 400 (BASE_SLOT_WIDTH) * 2
     if (drumGridUI_)
         return drumGridFallback;
+    if (externalInsertUI_)
+        return 360;  // two device pickers + manual-latency field
     return 0;
 }
 
@@ -854,6 +872,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         phaserUI_->updateFromParameters(device.parameters);
     if (filterUI_ && device.pluginId.containsIgnoreCase("lowpass"))
         filterUI_->updateFromParameters(device.parameters);
+    if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
+        sidechainUI_->updateFromParameters(device.parameters);
     if (pitchShiftUI_ && device.pluginId.containsIgnoreCase("pitchshift"))
         pitchShiftUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId.containsIgnoreCase("impulseresponse"))
@@ -1091,6 +1111,7 @@ bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& de
         polySynthUI_ = std::make_unique<PolySynthUI>();
         forwardParameterChanges(*polySynthUI_, callbacks);
         parent.addAndMakeVisible(*polySynthUI_);
+        refreshLivePluginBindings();
         update(device);
         return true;
     }
@@ -1151,6 +1172,17 @@ bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& de
 bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device,
                                                  juce::Component& parent,
                                                  const Callbacks& callbacks) {
+    if (device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName)) {
+        sidechainUI_ = std::make_unique<SidechainUI>();
+        forwardParameterChanges(*sidechainUI_, callbacks);
+        // The curve editor / depth / source picker address the live model by
+        // path, so hand through the slot's live path getter.
+        sidechainUI_->getNodePath = callbacks.getNodePath;
+        parent.addAndMakeVisible(*sidechainUI_);
+        update(device);
+        return true;
+    }
+
     if (device.pluginId.equalsIgnoreCase("eq")) {
         eqUI_ = std::make_unique<EqualiserUI>();
         forwardParameterChanges(*eqUI_, callbacks);
@@ -2003,9 +2035,21 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // handled by helper
     } else if (createImpulseResponseUI(device, *parent, uiCallbacks)) {
         // handled by helper
+    } else if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert) {
+        createExternalInsertUI(device, *parent);
     } else if (!createMidiUtilityUI(device, *parent)) {
         createAnalyzerUI(device, *parent);
     }
+}
+
+void DeviceCustomUIManager::createExternalInsertUI(const magda::DeviceInfo& device,
+                                                   juce::Component& parent) {
+    externalInsertUI_ = std::make_unique<ExternalInsertUI>(device.isInstrument);
+    parent.addAndMakeVisible(*externalInsertUI_);
+    // create() may run before the slot's path is valid; setDevicePath() rebinds
+    // the pickers from the live plugin once refreshLivePluginBindings() fires.
+    if (devicePath_.isValid())
+        externalInsertUI_->setDevicePath(devicePath_);
 }
 
 void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
@@ -2022,10 +2066,18 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
     // the path is bound so LFO/Mod Env destination lists are not left empty.
     if (fourOscUI_ && devicePath_.isValid())
         readAndPushModMatrix(devicePath_.getDeviceId());
+
+    // Same create-before-path situation for the Sidechain faceplate: its curve
+    // editor binds to the live model through the path, so rebind now.
+    if (sidechainUI_ && devicePath_.isValid())
+        sidechainUI_->refreshFromModel();
 }
 
 void DeviceCustomUIManager::refreshLivePluginBindings() {
     bindAnalyzerPlugins();
+
+    if (externalInsertUI_ != nullptr)
+        externalInsertUI_->setDevicePath(devicePath_);
 
     if (faustInstrumentUI_ != nullptr) {
         faustInstrumentUI_->setDevicePath(devicePath_);
@@ -2033,6 +2085,13 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
         if (auto plugin = getLivePlugin())
             model = dynamic_cast<magda::daw::audio::IFaustEditorModel*>(plugin.get());
         faustInstrumentUI_->setPlugin(model);
+    }
+
+    if (polySynthUI_ != nullptr) {
+        daw::audio::compiled::MagdaPolySynthCompiledPlugin* synth = nullptr;
+        if (auto plugin = getLivePlugin())
+            synth = dynamic_cast<daw::audio::compiled::MagdaPolySynthCompiledPlugin*>(plugin.get());
+        polySynthUI_->setLivePlugin(synth);
     }
 
     if (struckUI_ != nullptr) {
@@ -2064,6 +2123,8 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
         nimbusUI_->setTelemetrySource(nullptr);
     if (faustInstrumentUI_ != nullptr)
         faustInstrumentUI_->setPlugin(nullptr);
+    if (polySynthUI_ != nullptr)
+        polySynthUI_->setLivePlugin(nullptr);
     if (struckUI_ != nullptr)
         struckUI_->setLivePlugin(nullptr);
 
@@ -2165,6 +2226,9 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
             controller->setDevice(device);
         }
     }
+
+    if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
+        sidechainUI_->updateFromDevice(device);
 
     if (toneGeneratorUI_ && device.pluginId.containsIgnoreCase("tone")) {
         float frequency = 440.0f;

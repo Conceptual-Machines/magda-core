@@ -15,6 +15,7 @@ namespace magda::daw::audio {
  *
  *   - Kind::Boolean   → ParameterScale::Boolean,
  *                       min=0 / max=1 / default rounded to {0,1}.
+ *   - Kind::Trigger   → ParameterScale::Boolean with momentary interaction.
  *   - Kind::Discrete  → ParameterScale::Discrete with `choices` set
  *                       to the slot's menu labels sorted by underlying
  *                       value. min=0 / max=N-1 (UI side); the live

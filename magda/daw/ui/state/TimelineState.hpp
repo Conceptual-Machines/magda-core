@@ -23,7 +23,8 @@ enum class TimeDisplayMode {
 struct GridQuantize {
     bool autoGrid = true;  // When true, use smart grid based on zoom level
     int numerator = 1;     // e.g. 1, 2, 3
-    int denominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;  // Must be power of 2: 1, 2, 4, 8, 16, 32
+    int denominator =
+        DEFAULT_TIME_SIGNATURE_DENOMINATOR;  // Reduced stored fraction; custom values allow 1..64
 
     // Display-only: effective grid when in auto mode (set by MIDI editors)
     int autoEffectiveNumerator = 1;

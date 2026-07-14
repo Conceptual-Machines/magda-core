@@ -5,6 +5,7 @@
 
 #include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -102,6 +103,16 @@ void configureBoolToggle(juce::ToggleButton& toggle, const magda::ParameterInfo&
     };
     toggle.setToggleState(info.currentValue >= 0.5, juce::dontSendNotification);
     toggle.setButtonText("");
+}
+
+void configureMomentaryButton(MomentaryParamButton& button,
+                              std::function<void(double)> onValueChanged) {
+    button.release();
+    button.setValueChangedCallback(std::move(onValueChanged));
+    button.setButtonText("PUSH");
+    button.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    button.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
 }
 
 void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& info,

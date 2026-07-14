@@ -123,7 +123,12 @@ with {
 lvl(i) = sm(outLvl(i) > -59.5) * ba.db2linear(sm(outLvl(i)));
 mix(y0, y1, y2, y3) = y0 * lvl(0) + y1 * lvl(1) + y2 * lvl(2) + y3 * lvl(3);
 
-env = en.adsr(ampA, ampD, ampS, ampR, gate);
+// en.adsre (exponential segments), not en.adsr: the linear adsr's attack
+// counter hard-resets on the gate's rising edge, so a Mono retrigger (the
+// host's one-sample gate dip) collapses the envelope from sustain to zero in
+// one sample - an audible click on every mono note. adsre is a one-pole slew
+// toward the segment target, so it resumes from the current level instead.
+env = en.adsre(ampA, ampD, ampS, ampR, gate);
 
 voice = (operators ~ si.bus(4)) : mix : *(env) : *(velGain);
 

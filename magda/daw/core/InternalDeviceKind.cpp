@@ -18,6 +18,7 @@
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SidechainMonitorPlugin.hpp"
+#include "audio/plugins/SidechainPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/TrackMeasurementPlugin.hpp"
@@ -76,6 +77,8 @@ const InternalDeviceMetadata kMetadata[] = {
      "Simple tone generator for calibration, routing checks, and utility signals."},
     {InternalDeviceKind::TeLevelMeter, "Level Meter", "", "Meter",
      "Signal meter for monitoring level inside a chain."},
+    {InternalDeviceKind::ExternalInsert, "External Insert", "", "External",
+     "Hardware send/return insert for outboard audio FX and MIDI instruments."},
     {InternalDeviceKind::MagdaSampler, "Sampler", "", "Sampler",
      "Sample playback instrument with envelope, pitch, start/end, and looping controls."},
     {InternalDeviceKind::MutableElements, "Materia", "", "Synth",
@@ -99,6 +102,9 @@ const InternalDeviceMetadata kMetadata[] = {
      "MIDI step sequencer for pattern-driven notes and rhythmic control."},
     {InternalDeviceKind::PolyStepSequencer, "Poly Sequencer", "", "MIDI",
      "Polyphonic MIDI step sequencer with multiple notes per step for chord patterns."},
+    {InternalDeviceKind::Sidechain, "Sidechain", "", "Dynamics",
+     "MIDI-triggered volume shaper: a gain stage ducked by a retriggerable curve, "
+     "keyed from a chosen source track's notes."},
     {InternalDeviceKind::SidechainMonitor, "Sidechain Monitor", "", "Utility",
      "Internal monitor used to expose sidechain signal state."},
     {InternalDeviceKind::AudioSidechainMonitor, "Audio Sidechain Monitor", "", "Utility",
@@ -171,6 +177,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
     using daw::audio::MutableRingsPlugin;
     using daw::audio::OscilloscopePlugin;
     using daw::audio::PolyStepSequencerPlugin;
+    using daw::audio::SidechainPlugin;
     using daw::audio::SpectrumAnalyzerPlugin;
     using daw::audio::StepSequencerPlugin;
     using daw::audio::TrackMeasurementPlugin;
@@ -194,6 +201,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::TeFourOsc, "4OSC Synth", nullptr},
         {InternalDeviceKind::TeToneGenerator, "tone", TE::ToneGeneratorPlugin::xmlTypeName},
         {InternalDeviceKind::TeLevelMeter, "meter", TE::LevelMeterPlugin::xmlTypeName},
+        {InternalDeviceKind::ExternalInsert, TE::InsertPlugin::xmlTypeName, nullptr},
         // MAGDA daw::audio:: plugins
         {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, nullptr},
@@ -205,6 +213,7 @@ InternalDeviceKind classifyInternalDevice(const juce::String& pluginId) {
         {InternalDeviceKind::Strum, MidiStrumPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::PolyStepSequencer, PolyStepSequencerPlugin::xmlTypeName, nullptr},
+        {InternalDeviceKind::Sidechain, SidechainPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, nullptr},
         {InternalDeviceKind::Levels, LevelsPlugin::xmlTypeName, nullptr},

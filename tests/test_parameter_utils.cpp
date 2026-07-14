@@ -882,3 +882,32 @@ TEST_CASE("ParameterUtils - model value conversion preserves external native ran
     auto normalized = ParameterUtils::modelToNormalizedValue(ParameterModelValue{0.25f}, info);
     REQUIRE(normalized.value == Catch::Approx(0.25f));
 }
+
+TEST_CASE("ParameterUtils - model value converts to a display-mapped TE parameter",
+          "[parameter][conversion][model]") {
+    ParameterInfo info;
+    info.minValue = 1.0f;
+    info.maxValue = 1500.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+
+    REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{1.0f}, info) == Catch::Approx(0.0f));
+    REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{750.5f}, info) ==
+            Catch::Approx(0.5f));
+    REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{1500.0f}, info) ==
+            Catch::Approx(1.0f));
+}
+
+TEST_CASE("ParameterUtils - model value passes through a matching TE range",
+          "[parameter][conversion][model]") {
+    ParameterInfo info;
+    info.minValue = 20.0f;
+    info.maxValue = 20000.0f;
+    info.teMinValue = 20.0f;
+    info.teMaxValue = 20000.0f;
+    info.scale = ParameterScale::Logarithmic;
+    info.scaleAnchor = 1000.0f;
+
+    REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{440.0f}, info) ==
+            Catch::Approx(440.0f));
+}

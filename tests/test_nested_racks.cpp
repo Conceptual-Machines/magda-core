@@ -635,6 +635,43 @@ TEST_CASE("TrackManager: Set Device Bypassed by Path", "[trackmanager][device][p
     }
 }
 
+TEST_CASE("TrackManager: Delta solo and bypass are mutually exclusive by path",
+          "[trackmanager][delta_solo][path]") {
+    TrackManagerTestFixture fixture;
+    auto trackId = fixture.tm().createTrack("Delta Track");
+    auto rackId = fixture.tm().addRackToTrack(trackId, "Outer Rack");
+    auto* rack = fixture.tm().getRack(trackId, rackId);
+    REQUIRE(rack != nullptr);
+
+    auto outerChainPath = ChainNodePath::chain(trackId, rackId, rack->chains[0].id);
+    DeviceInfo device;
+    device.name = "Effect";
+    auto deviceId = fixture.tm().addDeviceToChainByPath(outerChainPath, device);
+    auto devicePath = outerChainPath.withDevice(deviceId);
+
+    fixture.tm().setDeviceDeltaSoloByPath(devicePath, true);
+    auto* liveDevice = fixture.tm().getDeviceInChainByPath(devicePath);
+    REQUIRE(liveDevice != nullptr);
+    CHECK(liveDevice->deltaSolo);
+    CHECK_FALSE(liveDevice->bypassed);
+
+    fixture.tm().setDeviceInChainBypassedByPath(devicePath, true);
+    CHECK(liveDevice->bypassed);
+    CHECK_FALSE(liveDevice->deltaSolo);
+
+    auto nestedRackId = fixture.tm().addRackToChainByPath(outerChainPath, "Nested Rack");
+    auto nestedRackPath = outerChainPath.withRack(nestedRackId);
+    fixture.tm().setRackDeltaSoloByPath(nestedRackPath, true);
+    auto* nestedRack = fixture.tm().getRackByPath(nestedRackPath);
+    REQUIRE(nestedRack != nullptr);
+    CHECK(nestedRack->deltaSolo);
+    CHECK_FALSE(nestedRack->bypassed);
+
+    fixture.tm().setRackBypassedByPath(nestedRackPath, true);
+    CHECK(nestedRack->bypassed);
+    CHECK_FALSE(nestedRack->deltaSolo);
+}
+
 TEST_CASE("TrackManager: Parameter writes follow device id after top-level reorder",
           "[trackmanager][device][path][parameter]") {
     TrackManagerTestFixture fixture;

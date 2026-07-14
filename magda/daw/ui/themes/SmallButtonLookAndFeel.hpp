@@ -12,7 +12,7 @@ namespace magda::daw::ui {
  */
 class SmallButtonLookAndFeel : public juce::LookAndFeel_V4 {
   public:
-    SmallButtonLookAndFeel() = default;
+    explicit SmallButtonLookAndFeel(float fontSize = 9.0f) : fontSize_(fontSize) {}
     ~SmallButtonLookAndFeel() override = default;
 
     void drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour& bgColour,
@@ -42,7 +42,7 @@ class SmallButtonLookAndFeel : public juce::LookAndFeel_V4 {
 
     void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool /*isMouseOverButton*/,
                         bool /*isButtonDown*/) override {
-        auto font = FontManager::getInstance().getUIFontBold(9.0f);
+        auto font = FontManager::getInstance().getUIFontBold(fontSize_);
         g.setFont(font);
         g.setColour(button
                         .findColour(button.getToggleState() ? juce::TextButton::textColourOnId
@@ -59,6 +59,7 @@ class SmallButtonLookAndFeel : public juce::LookAndFeel_V4 {
     }
 
   private:
+    float fontSize_;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SmallButtonLookAndFeel)
 };
 

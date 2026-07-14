@@ -36,6 +36,7 @@ target_sources(magda_daw PRIVATE
     TrackCommands.cpp
     TrackPropertyCommands.cpp
     AutomationCommands.cpp
+    ClipLaneFlattener.cpp
     MidiNoteCommands.cpp
     ParameterInfo.cpp
     ParameterUtils.cpp
@@ -71,6 +72,7 @@ target_sources(magda_daw PRIVATE
     controllers/MidiLearnCoordinator.cpp
     # Headers (listed for IDE visibility)
     Config.hpp
+    GridDivision.hpp
     AppPaths.hpp
     UIScale.hpp
     DeviceInfo.hpp

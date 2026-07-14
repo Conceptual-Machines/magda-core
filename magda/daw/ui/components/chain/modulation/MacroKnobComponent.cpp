@@ -157,8 +157,7 @@ void MacroKnobComponent::beginAutomationGesture() {
         return;
 
     auto& mgr = magda::AutomationManager::getInstance();
-    if (mgr.getLaneForTarget(target) != magda::INVALID_AUTOMATION_LANE_ID)
-        mgr.setTargetTouchSuppressed(target, true);
+    mgr.beginTargetGesture(target);
     mgr.setTargetUserTouched(target, true);
     mgr.setTouchBaseline(target, static_cast<double>(dragStartValue_));
 }
@@ -170,7 +169,7 @@ void MacroKnobComponent::endAutomationGesture() {
 
     auto& mgr = magda::AutomationManager::getInstance();
     mgr.setTargetUserTouched(target, false);
-    mgr.setTargetTouchSuppressed(target, false);
+    mgr.endTargetGesture(target);
     mgr.clearTouchBaseline(target);
 }
 

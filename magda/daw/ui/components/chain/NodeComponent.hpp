@@ -77,6 +77,9 @@ class NodeComponent : public juce::Component,
     juce::String getNodeName() const;
     void setBypassed(bool bypassed);
     bool isBypassed() const;
+    /** Grey the node because the track's chain power is off. Visual only —
+        does not touch the node's own bypass button/state. */
+    void setChainDisabled(bool disabled);
     void setFrozen(bool frozen);
     bool isFrozen() const {
         return frozen_;
@@ -276,6 +279,7 @@ class NodeComponent : public juce::Component,
     // Selection state
     bool selected_ = false;
     bool frozen_ = false;
+    bool chainDisabled_ = false;  // track chain power off (grey only, see setChainDisabled)
     bool mouseDownForSelection_ = false;
 
     // Collapsed state (show header only)

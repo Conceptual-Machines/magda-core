@@ -4,8 +4,10 @@
 #include <juce_graphics/juce_graphics.h>
 
 #include <array>
+#include <cmath>
 #include <vector>
 
+#include "AutomationStateMachine.hpp"
 #include "AutomationTypes.hpp"
 #include "ControlTarget.hpp"
 #include "ParameterInfo.hpp"
@@ -20,8 +22,8 @@ struct ModInfo;
  * @brief Visual state for a control bound to an automation target.
  *
  * Drives the "purple / grey / none" visualisation on faders and value labels.
- * Computed from lane existence + lane->touchSuppressed so UI code doesn't
- * re-implement the same if-chain at every paint site.
+ * Computed from lane existence + its authority state so UI code doesn't
+ * re-implement the same state machine at every paint site.
  */
 enum class AutomationVisualState {
     None,        // No lane exists — control paints normally
@@ -121,6 +123,16 @@ struct AutomationClipInfo {
     bool looping = false;
     double loopLengthBeats = 4.0;  // Loop length in beats
 
+    // Editor snap settings, per clip (each clip remembers its own instead of
+    // sharing the arrangement's). X = time grid, num/den of a whole note
+    // (like MIDI grids); Y = value grid, num/den of the normalized range.
+    bool snapXEnabled = true;
+    int snapXNumerator = 1;
+    int snapXDenominator = 4;
+    bool snapYEnabled = false;
+    int snapYNumerator = 1;
+    int snapYDenominator = 8;
+
     std::vector<AutomationPoint> points;
 
     // Helpers
@@ -147,6 +159,20 @@ struct AutomationClipInfo {
                 localBeatPosition += loopLengthBeats;
         }
         return localBeatPosition;
+    }
+
+    /**
+     * @brief Local beat corresponding to the clip's end, as a limit from the
+     *        left: the wrapped loop position that is sounding as the clip
+     *        runs out. Used to hold a clip's final value across the gap that
+     *        follows it.
+     */
+    double getEndLocalBeat() const {
+        if (looping && loopLengthBeats > 0.0) {
+            double local = std::fmod(lengthBeats, loopLengthBeats);
+            return (local == 0.0 && lengthBeats > 0.0) ? loopLengthBeats : local;
+        }
+        return lengthBeats;
     }
 
     // Default automation clip colors
@@ -183,12 +209,7 @@ struct AutomationLaneInfo {
     juce::String name;  // Optional explicit display override
     bool visible = true;
     bool expanded = true;
-    bool bypass = false;  // Ignore baked curve during playback
-    // Transient (not serialized): set while a user is actively touching a
-    // control bound to this target during playback, so AutomationPlaybackEngine
-    // leaves the parameter alone for the duration of the gesture instead of
-    // fighting it every block.
-    bool touchSuppressed = false;
+    AutomationAuthorityState authorityState = AutomationAuthorityState::Reading;
     bool snapEditsToBeatGrid = true;  // Snap edit gestures to the beat grid
     bool snapValue = false;           // Snap drawn values to parameter's natural ticks
     int height = 60;                  // Lane height in pixels

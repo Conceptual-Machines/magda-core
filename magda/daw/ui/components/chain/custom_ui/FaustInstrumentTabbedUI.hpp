@@ -9,6 +9,7 @@
 #include "core/ChainNodePath.hpp"
 #include "core/ParameterInfo.hpp"
 #include "custom_ui/LayoutStableTabbedComponent.hpp"
+#include "ui/components/chain/params/MomentaryParamButton.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
 namespace magda::daw::audio {
@@ -26,10 +27,10 @@ class FaustUI;
  * Top strip embeds a FaustUI (logo / DSP name / Load / Save / Edit), reusing
  * the whole .dsp load+edit flow. Below it, a tab per top-level Faust group
  * (FaustParamSlot::group) — a DSP with no groups shows a single "Params" tab.
- * Each tab lays its group's parameters out as LinkableTextSliders, so
- * mod / macro / automation / MIDI-Learn drag-linking works via the standard
- * DeviceSlotComponent::setupCustomUILinking() path (which binds each slider by
- * its setParamIndex()).
+ * Each tab lays its group's parameters out as LinkableTextSliders, except Faust
+ * button() controls, which use press-and-hold buttons. Linkable controls use the
+ * standard DeviceSlotComponent::setupCustomUILinking() path (which binds each
+ * slider by its setParamIndex()).
  *
  * Wired through DeviceCustomUIManager exactly like FourOscUI.
  */
@@ -47,8 +48,8 @@ class FaustInstrumentTabbedUI : public juce::Component {
     /// refresh by DeviceCustomUIManager.
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
 
-    /// Flat list of every tab's sliders (pool index carried via setParamIndex).
-    /// Consumed by DeviceSlotComponent::setupCustomUILinking().
+    /// Flat list of every tab's linkable sliders (pool index carried via
+    /// setParamIndex). Momentary buttons are intentionally excluded.
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
@@ -64,6 +65,7 @@ class FaustInstrumentTabbedUI : public juce::Component {
         int slotIndex = -1;
         std::unique_ptr<juce::Label> label;
         std::unique_ptr<LinkableTextSlider> slider;
+        std::unique_ptr<MomentaryParamButton> momentaryButton;
     };
 
     // One tab's page: owns its rows and lays them out in a simple grid.
@@ -74,6 +76,7 @@ class FaustInstrumentTabbedUI : public juce::Component {
     };
 
     void rebuildTabs();
+    void releaseMomentaryButtons();
     juce::String poolSignature() const;
 
     std::unique_ptr<FaustUI> header_;

@@ -126,6 +126,12 @@ void TrackContentPanel::startMultiClipDrag(ClipId anchorClipId, const juce::Poin
     // selection copies on drag exactly like a single clip does.
     isMultiClipDuplicating_ = GestureRouter::getInstance().isDuplicateOnDrag(
         GestureContext::Arrangement, juce::ModifierKeys::getCurrentModifiers());
+    // Ghost-copy gesture (default Alt+Shift): the copies join their sources'
+    // link groups and mirror content.
+    isMultiClipGhosting_ = GestureRouter::getInstance().isDuplicateAsGhostOnDrag(
+        GestureContext::Arrangement, juce::ModifierKeys::getCurrentModifiers());
+    if (isMultiClipGhosting_)
+        isMultiClipDuplicating_ = true;
     anchorClipId_ = anchorClipId;
     multiClipDragStartPos_ = startPos;
     multiClipDragDeltaTime_ = 0.0;
@@ -283,7 +289,8 @@ void TrackContentPanel::finishMultiClipDrag() {
     if (isMultiClipDuplicating_) {
         // Copy-on-drag: create duplicates at final positions through undo system
         if (isCompound) {
-            UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
+            UndoManager::getInstance().beginCompoundOperation(
+                isMultiClipGhosting_ ? "Duplicate Clips as Ghosts" : "Duplicate Clips");
         }
 
         std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
@@ -294,7 +301,8 @@ void TrackContentPanel::finishMultiClipDrag() {
             TrackId targetTrackId = visibleTrackIds_[static_cast<size_t>(targetIdx)];
             const double bpm = getTempo();
             auto cmd = std::make_unique<DuplicateClipCommand>(
-                dragInfo.clipId, BeatPosition{newStartTime * bpm / 60.0}, targetTrackId, bpm);
+                dragInfo.clipId, BeatPosition{newStartTime * bpm / 60.0}, targetTrackId, bpm, -1,
+                isMultiClipGhosting_);
             commands.push_back(std::move(cmd));
         }
 
@@ -342,6 +350,7 @@ void TrackContentPanel::finishMultiClipDrag() {
     // Clean up
     isMovingMultipleClips_ = false;
     isMultiClipDuplicating_ = false;
+    isMultiClipGhosting_ = false;
     anchorClipId_ = INVALID_CLIP_ID;
     multiClipDragInfos_.clear();
     multiClipDuplicateIds_.clear();
@@ -376,6 +385,7 @@ void TrackContentPanel::cancelMultiClipDrag() {
 
     isMovingMultipleClips_ = false;
     isMultiClipDuplicating_ = false;
+    isMultiClipGhosting_ = false;
     anchorClipId_ = INVALID_CLIP_ID;
     multiClipDragInfos_.clear();
     multiClipDuplicateIds_.clear();

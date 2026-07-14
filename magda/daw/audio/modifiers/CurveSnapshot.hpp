@@ -35,6 +35,10 @@ struct CurveSnapshot {
     CurvePreset preset = CurvePreset::Triangle;
     bool hasCustomPoints = false;
     bool oneShot = false;
+    // Level-envelope curve: the applied output is (1 - curve value). See
+    // ModInfo::invertOutput. Applied at the evaluateCallback return, so the
+    // stored points and the UI phase indicator stay on the drawn curve.
+    bool invertOutput = false;
 
     // MSEG loop region. When useLoopRegion is set, the intro [0, loopStart)
     // plays once, then [loopStart, loopEnd] repeats indefinitely.
@@ -84,6 +88,17 @@ struct CurveSnapshot {
         if (count > 0)
             return points[static_cast<size_t>(count - 1)].value;
         return evaluatePreset(preset, 1.0f);
+    }
+
+    /**
+     * @brief Map a curve value to the applied modulator output.
+     *
+     * Identity normally; (1 - value) for level-envelope curves so an inactive
+     * modifier (TE forces output 0 when gated / untriggered) means "no
+     * attenuation" while the drawn curve reads as the audible level.
+     */
+    float applyOutput(float value) const {
+        return invertOutput ? 1.0f - value : value;
     }
 
     /**
@@ -244,6 +259,7 @@ struct CurveSnapshotHolder {
         back->preset = modInfo.curvePreset;
         back->hasCustomPoints = !modInfo.curvePoints.empty();
         back->oneShot = modInfo.oneShot;
+        back->invertOutput = modInfo.invertOutput;
         back->useLoopRegion = modInfo.useLoopRegion;
         back->loopStart = modInfo.loopStart;
         back->loopEnd = modInfo.loopEnd;
@@ -319,7 +335,7 @@ struct CurveSnapshotHolder {
             // played through. With a loop, the region sustains instead.
             if (snap->oneShot && !looping &&
                 holder->oneShotCompleted_.load(std::memory_order_relaxed))
-                return snap->endValue();
+                return snap->applyOutput(snap->endValue());
 
             // Accumulate phase delta to advance the cumulative position.
             float prev = holder->previousPhase_.load(std::memory_order_relaxed);
@@ -341,7 +357,7 @@ struct CurveSnapshotHolder {
                     holder->cumulativePhase_.store(cum, std::memory_order_relaxed);
                     if (snap->oneShot && !looping && cum >= 1.0f) {
                         holder->oneShotCompleted_.store(true, std::memory_order_relaxed);
-                        return snap->endValue();
+                        return snap->applyOutput(snap->endValue());
                     }
                 }
             }
@@ -351,11 +367,11 @@ struct CurveSnapshotHolder {
                                       ? cum  // intro segment, plays once
                                       : snap->loopStart + std::fmod(cum - snap->loopStart, loopLen);
                 holder->lastEffectivePhase_.store(eff, std::memory_order_relaxed);
-                return snap->evaluate(eff);
+                return snap->applyOutput(snap->evaluate(eff));
             }
         }
 
-        return snap->evaluate(phase);
+        return snap->applyOutput(snap->evaluate(phase));
     }
 };
 

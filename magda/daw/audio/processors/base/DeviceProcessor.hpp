@@ -54,6 +54,8 @@ class DeviceProcessor {
 
     void setBypassed(bool bypassed);
     bool isBypassed() const;
+    void setDeltaSolo(bool deltaSolo);
+    bool isDeltaSolo() const;
 
     virtual void syncFromDeviceInfo(const DeviceInfo& info);
     virtual void syncToDeviceInfo(DeviceInfo& info) const;

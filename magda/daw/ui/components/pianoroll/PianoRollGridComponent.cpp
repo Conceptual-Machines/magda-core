@@ -712,7 +712,8 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    if (e.mods.isShiftDown() && onNoteAdded) {
+    // Alt is the note pencil (Shift is the scroll modifier now).
+    if (e.mods.isAltDown() && onNoteAdded) {
         auto insertPos = getNoteInsertPosition(e.getPosition());
         if (insertPos.has_value()) {
             const auto* clip = ClipManager::getInstance().getClip(insertPos->clipId);
@@ -741,8 +742,9 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
     dragSelectStart_ = e.getPosition();
     dragSelectEnd_ = e.getPosition();
     isDragSelecting_ = false;
-    // Plain click sets the playhead snapped; Alt disables snap (free position).
-    // Alt is allowed here so an Alt+click still lands on the playhead path.
+    // Plain click sets the playhead snapped; Alt disables snap (free
+    // position). An Alt+click that doesn't land on a drawable note cell
+    // (the pencil branch above returns) still reaches the playhead path.
     isPendingPlayheadClick_ = !e.mods.isShiftDown() && !e.mods.isCommandDown();
     playheadClickNoSnap_ = e.mods.isAltDown();
     playheadClickStart_ = e.getPosition();
@@ -1061,7 +1063,7 @@ void PianoRollGridComponent::mouseWheelMove(const juce::MouseEvent& e,
     const auto gesture = GestureRouter::getInstance().resolve(GestureContext::PianoRoll, wheel,
                                                               e.mods, e.getPosition());
     if (gesture.type == GestureActionType::ZoomVertical && onVerticalZoomRequested) {
-        onVerticalZoomRequested(e.y, wheel);
+        onVerticalZoomRequested(e.y, gesture.magnitude);
         return;
     }
 
@@ -2041,11 +2043,18 @@ double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const
 }
 
 void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int /*mouseX*/) {
-    if (mods.isShiftDown()) {
+    if (mods.isAltDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
+}
+
+void PianoRollGridComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    // Pressing/releasing Alt while hovering must swap the pencil cursor
+    // without waiting for a mouse move.
+    if (isMouseOver() && !juce::Component::isMouseButtonDownAnywhere())
+        updateEmptyGridCursor(modifiers, getMouseXYRelative().x);
 }
 
 void PianoRollGridComponent::createNoteComponents() {

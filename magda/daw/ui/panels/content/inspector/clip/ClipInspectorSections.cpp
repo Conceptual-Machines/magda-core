@@ -21,6 +21,7 @@
 #include "core/Config.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TempoUtils.hpp"
+#include "core/TimeStretchModes.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -394,6 +395,56 @@ void ClipInspector::initClipPropertiesSection() {
     clipViewIcon_->setTooltip("Arrangement clip");
     addChildComponent(*clipViewIcon_);
 
+    // Ghost indicator (same link glyph as the clip header). Shown next to the
+    // name only when the selected clip mirrors a link group. Drawn as a chip
+    // (bg + border) so it reads as a state badge; mouse events stay enabled
+    // so the tooltip shows, but there is no click action.
+    clipGhostIcon_ = std::make_unique<magda::SvgButton>("Ghost", BinaryData::link_flat_svg,
+                                                        BinaryData::link_flat_svgSize);
+    clipGhostIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipGhostIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipGhostIcon_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
+    clipGhostIcon_->setBorderColor(juce::Colour(0xff555555));
+    clipGhostIcon_->setBorderThickness(1.0f);
+    clipGhostIcon_->setCornerRadius(4.0f);
+    clipGhostIcon_->setIconPadding(3.0f);
+    clipGhostIcon_->setTooltip("Ghost clip");
+    addChildComponent(*clipGhostIcon_);
+
+    // Clip enable/disable toggle (#1736). Classic switch glyph in dual-icon
+    // mode: knob left / outline = off, knob right / filled = on — state
+    // reads from the icon itself, no colour coding. Drives the same clip
+    // state as the clip-editor header power toggle.
+    clipEnabledToggle_ = std::make_unique<magda::SvgButton>(
+        "ClipEnabled", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
+        BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
+    // Chip-style bordered button, matching the view|type chip next to it.
+    clipEnabledToggle_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
+    clipEnabledToggle_->setBorderColor(juce::Colour(0xff555555));
+    clipEnabledToggle_->setBorderThickness(1.0f);
+    clipEnabledToggle_->setIconPadding(2.0f);
+    clipEnabledToggle_->setClickingTogglesState(false);
+    clipEnabledToggle_->setTooltip("Enable/disable clip");
+    clipEnabledToggle_->onClick = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
+        if (!clip)
+            return;
+
+        const bool newState = !clip->enabled;
+        clipEnabledToggle_->setActive(newState);
+        magda::ClipBatchEdit batch("Enable/Disable Clips", selectedClipIds_.size());
+        for (auto cid : selectedClipIds_) {
+            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
+                cid, newState ? "Enable Clip" : "Disable Clip",
+                [newState](auto& manager, magda::ClipId id) {
+                    manager.setClipEnabled(id, newState);
+                }));
+        }
+    };
+    addChildComponent(*clipEnabledToggle_);
+
     // Source BPM (editable — shown at bottom with WARP/BEAT buttons)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
     clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
@@ -636,9 +687,9 @@ void ClipInspector::initClipPropertiesSection() {
     // Loop toggle: borderless single icon, recoloured by state. Off = grey
     // glyph, no fill; engaged = solid blue chip with a white glyph. Matches the
     // clip-editor header loop toggle (both drive the same clip loop).
-    clipLoopToggle_ =
-        std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
-    clipLoopToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
+                                                         BinaryData::loop_icon_svgSize);
+    clipLoopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipLoopToggle_->setActiveColor(juce::Colours::white);
     clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
@@ -887,9 +938,10 @@ void ClipInspector::initClipPropertiesSection() {
     stretchModeCombo_.setColour(juce::ComboBox::outlineColourId,
                                 DarkTheme::getColour(DarkTheme::BORDER));
     // Mode values match TimeStretcher::Mode enum (combo ID = mode + 1)
-    stretchModeCombo_.addItem("Off", 1);            // disabled = 0
-    stretchModeCombo_.addItem("SoundTouch", 4);     // soundtouchNormal = 3
-    stretchModeCombo_.addItem("SoundTouch HQ", 5);  // soundtouchBetter = 4
+    stretchModeCombo_.addItem("Off", time_stretch_mode::kDisabled + 1);
+    stretchModeCombo_.addItem("Signalsmith", time_stretch_mode::kSignalsmith + 1);
+    stretchModeCombo_.addItem("SoundTouch", time_stretch_mode::kSoundTouchNormal + 1);
+    stretchModeCombo_.addItem("SoundTouch HQ", time_stretch_mode::kSoundTouchBetter + 1);
     stretchModeCombo_.setSelectedId(1, juce::dontSendNotification);
     stretchModeCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())
@@ -1809,8 +1861,6 @@ void ClipInspector::initPlaybackSection() {
         if (bridge) {
             bridge->setTransientSensitivity(
                 primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
-            // Notify listeners so WaveformEditorContent requests fresh callback-driven transients.
-            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
         }
     };
     clipPropsContainer_.addChildComponent(*transientSensitivityValue_);
