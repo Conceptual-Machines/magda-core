@@ -1656,10 +1656,19 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         case toggleClipEnabled: {
             const auto selectedClips = selectionManager.getSelectedClips();
             if (!selectedClips.empty()) {
-                UndoManager::getInstance().beginCompoundOperation("Enable/Disable Clips");
+                // Uniform set: the anchor clip (the inspector's "primary" =
+                // first in the selection set) decides the target state, so a
+                // mixed selection ends up uniform instead of inverting per
+                // clip.
+                const auto* anchor = clipManager.getClip(*selectedClips.begin());
+                if (anchor == nullptr)
+                    return true;
+                const bool newState = !anchor->enabled;
+                UndoManager::getInstance().beginCompoundOperation(newState ? "Enable Clips"
+                                                                           : "Disable Clips");
                 for (auto clipId : selectedClips) {
-                    if (const auto* clip = clipManager.getClip(clipId)) {
-                        const bool newState = !clip->enabled;
+                    const auto* clip = clipManager.getClip(clipId);
+                    if (clip != nullptr && clip->enabled != newState) {
                         UndoManager::getInstance().executeCommand(
                             std::make_unique<SetClipPropertyCommand>(
                                 clipId, newState ? "Enable Clip" : "Disable Clip",

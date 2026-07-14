@@ -3531,23 +3531,31 @@ void ClipComponent::showContextMenu() {
             }
 
             case 27: {  // Enable/Disable Clip(s) (#1736)
+                // Uniform set: the clicked clip decides the target state (the
+                // same clip whose state decides the menu label), so a mixed
+                // selection ends up uniform instead of each clip inverting.
+                const auto* clicked = clipManager.getClip(clipId_);
+                if (!clicked)
+                    break;
+                const bool newState = !clicked->enabled;
                 std::vector<ClipId> targets;
                 if (selectionManager.getSelectedClipCount() > 1 &&
                     selectionManager.isClipSelected(clipId_)) {
-                    for (auto cid : selectionManager.getSelectedClips())
-                        targets.push_back(cid);
+                    for (auto cid : selectionManager.getSelectedClips()) {
+                        const auto* c = clipManager.getClip(cid);
+                        if (c && c->enabled != newState)
+                            targets.push_back(cid);
+                    }
                 } else {
                     targets.push_back(clipId_);
                 }
+                if (targets.empty())
+                    break;
                 auto& undoManager = UndoManager::getInstance();
                 const bool compound = targets.size() > 1;
                 if (compound)
-                    undoManager.beginCompoundOperation("Enable/Disable Clips");
+                    undoManager.beginCompoundOperation(newState ? "Enable Clips" : "Disable Clips");
                 for (auto cid : targets) {
-                    const auto* c = clipManager.getClip(cid);
-                    if (!c)
-                        continue;
-                    const bool newState = !c->enabled;
                     undoManager.executeCommand(std::make_unique<SetClipPropertyCommand>(
                         cid, newState ? "Enable Clip" : "Disable Clip",
                         [newState](auto& manager, ClipId id) {

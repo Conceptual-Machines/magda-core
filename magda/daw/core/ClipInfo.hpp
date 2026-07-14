@@ -41,6 +41,8 @@ enum class FadeCurve : int { Linear = 1, Convex = 2, Concave = 3, SCurve = 4 };
 struct MidiPitchExpressionPoint {
     double beat = 0.0;       // Position relative to note start (0..note length)
     double semitones = 0.0;  // Pitch offset in semitones (-48..+48)
+
+    bool operator==(const MidiPitchExpressionPoint&) const = default;
 };
 
 /**
@@ -59,6 +61,8 @@ struct MidiNote {
     bool hasPitchExpression() const {
         return !pitchExpression.empty();
     }
+
+    bool operator==(const MidiNote&) const = default;
 };
 
 /**
@@ -73,6 +77,8 @@ struct MidiCurveHandle {
     double dx = 0.0;     // Beat offset from parent point
     double dy = 0.0;     // Normalized value offset from parent point
     bool linked = true;  // Mirror handles when one is moved
+
+    bool operator==(const MidiCurveHandle&) const = default;
 };
 
 /**
@@ -86,6 +92,8 @@ struct MidiCCData {
     double tension = 0.0;  // -3 to +3 curve shape
     MidiCurveHandle inHandle;
     MidiCurveHandle outHandle;
+
+    bool operator==(const MidiCCData&) const = default;
 };
 
 /**
@@ -98,6 +106,8 @@ struct MidiPitchBendData {
     double tension = 0.0;  // -3 to +3 curve shape
     MidiCurveHandle inHandle;
     MidiCurveHandle outHandle;
+
+    bool operator==(const MidiPitchBendData&) const = default;
 };
 
 /**
@@ -119,6 +129,8 @@ struct ClipPlacement {
 struct AudioSourceFacts {
     juce::String filePath;
     double durationSeconds = 0.0;
+
+    bool operator==(const AudioSourceFacts&) const = default;
 };
 
 struct AudioSourceInterpretation {
@@ -131,6 +143,8 @@ struct AudioSourceInterpretation {
     // unknown; keyRoot is "C" / "C#" / ... / "B" or empty.
     std::string keyRoot;
     std::string keyScale;
+
+    bool operator==(const AudioSourceInterpretation&) const = default;
 };
 
 /**
@@ -149,6 +163,8 @@ struct AudioSourceInterpretation {
 struct AudioTake {
     juce::String filePath;
     double durationSeconds = 0.0;
+
+    bool operator==(const AudioTake&) const = default;
 };
 
 /**
@@ -162,6 +178,8 @@ struct CompSection {
     double startSeconds = 0.0;
     double endSeconds = 0.0;
     int takeIndex = 0;
+
+    bool operator==(const CompSection&) const = default;
 };
 
 struct AudioClipModel {
@@ -179,6 +197,8 @@ struct AudioClipModel {
     // assigns a take to each region of the comp timeline. Empty comp = no comp.
     std::vector<CompSection> comp;
     bool compActive = false;
+
+    bool operator==(const AudioClipModel&) const = default;
 };
 
 /**
@@ -192,6 +212,8 @@ struct MidiTake {
     std::vector<MidiNote> notes;
     std::vector<MidiCCData> cc;
     std::vector<MidiPitchBendData> pitchBend;
+
+    bool operator==(const MidiTake&) const = default;
 };
 
 /**
@@ -206,6 +228,8 @@ struct MidiCompSection {
     double startBeat = 0.0;
     double endBeat = 0.0;
     int takeIndex = 0;
+
+    bool operator==(const MidiCompSection&) const = default;
 };
 
 struct MidiClipModel {
@@ -224,6 +248,8 @@ struct MidiClipModel {
     // single take. Empty comp = no comp.
     std::vector<MidiCompSection> comp;
     bool compActive = false;
+
+    bool operator==(const MidiClipModel&) const = default;
 };
 
 using ClipContent = std::variant<MidiClipModel, AudioClipModel>;
@@ -385,6 +411,8 @@ struct ClipInfo {
     struct WarpMarker {
         double sourceTime;
         double warpTime;
+
+        bool operator==(const WarpMarker&) const = default;
     };
     std::vector<WarpMarker> warpMarkers;
 
@@ -472,6 +500,8 @@ struct ClipInfo {
         double lengthBeats = 4.0;   // Display width (beats)
         juce::String chordName;     // Display name, e.g. "Cmaj7", "Am/E"
         int chordGroup = 0;         // 0 = unlinked, >0 = linked to notes with same ID
+
+        bool operator==(const ChordAnnotation&) const = default;
     };
     std::vector<ChordAnnotation> chordAnnotations;
     int nextChordGroupId = 1;  // Counter for generating unique chord group IDs
@@ -552,6 +582,24 @@ struct ClipInfo {
         isReversed = src.isReversed;
         grooveTemplate = src.grooveTemplate;
         grooveStrength = src.grooveStrength;
+    }
+
+    /// True when the content-defining fields are identical: the exact set
+    /// copySharedContentFrom mirrors, kept in lockstep with it. Lets the
+    /// ghost-clip propagation skip the deep sibling copies (and the sibling
+    /// notifications) when an edit only touched per-instance state.
+    bool sharedContentEquals(const ClipInfo& src) const {
+        return name == src.name && content == src.content && midiNotes == src.midiNotes &&
+               midiCCData == src.midiCCData && midiPitchBendData == src.midiPitchBendData &&
+               chordAnnotations == src.chordAnnotations &&
+               nextChordGroupId == src.nextChordGroupId && warpEnabled == src.warpEnabled &&
+               timeStretchMode == src.timeStretchMode && warpMarkers == src.warpMarkers &&
+               autoTempo == src.autoTempo && autoPitch == src.autoPitch &&
+               analogPitch == src.analogPitch && autoPitchMode == src.autoPitchMode &&
+               pitchChange == src.pitchChange && transpose == src.transpose &&
+               autoDetectBeats == src.autoDetectBeats && beatSensitivity == src.beatSensitivity &&
+               isReversed == src.isReversed && grooveTemplate == src.grooveTemplate &&
+               grooveStrength == src.grooveStrength;
     }
 
     /// Derive startTime/length from placement beats using the given BPM.

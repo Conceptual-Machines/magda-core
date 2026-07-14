@@ -2,11 +2,60 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../core/Config.hpp"
+
 namespace magda {
 
 namespace te = tracktion;
 
-ExternalInsertDeviceEnablement::ExternalInsertDeviceEnablement(te::Edit& edit) : edit_(edit) {}
+ExternalInsertDeviceEnablement::ExternalInsertDeviceEnablement(te::Edit& edit) : edit_(edit) {
+    // Restore the auto-enabled set: TE persists device enablement globally,
+    // so a port auto-enabled last session comes back enabled at startup and
+    // must still count as auto-enabled, not user-enabled.
+    for (const auto& name : Config::getInstance().getAutoEnabledInsertInputs())
+        autoEnabledInputs_.insert(juce::String(name));
+    for (const auto& name : Config::getInstance().getAutoEnabledInsertOutputs())
+        autoEnabledOutputs_.insert(juce::String(name));
+}
+
+ExternalInsertDeviceEnablement::PortAction ExternalInsertDeviceEnablement::reconcilePort(
+    bool usedByInsert, bool portEnabled, bool trackedAsAuto) {
+    PortAction action;
+    if (usedByInsert) {
+        if (!portEnabled) {
+            action.changeEnabled = true;
+            action.enabled = true;
+            action.trackAsAuto = true;
+        } else {
+            // Already enabled: it stays auto-tracked only if WE enabled it
+            // (this session or, via the persisted set, a previous one). A
+            // user-enabled port is never auto-disabled later.
+            action.trackAsAuto = trackedAsAuto;
+        }
+    } else {
+        if (trackedAsAuto && portEnabled) {
+            action.changeEnabled = true;
+            action.enabled = false;
+        }
+        action.trackAsAuto = false;
+    }
+    return action;
+}
+
+void ExternalInsertDeviceEnablement::persistAutoEnabledSets() const {
+    auto& config = Config::getInstance();
+    std::vector<std::string> inputs;
+    inputs.reserve(autoEnabledInputs_.size());
+    for (const auto& name : autoEnabledInputs_)
+        inputs.push_back(name.toStdString());
+    std::vector<std::string> outputs;
+    outputs.reserve(autoEnabledOutputs_.size());
+    for (const auto& name : autoEnabledOutputs_)
+        outputs.push_back(name.toStdString());
+    config.setAutoEnabledInsertInputs(inputs);
+    config.setAutoEnabledInsertOutputs(outputs);
+    config.save();
+}
 
 bool ExternalInsertDeviceEnablement::refresh() {
     auto& dm = edit_.engine.getDeviceManager();
@@ -26,42 +75,33 @@ bool ExternalInsertDeviceEnablement::refresh() {
     }
 
     bool changed = false;
+    bool setsChanged = false;
 
-    for (int i = 0; i < dm.getNumInputDevices(); ++i) {
-        auto* in = dm.getInputDevice(i);
-        if (in == nullptr)
-            continue;
-        const auto name = in->getName();
-        if (usedInputs.count(name) > 0 && !in->isEnabled()) {
-            in->setEnabled(true);
-            autoEnabledInputs_.insert(name);
+    const auto reconcile = [&](auto* device, std::set<juce::String>& autoSet,
+                               const std::set<juce::String>& used) {
+        const auto name = device->getName();
+        const auto action =
+            reconcilePort(used.count(name) > 0, device->isEnabled(), autoSet.count(name) > 0);
+        if (action.changeEnabled) {
+            device->setEnabled(action.enabled);
             changed = true;
-        } else if (usedInputs.count(name) == 0 && autoEnabledInputs_.count(name) > 0) {
-            if (in->isEnabled()) {
-                in->setEnabled(false);
-                changed = true;
-            }
-            autoEnabledInputs_.erase(name);
         }
-    }
+        if (action.trackAsAuto)
+            setsChanged = autoSet.insert(name).second || setsChanged;
+        else
+            setsChanged = (autoSet.erase(name) > 0) || setsChanged;
+    };
 
-    for (int i = 0; i < dm.getNumOutputDevices(); ++i) {
-        auto* out = dm.getOutputDeviceAt(i);
-        if (out == nullptr)
-            continue;
-        const auto name = out->getName();
-        if (usedOutputs.count(name) > 0 && !out->isEnabled()) {
-            out->setEnabled(true);
-            autoEnabledOutputs_.insert(name);
-            changed = true;
-        } else if (usedOutputs.count(name) == 0 && autoEnabledOutputs_.count(name) > 0) {
-            if (out->isEnabled()) {
-                out->setEnabled(false);
-                changed = true;
-            }
-            autoEnabledOutputs_.erase(name);
-        }
-    }
+    for (int i = 0; i < dm.getNumInputDevices(); ++i)
+        if (auto* in = dm.getInputDevice(i))
+            reconcile(in, autoEnabledInputs_, usedInputs);
+
+    for (int i = 0; i < dm.getNumOutputDevices(); ++i)
+        if (auto* out = dm.getOutputDeviceAt(i))
+            reconcile(out, autoEnabledOutputs_, usedOutputs);
+
+    if (setsChanged)
+        persistAutoEnabledSets();
 
     if (changed) {
         // A just-enabled device only resolves in the inserts after

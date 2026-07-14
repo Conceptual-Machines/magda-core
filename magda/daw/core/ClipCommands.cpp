@@ -750,10 +750,9 @@ void DuplicateClipCommand::undo() {
 
     // If the ghost duplicate created the source's link group, revert the
     // source to unlinked — unless the group gained other members meanwhile.
-    if (asGhost_ && sourceWasUnlinked_ && !clipManager.isGhostClip(sourceClipId_)) {
-        if (auto* source = clipManager.getClip(sourceClipId_))
-            source->linkGroupId = 0;
-    }
+    // makeClipUnique keeps the manager's link-group index in step.
+    if (asGhost_ && sourceWasUnlinked_ && !clipManager.isGhostClip(sourceClipId_))
+        clipManager.makeClipUnique(sourceClipId_);
 
     duplicatedClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();

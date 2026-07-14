@@ -928,9 +928,27 @@ class ClipManager {
     int ensureLinkGroup(ClipInfo& clip);
 
     /// Mirror the clip's shared content to all link-group siblings (no-op when
-    /// unlinked). Returns the sibling ids that were updated so the notify
-    /// funnel can include them in the same pass.
+    /// unlinked, or when the notification didn't touch shared content).
+    /// Returns the sibling ids that were updated so the notify funnel can
+    /// include them in the same pass.
     std::vector<ClipId> propagateLinkGroupContent(ClipId clipId);
+
+    // Fast linkGroupId -> members lookup (members sorted by ClipId, i.e.
+    // creation order). isGhostClip / getLinkGroupIndex are called several
+    // times per clip paint, so scanning all clips made full repaints O(n^2).
+    // Maintained on every add / remove / link change inside the manager;
+    // silent writes from outside (undo snapshot restores assign whole
+    // ClipInfo structs) are reconciled in the notify funnels: per-clip in
+    // notifyClipPropertyChanged, full rebuild in notifyClipsChanged. Project
+    // load funnels through clearAllClips + restoreClip, which rebuild it.
+    std::unordered_map<int, std::vector<ClipId>> linkGroupMembers_;
+    std::unordered_map<ClipId, int> indexedGroupOf_;  // group recorded per clip
+
+    /// Record `clipId` as belonging to `groupId` (0 = unlinked), moving it
+    /// between member buckets as needed. No-op when already recorded.
+    void indexClipGroup(ClipId clipId, int groupId);
+    /// Rebuild both maps from clips_ (silent-write reconciliation).
+    void rebuildLinkGroupIndex();
 
     // Notification helpers (public so scheduler can emit state changes)
   public:

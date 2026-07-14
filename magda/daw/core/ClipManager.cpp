@@ -500,6 +500,7 @@ void ClipManager::deleteClip(ClipId clipId) {
     }
 
     removeFromSessionSlotIndex(it->second);
+    indexClipGroup(clipId, 0);
     clips_.erase(it);
     notifyClipsChanged();
 }
@@ -510,6 +511,7 @@ void ClipManager::restoreClip(const ClipInfo& clipInfo) {
 
     clips_[clipInfo.id] = clipInfo;
     addToSessionSlotIndex(clips_[clipInfo.id]);
+    indexClipGroup(clipInfo.id, clipInfo.linkGroupId);
 
     // Ensure nextClipId_ is beyond any restored clip IDs
     if (clipInfo.id >= nextClipId_) {
@@ -923,6 +925,7 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     }
     clips_[newClip.id] = newClip;
     addToSessionSlotIndex(clips_[newClip.id]);
+    indexClipGroup(newClip.id, newClip.linkGroupId);
 
     if (newClip.view == ClipView::Arrangement)
         resolveOverlaps(newClip.id);
@@ -960,6 +963,7 @@ ClipId ClipManager::duplicateClipAtBeats(ClipId clipId, double startBeat, TrackI
         clips_[newClip.id] = newClip;
     }
     addToSessionSlotIndex(clips_[newClip.id]);
+    indexClipGroup(newClip.id, newClip.linkGroupId);
 
     if (newClip.view == ClipView::Arrangement)
         resolveOverlaps(newClip.id);
@@ -979,8 +983,10 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
 // ============================================================================
 
 int ClipManager::ensureLinkGroup(ClipInfo& clip) {
-    if (clip.linkGroupId == 0)
+    if (clip.linkGroupId == 0) {
         clip.linkGroupId = nextLinkGroupId_++;
+        indexClipGroup(clip.id, clip.linkGroupId);
+    }
     return clip.linkGroupId;
 }
 
@@ -1020,11 +1026,14 @@ std::vector<ClipId> ClipManager::getLinkGroupSiblings(ClipId clipId) const {
     auto it = clips_.find(clipId);
     if (it == clips_.end() || it->second.linkGroupId == 0)
         return {};
+    auto groupIt = linkGroupMembers_.find(it->second.linkGroupId);
+    if (groupIt == linkGroupMembers_.end())
+        return {};
     std::vector<ClipId> siblings;
-    for (const auto& [id, other] : clips_) {
-        if (id != clipId && other.linkGroupId == it->second.linkGroupId)
+    siblings.reserve(groupIt->second.size());
+    for (ClipId id : groupIt->second)
+        if (id != clipId)
             siblings.push_back(id);
-    }
     return siblings;
 }
 
@@ -1032,41 +1041,84 @@ bool ClipManager::isGhostClip(ClipId clipId) const {
     auto it = clips_.find(clipId);
     if (it == clips_.end() || it->second.linkGroupId == 0)
         return false;
-    for (const auto& [id, other] : clips_) {
-        if (id != clipId && other.linkGroupId == it->second.linkGroupId)
-            return true;
-    }
-    return false;
+    auto groupIt = linkGroupMembers_.find(it->second.linkGroupId);
+    return groupIt != linkGroupMembers_.end() && groupIt->second.size() > 1;
 }
 
 int ClipManager::getLinkGroupIndex(ClipId clipId) const {
     auto it = clips_.find(clipId);
     if (it == clips_.end() || it->second.linkGroupId == 0)
         return 0;
-    int index = 1;
-    int members = 1;
-    for (const auto& [id, other] : clips_) {
-        if (id == clipId || other.linkGroupId != it->second.linkGroupId)
-            continue;
-        ++members;
-        if (id < clipId)
-            ++index;
-    }
-    return members > 1 ? index : 0;
+    auto groupIt = linkGroupMembers_.find(it->second.linkGroupId);
+    if (groupIt == linkGroupMembers_.end() || groupIt->second.size() < 2)
+        return 0;
+    const auto& members = groupIt->second;  // sorted by ClipId = creation order
+    const auto pos = std::lower_bound(members.begin(), members.end(), clipId);
+    if (pos == members.end() || *pos != clipId)
+        return 0;
+    return static_cast<int>(pos - members.begin()) + 1;
 }
 
 std::vector<ClipId> ClipManager::propagateLinkGroupContent(ClipId clipId) {
     auto* clip = getClip(clipId);
     if (clip == nullptr || clip->linkGroupId == 0)
         return {};
+    auto groupIt = linkGroupMembers_.find(clip->linkGroupId);
+    if (groupIt == linkGroupMembers_.end())
+        return {};
     std::vector<ClipId> siblings;
-    for (auto& [id, other] : clips_) {
-        if (id == clipId || other.linkGroupId != clip->linkGroupId)
+    for (ClipId id : groupIt->second) {
+        if (id == clipId)
             continue;
-        other.copySharedContentFrom(*clip);
+        auto it = clips_.find(id);
+        if (it == clips_.end())
+            continue;
+        // Members are kept in lockstep, so ONE comparison decides whether
+        // this notification touched shared content at all: per-instance
+        // edits (colour, mix, loop window, per-tick drags) skip the deep
+        // copies and the sibling notifications entirely.
+        if (siblings.empty() && it->second.sharedContentEquals(*clip))
+            return {};
+        it->second.copySharedContentFrom(*clip);
         siblings.push_back(id);
     }
     return siblings;
+}
+
+void ClipManager::indexClipGroup(ClipId clipId, int groupId) {
+    const auto recorded = indexedGroupOf_.find(clipId);
+    const int oldGroup = recorded != indexedGroupOf_.end() ? recorded->second : 0;
+    if (oldGroup == groupId)
+        return;
+    if (oldGroup != 0) {
+        auto bucketIt = linkGroupMembers_.find(oldGroup);
+        if (bucketIt != linkGroupMembers_.end()) {
+            auto& members = bucketIt->second;
+            members.erase(std::remove(members.begin(), members.end(), clipId), members.end());
+            if (members.empty())
+                linkGroupMembers_.erase(bucketIt);
+        }
+    }
+    if (groupId != 0) {
+        auto& members = linkGroupMembers_[groupId];
+        members.insert(std::upper_bound(members.begin(), members.end(), clipId), clipId);
+        indexedGroupOf_[clipId] = groupId;
+    } else {
+        indexedGroupOf_.erase(clipId);
+    }
+}
+
+void ClipManager::rebuildLinkGroupIndex() {
+    linkGroupMembers_.clear();
+    indexedGroupOf_.clear();
+    for (const auto& [id, clip] : clips_) {
+        if (clip.linkGroupId != 0) {
+            linkGroupMembers_[clip.linkGroupId].push_back(id);
+            indexedGroupOf_[id] = clip.linkGroupId;
+        }
+    }
+    for (auto& [groupId, members] : linkGroupMembers_)
+        std::sort(members.begin(), members.end());
 }
 
 void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
@@ -1236,6 +1288,7 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
             // (midiOffset / offset) and keep their group.
             clip->linkGroupId = 0;
             rightClip.linkGroupId = 0;
+            indexClipGroup(clip->id, 0);
         }
     }
 
@@ -1323,6 +1376,7 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
     // Add right clip to the clip pool
     clips_[rightClip.id] = rightClip;
     addToSessionSlotIndex(clips_[rightClip.id]);
+    indexClipGroup(rightClip.id, rightClip.linkGroupId);
 
     // Left clip mutated in place (length, midiNotes, loop range, fades, beats);
     // notifyClipsChanged carries only structural info (right clip added), so the
@@ -3034,6 +3088,11 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
 // ============================================================================
 
 void ClipManager::notifyClipsChanged() {
+    // Structural changes may have assigned whole ClipInfo structs outside the
+    // manager (undo snapshot restores); re-derive the link-group index before
+    // listeners query it.
+    rebuildLinkGroupIndex();
+
     // Make a copy because listeners may be removed during iteration
     // (e.g., ClipComponent destroyed when TrackContentPanel rebuilds)
     auto listenersCopy = listeners_;
@@ -3047,8 +3106,13 @@ void ClipManager::notifyClipsChanged() {
 void ClipManager::notifyClipPropertyChanged(ClipId clipId) {
     // Keep the active take in sync with piano-roll edits before notifying, so
     // per-take edits are preserved across take switches (#1465/#1466).
-    if (auto* clip = getClip(clipId))
+    // Reconcile the link-group index first: commands restore whole ClipInfo
+    // snapshots (linkGroupId included) outside the manager, and this funnel
+    // is their notification contract.
+    if (auto* clip = getClip(clipId)) {
+        indexClipGroup(clipId, clip->linkGroupId);
         syncActiveMidiTake(*clip);
+    }
 
     // Ghost clips: every content edit funnels through here, so mirror the
     // shared fields to the link-group siblings and notify them in the same
@@ -3378,6 +3442,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                 // clipboard so cross-project pastes come in unlinked. Ghosts
                 // keep the source name (they are the same content).
                 newClip->linkGroupId = clipData.linkGroupId;
+                indexClipGroup(newClipId, newClip->linkGroupId);
                 newClip->name =
                     clipData.linkGroupId != 0 ? clipData.name : clipData.name + " (copy)";
                 if (clipData.trackId != INVALID_TRACK_ID) {

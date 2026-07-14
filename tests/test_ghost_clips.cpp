@@ -208,6 +208,92 @@ TEST_CASE("Content edits propagate to link-group siblings", "[clip][ghost]") {
     }
 }
 
+TEST_CASE("Per-instance edits do not propagate or notify siblings", "[clip][ghost]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+    ClipId a = createMidi(track, 0.0, 2.0, {0.0});
+    ClipId b = cm.duplicateClipAsGhostAtBeats(a, 8.0);
+
+    SECTION("per-instance edit: no sibling copy, no sibling notification") {
+        auto* clipA = cm.getClip(a);
+        clipA->volumeDB = -6.0f;
+        clipA->colour = juce::Colour(0xFF123456);
+        clipA->loopEnabled = true;
+        clipA->loopLengthBeats = 1.0;
+
+        GhostRecordingListener listener;
+        cm.addListener(&listener);
+        cm.forceNotifyClipPropertyChanged(a);
+        cm.removeListener(&listener);
+
+        REQUIRE(listener.sawPropertyChangeFor(a));
+        REQUIRE_FALSE(listener.sawPropertyChangeFor(b));
+        REQUIRE(cm.getClip(b)->volumeDB == Catch::Approx(0.0f));
+        REQUIRE_FALSE(cm.getClip(b)->loopEnabled);
+    }
+
+    SECTION("shared-content edit: siblings copied and notified") {
+        auto* clipA = cm.getClip(a);
+        clipA->midiNotes[0].noteNumber = 65;
+
+        GhostRecordingListener listener;
+        cm.addListener(&listener);
+        cm.forceNotifyClipPropertyChanged(a);
+        cm.removeListener(&listener);
+
+        REQUIRE(listener.sawPropertyChangeFor(a));
+        REQUIRE(listener.sawPropertyChangeFor(b));
+        REQUIRE(cm.getClip(b)->midiNotes[0].noteNumber == 65);
+    }
+}
+
+TEST_CASE("Link-group index stays consistent through the group lifecycle", "[clip][ghost]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+    ClipId a = createMidi(track, 0.0, 2.0, {0.0});
+    ClipId b = cm.duplicateClipAsGhostAtBeats(a, 8.0);
+    ClipId c = cm.duplicateClipAsGhostAtBeats(a, 16.0);
+
+    // Create + link
+    REQUIRE(cm.isGhostClip(a));
+    REQUIRE(cm.getLinkGroupIndex(a) == 1);
+    REQUIRE(cm.getLinkGroupIndex(b) == 2);
+    REQUIRE(cm.getLinkGroupIndex(c) == 3);
+    REQUIRE(cm.getLinkGroupSiblings(b) == std::vector<ClipId>{a, c});
+
+    // Detach
+    cm.makeClipUnique(b);
+    REQUIRE_FALSE(cm.isGhostClip(b));
+    REQUIRE(cm.getLinkGroupIndex(b) == 0);
+    REQUIRE(cm.getLinkGroupIndex(a) == 1);
+    REQUIRE(cm.getLinkGroupIndex(c) == 2);
+
+    // Delete + undo-style restore
+    const ClipInfo snapshotC = *cm.getClip(c);
+    cm.deleteClip(c);
+    REQUIRE_FALSE(cm.isGhostClip(a));  // group now inert
+    REQUIRE(cm.getLinkGroupSiblings(a).empty());
+    cm.restoreClip(snapshotC);
+    REQUIRE(cm.isGhostClip(a));
+    REQUIRE(cm.isGhostClip(c));
+    REQUIRE(cm.getLinkGroupSiblings(a) == std::vector<ClipId>{c});
+
+    // Silent write outside the manager (the undo snapshot-restore pattern):
+    // the notify funnel must reconcile the index.
+    auto* clipC = cm.getClip(c);
+    const int groupId = clipC->linkGroupId;
+    clipC->linkGroupId = 0;
+    cm.forceNotifyClipPropertyChanged(c);
+    REQUIRE_FALSE(cm.isGhostClip(c));
+    REQUIRE_FALSE(cm.isGhostClip(a));
+    clipC->linkGroupId = groupId;
+    cm.forceNotifyClipPropertyChanged(c);
+    REQUIRE(cm.isGhostClip(c));
+    REQUIRE(cm.isGhostClip(a));
+}
+
 // ============================================================================
 // Make unique / group lifecycle
 // ============================================================================
