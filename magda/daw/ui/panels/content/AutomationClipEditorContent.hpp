@@ -86,6 +86,19 @@ class AutomationClipEditorContent : public PanelContent,
     double horizontalZoom_ = 0.0;          // pixels per beat; 0 = fit on next layout
     juce::Rectangle<int> scaleStripArea_;  // left value scale, next to the viewport
 
+    // The ONE beats<->display-seconds conversion factor. TimeRuler's API is
+    // seconds-based but maps seconds to pixels with a constant tempo, so the
+    // editor derives every display position from beats with this bpm (set
+    // from the timeline controller in updateView) and inverts ruler gestures
+    // with the SAME value - never an ad-hoc refetch or a 120 fallback.
+    double rulerBpm_ = 120.0;
+    double beatsToDisplaySeconds(double beats) const {
+        return beats * 60.0 / rulerBpm_;
+    }
+    double displaySecondsToBeats(double seconds) const {
+        return seconds * rulerBpm_ / 60.0;
+    }
+
     // Header snap controls (reparented into the panel header bar)
     SmallButtonLookAndFeel smallButtonLF_;
     std::unique_ptr<juce::TextButton> snapXButton_, snapYButton_;

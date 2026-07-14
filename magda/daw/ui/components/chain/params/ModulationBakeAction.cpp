@@ -83,7 +83,7 @@ double midiContentEndBeats(const magda::ControlTarget& target, double bpm) {
         const auto* clip = clipManager.getClip(clipId);
         if (clip == nullptr || !clip->isMidi() || clip->view == magda::ClipView::Session)
             continue;
-        end = juce::jmax(end, clip->getStartBeats(bpm) + clip->getTimelineLength(bpm) * bpm / 60.0);
+        end = juce::jmax(end, clip->getEndBeats(bpm));
     }
     return end;
 }

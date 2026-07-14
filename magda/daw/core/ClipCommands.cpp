@@ -148,11 +148,13 @@ bool trackNeedsInsertCapture(te::Track& track) {
 // Runs the external-insert capture pass modally over [startSec, endSec]
 // (progress + Cancel), mirroring what export does: the range plays once in
 // real time while hidden taps record each routed insert's return, then the
-// taps flip to playback mode so the offline render substitutes the captures.
-// Returns false when the user cancelled; on success (true with a service),
-// call cleanupAfterRender() once the render is done — InsertCaptureScope
-// below does it on scope exit.
-bool runInsertCapturePass(TracktionEngineWrapper& engine, double startSec, double endSec) {
+// taps flip to playback mode so the offline render (at renderSampleRate)
+// substitutes the captures. Returns false when the user cancelled or the
+// capture failed; on success (true with a service), call
+// cleanupAfterRender() once the render is done - InsertCaptureScope below
+// does it on scope exit.
+bool runInsertCapturePass(TracktionEngineWrapper& engine, double startSec, double endSec,
+                          double renderSampleRate) {
     auto* service = engine.getInsertRenderCaptureService();
     if (service == nullptr)
         return true;
@@ -178,13 +180,17 @@ bool runInsertCapturePass(TracktionEngineWrapper& engine, double startSec, doubl
 
     bool finished = false;
     bool ok = false;
-    const bool started = service->startCapturePass(startSec, endSec, [&](bool success) {
-        finished = true;
-        ok = success;
-        window.exitModalState(success ? 1 : 0);
-    });
-    if (!started)
-        return true;  // nothing to capture after all
+    const bool started =
+        service->startCapturePass(startSec, endSec, renderSampleRate, [&](bool success) {
+            finished = true;
+            ok = success;
+            window.exitModalState(success ? 1 : 0);
+        });
+    if (!started) {
+        // Arming failure must abort the bounce; "no insert qualifies" (no
+        // error recorded) just means there is nothing to capture after all.
+        return service->getLastPassError() == InsertRenderCaptureService::PassError::None;
+    }
 
     window.setVisible(true);
     window.toFront(true);
@@ -2191,8 +2197,17 @@ void BounceInPlaceCommand::execute() {
     const double bounceTailSeconds = 2.0;
     InsertCaptureScope captureScope;
     if (trackNeedsInsertCapture(*teTrack)) {
+        const double renderRate = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
-                                  bounceRange.endSeconds + bounceTailSeconds)) {
+                                  bounceRange.endSeconds + bounceTailSeconds, renderRate)) {
+            // A user cancel (no recorded error) stays quiet; a real capture
+            // failure gets the toast.
+            auto* service = engine_->getInsertRenderCaptureService();
+            if (service != nullptr &&
+                service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
+                errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
+                juce::Logger::writeToLog(errorMessage_);
+            }
             restoreTransport();
             return;
         }
@@ -2204,7 +2219,8 @@ void BounceInPlaceCommand::execute() {
         teClip = clip != nullptr ? bridge->getArrangementTeClip(clipId_) : nullptr;
         teTrack = teClip != nullptr ? teClip->getTrack() : nullptr;
         if (clip == nullptr || teClip == nullptr || teTrack == nullptr) {
-            DBG("BounceInPlaceCommand: clip vanished during the capture pass");
+            errorMessage_ = "Bounce failed: the clip disappeared during the capture pass.";
+            juce::Logger::writeToLog(errorMessage_);
             restoreTransport();
             return;
         }
@@ -2463,7 +2479,14 @@ void BounceToNewTrackCommand::execute() {
     InsertCaptureScope captureScope;
     if (trackNeedsInsertCapture(*teTrack)) {
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
-                                  bounceRange.endSeconds + bounceTailSeconds)) {
+                                  bounceRange.endSeconds + bounceTailSeconds,
+                                  params.sampleRateForAudio)) {
+            auto* service = engine_->getInsertRenderCaptureService();
+            if (service != nullptr &&
+                service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
+                errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
+                juce::Logger::writeToLog(errorMessage_);
+            }
             restoreTransport();
             return;
         }
@@ -2559,6 +2582,10 @@ void FlattenMidiClipCommand::execute() {
         return;
 
     beforeSnapshot_ = *clip;
+    // Unrolling rewrites shared content, so a ghost cannot stay in its link
+    // group: the notify below would propagate the flattened note list over
+    // every sibling's windowed loop. Mirror the split detach semantics.
+    clipManager.makeClipUnique(clipId_);
     ClipOperations::flattenMidiClip(*clip);
     clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;

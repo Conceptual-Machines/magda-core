@@ -169,8 +169,15 @@ struct AutomationClipInfo {
      */
     double getEndLocalBeat() const {
         if (looping && loopLengthBeats > 0.0) {
+            // fmod of non-representable length/loop ratios lands ~1e-16 off
+            // an exact cycle boundary; treat both sides as "on the boundary"
+            // (same tolerance as the flattener's edge epsilon).
+            constexpr double kBoundaryEpsilon = 0.0001;
             double local = std::fmod(lengthBeats, loopLengthBeats);
-            return (local == 0.0 && lengthBeats > 0.0) ? loopLengthBeats : local;
+            if (lengthBeats > 0.0 &&
+                (local <= kBoundaryEpsilon || loopLengthBeats - local <= kBoundaryEpsilon))
+                return loopLengthBeats;
+            return local;
         }
         return lengthBeats;
     }

@@ -831,14 +831,17 @@ void AutomationCurveEditor::onStepStamped(double gridStart, double gridEnd, doub
     bool prevFound = false;
     bool nextExistsAtGridEnd = false;
 
+    // gridStart/gridEnd are editor-space; clip points are stored clip-local
+    // (the onPointAdded calls below subtract clipOffset_ the same way).
     auto gatherContext = [&](const std::vector<AutomationPoint>& points) {
         constexpr double kTimeEps = 1e-6;
+        const double localGridEnd = gridEnd - clipOffset_;
         for (const auto& p : points) {
             if (p.id == static_cast<AutomationPointId>(prevPointId)) {
                 originalPrevType = p.curveType;
                 prevFound = true;
             }
-            if (std::abs(p.beatPosition - gridEnd) < kTimeEps)
+            if (std::abs(p.beatPosition - localGridEnd) < kTimeEps)
                 nextExistsAtGridEnd = true;
         }
     };

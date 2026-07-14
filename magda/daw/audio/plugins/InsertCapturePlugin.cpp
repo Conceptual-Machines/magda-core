@@ -46,10 +46,14 @@ void InsertCapturePlugin::stopPlayback() {
 }
 
 void InsertCapturePlugin::initialise(const te::PluginInitialisationInfo& info) {
-    // Keep the armed rate: the writer was created against it and a mismatch
-    // here (device rate change mid-capture) is aborted by the service.
+    // Keep the armed rate: the writer was created against it. A mismatch here
+    // means the device rate changed mid-capture, so the incoming audio no
+    // longer matches the file's rate - flag the capture as failed and let the
+    // service fail the pass.
     if (!isCapturing())
         sampleRate_ = info.sampleRate;
+    else if (info.sampleRate > 0.0 && info.sampleRate != sampleRate_)
+        captureFailed_.store(true, std::memory_order_release);
     zeroBuf_.assign(static_cast<size_t>(juce::jmax(4096, info.blockSizeSamples)), 0.0f);
 }
 
@@ -90,6 +94,7 @@ bool InsertCapturePlugin::startCapture(const juce::File& wavFile, double windowS
     nextFileSample_ = 0;
     samplesWritten_.store(0, std::memory_order_relaxed);
     complete_.store(false, std::memory_order_relaxed);
+    captureFailed_.store(false, std::memory_order_relaxed);
     activeWriter_.store(threadedWriter_.get(), std::memory_order_release);
     return true;
 }
@@ -98,11 +103,14 @@ void InsertCapturePlugin::stopCapture(bool keepFile) {
     if (threadedWriter_ == nullptr)
         return;
 
-    activeWriter_.store(nullptr, std::memory_order_release);
+    activeWriter_.store(nullptr);  // seq_cst: pairs with the audio thread's
+                                   // writersInUse_ increment / writer load
     // An audio block that loaded the writer before the store may still be
-    // writing; give it comfortably more than a block's duration to finish.
-    // Callers stop the transport first, so this is belt-and-braces.
-    juce::Thread::sleep(80);
+    // writing; wait for it to release the handshake (bounded, in case the
+    // audio callback is wedged).
+    for (int i = 0; writersInUse_.load() > 0 && i < 500; ++i)
+        juce::Thread::sleep(1);
+    jassert(writersInUse_.load() == 0);
     threadedWriter_.reset();  // flushes the FIFO and finalises the wav header
     writeThread_.stopThread(2000);
 
@@ -111,7 +119,7 @@ void InsertCapturePlugin::stopCapture(bool keepFile) {
     captureFile_ = juce::File();
 }
 
-void InsertCapturePlugin::writeSilence(juce::AudioFormatWriter::ThreadedWriter& writer,
+bool InsertCapturePlugin::writeSilence(juce::AudioFormatWriter::ThreadedWriter& writer,
                                        juce::int64 numSamples) {
     const float* chans[kNumChannels];
     for (int c = 0; c < kNumChannels; ++c)
@@ -119,10 +127,12 @@ void InsertCapturePlugin::writeSilence(juce::AudioFormatWriter::ThreadedWriter& 
 
     while (numSamples > 0) {
         const auto chunk = std::min(numSamples, static_cast<juce::int64>(zeroBuf_.size()));
-        writer.write(chans, static_cast<int>(chunk));
+        if (!writer.write(chans, static_cast<int>(chunk)))
+            return false;  // FIFO full: nothing was written
         numSamples -= chunk;
         nextFileSample_ += chunk;
     }
+    return true;
 }
 
 void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
@@ -153,10 +163,21 @@ void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     }
 
     // Capture mode: transparent passthrough — never modify the buffer.
-    auto* writer = activeWriter_.load(std::memory_order_acquire);
+    // Handshake with stopCapture(): the increment must happen BEFORE the
+    // writer load (seq_cst store-load pairing) so stopCapture either sees the
+    // count and waits, or this thread sees the cleared pointer.
+    writersInUse_.fetch_add(1);
+    struct ScopedWriterUse {
+        std::atomic<int>& count;
+        ~ScopedWriterUse() {
+            count.fetch_sub(1, std::memory_order_release);
+        }
+    } scopedUse{writersInUse_};
+
+    auto* writer = activeWriter_.load();
     if (writer == nullptr || !fc.isPlaying || fc.isRendering)
         return;
-    if (complete_.load(std::memory_order_relaxed))
+    if (complete_.load(std::memory_order_relaxed) || captureFailed_.load(std::memory_order_relaxed))
         return;
 
     const auto m = mapBlockToCaptureWindow(fc.editTime.getStart().inSeconds(),
@@ -175,9 +196,14 @@ void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     auto fileStart = m.fileStartSample;
     auto bufferOffset = m.bufferOffset;
     auto numSamples = m.numSamples;
-    if (fileStart > nextFileSample_)
-        writeSilence(*writer, fileStart - nextFileSample_);
-    else if (fileStart < nextFileSample_) {
+    if (fileStart > nextFileSample_) {
+        if (!writeSilence(*writer, fileStart - nextFileSample_)) {
+            // Advancing the cursor past a refused write would time-shift the
+            // rest of the take: mark the capture failed instead.
+            captureFailed_.store(true, std::memory_order_release);
+            return;
+        }
+    } else if (fileStart < nextFileSample_) {
         const auto trim = nextFileSample_ - fileStart;
         if (trim >= numSamples)
             return;
@@ -192,7 +218,10 @@ void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                        ? fc.destBuffer->getReadPointer(c, fc.bufferStartSample + bufferOffset)
                        : zeroBuf_.data();
 
-    writer->write(chans, numSamples);
+    if (!writer->write(chans, numSamples)) {
+        captureFailed_.store(true, std::memory_order_release);
+        return;
+    }
     nextFileSample_ += numSamples;
     samplesWritten_.store(nextFileSample_, std::memory_order_relaxed);
 

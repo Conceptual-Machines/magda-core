@@ -281,14 +281,17 @@ void AutomationPlaybackEngine::clearStaleTarget(const AutomationTarget& target) 
     // Restore the user's manual value where MAGDA tracks one separately. For
     // device parameters / macros / sends there's no separate manual store, so
     // we just clear the curve and leave the parameter at whatever TE last had.
+    // setParameterFromHost: TE's setParameter drops host writes while any
+    // modifier is attached, and deleting an automated lane with an LFO linked
+    // would otherwise leave the fader pinned.
     const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
     if (track) {
         if (target.kind == ControlTarget::Kind::TrackVolume) {
             float manualDb = juce::Decibels::gainToDecibels(track->manualVolume);
-            param->setParameter(te::decibelsToVolumeFaderPosition(manualDb),
-                                juce::sendNotificationSync);
+            param->setParameterFromHost(te::decibelsToVolumeFaderPosition(manualDb),
+                                        juce::sendNotificationSync);
         } else if (target.kind == ControlTarget::Kind::TrackPan) {
-            param->setParameter(track->manualPan, juce::sendNotificationSync);
+            param->setParameterFromHost(track->manualPan, juce::sendNotificationSync);
         }
     }
 

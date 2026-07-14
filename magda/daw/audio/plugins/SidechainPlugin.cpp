@@ -18,6 +18,10 @@ float smoothingCoeff(float ms, double sampleRate) {
     return 1.0f - std::exp(-1.0f / (ms * 0.001f * static_cast<float>(sampleRate)));
 }
 
+// Upper bound on the reconstructed stair width, and on the idle counter that
+// measures it (which would otherwise grow without bound and overflow).
+constexpr int kMaxStairSamples = 4096;
+
 }  // namespace
 
 SidechainPlugin::SidechainPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
@@ -109,10 +113,8 @@ void SidechainPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         smoothingCoeff(juce::jmax(5.0f, releaseParam->getCurrentValue()), sampleRate_);
 
     const int numChannels = fc.destBuffer->getNumChannels();
-    float* channels[8] = {};
-    const int usedChannels = juce::jmin(numChannels, 8);
-    for (int ch = 0; ch < usedChannels; ++ch)
-        channels[ch] = fc.destBuffer->getWritePointer(ch, fc.bufferStartSample);
+    auto channels = fc.destBuffer->getArrayOfWritePointers();
+    const int offset = fc.bufferStartSample;
 
     // The modifier writes the gain target at a coarse quantum (one hop per
     // modifier update, several render blocks wide), so the drawn curve
@@ -123,21 +125,20 @@ void SidechainPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // within one block so the onset stays punchy. The attack/release poles
     // then only shape, they no longer have to hide discontinuities.
     if (target != lastTarget_) {
-        constexpr int kMaxStairSamples = 4096;
         const bool goingDown = target < rampValue_;
-        const int width =
-            goingDown ? fc.bufferNumSamples
-                      : juce::jlimit(fc.bufferNumSamples, kMaxStairSamples, samplesSinceChange_);
+        const int width = goingDown ? fc.bufferNumSamples
+                                    : juce::jmax(fc.bufferNumSamples,
+                                                 juce::jmin(kMaxStairSamples, samplesSinceChange_));
         rampStep_ = (target - rampValue_) / static_cast<float>(width);
         rampSamplesLeft_ = width;
         samplesSinceChange_ = 0;
         lastTarget_ = target;
     }
-    samplesSinceChange_ += fc.bufferNumSamples;
+    samplesSinceChange_ = juce::jmin(samplesSinceChange_ + fc.bufferNumSamples, kMaxStairSamples);
 
     const bool sidesOnly = juce::roundToInt(channelModeParam->getCurrentValue()) ==
                                static_cast<int>(ChannelMode::Sides) &&
-                           usedChannels >= 2;
+                           numChannels >= 2;
     float gain = currentGain_;
     for (int i = 0; i < fc.bufferNumSamples; ++i) {
         if (rampSamplesLeft_ > 0) {
@@ -150,17 +151,17 @@ void SidechainPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         const float coeff = rampValue_ < gain ? attackCoeff : releaseCoeff;
         gain += coeff * (rampValue_ - gain);
         if (sidesOnly) {
-            const float left = channels[0][i];
-            const float right = channels[1][i];
+            const float left = channels[0][offset + i];
+            const float right = channels[1][offset + i];
             const float mid = 0.5f * (left + right);
             const float side = 0.5f * (left - right) * gain;
-            channels[0][i] = mid + side;
-            channels[1][i] = mid - side;
-            for (int ch = 2; ch < usedChannels; ++ch)
-                channels[ch][i] *= gain;
+            channels[0][offset + i] = mid + side;
+            channels[1][offset + i] = mid - side;
+            for (int ch = 2; ch < numChannels; ++ch)
+                channels[ch][offset + i] *= gain;
         } else {
-            for (int ch = 0; ch < usedChannels; ++ch)
-                channels[ch][i] *= gain;
+            for (int ch = 0; ch < numChannels; ++ch)
+                channels[ch][offset + i] *= gain;
         }
     }
     currentGain_ = gain;

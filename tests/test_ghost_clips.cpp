@@ -366,6 +366,69 @@ TEST_CASE("Split behaviour on ghosts", "[clip][ghost][split]") {
     }
 }
 
+TEST_CASE("Flatten detaches the clip from its link group", "[clip][ghost]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+
+    // Looped ghost pair: flattening unrolls the loop into literal notes,
+    // which rewrites shared content, so the flattened clip must leave the
+    // group (same rule as the non-looped split detach). The sibling keeps
+    // its own windowed loop. createMidi length is seconds: 2 s = 4 beats.
+    ClipId a = createMidi(track, 0.0, 2.0, {0.0, 1.0});
+    auto* clipA = cm.getClip(a);
+    clipA->loopEnabled = true;
+    clipA->loopLengthBeats = 2.0;
+    ClipId b = cm.duplicateClipAsGhostAtBeats(a, 16.0);
+    REQUIRE(cm.isGhostClip(a));
+
+    FlattenMidiClipCommand cmd(a);
+    cmd.execute();
+
+    REQUIRE(cm.getClip(a)->linkGroupId == 0);
+    REQUIRE_FALSE(cm.getClip(a)->loopEnabled);
+    REQUIRE(cm.getClip(a)->midiNotes.size() == 4);  // two notes x two cycles
+
+    // The sibling kept its notes and loop settings, and its group is inert.
+    const auto* clipB = cm.getClip(b);
+    REQUIRE(clipB->midiNotes.size() == 2);
+    REQUIRE(clipB->loopEnabled);
+    REQUIRE(clipB->loopLengthBeats == Catch::Approx(2.0));
+    REQUIRE_FALSE(cm.isGhostClip(b));
+}
+
+TEST_CASE("Pasted whole-clip ghost adopts the group's current content",
+          "[clip][ghost][clipboard]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+    ClipId a = createMidi(track, 0.0, 2.0, {0.0});
+    ClipId b = cm.duplicateClipAsGhostAtBeats(a, 8.0);
+
+    // Copy A, then edit the group AFTER the copy: the clipboard snapshot is
+    // now stale.
+    cm.copyToClipboard({a});
+    auto* clipA = cm.getClip(a);
+    clipA->midiNotes[0].noteNumber = 65;
+    cm.forceNotifyClipPropertyChanged(a);
+
+    // Paste: the new member must adopt the group's CURRENT content; the
+    // paste notify must not push the stale snapshot over the siblings.
+    const auto pasted = cm.pasteFromClipboardBeats(32.0, track, ClipView::Arrangement);
+    REQUIRE(pasted.size() == 1);
+    const auto* pastedClip = cm.getClip(pasted.front());
+    REQUIRE(pastedClip->linkGroupId == cm.getClip(a)->linkGroupId);
+    REQUIRE(pastedClip->midiNotes[0].noteNumber == 65);
+    REQUIRE(cm.getClip(a)->midiNotes[0].noteNumber == 65);
+    REQUIRE(cm.getClip(b)->midiNotes[0].noteNumber == 65);
+
+    // A further edit on the pasted member propagates live content as usual.
+    cm.getClip(pasted.front())->midiNotes[0].noteNumber = 70;
+    cm.forceNotifyClipPropertyChanged(pasted.front());
+    REQUIRE(cm.getClip(a)->midiNotes[0].noteNumber == 70);
+    REQUIRE(cm.getClip(b)->midiNotes[0].noteNumber == 70);
+}
+
 TEST_CASE("Range copies detach from the group", "[clip][ghost][clipboard]") {
     resetState();
     auto& cm = ClipManager::getInstance();

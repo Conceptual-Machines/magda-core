@@ -9,6 +9,7 @@
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
+#include "core/TempoUtils.hpp"
 
 namespace magda::daw::ui {
 
@@ -59,10 +60,9 @@ AutomationClipEditorContent::AutomationClipEditorContent() {
         const auto* clip = getClip();
         if (clip == nullptr || !clip->looping)
             return;
-        double bpm = 120.0;
-        if (auto* tc = TimelineController::getCurrent())
-            bpm = tc->getState().tempo.bpm;
-        const double lengthBeats = displayEnd * bpm / 60.0;
+        // Invert the ruler's display mapping with the same constant the
+        // display was built from, so the committed beats are gesture-exact.
+        const double lengthBeats = displaySecondsToBeats(displayEnd);
         if (lengthBeats > 0.0) {
             magda::AutomationManager::getInstance().setClipLoopLength(selection_.clipId,
                                                                       lengthBeats);
@@ -300,9 +300,7 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
     if (trackId == magda::INVALID_TRACK_ID)
         return;
 
-    double tempo = 120.0;
-    if (auto* tc = TimelineController::getCurrent())
-        tempo = tc->getState().tempo.bpm;
+    const double tempo = rulerBpm_;
 
     // Absolute view only: in the looped (relative) view every automation
     // cycle plays against DIFFERENT arrangement content, so any single
@@ -340,7 +338,7 @@ void AutomationClipEditorContent::paintTrackGhost(juce::Graphics& g) {
             continue;
         const double cStart = c->getStartBeats(tempo);
         const double cLenSeconds = c->getTimelineLength(tempo);
-        const double cEnd = cStart + cLenSeconds * tempo / 60.0;
+        const double cEnd = c->getEndBeats(tempo);
         if (cEnd <= arrStart || cStart >= arrEnd)
             continue;
 
@@ -590,20 +588,20 @@ void AutomationClipEditorContent::updateView() {
     // Ruler: looped clips read in the clip's own timeline from bar 1 (rel
     // mode); non-looped clips read in real arrangement time (abs).
     timeRuler_->setVisible(true);
-    double bpm = 120.0;
-    double startSeconds = 0.0;
-    double lengthSeconds = span * 60.0 / bpm;
     if (auto* tc = TimelineController::getCurrent()) {
         const auto& state = tc->getState();
-        bpm = state.tempo.bpm;
+        if (magda::isValidBpm(state.tempo.bpm))
+            rulerBpm_ = state.tempo.bpm;
         timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
                                      state.tempo.timeSignatureDenominator);
         timeRuler_->setTimelineLength(state.timelineLength);
-        startSeconds = state.beatsToSeconds(clip->startBeats);
-        lengthSeconds =
-            state.beatsToSeconds(clip->startBeats + span) - state.beatsToSeconds(clip->startBeats);
     }
-    timeRuler_->setTempo(bpm);
+    // All display positions derive from beats through the one constant the
+    // ruler itself maps with (it converts seconds back to beats internally),
+    // so ruler bars stay aligned with the editor's beat grid.
+    const double startSeconds = beatsToDisplaySeconds(clip->startBeats);
+    const double lengthSeconds = beatsToDisplaySeconds(span);
+    timeRuler_->setTempo(rulerBpm_);
     timeRuler_->setBarOrigin(0.0);
     timeRuler_->setZoom(horizontalZoom_);
     timeRuler_->setClipLength(lengthSeconds);
@@ -639,15 +637,11 @@ void AutomationClipEditorContent::layoutCanvas() {
 
 void AutomationClipEditorContent::performAnchorPointZoom(double newZoom, double anchorTime,
                                                          int anchorScreenX) {
-    double bpm = 120.0;
-    if (auto* tc = TimelineController::getCurrent())
-        bpm = tc->getState().tempo.bpm;
-
     const double clamped = juce::jlimit(kMinZoom, kMaxZoom, newZoom);
     if (clamped == horizontalZoom_)
         return;
 
-    const double anchorBeat = anchorTime * bpm / 60.0;
+    const double anchorBeat = displaySecondsToBeats(anchorTime);
     horizontalZoom_ = clamped;
     layoutCanvas();
     timeRuler_->setZoom(horizontalZoom_);

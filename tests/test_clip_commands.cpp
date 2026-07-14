@@ -1572,6 +1572,20 @@ TEST_CASE("PasteClipCommand - paste multiple clips", "[clip][command][paste]") {
     }
 }
 
+TEST_CASE("Paste preserves the enabled flag", "[clip][command][paste]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId original = createMidi(track, 0.0, 2.0, {0.0});
+
+    auto& cm = ClipManager::getInstance();
+    cm.getClip(original)->enabled = false;
+    cm.copyToClipboard({original});
+
+    const auto pasted = cm.pasteFromClipboardBeats(16.0, track, ClipView::Arrangement);
+    REQUIRE(pasted.size() == 1);
+    REQUIRE_FALSE(cm.getClip(pasted.front())->enabled);
+}
+
 // ============================================================================
 // resolveOverlaps - "C fully contains D" (regression for #1447)
 // ============================================================================

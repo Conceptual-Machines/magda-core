@@ -194,12 +194,17 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
     // the audio gate.
     lfo->setGateOnTriggerSource(modInfo.triggerMode == LFOTriggerMode::MIDI &&
                                 !crossTrackSidechain);
-    if (crossTrackSidechain)
+    if (modInfo.triggerMode == LFOTriggerMode::Audio) {
+        // Audio-trigger LFOs start gated; the audio thread clears the gate on
+        // each peak (gateSidechainLFOs / triggerNoteOn). Owned here so the
+        // create and in-place property paths cannot diverge (the in-place
+        // path used to force an audio-triggered gate open on any edit).
+        lfo->setGated(true);
+    } else if (crossTrackSidechain || modInfo.triggerMode != LFOTriggerMode::MIDI) {
         lfo->setGated(false);
-    else if (modInfo.triggerMode == LFOTriggerMode::MIDI)
+    } else {
         lfo->setGated(!modInfo.running);
-    else if (modInfo.triggerMode != LFOTriggerMode::Audio)
-        lfo->setGated(false);
+    }
 }
 
 /**

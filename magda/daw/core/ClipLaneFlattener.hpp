@@ -14,7 +14,9 @@ namespace magda {
  * Unrolls each clip's loop iterations onto the timeline and inserts hold
  * points so the baked TE curve reproduces the model semantics exactly:
  * gaps hold the nearest clip edge, loop wraps jump, truncated final
- * iterations cut off at the clip end.
+ * iterations cut off at the clip end, and overlaps follow the lane's
+ * clipIds-order precedence (a front-priority clip's points win inside its
+ * range; the underlying shape resumes at the overlap's far edge).
  *
  * Breakpoint VALUES always come from valueAtBeat (the lane-level resolver,
  * which owns overlap precedence and loop wrapping); the source points only

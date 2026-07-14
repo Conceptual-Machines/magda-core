@@ -78,4 +78,36 @@ TEST_CASE("resolve: returns nullopt when nothing matches", "[midi][resolve]") {
     REQUIRE(!resolve(devices, "").has_value());
 }
 
+TEST_CASE("sameMidiHardware: identical names match, empty names never do", "[midi][sendback]") {
+    REQUIRE(sameMidiHardware("IAC Driver Bus 1", "IAC Driver Bus 1"));
+    REQUIRE(sameMidiHardware("monologue", "Monologue"));
+    REQUIRE(!sameMidiHardware("", "monologue"));
+    REQUIRE(!sameMidiHardware("monologue", ""));
+}
+
+TEST_CASE("sameMidiHardware: direction words are dropped", "[midi][sendback]") {
+    REQUIRE(sameMidiHardware("monologue MIDI IN", "monologue MIDI OUT"));
+    REQUIRE(sameMidiHardware("Device Input", "Device Output"));
+}
+
+TEST_CASE("sameMidiHardware: multi-port interfaces only match the same-numbered port",
+          "[midi][sendback]") {
+    REQUIRE(sameMidiHardware("MIDISPORT IN 2", "MIDISPORT OUT 2"));
+    REQUIRE(!sameMidiHardware("MIDISPORT IN 2", "MIDISPORT OUT 1"));
+}
+
+TEST_CASE("sameMidiHardware: asymmetric per-port naming matches on the first two words",
+          "[midi][sendback]") {
+    REQUIRE(sameMidiHardware("Digitakt MIDI In-Port", "Digitakt MIDI Out-Port"));
+}
+
+TEST_CASE("sameMidiHardware: a shared brand prefix alone never matches", "[midi][sendback]") {
+    // Unrelated same-brand controllers must NOT be classified as the
+    // sendback port (they would be silently dropped from All-Inputs).
+    REQUIRE(!sameMidiHardware("Arturia BeatStep Pro", "Arturia MicroFreak"));
+    // The deliberate cost: single-word-model ports whose second word is a
+    // port function no longer match either.
+    REQUIRE(!sameMidiHardware("monologue KBD/KNOB", "monologue SOUND"));
+}
+
 }  // namespace magda::midi

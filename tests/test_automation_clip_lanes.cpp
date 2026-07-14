@@ -83,6 +83,14 @@ TEST_CASE("AutomationClipInfo::getEndLocalBeat", "[automation][cliplane]") {
         clip.loopLengthBeats = 3.0;
         REQUIRE(clip.getEndLocalBeat() == Approx(3.0));
     }
+    SECTION("non-representable length/loop ratio still lands on the boundary") {
+        // fmod(0.9, 0.3) is ~5.6e-17, not 0: an exact compare would hold the
+        // cycle-START value across the following gap.
+        clip.looping = true;
+        clip.lengthBeats = 0.9;
+        clip.loopLengthBeats = 0.3;
+        REQUIRE(clip.getEndLocalBeat() == Approx(0.3));
+    }
 }
 
 TEST_CASE("getValueAtBeat - clip lane loop wrap and gap hold", "[automation][cliplane]") {
@@ -189,6 +197,104 @@ TEST_CASE("flattenClipLane - truncated final loop iteration stops at the clip en
     // After the clip: hold the truncated iteration's outgoing value (0.5).
     REQUIRE(pts.back().beatPosition <= Approx(6.0));
     REQUIRE(flattenedValueAt(pts, 6.0) == Approx(0.5).margin(0.01));
+}
+
+TEST_CASE("flattenClipLane - front-priority clip wins inside its range", "[automation][cliplane]") {
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+
+    // Underlying ramp [0, 8): 0 -> 1 over 8 beats.
+    fx.addRampClip(0.0, 8.0, 8.0);
+    // Front clip [2, 6): constant 0.25, moved to the front of clipIds (the
+    // model's overlap precedence, same shape a bake produces).
+    const auto frontId = mgr.createClip(fx.laneId, 2.0, 4.0);
+    mgr.addPointToClip(frontId, 0.0, 0.25);
+    mgr.addPointToClip(frontId, 4.0, 0.25);
+    mgr.moveClipToFront(frontId);
+
+    auto pts = fx.flatten();
+    for (size_t i = 1; i < pts.size(); ++i)
+        REQUIRE(pts[i].beatPosition > pts[i - 1].beatPosition);
+
+    // Underlying ramp before the overlap.
+    REQUIRE(flattenedValueAt(pts, 1.0) == Approx(0.125).margin(0.001));
+    // Front-priority value throughout the overlap.
+    REQUIRE(flattenedValueAt(pts, 2.5) == Approx(0.25).margin(0.001));
+    REQUIRE(flattenedValueAt(pts, 4.0) == Approx(0.25).margin(0.001));
+    REQUIRE(flattenedValueAt(pts, 5.9) == Approx(0.25).margin(0.01));
+    // The underlying curve resumes mid-ramp at the overlap's far edge.
+    REQUIRE(flattenedValueAt(pts, 6.0) == Approx(0.75).margin(0.01));
+    REQUIRE(flattenedValueAt(pts, 7.0) == Approx(0.875).margin(0.01));
+}
+
+TEST_CASE("flattenClipLane - front clip overlapping the underlying clip's edges",
+          "[automation][cliplane]") {
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+
+    SECTION("overlap at the underlying clip's tail") {
+        fx.addRampClip(0.0, 4.0, 4.0);                             // ramp [0, 4)
+        const auto frontId = mgr.createClip(fx.laneId, 3.0, 2.0);  // [3, 5)
+        mgr.addPointToClip(frontId, 0.0, 0.1);
+        mgr.addPointToClip(frontId, 2.0, 0.1);
+        mgr.moveClipToFront(frontId);
+
+        auto pts = fx.flatten();
+        REQUIRE(flattenedValueAt(pts, 1.0) == Approx(0.25).margin(0.001));
+        REQUIRE(flattenedValueAt(pts, 2.9) == Approx(0.725).margin(0.01));
+        REQUIRE(flattenedValueAt(pts, 3.5) == Approx(0.1).margin(0.01));
+        REQUIRE(flattenedValueAt(pts, 4.5) == Approx(0.1).margin(0.01));
+        // After the front clip: the gap holds its outgoing value.
+        REQUIRE(flattenedValueAt(pts, 6.0) == Approx(0.1).margin(0.01));
+    }
+
+    SECTION("overlap at the underlying clip's head") {
+        fx.addRampClip(4.0, 4.0, 4.0);                             // ramp [4, 8)
+        const auto frontId = mgr.createClip(fx.laneId, 3.0, 2.0);  // [3, 5)
+        mgr.addPointToClip(frontId, 0.0, 0.9);
+        mgr.addPointToClip(frontId, 2.0, 0.9);
+        mgr.moveClipToFront(frontId);
+
+        auto pts = fx.flatten();
+        REQUIRE(flattenedValueAt(pts, 3.5) == Approx(0.9).margin(0.01));
+        REQUIRE(flattenedValueAt(pts, 4.9) == Approx(0.9).margin(0.01));
+        // The underlying ramp resumes mid-curve (local beat 1 of 4 -> 0.25).
+        REQUIRE(flattenedValueAt(pts, 5.0) == Approx(0.25).margin(0.01));
+        REQUIRE(flattenedValueAt(pts, 7.0) == Approx(0.75).margin(0.01));
+    }
+}
+
+TEST_CASE("flattenClipLane - baked front clip is audible in the flattened curve",
+          "[automation][cliplane]") {
+    ClipLaneFixture fx;
+    auto& mgr = AutomationManager::getInstance();
+
+    // The BakeModulationToClipCommand shape: a baked clip at the front of
+    // clipIds inside a longer existing clip. The flattened TE curve used to
+    // get ZERO breakpoints from it (monotonic guard), making the bake
+    // inaudible even though the UI showed the baked curve.
+    fx.addRampClip(0.0, 8.0, 8.0);
+    std::vector<AutomationPoint> baked;
+    for (int i = 0; i <= 4; ++i) {
+        AutomationPoint p;
+        p.beatPosition = 2.0 + i;
+        p.value = 0.25;
+        baked.push_back(p);
+    }
+    BakeModulationToClipCommand cmd(fx.laneId, 2.0, 6.0, std::move(baked), {});
+    cmd.execute();
+    REQUIRE(fx.lane().clipIds.front() == cmd.getCreatedClipId());
+
+    auto pts = fx.flatten();
+    int inBakedRange = 0;
+    for (const auto& p : pts)
+        if (p.beatPosition >= 2.0 && p.beatPosition < 6.0 - 0.001)
+            ++inBakedRange;
+    REQUIRE(inBakedRange > 0);
+    REQUIRE(flattenedValueAt(pts, 4.0) == Approx(0.25).margin(0.001));
+    // The underlying ramp still plays before and after the baked range.
+    REQUIRE(flattenedValueAt(pts, 1.0) == Approx(0.125).margin(0.01));
+    REQUIRE(flattenedValueAt(pts, 7.0) == Approx(0.875).margin(0.01));
 }
 
 TEST_CASE("flattenClipLane - absolute lanes and empty clip lanes return empty",

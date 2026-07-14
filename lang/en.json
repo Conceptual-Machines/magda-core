@@ -312,6 +312,8 @@
     "capture.title": "Capturing External Hardware",
     "capture.body": "Playing the export range in real time to record the external instrument/FX returns.",
     "capture.cancel": "Cancel",
+    "capture.error_setup": "Couldn't set up the external hardware capture. The export was aborted.",
+    "capture.error_failed": "Recording the external hardware returns failed. The export was aborted.",
     "error.trim_failed": "Render succeeded but failed to trim preroll.",
     "error.file_not_created": "Render completed but file was not created. The project may be empty or contain no audio.",
     "error.render_failed": "Render job failed",

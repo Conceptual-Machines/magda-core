@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <unordered_set>
 
 #include "../../core/ClipManager.hpp"
@@ -425,10 +426,18 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                     // AutoTempo handling for audio clips
                     bool isAutoTempoAudio = clip->isAudio() && clip->autoTempo;
 
+                    // configureSessionAutoTempo applies the stretch mode
+                    // itself; remember what it was so the stretch-mode block
+                    // below still detects the switch and requests the
+                    // explicit graph rebuild (proxy off + reallocation).
+                    std::optional<te::TimeStretcher::Mode> stretchModeBefore;
+
                     if (isAutoTempoAudio) {
                         auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
-                        if (audioClip)
+                        if (audioClip) {
+                            stretchModeBefore = audioClip->getTimeStretchMode();
                             configureSessionAutoTempo(audioClip, clip);
+                        }
                     } else {
                         // Note: do NOT call setAutoTempo(false) here.
                         // TE's ClipOwner auto-enables autoTempo on session slot clips
@@ -526,7 +535,10 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                             if (isAnalog)
                                 desiredMode = te::TimeStretcher::disabled;
 
-                            if (audioClip->getTimeStretchMode() != desiredMode) {
+                            const auto modeBefore =
+                                stretchModeBefore.value_or(audioClip->getTimeStretchMode());
+                            if (modeBefore != desiredMode ||
+                                audioClip->getTimeStretchMode() != desiredMode) {
                                 audioClip->setUsesProxy(false);
                                 audioClip->setTimeStretchMode(desiredMode);
                                 needsGraphReallocation = true;

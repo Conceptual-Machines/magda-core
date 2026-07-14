@@ -567,16 +567,11 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
            faustInstrumentUI_ || polySynthUI_ || fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ ||
-           eqUI_ || compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
-           pitchShiftUI_ || impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
-           stepSequencerUI_ || polySynthUI_ || fmUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ ||
-           reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-           impulseResponseUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_ ||
-           polySynthUI_ || fmUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ || reverbUI_ ||
-           delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ ||
-           faustUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_ ||
-           struckUI_ || sidechainUI_;
+           struckUI_ || drumVoiceUI_ || eqUI_ || compressorUI_ || reverbUI_ || delayUI_ ||
+           chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ || impulseResponseUI_ ||
+           sidechainUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ ||
+           stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ ||
+           levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {

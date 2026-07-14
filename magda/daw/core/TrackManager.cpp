@@ -664,6 +664,51 @@ void TrackManager::deleteTrack(TrackId trackId) {
     for (auto listenerId : midiInputListeners)
         setTrackMidiInput(listenerId, "");
 
+    // Clear sidechain configs (devices and racks) referencing this track on
+    // every other track including master, like the send / input-routing
+    // sweeps above - otherwise the UI keeps showing a source that no longer
+    // exists and the stale id gets serialized.
+    {
+        std::vector<DeviceId> clearedDevices;
+        auto clearInElements = [&](auto&& self, std::vector<ChainElement>& elements) -> bool {
+            bool cleared = false;
+            for (auto& element : elements) {
+                if (magda::isDevice(element)) {
+                    auto& device = magda::getDevice(element);
+                    if (device.sidechain.sourceTrackId == trackId) {
+                        device.sidechain = {};
+                        clearedDevices.push_back(device.id);
+                        cleared = true;
+                    }
+                } else if (magda::isRack(element)) {
+                    auto& rack = magda::getRack(element);
+                    if (rack.sidechain.sourceTrackId == trackId) {
+                        rack.sidechain = {};
+                        cleared = true;
+                    }
+                    for (auto& chain : rack.chains)
+                        cleared = self(self, chain.elements) || cleared;
+                }
+            }
+            return cleared;
+        };
+        std::vector<TrackId> sidechainAffectedTracks;
+        for (auto& t : tracks_) {
+            if (t.id == trackId)
+                continue;
+            if (clearInElements(clearInElements, t.chain.fxChainElements))
+                sidechainAffectedTracks.push_back(t.id);
+        }
+        if (clearInElements(clearInElements, masterTrack_.chain.fxChainElements))
+            sidechainAffectedTracks.push_back(MASTER_TRACK_ID);
+        for (auto deviceId : clearedDevices)
+            notifyDevicePropertyChanged(findDevicePath(deviceId));
+        // Re-sync the affected tracks' modifiers/sidechain caches (mirrors
+        // setSidechainSource / setRackSidechainSource).
+        for (auto affectedId : sidechainAffectedTracks)
+            notifyDeviceModifiersChanged(affectedId);
+    }
+
     // Remove the track itself
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });

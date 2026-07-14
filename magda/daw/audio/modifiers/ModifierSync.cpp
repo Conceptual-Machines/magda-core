@@ -57,14 +57,10 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
                 auto& snapHolder = state.curveSnapshots[modInfo.id];
                 if (!snapHolder)
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
-                // Owns skipNativeResync / gateOnTriggerSource / initial gate,
-                // including the cross-track sidechain policy.
+                // Owns skipNativeResync / gateOnTriggerSource / initial gate
+                // (including the audio-trigger "starts gated" state and the
+                // cross-track sidechain policy).
                 applyLFOProperties(lfo, modInfo, snapHolder.get(), ctx.hasCrossTrackSidechain);
-
-                // Audio-trigger LFOs start gated; the audio thread clears the
-                // gate on each peak (gateSidechainLFOs / triggerNoteOn).
-                if (modInfo.triggerMode == LFOTriggerMode::Audio)
-                    lfo->setGated(true);
             }
             modifier = lfoMod;
             break;
@@ -351,9 +347,9 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 // fingerprint doesn't change), so it must restate the
                 // cross-track policy - see applyLFOProperties.
                 applyLFOProperties(lfo, modInfo, snapHolder.get(), ctx.hasCrossTrackSidechain);
-                // MIDI gate state is part of the MAGDA model and is applied
-                // above. Audio-trigger gate state remains owned by the audio
-                // sidechain path.
+                // Gate state is owned by applyLFOProperties: MIDI follows the
+                // MAGDA model, audio-trigger re-arms gated and the sidechain
+                // path re-opens it on the next peak.
             } else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(modifier.get())) {
                 applyADSRProperties(adsr, modInfo);
             } else if (auto* rnd = dynamic_cast<te::RandomModifier*>(modifier.get())) {

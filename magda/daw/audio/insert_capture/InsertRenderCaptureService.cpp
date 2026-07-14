@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "plugins/InsertCapturePlugin.hpp"
@@ -32,6 +33,58 @@ std::vector<te::InsertPlugin*> routedInserts(te::Edit& edit) {
     return result;
 }
 
+// Rewrite a capture wav at the offline render's rate. The capture is recorded
+// at the live device rate but the playback tap reads the file 1:1 into
+// render-rate blocks, so a mismatched file would come out time-stretched.
+// Message thread, offline: allocation and blocking file IO are fine here.
+bool resampleCaptureFile(const juce::File& file, double targetRate) {
+    juce::WavAudioFormat format;
+    auto inStream = file.createInputStream();
+    if (inStream == nullptr)
+        return false;
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        format.createReaderFor(inStream.release(), true));
+    if (reader == nullptr || reader->sampleRate <= 0.0)
+        return false;
+    if (reader->sampleRate == targetRate)
+        return true;
+
+    const auto tempFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_rs.wav");
+    tempFile.deleteFile();
+    {
+        std::unique_ptr<juce::OutputStream> outStream = tempFile.createOutputStream();
+        if (outStream == nullptr)
+            return false;
+        auto writerOptions =
+            juce::AudioFormatWriterOptions()
+                .withSampleRate(targetRate)
+                .withNumChannels(static_cast<int>(reader->numChannels))
+                .withBitsPerSample(32)
+                .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+        auto writer = format.createWriterFor(outStream, writerOptions);
+        if (writer == nullptr)
+            return false;
+
+        juce::AudioFormatReaderSource readerSource(reader.get(), false);
+        juce::ResamplingAudioSource resampler(&readerSource, false,
+                                              static_cast<int>(reader->numChannels));
+        resampler.setResamplingRatio(reader->sampleRate / targetRate);
+        constexpr int blockSize = 4096;
+        resampler.prepareToPlay(blockSize, targetRate);
+        const auto outLength = std::llround(static_cast<double>(reader->lengthInSamples) *
+                                            targetRate / reader->sampleRate);
+        const bool ok =
+            writer->writeFromAudioSource(resampler, static_cast<int>(outLength), blockSize);
+        resampler.releaseResources();
+        if (!ok) {
+            tempFile.deleteFile();
+            return false;
+        }
+    }
+    reader.reset();
+    return file.deleteFile() && tempFile.moveFileTo(file);
+}
+
 }  // namespace
 
 struct InsertRenderCaptureService::Taps {
@@ -52,16 +105,21 @@ bool InsertRenderCaptureService::exportNeedsCapturePass() const {
 }
 
 bool InsertRenderCaptureService::startCapturePass(double startSec, double endSec,
+                                                  double renderSampleRate,
                                                   std::function<void(bool)> onFinished) {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    jassert(renderSampleRate > 0.0);
 
-    if (pass_ != nullptr || endSec <= startSec)
+    if (pass_ != nullptr || endSec <= startSec) {
+        lastError_ = PassError::SetupFailed;
         return false;
+    }
+    lastError_ = PassError::None;
     cleanupAfterRender();  // stale taps from an aborted previous export
 
     const auto inserts = routedInserts(edit_);
     if (inserts.empty())
-        return false;
+        return false;  // nothing to capture: not an error
 
     auto& transport = edit_.getTransport();
     if (transport.isPlaying() || transport.isRecording())
@@ -70,18 +128,26 @@ bool InsertRenderCaptureService::startCapturePass(double startSec, double endSec
     const double sampleRate = edit_.engine.getDeviceManager().getSampleRate();
     auto tempDir = edit_.getTempDirectory(true);
 
+    // All-or-nothing: a qualifying insert that cannot get a tap would
+    // silently export silence for its return, so any arming failure fails
+    // the whole pass.
     auto taps = std::make_unique<Taps>();
+    bool armFailed = false;
     for (auto* insert : inserts) {
         auto* ownerList = insert->getOwnerList();
-        if (ownerList == nullptr)
-            continue;
+        if (ownerList == nullptr) {
+            armFailed = true;
+            break;
+        }
 
         juce::ValueTree pluginState(te::IDs::PLUGIN);
         pluginState.setProperty(te::IDs::type, InsertCapturePlugin::xmlTypeName, nullptr);
         auto tapPlugin = edit_.getPluginCache().createNewPlugin(pluginState);
         auto* tap = dynamic_cast<InsertCapturePlugin*>(tapPlugin.get());
-        if (tap == nullptr)
-            continue;
+        if (tap == nullptr) {
+            armFailed = true;
+            break;
+        }
 
         auto file = tempDir.getChildFile("insert_capture_" +
                                          juce::String(insert->itemID.getRawID()) + ".wav");
@@ -89,19 +155,25 @@ bool InsertRenderCaptureService::startCapturePass(double startSec, double endSec
 
         if (!tap->startCapture(file, startSec, endSec, sampleRate)) {
             tapPlugin->deleteFromParent();
-            continue;
+            armFailed = true;
+            break;
         }
         taps->plugins.push_back(tapPlugin);
         taps->files.push_back(file);
     }
 
-    if (taps->plugins.empty())
+    if (armFailed) {
+        taps_ = std::move(taps);
+        removeTaps();
+        lastError_ = PassError::SetupFailed;
         return false;
+    }
 
     taps_ = std::move(taps);
     pass_ = std::make_unique<ActivePass>();
     pass_->windowStartSec = startSec;
     pass_->windowEndSec = endSec;
+    pass_->renderSampleRate = renderSampleRate;
     pass_->savedPositionSec = transport.getPosition().inSeconds();
     pass_->savedLooping = transport.looping;
     pass_->onFinished = std::move(onFinished);
@@ -144,6 +216,13 @@ void InsertRenderCaptureService::timerCallback() {
         auto* tap = dynamic_cast<InsertCapturePlugin*>(plugin.get());
         if (tap == nullptr || !tap->isCaptureComplete())
             allComplete = false;
+        if (tap != nullptr && tap->hasCaptureFailed()) {
+            // A tap's file is already unfaithful (refused FIFO write or a
+            // mid-capture device rate change): fail the pass now.
+            lastError_ = PassError::CaptureFailed;
+            finishPass(false);
+            return;
+        }
     }
     if (allComplete) {
         finishPass(true);
@@ -169,13 +248,19 @@ void InsertRenderCaptureService::finishPass(bool success) {
     transport.setPosition(te::TimePosition::fromSeconds(pass->savedPositionSec));
 
     if (success && taps_ != nullptr) {
-        // Finalise every capture and flip the taps to playback mode: the
-        // upcoming offline render substitutes the recorded returns in place.
+        // Finalise every capture, match each file to the render rate and flip
+        // the taps to playback mode: the upcoming offline render substitutes
+        // the recorded returns in place.
         for (size_t i = 0; i < taps_->plugins.size(); ++i) {
             if (auto* tap = dynamic_cast<InsertCapturePlugin*>(taps_->plugins[i].get())) {
                 tap->stopCapture(true);
-                if (!tap->startPlayback(taps_->files[i], pass->windowStartSec, pass->windowEndSec))
+                if (tap->hasCaptureFailed() ||
+                    !resampleCaptureFile(taps_->files[i], pass->renderSampleRate) ||
+                    !tap->startPlayback(taps_->files[i], pass->windowStartSec,
+                                        pass->windowEndSec)) {
+                    lastError_ = PassError::CaptureFailed;
                     success = false;
+                }
             }
         }
     }

@@ -79,7 +79,7 @@ class InsertCapturePlugin : public te::Plugin {
     void restorePluginStateFromValueTree(const juce::ValueTree&) override {}
 
     // ------------------------------------------------------------------
-    // Message-thread capture control (InsertFreezeService)
+    // Message-thread capture control (InsertRenderCaptureService)
 
     /** Start capturing [windowStartSec, windowEndSec) to a stereo float wav.
         sampleRate is passed explicitly because arming happens right after the
@@ -89,9 +89,9 @@ class InsertCapturePlugin : public te::Plugin {
                       double sampleRate);
 
     /** Finalise (keepFile) or abort (!keepFile, deletes the file) the capture.
-        Call only while the transport is stopped — an in-flight audio block may
-        still hold the writer for its duration, so this briefly waits before
-        destroying it. */
+        An in-flight audio block may still hold the writer; this waits
+        (bounded) for the writer-in-use handshake to clear before destroying
+        it. */
     void stopCapture(bool keepFile);
 
     /** Arm offline-render playback of a previously captured window: while the
@@ -108,6 +108,12 @@ class InsertCapturePlugin : public te::Plugin {
     }
     bool isCaptureComplete() const {
         return complete_.load(std::memory_order_acquire);
+    }
+    /** True when the capture can no longer produce a faithful file: the FIFO
+        refused a write (the rest of the take would be time-shifted) or the
+        device sample rate changed mid-capture. The service fails the pass. */
+    bool hasCaptureFailed() const {
+        return captureFailed_.load(std::memory_order_acquire);
     }
     /** Seconds of the window written so far — progress for the UI. */
     double getCapturedSeconds() const {
@@ -135,13 +141,19 @@ class InsertCapturePlugin : public te::Plugin {
 
     std::atomic<juce::int64> samplesWritten_{0};
     std::atomic<bool> complete_{false};
+    std::atomic<bool> captureFailed_{false};
     juce::int64 nextFileSample_ = 0;  // audio-thread only: sequential-write cursor
+
+    // Handshake with stopCapture(): incremented before the audio thread loads
+    // activeWriter_, decremented when it is done with it (both seq_cst so the
+    // store-load pairing with stopCapture's nullptr store is race-free).
+    std::atomic<int> writersInUse_{0};
 
     double sampleRate_ = 44100.0;
     std::vector<float> zeroBuf_;  // pre-allocated silence for gap padding
     juce::File captureFile_;
 
-    void writeSilence(juce::AudioFormatWriter::ThreadedWriter& writer, juce::int64 numSamples);
+    bool writeSilence(juce::AudioFormatWriter::ThreadedWriter& writer, juce::int64 numSamples);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InsertCapturePlugin)
 };

@@ -109,9 +109,11 @@ void TracktionEngineWrapper::sendAllNotesOffToExternalInserts() {
     if (!currentEdit_ || !engine_)
         return;
 
+    // Deliberately not gated on isEnabled(): a just-disabled insert may
+    // still have a note-on in flight on its hardware synth.
     for (auto plugin : tracktion::getAllPlugins(*currentEdit_, false)) {
         auto* insert = dynamic_cast<tracktion::InsertPlugin*>(plugin);
-        if (insert == nullptr || !insert->isEnabled())
+        if (insert == nullptr)
             continue;
         const auto outputName = insert->outputDevice.get();
         if (outputName.isEmpty())
@@ -125,6 +127,7 @@ void TracktionEngineWrapper::sendAllNotesOffToExternalInserts() {
             midiOut->sendNoteOffMessages();  // note-offs for TE-tracked notes
             for (int channel = 1; channel <= 16; ++channel)
                 midiOut->fireMessage(juce::MidiMessage::allNotesOff(channel));
+            break;  // device names are unique; done with this insert
         }
     }
 }

@@ -3387,6 +3387,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                     newClip->colour = targetTrack->colour;
                 }
                 newClip->loopEnabled = clipData.loopEnabled;
+                newClip->enabled = clipData.enabled;
 
                 // Copy MIDI data
                 if (clipData.isMidi()) {
@@ -3514,6 +3515,20 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                                 clipData.sourceToTimeline(clipData.loopLength), bpm);
                             newClip->loopLength = clipData.loopLength;
                         }
+                    }
+                }
+
+                // A whole-clip copy's snapshot may be stale: copy ghost A,
+                // edit a sibling, paste - the pasted clip would rejoin
+                // carrying pre-copy content and the notify below would
+                // propagate it over every sibling. The live group is
+                // authoritative (same rule as restoreClip): adopt its
+                // current shared content on rejoin.
+                if (newClip->linkGroupId != 0) {
+                    const auto siblings = getLinkGroupSiblings(newClipId);
+                    if (!siblings.empty()) {
+                        if (const auto* source = getClip(siblings.front()))
+                            newClip->copySharedContentFrom(*source);
                     }
                 }
 

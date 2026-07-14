@@ -906,7 +906,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // Move after the previous desired plugin
                 int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
                 int curVtIdx = listState.indexOf(desiredOrder[i]->state);
-                // A freeze pass pins a hidden InsertCapturePlugin directly
+                // A capture pass pins a hidden InsertCapturePlugin directly
                 // after its insert; skip it so a mid-pass sync doesn't
                 // displace it (and with it, the capture point).
                 int expectedVtIdx = prevVtIdx + 1;

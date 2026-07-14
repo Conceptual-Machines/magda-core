@@ -172,6 +172,13 @@ class TrackHeadersPanel : public juce::Component,
         bool midiInEnabled = true;
         bool midiOutEnabled = true;
 
+        // Last external-insert routing mirrored into the read-only selectors;
+        // lets devicePropertyChanged skip the full header re-layout when a
+        // device change didn't touch the routing (e.g. per-tick gain drags).
+        bool extRoutingPresent = false;
+        juce::String extRoutingMidiOut;
+        juce::String extRoutingAudioReturn;
+
         // UI components
         std::unique_ptr<juce::Label> nameLabel;
         std::unique_ptr<magda::SvgButton> muteButton;

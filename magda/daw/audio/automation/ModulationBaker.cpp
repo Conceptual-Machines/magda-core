@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "../../core/ModulatorEngine.hpp"
 #include "AutomationCurveSimplifier.hpp"
@@ -102,6 +103,7 @@ std::vector<AutomationPoint> ModulationBaker::bake(
 
     // Step: fine enough for the fastest bakeable source's cycle.
     double step = opts.maxStepBeats;
+    double minCycleBeats = std::numeric_limits<double>::max();
     bool anyBakeable = false;
     for (const auto& source : sources) {
         if (!source.mod.enabled || !source.link.enabled || !isBakeable(source.mod))
@@ -118,11 +120,17 @@ std::vector<AutomationPoint> ModulationBaker::bake(
             const double rate = std::max(1.0e-6, static_cast<double>(source.mod.rate));
             cycleBeats = bps / rate;
         }
+        minCycleBeats = std::min(minCycleBeats, cycleBeats);
         step = std::min(step, cycleBeats / std::max(1, opts.samplesPerCycle));
     }
     if (!anyBakeable)
         return {};
-    step = std::max(step, opts.minStepBeats);
+    // The floor guards runaway sample counts, but applied flat it starves
+    // fast LFOs (a 32nd-triplet cycle kept ~10 samples instead of
+    // samplesPerCycle): scale it with the shortest source cycle so the floor
+    // can never push a cycle below its requested density.
+    step = std::max(step,
+                    std::min(opts.minStepBeats, minCycleBeats / std::max(1, opts.samplesPerCycle)));
 
     const auto baseAt = [&](double beat) {
         return baseValueAt ? baseValueAt(beat) : opts.fallbackBaseValue;

@@ -1117,11 +1117,21 @@ void TrackHeadersPanel::trackDevicesChanged(TrackId trackId) {
 
 void TrackHeadersPanel::devicePropertyChanged(const magda::ChainNodePath& devicePath) {
     // An External Instrument's send/return picker changed: re-lay-out so the
-    // track-level read-only MIDI-out / audio-in mirror picks up the new value.
+    // track-level read-only MIDI-out / audio-in mirror picks up the new
+    // value. Gated on the routing actually differing from the mirrored one -
+    // this fires for EVERY device property change (per-tick gain drags
+    // included) and a full header re-layout each tick is wasteful.
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         if (visibleTrackIds_[i] == devicePath.trackId && i < trackHeaders.size()) {
-            updateTrackHeaderLayout();
-            repaint();
+            const auto& header = *trackHeaders[i];
+            const auto routing =
+                TrackManager::getInstance().getExternalInstrumentRouting(devicePath.trackId);
+            if (routing.present != header.extRoutingPresent ||
+                routing.midiOut != header.extRoutingMidiOut ||
+                routing.audioReturn != header.extRoutingAudioReturn) {
+                updateTrackHeaderLayout();
+                repaint();
+            }
             break;
         }
     }
@@ -2319,6 +2329,9 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     // device's selection (editable only on the device). MIDI-in and audio-out
     // stay fully interactive.
     auto extRouting = TrackManager::getInstance().getExternalInstrumentRouting(header.trackId);
+    header.extRoutingPresent = extRouting.present;
+    header.extRoutingMidiOut = extRouting.midiOut;
+    header.extRoutingAudioReturn = extRouting.audioReturn;
     header.audioInputSelector->setReadOnly(extRouting.present, extRouting.audioReturn);
     header.midiOutputSelector->setReadOnly(extRouting.present, extRouting.midiOut);
 }
