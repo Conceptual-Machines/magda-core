@@ -448,6 +448,107 @@ TEST_CASE("BakeModulationToClipCommand - activates the lane and restores bypass 
     REQUIRE_FALSE(redoneLink->enabled);
 }
 
+TEST_CASE("BakeModulationCommand - new lane is part of the bake transition", "[automation][bake]") {
+    resetManagers();
+    auto& tracks = TrackManager::getInstance();
+    const auto& constTracks = tracks;
+    auto& autoMgr = AutomationManager::getInstance();
+    auto& undoMgr = UndoManager::getInstance();
+
+    const auto trackId = tracks.createTrack("T", TrackType::Audio);
+    const auto path = ChainNodePath::trackLevel(trackId);
+    const auto target = ControlTarget::trackVolume(trackId);
+    tracks.addMod(path, 0, ModType::LFO);
+    tracks.setModTarget(path, 0, target);
+
+    auto previousLaneState = captureBakeAutomationLaneState(target);
+    REQUIRE(previousLaneState.captured);
+    REQUIRE_FALSE(previousLaneState.laneExisted);
+
+    const auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+    autoMgr.setTargetUserTouched(target, true);
+    autoMgr.setTargetTouchSuppressed(target, true);
+
+    const std::vector<BakeModulationCommand::ModLinkRef> refs{{path, 0, target}};
+    undoMgr.executeCommand(std::make_unique<BakeModulationCommand>(
+        laneId, 0.0, 4.0,
+        std::vector<AutomationPoint>{bakedPoint(0.0, 0.25), bakedPoint(4.0, 0.75)}, refs,
+        std::move(previousLaneState)));
+
+    const auto* bakedLane = autoMgr.getLane(laneId);
+    REQUIRE(bakedLane != nullptr);
+    REQUIRE_FALSE(bakedLane->bypass);
+    REQUIRE_FALSE(bakedLane->touchSuppressed);
+    REQUIRE_FALSE(autoMgr.isTargetUserTouched(target));
+
+    REQUIRE(undoMgr.undo());
+    REQUIRE(autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
+    const auto undoNode = constTracks.resolveChainNode(path);
+    REQUIRE(undoNode.valid());
+    REQUIRE((*undoNode.mods)[0].getLink(target)->enabled);
+
+    REQUIRE(undoMgr.redo());
+    const auto* redoneLane = autoMgr.getLane(laneId);
+    REQUIRE(redoneLane != nullptr);
+    REQUIRE_FALSE(redoneLane->bypass);
+    REQUIRE_FALSE(redoneLane->touchSuppressed);
+    const auto redoNode = constTracks.resolveChainNode(path);
+    REQUIRE(redoNode.valid());
+    REQUIRE_FALSE((*redoNode.mods)[0].getLink(target)->enabled);
+}
+
+TEST_CASE("BakeModulationToClipCommand - undo restores lane preparation state",
+          "[automation][bake]") {
+    resetManagers();
+    auto& tracks = TrackManager::getInstance();
+    auto& autoMgr = AutomationManager::getInstance();
+    auto& undoMgr = UndoManager::getInstance();
+
+    const auto trackId = tracks.createTrack("T", TrackType::Audio);
+    const auto path = ChainNodePath::trackLevel(trackId);
+    const auto target = ControlTarget::trackVolume(trackId);
+    tracks.addMod(path, 0, ModType::LFO);
+    tracks.setModTarget(path, 0, target);
+
+    const auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+    autoMgr.clearLanePoints(laneId);
+    autoMgr.setLaneVisible(laneId, false);
+    autoMgr.setLaneBypass(laneId, true);
+    auto previousLaneState = captureBakeAutomationLaneState(target);
+
+    REQUIRE(autoMgr.retypeEmptyLane(laneId, AutomationLaneType::ClipBased));
+    autoMgr.setLaneVisible(laneId, true);
+
+    const std::vector<BakeModulationCommand::ModLinkRef> refs{{path, 0, target}};
+    undoMgr.executeCommand(std::make_unique<BakeModulationToClipCommand>(
+        laneId, 2.0, 6.0, std::vector<AutomationPoint>{bakedPoint(2.0, 0.2), bakedPoint(6.0, 0.8)},
+        refs, 0.0, std::move(previousLaneState)));
+
+    const auto* bakedLane = autoMgr.getLane(laneId);
+    REQUIRE(bakedLane != nullptr);
+    REQUIRE(bakedLane->isClipBased());
+    REQUIRE(bakedLane->visible);
+    REQUIRE_FALSE(bakedLane->bypass);
+    REQUIRE(bakedLane->clipIds.size() == 1);
+
+    REQUIRE(undoMgr.undo());
+    const auto* restoredLane = autoMgr.getLane(laneId);
+    REQUIRE(restoredLane != nullptr);
+    REQUIRE(restoredLane->isAbsolute());
+    REQUIRE(restoredLane->absolutePoints.empty());
+    REQUIRE_FALSE(restoredLane->visible);
+    REQUIRE(restoredLane->bypass);
+    REQUIRE(restoredLane->clipIds.empty());
+
+    REQUIRE(undoMgr.redo());
+    const auto* redoneLane = autoMgr.getLane(laneId);
+    REQUIRE(redoneLane != nullptr);
+    REQUIRE(redoneLane->isClipBased());
+    REQUIRE(redoneLane->visible);
+    REQUIRE_FALSE(redoneLane->bypass);
+    REQUIRE(redoneLane->clipIds.size() == 1);
+}
+
 TEST_CASE("BakeModulationCommand - undo does not re-enable links that were already disabled",
           "[automation][bake]") {
     resetManagers();

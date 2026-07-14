@@ -102,21 +102,29 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
 
     const bool wantClip = destination == BakeDestination::Clip;
     auto& autoMgr = magda::AutomationManager::getInstance();
+    auto previousLaneState = magda::captureBakeAutomationLaneState(target);
     const auto laneId =
         autoMgr.getOrCreateLane(target, wantClip ? magda::AutomationLaneType::ClipBased
                                                  : magda::AutomationLaneType::Absolute);
+    const auto rollbackLanePreparation = [laneId, &previousLaneState]() {
+        magda::restoreBakeAutomationLaneState(laneId, previousLaneState);
+    };
     // getOrCreateLane returns the existing lane regardless of the requested
     // type. An EMPTY lane of the other type retypes to the chosen
     // destination (the menu offers both for empty lanes); a lane with data
     // of the other kind can't take this bake (menu-gated; this guards the
     // races).
     const auto* lane = autoMgr.getLane(laneId);
-    if (lane == nullptr)
+    if (lane == nullptr) {
+        rollbackLanePreparation();
         return;
+    }
     if (lane->isClipBased() != wantClip) {
         if (!autoMgr.retypeEmptyLane(laneId, wantClip ? magda::AutomationLaneType::ClipBased
-                                                      : magda::AutomationLaneType::Absolute))
+                                                      : magda::AutomationLaneType::Absolute)) {
+            rollbackLanePreparation();
             return;
+        }
     }
     const bool clipBased = wantClip;
     autoMgr.setLaneVisible(laneId, true);
@@ -172,19 +180,21 @@ void performModulationBake(const magda::ControlTarget& target, BakeableModLinks 
     }
 
     auto points = magda::ModulationBaker::bake(links.sources, opts, *tc->tempoMap(), baseValueAt);
-    if (points.empty())
+    if (points.empty()) {
+        rollbackLanePreparation();
         return;
+    }
 
     if (clipBased) {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::BakeModulationToClipCommand>(
                 laneId, opts.startBeat, clipEndBeat, std::move(points), std::move(links.linkRefs),
-                loopCycleBeats));
+                loopCycleBeats, std::move(previousLaneState)));
     } else {
         magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::BakeModulationCommand>(laneId, opts.startBeat, opts.endBeat,
-                                                           std::move(points),
-                                                           std::move(links.linkRefs)));
+            std::make_unique<magda::BakeModulationCommand>(
+                laneId, opts.startBeat, opts.endBeat, std::move(points), std::move(links.linkRefs),
+                std::move(previousLaneState)));
     }
 }
 

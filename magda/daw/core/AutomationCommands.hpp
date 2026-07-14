@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility>
+#include <vector>
 
 #include "AutomationInfo.hpp"
 #include "AutomationManager.hpp"
@@ -8,6 +9,27 @@
 #include "UndoManager.hpp"
 
 namespace magda {
+
+/**
+ * @brief Durable automation-lane state before a modulation bake prepares it.
+ *
+ * Lane creation, retyping and visibility changes happen while the bake range
+ * is being prepared. Keeping that state with the bake command makes the whole
+ * modulation -> automation transition one undoable operation.
+ */
+struct BakeAutomationLaneState {
+    bool captured = false;
+    bool laneExisted = false;
+    AutomationLaneInfo lane;
+    std::vector<AutomationClipInfo> clips;
+};
+
+/** Capture the target lane before bake preparation mutates or creates it. */
+BakeAutomationLaneState captureBakeAutomationLaneState(const AutomationTarget& target);
+
+/** Roll back lane preparation when a bake cannot be completed. */
+void restoreBakeAutomationLaneState(AutomationLaneId preparedLaneId,
+                                    const BakeAutomationLaneState& state);
 
 /**
  * @brief Command for adding an automation point (lane or clip)
@@ -503,12 +525,14 @@ class BakeModulationCommand : public UndoableCommand {
 
     BakeModulationCommand(AutomationLaneId laneId, double startBeat, double endBeat,
                           std::vector<AutomationPoint> bakedPoints,
-                          std::vector<ModLinkRef> linksToDisable)
+                          std::vector<ModLinkRef> linksToDisable,
+                          BakeAutomationLaneState previousLaneState = {})
         : laneId_(laneId),
           startBeat_(startBeat),
           endBeat_(endBeat),
           bakedPoints_(std::move(bakedPoints)),
-          linksToDisable_(std::move(linksToDisable)) {}
+          linksToDisable_(std::move(linksToDisable)),
+          previousLaneState_(std::move(previousLaneState)) {}
 
     void execute() override;
     void undo() override;
@@ -525,6 +549,8 @@ class BakeModulationCommand : public UndoableCommand {
     std::vector<ModLinkRef> disabledLinks_;  // links actually flipped off by execute()
     bool previousLaneBypass_ = false;
     bool capturedLaneBypass_ = false;
+    BakeAutomationLaneState previousLaneState_;
+    BakeAutomationLaneState preparedLaneState_;
 };
 
 /**
@@ -545,13 +571,15 @@ class BakeModulationToClipCommand : public UndoableCommand {
     BakeModulationToClipCommand(AutomationLaneId laneId, double startBeat, double endBeat,
                                 std::vector<AutomationPoint> bakedPoints,
                                 std::vector<ModLinkRef> linksToDisable,
-                                double loopLengthBeats = 0.0)
+                                double loopLengthBeats = 0.0,
+                                BakeAutomationLaneState previousLaneState = {})
         : laneId_(laneId),
           startBeat_(startBeat),
           endBeat_(endBeat),
           loopLengthBeats_(loopLengthBeats),
           bakedPoints_(std::move(bakedPoints)),
-          linksToDisable_(std::move(linksToDisable)) {}
+          linksToDisable_(std::move(linksToDisable)),
+          previousLaneState_(std::move(previousLaneState)) {}
 
     void execute() override;
     void undo() override;
@@ -574,6 +602,8 @@ class BakeModulationToClipCommand : public UndoableCommand {
     AutomationClipId createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
     bool previousLaneBypass_ = false;
     bool capturedLaneBypass_ = false;
+    BakeAutomationLaneState previousLaneState_;
+    BakeAutomationLaneState preparedLaneState_;
 };
 
 /**

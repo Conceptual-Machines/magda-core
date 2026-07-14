@@ -427,6 +427,71 @@ void DuplicateAutomationClipCommand::undo() {
 
 namespace {
 
+std::vector<AutomationClipInfo> clipsForLane(const AutomationManager& manager,
+                                             const AutomationLaneInfo& lane) {
+    std::vector<AutomationClipInfo> clips;
+    clips.reserve(lane.clipIds.size());
+    for (const auto clipId : lane.clipIds) {
+        if (const auto* clip = manager.getClip(clipId))
+            clips.push_back(*clip);
+    }
+    return clips;
+}
+
+void restoreBakeLaneState(const BakeAutomationLaneState& state) {
+    if (!state.captured || !state.laneExisted)
+        return;
+
+    auto& manager = AutomationManager::getInstance();
+    if (manager.getLane(state.lane.id) != nullptr) {
+        manager.restoreLaneState(state.lane, state.clips);
+        return;
+    }
+
+    auto lane = state.lane;
+    manager.restoreLane(lane);
+    for (auto clip : state.clips)
+        manager.restoreClip(clip);
+}
+
+bool prepareBakeLaneForExecute(AutomationLaneId laneId, AutomationLaneType expectedType,
+                               const BakeAutomationLaneState& previousState,
+                               BakeAutomationLaneState& preparedState) {
+    auto& manager = AutomationManager::getInstance();
+
+    if (previousState.captured && preparedState.captured) {
+        restoreBakeLaneState(preparedState);
+    } else if (previousState.captured) {
+        const auto* lane = manager.getLane(laneId);
+        if (lane == nullptr || lane->type != expectedType)
+            return false;
+        preparedState.captured = true;
+        preparedState.laneExisted = true;
+        preparedState.lane = *lane;
+        preparedState.lane.touchSuppressed = false;
+        preparedState.clips = clipsForLane(manager, *lane);
+    }
+
+    const auto* lane = manager.getLane(laneId);
+    return lane != nullptr && lane->type == expectedType;
+}
+
+void activateBakedLane(AutomationLaneId laneId) {
+    auto& manager = AutomationManager::getInstance();
+    const auto* lane = manager.getLane(laneId);
+    if (lane == nullptr)
+        return;
+
+    const auto target = lane->target;
+    manager.setTargetUserTouched(target, false);
+    manager.setTargetTouchSuppressed(target, false);
+    manager.clearTouchBaseline(target);
+    manager.setLaneBypass(laneId, false);
+    // setLaneBypass is intentionally a no-op when the lane was already on.
+    // Still notify controls after clearing a stale transient override.
+    manager.invalidateLane(laneId);
+}
+
 /** Flip off the given links; returns the ones that were actually enabled. */
 std::vector<BakeModulationCommand::ModLinkRef> disableModLinks(
     const std::vector<BakeModulationCommand::ModLinkRef>& refs) {
@@ -455,11 +520,41 @@ void enableModLinks(const std::vector<BakeModulationCommand::ModLinkRef>& refs) 
 
 }  // namespace
 
+BakeAutomationLaneState captureBakeAutomationLaneState(const AutomationTarget& target) {
+    BakeAutomationLaneState state;
+    state.captured = true;
+
+    const auto& manager = AutomationManager::getInstance();
+    const auto laneId = manager.getLaneForTarget(target);
+    const auto* lane = manager.getLane(laneId);
+    if (lane == nullptr)
+        return state;
+
+    state.laneExisted = true;
+    state.lane = *lane;
+    // A popup-menu command must never restore a half-finished mouse gesture.
+    state.lane.touchSuppressed = false;
+    state.clips = clipsForLane(manager, *lane);
+    return state;
+}
+
+void restoreBakeAutomationLaneState(AutomationLaneId preparedLaneId,
+                                    const BakeAutomationLaneState& state) {
+    if (!state.captured)
+        return;
+    if (state.laneExisted)
+        restoreBakeLaneState(state);
+    else
+        AutomationManager::getInstance().deleteLane(preparedLaneId);
+}
+
 void BakeModulationCommand::execute() {
     auto& autoMgr = AutomationManager::getInstance();
-    const auto* lane = autoMgr.getLane(laneId_);
-    if (!lane || !lane->isAbsolute())
+    if (!prepareBakeLaneForExecute(laneId_, AutomationLaneType::Absolute, previousLaneState_,
+                                   preparedLaneState_))
         return;
+
+    const auto* lane = autoMgr.getLane(laneId_);
 
     if (!capturedLaneBypass_) {
         previousLaneBypass_ = lane->bypass;
@@ -473,31 +568,40 @@ void BakeModulationCommand::execute() {
     disabledLinks_ = disableModLinks(linksToDisable_);
     // A bake replaces the source modulation with automation. Leaving a
     // previously overridden lane bypassed would turn both sources off.
-    autoMgr.setLaneBypass(laneId_, false);
+    activateBakedLane(laneId_);
 }
 
 void BakeModulationCommand::undo() {
-    AutomationManager::getInstance().replacePointsInRange(laneId_, startBeat_, endBeat_,
-                                                          removedPoints_);
+    if (previousLaneState_.captured) {
+        restoreBakeAutomationLaneState(laneId_, previousLaneState_);
+    } else {
+        AutomationManager::getInstance().replacePointsInRange(laneId_, startBeat_, endBeat_,
+                                                              removedPoints_);
+        if (capturedLaneBypass_)
+            AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
+    }
     enableModLinks(disabledLinks_);
-    if (capturedLaneBypass_)
-        AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
+    disabledLinks_.clear();
 }
 
 void BakeModulationToClipCommand::execute() {
     auto& autoMgr = AutomationManager::getInstance();
-    const auto* lane = autoMgr.getLane(laneId_);
-    if (!lane || !lane->isClipBased() || endBeat_ <= startBeat_)
+    if (endBeat_ <= startBeat_ ||
+        !prepareBakeLaneForExecute(laneId_, AutomationLaneType::ClipBased, previousLaneState_,
+                                   preparedLaneState_))
         return;
 
-    createdClipId_ = autoMgr.createClip(laneId_, startBeat_, endBeat_ - startBeat_);
-    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
-        return;
+    const auto* lane = autoMgr.getLane(laneId_);
 
     if (!capturedLaneBypass_) {
         previousLaneBypass_ = lane->bypass;
         capturedLaneBypass_ = true;
     }
+
+    createdClipId_ = autoMgr.createClip(laneId_, startBeat_, endBeat_ - startBeat_);
+    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
+        return;
+
     LinkModeManager::getInstance().exitAllLinkModes();
     auto localPoints = bakedPoints_;
     for (auto& point : localPoints)
@@ -510,18 +614,21 @@ void BakeModulationToClipCommand::execute() {
     autoMgr.moveClipToFront(createdClipId_);
 
     disabledLinks_ = disableModLinks(linksToDisable_);
-    autoMgr.setLaneBypass(laneId_, false);
+    activateBakedLane(laneId_);
 }
 
 void BakeModulationToClipCommand::undo() {
-    if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID) {
+    if (previousLaneState_.captured) {
+        restoreBakeAutomationLaneState(laneId_, previousLaneState_);
+        createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+    } else if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID) {
         AutomationManager::getInstance().deleteClip(createdClipId_);
         createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+        if (capturedLaneBypass_)
+            AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
     }
     enableModLinks(disabledLinks_);
     disabledLinks_.clear();
-    if (capturedLaneBypass_)
-        AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
 }
 
 bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {
