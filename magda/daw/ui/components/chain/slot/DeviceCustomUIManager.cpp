@@ -29,6 +29,7 @@
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
+#include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
@@ -1110,6 +1111,7 @@ bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& de
         polySynthUI_ = std::make_unique<PolySynthUI>();
         forwardParameterChanges(*polySynthUI_, callbacks);
         parent.addAndMakeVisible(*polySynthUI_);
+        refreshLivePluginBindings();
         update(device);
         return true;
     }
@@ -2085,6 +2087,13 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
         faustInstrumentUI_->setPlugin(model);
     }
 
+    if (polySynthUI_ != nullptr) {
+        daw::audio::compiled::MagdaPolySynthCompiledPlugin* synth = nullptr;
+        if (auto plugin = getLivePlugin())
+            synth = dynamic_cast<daw::audio::compiled::MagdaPolySynthCompiledPlugin*>(plugin.get());
+        polySynthUI_->setLivePlugin(synth);
+    }
+
     if (struckUI_ != nullptr) {
         daw::audio::compiled::MagdaCompiledPolyInstrument* inst = nullptr;
         if (auto plugin = getLivePlugin())
@@ -2114,6 +2123,8 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
         nimbusUI_->setTelemetrySource(nullptr);
     if (faustInstrumentUI_ != nullptr)
         faustInstrumentUI_->setPlugin(nullptr);
+    if (polySynthUI_ != nullptr)
+        polySynthUI_->setLivePlugin(nullptr);
     if (struckUI_ != nullptr)
         struckUI_->setLivePlugin(nullptr);
 
