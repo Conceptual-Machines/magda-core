@@ -1164,6 +1164,9 @@ TrackChainContent::TrackChainContent()
     linkModeLabel_.setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     linkModeLabel_.setJustificationType(juce::Justification::centred);
+    // The banner spans the full header. It is status-only and must not trap
+    // clicks intended for the mod/macro controls underneath it.
+    linkModeLabel_.setInterceptsMouseClicks(false, false);
     linkModeLabel_.setVisible(false);
     addChildComponent(linkModeLabel_);
 

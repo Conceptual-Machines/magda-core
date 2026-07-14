@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "LinkModeManager.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
@@ -464,6 +465,10 @@ void BakeModulationCommand::execute() {
         previousLaneBypass_ = lane->bypass;
         capturedLaneBypass_ = true;
     }
+    // Baking is a terminal action for the current modulation-linking gesture.
+    // Keeping the transient mode alive leaves its banner and overlays active
+    // even though the source link is about to be disabled.
+    LinkModeManager::getInstance().exitAllLinkModes();
     removedPoints_ = autoMgr.replacePointsInRange(laneId_, startBeat_, endBeat_, bakedPoints_);
     disabledLinks_ = disableModLinks(linksToDisable_);
     // A bake replaces the source modulation with automation. Leaving a
@@ -493,6 +498,7 @@ void BakeModulationToClipCommand::execute() {
         previousLaneBypass_ = lane->bypass;
         capturedLaneBypass_ = true;
     }
+    LinkModeManager::getInstance().exitAllLinkModes();
     auto localPoints = bakedPoints_;
     for (auto& point : localPoints)
         point.beatPosition -= startBeat_;

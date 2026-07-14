@@ -4,6 +4,7 @@
 #include "../magda/daw/audio/automation/ModulationBaker.hpp"
 #include "../magda/daw/core/AutomationCommands.hpp"
 #include "../magda/daw/core/AutomationManager.hpp"
+#include "../magda/daw/core/LinkModeManager.hpp"
 #include "../magda/daw/core/TrackManager.hpp"
 #include "../magda/daw/core/UndoManager.hpp"
 
@@ -257,6 +258,7 @@ TEST_CASE("ModulationBaker - empty or non-bakeable input yields no points", "[au
 namespace {
 
 void resetManagers() {
+    LinkModeManager::getInstance().exitAllLinkModes();
     AutomationManager::getInstance().clearAll();
     TrackManager::getInstance().clearAllTracks();
     UndoManager::getInstance().clearHistory();
@@ -340,6 +342,8 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
 
     std::vector<BakeModulationCommand::ModLinkRef> refs;
     refs.push_back({path, 0, target});
+    LinkModeManager::getInstance().enterModLinkMode(path, 0);
+    REQUIRE(LinkModeManager::getInstance().isInLinkMode());
     undoMgr.executeCommand(std::make_unique<BakeModulationCommand>(
         laneId, 2.0, 4.0, std::vector<AutomationPoint>{bakedPoint(2.0, 0.6), bakedPoint(4.0, 0.8)},
         refs));
@@ -350,6 +354,7 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
     REQUIRE(pts[1].value == Approx(0.6));
     REQUIRE(pts[2].beatPosition == Approx(4.0));
     REQUIRE_FALSE(autoMgr.getLane(laneId)->bypass);
+    REQUIRE_FALSE(LinkModeManager::getInstance().isInLinkMode());
 
     {
         const auto node = constTracks.resolveChainNode(path);
@@ -369,6 +374,7 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
         REQUIRE(restored[i].value == Approx(before[i].value));
     }
     REQUIRE(autoMgr.getLane(laneId)->bypass);
+    REQUIRE_FALSE(LinkModeManager::getInstance().isInLinkMode());
 
     {
         const auto node = constTracks.resolveChainNode(path);
@@ -397,6 +403,7 @@ TEST_CASE("BakeModulationToClipCommand - activates the lane and restores bypass 
     autoMgr.setLaneBypass(laneId, true);
 
     const std::vector<BakeModulationCommand::ModLinkRef> refs{{path, 0, target}};
+    LinkModeManager::getInstance().enterModLinkMode(path, 0);
     undoMgr.executeCommand(std::make_unique<BakeModulationToClipCommand>(
         laneId, 2.0, 6.0,
         std::vector<AutomationPoint>{bakedPoint(2.0, 0.25), bakedPoint(6.0, 0.75)}, refs));
@@ -405,6 +412,7 @@ TEST_CASE("BakeModulationToClipCommand - activates the lane and restores bypass 
     REQUIRE(lane != nullptr);
     REQUIRE_FALSE(lane->bypass);
     REQUIRE(lane->clipIds.size() == 1);
+    REQUIRE_FALSE(LinkModeManager::getInstance().isInLinkMode());
 
     const auto* clip = autoMgr.getClip(lane->clipIds.front());
     REQUIRE(clip != nullptr);
@@ -432,6 +440,7 @@ TEST_CASE("BakeModulationToClipCommand - activates the lane and restores bypass 
     REQUIRE(undoMgr.redo());
     REQUIRE_FALSE(autoMgr.getLane(laneId)->bypass);
     REQUIRE(autoMgr.getLane(laneId)->clipIds.size() == 1);
+    REQUIRE_FALSE(LinkModeManager::getInstance().isInLinkMode());
     const auto redoneNode = constTracks.resolveChainNode(path);
     REQUIRE(redoneNode.valid());
     const auto* redoneLink = (*redoneNode.mods)[0].getLink(target);
