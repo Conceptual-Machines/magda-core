@@ -335,6 +335,7 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
     autoMgr.addPoint(laneId, 0.0, 0.1);
     autoMgr.addPoint(laneId, 3.0, 0.3);
     autoMgr.addPoint(laneId, 8.0, 0.5);
+    autoMgr.setLaneBypass(laneId, true);
     const auto before = autoMgr.getLane(laneId)->absolutePoints;
 
     std::vector<BakeModulationCommand::ModLinkRef> refs;
@@ -348,6 +349,7 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
     REQUIRE(pts[1].beatPosition == Approx(2.0));
     REQUIRE(pts[1].value == Approx(0.6));
     REQUIRE(pts[2].beatPosition == Approx(4.0));
+    REQUIRE_FALSE(autoMgr.getLane(laneId)->bypass);
 
     {
         const auto node = constTracks.resolveChainNode(path);
@@ -366,6 +368,7 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
         REQUIRE(restored[i].beatPosition == Approx(before[i].beatPosition));
         REQUIRE(restored[i].value == Approx(before[i].value));
     }
+    REQUIRE(autoMgr.getLane(laneId)->bypass);
 
     {
         const auto node = constTracks.resolveChainNode(path);
@@ -373,6 +376,67 @@ TEST_CASE("BakeModulationCommand - execute/undo round-trip with link disable",
         REQUIRE(link != nullptr);
         REQUIRE(link->enabled);
     }
+}
+
+TEST_CASE("BakeModulationToClipCommand - activates the lane and restores bypass on undo",
+          "[automation][bake]") {
+    resetManagers();
+    auto& tracks = TrackManager::getInstance();
+    const auto& constTracks = tracks;
+    auto& autoMgr = AutomationManager::getInstance();
+    auto& undoMgr = UndoManager::getInstance();
+
+    const auto trackId = tracks.createTrack("T", TrackType::Audio);
+    const auto path = ChainNodePath::trackLevel(trackId);
+    const auto target = ControlTarget::trackVolume(trackId);
+
+    tracks.addMod(path, 0, ModType::LFO);
+    tracks.setModTarget(path, 0, target);
+
+    const auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::ClipBased);
+    autoMgr.setLaneBypass(laneId, true);
+
+    const std::vector<BakeModulationCommand::ModLinkRef> refs{{path, 0, target}};
+    undoMgr.executeCommand(std::make_unique<BakeModulationToClipCommand>(
+        laneId, 2.0, 6.0,
+        std::vector<AutomationPoint>{bakedPoint(2.0, 0.25), bakedPoint(6.0, 0.75)}, refs));
+
+    const auto* lane = autoMgr.getLane(laneId);
+    REQUIRE(lane != nullptr);
+    REQUIRE_FALSE(lane->bypass);
+    REQUIRE(lane->clipIds.size() == 1);
+
+    const auto* clip = autoMgr.getClip(lane->clipIds.front());
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->points.size() == 2);
+    REQUIRE(clip->points.front().beatPosition == Approx(0.0));
+    REQUIRE(clip->points.back().beatPosition == Approx(4.0));
+
+    {
+        const auto node = constTracks.resolveChainNode(path);
+        REQUIRE(node.valid());
+        const auto* link = (*node.mods)[0].getLink(target);
+        REQUIRE(link != nullptr);
+        REQUIRE_FALSE(link->enabled);
+    }
+
+    REQUIRE(undoMgr.undo());
+    REQUIRE(autoMgr.getLane(laneId)->bypass);
+    REQUIRE(autoMgr.getLane(laneId)->clipIds.empty());
+
+    const auto node = constTracks.resolveChainNode(path);
+    const auto* link = (*node.mods)[0].getLink(target);
+    REQUIRE(link != nullptr);
+    REQUIRE(link->enabled);
+
+    REQUIRE(undoMgr.redo());
+    REQUIRE_FALSE(autoMgr.getLane(laneId)->bypass);
+    REQUIRE(autoMgr.getLane(laneId)->clipIds.size() == 1);
+    const auto redoneNode = constTracks.resolveChainNode(path);
+    REQUIRE(redoneNode.valid());
+    const auto* redoneLink = (*redoneNode.mods)[0].getLink(target);
+    REQUIRE(redoneLink != nullptr);
+    REQUIRE_FALSE(redoneLink->enabled);
 }
 
 TEST_CASE("BakeModulationCommand - undo does not re-enable links that were already disabled",

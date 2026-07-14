@@ -460,14 +460,23 @@ void BakeModulationCommand::execute() {
     if (!lane || !lane->isAbsolute())
         return;
 
+    if (!capturedLaneBypass_) {
+        previousLaneBypass_ = lane->bypass;
+        capturedLaneBypass_ = true;
+    }
     removedPoints_ = autoMgr.replacePointsInRange(laneId_, startBeat_, endBeat_, bakedPoints_);
     disabledLinks_ = disableModLinks(linksToDisable_);
+    // A bake replaces the source modulation with automation. Leaving a
+    // previously overridden lane bypassed would turn both sources off.
+    autoMgr.setLaneBypass(laneId_, false);
 }
 
 void BakeModulationCommand::undo() {
     AutomationManager::getInstance().replacePointsInRange(laneId_, startBeat_, endBeat_,
                                                           removedPoints_);
     enableModLinks(disabledLinks_);
+    if (capturedLaneBypass_)
+        AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
 }
 
 void BakeModulationToClipCommand::execute() {
@@ -480,6 +489,10 @@ void BakeModulationToClipCommand::execute() {
     if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
         return;
 
+    if (!capturedLaneBypass_) {
+        previousLaneBypass_ = lane->bypass;
+        capturedLaneBypass_ = true;
+    }
     auto localPoints = bakedPoints_;
     for (auto& point : localPoints)
         point.beatPosition -= startBeat_;
@@ -491,6 +504,7 @@ void BakeModulationToClipCommand::execute() {
     autoMgr.moveClipToFront(createdClipId_);
 
     disabledLinks_ = disableModLinks(linksToDisable_);
+    autoMgr.setLaneBypass(laneId_, false);
 }
 
 void BakeModulationToClipCommand::undo() {
@@ -500,6 +514,8 @@ void BakeModulationToClipCommand::undo() {
     }
     enableModLinks(disabledLinks_);
     disabledLinks_.clear();
+    if (capturedLaneBypass_)
+        AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
 }
 
 bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {
