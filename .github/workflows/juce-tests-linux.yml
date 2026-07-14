@@ -61,7 +61,7 @@ jobs:
     # Compile cache: sccache backed by S3 (see infra/sccache), sharing the
     # linux key prefix with the main CI job so common translation units hit.
     - name: Configure AWS credentials (sccache S3, OIDC)
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: ${{ secrets.AWS_SCCACHE_ROLE_ARN }}
         aws-region: eu-west-2

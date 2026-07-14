@@ -102,7 +102,7 @@ jobs:
     # actually survive. The linux prefix is shared with the JUCE-tests job so
     # their common translation units hit each other's objects.
     - name: Configure AWS credentials (sccache S3, OIDC)
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: ${{ secrets.AWS_SCCACHE_ROLE_ARN }}
         aws-region: eu-west-2
