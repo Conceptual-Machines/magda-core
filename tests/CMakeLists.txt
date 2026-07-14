@@ -57,6 +57,7 @@ set(TEST_SOURCES
     test_sidechain_triggers.cpp
     test_sidechain_device.cpp
     test_curve_snapshot.cpp
+    test_curve_editor_preview.cpp
     test_automation_curve_simplifier.cpp
     # Bake modulation to automation (issue #162)
     test_modulation_baker.cpp
@@ -235,6 +236,7 @@ target_sources(magda_juce_tests PRIVATE
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
+    test_signalsmith_loop_juce.cpp
     test_arranger_launcher_switching_juce.cpp
     test_session_slot_recording_juce.cpp
     test_input_monitor_track_routing_juce.cpp

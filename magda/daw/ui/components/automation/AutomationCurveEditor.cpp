@@ -59,8 +59,8 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
 
 void AutomationCurveEditor::refreshCurveColour() {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
-    const bool bypassed = lane && lane->bypass;
-    setCurveColour(bypassed ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
+    const bool disabled = lane && isAutomationPersistentlyDisabled(lane->authorityState);
+    setCurveColour(disabled ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
                             : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
 }
 
@@ -483,7 +483,7 @@ void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
 
 void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
-    if (!lane || !lane->bypass)
+    if (!lane || !isAutomationPersistentlyDisabled(lane->authorityState))
         return;
     if (lane->absolutePoints.empty())
         return;

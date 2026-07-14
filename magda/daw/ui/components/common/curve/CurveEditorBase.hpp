@@ -284,6 +284,9 @@ class CurveEditorBase : public juce::Component {
 
     // Helper to get effective position during preview
     std::pair<double, double> getEffectivePosition(const CurvePoint& p) const;
+    // A point can cross its neighbours during a drag. The model is sorted on
+    // commit, so render previews in that same effective X order immediately.
+    std::vector<const CurvePoint*> getRenderOrderedPoints() const;
 
     // Pencil drawing
     void createPointsFromDrawingPath();

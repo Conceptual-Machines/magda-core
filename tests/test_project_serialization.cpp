@@ -1017,9 +1017,11 @@ TEST_CASE("Automation serialization uses beat-domain property names",
 
     auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Audio);
     auto& automation = AutomationManager::getInstance();
-    auto laneId =
-        automation.createLane(ControlTarget::trackVolume(trackId), AutomationLaneType::ClipBased);
+    const auto target = ControlTarget::trackVolume(trackId);
+    auto laneId = automation.createLane(target, AutomationLaneType::ClipBased);
     automation.setLaneSnapEditsToBeatGrid(laneId, false);
+    automation.beginTargetGesture(target);
+    REQUIRE(automation.getLane(laneId)->authorityState == AutomationAuthorityState::Touching);
     auto clipId = automation.createClip(laneId, 4.0, 8.0);
     REQUIRE(clipId != INVALID_AUTOMATION_CLIP_ID);
     automation.setClipLooping(clipId, true);
@@ -1049,6 +1051,8 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     auto* laneObj = lanes->getReference(0).getDynamicObject();
     REQUIRE(laneObj != nullptr);
     REQUIRE(laneObj->hasProperty("snapEditsToBeatGrid"));
+    REQUIRE(laneObj->hasProperty("bypass"));
+    REQUIRE_FALSE(static_cast<bool>(laneObj->getProperty("bypass")));
     REQUIRE_FALSE(laneObj->hasProperty("snapToBeatGrid"));
     REQUIRE_FALSE(laneObj->hasProperty("snapTime"));
     REQUIRE(static_cast<bool>(laneObj->getProperty("snapEditsToBeatGrid")) == false);
@@ -1114,6 +1118,36 @@ TEST_CASE("Automation serialization uses beat-domain property names",
     const auto* restoredLane = AutomationManager::getInstance().getLane(laneId);
     REQUIRE(restoredLane != nullptr);
     REQUIRE_FALSE(restoredLane->snapEditsToBeatGrid);
+    REQUIRE(restoredLane->authorityState == AutomationAuthorityState::Reading);
+}
+
+TEST_CASE("Automation serialization persists only explicit disablement",
+          "[project][serialization][automation][authority]") {
+    ProjectTestFixture fixture;
+
+    const auto trackId = TrackManager::getInstance().createTrack("Automation", TrackType::Audio);
+    auto& automation = AutomationManager::getInstance();
+    const auto laneId =
+        automation.createLane(ControlTarget::trackVolume(trackId), AutomationLaneType::Absolute);
+    automation.setLaneEnabled(laneId, false);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+    auto* automationObj = rootObj->getProperty("automation").getDynamicObject();
+    REQUIRE(automationObj != nullptr);
+    auto* lanes = automationObj->getProperty("lanes").getArray();
+    REQUIRE(lanes != nullptr);
+    REQUIRE(lanes->size() == 1);
+    auto* laneObj = lanes->getReference(0).getDynamicObject();
+    REQUIRE(laneObj != nullptr);
+    REQUIRE(static_cast<bool>(laneObj->getProperty("bypass")));
+
+    REQUIRE(ProjectSerializer::deserializeProject(json, info));
+    const auto* restoredLane = AutomationManager::getInstance().getLane(laneId);
+    REQUIRE(restoredLane != nullptr);
+    REQUIRE(restoredLane->authorityState == AutomationAuthorityState::Disabled);
 }
 
 TEST_CASE("Automation serialization reads legacy time-named beat properties",

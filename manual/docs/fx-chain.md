@@ -26,8 +26,15 @@ The chain can contain:
 - **Right-click** a device for options: bypass, remove, replace, move to rack
 - Each device has **Mod** and **Macro** buttons to toggle the modulation and macro panels
 - Plugin devices have a **Learn** button that maps a control in the plugin's own UI back to the matching parameter slot — see [Plugin Parameters](plugin-parameters.md#learn-mode)
+- Each device header carries a **Δ** delta-solo button — see [Delta Solo](#delta-solo)
 
 See [Plugin Parameters](plugin-parameters.md) for per-plugin parameter visibility, custom units and ranges, and AI-assisted classification.
+
+### Delta Solo
+
+The **Δ** button in a device header (tooltip *Delta Solo: processed signal minus dry input*) lets you hear only what that device changes: MAGDA subtracts the device's latency-aligned dry input from its processed output, so you audition the difference alone. It is the direct way to check exactly what a compressor, EQ, or saturator is doing to the signal.
+
+Delta solo and bypass are mutually exclusive: turning on delta solo powers the device on, and powering the device off clears delta solo. The button lights cyan while active. Racks have their own delta-solo button in the same position (see [Rack Controls](#rack-controls)).
 
 ## Presets
 
@@ -87,11 +94,34 @@ Select multiple chains with ++cmd++-click (toggle) or ++shift++-click (range). W
 
 - **Volume** — Master output level for the entire rack
 - **Mod / Macro buttons** — Access the rack's own modulation and macro panels
+- **Delta Solo (Δ)** — Hear the whole rack's processed output minus its dry input (tooltip *Delta Solo: processed rack signal minus dry input*). Works on nested racks and stays available when the rack is collapsed. See [Delta Solo](#delta-solo).
 - **Collapse/Expand** — Click the rack header to toggle between collapsed and expanded views
 
 ### Collapsible Devices
 
 Individual devices inside a rack can be collapsed to save space. Click the collapse button on a device to shrink it to a compact header. The rack resizes dynamically as devices are collapsed or expanded. Collapsed states are preserved when the chain rebuilds (e.g. when adding or removing devices).
+
+## External Hardware Inserts
+
+MAGDA can route a track's signal out to outboard gear and back, treating a hardware unit as an insert in the chain. Two entries live under the **External** category in the [Plugin Browser](panels/browsers.md):
+
+- **External FX** — sends audio out to an outboard effect and returns its processed audio.
+- **External Instrument** — sends MIDI out to a hardware synth and returns its audio.
+
+Drag either onto a track's chain, then set its routing in the device slot:
+
+| Control | Purpose |
+|---|---|
+| **Send to** / **MIDI to** | The hardware output to feed (audio out for External FX, MIDI out for External Instrument) |
+| **Return from** | The audio input the hardware comes back on |
+| **Latency (ms)** | Manual trim to align the return with the rest of the mix (default 0.0) |
+
+Picking a hardware port that is currently disabled enables it automatically, and ports that no longer feed any insert are disabled again for you. If two inserts fight over the same port, a warning line appears in the slot (for example *Return uses the same port as the send*).
+
+For an **External Instrument**, the track's own MIDI-out and audio-in selectors become read-only mirrors of the insert's routing, and MAGDA blocks the synth's MIDI from being recorded straight back in so you don't get doubled or hanging notes.
+
+!!! note "Export captures the hardware automatically"
+    Because outboard gear isn't part of an offline render, MAGDA captures it for you. When you export a project that contains a routed insert, it first plays the export range once in real time to record the hardware returns (a progress box titled *Capturing External Hardware* appears, with a **Cancel** button), then substitutes those captures into the offline render. Nothing is added to your project and there is no freeze step to manage.
 
 ## Post-FX Section
 

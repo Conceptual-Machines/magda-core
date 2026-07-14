@@ -7,6 +7,7 @@
 #include <cmath>
 #include <vector>
 
+#include "AutomationStateMachine.hpp"
 #include "AutomationTypes.hpp"
 #include "ControlTarget.hpp"
 #include "ParameterInfo.hpp"
@@ -21,8 +22,8 @@ struct ModInfo;
  * @brief Visual state for a control bound to an automation target.
  *
  * Drives the "purple / grey / none" visualisation on faders and value labels.
- * Computed from lane existence + lane->touchSuppressed so UI code doesn't
- * re-implement the same if-chain at every paint site.
+ * Computed from lane existence + its authority state so UI code doesn't
+ * re-implement the same state machine at every paint site.
  */
 enum class AutomationVisualState {
     None,        // No lane exists — control paints normally
@@ -208,12 +209,7 @@ struct AutomationLaneInfo {
     juce::String name;  // Optional explicit display override
     bool visible = true;
     bool expanded = true;
-    bool bypass = false;  // Ignore baked curve during playback
-    // Transient (not serialized): set while a user is actively touching a
-    // control bound to this target during playback, so AutomationPlaybackEngine
-    // leaves the parameter alone for the duration of the gesture instead of
-    // fighting it every block.
-    bool touchSuppressed = false;
+    AutomationAuthorityState authorityState = AutomationAuthorityState::Reading;
     bool snapEditsToBeatGrid = true;  // Snap edit gestures to the beat grid
     bool snapValue = false;           // Snap drawn values to parameter's natural ticks
     int height = 60;                  // Lane height in pixels

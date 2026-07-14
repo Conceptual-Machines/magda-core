@@ -92,6 +92,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testBeatModeStretchEngineChangesReallocateGraph();
         testArrangementWarpClipboardPasteToSessionPreservesMarkers();
         testWarpMarkerSyncIsIdempotent();
+        testTransientSensitivityChangesAreDebounced();
         testSingleWarpMarkerMapIsIgnored();
         testLoopEnableDisable();
         testBeatModeRoundTripPreservesTrimmedLength();
@@ -720,6 +721,31 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectEquals(teClip->getWarpTimeManager().getMarkers().size(), 2,
                      "A lone saved marker must not be inserted over TE's two boundaries");
+    }
+
+    void testTransientSensitivityChangesAreDebounced() {
+        beginTest("Rapid transient sensitivity changes retain cached markers until settled");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        juce::Array<double> cachedTransients{0.25, 0.75, 1.25};
+        auto& thumbnailManager = AudioThumbnailManager::getInstance();
+        thumbnailManager.cacheTransients(f.audioPath(), cachedTransients);
+
+        f.clipSync->setTransientSensitivity(clipId, 0.2f);
+        f.clipSync->setTransientSensitivity(clipId, 0.5f);
+        f.clipSync->setTransientSensitivity(clipId, 0.8f);
+
+        const auto* cached = thumbnailManager.getCachedTransients(f.audioPath());
+        expect(cached != nullptr,
+               "Dragging sensitivity should not clear the displayed transient cache per tick");
+        if (cached != nullptr)
+            expectEquals(cached->size(), cachedTransients.size(),
+                         "Cached markers should remain stable during the debounce window");
     }
 
     void testPropertyChangeCreatesMissingReversedArrangementClipSynchronously() {

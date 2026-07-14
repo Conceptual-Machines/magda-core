@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <juce_events/juce_events.h>
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <map>
@@ -38,7 +39,7 @@ struct WarpMarkerInfo {
  * - All operations run on message thread (UI thread)
  * - Delegates to Tracktion Engine's WarpTimeManager
  */
-class WarpMarkerManager : private te::WarpTimeManager::Listener {
+class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::Timer {
   public:
     WarpMarkerManager() = default;
     ~WarpMarkerManager();
@@ -134,9 +135,10 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener {
     // -------- In-flight guard for transient detection --------
     //
     // The UI can spam sensitivity changes (slider drag = many calls/sec).
-    // Restart detection immediately for the latest value; WarpTimeManager
-    // detaches/cancels the previous job and reports the surviving job by
-    // callback, so stale jobs can't overwrite the cache.
+    // Retain only the latest value and start one detection after the gesture
+    // settles, keeping the current overlay stable in the meantime. All clips
+    // share this quiet-period timer: an update for any clip restarts it, then
+    // every pending clip is processed together once input settles.
     struct PendingDetection {
         float sensitivity = 0.0f;
         // Resolved at queue time so the slider hot-path doesn't snapshot the
@@ -157,7 +159,9 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener {
                              float sensitivity);
     void finishDetection(ClipId clipId, te::WarpTimeManager& warpManager, bool completedOk);
     void transientDetectionFinished(te::WarpTimeManager&, bool completedOk) override;
+    void timerCallback() override;
 
+    std::map<ClipId, PendingDetection> pendingDetections_;
     std::set<ClipId> detectionInFlight_;
     std::map<ClipId, ActiveDetection> activeDetections_;
     std::map<te::WarpTimeManager*, ClipId> clipByWarpManager_;

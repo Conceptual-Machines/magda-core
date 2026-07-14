@@ -43,6 +43,7 @@ DraggableValueLabel::DraggableValueLabel(Format format) : format_(format) {
 }
 
 DraggableValueLabel::~DraggableValueLabel() {
+    endAutomationGesture();
     if (listeningToAutomation_) {
         AutomationManager::getInstance().removeListener(this);
         listeningToAutomation_ = false;
@@ -299,49 +300,38 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
 
     isDragging_ = true;
     valueControl_.setDragging(true);
-    overrideLatchedThisGesture_ = false;
     dragStartValue_ = value_;
     dragStartY_ = e.y;
 
     if (onDragStart)
         onDragStart();
 
-    // Suppress playback write-back for the duration of the gesture so the
-    // engine doesn't fight a drag-in-progress. This is transient (cleared on
-    // mouseUp) and is NOT the same as the persistent override/bypass — that
-    // only latches once we see a real value change (see latchAutomationOverride).
-    if (hasAutomationTarget_ && isAutomated()) {
-        AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_, true);
-    }
-    // Always mark the gesture on the target (even when no lane exists yet) so
-    // AutomationRecordingEngine can distinguish real user touches from playback
-    // engine echo-backs when deciding whether to record a point.
-    if (hasAutomationTarget_) {
-        AutomationManager::getInstance().setTargetUserTouched(automationTarget_, true);
-        // Capture pre-drag value as the Touch-mode bounce-back baseline. Same
-        // mechanism TextSlider uses; needed here for any DraggableValueLabel
-        // wired to a Macro / ModParameter / device target.
-        ParameterInfo info = getParameterInfoForTarget(automationTarget_);
-        double normalized = static_cast<double>(
-            ParameterUtils::realToNormalized(static_cast<float>(dragStartValue_), info));
-        AutomationManager::getInstance().setTouchBaseline(automationTarget_, normalized);
-    }
+    beginAutomationGesture(dragStartValue_);
 
     syncValueControl();
 }
 
-void DraggableValueLabel::latchAutomationOverride() {
-    if (overrideLatchedThisGesture_)
+void DraggableValueLabel::beginAutomationGesture(double baselineValue) {
+    if (automationGestureActive_ || !hasAutomationTarget_)
         return;
-    if (!hasAutomationTarget_ || !isAutomated())
-        return;
-    // Write mode is ACTIVELY recording into the lane — do not bypass it.
-    if (AutomationManager::getInstance().isWriteModeEnabled())
-        return;
+    automationGestureActive_ = true;
     auto& mgr = AutomationManager::getInstance();
-    mgr.setTargetOverridden(automationTarget_, true);
-    setAutomationVisualState(AutomationVisualState::Overridden);
-    overrideLatchedThisGesture_ = true;
+    mgr.beginTargetGesture(automationTarget_);
+    mgr.setTargetUserTouched(automationTarget_, true);
+    const auto info = getParameterInfoForTarget(automationTarget_);
+    const double normalized = static_cast<double>(
+        ParameterUtils::realToNormalized(static_cast<float>(baselineValue), info));
+    mgr.setTouchBaseline(automationTarget_, normalized);
+}
+
+void DraggableValueLabel::endAutomationGesture() {
+    if (!automationGestureActive_)
+        return;
+    automationGestureActive_ = false;
+    auto& mgr = AutomationManager::getInstance();
+    mgr.setTargetUserTouched(automationTarget_, false);
+    mgr.endTargetGesture(automationTarget_);
+    mgr.clearTouchBaseline(automationTarget_);
 }
 
 void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
@@ -351,13 +341,6 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
 
     // Calculate delta (dragging up increases value)
     int deltaY = dragStartY_ - e.y;
-
-    // Confirm gesture as a real edit once the drag crosses a small threshold —
-    // only then do we latch the persistent override. A plain click or an
-    // aborted gesture never reaches this point.
-    constexpr int kDragThresholdPx = 2;
-    if (std::abs(deltaY) >= kDragThresholdPx)
-        latchAutomationOverride();
 
     double deltaValue;
     if (format_ == Format::BarsBeats) {
@@ -391,14 +374,7 @@ void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
     isDragging_ = false;
     valueControl_.setDragging(false);
 
-    // Release the transient flags; the lane stays in bypass (override) state
-    // until the user explicitly re-enables it from the lane header.
-    if (hasAutomationTarget_) {
-        auto& mgr = AutomationManager::getInstance();
-        mgr.setTargetUserTouched(automationTarget_, false);
-        mgr.setTargetTouchSuppressed(automationTarget_, false);
-        mgr.clearTouchBaseline(automationTarget_);
-    }
+    endAutomationGesture();
 
     syncValueControl();
     if (wasDragging && onDragEnd)
@@ -409,17 +385,13 @@ void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& e) {
     const bool wasDragging = isDragging_;
     isDragging_ = false;
     valueControl_.setDragging(false);
-    if (wasDragging && hasAutomationTarget_) {
-        auto& mgr = AutomationManager::getInstance();
-        mgr.setTargetUserTouched(automationTarget_, false);
-        mgr.setTargetTouchSuppressed(automationTarget_, false);
-        mgr.clearTouchBaseline(automationTarget_);
-    }
+    if (wasDragging)
+        endAutomationGesture();
 
     if (doubleClickResets_ && !e.mods.isShiftDown()) {
-        if (value_ != defaultValue_)
-            latchAutomationOverride();
+        beginAutomationGesture(value_);
         setValue(defaultValue_);
+        endAutomationGesture();
     } else {
         startEditing();
     }
@@ -475,22 +447,22 @@ void DraggableValueLabel::startEditing() {
         return;
     }
 
+    beginAutomationGesture(value_);
     valueControl_.showEditor(formatValue(value_));
 }
 
 void DraggableValueLabel::finishEditing(const juce::String& text) {
     double newValue = parseValue(text);
-    if (newValue != value_)
-        latchAutomationOverride();
     setValue(newValue);
+    endAutomationGesture();
 }
 
 void DraggableValueLabel::cancelEditing() {
-    if (!valueControl_.isEditing()) {
+    if (valueControl_.isEditing()) {
+        valueControl_.cancelEditing();
         return;
     }
-
-    valueControl_.cancelEditing();
+    endAutomationGesture();
 }
 
 }  // namespace magda

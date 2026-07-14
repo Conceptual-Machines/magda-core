@@ -312,6 +312,9 @@ void GestureRouter::installDefaults() {
                     GestureMod_None},
                    {GestureActionType::ZoomVertical, kDragZoomSensitivity, false});
     }
+    setBinding(GestureContext::CurveEditor,
+               {GestureInputKind::Drag, GestureArea::Ruler, GestureAxis::Vertical, GestureMod_None},
+               {GestureActionType::ZoomHorizontal, kDragZoomSensitivity, false});
     setBinding(
         GestureContext::PianoRoll,
         {GestureInputKind::Drag, GestureArea::Keyboard, GestureAxis::Horizontal, GestureMod_None},
