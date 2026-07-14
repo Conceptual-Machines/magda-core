@@ -72,7 +72,9 @@ juce::var ProjectSerializer::serializeAutomationLaneInfo(const AutomationLaneInf
     obj->setProperty("name", lane.name);
     obj->setProperty("visible", lane.visible);
     obj->setProperty("expanded", lane.expanded);
-    obj->setProperty("bypass", lane.bypass);
+    // Keep the existing project key for backward compatibility. Runtime
+    // Touching/Writing states are intentionally normalized to enabled.
+    obj->setProperty("bypass", isAutomationPersistentlyDisabled(lane.authorityState));
     obj->setProperty("snapEditsToBeatGrid", lane.snapEditsToBeatGrid);
     obj->setProperty("snapValue", lane.snapValue);
     obj->setProperty("height", lane.height);
@@ -111,8 +113,11 @@ bool ProjectSerializer::deserializeAutomationLaneInfo(const juce::var& json,
     outLane.name = obj->getProperty("name").toString();
     outLane.visible = obj->getProperty("visible");
     outLane.expanded = obj->getProperty("expanded");
-    if (obj->hasProperty("bypass"))
-        outLane.bypass = obj->getProperty("bypass");
+    if (obj->hasProperty("bypass")) {
+        outLane.authorityState = static_cast<bool>(obj->getProperty("bypass"))
+                                     ? AutomationAuthorityState::Disabled
+                                     : AutomationAuthorityState::Reading;
+    }
     if (obj->hasProperty("snapEditsToBeatGrid"))
         outLane.snapEditsToBeatGrid = obj->getProperty("snapEditsToBeatGrid");
     else if (obj->hasProperty("snapToBeatGrid"))

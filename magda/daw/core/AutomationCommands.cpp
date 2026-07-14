@@ -468,7 +468,8 @@ bool prepareBakeLaneForExecute(AutomationLaneId laneId, AutomationLaneType expec
         preparedState.captured = true;
         preparedState.laneExisted = true;
         preparedState.lane = *lane;
-        preparedState.lane.touchSuppressed = false;
+        preparedState.lane.authorityState =
+            automationAuthorityForPersistence(preparedState.lane.authorityState);
         preparedState.clips = clipsForLane(manager, *lane);
     }
 
@@ -484,11 +485,11 @@ void activateBakedLane(AutomationLaneId laneId) {
 
     const auto target = lane->target;
     manager.setTargetUserTouched(target, false);
-    manager.setTargetTouchSuppressed(target, false);
+    manager.endTargetGesture(target);
     manager.clearTouchBaseline(target);
-    manager.setLaneBypass(laneId, false);
-    // setLaneBypass is intentionally a no-op when the lane was already on.
-    // Still notify controls after clearing a stale transient override.
+    manager.setLaneEnabled(laneId, true);
+    // setLaneEnabled is intentionally a no-op when already Reading. Still
+    // notify controls after clearing stale gesture bookkeeping.
     manager.invalidateLane(laneId);
 }
 
@@ -533,7 +534,7 @@ BakeAutomationLaneState captureBakeAutomationLaneState(const AutomationTarget& t
     state.laneExisted = true;
     state.lane = *lane;
     // A popup-menu command must never restore a half-finished mouse gesture.
-    state.lane.touchSuppressed = false;
+    state.lane.authorityState = automationAuthorityForPersistence(state.lane.authorityState);
     state.clips = clipsForLane(manager, *lane);
     return state;
 }
@@ -556,9 +557,9 @@ void BakeModulationCommand::execute() {
 
     const auto* lane = autoMgr.getLane(laneId_);
 
-    if (!capturedLaneBypass_) {
-        previousLaneBypass_ = lane->bypass;
-        capturedLaneBypass_ = true;
+    if (!capturedLaneAuthority_) {
+        previousLaneDisabled_ = isAutomationPersistentlyDisabled(lane->authorityState);
+        capturedLaneAuthority_ = true;
     }
     // Baking is a terminal action for the current modulation-linking gesture.
     // Keeping the transient mode alive leaves its banner and overlays active
@@ -566,8 +567,8 @@ void BakeModulationCommand::execute() {
     LinkModeManager::getInstance().exitAllLinkModes();
     removedPoints_ = autoMgr.replacePointsInRange(laneId_, startBeat_, endBeat_, bakedPoints_);
     disabledLinks_ = disableModLinks(linksToDisable_);
-    // A bake replaces the source modulation with automation. Leaving a
-    // previously overridden lane bypassed would turn both sources off.
+    // A bake replaces the source modulation with automation, so the resulting
+    // lane must enter Reading even if it was explicitly disabled beforehand.
     activateBakedLane(laneId_);
 }
 
@@ -577,8 +578,8 @@ void BakeModulationCommand::undo() {
     } else {
         AutomationManager::getInstance().replacePointsInRange(laneId_, startBeat_, endBeat_,
                                                               removedPoints_);
-        if (capturedLaneBypass_)
-            AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
+        if (capturedLaneAuthority_)
+            AutomationManager::getInstance().setLaneEnabled(laneId_, !previousLaneDisabled_);
     }
     enableModLinks(disabledLinks_);
     disabledLinks_.clear();
@@ -593,9 +594,9 @@ void BakeModulationToClipCommand::execute() {
 
     const auto* lane = autoMgr.getLane(laneId_);
 
-    if (!capturedLaneBypass_) {
-        previousLaneBypass_ = lane->bypass;
-        capturedLaneBypass_ = true;
+    if (!capturedLaneAuthority_) {
+        previousLaneDisabled_ = isAutomationPersistentlyDisabled(lane->authorityState);
+        capturedLaneAuthority_ = true;
     }
 
     createdClipId_ = autoMgr.createClip(laneId_, startBeat_, endBeat_ - startBeat_);
@@ -624,8 +625,8 @@ void BakeModulationToClipCommand::undo() {
     } else if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID) {
         AutomationManager::getInstance().deleteClip(createdClipId_);
         createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
-        if (capturedLaneBypass_)
-            AutomationManager::getInstance().setLaneBypass(laneId_, previousLaneBypass_);
+        if (capturedLaneAuthority_)
+            AutomationManager::getInstance().setLaneEnabled(laneId_, !previousLaneDisabled_);
     }
     enableModLinks(disabledLinks_);
     disabledLinks_.clear();

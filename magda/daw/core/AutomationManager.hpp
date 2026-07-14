@@ -176,7 +176,8 @@ class AutomationManager : public TrackManagerListener {
     void setLaneName(AutomationLaneId laneId, const juce::String& name);
     void setLaneVisible(AutomationLaneId laneId, bool visible);
     void setLaneExpanded(AutomationLaneId laneId, bool expanded);
-    void setLaneBypass(AutomationLaneId laneId, bool bypass);
+    /** Explicit power control. This is the only authority transition that persists. */
+    void setLaneEnabled(AutomationLaneId laneId, bool enabled);
 
     // Global session-only show/hide: when false, all automation lane viewports
     // are hidden across every track regardless of per-lane `visible` flags.
@@ -185,30 +186,17 @@ class AutomationManager : public TrackManagerListener {
     }
     void setGlobalLaneVisibility(bool enabled);
 
-    /**
-     * @brief Transient touch suppression for a target.
-     *
-     * Called by UI controls on mouseDown / mouseUp during playback so the
-     * playback engine stops writing into the parameter while the user is
-     * dragging it. Looks up the lane by target; no-op if no lane exists.
-     * The flag is not serialized and not surfaced via
-     * automationLanePropertyChanged — listeners that need to react use
-     * setTouchSuppressionListener().
-     */
-    void setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed);
+    /** Enter transient Touching/Writing authority for the target's lane. */
+    void beginTargetGesture(const AutomationTarget& target);
 
-    /**
-     * Release any touchSuppressed flag left on any lane. Safety net for the
-     * case where a UI gesture's end-callback didn't fire (component destroyed
-     * mid-drag, modal opened, exception) and the lane stayed suppressed —
-     * the next bake would skip it and the parameter would silently stop
-     * following automation. Call at safe boundaries (transport stop) when no
-     * gesture should be in flight.
-     */
-    void clearAllTouchSuppression();
+    /** Return a transient target gesture to Reading. Disabled remains Disabled. */
+    void endTargetGesture(const AutomationTarget& target);
+
+    /** Safety net for gestures interrupted by component destruction or transport stop. */
+    void resetRuntimeAuthorityStates();
 
     // Tracks which automation targets the user is actively manipulating via
-    // a mouse/touch gesture. Unlike touchSuppressed, this is set even when no
+    // a mouse/touch gesture. This is set even when no
     // lane exists yet, so the recording engine can tell "user is touching" from
     // "playback engine echoed a curve value back into TrackManager" during
     // active playback — preventing feedback loops that overwrite baked curves.
@@ -231,33 +219,24 @@ class AutomationManager : public TrackManagerListener {
     /**
      * @brief Compute the visual state for a target's bound control.
      *
-     * Single source of truth so widgets don't re-derive (lane exists,
-     * bypass, touchSuppressed) logic in their own paint paths.
+     * Single source of truth so widgets don't re-derive the lane authority
+     * state machine in their own paint paths.
      */
     AutomationVisualState getVisualState(const AutomationTarget& target) const;
-
-    /**
-     * @brief Latch a target's lane into the "overridden" state.
-     *
-     * Called when the user takes over an automated control — bypasses the
-     * lane so playback stops reading the curve. The user re-enables by
-     * toggling the lane's power button (setLaneBypass(laneId, false)).
-     * No-op if no lane exists for the target.
-     */
-    void setTargetOverridden(const AutomationTarget& target, bool overridden);
 
     // Query the real automation-write mode from AudioBridge so controls don't
     // depend on a duplicated UI-side cache that can drift out of sync.
     bool isWriteModeEnabled() const;
 
     // Current live normalized value for a target, independent of whether its
-    // automation lane is active. Used by overridden lanes to show where the
-    // user-held value sits against the stored curve.
+    // automation lane is active. Used by disabled lanes to show where the
+    // manual value sits against the stored curve.
     std::optional<double> getCurrentTargetValue(const AutomationTarget& target) const;
 
-    using TouchSuppressionListener = std::function<void(AutomationLaneId, bool)>;
-    void setTouchSuppressionListener(TouchSuppressionListener listener) {
-        touchSuppressionListener_ = std::move(listener);
+    using AuthorityStateListener =
+        std::function<void(AutomationLaneId, AutomationAuthorityState, AutomationAuthorityState)>;
+    void setAuthorityStateListener(AuthorityStateListener listener) {
+        authorityStateListener_ = std::move(listener);
     }
 
     void setLaneSnapEditsToBeatGrid(AutomationLaneId laneId, bool snap);
@@ -583,14 +562,14 @@ class AutomationManager : public TrackManagerListener {
 
     // Targets under an active user touch gesture (mouseDown..mouseUp on a
     // DraggableValueLabel / TextSlider bound to this target). Separate from
-    // lane-level touchSuppressed because touches start before a lane exists
+    // lane-level authority because touches start before a lane exists
     // — see setTargetUserTouched().
     std::vector<AutomationTarget> userTouchedTargets_;
     // Per-target normalized baseline captured at touch start; see
     // setTouchBaseline.
     std::vector<std::pair<AutomationTarget, double>> touchBaselines_;
 
-    TouchSuppressionListener touchSuppressionListener_;
+    AuthorityStateListener authorityStateListener_;
 
     int nextLaneId_ = 1;
     int nextClipId_ = 1;
@@ -606,6 +585,7 @@ class AutomationManager : public TrackManagerListener {
     void notifyLanePropertyChanged(AutomationLaneId laneId);
     void notifyClipsChanged(AutomationLaneId laneId);
     void notifyPointsChanged(AutomationLaneId laneId);
+    void dispatchAuthorityEvent(AutomationLaneId laneId, AutomationAuthorityEvent event);
 
     // Interpolation helpers
     double interpolateLinear(double t, double v1, double v2) const;

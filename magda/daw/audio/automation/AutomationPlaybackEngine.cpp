@@ -29,17 +29,17 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
     auto& mgr = AutomationManager::getInstance();
     mgr.addListener(this);
 
-    // When a user grabs an automated control, clear the baked curve so TE
-    // stops writing to the parameter; when they release, rebake from the
-    // stored lane data so automation resumes. This is the cheap,
-    // per-gesture equivalent of a "touch" write mode.
-    mgr.setTouchSuppressionListener([this](AutomationLaneId laneId, bool suppressed) {
+    // Authority transitions are applied immediately: transient Touching /
+    // Writing and explicit Disabled states clear the TE curve; returning to
+    // Reading restores it. Modifiers remain attached independently, so
+    // automation supplies the base value and modulation composes on top.
+    mgr.setAuthorityStateListener([this](AutomationLaneId laneId,
+                                         AutomationAuthorityState /*previous*/,
+                                         AutomationAuthorityState next) {
         auto* lane = AutomationManager::getInstance().getLane(laneId);
         if (!lane)
             return;
-        DBG("[AutoPb] touchSuppressionListener lane=" << laneId << " suppressed=" << (int)suppressed
-                                                      << " bypass=" << (int)lane->bypass);
-        if (suppressed) {
+        if (isAutomationPlaybackSuppressed(next)) {
             clearLane(*lane);
             if (auto* param = resolveParameter(lane->target))
                 param->updateStream();
@@ -52,7 +52,7 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
 AutomationPlaybackEngine::~AutomationPlaybackEngine() {
     auto& mgr = AutomationManager::getInstance();
     mgr.removeListener(this);
-    mgr.setTouchSuppressionListener({});
+    mgr.setAuthorityStateListener({});
 
     // Detach from every TE parameter we were listening on — otherwise the
     // parameter keeps a dangling pointer and will crash on the next value
@@ -98,11 +98,11 @@ void AutomationPlaybackEngine::process() {
         // so curves are ready before the next play. The 10ms deferred iterator
         // rebuild will complete long before the user presses play again.
         // Manual fader control still works because playbackActive_ is false.
-        // Release any touchSuppressed flag a UI gesture may have left behind
+        // Release any transient authority state a UI gesture may have left behind
         // (component destroyed mid-drag, modal opened, etc.) — otherwise the
         // upcoming bake skips that lane and the parameter silently stops
         // following automation until the user re-touches the control.
-        AutomationManager::getInstance().clearAllTouchSuppression();
+        AutomationManager::getInstance().resetRuntimeAuthorityStates();
         clearAllLanes();
         bakeAllLanes();
         AutomationManager::getInstance().setPlaybackActive(false);
@@ -306,11 +306,11 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // Clear existing TE automation points
     curve.clear(nullptr);
 
-    // Bypass or live touch-suppression: leave the curve empty so TE's audio
+    // Any non-reading state leaves the curve empty so TE's audio
     // thread falls back to the parameter's manual/static value. Force iterator
     // rebuild so the change takes effect on the next audio block rather than
     // after TE's 10ms timer.
-    if (lane.bypass || lane.touchSuppressed) {
+    if (isAutomationPlaybackSuppressed(lane.authorityState)) {
         param->updateStream();
         return;
     }

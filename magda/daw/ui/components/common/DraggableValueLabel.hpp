@@ -164,6 +164,8 @@ class DraggableValueLabel : public juce::Component,
     // are added/removed or a lane's properties change — no caller needs to
     // push updates. Pass an invalid target to detach.
     void setAutomationTarget(const AutomationTarget& target) {
+        if (automationGestureActive_ && target != automationTarget_)
+            endAutomationGesture();
         automationTarget_ = target;
         const bool nowHas = target.isValid();
         if (nowHas && !listeningToAutomation_) {
@@ -307,14 +309,12 @@ class DraggableValueLabel : public juce::Component,
     // Drag state
     bool isDragging_ = false;
     bool coEditing_ = false;  // see setCoEditing
-    bool overrideLatchedThisGesture_ = false;
+    bool automationGestureActive_ = false;
     double dragStartValue_ = 0.0;
     int dragStartY_ = 0;
 
-    // Latches lane bypass + visual override once the gesture is confirmed
-    // as a real edit (drag crossed threshold, text commit changed value, or
-    // double-click reset). No-op if already latched or not automated.
-    void latchAutomationOverride();
+    void beginAutomationGesture(double baselineValue);
+    void endAutomationGesture();
 
     // Edit mode
     daw::ui::ValueLabelControl valueControl_;

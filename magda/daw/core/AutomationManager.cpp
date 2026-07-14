@@ -282,6 +282,10 @@ AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
     lane.id = nextLaneId_++;
     lane.target = target;
     lane.type = type;
+    if (isTargetUserTouched(target)) {
+        lane.authorityState = isWriteModeEnabled() ? AutomationAuthorityState::Writing
+                                                   : AutomationAuthorityState::Touching;
+    }
 
     // For absolute lanes, add an initial point at the current target value
     if (type == AutomationLaneType::Absolute) {
@@ -383,6 +387,7 @@ void AutomationManager::restoreLaneState(const AutomationLaneInfo& laneState,
         return;
 
     *lane = laneState;
+    lane->authorityState = automationAuthorityForPersistence(lane->authorityState);
     clips_.erase(std::remove_if(clips_.begin(), clips_.end(),
                                 [&laneState](const AutomationClipInfo& c) {
                                     return c.laneId == laneState.id;
@@ -494,13 +499,26 @@ void AutomationManager::setLaneExpanded(AutomationLaneId laneId, bool expanded) 
     }
 }
 
-void AutomationManager::setLaneBypass(AutomationLaneId laneId, bool bypass) {
-    if (auto* lane = getLane(laneId)) {
-        if (lane->bypass == bypass)
-            return;
-        lane->bypass = bypass;
-        notifyLanePropertyChanged(laneId);
-    }
+void AutomationManager::setLaneEnabled(AutomationLaneId laneId, bool enabled) {
+    dispatchAuthorityEvent(laneId, enabled ? AutomationAuthorityEvent::Enable
+                                           : AutomationAuthorityEvent::Disable);
+}
+
+void AutomationManager::dispatchAuthorityEvent(AutomationLaneId laneId,
+                                               AutomationAuthorityEvent event) {
+    auto* lane = getLane(laneId);
+    if (!lane)
+        return;
+
+    const auto previous = lane->authorityState;
+    const auto next = transitionAutomationAuthority(previous, event);
+    if (next == previous)
+        return;
+
+    lane->authorityState = next;
+    if (authorityStateListener_)
+        authorityStateListener_(laneId, previous, next);
+    notifyLanePropertyChanged(laneId);
 }
 
 void AutomationManager::setTargetUserTouched(const AutomationTarget& target, bool touched) {
@@ -552,19 +570,26 @@ AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& 
     AutomationLaneId laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)
         return AutomationVisualState::None;
-    const auto* lane = const_cast<AutomationManager*>(this)->getLane(laneId);
+    const auto* lane = getLane(laneId);
     if (!lane)
         return AutomationVisualState::None;
-    if (lane->bypass || lane->touchSuppressed)
+    if (isAutomationPlaybackSuppressed(lane->authorityState))
         return AutomationVisualState::Overridden;
     return AutomationVisualState::Active;
 }
 
-void AutomationManager::setTargetOverridden(const AutomationTarget& target, bool overridden) {
-    AutomationLaneId laneId = getLaneForTarget(target);
+void AutomationManager::beginTargetGesture(const AutomationTarget& target) {
+    const auto laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)
         return;
-    setLaneBypass(laneId, overridden);
+    dispatchAuthorityEvent(laneId, isWriteModeEnabled() ? AutomationAuthorityEvent::BeginWrite
+                                                        : AutomationAuthorityEvent::BeginTouch);
+}
+
+void AutomationManager::endTargetGesture(const AutomationTarget& target) {
+    const auto laneId = getLaneForTarget(target);
+    if (laneId != INVALID_AUTOMATION_LANE_ID)
+        dispatchAuthorityEvent(laneId, AutomationAuthorityEvent::EndGesture);
 }
 
 bool AutomationManager::isWriteModeEnabled() const {
@@ -580,27 +605,14 @@ std::optional<double> AutomationManager::getCurrentTargetValue(
     return getCurrentTargetValueImpl(target);
 }
 
-void AutomationManager::clearAllTouchSuppression() {
-    for (auto& lane : lanes_) {
-        if (!lane.touchSuppressed)
-            continue;
-        lane.touchSuppressed = false;
-        if (touchSuppressionListener_)
-            touchSuppressionListener_(lane.id, false);
+void AutomationManager::resetRuntimeAuthorityStates() {
+    std::vector<AutomationLaneId> runtimeLanes;
+    for (const auto& lane : lanes_) {
+        if (isAutomationGestureActive(lane.authorityState))
+            runtimeLanes.push_back(lane.id);
     }
-}
-
-void AutomationManager::setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed) {
-    AutomationLaneId laneId = getLaneForTarget(target);
-    if (laneId == INVALID_AUTOMATION_LANE_ID)
-        return;
-    auto* lane = getLane(laneId);
-    if (!lane || lane->touchSuppressed == suppressed)
-        return;
-    lane->touchSuppressed = suppressed;
-
-    if (touchSuppressionListener_)
-        touchSuppressionListener_(laneId, suppressed);
+    for (const auto laneId : runtimeLanes)
+        dispatchAuthorityEvent(laneId, AutomationAuthorityEvent::ResetRuntime);
 }
 
 void AutomationManager::setLaneSnapEditsToBeatGrid(AutomationLaneId laneId, bool snap) {
@@ -1328,6 +1340,8 @@ void AutomationManager::notifyPointDragPreview(AutomationLaneId laneId, Automati
 void AutomationManager::clearAll() {
     lanes_.clear();
     clips_.clear();
+    userTouchedTargets_.clear();
+    touchBaselines_.clear();
     nextLaneId_ = 1;
     nextClipId_ = 1;
     nextPointId_ = 1;
@@ -1345,6 +1359,7 @@ void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
     // lane for that target can be present.
     if (getLaneForTarget(lane.target) != INVALID_AUTOMATION_LANE_ID)
         return;
+    lane.authorityState = automationAuthorityForPersistence(lane.authorityState);
     lanes_.push_back(std::move(lane));
     notifyLanesChanged();
 }
@@ -1352,6 +1367,7 @@ void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
 void AutomationManager::insertLaneAt(AutomationLaneInfo& lane, size_t index) {
     if (index > lanes_.size())
         index = lanes_.size();
+    lane.authorityState = automationAuthorityForPersistence(lane.authorityState);
     lanes_.insert(lanes_.begin() + static_cast<std::ptrdiff_t>(index), std::move(lane));
     notifyLanesChanged();
 }

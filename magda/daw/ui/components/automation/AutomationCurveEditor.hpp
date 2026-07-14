@@ -52,7 +52,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     void automationPointSelectionChanged(const AutomationPointSelection& selection) override;
 
     // Syncs the curve colour with lane state (purple when active, grey when
-    // bypassed/overridden). Called from listener callbacks — no polling.
+    // explicitly disabled). Called from listener callbacks — no polling.
     void refreshCurveColour();
 
     // Configuration

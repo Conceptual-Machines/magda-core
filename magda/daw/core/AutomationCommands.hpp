@@ -547,8 +547,8 @@ class BakeModulationCommand : public UndoableCommand {
     std::vector<AutomationPoint> removedPoints_;  // originals in range, ids preserved
     std::vector<ModLinkRef> linksToDisable_;
     std::vector<ModLinkRef> disabledLinks_;  // links actually flipped off by execute()
-    bool previousLaneBypass_ = false;
-    bool capturedLaneBypass_ = false;
+    bool previousLaneDisabled_ = false;
+    bool capturedLaneAuthority_ = false;
     BakeAutomationLaneState previousLaneState_;
     BakeAutomationLaneState preparedLaneState_;
 };
@@ -600,8 +600,8 @@ class BakeModulationToClipCommand : public UndoableCommand {
     std::vector<ModLinkRef> linksToDisable_;
     std::vector<ModLinkRef> disabledLinks_;  // links actually flipped off by execute()
     AutomationClipId createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
-    bool previousLaneBypass_ = false;
-    bool capturedLaneBypass_ = false;
+    bool previousLaneDisabled_ = false;
+    bool capturedLaneAuthority_ = false;
     BakeAutomationLaneState previousLaneState_;
     BakeAutomationLaneState preparedLaneState_;
 };

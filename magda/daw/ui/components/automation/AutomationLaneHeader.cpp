@@ -242,10 +242,9 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
     entry->snapValueBtn->setTooltip("Snap values to parameter grid");
     host.addAndMakeVisible(*entry->snapValueBtn);
 
-    // Bypass button uses a power glyph, so the "on" visual (cyan fill)
-    // represents automation-enabled — not automation-bypassed. Toggle
-    // state is the inverse of lane->bypass, and the click handler flips
-    // the underlying bypass flag accordingly.
+    // The power glyph controls the stable Reading/Disabled state. Transient
+    // Touching/Writing states still show as powered because they return to
+    // Reading when the gesture ends.
     entry->bypassBtn = std::make_unique<PowerGlyphButton>();
     entry->bypassBtn->setTooltip("Automation on/off");
     host.addAndMakeVisible(*entry->bypassBtn);
@@ -280,7 +279,7 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
     entry->bypassBtn->onClick = [id]() {
         auto& mgr = AutomationManager::getInstance();
         if (const auto* lane = mgr.getLane(id))
-            mgr.setLaneBypass(id, !lane->bypass);
+            mgr.setLaneEnabled(id, isAutomationPersistentlyDisabled(lane->authorityState));
     };
     entry->modeBtn->onClick = [id]() {
         // A lane whose curve spans less than a bar (e.g. just the seed
@@ -303,8 +302,8 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons,
                                     const AutomationLaneInfo& lane) {
     buttons.snapEditGridBtn->setToggleState(lane.snapEditsToBeatGrid, juce::dontSendNotification);
     buttons.snapValueBtn->setToggleState(lane.snapValue, juce::dontSendNotification);
-    // Power glyph: inverted — "on" means automation active, not bypassed.
-    buttons.bypassBtn->setToggleState(!lane.bypass, juce::dontSendNotification);
+    buttons.bypassBtn->setToggleState(!isAutomationPersistentlyDisabled(lane.authorityState),
+                                      juce::dontSendNotification);
     // Mode glyph: on = clip lane, off = free-drawn curve lane.
     buttons.modeBtn->setToggleState(lane.isClipBased(), juce::dontSendNotification);
     buttons.modeBtn->repaint();
