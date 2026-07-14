@@ -231,6 +231,9 @@ ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
 }
 
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
+    if (infoMatchesTeRange(info))
+        return model.value;
+
     const float teSpan = info.teMaxValue - info.teMinValue;
     if (teSpan <= 0.0f)
         return model.value;

@@ -600,8 +600,10 @@ void BakeModulationToClipCommand::execute() {
     }
 
     createdClipId_ = autoMgr.createClip(laneId_, startBeat_, endBeat_ - startBeat_);
-    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID)
+    if (createdClipId_ == INVALID_AUTOMATION_CLIP_ID) {
+        restoreBakeAutomationLaneState(laneId_, previousLaneState_);
         return;
+    }
 
     LinkModeManager::getInstance().exitAllLinkModes();
     auto localPoints = bakedPoints_;

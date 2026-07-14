@@ -136,7 +136,9 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
     //
     // The UI can spam sensitivity changes (slider drag = many calls/sec).
     // Retain only the latest value and start one detection after the gesture
-    // settles, keeping the current overlay stable in the meantime.
+    // settles, keeping the current overlay stable in the meantime. All clips
+    // share this quiet-period timer: an update for any clip restarts it, then
+    // every pending clip is processed together once input settles.
     struct PendingDetection {
         float sensitivity = 0.0f;
         // Resolved at queue time so the slider hot-path doesn't snapshot the

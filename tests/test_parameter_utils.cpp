@@ -905,6 +905,8 @@ TEST_CASE("ParameterUtils - model value passes through a matching TE range",
     info.maxValue = 20000.0f;
     info.teMinValue = 20.0f;
     info.teMaxValue = 20000.0f;
+    info.scale = ParameterScale::Logarithmic;
+    info.scaleAnchor = 1000.0f;
 
     REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{440.0f}, info) ==
             Catch::Approx(440.0f));
