@@ -37,6 +37,8 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
     CurveEditorBase::snapYToGrid = [this](double y) -> double {
         if (AutomationManager::getInstance().isWriteModeEnabled())
             return y;
+        if (snapValueToGrid)
+            return snapValueToGrid(y);
         return applyValueSnap(y);
     };
 
@@ -57,8 +59,8 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
 
 void AutomationCurveEditor::refreshCurveColour() {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
-    const bool bypassed = lane && lane->bypass;
-    setCurveColour(bypassed ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
+    const bool disabled = lane && isAutomationPersistentlyDisabled(lane->authorityState);
+    setCurveColour(disabled ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
                             : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
 }
 
@@ -89,20 +91,33 @@ void AutomationCurveEditor::automationPointsChanged(AutomationLaneId laneId) {
     }
 }
 
+void AutomationCurveEditor::automationClipsChanged(AutomationLaneId laneId) {
+    // Only clip-mode editors source their points from a clip; lane editors
+    // ignore clip traffic.
+    if (laneId == laneId_ && clipId_ != INVALID_AUTOMATION_CLIP_ID) {
+        previewPointId_ = INVALID_CURVE_POINT_ID;
+        pointsCacheDirty_ = true;
+        rebuildPointComponents();
+        repaint();
+    }
+}
+
 void AutomationCurveEditor::automationPointDragPreview(AutomationLaneId laneId,
                                                        AutomationPointId pointId,
                                                        double previewTime, double previewValue) {
     if (laneId != laneId_)
         return;
 
+    // previewTime arrives in model coordinates (clip-local); the preview
+    // state and point components live in editor coordinates.
     previewPointId_ = pointId;
-    previewX_ = previewTime;
+    previewX_ = previewTime + clipOffset_;
     previewY_ = previewValue;
 
     // Update the point component position for visual feedback
     for (auto& pc : pointComponents_) {
         if (pc->getPointId() == static_cast<uint32_t>(pointId)) {
-            int x = xToPixel(previewTime);
+            int x = xToPixel(previewX_);
             int y = yToPixel(previewValue);
             pc->setCentrePosition(x, y);
             break;
@@ -174,18 +189,38 @@ void AutomationCurveEditor::setPixelsPerBeat(double ppb) {
 }
 
 double AutomationCurveEditor::pixelToX(int px) const {
-    return (static_cast<double>(px) / pixelsPerBeat_) + clipOffset_;
+    return (static_cast<double>(px - edgeInsetPx_) / pixelsPerBeat_) + clipOffset_;
 }
 
 int AutomationCurveEditor::xToPixel(double x) const {
-    return static_cast<int>(std::round((x - clipOffset_) * pixelsPerBeat_));
+    return static_cast<int>(std::round((x - clipOffset_) * pixelsPerBeat_)) + edgeInsetPx_;
 }
 
 double AutomationCurveEditor::xToPixelF(double x) const {
-    return (x - clipOffset_) * pixelsPerBeat_;
+    return (x - clipOffset_) * pixelsPerBeat_ + edgeInsetPx_;
 }
 
 void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
+    if (paintUnderlay)
+        paintUnderlay(g);
+
+    // Vertical gridlines at the current quantization, on the same pixel
+    // columns as the ruler ticks (xToPixel mirrors the ruler's rounding).
+    if (showBeatGrid_ && getGridSpacingBeats && pixelsPerBeat_ > 0.0) {
+        const double res = getGridSpacingBeats();
+        if (res > 0.0 && res * pixelsPerBeat_ >= 4.0) {
+            const double domainStart = pixelToX(0);
+            const double domainEnd = pixelToX(getWidth());
+            g.setColour(juce::Colour(0x14FFFFFF));
+            for (double beat = std::ceil(domainStart / res - 1.0e-9) * res; beat <= domainEnd;
+                 beat += res) {
+                g.drawVerticalLine(xToPixel(beat), 0.0f, static_cast<float>(getHeight()));
+            }
+        }
+    }
+
+    paintClipBorders(g);
+
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     if (!lane) {
         CurveEditorBase::paintGrid(g);
@@ -246,6 +281,40 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
         g.setColour(isZeroLine ? juce::Colour(0x50FFFFFF) : juce::Colour(0x18FFFFFF));
         g.drawHorizontalLine(y, 0.0f, width);
     }
+}
+
+void AutomationCurveEditor::paintCurve(juce::Graphics& g) {
+    if (edgeInsetPx_ <= 0) {
+        CurveEditorBase::paintCurve(g);
+        return;
+    }
+    g.saveState();
+    g.reduceClipRegion(edgeInsetPx_, 0, juce::jmax(0, getWidth() - 2 * edgeInsetPx_), getHeight());
+    CurveEditorBase::paintCurve(g);
+    g.restoreState();
+}
+
+void AutomationCurveEditor::paintClipBorders(juce::Graphics& g) {
+    if (!showClipBorders_ || clipId_ == INVALID_AUTOMATION_CLIP_ID)
+        return;
+    const auto* clip = AutomationManager::getInstance().getClip(clipId_);
+    if (clip == nullptr)
+        return;
+
+    // The view span starts at clipOffset_ (0 in the looped one-cycle view,
+    // the clip's arrangement start in the absolute view). xToPixel rounds
+    // the same way the TimeRuler places its ticks, so the 1px markers land
+    // on exactly the ruler's pixel column.
+    const bool looped = clip->looping && clip->loopLengthBeats > 0.0;
+    const double span = looped ? clip->loopLengthBeats : clip->lengthBeats;
+    const int startX = xToPixel(clipOffset_);
+    const int endX = xToPixel(clipOffset_ + span);
+
+    // Same colour language as the piano roll's clip boundaries.
+    constexpr juce::uint32 kClipBoundaryColour = 0xFF6A7280;
+    g.setColour(juce::Colour(kClipBoundaryColour));
+    g.fillRect(startX, 0, 1, getHeight());
+    g.fillRect(endX, 0, 1, getHeight());
 }
 
 juce::String AutomationCurveEditor::formatValueLabel(double y) const {
@@ -378,12 +447,43 @@ void AutomationCurveEditor::mouseUp(const juce::MouseEvent& e) {
 
 void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
     paintOverrideOverlay(g);
+
+    // Playback indicator: a dot riding the curve (the mod editor's
+    // phase-dot language) — position from the transport, value from the
+    // model's interpolation, so it shows WHAT plays, not just when.
+    if (playheadBeat_ >= 0.0) {
+        auto& mgr = AutomationManager::getInstance();
+        double value = 0.5;
+        bool haveValue = false;
+        if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
+            if (const auto* clip = mgr.getClip(clipId_)) {
+                value = mgr.interpolatePoints(clip->points, playheadBeat_ - clipOffset_);
+                haveValue = true;
+            }
+        } else if (const auto* lane = mgr.getLane(laneId_)) {
+            if (lane->isAbsolute()) {
+                value = mgr.interpolatePoints(lane->absolutePoints, playheadBeat_);
+                haveValue = true;
+            }
+        }
+        if (haveValue) {
+            const auto x = static_cast<float>(xToPixelF(playheadBeat_));
+            const auto y = static_cast<float>(yToPixelF(value));
+            constexpr float dotSize = 7.0f;
+            constexpr float dotRadius = dotSize / 2.0f;
+            g.setColour(curveColour_);
+            g.fillEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize);
+            g.setColour(juce::Colours::white);
+            g.drawEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize, 1.5f);
+        }
+    }
+
     CurveEditorBase::paintOverChildren(g);
 }
 
 void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
-    if (!lane || !lane->bypass)
+    if (!lane || !isAutomationPersistentlyDisabled(lane->authorityState))
         return;
     if (lane->absolutePoints.empty())
         return;
@@ -503,7 +603,10 @@ void AutomationCurveEditor::updatePointsCache() const {
         for (const auto& ap : *sourcePoints) {
             CurvePoint cp;
             cp.id = ap.id;
-            cp.x = ap.beatPosition;
+            // Editor-space x: clip points are stored clip-local; clipOffset_
+            // shifts them into timeline beats for the absolute (non-looped)
+            // clip editor view. Zero for lanes and loop-cycle views.
+            cp.x = ap.beatPosition + clipOffset_;
             cp.y = ap.value;
             cp.curveType = toCurveType(ap.curveType);
             cp.tension = ap.tension;
@@ -538,9 +641,12 @@ void AutomationCurveEditor::onPointDragPreview(uint32_t pointId, double newX, do
     // preview value straight into the TE parameter — this keeps the fader /
     // knob tracking the drag in real time without waiting for the mouseUp
     // commit + full rebake. Visual point movement is already handled by the
-    // base-class lambda; this notification is purely for audio-side listeners.
+    // base-class lambda.
+    // previewTime is broadcast in MODEL coordinates (clip-local beats for
+    // clip points, lane beats otherwise) so listeners like the timeline
+    // clip's mini preview don't need this editor's offset convention.
     AutomationManager::getInstance().notifyPointDragPreview(
-        laneId_, static_cast<AutomationPointId>(pointId), newX, newY);
+        laneId_, static_cast<AutomationPointId>(pointId), newX - clipOffset_, newY);
 }
 
 void AutomationCurveEditor::onSelectedPointsMoved(
@@ -725,14 +831,17 @@ void AutomationCurveEditor::onStepStamped(double gridStart, double gridEnd, doub
     bool prevFound = false;
     bool nextExistsAtGridEnd = false;
 
+    // gridStart/gridEnd are editor-space; clip points are stored clip-local
+    // (the onPointAdded calls below subtract clipOffset_ the same way).
     auto gatherContext = [&](const std::vector<AutomationPoint>& points) {
         constexpr double kTimeEps = 1e-6;
+        const double localGridEnd = gridEnd - clipOffset_;
         for (const auto& p : points) {
             if (p.id == static_cast<AutomationPointId>(prevPointId)) {
                 originalPrevType = p.curveType;
                 prevFound = true;
             }
-            if (std::abs(p.beatPosition - gridEnd) < kTimeEps)
+            if (std::abs(p.beatPosition - localGridEnd) < kTimeEps)
                 nextExistsAtGridEnd = true;
         }
     };
@@ -768,37 +877,21 @@ void AutomationCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& poi
     if (pointIds.empty())
         return;
 
-    CompoundOperationScope scope("Delete Automation Points");
-    for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
-        onPointDeleted(*it);
-    }
-}
-
-void AutomationCurveEditor::deleteSelectedPoints() {
-    auto& selectionManager = SelectionManager::getInstance();
-    if (!selectionManager.hasAutomationPointSelection())
-        return;
-
-    const auto& selection = selectionManager.getAutomationPointSelection();
-    if (selection.laneId != laneId_)
-        return;
-
-    // Delete in reverse order to maintain indices, grouped as one undo step
-    CompoundOperationScope scope("Delete Automation Points");
-    auto pointIds = selection.pointIds;
-    for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
-        if (selection.clipId != INVALID_AUTOMATION_CLIP_ID) {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<DeleteAutomationPointCommand>(
-                    laneId_, selection.clipId, static_cast<AutomationPointId>(*it)));
-        } else {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<DeleteAutomationPointCommand>(
-                    laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(*it)));
+    {
+        CompoundOperationScope scope("Delete Automation Points");
+        for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
+            onPointDeleted(*it);
         }
     }
 
-    selectionManager.clearAutomationPointSelection();
+    // The deleted points may still be the published selection. Points inside
+    // a clip fall back to the clip selection so the clip editor stays open;
+    // lane points clear to nothing (matches the global delete command).
+    auto& selectionManager = SelectionManager::getInstance();
+    if (clipId_ != INVALID_AUTOMATION_CLIP_ID)
+        selectionManager.selectAutomationClip(clipId_, laneId_);
+    else if (selectionManager.hasAutomationPointSelection())
+        selectionManager.clearAutomationPointSelection();
 }
 
 CurveType AutomationCurveEditor::toCurveType(AutomationCurveType type) {

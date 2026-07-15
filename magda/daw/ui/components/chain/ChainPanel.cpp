@@ -7,6 +7,7 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -107,16 +108,11 @@ class ChainPanel::ZoomableViewport : public juce::Viewport {
 
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override {
-        DBG("ZoomableViewport::mouseWheelMove - deltaY="
-            << wheel.deltaY << " isCommandDown=" << (event.mods.isCommandDown() ? "yes" : "no"));
-
-        // Cmd/Ctrl + scroll wheel = zoom
-        if (event.mods.isCommandDown()) {
-            float delta = wheel.deltaY > 0 ? ChainPanel::ZOOM_STEP : -ChainPanel::ZOOM_STEP;
-            DBG("  -> Zooming by " << delta << " to " << (owner_.getZoomLevel() + delta));
-            owner_.setZoomLevel(owner_.getZoomLevel() + delta);
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::Chain, wheel, event.mods, event.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+            owner_.setZoomLevel(owner_.getZoomLevel() + gesture.magnitude);
         } else {
-            // Normal scroll - let viewport handle horizontal scrolling
             Viewport::mouseWheelMove(event, wheel);
         }
     }
@@ -153,15 +149,11 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
 
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override {
-        DBG("ElementSlotsContainer::mouseWheelMove - deltaY="
-            << wheel.deltaY << " isCommandDown=" << (event.mods.isCommandDown() ? "yes" : "no"));
-
-        // Cmd/Ctrl + scroll wheel = zoom
-        if (event.mods.isCommandDown()) {
-            float delta = wheel.deltaY > 0 ? ChainPanel::ZOOM_STEP : -ChainPanel::ZOOM_STEP;
-            owner_.setZoomLevel(owner_.getZoomLevel() + delta);
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::Chain, wheel, event.mods, event.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+            owner_.setZoomLevel(owner_.getZoomLevel() + gesture.magnitude);
         } else {
-            // Normal scroll - let parent handle it (viewport scrolling)
             Component::mouseWheelMove(event, wheel);
         }
     }
@@ -497,13 +489,11 @@ void ChainPanel::mouseEnter(const juce::MouseEvent&) {
 
 void ChainPanel::mouseWheelMove(const juce::MouseEvent& event,
                                 const juce::MouseWheelDetails& wheel) {
-    // Option/Alt + scroll wheel = zoom (Cmd+scroll is intercepted by macOS)
-    if (event.mods.isAltDown()) {
-        float delta = wheel.deltaY > 0 ? ZOOM_STEP : -ZOOM_STEP;
-        DBG("  -> Zooming to " << (zoomLevel_ + delta));
-        setZoomLevel(zoomLevel_ + delta);
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Chain, wheel, event.mods, event.getPosition());
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+        setZoomLevel(zoomLevel_ + gesture.magnitude);
     } else {
-        // Normal scroll - let viewport handle it
         NodeComponent::mouseWheelMove(event, wheel);
     }
 }

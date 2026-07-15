@@ -14,6 +14,7 @@
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/TempoUtils.hpp"
+#include "core/TimeStretchModes.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "project/ProjectManager.hpp"
@@ -261,9 +262,11 @@ void AudioClipPropertiesContent::createControls() {
     stretchModeCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
     stretchModeCombo_->setColour(juce::ComboBox::outlineColourId,
                                  DarkTheme::getColour(DarkTheme::BORDER));
-    stretchModeCombo_->addItem("Off", 1);
-    stretchModeCombo_->addItem("SoundTouch", 4);
-    stretchModeCombo_->addItem("SoundTouch HQ", 5);
+    // Combo IDs are persisted mode values plus one because JUCE reserves ID 0.
+    stretchModeCombo_->addItem("Off", time_stretch_mode::kDisabled + 1);
+    stretchModeCombo_->addItem("Signalsmith", time_stretch_mode::kSignalsmith + 1);
+    stretchModeCombo_->addItem("SoundTouch", time_stretch_mode::kSoundTouchNormal + 1);
+    stretchModeCombo_->addItem("SoundTouch HQ", time_stretch_mode::kSoundTouchBetter + 1);
     stretchModeCombo_->setSelectedId(1, juce::dontSendNotification);
     stretchModeCombo_->setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     stretchModeCombo_->onChange = [this]() {
@@ -524,7 +527,6 @@ void AudioClipPropertiesContent::createControls() {
             return;
         bridge->setTransientSensitivity(clipId_,
                                         static_cast<float>(transientSensValue_->getValue()));
-        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
     };
     addAndMakeVisible(*transientSensValue_);
 

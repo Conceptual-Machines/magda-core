@@ -34,6 +34,9 @@ class CursorManager {
     const juce::MouseCursor& getBladeCursor() const {
         return bladeCursor;
     }
+    const juce::MouseCursor& getGhostCopyCursor() const {
+        return ghostCopyCursor;
+    }
 
   private:
     CursorManager();
@@ -49,6 +52,7 @@ class CursorManager {
     static juce::MouseCursor createEraseCursor();
     static juce::MouseCursor createNoteRepeatCursor();
     static juce::MouseCursor createBladeCursor();
+    static juce::MouseCursor createGhostCopyCursor();
 
     juce::MouseCursor zoomCursor;
     juce::MouseCursor zoomInCursor;
@@ -57,6 +61,7 @@ class CursorManager {
     juce::MouseCursor eraseCursor;
     juce::MouseCursor noteRepeatCursor;
     juce::MouseCursor bladeCursor;
+    juce::MouseCursor ghostCopyCursor;
 };
 
 }  // namespace magda

@@ -5,6 +5,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "ai/AIPanelComponent.hpp"
 #include "core/AutomationInfo.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -487,8 +488,9 @@ void NodeComponent::paint(juce::Graphics& g) {
 }
 
 void NodeComponent::paintOverChildren(juce::Graphics& g) {
-    // Dim if bypassed or frozen (over everything including side panels)
-    if (!bypassButton_->getToggleState() || frozen_) {  // Toggle OFF = bypassed
+    // Dim if bypassed, frozen, or the track's chain power is off (over
+    // everything including side panels)
+    if (!bypassButton_->getToggleState() || frozen_ || chainDisabled_) {  // Toggle OFF = bypassed
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
     }
@@ -755,6 +757,13 @@ void NodeComponent::setBypassed(bool bypassed) {
     bypassButton_->setToggleState(!bypassed, juce::dontSendNotification);  // Active = not bypassed
     bypassButton_->setActive(!bypassed);
     repaint();  // Redraw bypass overlay in paintOverChildren
+}
+
+void NodeComponent::setChainDisabled(bool disabled) {
+    if (chainDisabled_ == disabled)
+        return;
+    chainDisabled_ = disabled;
+    repaint();  // Redraw dim overlay in paintOverChildren
 }
 
 bool NodeComponent::isBypassed() const {
@@ -1396,15 +1405,11 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
 void NodeComponent::mouseWheelMove(const juce::MouseEvent& e,
                                    const juce::MouseWheelDetails& wheel) {
-    // Alt/Option (or Cmd/Ctrl) + scroll wheel = zoom (forward to parent chain
-    // panel). Alt matches ChainPanel/RackComponent — Cmd+scroll is intercepted
-    // by macOS, so Alt is the live modifier there; we accept both so the gesture
-    // is consistent whether the pointer is over a device or empty chain space.
-    if ((e.mods.isAltDown() || e.mods.isCommandDown()) && onZoomDelta) {
-        float delta = wheel.deltaY > 0 ? 0.1f : -0.1f;
-        onZoomDelta(delta);
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Chain, wheel, e.mods, e.getPosition());
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal && onZoomDelta) {
+        onZoomDelta(gesture.magnitude);
     } else {
-        // Let parent handle normal scrolling
         Component::mouseWheelMove(e, wheel);
     }
 }

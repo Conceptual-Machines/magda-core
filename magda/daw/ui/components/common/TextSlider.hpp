@@ -39,12 +39,14 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             mouseDoubleClick(e);
         };
         valueControl_.onEditCommit = [this](const juce::String& text) { commitText(text); };
+        valueControl_.onEditCancel = [this]() { endAutomationGesture(); };
         addAndMakeVisible(valueControl_);
 
         updateLabel();
     }
 
     ~TextSlider() override {
+        endAutomationGesture();
         if (listeningToAutomation_) {
             magda::AutomationManager::getInstance().removeListener(this);
             listeningToAutomation_ = false;
@@ -269,20 +271,17 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         isLeftButtonDrag_ = false;
         isShiftDrag_ = false;
         hasDragged_ = false;
-        overrideLatchedThisGesture_ = false;
         valueControl_.setDragging(false);
-        if (wasLeftDrag && hasAutomationTarget_) {
-            auto& mgr = magda::AutomationManager::getInstance();
-            mgr.setTargetUserTouched(automationTarget_, false);
-            mgr.setTargetTouchSuppressed(automationTarget_, false);
-            mgr.clearTouchBaseline(automationTarget_);
-        }
+        if (wasLeftDrag)
+            endAutomationGesture();
     }
 
     // Bind this slider to an automation target so mouseDown/mouseUp automatically
     // pause the lane's baking for the duration of a gesture (kills fader-vs-curve
     // fighting during playback) and so we can paint the "automated" state.
     void setAutomationTarget(const magda::AutomationTarget& target) {
+        if (automationGestureActive_ && target != automationTarget_)
+            endAutomationGesture();
         automationTarget_ = target;
         const bool nowHas = target.isValid();
         if (nowHas && !listeningToAutomation_) {
@@ -434,7 +433,6 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             dragStartY_ = e.y;
             dragStartX_ = e.x;
             hasDragged_ = false;
-            overrideLatchedThisGesture_ = false;
             isLeftButtonDrag_ = true;
             valueControl_.setDragging(true);
             // Only enter Shift+drag mode if the owner actually wants to take
@@ -450,32 +448,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
                 onShiftDragStart(shiftDragStartValue_);
             }
 
-            // Transient touch-suppression so playback doesn't fight the
-            // gesture. The persistent override/bypass only latches once the
-            // drag is confirmed as a real edit (see latchAutomationOverride).
-            if (hasAutomationTarget_ && isAutomated()) {
-                magda::AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_,
-                                                                                 true);
-            }
-            // Mark the user gesture even when no lane exists yet, so the
-            // recording engine can distinguish real touches from playback
-            // engine echo-backs.
-            if (hasAutomationTarget_) {
-                magda::AutomationManager::getInstance().setTargetUserTouched(automationTarget_,
-                                                                             true);
-                // Capture the pre-drag value as a Touch-mode bounce-back
-                // baseline. dragStartValue_ is the slider's value before any
-                // motion, in the slider's display units; convert to the
-                // normalized 0..1 form the lane stores via the target's
-                // ParameterInfo. Track volume / pan have their own engine-
-                // internal baseline path and don't strictly need this, but
-                // it's harmless — the engine prefers its own when both exist.
-                magda::ParameterInfo info = magda::getParameterInfoForTarget(automationTarget_);
-                double normalized = static_cast<double>(magda::ParameterUtils::realToNormalized(
-                    static_cast<float>(dragStartValue_), info));
-                magda::AutomationManager::getInstance().setTouchBaseline(automationTarget_,
-                                                                         normalized);
-            }
+            beginAutomationGesture(dragStartValue_);
         } else {
             isLeftButtonDrag_ = false;
             isShiftDrag_ = false;
@@ -492,16 +465,6 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
         int dy = std::abs(e.y - dragStartY_);
         if (dx > 3 || dy > 3) {
             hasDragged_ = true;
-            // Drag confirmed — latch persistent override on first real motion.
-            // Skipped when write mode is on: the gesture is being recorded
-            // into the lane, not taking over from it.
-            if (!isShiftDrag_ && !overrideLatchedThisGesture_ && hasAutomationTarget_ &&
-                isAutomated() && !magda::AutomationManager::getInstance().isWriteModeEnabled()) {
-                magda::AutomationManager::getInstance().setTargetOverridden(automationTarget_,
-                                                                            true);
-                setAutomationVisualState(magda::AutomationVisualState::Overridden);
-                overrideLatchedThisGesture_ = true;
-            }
         }
 
         if (hasDragged_) {
@@ -595,17 +558,8 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             return;
         }
 
-        // Release the transient flags; the lane stays in bypass (override)
-        // state until the user explicitly re-enables it from the header.
-        if (wasLeftDrag && hasAutomationTarget_) {
-            auto& mgr = magda::AutomationManager::getInstance();
-            mgr.setTargetUserTouched(automationTarget_, false);
-            mgr.setTargetTouchSuppressed(automationTarget_, false);
-            // Recording engine consumes the baseline on the release
-            // transition; clear it here so a stale value doesn't leak into
-            // the next gesture if the engine wasn't recording.
-            mgr.clearTouchBaseline(automationTarget_);
-        }
+        if (wasLeftDrag)
+            endAutomationGesture();
 
         // Handle Shift+drag end
         if (isShiftDrag_) {
@@ -651,24 +605,24 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
   private:
     void commitText(const juce::String& committedText) {
         auto text = committedText.trim();
+        double parsedValue = value_;
 
         // Use custom parser if provided
         if (valueParser_) {
-            setValueFromUser(valueParser_(text));
-            return;
+            parsedValue = valueParser_(text);
+        } else {
+            // Default parsing - remove common suffixes
+            if (text.endsWithIgnoreCase("db")) {
+                text = text.dropLastCharacters(2).trim();
+            } else if (text.endsWithIgnoreCase("l") || text.endsWithIgnoreCase("r")) {
+                text = text.dropLastCharacters(1).trim();
+            } else if (text.equalsIgnoreCase("c") || text.equalsIgnoreCase("center")) {
+                text = "0";
+            }
+            parsedValue = text.getDoubleValue();
         }
-
-        // Default parsing - remove common suffixes
-        if (text.endsWithIgnoreCase("db")) {
-            text = text.dropLastCharacters(2).trim();
-        } else if (text.endsWithIgnoreCase("l") || text.endsWithIgnoreCase("r")) {
-            text = text.dropLastCharacters(1).trim();
-        } else if (text.equalsIgnoreCase("c") || text.equalsIgnoreCase("center")) {
-            setValueFromUser(0.0);
-            return;
-        }
-
-        setValueFromUser(text.getDoubleValue());
+        setValueFromUser(parsedValue);
+        endAutomationGesture();
     }
 
     juce::Rectangle<int> compactVerticalEditorBounds() const {
@@ -688,6 +642,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     }
 
     void showValueEditor() {
+        beginAutomationGesture(value_);
         if (orientation_ == Orientation::Vertical)
             valueControl_.setEditorBoundsOverride(compactVerticalEditorBounds());
         else
@@ -696,26 +651,36 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     }
 
     void setValueFromUser(double newValue) {
-        if (std::abs(value_ - juce::jlimit(minValue_, maxValue_, newValue)) > 1.0e-9)
-            latchAutomationOverride();
         setValue(newValue);
     }
 
     void resetToDefaultValue() {
+        beginAutomationGesture(value_);
         setValueFromUser(defaultValue_);
+        endAutomationGesture();
     }
 
-    void latchAutomationOverride() {
-        if (overrideLatchedThisGesture_)
+    void beginAutomationGesture(double baselineValue) {
+        if (automationGestureActive_ || !hasAutomationTarget_)
             return;
-        if (!hasAutomationTarget_ || !isAutomated())
-            return;
-        if (magda::AutomationManager::getInstance().isWriteModeEnabled())
-            return;
+        automationGestureActive_ = true;
+        auto& mgr = magda::AutomationManager::getInstance();
+        mgr.beginTargetGesture(automationTarget_);
+        mgr.setTargetUserTouched(automationTarget_, true);
+        const auto info = magda::getParameterInfoForTarget(automationTarget_);
+        const double normalized = static_cast<double>(
+            magda::ParameterUtils::realToNormalized(static_cast<float>(baselineValue), info));
+        mgr.setTouchBaseline(automationTarget_, normalized);
+    }
 
-        magda::AutomationManager::getInstance().setTargetOverridden(automationTarget_, true);
-        setAutomationVisualState(magda::AutomationVisualState::Overridden);
-        overrideLatchedThisGesture_ = true;
+    void endAutomationGesture() {
+        if (!automationGestureActive_)
+            return;
+        automationGestureActive_ = false;
+        auto& mgr = magda::AutomationManager::getInstance();
+        mgr.setTargetUserTouched(automationTarget_, false);
+        mgr.endTargetGesture(automationTarget_);
+        mgr.clearTouchBaseline(automationTarget_);
     }
 
     ValueLabelControl valueControl_;
@@ -733,7 +698,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     int dragStartX_ = 0;
     int dragStartY_ = 0;
     bool hasDragged_ = false;
-    bool overrideLatchedThisGesture_ = false;
+    bool automationGestureActive_ = false;
     bool isLeftButtonDrag_ = false;
     bool isShiftDrag_ = false;
     bool suppressClickAfterDirectEdit_ = false;

@@ -249,6 +249,26 @@ TrackInspector::TrackInspector() {
     };
     addAndMakeVisible(*recordButton_);
 
+    // Track enable/disable: drives the chain bypass — the same signal-flow
+    // power as the track chain header's power button. Chip-style bordered
+    // switch in the name row, matching the clip inspector's toggle.
+    enableButton_ = std::make_unique<SvgButton>(
+        "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
+        BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
+    enableButton_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
+    enableButton_->setBorderColor(juce::Colour(0xff555555));
+    enableButton_->setBorderThickness(1.0f);
+    enableButton_->setIconPadding(2.0f);
+    enableButton_->setTooltip(tr("tracks.enable.tooltip"));
+    enableButton_->setClickingTogglesState(true);
+    enableButton_->onClick = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().setChainEnabled(selectedTrackId_,
+                                                               enableButton_->getToggleState());
+        }
+    };
+    addAndMakeVisible(*enableButton_);
+
     // Input-monitor: 3-state control (Off / In / Auto). It reads/writes the mode
     // itself; the lambdas resolve single- vs multi-track selection dynamically so
     // they don't need rewiring when the selection changes.
@@ -553,10 +573,6 @@ void TrackInspector::resized() {
     sectionSeparatorYs_.clear();
     const int separatorPadding = 6;
 
-    // Colour swatch / pan / automation share one width and right edge so they
-    // form a clean right-aligned column, matching the arrange track headers.
-    constexpr int rightColW = 26;
-
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
     auto nameRow = bounds.removeFromTop(24);
@@ -564,10 +580,19 @@ void TrackInspector::resized() {
         // Right-align the glyph flush to the row edge in a 22px cell, matching
         // the volume row's speaker mute button below it so the two line up.
         masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
+        nameRow.removeFromRight(4);
     } else {
-        colourSwatch_->setBounds(nameRow.removeFromRight(rightColW));
+        // Colour spine on the left doubles as the colour swatch, matching the
+        // clip inspector's name row.
+        colourSwatch_->setBounds(nameRow.removeFromLeft(6));
+        nameRow.removeFromLeft(6);
+        // Enable/disable switch on the right, same position as the clip
+        // inspector's toggle.
+        if (enableButton_->isVisible()) {
+            enableButton_->setBounds(nameRow.removeFromRight(28));
+            nameRow.removeFromRight(6);
+        }
     }
-    nameRow.removeFromRight(4);
     trackNameValue_.setBounds(nameRow);
     bounds.removeFromTop(separatorPadding);
     sectionSeparatorYs_.push_back(bounds.getY());
@@ -752,6 +777,12 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
                                                                  soloButton_->getToggleState()));
             }
         };
+        enableButton_->onClick = [this]() {
+            if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+                magda::TrackManager::getInstance().setChainEnabled(selectedTrackId_,
+                                                                   enableButton_->getToggleState());
+            }
+        };
         trackNameValue_.setEditable(true);
 
         gainLabel_->clearTextOverride();
@@ -854,6 +885,18 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
         rebuildSendsUI();
 
+        // Resync the enable switch — setChainEnabled notifies through
+        // trackDevicesChanged, so the chain power button and this switch
+        // stay mirrored whichever one was pressed.
+        enableButton_->setToggleState(
+            magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_),
+            juce::dontSendNotification);
+
+        // Adding/removing/editing an External Instrument insert changes the
+        // read-only mirror on the track MIDI-out / audio-in, so re-apply it.
+        if (!isMultiTrackMode_)
+            showTrackControls(true);
+
         // Refresh latency (devices added/removed/loaded)
         if (latencyLabel_.isVisible()) {
             double latency =
@@ -866,6 +909,13 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
             latencyValue_.repaint();
         }
     }
+}
+
+void TrackInspector::devicePropertyChanged(const magda::ChainNodePath& devicePath) {
+    // An External Instrument's send/return picker changed: re-apply the
+    // read-only mirror on this track's MIDI-out / audio-in.
+    if (!isMultiTrackMode_ && devicePath.trackId == selectedTrackId_)
+        showTrackControls(true);
 }
 
 void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
@@ -1000,6 +1050,9 @@ void TrackInspector::updateFromSelectedTrack() {
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
         muteButton_->setToggleState(track->muted, juce::dontSendNotification);
+        enableButton_->setToggleState(
+            magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_),
+            juce::dontSendNotification);
         chordSpeakerButton_->refresh();
         soloButton_->setToggleState(track->soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track->recordArmed, juce::dontSendNotification);
@@ -1080,6 +1133,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     bool allMuted = true;
     bool allSoloed = true;
     bool allRecordArmed = true;
+    bool allEnabled = true;
     for (auto tid : selectedTrackIds_) {
         const auto* track = tm.getTrack(tid);
         if (!track)
@@ -1090,11 +1144,14 @@ void TrackInspector::updateFromMultiTrackSelection() {
             allSoloed = false;
         if (!track->recordArmed)
             allRecordArmed = false;
+        if (!tm.isChainEnabled(tid))
+            allEnabled = false;
     }
 
     muteButton_->setToggleState(allMuted, juce::dontSendNotification);
     soloButton_->setToggleState(allSoloed, juce::dontSendNotification);
     recordButton_->setToggleState(allRecordArmed, juce::dontSendNotification);
+    enableButton_->setToggleState(allEnabled, juce::dontSendNotification);
     monitorButton_.refresh();
 
     // Rewire button callbacks for multi-track mode
@@ -1116,6 +1173,12 @@ void TrackInspector::updateFromMultiTrackSelection() {
         bool newState = recordButton_->getToggleState();
         for (auto tid : selectedTrackIds_) {
             magda::TrackManager::getInstance().setTrackRecordArmed(tid, newState);
+        }
+    };
+    enableButton_->onClick = [this]() {
+        bool newState = enableButton_->getToggleState();
+        for (auto tid : selectedTrackIds_) {
+            magda::TrackManager::getInstance().setChainEnabled(tid, newState);
         }
     };
     // monitorButton_ cycles/menus itself; getTargets returns the multi-track
@@ -1248,6 +1311,7 @@ void TrackInspector::showTrackControls(bool show) {
     masterGlyph_->setVisible(show && isMaster);
 
     muteButton_->setVisible(p.mute && p.muteStyle == MuteStyle::Standard);
+    enableButton_->setVisible(p.mute && p.muteStyle == MuteStyle::Standard);
     speakerButton_->setVisible(p.mute && isMaster);
     chordSpeakerButton_->setVisible(p.mute && isChordTrack_);
     soloButton_->setVisible(p.solo);
@@ -1270,6 +1334,17 @@ void TrackInspector::showTrackControls(bool show) {
     outputSelector_->setVisible(p.audioOut);
     midiOutputSelector_->setVisible(p.midiOut);
     outputIcon_->setVisible(p.anyOutput());
+
+    // An External Instrument insert owns the track's MIDI send + audio return.
+    // The track-level MIDI-out and audio-in stay visible but go read-only and
+    // mirror the device's selection (the synth audio returns via the insert,
+    // not the record path), so the routing is only editable on the device.
+    auto extRouting =
+        (show && !isMaster)
+            ? magda::TrackManager::getInstance().getExternalInstrumentRouting(selectedTrackId_)
+            : magda::TrackManager::ExternalInstrumentRouting{};
+    midiOutputSelector_->setReadOnly(extRouting.present, extRouting.midiOut);
+    audioInputSelector_->setReadOnly(extRouting.present, extRouting.audioReturn);
 
     sendReceiveSectionLabel_.setVisible(p.sends);
     addSendButton_->setVisible(p.sends);

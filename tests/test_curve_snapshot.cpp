@@ -290,6 +290,33 @@ TEST_CASE("CurveSnapshotHolder - evaluateCallback", "[curve][holder]") {
 // One-shot behavior
 // ============================================================================
 
+TEST_CASE("CurveSnapshotHolder - invertOutput flips the applied output", "[curve][holder]") {
+    CurveSnapshotHolder holder;
+
+    ModInfo mod;
+    mod.curvePreset = CurvePreset::RampUp;
+    mod.curvePoints.clear();
+    mod.invertOutput = true;
+    holder.update(mod);
+
+    // Level-envelope curve: applied output is (1 - curve value).
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.25f, &holder) == Approx(0.75f));
+    REQUIRE(CurveSnapshotHolder::evaluateCallback(0.5f, &holder) == Approx(0.5f));
+
+    SECTION("one-shot hold applies the inversion too") {
+        mod.oneShot = true;
+        holder.update(mod);
+        holder.resetOneShot();
+
+        CurveSnapshotHolder::evaluateCallback(0.0f, &holder);
+        CurveSnapshotHolder::evaluateCallback(0.9f, &holder);
+        // Wrap completes the single pass; RampUp end value is 1 -> output 0,
+        // i.e. an idle level curve applies no attenuation.
+        REQUIRE(CurveSnapshotHolder::evaluateCallback(0.1f, &holder) == Approx(0.0f));
+        REQUIRE(CurveSnapshotHolder::evaluateCallback(0.3f, &holder) == Approx(0.0f));
+    }
+}
+
 TEST_CASE("CurveSnapshotHolder - one-shot holds at end value", "[curve][oneshot]") {
     CurveSnapshotHolder holder;
 

@@ -327,6 +327,16 @@ class ClipSlotButton : public juce::TextButton {
                                                   size * 2.0f, size * 2.0f));
             }
         }
+
+        // Disabled clip (#1736): dim the whole slot, mirroring the
+        // arrangement clip overlay.
+        if (hasClip && clipId != INVALID_CLIP_ID) {
+            const auto* clip = ClipManager::getInstance().getClip(clipId);
+            if (clip && !clip->enabled) {
+                g.setColour(juce::Colours::black.withAlpha(0.55f));
+                g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(0.0f, 0.5f), 6.0f);
+            }
+        }
     }
 };
 

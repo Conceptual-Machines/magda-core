@@ -14,7 +14,6 @@ namespace magda::daw::ui {
 namespace {
 
 constexpr float kMinCutoffHz = 5.0f;
-constexpr float kMinPlotFreq = 5.0f;
 constexpr float kMaxFreq = 20000.0f;
 constexpr float kMinDb = -60.0f;
 constexpr float kBaseMaxDb = 18.0f;
@@ -66,8 +65,8 @@ float modulatedValueForSlot(const magda::DeviceInfo& device, int slotIndex, floa
     return magda::ParameterUtils::normalizedToReal(effectiveNorm, *param);
 }
 
-float freqToX(float freq, float width) {
-    const float norm = std::log(freq / kMinPlotFreq) / std::log(kMaxFreq / kMinPlotFreq);
+float freqToX(float freq, float width, float minFrequencyHz) {
+    const float norm = std::log(freq / minFrequencyHz) / std::log(kMaxFreq / minFrequencyHz);
     return juce::jlimit(0.0f, 1.0f, norm) * width;
 }
 
@@ -76,9 +75,9 @@ float dbToY(float db, float height, float maxDb) {
     return height * (1.0f - norm);
 }
 
-float xToFreq(float x, float width) {
+float xToFreq(float x, float width, float minFrequencyHz) {
     const float norm = width > 0.0f ? juce::jlimit(0.0f, 1.0f, x / width) : 0.0f;
-    return kMinPlotFreq * std::pow(kMaxFreq / kMinPlotFreq, norm);
+    return minFrequencyHz * std::pow(kMaxFreq / minFrequencyHz, norm);
 }
 
 float linearToDb(float linear) {
@@ -105,7 +104,12 @@ float expandedMaxDb(float responseMaxDb) {
 
 }  // namespace
 
-CompiledFilterCurveView::CompiledFilterCurveView(juce::String /*pluginId*/) {
+CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
+    // Poly Synth's filter cannot go below 50 Hz. Keep the shared filter view's
+    // wider 20 Hz range without wasting a full invisible decade in the synth.
+    if (pluginId == "magda_polysynth")
+        minPlotFrequencyHz_ = 50.0f;
+
     // Family is read from the plugin's Engine parameter every refresh —
     // the unified MagdaFilterCompiledPlugin holds all five engines and
     // exposes which one is active via slot kEngineSlot.
@@ -346,7 +350,7 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
                                   {1000.0f, "1k"}, {5000.0f, nullptr}, {10000.0f, "10k"}};
 
     for (const auto& line : freqLines) {
-        const float x = plot.getX() + freqToX(line.freq, plot.getWidth());
+        const float x = plot.getX() + freqToX(line.freq, plot.getWidth(), minPlotFrequencyHz_);
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(line.label ? 0.27f : 0.14f));
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
         if (line.label != nullptr) {
@@ -363,7 +367,7 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     float maxResponseDb = kMinDb;
     for (int i = 0; i < samples; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(samples - 1);
-        const float freq = xToFreq(t * plot.getWidth(), plot.getWidth());
+        const float freq = xToFreq(t * plot.getWidth(), plot.getWidth(), minPlotFrequencyHz_);
         const float db = responseDbAt(freq);
         responseDbs.push_back(db);
         maxResponseDb = std::max(maxResponseDb, db);
@@ -407,7 +411,7 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     g.strokePath(curvePath, juce::PathStrokeType(1.7f, juce::PathStrokeType::curved,
                                                  juce::PathStrokeType::rounded));
 
-    const float cutoffX = plot.getX() + freqToX(cutoffHz_, plot.getWidth());
+    const float cutoffX = plot.getX() + freqToX(cutoffHz_, plot.getWidth(), minPlotFrequencyHz_);
     g.setColour(accent.withAlpha(0.45f));
     g.drawVerticalLine(static_cast<int>(std::round(cutoffX)), plot.getY(), plot.getBottom());
 }

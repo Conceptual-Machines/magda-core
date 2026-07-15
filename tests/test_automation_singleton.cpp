@@ -59,6 +59,77 @@ const AutomationPoint* findPointAt(const AutomationLaneInfo* lane, double beatPo
 
 }  // namespace
 
+TEST_CASE("Automation authority state machine has explicit stable and gesture states",
+          "[automation][authority]") {
+    using State = AutomationAuthorityState;
+    using Event = AutomationAuthorityEvent;
+
+    REQUIRE(transitionAutomationAuthority(State::Reading, Event::BeginTouch) == State::Touching);
+    REQUIRE(transitionAutomationAuthority(State::Touching, Event::EndGesture) == State::Reading);
+    REQUIRE(transitionAutomationAuthority(State::Reading, Event::BeginWrite) == State::Writing);
+    REQUIRE(transitionAutomationAuthority(State::Writing, Event::EndGesture) == State::Reading);
+
+    REQUIRE(transitionAutomationAuthority(State::Reading, Event::Disable) == State::Disabled);
+    REQUIRE(transitionAutomationAuthority(State::Disabled, Event::BeginTouch) == State::Disabled);
+    REQUIRE(transitionAutomationAuthority(State::Disabled, Event::BeginWrite) == State::Disabled);
+    REQUIRE(transitionAutomationAuthority(State::Disabled, Event::EndGesture) == State::Disabled);
+    REQUIRE(transitionAutomationAuthority(State::Disabled, Event::Enable) == State::Reading);
+
+    REQUIRE(transitionAutomationAuthority(State::Touching, Event::ResetRuntime) == State::Reading);
+    REQUIRE(transitionAutomationAuthority(State::Writing, Event::ResetRuntime) == State::Reading);
+    REQUIRE(transitionAutomationAuthority(State::Disabled, Event::ResetRuntime) == State::Disabled);
+
+    REQUIRE(automationAuthorityForPersistence(State::Touching) == State::Reading);
+    REQUIRE(automationAuthorityForPersistence(State::Writing) == State::Reading);
+    REQUIRE(automationAuthorityForPersistence(State::Disabled) == State::Disabled);
+}
+
+TEST_CASE("AutomationManager gestures never become persistent lane disablement",
+          "[automation][authority]") {
+    resetState();
+    const auto trackId = makeTrack("T");
+    const auto target = volumeTarget(trackId);
+    auto& mgr = AutomationManager::getInstance();
+    const auto laneId = mgr.createLane(target, AutomationLaneType::Absolute);
+
+    REQUIRE(mgr.getLane(laneId)->authorityState == AutomationAuthorityState::Reading);
+    REQUIRE(mgr.getVisualState(target) == AutomationVisualState::Active);
+
+    mgr.beginTargetGesture(target);
+    REQUIRE(mgr.getLane(laneId)->authorityState == AutomationAuthorityState::Touching);
+    REQUIRE(mgr.getVisualState(target) == AutomationVisualState::Overridden);
+
+    mgr.endTargetGesture(target);
+    REQUIRE(mgr.getLane(laneId)->authorityState == AutomationAuthorityState::Reading);
+    REQUIRE(mgr.getVisualState(target) == AutomationVisualState::Active);
+
+    mgr.setLaneEnabled(laneId, false);
+    mgr.beginTargetGesture(target);
+    mgr.endTargetGesture(target);
+    REQUIRE(mgr.getLane(laneId)->authorityState == AutomationAuthorityState::Disabled);
+
+    mgr.setLaneEnabled(laneId, true);
+    REQUIRE(mgr.getLane(laneId)->authorityState == AutomationAuthorityState::Reading);
+}
+
+TEST_CASE("Adding and removing modulation does not change automation authority",
+          "[automation][authority][modulation]") {
+    resetState();
+    const auto trackId = makeTrack("T");
+    const auto path = ChainNodePath::trackLevel(trackId);
+    const auto target = volumeTarget(trackId);
+    auto& automation = AutomationManager::getInstance();
+    auto& tracks = TrackManager::getInstance();
+    const auto laneId = automation.createLane(target, AutomationLaneType::Absolute);
+
+    tracks.addMod(path, 0, ModType::LFO);
+    tracks.setModTarget(path, 0, target);
+    REQUIRE(automation.getLane(laneId)->authorityState == AutomationAuthorityState::Reading);
+
+    tracks.removeMod(path, 0);
+    REQUIRE(automation.getLane(laneId)->authorityState == AutomationAuthorityState::Reading);
+}
+
 TEST_CASE("AutomationManager::createLane returns the existing id for a duplicate target",
           "[automation][singleton]") {
     resetState();

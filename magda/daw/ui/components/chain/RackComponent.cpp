@@ -50,7 +50,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
 
     onBypassChanged = [this](bool bypassed) {
-        magda::TrackManager::getInstance().setRackBypassed(trackId_, rackId_, bypassed);
+        if (bypassed)
+            deltaButton_->setToggleState(false, juce::dontSendNotification);
+        magda::TrackManager::getInstance().setRackBypassedByPath(rackPath_, bypassed);
     };
 
     onModPanelToggled = [this](bool visible) {
@@ -103,6 +105,25 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         setParamPanelVisible(macroButton_->getToggleState());
     };
     addAndMakeVisible(*macroButton_);
+
+    deltaButton_ = std::make_unique<juce::TextButton>(juce::String::fromUTF8("\xce\x94"));
+    deltaButton_->setClickingTogglesState(true);
+    deltaButton_->setToggleState(rack.deltaSolo, juce::dontSendNotification);
+    deltaButton_->setTooltip("Delta Solo: processed rack signal minus dry input");
+    deltaButton_->setLookAndFeel(&node_header::getDeltaSoloButtonLookAndFeel());
+    deltaButton_->setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    deltaButton_->setColour(juce::TextButton::buttonOnColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_CYAN).darker(0.3f));
+    deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    deltaButton_->onClick = [this]() {
+        const bool enabled = deltaButton_->getToggleState();
+        if (enabled)
+            setBypassed(false);
+        magda::TrackManager::getInstance().setRackDeltaSoloByPath(rackPath_, enabled);
+    };
+    addAndMakeVisible(*deltaButton_);
 
     // PRESET button (MAGDA rack presets menu) — same indigo pill recipe as
     // DeviceSlotComponent's preset button so device and rack presets read
@@ -230,14 +251,7 @@ void RackComponent::mouseDown(const juce::MouseEvent& e) {
 
 void RackComponent::mouseWheelMove(const juce::MouseEvent& e,
                                    const juce::MouseWheelDetails& wheel) {
-    // Alt/Option + scroll = zoom (forward to parent via callback)
-    if (e.mods.isAltDown() && onZoomDelta) {
-        float delta = wheel.deltaY > 0 ? 0.1f : -0.1f;
-        onZoomDelta(delta);
-    } else {
-        // Normal scroll - let base class / viewport handle it
-        NodeComponent::mouseWheelMove(e, wheel);
-    }
+    NodeComponent::mouseWheelMove(e, wheel);
 }
 
 void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
@@ -268,6 +282,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
             gainSlider_->setVisible(false);
         if (presetButton_)
             presetButton_->setVisible(false);
+        deltaButton_->setVisible(false);
         // levelMeter_ visibility handled by resizedCollapsed
         return;
     }
@@ -280,6 +295,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     macroButton_->setVisible(true);
     if (presetButton_)
         presetButton_->setVisible(true);
+    deltaButton_->setVisible(true);
     levelMeter_.setVisible(true);
 
     // Position the level meter on the right edge of the content area, with
@@ -356,8 +372,8 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Right edge — [preset][power][delete] — is owned by NodeComponent. Only
-    // place left-side header icons here; do not touch presetButton_.
+    deltaButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+    headerArea.removeFromRight(4);
     macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
     headerArea.removeFromLeft(4);
     modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
@@ -387,6 +403,10 @@ void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     modButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
     modButton_->setVisible(true);
+    area.removeFromTop(4);
+    deltaButton_->setBounds(
+        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    deltaButton_->setVisible(true);
 }
 
 int RackComponent::getPreferredHeight() const {
@@ -442,6 +462,7 @@ void RackComponent::setAvailableWidth(int width) {
 void RackComponent::updateFromRack(const magda::RackInfo& rack) {
     setNodeName(rack.name);
     setBypassed(rack.bypassed);
+    deltaButton_->setToggleState(rack.deltaSolo, juce::dontSendNotification);
     if (gainSlider_)
         gainSlider_->setValue(rack.volume, juce::dontSendNotification);
     rebuildChainRows();

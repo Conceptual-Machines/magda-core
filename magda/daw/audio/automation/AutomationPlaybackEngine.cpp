@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "../../core/AutomationManager.hpp"
+#include "../../core/ClipLaneFlattener.hpp"
 #include "../../core/ParameterInfo.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TrackManager.hpp"
@@ -28,17 +29,17 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
     auto& mgr = AutomationManager::getInstance();
     mgr.addListener(this);
 
-    // When a user grabs an automated control, clear the baked curve so TE
-    // stops writing to the parameter; when they release, rebake from the
-    // stored lane data so automation resumes. This is the cheap,
-    // per-gesture equivalent of a "touch" write mode.
-    mgr.setTouchSuppressionListener([this](AutomationLaneId laneId, bool suppressed) {
+    // Authority transitions are applied immediately: transient Touching /
+    // Writing and explicit Disabled states clear the TE curve; returning to
+    // Reading restores it. Modifiers remain attached independently, so
+    // automation supplies the base value and modulation composes on top.
+    mgr.setAuthorityStateListener([this](AutomationLaneId laneId,
+                                         AutomationAuthorityState /*previous*/,
+                                         AutomationAuthorityState next) {
         auto* lane = AutomationManager::getInstance().getLane(laneId);
         if (!lane)
             return;
-        DBG("[AutoPb] touchSuppressionListener lane=" << laneId << " suppressed=" << (int)suppressed
-                                                      << " bypass=" << (int)lane->bypass);
-        if (suppressed) {
+        if (isAutomationPlaybackSuppressed(next)) {
             clearLane(*lane);
             if (auto* param = resolveParameter(lane->target))
                 param->updateStream();
@@ -51,7 +52,7 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
 AutomationPlaybackEngine::~AutomationPlaybackEngine() {
     auto& mgr = AutomationManager::getInstance();
     mgr.removeListener(this);
-    mgr.setTouchSuppressionListener({});
+    mgr.setAuthorityStateListener({});
 
     // Detach from every TE parameter we were listening on — otherwise the
     // parameter keeps a dangling pointer and will crash on the next value
@@ -97,11 +98,11 @@ void AutomationPlaybackEngine::process() {
         // so curves are ready before the next play. The 10ms deferred iterator
         // rebuild will complete long before the user presses play again.
         // Manual fader control still works because playbackActive_ is false.
-        // Release any touchSuppressed flag a UI gesture may have left behind
+        // Release any transient authority state a UI gesture may have left behind
         // (component destroyed mid-drag, modal opened, etc.) — otherwise the
         // upcoming bake skips that lane and the parameter silently stops
         // following automation until the user re-touches the control.
-        AutomationManager::getInstance().clearAllTouchSuppression();
+        AutomationManager::getInstance().resetRuntimeAuthorityStates();
         clearAllLanes();
         bakeAllLanes();
         AutomationManager::getInstance().setPlaybackActive(false);
@@ -213,6 +214,11 @@ void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId laneId) 
     needsRebake_ = false;
 }
 
+void AutomationPlaybackEngine::automationClipsChanged(AutomationLaneId laneId) {
+    // Same semantics as a point edit: the lane's baked data changed.
+    automationPointsChanged(laneId);
+}
+
 void AutomationPlaybackEngine::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
     needsRebake_ = true;
 }
@@ -275,14 +281,17 @@ void AutomationPlaybackEngine::clearStaleTarget(const AutomationTarget& target) 
     // Restore the user's manual value where MAGDA tracks one separately. For
     // device parameters / macros / sends there's no separate manual store, so
     // we just clear the curve and leave the parameter at whatever TE last had.
+    // setParameterFromHost: TE's setParameter drops host writes while any
+    // modifier is attached, and deleting an automated lane with an LFO linked
+    // would otherwise leave the fader pinned.
     const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
     if (track) {
         if (target.kind == ControlTarget::Kind::TrackVolume) {
             float manualDb = juce::Decibels::gainToDecibels(track->manualVolume);
-            param->setParameter(te::decibelsToVolumeFaderPosition(manualDb),
-                                juce::sendNotificationSync);
+            param->setParameterFromHost(te::decibelsToVolumeFaderPosition(manualDb),
+                                        juce::sendNotificationSync);
         } else if (target.kind == ControlTarget::Kind::TrackPan) {
-            param->setParameter(track->manualPan, juce::sendNotificationSync);
+            param->setParameterFromHost(track->manualPan, juce::sendNotificationSync);
         }
     }
 
@@ -300,11 +309,11 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // Clear existing TE automation points
     curve.clear(nullptr);
 
-    // Bypass or live touch-suppression: leave the curve empty so TE's audio
+    // Any non-reading state leaves the curve empty so TE's audio
     // thread falls back to the parameter's manual/static value. Force iterator
     // rebuild so the change takes effect on the next audio block rather than
     // after TE's 10ms timer.
-    if (lane.bypass || lane.touchSuppressed) {
+    if (isAutomationPlaybackSuppressed(lane.authorityState)) {
         param->updateStream();
         return;
     }
@@ -408,9 +417,19 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // couple of helper points so TE's linear-only iterator still matches
     // the MAGDA shape.
     const std::vector<AutomationPoint>* sourcePoints = nullptr;
-    if (lane.isAbsolute())
+    std::vector<AutomationPoint> clipFlattened;
+    if (lane.isAbsolute()) {
         sourcePoints = &lane.absolutePoints;
-    // TODO: handle clip-based lanes similarly
+    } else if (lane.isClipBased()) {
+        // Unroll the lane's clips (loop iterations, gap holds, wrap jumps)
+        // into an absolute-style breakpoint list; the emission loop below
+        // then treats it exactly like an absolute lane. Its tessellation
+        // queries go through getValueAtBeat, which resolves clips natively.
+        clipFlattened = flattenClipLane(
+            lane, [&](AutomationClipId clipId) { return autoMgr.getClip(clipId); },
+            [&](double beat) { return autoMgr.getValueAtBeat(lane.id, beat); });
+        sourcePoints = &clipFlattened;
+    }
 
     auto addTEPoint = [&](double beat, double normalizedValue) {
         float teValue = convertValue(normalizedValue);
@@ -621,46 +640,7 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
 double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& target,
                                                     te::AutomatableParameter* param,
                                                     float teValue) const {
-    switch (target.kind) {
-        case ControlTarget::Kind::DeviceMacro:
-            // Mirror of convertToTEValue: macros are 0..1 on both sides.
-            return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
-
-        case ControlTarget::Kind::TrackVolume:
-        case ControlTarget::Kind::SendLevel: {
-            // TE fader position → dB → MAGDA 0-1 (FaderDB scale). Mirror of
-            // the forward path; kept identical for TrackVolume and SendLevel.
-            auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
-            float dB = te::volumeFaderPositionToDB(teValue);
-            return ParameterUtils::realToNormalized(dB, paramInfo);
-        }
-        case ControlTarget::Kind::TrackPan: {
-            auto paramInfo = ParameterPresets::pan(-1, "Pan");
-            return ParameterUtils::realToNormalized(teValue, paramInfo);
-        }
-        default: {
-            // Inverse of convertToTEValue — keep the two symmetric or the
-            // round-trip (MAGDA normalized -> TE raw -> MAGDA normalized)
-            // will drift and the UI will fight the curve.
-            ParameterInfo info = getParameterInfoForTarget(target);
-            // Mirror of convertToTEValue: display-mapped internal params keep
-            // the lane normalized == TE native, so pass through directly.
-            if (ParameterUtils::isDisplayMappedInternalValue(info))
-                return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
-            const float teSpan = info.teMaxValue - info.teMinValue;
-            if (teSpan <= 0.0f) {
-                if (!param)
-                    return teValue;
-                auto range = param->getValueRange();
-                float span = range.getEnd() - range.getStart();
-                if (span <= 0.0f)
-                    return 0.0;
-                return juce::jlimit(0.0, 1.0,
-                                    static_cast<double>((teValue - range.getStart()) / span));
-            }
-            return ParameterUtils::modelToNormalizedValue(ParameterModelValue{teValue}, info).value;
-        }
-    }
+    return laneNormalizedFromTEValue(target, param, teValue);
 }
 
 void AutomationPlaybackEngine::syncParameterListeners() {
@@ -725,7 +705,12 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         return;
     }
 
-    double normalized = convertFromTEValue(target, &param, param.getCurrentValue());
+    // Base value, NOT getCurrentValue(): TE fires this listener for modifier
+    // (LFO) movement too, and the current value includes the modifier output.
+    // Broadcasting it made every UI follower dance with the modulation as
+    // soon as a lane existed for the target (mod range indicators own that
+    // display); the automation curve only ever writes the base.
+    double normalized = convertFromTEValue(target, &param, param.getCurrentBaseValue());
     AutomationManager::getInstance().notifyValueChanged(it->second.laneId, normalized);
 
     // Keep MAGDA's TrackInfo cache in sync with what TE just wrote, so any UI

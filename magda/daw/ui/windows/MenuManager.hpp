@@ -36,6 +36,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onDuplicate;
         std::function<void()> onDuplicateClipWithAutomation;
         std::function<void()> onDuplicateClipWithoutAutomation;
+        std::function<void()> onDuplicateClipAsGhost;
+        std::function<void()> onMakeClipUnique;
         std::function<void()> onDelete;
         std::function<void()> onSplitOrTrim;
         std::function<void()> onJoinClips;
@@ -202,6 +204,8 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         CutLoopRange,
         DeleteLoopRange,
         PasteRipple,
+        DuplicateClipAsGhost = 235,
+        MakeClipUnique,
         Preferences = 299,
 
         // Settings menu (800-899)

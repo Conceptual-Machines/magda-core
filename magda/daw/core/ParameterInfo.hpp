@@ -146,6 +146,10 @@ struct ParameterInfo {
     // aliases, and host writes, but parameter-grid layouts omit their cell.
     bool hidden = false;
 
+    // UI interaction semantics for a Boolean parameter. Momentary controls emit
+    // 1 while pressed and return to 0 on release instead of latching.
+    bool momentary = false;
+
     // Wrapper-role tag. Defaults to None. Processors that place an entry in
     // DeviceInfo::wrapperParameters set the role so the device-header chrome
     // can spot known pairs (e.g. DryGain+WetGain → Mix knob).

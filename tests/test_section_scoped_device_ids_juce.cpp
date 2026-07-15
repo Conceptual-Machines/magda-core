@@ -294,7 +294,7 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
     }
 
     void testTrackChainBypassNotifiesNestedDevicePaths() {
-        beginTest("Track chain bypass notifies nested devices with full paths");
+        beginTest("Chain power off notifies nested devices with full paths");
 
         auto& trackManager = magda::TrackManager::getInstance();
         trackManager.clearAllTracks();
@@ -321,7 +321,7 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
 
         DevicePropertyRecordingListener listener;
         trackManager.addListener(&listener);
-        trackManager.setChainBypassed(trackId, true);
+        trackManager.setChainEnabled(trackId, false);
         trackManager.removeListener(&listener);
 
         expect(containsPath(listener.devicePropertyPaths, topLevelPath),
@@ -332,9 +332,21 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
                              magda::ChainNodePath::topLevelDevice(trackId, nestedId)),
                "Nested device must not be reported as a fabricated top-level path");
 
+        // Chain power gates devices in the engine WITHOUT touching their own
+        // bypassed flags, so per-device bypass survives an off/on cycle.
+        expect(!trackManager.isChainEnabled(trackId), "Chain power should be off");
         auto* nestedDevice = trackManager.getDeviceInChainByPath(nestedPath);
-        expect(nestedDevice != nullptr && nestedDevice->bypassed,
-               "Nested device model state should be bypassed");
+        expect(nestedDevice != nullptr && !nestedDevice->bypassed,
+               "Nested device's own bypassed flag must stay untouched");
+        expect(nestedDevice != nullptr &&
+                   !trackManager.isDeviceEffectivelyEnabled(nestedPath, *nestedDevice),
+               "Nested device should be effectively disabled while the chain power is off");
+
+        trackManager.setChainEnabled(trackId, true);
+        nestedDevice = trackManager.getDeviceInChainByPath(nestedPath);
+        expect(nestedDevice != nullptr &&
+                   trackManager.isDeviceEffectivelyEnabled(nestedPath, *nestedDevice),
+               "Nested device should be effectively enabled again after power on");
 
         trackManager.clearAllTracks();
     }

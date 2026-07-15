@@ -1,6 +1,7 @@
 #include "../../core/AutomationCommands.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/ClipPropertyCommands.hpp"
 #include "../../core/Config.hpp"
 #include "../../core/MidiNoteCommands.hpp"
 #include "../../core/PasteTargetResolver.hpp"
@@ -91,10 +92,11 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
-        duplicateClipWithoutAutomation, deleteCmd, selectAll, splitOrTrim, joinClips, renderClip,
-        renderTimeSelection, setLoopFromClip, toggleClipLoop, escapeAction, insertTime,
-        duplicateTimeRange, duplicateLoopRange, splitAllTracksAtCursor, copyTimeRange, cutTimeRange,
-        deleteTimeRange, copyLoopRange, cutLoopRange, deleteLoopRange, pasteRipple,
+        duplicateClipWithoutAutomation, duplicateClipAsGhost, makeClipUnique, deleteCmd, selectAll,
+        splitOrTrim, joinClips, renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
+        toggleClipEnabled, escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange,
+        splitAllTracksAtCursor, copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange,
+        cutLoopRange, deleteLoopRange, pasteRipple,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -158,6 +160,15 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case duplicateClipWithoutAutomation:
             result.setInfo("Duplicate Clip Without Automation",
                            "Duplicate selected clips without copying automation", "Edit", 0);
+            break;
+        case duplicateClipAsGhost:
+            result.setInfo("Duplicate Clip as Ghost",
+                           "Duplicate selected clips as ghosts that mirror the source's content",
+                           "Edit", 0);
+            break;
+        case makeClipUnique:
+            result.setInfo("Make Clip Unique", "Detach selected ghost clips from their link groups",
+                           "Edit", 0);
             break;
 
         case deleteCmd:
@@ -286,6 +297,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case toggleClipLoop:
             result.setInfo("Toggle Clip Loop", "Toggle loop on/off for selected clip", "Edit", 0);
             result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier);
+            break;
+
+        case toggleClipEnabled:
+            result.setInfo("Enable/Disable Clip", "Enable or disable selected clips", "Edit", 0);
+            result.addDefaultKeypress('0', 0);
             break;
 
         case escapeAction:
@@ -495,21 +511,24 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         return sel.isActive() && !sel.visuallyHidden;
     };
 
-    auto duplicateSelectedArrangementClips = [&](bool includeAutomation) -> bool {
+    auto duplicateSelectedArrangementClips = [&](bool includeAutomation,
+                                                 bool asGhost = false) -> bool {
         if (selectedClips.empty())
             return false;
 
         std::vector<ClipId> newClips;
         const double tempo = mainView ? mainView->getTimelineController().getState().tempo.bpm
                                       : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
+        auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo, asGhost);
         if (commands.empty())
             return false;
 
         const bool compoundOperation = commands.size() > 1 || includeAutomation;
         if (compoundOperation) {
             UndoManager::getInstance().beginCompoundOperation(
-                includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips");
+                asGhost
+                    ? "Duplicate Clips as Ghosts"
+                    : (includeAutomation ? "Duplicate Clips With Automation" : "Duplicate Clips"));
         }
 
         for (auto& cmd : commands) {
@@ -896,13 +915,36 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             duplicateSelectedArrangementClips(false);
             return true;
 
+        case duplicateClipAsGhost:
+            duplicateSelectedArrangementClips(false, true);
+            return true;
+
+        case makeClipUnique: {
+            std::vector<ClipId> targets;
+            for (auto cid : selectedClips)
+                if (clipManager.isGhostClip(cid))
+                    targets.push_back(cid);
+            if (targets.empty())
+                return true;
+            if (targets.size() > 1)
+                UndoManager::getInstance().beginCompoundOperation("Make Clips Unique");
+            for (auto cid : targets)
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<MakeClipUniqueCommand>(cid));
+            if (targets.size() > 1)
+                UndoManager::getInstance().endCompoundOperation();
+            return true;
+        }
+
         case deleteCmd: {
             // Automation-point selection takes priority — the user is editing a
             // curve. Routing it through this command (rather than the curve
             // editor's keyPressed) is robust: selecting a point publishes to the
             // SelectionManager, but the editor loses keyboard focus when the
             // inspector relayouts, so the key never reaches its keyPressed.
-            const auto& autoPtSel = selectionManager.getAutomationPointSelection();
+            // Copy: the commands notify listeners that may touch the live
+            // selection while we iterate it.
+            const auto autoPtSel = selectionManager.getAutomationPointSelection();
             if (autoPtSel.isValid()) {
                 auto& undo = UndoManager::getInstance();
                 const bool many = autoPtSel.pointIds.size() > 1;
@@ -913,8 +955,24 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         autoPtSel.laneId, autoPtSel.clipId, *it));
                 if (many)
                     undo.endCompoundOperation();
-                selectionManager.clearAutomationPointSelection();
+                // Points inside a clip: fall back to the clip selection so the
+                // clip editor stays open; clearing to nothing would switch the
+                // bottom panel away mid-edit.
+                if (autoPtSel.clipId != INVALID_AUTOMATION_CLIP_ID)
+                    selectionManager.selectAutomationClip(autoPtSel.clipId, autoPtSel.laneId);
+                else
+                    selectionManager.clearAutomationPointSelection();
                 return true;
+            }
+            // Selected automation clip: delete the whole clip.
+            if (selectionManager.getSelectionType() == SelectionType::AutomationClip) {
+                const auto autoClipSel = selectionManager.getAutomationClipSelection();
+                if (autoClipSel.isValid()) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<DeleteAutomationClipCommand>(autoClipSel.clipId));
+                    selectionManager.clearAutomationClipSelection();
+                    return true;
+                }
             }
             // Note selection takes priority — user is actively editing in the piano roll
             const auto& noteSel = selectionManager.getNoteSelection();
@@ -1591,6 +1649,35 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     if (clip)
                         clipManager.setClipLoopEnabled(clipId, !clip->loopEnabled, bpm);
                 }
+            }
+            return true;
+        }
+
+        case toggleClipEnabled: {
+            const auto selectedClips = selectionManager.getSelectedClips();
+            if (!selectedClips.empty()) {
+                // Uniform set: the anchor clip (the inspector's "primary" =
+                // first in the selection set) decides the target state, so a
+                // mixed selection ends up uniform instead of inverting per
+                // clip.
+                const auto* anchor = clipManager.getClip(*selectedClips.begin());
+                if (anchor == nullptr)
+                    return true;
+                const bool newState = !anchor->enabled;
+                UndoManager::getInstance().beginCompoundOperation(newState ? "Enable Clips"
+                                                                           : "Disable Clips");
+                for (auto clipId : selectedClips) {
+                    const auto* clip = clipManager.getClip(clipId);
+                    if (clip != nullptr && clip->enabled != newState) {
+                        UndoManager::getInstance().executeCommand(
+                            std::make_unique<SetClipPropertyCommand>(
+                                clipId, newState ? "Enable Clip" : "Disable Clip",
+                                [newState](auto& manager, ClipId id) {
+                                    manager.setClipEnabled(id, newState);
+                                }));
+                    }
+                }
+                UndoManager::getInstance().endCompoundOperation();
             }
             return true;
         }

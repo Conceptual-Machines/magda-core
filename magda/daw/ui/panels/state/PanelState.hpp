@@ -112,13 +112,14 @@ inline AllPanelStates getDefaultPanelStates() {
     states.rightPanel.collapsed = false;
 
     // Bottom Panel: Empty (no selection), Piano Roll, Drum Grid, Chord editor, Waveform Editor,
-    // Track Chain
+    // Automation Clip editor, Track Chain
     states.bottomPanel.location = PanelLocation::Bottom;
     states.bottomPanel.tabs = {PanelContentType::Empty,
                                PanelContentType::PianoRoll,
                                PanelContentType::DrumGridClipView,
                                PanelContentType::ChordClipView,
                                PanelContentType::WaveformEditor,
+                               PanelContentType::AutomationClipEditor,
                                PanelContentType::TrackChain};
     states.bottomPanel.activeTabIndex = 0;
     states.bottomPanel.collapsed = false;

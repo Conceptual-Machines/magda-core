@@ -13,6 +13,7 @@
 #include "../core/TypeIds.hpp"
 #include "AudioBridgeMixer.hpp"
 #include "DeviceMeteringManager.hpp"
+#include "ExternalInsertDeviceEnablement.hpp"
 #include "MeteringBuffer.hpp"
 #include "PluginWindowBridge.hpp"
 #include "TrackController.hpp"
@@ -861,6 +862,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     MidiInputRouter midiInputRouter_;
     ControlTargetResolver controlTargetResolver_;
     SidechainRoutingManager sidechainRouting_;
+    ExternalInsertDeviceEnablement insertDeviceEnablement_;
     SamplerFileLoader samplerFileLoader_;
     ClipSynchronizer clipSynchronizer_;
     SessionClipAudioMonitor sessionAudioMonitor_;
@@ -896,6 +898,12 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
         mappingLock_;  // Protects mapping updates (mutable for const getters)
 
     void updateMidiInputRouting();
+
+    /**
+     * @brief Derive external-insert hardware port enablement (#1623) and
+     *        reallocate the playback graph when it changed.
+     */
+    void refreshInsertDeviceEnablement();
     void resyncAllInputMonitors();
 
     void applyPendingMidiRoutes();

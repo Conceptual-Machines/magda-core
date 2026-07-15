@@ -132,7 +132,13 @@ jobs:
           exit 1
         fi
 
-        xvfb-run -a "$JUCE_TEST_BIN"
+        # Async work can otherwise leak across shared-engine suites and only
+        # manifest intermittently. Repeating the same process catches those
+        # cross-test lifetime regressions before they land.
+        for run in $(seq 1 10); do
+          echo "JUCE test run ${run}/10"
+          xvfb-run -a "$JUCE_TEST_BIN"
+        done
 
     - name: Show sccache statistics
       run: sccache --show-stats

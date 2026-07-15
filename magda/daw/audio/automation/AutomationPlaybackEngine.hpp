@@ -47,10 +47,12 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     // AutomationManagerListener — rebake on data changes during playback
     void automationLanesChanged() override;
     void automationPointsChanged(AutomationLaneId laneId) override;
-    // Property changes include bypass, snap flags, arm, name, etc. Only
-    // bypass affects what gets baked, but any property-change listener miss
-    // means a bypass toggle has no audible effect until another event forces
-    // a rebake — so mark dirty unconditionally here.
+    // Clip create/move/resize/point edits change what a clip-based lane
+    // bakes to, so they follow the same rebake path as point edits.
+    void automationClipsChanged(AutomationLaneId laneId) override;
+    // Property changes include authority, snap flags, arm, name, etc. The
+    // authority state affects what gets baked, so every transition must reach
+    // the playback engine — mark dirty unconditionally here.
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
     // Fluid preview while the user is actively dragging a point — republish
     // the value through AutomationManager::notifyValueChanged so UI listeners

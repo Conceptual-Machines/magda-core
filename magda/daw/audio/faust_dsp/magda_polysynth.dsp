@@ -172,7 +172,12 @@ oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enabl
 // Resonance 0..0.95 -> Q 0.5..~9.5. Filter-envelope output scales the cutoff
 // exponentially (in octaves) and the result is clamped to the audio band.
 Q         = 0.5 + res * 9.5;
-filterEnv = en.adsr(fAtt, fDec, fSus, fRel, gate);
+// en.adsre (exponential segments), not en.adsr: the linear adsr's attack
+// counter hard-resets on the gate's rising edge, so a Mono retrigger (the
+// host's one-sample gate dip) collapses the envelope from sustain to zero in
+// one sample - an audible click on every mono note. adsre is a one-pole slew
+// toward the segment target, so it resumes from the current level instead.
+filterEnv = en.adsre(fAtt, fDec, fSus, fRel, gate);
 fc        = (cutoff * pow(2.0, fEnvAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
 
 filterMux(x) = ba.selectn(4, int(filterType),
@@ -191,7 +196,7 @@ filterSlope(x) = (filterMux(x), filterMux(filterMux(x))) : ba.selectn(2, int(fSl
 // (high velocity / resonance) overdrives gracefully instead of hard-clipping
 // downstream - tanh is ~linear for small signals, so clean patches stay clean.
 resComp = 1.0 - 0.5 * res;
-ampEnv  = en.adsr(aAtt, aDec, aSus, aRel, gate);
+ampEnv  = en.adsre(aAtt, aDec, aSus, aRel, gate);  // see filterEnv: no click on Mono retrigger
 // Drive: dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude
 // signals at unity at full drive (matches magda_filter_svf.dsp).
 drivenIn(x) = (1.0 - fDrive) * x

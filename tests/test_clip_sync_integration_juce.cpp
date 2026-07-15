@@ -79,6 +79,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce();
         testPropertyChangeCreatesMissingReversedArrangementClipSynchronously();
         testBatchSessionSlotCreationReallocatesOnce();
+        testDisabledSessionClipSyncsDisabled();
         testSessionClipMoveToTrackClearsVacatedSlot();
         testSessionClipMovePreservesEngineIdentity();
         testSessionClipDeleteRemovesMappedSlotClip();
@@ -88,6 +89,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testTrimAudioFromLeft();
         testTrimAudioFromRight();
         testSpeedRatio();
+        testBeatModeStretchEngineChangesReallocateGraph();
+        testArrangementWarpClipboardPasteToSessionPreservesMarkers();
+        testWarpMarkerSyncIsIdempotent();
+        testTransientSensitivityChangesAreDebounced();
+        testSingleWarpMarkerMapIsIgnored();
         testLoopEnableDisable();
         testBeatModeRoundTripPreservesTrimmedLength();
         testLoopTimeBased();
@@ -400,6 +406,94 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                      "Pure arrangement property batch should not reallocate the graph");
     }
 
+    void testBeatModeStretchEngineChangesReallocateGraph() {
+        beginTest("172 BPM beat-mode clip switches between all stretch engines");
+
+        Fixture f;
+        ProjectManager::getInstance().setTempo(120.0);
+        if (auto* tempo = f.edit->tempoSequence.getTempo(0))
+            tempo->setBpm(120.0);
+
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 120.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr);
+        if (!clip)
+            return;
+
+        constexpr double sourceBpm = 172.0;
+        const double sourceBeats = clip->audio().source.durationSeconds * sourceBpm / 60.0;
+        clip->autoTempo = true;
+        clip->audio().interpretation.bpm = sourceBpm;
+        clip->audio().interpretation.totalBeats = sourceBeats;
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        clip->setPlacementBeats(0.0, sourceBeats);
+        clip->deriveTimesFromBeats(120.0);
+
+        f.clipSync->syncClipToEngine(clipId);
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr);
+        if (!teClip)
+            return;
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchNormal));
+
+        int reallocations = 0;
+        f.edit->getTransport().ensureContextAllocated();
+        const bool canObserveReallocation = f.edit->getCurrentPlaybackContext() != nullptr;
+        f.clipSync->onGraphReallocated = [&reallocations] { ++reallocations; };
+
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::signalsmith));
+        if (canObserveReallocation)
+            expectEquals(reallocations, 1,
+                         "Signalsmith selection should rebuild the playback graph");
+
+        clip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchBetter);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(static_cast<int>(teClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchBetter));
+        if (canObserveReallocation)
+            expectEquals(reallocations, 2,
+                         "SoundTouch HQ selection should rebuild the playback graph");
+
+        auto sessionClipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Session, 120.0);
+        auto* sessionClip = cm.getClip(sessionClipId);
+        expect(sessionClip != nullptr);
+        if (!sessionClip)
+            return;
+
+        sessionClip->autoTempo = true;
+        sessionClip->audio().interpretation.bpm = sourceBpm;
+        sessionClip->audio().interpretation.totalBeats = sourceBeats;
+        sessionClip->timeStretchMode = static_cast<int>(te::TimeStretcher::soundtouchNormal);
+        cm.setClipSceneIndex(sessionClipId, 0);
+        if (f.clipSync->getSessionTeClip(sessionClipId) == nullptr)
+            f.clipSync->syncSessionClipToSlot(sessionClipId);
+
+        auto* sessionTeClip =
+            dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(sessionClipId));
+        expect(sessionTeClip != nullptr);
+        if (!sessionTeClip)
+            return;
+
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchNormal),
+                     "Session creation should honour an explicit SoundTouch selection");
+
+        cm.setTimeStretchMode(sessionClipId, static_cast<int>(te::TimeStretcher::signalsmith));
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::signalsmith));
+
+        cm.setTimeStretchMode(sessionClipId, static_cast<int>(te::TimeStretcher::soundtouchBetter));
+        expectEquals(static_cast<int>(sessionTeClip->getTimeStretchMode()),
+                     static_cast<int>(te::TimeStretcher::soundtouchBetter));
+    }
+
     void testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce() {
         beginTest("Property change creates missing arrangement TE clip and reallocates once");
 
@@ -437,6 +531,221 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                 reallocationCount, 1,
                 "Creating an arrangement TE clip from a property batch should reallocate once");
         }
+    }
+
+    void testArrangementWarpClipboardPasteToSessionPreservesMarkers() {
+        beginTest("Arrangement warp clipboard paste to session preserves markers");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto sourceId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* source = cm.getClip(sourceId);
+        expect(source != nullptr, "Source clip should exist");
+        if (source == nullptr)
+            return;
+
+        source->warpEnabled = true;
+        source->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
+        f.clipSync->syncClipToEngine(sourceId);
+
+        const int insertedIndex = f.clipSync->addWarpMarker(sourceId, 1.0, 1.25);
+        expect(insertedIndex >= 0, "User warp marker should be inserted");
+        expectEquals(static_cast<int>(source->warpMarkers.size()), 3,
+                     "Live TE marker edits should be mirrored into ClipInfo");
+
+        cm.copyToClipboard({sourceId});
+        auto pastedIds = cm.pasteFromClipboardBeats(0.0, f.trackId, ClipView::Session, 0);
+        expectEquals(static_cast<int>(pastedIds.size()), 1);
+        if (pastedIds.empty())
+            return;
+
+        const auto pastedId = pastedIds.front();
+        auto* pasted = cm.getClip(pastedId);
+        expect(pasted != nullptr, "Pasted session clip should exist");
+        if (pasted == nullptr)
+            return;
+
+        expect(pasted->warpEnabled, "Pasted session clip should remain warped");
+        expectEquals(pasted->timeStretchMode, static_cast<int>(te::TimeStretcher::signalsmith));
+        expectEquals(static_cast<int>(pasted->warpMarkers.size()), 3,
+                     "Pasted ClipInfo should contain the source marker map");
+
+        if (f.clipSync->getSessionTeClip(pastedId) == nullptr)
+            f.clipSync->syncSessionClipToSlot(pastedId);
+
+        auto* pastedTeClip =
+            dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(pastedId));
+        expect(pastedTeClip != nullptr, "Pasted clip should be installed in its session slot");
+        if (pastedTeClip == nullptr)
+            return;
+
+        expect(pastedTeClip->getWarpTime(), "Session TE clip should have warp enabled");
+        const auto pastedMarkers = f.clipSync->getWarpMarkers(pastedId);
+        expectEquals(static_cast<int>(pastedMarkers.size()), 3,
+                     "Session TE clip should restore every warp marker");
+        if (pastedMarkers.size() == 3) {
+            expectWithinAbsoluteError(pastedMarkers[1].sourceTime, 1.0, 0.001);
+            expectWithinAbsoluteError(pastedMarkers[1].warpTime, 1.25, 0.001);
+        }
+    }
+
+    void testWarpMarkerSyncIsIdempotent() {
+        beginTest("Warp marker sync is idempotent for arrangement and session clips");
+
+        struct WarpStateMutationCounter final : juce::ValueTree::Listener {
+            explicit WarpStateMutationCounter(juce::ValueTree& stateToWatch) : state(stateToWatch) {
+                state.addListener(this);
+            }
+
+            ~WarpStateMutationCounter() override {
+                state.removeListener(this);
+            }
+
+            void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) override {
+                ++mutationCount;
+            }
+
+            void valueTreeChildAdded(juce::ValueTree&, juce::ValueTree&) override {
+                ++mutationCount;
+            }
+
+            void valueTreeChildRemoved(juce::ValueTree&, juce::ValueTree&, int) override {
+                ++mutationCount;
+            }
+
+            juce::ValueTree& state;
+            int mutationCount = 0;
+        };
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto arrangementId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* arrangement = cm.getClip(arrangementId);
+        expect(arrangement != nullptr, "Arrangement clip should exist");
+        if (arrangement == nullptr)
+            return;
+
+        arrangement->warpEnabled = true;
+        f.clipSync->syncClipToEngine(arrangementId);
+        f.clipSync->enableWarp(arrangementId);
+
+        auto* arrangementTeClip = f.getTeAudioClip(arrangementId);
+        expect(arrangementTeClip != nullptr, "Arrangement TE clip should exist");
+        expectEquals(static_cast<int>(arrangement->warpMarkers.size()), 2,
+                     "Enabling warp without user markers should store only the boundaries");
+        if (arrangementTeClip == nullptr || arrangement->warpMarkers.size() != 2)
+            return;
+
+        auto& arrangementWarpManager = arrangementTeClip->getWarpTimeManager();
+        const auto& arrangementMarkersBefore = arrangementWarpManager.getMarkers();
+        expectEquals(arrangementMarkersBefore.size(), 2);
+        if (arrangementMarkersBefore.size() != 2)
+            return;
+
+        WarpStateMutationCounter arrangementMutations(arrangementWarpManager.state);
+        f.clipSync->syncClipToEngine(arrangementId);
+        expectEquals(arrangementMutations.mutationCount, 0,
+                     "An identical saved boundary map must not mutate arrangement markers");
+
+        auto sessionId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Session, 60.0);
+        cm.setClipSceneIndex(sessionId, 0);
+        auto* session = cm.getClip(sessionId);
+        auto* sessionTeClip =
+            dynamic_cast<te::WaveAudioClip*>(f.clipSync->getSessionTeClip(sessionId));
+        expect(session != nullptr, "Session clip should exist");
+        expect(sessionTeClip != nullptr, "Session TE clip should exist");
+        if (session == nullptr || sessionTeClip == nullptr)
+            return;
+
+        session->warpEnabled = true;
+        f.clipSync->enableWarp(sessionId);
+        expectEquals(static_cast<int>(session->warpMarkers.size()), 2,
+                     "Session warp enable should store its boundary map");
+        if (session->warpMarkers.size() != 2)
+            return;
+
+        // Settle other lazily-created session properties before observing graph
+        // reallocations caused by the property change under test.
+        cm.forceNotifyMultipleClipPropertiesChanged({sessionId});
+
+        auto& sessionWarpManager = sessionTeClip->getWarpTimeManager();
+        const auto& sessionMarkersBefore = sessionWarpManager.getMarkers();
+        expectEquals(sessionMarkersBefore.size(), 2);
+        if (sessionMarkersBefore.size() != 2)
+            return;
+
+        // Serialized doubles can differ by sub-microsecond rounding. This must
+        // still compare equal rather than restarting playback on a gain change.
+        session->warpMarkers.front().warpTime += 5.0e-7;
+
+        WarpStateMutationCounter sessionMutations(sessionWarpManager.state);
+        int reallocationCount = 0;
+        f.edit->getTransport().ensureContextAllocated();
+        const bool canObserveReallocation = f.edit->getCurrentPlaybackContext() != nullptr;
+        f.clipSync->onGraphReallocated = [&reallocationCount]() { ++reallocationCount; };
+
+        session->volumeDB = -3.0f;
+        cm.forceNotifyMultipleClipPropertiesChanged({sessionId});
+
+        expectEquals(sessionMutations.mutationCount, 0,
+                     "Equivalent saved boundaries must not mutate session markers");
+        if (canObserveReallocation)
+            expectEquals(reallocationCount, 0,
+                         "A gain change with an equivalent warp map must not rebuild the graph");
+    }
+
+    void testSingleWarpMarkerMapIsIgnored() {
+        beginTest("A malformed single warp marker map is ignored");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "Arrangement clip should exist");
+        if (clip == nullptr)
+            return;
+
+        clip->warpEnabled = true;
+        clip->warpMarkers = {{0.0, 0.0}};
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr, "Arrangement TE clip should exist");
+        if (teClip == nullptr)
+            return;
+
+        expectEquals(teClip->getWarpTimeManager().getMarkers().size(), 2,
+                     "A lone saved marker must not be inserted over TE's two boundaries");
+    }
+
+    void testTransientSensitivityChangesAreDebounced() {
+        beginTest("Rapid transient sensitivity changes retain cached markers until settled");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        juce::Array<double> cachedTransients{0.25, 0.75, 1.25};
+        auto& thumbnailManager = AudioThumbnailManager::getInstance();
+        thumbnailManager.cacheTransients(f.audioPath(), cachedTransients);
+
+        f.clipSync->setTransientSensitivity(clipId, 0.2f);
+        f.clipSync->setTransientSensitivity(clipId, 0.5f);
+        f.clipSync->setTransientSensitivity(clipId, 0.8f);
+
+        const auto* cached = thumbnailManager.getCachedTransients(f.audioPath());
+        expect(cached != nullptr,
+               "Dragging sensitivity should not clear the displayed transient cache per tick");
+        if (cached != nullptr)
+            expectEquals(cached->size(), cachedTransients.size(),
+                         "Cached markers should remain stable during the debounce window");
     }
 
     void testPropertyChangeCreatesMissingReversedArrangementClipSynchronously() {
@@ -505,6 +814,39 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         if (canObserveReallocation)
             expectEquals(reallocationCount, 1,
                          "Batch-created session slots should share one graph reallocation");
+    }
+
+    void testDisabledSessionClipSyncsDisabled() {
+        beginTest("Disabled session clip enters the engine disabled on first sync");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Session, 60.0);
+        expect(clipId != INVALID_CLIP_ID);
+
+        // Disable before the first engine sync (sceneIndex is still unset, so
+        // there is no TE counterpart yet) — mirrors loading a project that
+        // contains a disabled session clip.
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr);
+        if (!clip)
+            return;
+        clip->enabled = false;
+
+        cm.setClipSceneIndex(clipId, 0);
+
+        auto* teClip = f.clipSync->getSessionTeClip(clipId);
+        expect(teClip != nullptr, "Session clip should be synced into its slot");
+        if (!teClip)
+            return;
+        expect(teClip->disabled.get(),
+               "Disabled session clip must be disabled in TE on first sync (#1736)");
+
+        // Re-enabling through the manager clears it via the property-change path.
+        cm.setClipEnabled(clipId, true);
+        expect(!teClip->disabled.get(), "Re-enabling must clear the TE disabled flag");
     }
 
     void testSessionClipMoveToTrackClearsVacatedSlot() {
@@ -1006,7 +1348,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         // Enable warp (this routes sync through the auto-tempo/warp code path)
         clip->warpEnabled = true;
-        // Set a valid time-stretch mode (SoundTouch HQ = mode 4, but defaultMode works)
+        // Set the current default time-stretch mode.
         clip->timeStretchMode = static_cast<int>(te::TimeStretcher::defaultMode);
 
         // Verify model state

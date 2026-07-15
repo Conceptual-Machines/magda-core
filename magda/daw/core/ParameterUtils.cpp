@@ -230,6 +230,18 @@ ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
     return ParameterNormalizedValue::clamped(model.value);
 }
 
+float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
+    if (infoMatchesTeRange(info))
+        return model.value;
+
+    const float teSpan = info.teMaxValue - info.teMinValue;
+    if (teSpan <= 0.0f)
+        return model.value;
+
+    const auto normalized = modelToNormalizedValue(model, info);
+    return info.teMinValue + normalized.value * teSpan;
+}
+
 float applyModulation(float baseNormalized, float modValue, float amount, bool bipolar) {
     // modValue is 0-1, convert to -1 to +1 if bipolar
     float modOffset = bipolar ? (modValue * 2.0f - 1.0f) : modValue;

@@ -75,6 +75,9 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
 
     // Export helper methods
     void performExport(const ExportAudioDialog::Settings& settings, TracktionEngineWrapper* engine);
+    // The actual chooser + render flow, after performExport's pre-checks pass.
+    void launchAudioExport(const ExportAudioDialog::Settings& settings,
+                           TracktionEngineWrapper* engine);
     void performMidiExport(const ExportMidiDialog::Settings& settings);
     juce::String getFileExtensionForFormat(const juce::String& format) const;
     int getBitDepthForFormat(const juce::String& format) const;
@@ -112,7 +115,7 @@ class MainWindow::MainComponent : public juce::Component,
     void selectionTypeChanged(SelectionType newType) override;
 
     // TrackManagerListener
-    void tracksChanged() override {}
+    void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
 
     // MidiLearnCoordinatorListener

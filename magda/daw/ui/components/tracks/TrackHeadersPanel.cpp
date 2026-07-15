@@ -1115,6 +1115,28 @@ void TrackHeadersPanel::trackDevicesChanged(TrackId trackId) {
     }
 }
 
+void TrackHeadersPanel::devicePropertyChanged(const magda::ChainNodePath& devicePath) {
+    // An External Instrument's send/return picker changed: re-lay-out so the
+    // track-level read-only MIDI-out / audio-in mirror picks up the new
+    // value. Gated on the routing actually differing from the mirrored one -
+    // this fires for EVERY device property change (per-tick gain drags
+    // included) and a full header re-layout each tick is wasteful.
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        if (visibleTrackIds_[i] == devicePath.trackId && i < trackHeaders.size()) {
+            const auto& header = *trackHeaders[i];
+            const auto routing =
+                TrackManager::getInstance().getExternalInstrumentRouting(devicePath.trackId);
+            if (routing.present != header.extRoutingPresent ||
+                routing.midiOut != header.extRoutingMidiOut ||
+                routing.audioReturn != header.extRoutingAudioReturn) {
+                updateTrackHeaderLayout();
+                repaint();
+            }
+            break;
+        }
+    }
+}
+
 void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
                                                        const TrackInfo* track) {
     if (!track || !audioEngine_)
@@ -2038,6 +2060,13 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         int stripX = headersOnRight_ ? bgArea.getRight() - 3 : bgArea.getX();
         g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
     }
+
+    // Chain power off — dim the header like the mixer strip (visual cue that
+    // the track's insert chain is gated; mute/solo/fader stay live).
+    if (!header.isMaster && !TrackManager::getInstance().isChainEnabled(header.trackId)) {
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRect(bgArea);
+    }
 }
 
 void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -2294,6 +2323,17 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
                                          p.midiIn ? header.inputSelector.get() : nullptr,
                                          header.inputIcon.get(), m);
     }
+
+    // An External Instrument insert owns the track's MIDI send + audio return,
+    // so the track-level audio-in and MIDI-out go read-only and mirror the
+    // device's selection (editable only on the device). MIDI-in and audio-out
+    // stay fully interactive.
+    auto extRouting = TrackManager::getInstance().getExternalInstrumentRouting(header.trackId);
+    header.extRoutingPresent = extRouting.present;
+    header.extRoutingMidiOut = extRouting.midiOut;
+    header.extRoutingAudioReturn = extRouting.audioReturn;
+    header.audioInputSelector->setReadOnly(extRouting.present, extRouting.audioReturn);
+    header.midiOutputSelector->setReadOnly(extRouting.present, extRouting.midiOut);
 }
 
 void TrackHeadersPanel::updateTrackHeaderLayout() {
@@ -3495,7 +3535,7 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                                             : AutomationLaneComponent::HEADER_HEIGHT;
 
             if (auto* entry = findLaneHeaderButtons(laneId))
-                layoutAutoLaneHeaderButtons(*entry, *lane, y);
+                layoutAutoLaneHeaderButtons(*entry, *lane, y, getWidth());
 
             y += laneHeight;
         }

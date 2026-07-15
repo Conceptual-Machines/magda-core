@@ -7,6 +7,7 @@
 #include "audio/plugins/FaustParamSlot.hpp"
 #include "audio/plugins/IFaustEditorModel.hpp"
 #include "custom_ui/FaustUI.hpp"
+#include "ui/components/chain/params/ParamWidgetSetup.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -28,6 +29,7 @@ FaustInstrumentTabbedUI::FaustInstrumentTabbedUI() {
 }
 
 FaustInstrumentTabbedUI::~FaustInstrumentTabbedUI() {
+    releaseMomentaryButtons();
     // tabs_ owns the page Components by raw pointer (deleteWhenRemoved=false);
     // clear the tab bar before pages_ is destroyed so it doesn't dangle.
     if (tabs_)
@@ -57,12 +59,14 @@ juce::String FaustInstrumentTabbedUI::poolSignature() const {
         const auto& slot = pool.slot(i);
         if (!slot.active || slot.hidden)
             continue;
-        sig << i << ':' << slot.group << ':' << slot.label << '|';
+        sig << i << ':' << slot.group << ':' << slot.label << ':' << static_cast<int>(slot.kind)
+            << '|';
     }
     return sig;
 }
 
 void FaustInstrumentTabbedUI::rebuildTabs() {
+    releaseMomentaryButtons();
     if (tabs_)
         tabs_->clearTabs();
     pages_.clear();
@@ -108,16 +112,26 @@ void FaustInstrumentTabbedUI::rebuildTabs() {
         row.label->setJustificationType(juce::Justification::centredLeft);
         page->addAndMakeVisible(*row.label);
 
-        row.slider = std::make_unique<LinkableTextSlider>();
-        row.slider->setParameterInfo(magda::daw::audio::paramInfoFromSlot(slot));
-        row.slider->setParamIndex(slot.index);
-        row.slider->setValue(slot.defaultValue, juce::dontSendNotification);
         const int idx = slot.index;
-        row.slider->onValueChanged = [this, idx](double v) {
-            if (onParameterChanged)
-                onParameterChanged(idx, static_cast<float>(v));
-        };
-        page->addAndMakeVisible(*row.slider);
+        auto info = magda::daw::audio::paramInfoFromSlot(slot);
+        if (info.momentary) {
+            row.momentaryButton = std::make_unique<MomentaryParamButton>();
+            configureMomentaryButton(*row.momentaryButton, [this, idx](double value) {
+                if (onParameterChanged)
+                    onParameterChanged(idx, static_cast<float>(value));
+            });
+            page->addAndMakeVisible(*row.momentaryButton);
+        } else {
+            row.slider = std::make_unique<LinkableTextSlider>();
+            row.slider->setParameterInfo(info);
+            row.slider->setParamIndex(slot.index);
+            row.slider->setValue(slot.defaultValue, juce::dontSendNotification);
+            row.slider->onValueChanged = [this, idx](double value) {
+                if (onParameterChanged)
+                    onParameterChanged(idx, static_cast<float>(value));
+            };
+            page->addAndMakeVisible(*row.slider);
+        }
 
         page->rows.push_back(std::move(row));
     }
@@ -145,8 +159,10 @@ void FaustInstrumentTabbedUI::updateFromParameters(
             for (const auto& info : params) {
                 if (info.paramIndex != row.slotIndex)
                     continue;
-                row.slider->setParameterInfo(info);
-                row.slider->setValue(info.currentValue, juce::dontSendNotification);
+                if (row.slider) {
+                    row.slider->setParameterInfo(info);
+                    row.slider->setValue(info.currentValue, juce::dontSendNotification);
+                }
                 break;
             }
         }
@@ -157,8 +173,16 @@ std::vector<LinkableTextSlider*> FaustInstrumentTabbedUI::getLinkableSliders() {
     std::vector<LinkableTextSlider*> sliders;
     for (auto& page : pages_)
         for (auto& row : page->rows)
-            sliders.push_back(row.slider.get());
+            if (row.slider)
+                sliders.push_back(row.slider.get());
     return sliders;
+}
+
+void FaustInstrumentTabbedUI::releaseMomentaryButtons() {
+    for (auto& page : pages_)
+        for (auto& row : page->rows)
+            if (row.momentaryButton)
+                row.momentaryButton->release();
 }
 
 int FaustInstrumentTabbedUI::getCurrentTabIndex() const {
@@ -202,8 +226,12 @@ void FaustInstrumentTabbedUI::GroupPage::resized() {
         juce::Rectangle<int> cell(area.getX() + col * cellW, area.getY() + rowIdx * cellH, cellW,
                                   cellH);
         cell = cell.reduced(kCellPadding, 2);
-        rows[static_cast<size_t>(i)].label->setBounds(cell.removeFromTop(kRowLabelHeight));
-        rows[static_cast<size_t>(i)].slider->setBounds(cell);
+        auto& row = rows[static_cast<size_t>(i)];
+        row.label->setBounds(cell.removeFromTop(kRowLabelHeight));
+        if (row.slider)
+            row.slider->setBounds(cell);
+        else if (row.momentaryButton)
+            row.momentaryButton->setBounds(cell.reduced(2));
     }
 }
 

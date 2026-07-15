@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <unordered_set>
 
 #include "../../core/ClipManager.hpp"
@@ -137,6 +138,90 @@ bool syncFollowActionToTracktionClip(te::Clip& teClip, const ClipInfo& clip, dou
     if (std::abs(teClip.followActionNumLoops.get() - loops) > 0.0001) {
         teClip.followActionNumLoops = loops;
         changed = true;
+    }
+
+    return changed;
+}
+
+constexpr double warpMarkerSyncEpsilonSeconds = 1.0e-6;
+
+bool warpMarkerMapsMatch(const juce::Array<te::WarpMarker*>& engineMarkers,
+                         const std::vector<ClipInfo::WarpMarker>& savedMarkers) {
+    if (engineMarkers.size() != static_cast<int>(savedMarkers.size()))
+        return false;
+
+    for (size_t i = 0; i < savedMarkers.size(); ++i) {
+        const auto* engineMarker = engineMarkers[static_cast<int>(i)];
+        const auto& savedMarker = savedMarkers[i];
+        if (engineMarker == nullptr ||
+            std::abs(engineMarker->sourceTime.inSeconds() - savedMarker.sourceTime) >
+                warpMarkerSyncEpsilonSeconds ||
+            std::abs(engineMarker->warpTime.inSeconds() - savedMarker.warpTime) >
+                warpMarkerSyncEpsilonSeconds) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool restoreWarpMarkersIfNeeded(te::WarpTimeManager& warpManager,
+                                const std::vector<ClipInfo::WarpMarker>& markers) {
+    // A valid map needs both boundary markers. In particular, do not insert a
+    // lone saved marker on top of TE's recreated boundaries: that can create a
+    // zero-length segment in WarpTimeManager's stretch-ratio calculation.
+    if (markers.size() < 2)
+        return false;
+
+    const auto& existingMarkers = warpManager.getMarkers();
+
+    // More than the two default boundaries means the live map has already been
+    // edited. Never overwrite it from an older model snapshot.
+    if (existingMarkers.size() > 2 || warpMarkerMapsMatch(existingMarkers, markers))
+        return false;
+
+    // removeAllMarkers deliberately recreates TE's start/end boundaries, so
+    // inserting the complete saved list would duplicate both boundaries.
+    warpManager.removeAllMarkers();
+
+    auto& defaultMarkers = warpManager.getMarkers();
+    warpManager.moveMarker(0, te::TimePosition::fromSeconds(markers.front().warpTime));
+    warpManager.moveMarker(defaultMarkers.size() - 1,
+                           te::TimePosition::fromSeconds(markers.back().warpTime));
+
+    for (size_t i = 1; i + 1 < markers.size(); ++i) {
+        warpManager.insertMarker(
+            te::WarpMarker(te::TimePosition::fromSeconds(markers[i].sourceTime),
+                           te::TimePosition::fromSeconds(markers[i].warpTime)));
+    }
+
+    return true;
+}
+
+bool syncWarpStateToTracktionClip(te::WaveAudioClip& audioClip, const ClipInfo& clip) {
+    bool changed = false;
+
+    if (!clip.warpEnabled) {
+        if (audioClip.getWarpTime()) {
+            audioClip.setWarpTime(false);
+            changed = true;
+        }
+        return changed;
+    }
+
+    if (!audioClip.getWarpTime()) {
+        audioClip.setWarpTime(true);
+        changed = true;
+    }
+
+    if (!clip.warpMarkers.empty()) {
+        auto& warpManager = audioClip.getWarpTimeManager();
+
+        // A newly-created WarpTimeManager contains only its two default
+        // boundary markers. Replace those with the marker map copied from the
+        // source clip, but never overwrite an already-live edited map.
+        if (restoreWarpMarkersIfNeeded(warpManager, clip.warpMarkers))
+            changed = true;
     }
 
     return changed;
@@ -309,6 +394,14 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                 // disrupting a playing LaunchHandle.
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
+                    // Enabled toggle (#1736) — same guarded write as the
+                    // arrangement path in syncArrangementClipToEngine.
+                    {
+                        const bool wantDisabled = !clip->enabled;
+                        if (teClip->disabled.get() != wantDisabled)
+                            teClip->disabled = wantDisabled;
+                    }
+
                     // Push the length to TE in beats and let the engine resolve
                     // the seconds from its tempo sequence. This stays correct
                     // under a tempo ramp with no re-push, and avoids the
@@ -333,10 +426,18 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
                     // AutoTempo handling for audio clips
                     bool isAutoTempoAudio = clip->isAudio() && clip->autoTempo;
 
+                    // configureSessionAutoTempo applies the stretch mode
+                    // itself; remember what it was so the stretch-mode block
+                    // below still detects the switch and requests the
+                    // explicit graph rebuild (proxy off + reallocation).
+                    std::optional<te::TimeStretcher::Mode> stretchModeBefore;
+
                     if (isAutoTempoAudio) {
                         auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip);
-                        if (audioClip)
+                        if (audioClip) {
+                            stretchModeBefore = audioClip->getTimeStretchMode();
                             configureSessionAutoTempo(audioClip, clip);
+                        }
                     } else {
                         // Note: do NOT call setAutoTempo(false) here.
                         // TE's ClipOwner auto-enables autoTempo on session slot clips
@@ -424,6 +525,28 @@ bool ClipSynchronizer::syncClipPropertyToEngine(ClipId clipId) {
 
                             if (audioClip->getLaunchFadeSamples() != clip->launchFadeSamples)
                                 audioClip->setLaunchFadeSamples(clip->launchFadeSamples);
+
+                            auto desiredMode =
+                                static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+                            if (!isAnalog && desiredMode == te::TimeStretcher::disabled &&
+                                (clip->autoTempo || clip->warpEnabled ||
+                                 std::abs(clip->speedRatio - 1.0) > 0.001))
+                                desiredMode = te::TimeStretcher::defaultMode;
+                            if (isAnalog)
+                                desiredMode = te::TimeStretcher::disabled;
+
+                            const auto modeBefore =
+                                stretchModeBefore.value_or(audioClip->getTimeStretchMode());
+                            if (modeBefore != desiredMode ||
+                                audioClip->getTimeStretchMode() != desiredMode) {
+                                audioClip->setUsesProxy(false);
+                                audioClip->setTimeStretchMode(desiredMode);
+                                needsGraphReallocation = true;
+                            }
+
+                            needsGraphReallocation =
+                                syncWarpStateToTracktionClip(*audioClip, *clip) ||
+                                needsGraphReallocation;
                         }
                     }
 
@@ -493,15 +616,28 @@ bool ClipSynchronizer::syncArrangementClipToEngine(ClipId clipId) {
     }
 
     // Route to appropriate sync method by type
+    bool needsGraphReallocation = false;
     if (clip->isMidi()) {
-        return syncMidiClipToEngine(clipId, clip);
+        needsGraphReallocation = syncMidiClipToEngine(clipId, clip);
     } else if (clip->isAudio()) {
-        return syncAudioClipToEngine(clipId, clip);
+        needsGraphReallocation = syncAudioClipToEngine(clipId, clip);
     } else {
         DBG("syncClipToEngine: Unknown clip type for clip " << clipId);
+        return false;
     }
 
-    return false;
+    // Enabled toggle (#1736). TE skips disabled clips when building the
+    // playback graph and restarts playback itself on IDs::disabled changes,
+    // so no reallocation is needed here. Guarded read-before-write: assigning
+    // an equal value to a CachedValue still using its default would create
+    // the property and trigger a spurious restart on first sync.
+    if (auto* teClip = getArrangementTeClip(clipId)) {
+        const bool wantDisabled = !clip->enabled;
+        if (teClip->disabled.get() != wantDisabled)
+            teClip->disabled = wantDisabled;
+    }
+
+    return needsGraphReallocation;
 }
 
 void ClipSynchronizer::removeTeClipByEngineId(const std::string& engineId) {
@@ -670,6 +806,13 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         audioClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
         clipIds_.set(clipId, audioClipPtr->itemID.toString().toStdString());
 
+        // Enabled toggle (#1736): apply at creation so a disabled clip loaded
+        // from a project never enters the playback graph enabled. Write only
+        // when disabled — the property defaults to enabled and an explicit
+        // equal write would trigger a spurious TE restart.
+        if (!clip->enabled)
+            audioClipPtr->disabled = true;
+
         // Populate source file metadata from TE's loopInfo. For a freshly
         // imported session clip, loopLengthBeats starts as a sentinel and is
         // initialised from the already-stored source loop seconds once the
@@ -805,8 +948,10 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         // Force WarpTimeManager creation now so its constructor's warp marker
         // insertions (which trigger TreeWatcher → restartPlayback) happen during
-        // initial sync rather than lazily during playback (which causes a click).
+        // initial sync rather than lazily during playback (which causes a click),
+        // then restore any marker map carried by a copied/project-loaded clip.
         audioClipPtr->getWarpTimeManager();
+        syncWarpStateToTracktionClip(*audioClipPtr, *clip);
 
         return true;
 
@@ -826,6 +971,10 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         auto* midiClipPtr = clipRef.get();
         midiClipPtr->setLength(te::BeatDuration::fromBeats(lengthBeats), false);
         clipIds_.set(clipId, midiClipPtr->itemID.toString().toStdString());
+
+        // Enabled toggle (#1736) — same as the audio branch above.
+        if (!clip->enabled)
+            midiClipPtr->disabled = true;
 
         // Force offset to 0 — note shifting is handled manually below
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
@@ -1097,9 +1246,16 @@ void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
     // source beat count to map source time to timeline beats.
     syncAudioSourceInterpretationToLoopInfo(*audioClip, *clip);
 
-    // Ensure valid stretch mode (autoTempo requires time-stretching)
-    if (audioClip->getTimeStretchMode() == te::TimeStretcher::disabled)
-        audioClip->setTimeStretchMode(te::TimeStretcher::defaultMode);
+    // Auto-tempo requires stretching, but it must still honour the user's
+    // explicit SoundTouch/Signalsmith selection. Fresh slot clips otherwise
+    // retain TE's default mode, making the old modes sound identical to
+    // Signalsmith until a later property edit happens to rebuild the graph.
+    auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+    if (desiredMode == te::TimeStretcher::disabled)
+        desiredMode = te::TimeStretcher::defaultMode;
+
+    if (audioClip->getTimeStretchMode() != desiredMode)
+        audioClip->setTimeStretchMode(desiredMode);
 
     // Force speedRatio to 1.0 (TE requirement for autoTempo)
     if (std::abs(audioClip->getSpeedRatio() - 1.0) > 0.001)
@@ -1774,6 +1930,24 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     // Timeline placement is always stored in project beats, but TE should only
     // use source-beat audio processing when MAGDA beat/warp mode requires it.
     const bool useSourceBeatProcessing = clip->autoTempo || clip->warpEnabled;
+
+    // Apply engine changes in both beat-based and time-based processing modes.
+    // The stretcher is captured in the playback graph, so changing this property
+    // must explicitly request a graph rebuild.
+    auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
+    const bool isAnalog = clip->isAnalogPitchActive();
+    if (!isAnalog && desiredMode == te::TimeStretcher::disabled &&
+        (useSourceBeatProcessing || std::abs(clip->speedRatio - 1.0) > 0.001))
+        desiredMode = te::TimeStretcher::defaultMode;
+    if (isAnalog)
+        desiredMode = te::TimeStretcher::disabled;
+
+    if (audioClipPtr->getTimeStretchMode() != desiredMode) {
+        audioClipPtr->setUsesProxy(false);
+        audioClipPtr->setTimeStretchMode(desiredMode);
+        needsGraphReallocation = true;
+    }
+
     if (useSourceBeatProcessing) {
         // ========================================================================
         // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
@@ -1795,11 +1969,6 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             audioClipPtr->setSpeedRatio(1.0);
         }
 
-        // Auto-tempo requires a valid stretch mode for TE to time-stretch audio
-        if (audioClipPtr->getTimeStretchMode() == te::TimeStretcher::disabled) {
-            audioClipPtr->setTimeStretchMode(te::TimeStretcher::defaultMode);
-        }
-
     } else {
         // ========================================================================
         // TIME-BASED MODE (Fixed absolute time, current default behavior)
@@ -1812,19 +1981,6 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         double teSpeedRatio = clip->speedRatio;
         double currentSpeedRatio = audioClipPtr->getSpeedRatio();
-
-        // Sync time stretch mode — warp also requires a valid stretcher
-        auto desiredMode = static_cast<te::TimeStretcher::Mode>(clip->timeStretchMode);
-        bool isAnalog = clip->isAnalogPitchActive();
-        if (!isAnalog && desiredMode == te::TimeStretcher::disabled &&
-            (std::abs(teSpeedRatio - 1.0) > 0.001 || clip->warpEnabled))
-            desiredMode = te::TimeStretcher::defaultMode;
-        // When analog: force disabled mode (pure resampling)
-        if (isAnalog)
-            desiredMode = te::TimeStretcher::disabled;
-        if (audioClipPtr->getTimeStretchMode() != desiredMode) {
-            audioClipPtr->setTimeStretchMode(desiredMode);
-        }
 
         if (std::abs(currentSpeedRatio - teSpeedRatio) > 0.001) {
             audioClipPtr->setUsesProxy(false);
@@ -1846,15 +2002,8 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // Restore saved warp markers if TE has no user markers yet
         if (!clip->warpMarkers.empty()) {
             auto& warpManager = audioClipPtr->getWarpTimeManager();
-            auto existingMarkers = warpManager.getMarkers();
             // TE creates 2 default boundary markers; if only those exist, restore saved
-            if (existingMarkers.size() <= 2) {
-                warpManager.removeAllMarkers();
-                for (const auto& wm : clip->warpMarkers) {
-                    warpManager.insertMarker(
-                        te::WarpMarker(te::TimePosition::fromSeconds(wm.sourceTime),
-                                       te::TimePosition::fromSeconds(wm.warpTime)));
-                }
+            if (restoreWarpMarkersIfNeeded(warpManager, clip->warpMarkers)) {
                 DBG("ClipSynchronizer: Restored " << clip->warpMarkers.size()
                                                   << " warp markers for clip " << clipId);
             }

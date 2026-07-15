@@ -16,6 +16,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../common/Toast.hpp"
 #include "../tracks/TrackContentPanel.hpp"
+#include "../waveform/ClipWaveformPainter.hpp"
 #include "../waveform/WarpedWaveformRenderer.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
@@ -475,6 +476,14 @@ void ClipComponent::paint(juce::Graphics& g) {
                                CORNER_RADIUS);
     }
 
+    // Disabled overlay (#1736) — heavier than the ghost treatment and the
+    // frozen/session dims, and it covers the header too, so a disabled clip
+    // reads as "off" at a glance (ghosts keep a full-colour header).
+    if (!clip->enabled) {
+        fillClippedRoundedRect(g, bounds, visibleBounds, juce::Colours::black.withAlpha(0.55f),
+                               CORNER_RADIUS);
+    }
+
     // Frozen overlay — dim clip on frozen tracks
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
     if (trackInfo && trackInfo->frozen) {
@@ -529,244 +538,18 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
                                          juce::Rectangle<int> waveformArea,
                                          double clipDisplayLength,
                                          juce::Colour waveColourOverride) {
-    auto& thumbnailManager = AudioThumbnailManager::getInstance();
-
-    double pixelsPerSecond = (clipDisplayLength > 0.0)
-                                 ? static_cast<double>(waveformArea.getWidth()) / clipDisplayLength
-                                 : 0.0;
-
-    if (pixelsPerSecond <= 0.0)
-        return;
-
-    // Visible X range from graphics clip region — skip waveform tiles that are off-screen
-    auto visClip = g.getClipBounds();
-    int visLeft = visClip.getX();
-    int visRight = visClip.getRight();
-
-    // Clip a draw rect to the visible area and adjust the source time range accordingly.
-    // Returns false if the rect is entirely off-screen.
-    auto clipToVisible = [&](juce::Rectangle<int>& rect, double& srcStart, double& srcEnd) -> bool {
-        int rectLeft = rect.getX();
-        int rectRight = rect.getRight();
-        if (rectRight <= visLeft || rectLeft >= visRight)
-            return false;
-        int clippedLeft = juce::jmax(rectLeft, visLeft);
-        int clippedRight = juce::jmin(rectRight, visRight);
-        int origWidth = rectRight - rectLeft;
-        if (origWidth > 0) {
-            double srcRange = srcEnd - srcStart;
-            double fracLeft = static_cast<double>(clippedLeft - rectLeft) / origWidth;
-            double fracRight = static_cast<double>(clippedRight - rectLeft) / origWidth;
-            srcStart = srcStart + fracLeft * srcRange;
-            srcEnd = srcStart + (fracRight - fracLeft) * srcRange;
-        }
-        rect = juce::Rectangle<int>(clippedLeft, rect.getY(), clippedRight - clippedLeft,
-                                    rect.getHeight());
-        return rect.getWidth() > 0;
-    };
-
-    if (clip.isReversed) {
-        g.saveState();
-        g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, waveformArea.getCentreX(),
-                                                    waveformArea.getCentreY()));
+    // Rendering lives in the shared painter (also used by the automation
+    // clip editor's track ghost); this wrapper supplies the arrangement
+    // component's state: tempo, selection stroke, and resize-drag preview.
+    daw::ui::ClipWaveformSpec spec;
+    spec.tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    spec.colour = waveColourOverride.isTransparent() ? juce::Colours::black : waveColourOverride;
+    spec.thick = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+    if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
+        spec.previewOffset = resizePreviewClip_.offset;
+        spec.previewLoopStart = resizePreviewClip_.loopStart;
     }
-
-    double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-
-    double fileDuration = 0.0;
-    auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
-    if (thumbnail)
-        fileDuration = thumbnail->getTotalLength();
-
-    // Build display info with the real file duration so loop-region
-    // fields get clamped against the file extent. Without this the
-    // factory falls back to a clip-length-derived extent and the loop
-    // clamp branch is skipped, which leaves loopRegionLengthSource
-    // potentially extending past the file.
-    auto di = ClipDisplayInfo::from(clip, tempo, fileDuration);
-
-    double displayOffset = clip.offset;
-    if (isDragging_ && dragMode_ == DragMode::ResizeLeft)
-        displayOffset = resizePreviewClip_.offset;
-
-    const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
-    const auto waveColour =
-        waveColourOverride.isTransparent() ? juce::Colours::black : waveColourOverride;
-    float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
-
-    bool useWarpedDraw = false;
-    std::vector<WarpMarkerInfo> warpMarkers;
-    if (clip.warpEnabled) {
-        auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
-            auto* bridge = audioEngine->getAudioBridge();
-            if (bridge) {
-                warpMarkers = bridge->getWarpMarkers(clipId_);
-                useWarpedDraw = warpMarkers.size() >= 2;
-            }
-        }
-    }
-
-    if (useWarpedDraw) {
-        // Warp takes priority over loop tiling, through the SAME shared renderer
-        // the warp editor uses -- so the arrangement and editor can never drift.
-        // Audio clips default to loopEnabled (autoTempo beat clips especially), so
-        // the old !isLooped() gate dropped every warped clip into the loop-tiling
-        // path below, which ignores warp markers entirely. Looped warp clips now
-        // tile the warped content; non-looped draw a single pass. The transform is
-        // tempo-aware (sourceToTimeline), matching the editor.
-        double minWarp = warpMarkers.front().warpTime;
-        double maxWarp = warpMarkers.front().warpTime;
-        for (const auto& m : warpMarkers) {
-            minWarp = std::min(minWarp, m.warpTime);
-            maxWarp = std::max(maxWarp, m.warpTime);
-        }
-
-        daw::ui::WarpedWaveformSpec spec;
-        spec.clipArea = juce::Rectangle<int>(
-            waveformArea.getX(), waveformArea.getY(),
-            juce::jmin(waveformArea.getWidth(),
-                       static_cast<int>(clipDisplayLength * pixelsPerSecond + 0.5)),
-            waveformArea.getHeight());
-        spec.warpToPixelX = [&](double warpSeconds) {
-            return waveformArea.getX() +
-                   di.sourceToTimeline(warpSeconds - displayOffset) * pixelsPerSecond;
-        };
-        spec.fileDuration = fileDuration;
-        spec.colour = waveColour;
-        spec.verticalScale = gainLinear;
-        spec.useHighRes = true;
-        spec.thick = selected;
-        spec.looped = di.isLooped();
-        spec.cycleWarp = maxWarp - minWarp;
-        daw::ui::drawWarpedWaveform(g, thumbnailManager, clip.audio().source.filePath, warpMarkers,
-                                    spec);
-    } else if (di.isLooped()) {
-        double sourceDurationForBeats = clip.audio().source.durationSeconds;
-        if (sourceDurationForBeats <= 0.0 && fileDuration > 0.0)
-            sourceDurationForBeats = fileDuration;
-        if (sourceDurationForBeats <= 0.0)
-            sourceDurationForBeats = di.fileExtentSource();
-        const double projectBpm = isValidBpm(tempo) ? tempo : DEFAULT_BPM;
-
-        auto timelineDeltaToPreviewSource = [&](double timelineDelta) {
-            if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
-                sourceDurationForBeats > 0.0) {
-                double projectBeats = timelineDelta * projectBpm / 60.0;
-                return projectBeats * sourceDurationForBeats /
-                       clip.audio().interpretation.totalBeats;
-            }
-            return di.timelineToSource(timelineDelta);
-        };
-
-        auto sourceDeltaToPreviewTimeline = [&](double sourceDelta) {
-            if (clip.autoTempo && clip.audio().interpretation.totalBeats > 0.0 &&
-                sourceDurationForBeats > 0.0) {
-                double sourceBeats =
-                    sourceDelta * clip.audio().interpretation.totalBeats / sourceDurationForBeats;
-                return sourceBeats * 60.0 / projectBpm;
-            }
-            return di.sourceToTimeline(sourceDelta);
-        };
-
-        double loopCycle = di.loopLengthSeconds;
-        if (clip.autoTempo && clip.loopLengthBeats > 0.0)
-            loopCycle = clip.loopLengthBeats * 60.0 / projectBpm;
-        // These were named "fileStart/End" but actually hold the loop
-        // region's bounds (in source-time). Renamed to match what they
-        // really are; per-tile rendering reads from this loop subset, not
-        // the whole file.
-        double loopRegionStart = di.loopRegionStartSource;
-        double loopRegionEnd = di.loopRegionStartSource + di.loopRegionLengthSource;
-        if (fileDuration > 0.0 && loopRegionEnd > fileDuration)
-            loopRegionEnd = fileDuration;
-        double phaseSource = di.loopOffset;
-        if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-            phaseSource = wrapPhase(resizePreviewClip_.offset - resizePreviewClip_.loopStart,
-                                    di.loopRegionLengthSource);
-        }
-        double phaseTimeline = sourceDeltaToPreviewTimeline(phaseSource);
-        bool isFirstTile = (phaseTimeline > 0.001);
-
-        double timePos = 0.0;
-        while (timePos < clipDisplayLength) {
-            double tileFileStart = loopRegionStart;
-            double tileFullDuration = loopCycle;
-            if (isFirstTile) {
-                // Render the partial loop fragment from (loopStart + phase)
-                // to loopRegionEnd. Floating-point wrap edge cases can put
-                // phase right at the loop boundary, producing a zero-length
-                // fragment — fall through to the regular tile so we still
-                // draw the rest of the clip instead of breaking out.
-                const double partialStart = loopRegionStart + phaseSource;
-                const double partialDuration =
-                    sourceDeltaToPreviewTimeline(loopRegionEnd - partialStart);
-                if (partialDuration > 0.0001) {
-                    tileFileStart = partialStart;
-                    tileFullDuration = partialDuration;
-                }
-                isFirstTile = false;
-            }
-            if (tileFullDuration <= 0.0001)
-                break;
-            double cycleEnd = juce::jmin(timePos + tileFullDuration, clipDisplayLength);
-            double remainingTileDuration = cycleEnd - timePos;
-            double segmentTime = timePos;
-            double segmentSourceStart = tileFileStart;
-            int safety = 0;
-            while (remainingTileDuration > 0.0001 && safety++ < 128) {
-                if (segmentSourceStart >= loopRegionEnd - 0.0001)
-                    segmentSourceStart = loopRegionStart;
-
-                double remainingSource = loopRegionEnd - segmentSourceStart;
-                double fullSegmentDuration = sourceDeltaToPreviewTimeline(remainingSource);
-                if (remainingSource <= 0.0001 || fullSegmentDuration <= 0.0001)
-                    break;
-
-                double segmentDuration = juce::jmin(remainingTileDuration, fullSegmentDuration);
-                double segmentEnd = segmentTime + segmentDuration;
-                int segmentX =
-                    waveformArea.getX() + static_cast<int>(segmentTime * pixelsPerSecond + 0.5);
-                int segmentRight =
-                    waveformArea.getX() + static_cast<int>(segmentEnd * pixelsPerSecond + 0.5);
-                auto segmentRect =
-                    juce::Rectangle<int>(segmentX, waveformArea.getY(), segmentRight - segmentX,
-                                         waveformArea.getHeight());
-
-                double segmentSourceEnd =
-                    segmentSourceStart + timelineDeltaToPreviewSource(segmentDuration);
-                segmentSourceEnd = juce::jmin(segmentSourceEnd, loopRegionEnd);
-                if (clipToVisible(segmentRect, segmentSourceStart, segmentSourceEnd))
-                    thumbnailManager.drawWaveform(g, segmentRect, clip.audio().source.filePath,
-                                                  segmentSourceStart, segmentSourceEnd, waveColour,
-                                                  gainLinear, true, selected);
-
-                segmentTime = segmentEnd;
-                remainingTileDuration -= segmentDuration;
-                if (segmentDuration >= fullSegmentDuration - 0.0001)
-                    segmentSourceStart = loopRegionStart;
-                else
-                    segmentSourceStart = segmentSourceEnd;
-            }
-            timePos += tileFullDuration;
-        }
-    } else {
-        double fileStart = displayOffset;
-        double fileEnd = displayOffset + di.timelineToSource(clipDisplayLength);
-        if (fileDuration > 0.0 && fileEnd > fileDuration)
-            fileEnd = fileDuration;
-        double clampedTimelineDuration = di.sourceToTimeline(fileEnd - fileStart);
-        int drawWidth = static_cast<int>(clampedTimelineDuration * pixelsPerSecond + 0.5);
-        drawWidth = juce::jmin(drawWidth, waveformArea.getWidth());
-        auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(), drawWidth,
-                                             waveformArea.getHeight());
-        if (clipToVisible(drawRect, fileStart, fileEnd))
-            thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath, fileStart,
-                                          fileEnd, waveColour, gainLinear, true, selected);
-    }
-
-    if (clip.isReversed)
-        g.restoreState();
+    daw::ui::paintClipWaveform(g, clip, clipId_, waveformArea, clipDisplayLength, spec);
 }
 
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
@@ -796,11 +579,17 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Draw directly — no offscreen cache.  AudioThumbnail is already a
     // pre-computed waveform cache (512 samples/point) so drawing from it is fast.
+    // Ghost clips paint a translucent body + dimmed waveform so link-group
+    // members read as mirrors of shared content.
+    const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
     auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    if (ghosted)
+        bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     if (clip.audio().source.filePath.isNotEmpty())
-        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
+        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength,
+                             ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colour());
 
     strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
                              CORNER_RADIUS, 1.0f);
@@ -846,11 +635,16 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     if (visibleBounds.isEmpty())
         return;
 
+    // Ghost clips paint a translucent body + dimmed notes (see paintAudioClip).
+    const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
     auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    if (ghosted)
+        bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
 
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
-    paintMidiNotes(g, clip, noteArea, juce::Colours::black);
+    paintMidiNotes(g, clip, noteArea,
+                   ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colours::black);
 
     strokeClippedRoundedRect(g, bounds, visibleBounds, deriveTrackSwatch(clip.colour, 0.45f),
                              CORNER_RADIUS, 1.0f);
@@ -1102,6 +896,27 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     fillClippedRoundedRect(g, headerArea.withBottom(headerArea.getBottom() + 2), visibleHeaderArea,
                            headerColour, CORNER_RADIUS);
 
+    // Ghost clips (link-group members) show a link glyph at the left of the
+    // header and an italicised name.
+    const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
+    if (ghosted && headerArea.getWidth() > HEADER_HEIGHT + 4) {
+        auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
+        if (iconArea.intersects(g.getClipBounds())) {
+            static auto makeLinkIcon = [](juce::Colour fg) {
+                auto icon = juce::Drawable::createFromImageData(BinaryData::link_flat_svg,
+                                                                BinaryData::link_flat_svgSize);
+                if (icon)
+                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
+                return icon;
+            };
+            static auto normalLink = makeLinkIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            static auto selectedLink = makeLinkIcon(juce::Colours::white);
+            const auto& icon = selected ? selectedLink : normalLink;
+            if (icon)
+                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+    }
+
     // Chord clips show the chord glyph at the left of the header.
     if (isChordClip(clip) && headerArea.getWidth() > HEADER_HEIGHT + 4) {
         auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
@@ -1121,13 +936,21 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
-    // Clip name
+    // Clip name (italic for ghost clips, with the instance index appended —
+    // group members share their name, the #index tells them apart)
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
         auto nameArea = headerArea.withWidth(juce::jmin(headerArea.getWidth(), 300)).reduced(4, 0);
         if (nameArea.intersects(g.getClipBounds())) {
             g.setColour(headerForeground);
-            g.setFont(FontManager::getInstance().getUIFont(10.0f));
-            g.drawText(clip.name, nameArea, juce::Justification::centredLeft, true);
+            auto nameFont = FontManager::getInstance().getUIFont(10.0f);
+            g.setFont(ghosted ? nameFont.italicised() : nameFont);
+            auto displayName = clip.name;
+            if (ghosted) {
+                const int groupIndex = ClipManager::getInstance().getLinkGroupIndex(clipId_);
+                if (groupIndex > 0)
+                    displayName += " #" + juce::String(groupIndex);
+            }
+            g.drawText(displayName, nameArea, juce::Justification::centredLeft, true);
         }
     }
 
@@ -1140,18 +963,21 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                    juce::Justification::centred, false);
     }
 
-    // Loop indicator (infinito/infinity icon).
+    // Loop indicator: the transport's circular-arrows loop glyph, so "loop"
+    // reads the same everywhere (and stays distinct from the ghost link icon).
     // Cache one drawable per foreground variant — selection flips foreground,
     // so we can't bake a single colour at construction.
     if (clip.loopEnabled && headerArea.getWidth() > 16) {
         headerArea.removeFromRight(2);  // right padding
-        auto loopArea = headerArea.removeFromRight(14).reduced(1);
+        // Same box as the ghost link icon on the left (HEADER_HEIGHT reduced
+        // by 3) so the two header glyphs read at the same size.
+        auto loopArea = headerArea.removeFromRight(HEADER_HEIGHT).reduced(3);
         if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
             static auto makeIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
-                                                                BinaryData::infinito_svgSize);
+                auto icon = juce::Drawable::createFromImageData(BinaryData::loop_icon_svg,
+                                                                BinaryData::loop_icon_svgSize);
                 if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
+                    icon->replaceColour(juce::Colour(0xFFBCBCBC), fg);
                 return icon;
             };
             static auto normalIcon = makeIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -1573,7 +1399,15 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // the selected range via the multi-drag path.
     bool didRangeSelect = false;
     pendingCopyDragAction_ = false;
-    if (e.mods.isShiftDown()) {
+    pendingCopyDragIsGhost_ = false;
+    if (magda::GestureRouter::getInstance().isDuplicateAsGhostOnDrag(
+            magda::GestureContext::Arrangement, e.mods)) {
+        // Ghost-copy modifier (default Alt+Shift): checked before the Shift
+        // branch, which would otherwise swallow the combination. The copy
+        // joins the source's link group and mirrors its content.
+        pendingCopyDragAction_ = true;
+        pendingCopyDragIsGhost_ = true;
+    } else if (e.mods.isShiftDown()) {
         if (magda::isRangeSelectClick(e.mods)) {
             logArrangeRangeSelect("ClipComponent range branch: extending to clip=" +
                                   juce::String(static_cast<int>(clipId_)) + " edgeHit=" +
@@ -1905,6 +1739,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 }
             }
             isDuplicating_ = true;
+            isDuplicatingGhost_ = pendingCopyDragIsGhost_;
         }
     }
 
@@ -2419,6 +2254,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
     // position (the documented gesture; Cmd+Alt is the blade, Alt+drag copies)
     if (pendingCopyDragAction_) {
         pendingCopyDragAction_ = false;
+        pendingCopyDragIsGhost_ = false;
         if (!isDragging_) {
             if (parentPanel_) {
                 auto parentPos = e.getEventRelativeTo(parentPanel_).getPosition();
@@ -2498,7 +2334,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     double dupTempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                     auto cmd = std::make_unique<DuplicateClipCommand>(
                         clipId_, BeatPosition{finalStartTime * dupTempo / 60.0}, targetTrackId,
-                        dupTempo);
+                        dupTempo, -1, isDuplicatingGhost_);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     // Select the duplicate — must happen before SafePointer check
@@ -2512,6 +2348,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         return;
                     // Reset duplication state
                     isDuplicating_ = false;
+                    isDuplicatingGhost_ = false;
                     duplicateClipId_ = INVALID_CLIP_ID;
                 } else {
                     // Clear cross-track ghost before committing
@@ -3221,6 +3058,11 @@ void ClipComponent::showContextMenu() {
         menu.addItem(18, "Duplicate With Automation", canEdit);
         menu.addItem(19, "Duplicate Without Automation", canEdit);
         menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
+        // Ghost clips: the copy joins the source's link group and mirrors
+        // its content; Make Unique detaches a member from its group.
+        menu.addItem(25, "Duplicate as Ghost", canEdit);
+        if (clipManager.isGhostClip(clipId_))
+            menu.addItem(26, "Make Unique", canEdit);
     }
     menu.addSeparator();
 
@@ -3360,6 +3202,10 @@ void ClipComponent::showContextMenu() {
         }
     }
 
+    // Enable/disable (#1736): disabled clips do not play.
+    if (clipForMenu)
+        menu.addItem(27, clipForMenu->enabled ? "Disable Clip" : "Enable Clip", canEdit);
+
     // Delete
     menu.addItem(6, "Delete", canEdit);
     menu.addSeparator();
@@ -3368,6 +3214,7 @@ void ClipComponent::showContextMenu() {
     {
         bool hasMidi = false;
         bool canSaveMidi = false;
+        bool canRenderMidiLoop = false;
         if (isMultiSelection) {
             for (auto cid : selectionManager.getSelectedClips()) {
                 auto* c = clipManager.getClip(cid);
@@ -3380,6 +3227,7 @@ void ClipComponent::showContextMenu() {
             const auto* ci = getClipInfo();
             hasMidi = ci && ci->isMidi() && !ci->midiNotes.empty();
             canSaveMidi = ci && ci->isMidi() && clipManager.canSaveClipToLibrary(ci->id);
+            canRenderMidiLoop = ci && ci->isMidi() && ci->loopEnabled && ci->loopLengthBeats > 0.0;
         }
 
         if (hasMidi) {
@@ -3447,6 +3295,11 @@ void ClipComponent::showContextMenu() {
                 quantizeMenu.addSubMenu(grid.name, modeMenu, canEdit);
             }
             menu.addSubMenu("Quantize", quantizeMenu, canEdit);
+            menu.addSeparator();
+        }
+
+        if (canRenderMidiLoop) {
+            menu.addItem(28, "Flatten MIDI Loop", canEdit);
             menu.addSeparator();
         }
     }
@@ -3645,6 +3498,81 @@ void ClipComponent::showContextMenu() {
             case 19: {  // Duplicate Without Automation
                 if (parentPanel_)
                     parentPanel_->duplicateSelectedArrangementClips(false);
+                break;
+            }
+
+            case 25: {  // Duplicate as Ghost
+                if (parentPanel_)
+                    parentPanel_->duplicateSelectedArrangementClips(false, true);
+                break;
+            }
+
+            case 26: {  // Make Unique (detach from link group)
+                std::vector<ClipId> targets;
+                if (selectionManager.getSelectedClipCount() > 1 &&
+                    selectionManager.isClipSelected(clipId_)) {
+                    for (auto cid : selectionManager.getSelectedClips())
+                        if (clipManager.isGhostClip(cid))
+                            targets.push_back(cid);
+                } else if (clipManager.isGhostClip(clipId_)) {
+                    targets.push_back(clipId_);
+                }
+                if (targets.empty())
+                    break;
+                auto& undoManager = UndoManager::getInstance();
+                const bool compound = targets.size() > 1;
+                if (compound)
+                    undoManager.beginCompoundOperation("Make Clips Unique");
+                for (auto cid : targets)
+                    undoManager.executeCommand(std::make_unique<MakeClipUniqueCommand>(cid));
+                if (compound)
+                    undoManager.endCompoundOperation();
+                break;
+            }
+
+            case 27: {  // Enable/Disable Clip(s) (#1736)
+                // Uniform set: the clicked clip decides the target state (the
+                // same clip whose state decides the menu label), so a mixed
+                // selection ends up uniform instead of each clip inverting.
+                const auto* clicked = clipManager.getClip(clipId_);
+                if (!clicked)
+                    break;
+                const bool newState = !clicked->enabled;
+                std::vector<ClipId> targets;
+                if (selectionManager.getSelectedClipCount() > 1 &&
+                    selectionManager.isClipSelected(clipId_)) {
+                    for (auto cid : selectionManager.getSelectedClips()) {
+                        const auto* c = clipManager.getClip(cid);
+                        if (c && c->enabled != newState)
+                            targets.push_back(cid);
+                    }
+                } else {
+                    targets.push_back(clipId_);
+                }
+                if (targets.empty())
+                    break;
+                auto& undoManager = UndoManager::getInstance();
+                const bool compound = targets.size() > 1;
+                if (compound)
+                    undoManager.beginCompoundOperation(newState ? "Enable Clips" : "Disable Clips");
+                for (auto cid : targets) {
+                    undoManager.executeCommand(std::make_unique<SetClipPropertyCommand>(
+                        cid, newState ? "Enable Clip" : "Disable Clip",
+                        [newState](auto& manager, ClipId id) {
+                            manager.setClipEnabled(id, newState);
+                        }));
+                }
+                if (compound)
+                    undoManager.endCompoundOperation();
+                break;
+            }
+
+            case 28: {  // Flatten MIDI Loop (#1737)
+                const auto* clip = clipManager.getClip(clipId_);
+                if (clip && clip->isMidi() && clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<FlattenMidiClipCommand>(clipId_));
+                }
                 break;
             }
 

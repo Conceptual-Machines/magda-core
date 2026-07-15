@@ -523,6 +523,18 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
                                                          spec->isInstrument, spec->browserCategory,
                                                          searchKeywordsForCompiledSpec(*spec)));
     }
+    // External hardware insert: one registry kind (te::InsertPlugin), surfaced as
+    // two browser entries — External FX (audio send/return) and External
+    // Instrument (MIDI send + audio return). The split is carried by isInstrument
+    // on the created DeviceInfo; the send/return picker lives in the device slot.
+    // (The registry spec keeps showInBrowser=false so it isn't also auto-listed.)
+    if (const auto* insertSpec =
+            audio::findInternalPluginSpec(magda::InternalDeviceKind::ExternalInsert)) {
+        list.push_back(PluginBrowserInfo::createInternal("External FX", insertSpec->pluginId,
+                                                         /*isInstrument*/ false, "External"));
+        list.push_back(PluginBrowserInfo::createInternal(
+            "External Instrument", insertSpec->pluginId, /*isInstrument*/ true, "External"));
+    }
     return list;
 }
 

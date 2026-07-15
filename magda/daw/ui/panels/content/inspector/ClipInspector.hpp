@@ -86,6 +86,9 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::Label clipFilePathLabel_;
     std::unique_ptr<magda::SvgButton> clipTypeIcon_;
     std::unique_ptr<magda::SvgButton> clipViewIcon_;
+    std::unique_ptr<magda::SvgButton> clipGhostIcon_;      // link glyph, ghost clips only
+    std::unique_ptr<magda::SvgButton> clipEnabledToggle_;  // enable/disable clip (#1736)
+    juce::Rectangle<int> viewTypeChipBounds_;              // segmented chip behind view|type icons
 
     // Position section
     juce::Label playbackColumnLabel_;

@@ -6,8 +6,14 @@
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui::node_header {
+
+inline SmallButtonLookAndFeel& getDeltaSoloButtonLookAndFeel() {
+    static SmallButtonLookAndFeel instance(10.5f);
+    return instance;
+}
 
 // Flat-thumb LookAndFeel for the device/rack gain slider: draws no track,
 // just a thin horizontal bar at the slider position. Designed to overlay

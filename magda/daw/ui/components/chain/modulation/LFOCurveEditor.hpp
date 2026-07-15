@@ -69,6 +69,14 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
     // Callback during drag for real-time preview sync
     std::function<void()> onDragPreview;
 
+    // Draw a 1px frame around the padded curve field. Off by default (the
+    // inline modulator-panel editor stays chromeless); the Sidechain faceplate
+    // turns it on, where the editor is the dominant visual.
+    void setDrawContentBorder(bool draw) {
+        drawContentBorder_ = draw;
+        repaint();
+    }
+
     // Phase indicator crosshair toggle
     void setShowCrosshair(bool show) {
         showCrosshair_ = show;
@@ -189,6 +197,7 @@ class LFOCurveEditor : public CurveEditorBase, private juce::Timer {
 
     // Phase indicator state
     bool showCrosshair_ = false;
+    bool drawContentBorder_ = false;
     float lastPhase_ = 0.0f;
     float lastValue_ = 0.0f;
 

@@ -172,6 +172,9 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
 ParamSlotComponent::~ParamSlotComponent() {
     stopTimer();
 
+    if (momentaryButton_)
+        momentaryButton_->release();
+
     if (amountLabel_.isOnDesktop()) {
         amountLabel_.removeFromDesktop();
     }
@@ -463,6 +466,8 @@ bool ParamSlotComponent::isBeingDragged() const {
 
 void ParamSlotComponent::setOverlayOnly(bool overlayOnly) {
     overlayOnly_ = overlayOnly;
+    if (overlayOnly && momentaryButton_)
+        momentaryButton_->release();
     nameLabel_.setVisible(!overlayOnly);
     valueSlider_.setVisible(!overlayOnly);
     setInterceptsMouseClicks(!overlayOnly || isInLinkMode_, !overlayOnly || isInLinkMode_);
@@ -484,6 +489,8 @@ void ParamSlotComponent::refreshLinkModeState() {
 
 void ParamSlotComponent::cancelGesture() {
     valueSlider_.cancelGesture();
+    if (momentaryButton_)
+        momentaryButton_->release();
     isLinkModeDrag_ = false;
     isModAmountDrag_ = false;
     modAmountDragModIndex_ = -1;
@@ -504,6 +511,10 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
         discreteCombo_->setVisible(false);
     if (boolToggle_)
         boolToggle_->setVisible(false);
+    if (momentaryButton_) {
+        momentaryButton_->release();
+        momentaryButton_->setVisible(false);
+    }
 
     // Boolean/Discrete configurators std::move-capture the callback at
     // config time. updateParameterSlots calls setParameterInfo BEFORE
@@ -518,12 +529,21 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
     };
 
     if (info.scale == magda::ParameterScale::Boolean) {
-        if (!boolToggle_) {
-            boolToggle_ = std::make_unique<juce::ToggleButton>();
-            addAndMakeVisible(*boolToggle_);
+        if (info.momentary) {
+            if (!momentaryButton_) {
+                momentaryButton_ = std::make_unique<MomentaryParamButton>();
+                addAndMakeVisible(*momentaryButton_);
+            }
+            configureMomentaryButton(*momentaryButton_, deferToSlot);
+            momentaryButton_->setVisible(true);
+        } else {
+            if (!boolToggle_) {
+                boolToggle_ = std::make_unique<juce::ToggleButton>();
+                addAndMakeVisible(*boolToggle_);
+            }
+            configureBoolToggle(*boolToggle_, info, deferToSlot);
+            boolToggle_->setVisible(true);
         }
-        configureBoolToggle(*boolToggle_, info, deferToSlot);
-        boolToggle_->setVisible(true);
     } else if (info.scale == magda::ParameterScale::Discrete && !info.choices.empty()) {
         if (!discreteCombo_) {
             discreteCombo_ = std::make_unique<juce::ComboBox>();
@@ -556,6 +576,7 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
 
     // Draw cell background for toggle/combo widgets (TextSlider draws its own)
     if ((boolToggle_ && boolToggle_->isVisible()) ||
+        (momentaryButton_ && momentaryButton_->isVisible()) ||
         (discreteCombo_ && discreteCombo_->isVisible())) {
         auto bounds = getLocalBounds();
         int labelHeight = juce::jmin(12, getHeight() / 3);
@@ -650,6 +671,8 @@ void ParamSlotComponent::resized() {
             discreteCombo_->setVisible(false);
         if (boolToggle_)
             boolToggle_->setVisible(false);
+        if (momentaryButton_)
+            momentaryButton_->setVisible(false);
         if (linkModeSlider_ != nullptr)
             linkModeSlider_->setBounds(bounds.reduced(2));
         return;
@@ -665,6 +688,8 @@ void ParamSlotComponent::resized() {
         int size = juce::jmin(28, bounds.getHeight(), bounds.getWidth());
         auto toggleBounds = bounds.withSizeKeepingCentre(size, size);
         boolToggle_->setBounds(toggleBounds);
+    } else if (momentaryButton_ && momentaryButton_->isVisible()) {
+        momentaryButton_->setBounds(bounds.reduced(2));
     } else {
         valueSlider_.setBounds(bounds);
     }

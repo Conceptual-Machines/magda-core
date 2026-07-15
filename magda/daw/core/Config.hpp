@@ -285,6 +285,24 @@ class Config {
         customPluginPaths = paths;
     }
 
+    // Hardware ports auto-enabled for External FX / Instrument inserts
+    // (owned by ExternalInsertDeviceEnablement, name-keyed). TE persists
+    // device enablement globally, so without this set a port MAGDA
+    // auto-enabled would come back after a restart looking user-enabled and
+    // never be auto-disabled again.
+    std::vector<std::string> getAutoEnabledInsertInputs() const {
+        return autoEnabledInsertInputs_;
+    }
+    void setAutoEnabledInsertInputs(const std::vector<std::string>& names) {
+        autoEnabledInsertInputs_ = names;
+    }
+    std::vector<std::string> getAutoEnabledInsertOutputs() const {
+        return autoEnabledInsertOutputs_;
+    }
+    void setAutoEnabledInsertOutputs(const std::vector<std::string>& names) {
+        autoEnabledInsertOutputs_ = names;
+    }
+
     // Total plugin count (persisted after last successful scan)
     int getTotalPluginCount() const {
         return totalPluginCount;
@@ -1125,6 +1143,10 @@ class Config {
 
     // Custom plugin paths
     std::vector<std::string> customPluginPaths;
+
+    // Ports auto-enabled by ExternalInsertDeviceEnablement (see accessors)
+    std::vector<std::string> autoEnabledInsertInputs_;
+    std::vector<std::string> autoEnabledInsertOutputs_;
 
     // Total plugin count from last scan
     int totalPluginCount = 0;

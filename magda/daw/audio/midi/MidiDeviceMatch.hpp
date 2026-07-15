@@ -55,4 +55,20 @@ bool matchedByNameOnly(const juce::String& storedKey, const juce::String& liveId
 std::optional<juce::MidiDeviceInfo> resolve(const juce::Array<juce::MidiDeviceInfo>& devices,
                                             const juce::String& storedKey);
 
+/// True when a MIDI input and a MIDI output port belong to the same hardware.
+/// Used by the external-instrument sendback guard to drop the synth's own
+/// input port from All-Inputs routing. Real devices rarely name the two
+/// directions identically, so match in tiers:
+///   1. identical names ("IAC Driver Bus 1" both ways)
+///   2. identical after dropping direction words ("monologue MIDI IN" /
+///      "monologue MIDI OUT"); port numbers are kept, so a multi-port
+///      interface only matches the same-numbered port ("MIDISPORT IN 2" does
+///      not match "MIDISPORT OUT 1")
+///   3. same first TWO words when neither name carries a port number;
+///      covers asymmetric per-port naming that keeps the model prefix
+///      ("Digitakt MIDI In-Port" vs "Digitakt MIDI Out-Port"). A shared
+///      first word alone never matches: unrelated same-brand devices share
+///      it ("Arturia BeatStep Pro" vs "Arturia MicroFreak").
+bool sameMidiHardware(const juce::String& a, const juce::String& b);
+
 }  // namespace magda::midi

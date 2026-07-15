@@ -2,11 +2,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
+#include "ClipLaneFlattener.hpp"
+#include "CurveMath.hpp"
+#include "GridDivision.hpp"
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/automation/ControlTargetResolver.hpp"
 #include "engine/AudioEngine.hpp"
 
 namespace magda {
@@ -84,6 +89,20 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             return 0.75;  // Default to unity when bus not found
         }
         case ControlTarget::Kind::PluginParam: {
+            // Prefer the live engine parameter: DeviceInfo::currentValue can
+            // go stale when a UI writes the engine without updating the model
+            // (observed with the compiled Faust custom UIs, #162 bake), and a
+            // stale value here seeds lanes and bake bases at the wrong height.
+            // Base value, NOT getCurrentValue(): the current value includes
+            // live modifier output, and a bake/seed must ride on the knob
+            // position, not on whatever the LFO happened to output right now.
+            if (auto* audioEngine = TrackManager::getInstance().getAudioEngine()) {
+                if (const auto* bridge = audioEngine->getAudioBridge()) {
+                    if (auto* teParam = bridge->resolveControlTarget(target))
+                        return laneNormalizedFromTEValue(target, teParam,
+                                                         teParam->getCurrentBaseValue());
+                }
+            }
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
                 return std::nullopt;
@@ -263,6 +282,10 @@ AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
     lane.id = nextLaneId_++;
     lane.target = target;
     lane.type = type;
+    if (isTargetUserTouched(target)) {
+        lane.authorityState = isWriteModeEnabled() ? AutomationAuthorityState::Writing
+                                                   : AutomationAuthorityState::Touching;
+    }
 
     // For absolute lanes, add an initial point at the current target value
     if (type == AutomationLaneType::Absolute) {
@@ -288,6 +311,93 @@ AutomationLaneId AutomationManager::getOrCreateLane(const AutomationTarget& targ
         return existingId;
     }
     return createLane(target, type);
+}
+
+AutomationClipId AutomationManager::convertLaneToClipBased(AutomationLaneId laneId,
+                                                           double minLengthBeats) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isAbsolute())
+        return INVALID_AUTOMATION_CLIP_ID;
+
+    if (lane->absolutePoints.empty()) {
+        lane->type = AutomationLaneType::ClipBased;
+        notifyLanesChanged();
+        return INVALID_AUTOMATION_CLIP_ID;
+    }
+
+    // Wrap the existing curve into one clip spanning the data range. Points
+    // are sorted by beat, so front/back bound the data.
+    const double start = lane->absolutePoints.front().beatPosition;
+    const double length = juce::jmax(lane->absolutePoints.back().beatPosition - start,
+                                     juce::jmax(minLengthBeats, 0.1));
+
+    AutomationClipInfo clip;
+    clip.id = nextClipId_++;
+    clip.laneId = laneId;
+    clip.startBeats = start;
+    clip.lengthBeats = length;
+    // Default colour inherits from the track (like other clips).
+    clip.colour = getLaneTrackColour(laneId).value_or(
+        AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size())));
+    clip.name = "Automation " + juce::String(clip.id);
+    clip.points = std::move(lane->absolutePoints);
+    for (auto& point : clip.points)
+        point.beatPosition -= start;
+
+    lane->absolutePoints.clear();
+    lane->type = AutomationLaneType::ClipBased;
+    lane->clipIds = {clip.id};
+    clips_.push_back(std::move(clip));
+
+    notifyLanesChanged();
+    notifyClipsChanged(laneId);
+    return lane->clipIds.front();
+}
+
+void AutomationManager::convertLaneToAbsolute(AutomationLaneId laneId) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isClipBased())
+        return;
+
+    auto flattened = flattenClipLane(
+        *lane, [this](AutomationClipId clipId) { return getClip(clipId); },
+        [this, laneId](double beat) { return getValueAtBeat(laneId, beat); });
+
+    clips_.erase(
+        std::remove_if(clips_.begin(), clips_.end(),
+                       [laneId](const AutomationClipInfo& c) { return c.laneId == laneId; }),
+        clips_.end());
+    lane->clipIds.clear();
+    lane->type = AutomationLaneType::Absolute;
+    lane->absolutePoints.clear();
+    lane->absolutePoints.reserve(flattened.size());
+    for (auto point : flattened) {
+        point.id = nextPointId_++;
+        lane->absolutePoints.push_back(point);
+    }
+
+    notifyLanesChanged();
+    notifyPointsChanged(laneId);
+}
+
+void AutomationManager::restoreLaneState(const AutomationLaneInfo& laneState,
+                                         const std::vector<AutomationClipInfo>& clips) {
+    auto* lane = getLane(laneState.id);
+    if (!lane)
+        return;
+
+    *lane = laneState;
+    lane->authorityState = automationAuthorityForPersistence(lane->authorityState);
+    clips_.erase(std::remove_if(clips_.begin(), clips_.end(),
+                                [&laneState](const AutomationClipInfo& c) {
+                                    return c.laneId == laneState.id;
+                                }),
+                 clips_.end());
+    for (const auto& clip : clips)
+        clips_.push_back(clip);
+
+    notifyLanesChanged();
+    notifyClipsChanged(laneState.id);
 }
 
 void AutomationManager::deleteLane(AutomationLaneId laneId) {
@@ -389,13 +499,26 @@ void AutomationManager::setLaneExpanded(AutomationLaneId laneId, bool expanded) 
     }
 }
 
-void AutomationManager::setLaneBypass(AutomationLaneId laneId, bool bypass) {
-    if (auto* lane = getLane(laneId)) {
-        if (lane->bypass == bypass)
-            return;
-        lane->bypass = bypass;
-        notifyLanePropertyChanged(laneId);
-    }
+void AutomationManager::setLaneEnabled(AutomationLaneId laneId, bool enabled) {
+    dispatchAuthorityEvent(laneId, enabled ? AutomationAuthorityEvent::Enable
+                                           : AutomationAuthorityEvent::Disable);
+}
+
+void AutomationManager::dispatchAuthorityEvent(AutomationLaneId laneId,
+                                               AutomationAuthorityEvent event) {
+    auto* lane = getLane(laneId);
+    if (!lane)
+        return;
+
+    const auto previous = lane->authorityState;
+    const auto next = transitionAutomationAuthority(previous, event);
+    if (next == previous)
+        return;
+
+    lane->authorityState = next;
+    if (authorityStateListener_)
+        authorityStateListener_(laneId, previous, next);
+    notifyLanePropertyChanged(laneId);
 }
 
 void AutomationManager::setTargetUserTouched(const AutomationTarget& target, bool touched) {
@@ -447,19 +570,26 @@ AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& 
     AutomationLaneId laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)
         return AutomationVisualState::None;
-    const auto* lane = const_cast<AutomationManager*>(this)->getLane(laneId);
+    const auto* lane = getLane(laneId);
     if (!lane)
         return AutomationVisualState::None;
-    if (lane->bypass || lane->touchSuppressed)
+    if (isAutomationPlaybackSuppressed(lane->authorityState))
         return AutomationVisualState::Overridden;
     return AutomationVisualState::Active;
 }
 
-void AutomationManager::setTargetOverridden(const AutomationTarget& target, bool overridden) {
-    AutomationLaneId laneId = getLaneForTarget(target);
+void AutomationManager::beginTargetGesture(const AutomationTarget& target) {
+    const auto laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)
         return;
-    setLaneBypass(laneId, overridden);
+    dispatchAuthorityEvent(laneId, isWriteModeEnabled() ? AutomationAuthorityEvent::BeginWrite
+                                                        : AutomationAuthorityEvent::BeginTouch);
+}
+
+void AutomationManager::endTargetGesture(const AutomationTarget& target) {
+    const auto laneId = getLaneForTarget(target);
+    if (laneId != INVALID_AUTOMATION_LANE_ID)
+        dispatchAuthorityEvent(laneId, AutomationAuthorityEvent::EndGesture);
 }
 
 bool AutomationManager::isWriteModeEnabled() const {
@@ -475,27 +605,14 @@ std::optional<double> AutomationManager::getCurrentTargetValue(
     return getCurrentTargetValueImpl(target);
 }
 
-void AutomationManager::clearAllTouchSuppression() {
-    for (auto& lane : lanes_) {
-        if (!lane.touchSuppressed)
-            continue;
-        lane.touchSuppressed = false;
-        if (touchSuppressionListener_)
-            touchSuppressionListener_(lane.id, false);
+void AutomationManager::resetRuntimeAuthorityStates() {
+    std::vector<AutomationLaneId> runtimeLanes;
+    for (const auto& lane : lanes_) {
+        if (isAutomationGestureActive(lane.authorityState))
+            runtimeLanes.push_back(lane.id);
     }
-}
-
-void AutomationManager::setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed) {
-    AutomationLaneId laneId = getLaneForTarget(target);
-    if (laneId == INVALID_AUTOMATION_LANE_ID)
-        return;
-    auto* lane = getLane(laneId);
-    if (!lane || lane->touchSuppressed == suppressed)
-        return;
-    lane->touchSuppressed = suppressed;
-
-    if (touchSuppressionListener_)
-        touchSuppressionListener_(laneId, suppressed);
+    for (const auto laneId : runtimeLanes)
+        dispatchAuthorityEvent(laneId, AutomationAuthorityEvent::ResetRuntime);
 }
 
 void AutomationManager::setLaneSnapEditsToBeatGrid(AutomationLaneId laneId, bool snap) {
@@ -538,7 +655,9 @@ AutomationClipId AutomationManager::createClip(AutomationLaneId laneId, double s
     clip.laneId = laneId;
     clip.startBeats = startBeats;
     clip.lengthBeats = lengthBeats;
-    clip.colour = AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size()));
+    // Default colour inherits from the track (like other clips).
+    clip.colour = getLaneTrackColour(laneId).value_or(
+        AutomationClipInfo::getDefaultColor(static_cast<int>(clips_.size())));
     clip.name = "Automation " + juce::String(clip.id);
 
     clips_.push_back(clip);
@@ -585,9 +704,9 @@ const AutomationClipInfo* AutomationManager::getClip(AutomationClipId clipId) co
     return nullptr;
 }
 
-void AutomationManager::moveClip(AutomationClipId clipId, double newStartTime) {
+void AutomationManager::moveClip(AutomationClipId clipId, double newStartBeats) {
     if (auto* clip = getClip(clipId)) {
-        clip->startBeats = juce::jmax(0.0, newStartTime);
+        clip->startBeats = juce::jmax(0.0, newStartBeats);
         notifyClipsChanged(clip->laneId);
     }
 }
@@ -653,6 +772,15 @@ void AutomationManager::setClipColour(AutomationClipId clipId, juce::Colour colo
     }
 }
 
+std::optional<juce::Colour> AutomationManager::getLaneTrackColour(AutomationLaneId laneId) const {
+    const auto* lane = getLane(laneId);
+    if (lane == nullptr || lane->target.isEditScoped())
+        return std::nullopt;
+    if (const auto* track = TrackManager::getInstance().getTrack(lane->target.devicePath.trackId))
+        return track->colour;
+    return std::nullopt;
+}
+
 void AutomationManager::setClipLooping(AutomationClipId clipId, bool looping) {
     if (auto* clip = getClip(clipId)) {
         clip->looping = looping;
@@ -665,6 +793,71 @@ void AutomationManager::setClipLoopLength(AutomationClipId clipId, double length
         clip->loopLengthBeats = juce::jmax(0.1, length);
         notifyClipsChanged(clip->laneId);
     }
+}
+
+void AutomationManager::setClipSnapX(AutomationClipId clipId, bool enabled, int numerator,
+                                     int denominator) {
+    if (auto* clip = getClip(clipId)) {
+        const auto [num, den] = grid::normaliseFraction(numerator, denominator);
+        clip->snapXEnabled = enabled;
+        clip->snapXNumerator = num;
+        clip->snapXDenominator = den;
+        notifyClipsChanged(clip->laneId);
+    }
+}
+
+void AutomationManager::setClipSnapY(AutomationClipId clipId, bool enabled, int numerator,
+                                     int denominator) {
+    if (auto* clip = getClip(clipId)) {
+        const auto [num, den] = grid::normaliseFraction(numerator, denominator);
+        clip->snapYEnabled = enabled;
+        clip->snapYNumerator = num;
+        clip->snapYDenominator = den;
+        notifyClipsChanged(clip->laneId);
+    }
+}
+
+void AutomationManager::setClipPoints(AutomationClipId clipId,
+                                      std::vector<AutomationPoint> points) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr)
+        return;
+    std::sort(points.begin(), points.end(), [](const AutomationPoint& a, const AutomationPoint& b) {
+        return a.beatPosition < b.beatPosition;
+    });
+    for (auto& point : points)
+        point.id = nextPointId_++;
+    clip->points = std::move(points);
+    notifyClipsChanged(clip->laneId);
+}
+
+bool AutomationManager::retypeEmptyLane(AutomationLaneId laneId, AutomationLaneType type) {
+    auto* lane = getLane(laneId);
+    if (lane == nullptr)
+        return false;
+    if (lane->type == type)
+        return true;
+    if (!lane->absolutePoints.empty() || !lane->clipIds.empty())
+        return false;
+    lane->type = type;
+    notifyLanesChanged();
+    return true;
+}
+
+void AutomationManager::moveClipToFront(AutomationClipId clipId) {
+    const auto* clip = getClip(clipId);
+    if (clip == nullptr)
+        return;
+    auto* lane = getLane(clip->laneId);
+    if (lane == nullptr)
+        return;
+    auto& ids = lane->clipIds;
+    auto it = std::find(ids.begin(), ids.end(), clipId);
+    if (it == ids.end() || it == ids.begin())
+        return;
+    ids.erase(it);
+    ids.insert(ids.begin(), clipId);
+    notifyClipsChanged(lane->id);
 }
 
 // ============================================================================
@@ -748,6 +941,36 @@ void AutomationManager::replaceLanePoints(AutomationLaneId laneId,
     }
     sortPoints(lane->absolutePoints);
     notifyPointsChanged(laneId);
+}
+
+std::vector<AutomationPoint> AutomationManager::replacePointsInRange(
+    AutomationLaneId laneId, double startBeat, double endBeat,
+    const std::vector<AutomationPoint>& points) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isAbsolute())
+        return {};
+
+    auto& lanePoints = lane->absolutePoints;
+    const auto inRange = [startBeat, endBeat](const AutomationPoint& p) {
+        return p.beatPosition >= startBeat && p.beatPosition <= endBeat;
+    };
+
+    std::vector<AutomationPoint> removed;
+    std::copy_if(lanePoints.begin(), lanePoints.end(), std::back_inserter(removed), inRange);
+    lanePoints.erase(std::remove_if(lanePoints.begin(), lanePoints.end(), inRange),
+                     lanePoints.end());
+
+    lanePoints.reserve(lanePoints.size() + points.size());
+    for (auto p : points) {
+        if (p.id == INVALID_AUTOMATION_POINT_ID)
+            p.id = nextPointId_++;
+        p.beatPosition = juce::jmax(0.0, p.beatPosition);
+        p.value = juce::jlimit(0.0, 1.0, p.value);
+        lanePoints.push_back(p);
+    }
+    sortPoints(lanePoints);
+    notifyPointsChanged(laneId);
+    return removed;
 }
 
 void AutomationManager::deletePointFromClip(AutomationClipId clipId, AutomationPointId pointId) {
@@ -891,7 +1114,28 @@ double AutomationManager::getValueAtBeat(AutomationLaneId laneId, double beatPos
         }
     }
 
-    return 0.5;  // Default if no clip at this beat
+    // Gap between clips: hold the nearest clip edge — the previous clip's
+    // final value, or before the first clip, the first clip's initial value.
+    const AutomationClipInfo* prevClip = nullptr;  // greatest end <= beat
+    const AutomationClipInfo* nextClip = nullptr;  // smallest start > beat
+    for (auto clipId : lane->clipIds) {
+        const auto* clip = getClip(clipId);
+        if (!clip)
+            continue;
+        if (clip->getEndBeats() <= beatPosition) {
+            if (!prevClip || clip->getEndBeats() > prevClip->getEndBeats())
+                prevClip = clip;
+        } else if (clip->startBeats > beatPosition) {
+            if (!nextClip || clip->startBeats < nextClip->startBeats)
+                nextClip = clip;
+        }
+    }
+    if (prevClip)
+        return interpolatePoints(prevClip->points, prevClip->getEndLocalBeat());
+    if (nextClip)
+        return interpolatePoints(nextClip->points, 0.0);
+
+    return 0.5;  // Lane has no clips at all
 }
 
 double AutomationManager::getClipValueAtBeat(AutomationClipId clipId,
@@ -909,56 +1153,60 @@ double AutomationManager::interpolateLinear(double t, double v1, double v2) cons
 
 double AutomationManager::interpolateBezier(double t, const AutomationPoint& p1,
                                             const AutomationPoint& p2) const {
-    // Cubic bezier interpolation
-    // P0 = (p1.beatPosition, p1.value)
-    // P1 = (p1.beatPosition + p1.outHandle.beatOffset, p1.value + p1.outHandle.value)
-    // P2 = (p2.beatPosition + p2.inHandle.beatOffset, p2.value + p2.inHandle.value)
-    // P3 = (p2.beatPosition, p2.value)
+    // The editor renders the PARAMETRIC cubic (handles offset the control
+    // points in x too), so evaluating the value cubic at t-linear-in-x
+    // drifts off the drawn line whenever a handle has a beat offset. Solve
+    // the x cubic for the parameter s where the curve crosses the queried
+    // beat, then evaluate the value cubic there.
+    const double x0 = p1.beatPosition;
+    const double x3 = p2.beatPosition;
+    const double x1 = x0 + p1.outHandle.beatOffset;
+    const double x2 = x3 + p2.inHandle.beatOffset;
+    const double target = x0 + t * (x3 - x0);
 
-    double t2 = t * t;
-    double t3 = t2 * t;
-    double mt = 1.0 - t;
-    double mt2 = mt * mt;
-    double mt3 = mt2 * mt;
+    const auto xAt = [&](double s) {
+        const double ms = 1.0 - s;
+        return ms * ms * ms * x0 + 3.0 * ms * ms * s * x1 + 3.0 * ms * s * s * x2 + s * s * s * x3;
+    };
+    const auto dxAt = [&](double s) {
+        const double ms = 1.0 - s;
+        return 3.0 * ms * ms * (x1 - x0) + 6.0 * ms * s * (x2 - x1) + 3.0 * s * s * (x3 - x2);
+    };
 
-    // Calculate control points
-    double cp1Value = p1.value + p1.outHandle.value;
-    double cp2Value = p2.value + p2.inHandle.value;
-
-    // Cubic bezier formula for value
-    return mt3 * p1.value + 3.0 * mt2 * t * cp1Value + 3.0 * mt * t2 * cp2Value + t3 * p2.value;
-}
-
-// Tension-based interpolation: power curve between two values
-// tension: -1 = concave (log-like), 0 = linear, +1 = convex (exp-like)
-static double interpolateWithTension(double t, double v1, double v2, double tension) {
-    if (std::abs(tension) < 0.001) {
-        // Linear interpolation for near-zero tension
-        return v1 + t * (v2 - v1);
+    // Newton with a t seed; clamped so overshooting handles can't escape the
+    // segment. A handful of iterations reaches sub-sample accuracy.
+    double s = t;
+    for (int i = 0; i < 12; ++i) {
+        const double err = xAt(s) - target;
+        if (std::abs(err) < 1.0e-6 * (x3 - x0 + 1.0))
+            break;
+        const double slope = dxAt(s);
+        if (std::abs(slope) < 1.0e-9)
+            break;
+        s = std::clamp(s - err / slope, 0.0, 1.0);
     }
 
-    // Use power curve for tension
-    // tension > 0: convex curve (slow start, fast end) - use t^(1+tension)
-    // tension < 0: concave curve (fast start, slow end) - use t^(1/(1-tension))
-    double curvedT;
-    if (tension > 0) {
-        // Convex: power > 1
-        curvedT = std::pow(t, 1.0 + tension * 2.0);
-    } else {
-        // Concave: power < 1
-        curvedT = 1.0 - std::pow(1.0 - t, 1.0 - tension * 2.0);
-    }
-
-    return v1 + curvedT * (v2 - v1);
+    const double s2 = s * s;
+    const double s3 = s2 * s;
+    const double ms = 1.0 - s;
+    const double ms2 = ms * ms;
+    const double ms3 = ms2 * ms;
+    const double cp1Value = p1.value + p1.outHandle.value;
+    const double cp2Value = p2.value + p2.inHandle.value;
+    return ms3 * p1.value + 3.0 * ms2 * s * cp1Value + 3.0 * ms * s2 * cp2Value + s3 * p2.value;
 }
 
-// Quadratic bezier through the segment shaper's apex (both handles point to it),
-// matching AutomationCurveEditor's quadraticTo rendering so what you see and
-// what plays back agree. t is the x-fraction along the segment.
-static double interpolateShaper(double t, const AutomationPoint& p1, const AutomationPoint& p2) {
-    const double apex = p1.value + p1.outHandle.value;
-    const double mt = 1.0 - t;
-    return mt * mt * p1.value + 2.0 * mt * t * apex + t * t * p2.value;
+// Linear-type segments (pure, tension, or shaper-bent) evaluate through the
+// SHARED curvemath::evalSegment — the same function the editor samples when
+// drawing and the modulator engine outputs — so the played value sits exactly
+// on the drawn curve. (The old local quadratic/power copies here had drifted
+// from the renderer.) t is the x-fraction along the segment.
+static double evalLinearSegment(double t, const AutomationPoint& p1, const AutomationPoint& p2) {
+    const bool hasShaper = !p1.outHandle.isZero() || !p2.inHandle.isZero();
+    const double controlY = p1.value + p1.outHandle.value;
+    return static_cast<double>(curvemath::evalSegment(
+        static_cast<float>(p1.value), static_cast<float>(p2.value), static_cast<float>(controlY),
+        static_cast<float>(p1.tension), hasShaper, static_cast<float>(t)));
 }
 
 double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& points,
@@ -989,11 +1237,7 @@ double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& 
 
             switch (p1.curveType) {
                 case AutomationCurveType::Linear:
-                    // The shaper bends a Linear segment via bezier handles; fall
-                    // back to the tension scalar only when no handle is stored.
-                    if (!p1.outHandle.isZero() || !p2.inHandle.isZero())
-                        return interpolateShaper(t, p1, p2);
-                    return interpolateWithTension(t, p1.value, p2.value, p1.tension);
+                    return evalLinearSegment(t, p1, p2);
 
                 case AutomationCurveType::Bezier:
                     return interpolateBezier(t, p1, p2);
@@ -1096,6 +1340,8 @@ void AutomationManager::notifyPointDragPreview(AutomationLaneId laneId, Automati
 void AutomationManager::clearAll() {
     lanes_.clear();
     clips_.clear();
+    userTouchedTargets_.clear();
+    touchBaselines_.clear();
     nextLaneId_ = 1;
     nextClipId_ = 1;
     nextPointId_ = 1;
@@ -1113,6 +1359,7 @@ void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
     // lane for that target can be present.
     if (getLaneForTarget(lane.target) != INVALID_AUTOMATION_LANE_ID)
         return;
+    lane.authorityState = automationAuthorityForPersistence(lane.authorityState);
     lanes_.push_back(std::move(lane));
     notifyLanesChanged();
 }
@@ -1120,13 +1367,26 @@ void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
 void AutomationManager::insertLaneAt(AutomationLaneInfo& lane, size_t index) {
     if (index > lanes_.size())
         index = lanes_.size();
+    lane.authorityState = automationAuthorityForPersistence(lane.authorityState);
     lanes_.insert(lanes_.begin() + static_cast<std::ptrdiff_t>(index), std::move(lane));
     notifyLanesChanged();
 }
 
 void AutomationManager::restoreClip(AutomationClipInfo& clip) {
+    const AutomationClipId clipId = clip.id;
+    const AutomationLaneId laneId = clip.laneId;
     clips_.push_back(std::move(clip));
-    notifyClipsChanged(clip.laneId);
+
+    // Re-link into the owning lane when missing: a single-clip delete undo
+    // must restore the reference too. The lane-restore path (undo of a lane
+    // delete) re-inserts the lane with its clipIds intact, so this is a
+    // no-op there.
+    if (auto* lane = getLane(laneId)) {
+        if (std::find(lane->clipIds.begin(), lane->clipIds.end(), clipId) == lane->clipIds.end())
+            lane->clipIds.push_back(clipId);
+    }
+
+    notifyClipsChanged(laneId);
 }
 
 void AutomationManager::refreshIdCountersFromLanes() {

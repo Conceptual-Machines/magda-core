@@ -7,6 +7,7 @@
 
 #include "ClipInfo.hpp"
 #include "TempoUtils.hpp"
+#include "TimeStretchModes.hpp"
 
 namespace magda {
 
@@ -759,9 +760,10 @@ class ClipOperations {
         if (enabled) {
             clip.analogPitch = false;  // Analog pitch is incompatible with autoTempo
 
-            // Auto-tempo requires time-stretching — enable SoundTouch if disabled
-            if (clip.timeStretchMode == 0 || clip.timeStretchMode == 3)
-                clip.timeStretchMode = 4;  // soundtouchBetter
+            // Auto-tempo requires time-stretching. Preserve any explicitly selected
+            // engine, otherwise enable the default quality engine.
+            if (clip.timeStretchMode == time_stretch_mode::kDisabled)
+                clip.timeStretchMode = time_stretch_mode::kSignalsmith;
 
             // Convert current offset to beats
             if (clip.audio().interpretation.bpm > 0.0)
@@ -991,10 +993,12 @@ class ClipOperations {
 
         if (clip.loopEnabled && clip.loopLengthBeats > 0.0) {
             double loopLen = clip.loopLengthBeats;
-            double phase = clip.midiOffset;
+            double phase = wrapPhase(clip.midiOffset, loopLen);
 
-            // Number of full loop cycles that fit in the clip
-            int numCycles = static_cast<int>(std::ceil(clipLen / loopLen));
+            // Include the final partial cycle introduced by the phase offset.
+            // A clip starting one beat into a two-beat loop needs the cycle
+            // beginning at clipLen - 1 to render its final beat.
+            int numCycles = static_cast<int>(std::ceil((clipLen + phase) / loopLen));
 
             for (int cycle = 0; cycle < numCycles; ++cycle) {
                 double cycleStart = cycle * loopLen - phase;
@@ -1068,6 +1072,7 @@ class ClipOperations {
 
             clip.loopEnabled = false;
             clip.midiOffset = 0.0;
+            clip.midiTrimOffset = 0.0;
             clip.loopLengthBeats = 0.0;
             clip.loopLength = 0.0;
             clip.loopStart = 0.0;

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
+#include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -603,11 +604,22 @@ void CompiledMultibandCurveView::mouseUp(const juce::MouseEvent& e) {
 
 void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
                                                 const juce::MouseWheelDetails& wheel) {
-    const float direction = wheel.deltaY > 0.0f ? 1.0f : -1.0f;
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::CurveEditor, wheel, e.mods, e.getPosition());
+    if (!magda::isValueAdjustmentAction(gesture.type)) {
+        juce::Component::mouseWheelMove(e, wheel);
+        return;
+    }
+    if (gesture.magnitude == 0.0f)
+        return;
+
+    const float direction = gesture.magnitude > 0.0f ? 1.0f : -1.0f;
     auto adjustTiming = [&](int band, bool release) {
         const auto idx = static_cast<size_t>(band);
         auto& target = release ? releaseMs_[idx] : attackMs_[idx];
-        const float step = e.mods.isAltDown() ? 0.125f : 0.25f;
+        const bool fine = gesture.type == magda::GestureActionType::AdjustValueFine ||
+                          gesture.type == magda::GestureActionType::AdjustSecondaryValueFine;
+        const float step = fine ? 0.125f : 0.25f;
         const float next =
             adjustTimeMs(target, direction * step, release ? kReleaseMinMs : kAttackMinMs,
                          release ? kReleaseMaxMs : kAttackMaxMs);
@@ -636,7 +648,8 @@ void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
     if (band < 0)
         return;
 
-    const bool adjustRange = e.mods.isShiftDown();
+    const bool adjustRange = gesture.type == magda::GestureActionType::AdjustSecondaryValue ||
+                             gesture.type == magda::GestureActionType::AdjustSecondaryValueFine;
     const auto idx = static_cast<size_t>(band);
 
     if (adjustRange) {
@@ -652,7 +665,9 @@ void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
         return;
     }
 
-    const float step = e.mods.isAltDown() ? 0.125f : 0.25f;
+    const bool fine = gesture.type == magda::GestureActionType::AdjustValueFine ||
+                      gesture.type == magda::GestureActionType::AdjustSecondaryValueFine;
+    const float step = fine ? 0.125f : 0.25f;
     const float y = static_cast<float>(e.y);
     const float upperY = dbToY(upperThresholdDb_[idx]);
     const float lowerY = dbToY(lowerThresholdDb_[idx]);

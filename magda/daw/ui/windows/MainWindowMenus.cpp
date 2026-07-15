@@ -540,6 +540,14 @@ void MainWindow::setupMenuCallbacks() {
             CommandIDs::duplicateClipWithoutAutomation, false);
     };
 
+    callbacks.onDuplicateClipAsGhost = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::duplicateClipAsGhost, false);
+    };
+
+    callbacks.onMakeClipUnique = [this]() {
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::makeClipUnique, false);
+    };
+
     callbacks.onDelete = [this]() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::deleteCmd, false);
     };

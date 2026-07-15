@@ -11,6 +11,16 @@
 
 namespace magda::test {
 
+inline void drainJuceAsyncWork() {
+    if (auto* engine = getSharedEngineIfInitialized()) {
+        if (auto* teEngine = engine->getEngine())
+            teEngine->getBackgroundJobs().getPool().removeAllJobs(false, 10000);
+    }
+
+    if (auto* messageManager = juce::MessageManager::getInstanceWithoutCreating())
+        messageManager->runDispatchLoopUntil(10);
+}
+
 inline void resetJuceProjectState() {
     auto* engine = getSharedEngineIfInitialized();
     if (engine)
@@ -42,14 +52,21 @@ inline void resetJuceProjectState() {
     }
 }
 
+inline void cleanJuceTestState() {
+    // Complete work while the shared engine and its current model are still valid.
+    drainJuceAsyncWork();
+    resetJuceProjectState();
+    drainJuceAsyncWork();
+}
+
 class ScopedJuceTestState {
   public:
     ScopedJuceTestState() {
-        resetJuceProjectState();
+        cleanJuceTestState();
     }
 
     ~ScopedJuceTestState() {
-        resetJuceProjectState();
+        cleanJuceTestState();
     }
 
     ScopedJuceTestState(const ScopedJuceTestState&) = delete;

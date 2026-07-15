@@ -898,8 +898,14 @@ AIChatConsoleContent::AIChatConsoleContent() {
     inputBox_->setFont(monoFont);
     inputBox_->setLineNumbersShown(false);
     inputBox_->setScrollbarThickness(8);
+    // CodeEditorComponent forces setOpaque(true) in its own constructor, so a
+    // transparent fill here is undefined depending on how the platform clips
+    // paint-behind-opaque-child (JUCE's TextEditor, by contrast, never
+    // opts into opaque and composites fine with a transparent fill). Paint
+    // the same solid colour as the panel drawn behind it in paint() instead
+    // of relying on transparency — matches dslEditor_'s approach below.
     inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                         juce::Colours::transparentBlack);
+                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
     inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
                          DarkTheme::getTextColour());
     inputBox_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,

@@ -221,6 +221,16 @@ void Config::save() {
         pluginPathArray.add(toJuceString(p));
     root->setProperty("customPluginPaths", pluginPathArray);
 
+    // External-insert auto-enabled hardware ports
+    juce::Array<juce::var> autoInsertInArray;
+    for (const auto& n : autoEnabledInsertInputs_)
+        autoInsertInArray.add(toJuceString(n));
+    root->setProperty("autoEnabledInsertInputs", autoInsertInArray);
+    juce::Array<juce::var> autoInsertOutArray;
+    for (const auto& n : autoEnabledInsertOutputs_)
+        autoInsertOutArray.add(toJuceString(n));
+    root->setProperty("autoEnabledInsertOutputs", autoInsertOutArray);
+
     // Total plugin count
     root->setProperty("totalPluginCount", totalPluginCount);
     root->setProperty("scanPluginsOnStartup", scanPluginsOnStartup);
@@ -626,6 +636,8 @@ void Config::load() {
             static_cast<juce::int64>(obj->getProperty("lastUpdateCheckTimestamp")));
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
+    autoEnabledInsertInputs_ = getStringArray("autoEnabledInsertInputs");
+    autoEnabledInsertOutputs_ = getStringArray("autoEnabledInsertOutputs");
     totalPluginCount = getInt("totalPluginCount", totalPluginCount);
     scanPluginsOnStartup = getBool("scanPluginsOnStartup", scanPluginsOnStartup);
     loadModelOnStartup = getBool("loadModelOnStartup", loadModelOnStartup);

@@ -22,6 +22,7 @@
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
+#include "plugins/InsertCapturePlugin.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
@@ -319,6 +320,10 @@ void PluginManager::syncAllPlugins() {
                     }
                     auto* teTrack = trackController_.getAudioTrack(it->second.trackId);
                     auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
+                    if (!modifierList && it->second.trackId == MASTER_TRACK_ID) {
+                        if (auto* masterTrack = edit_.getMasterTrack())
+                            modifierList = masterTrack->getModifierList();
+                    }
                     auto* macroList =
                         teTrack ? &teTrack->getMacroParameterListForWriting() : nullptr;
 
@@ -769,7 +774,14 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Sync device-level + track-level modifiers AND macros via the
     // ModifierSyncWalker (issue #1131 step 2).
-    syncDeviceModifiers(trackId, teTrack);
+    syncDeviceModifiers(trackId, teTrack->getModifierList(),
+                        &teTrack->getMacroParameterListForWriting(),
+                        [teTrack](const std::function<void(te::Plugin*)>& visit) {
+                            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+                                if (auto* plugin = teTrack->pluginList[pi])
+                                    visit(plugin);
+                            }
+                        });
 
     // Update mod link fingerprint so resyncDeviceModifiers doesn't rebuild immediately after
     if (auto* info = TrackManager::getInstance().getTrack(trackId))
@@ -894,8 +906,21 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // Move after the previous desired plugin
                 int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
                 int curVtIdx = listState.indexOf(desiredOrder[i]->state);
-                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1) {
-                    listState.moveChild(curVtIdx, prevVtIdx + 1, nullptr);
+                // A capture pass pins a hidden InsertCapturePlugin directly
+                // after its insert; skip it so a mid-pass sync doesn't
+                // displace it (and with it, the capture point).
+                int expectedVtIdx = prevVtIdx + 1;
+                while (expectedVtIdx < listState.getNumChildren()) {
+                    auto child = listState.getChild(expectedVtIdx);
+                    if (child.hasType(te::IDs::PLUGIN) &&
+                        child.getProperty(te::IDs::type).toString() ==
+                            InsertCapturePlugin::xmlTypeName)
+                        ++expectedVtIdx;
+                    else
+                        break;
+                }
+                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != expectedVtIdx) {
+                    listState.moveChild(curVtIdx, expectedVtIdx, nullptr);
                     pluginOrderChanged = true;
                 }
             }
@@ -1294,10 +1319,11 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
         }
 
         if (loaded) {
-            // Apply bypass state
+            // Apply bypass state (device flag gated by the track chain power)
             plugin->setEnabled(true);
             if (auto* devInfo = getDeviceInfoForPath(devicePath)) {
-                plugin->setEnabled(!devInfo->bypassed);
+                plugin->setEnabled(
+                    TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath, *devInfo));
             }
 
             // Apply an imported .vstpreset (DAWproject device state) now that the
@@ -1347,7 +1373,9 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
                     }
 
                     if (rackPlugin) {
-                        rackPlugin->setEnabled(!devInfo->bypassed);
+                        rackPlugin->setEnabled(
+                            TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath,
+                                                                                   *devInfo));
 
                         // Insert the rack instance back at the original position
                         if (track)
@@ -1698,6 +1726,8 @@ void PluginManager::syncMasterPlugins() {
         return;
 
     auto& masterList = edit_.getMasterPluginList();
+    auto* masterTrack = edit_.getMasterTrack();
+    auto* masterModifierList = masterTrack ? masterTrack->getModifierList() : nullptr;
 
     // Collect current MAGDA device paths on master (fx chain + flat post-fx list)
     std::vector<ChainNodePath> magdaDevices;
@@ -1738,10 +1768,19 @@ void PluginManager::syncMasterPlugins() {
             }
         }
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
+        std::vector<te::Plugin*> scopePlugins;
+        scopePlugins.reserve(masterList.size());
+        for (int i = 0; i < masterList.size(); ++i) {
+            if (auto* plugin = masterList[i])
+                scopePlugins.push_back(plugin);
+        }
         for (const auto& devicePath : toRemove) {
             auto it = findSyncedDevice(devicePath);
             if (it != syncedDevices_.end()) {
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                teardownMacroMap(it->second.macroParams, it->second.modifiers, scopePlugins,
+                                 nullptr);
+                teardownModifierMap(it->second.modifiers, scopePlugins, masterModifierList);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
                     dg->removeListener(this);
@@ -1893,6 +1932,11 @@ void PluginManager::syncMasterPlugins() {
             }
         }
     }
+
+    // The master owns a Tracktion ModifierList despite not being an
+    // AudioTrack. Rebuild after plugins are mapped so Sidechain links can
+    // resolve their master-device targets.
+    resyncDeviceModifiers(MASTER_TRACK_ID);
 }
 
 // =============================================================================
@@ -1900,8 +1944,6 @@ void PluginManager::syncMasterPlugins() {
 // =============================================================================
 
 te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInfo& device) {
-    juce::ignoreUnused(trackId);
-
     te::Plugin::Ptr plugin;
 
     if (device.format == PluginFormat::Internal) {
@@ -2008,7 +2050,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
     }
 
     if (plugin) {
-        plugin->setEnabled(!device.bypassed);
+        // Rack inner devices always live in the insert chain, so the chain
+        // power gates them (no full path available here, only the track).
+        plugin->setEnabled(!device.bypassed && TrackManager::getInstance().isChainEnabled(trackId));
+        plugin->setDeltaSoloEnabled(device.deltaSolo);
     }
 
     return plugin;
@@ -2278,13 +2323,23 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             syncedDevices_[devicePath].processor = std::move(processor);
         }
 
-        // Apply device state
-        plugin->setEnabled(!device.bypassed);
+        // Apply device state (device flag gated by the track chain power)
+        plugin->setEnabled(
+            TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath, device));
         daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
         // Wrap instruments in a RackType with audio passthrough so both synth
         // output and audio clips on the same track are summed together.
-        if (device.isInstrument) {
+        //
+        // Exception: an External Instrument is a te::InsertPlugin. TE only turns
+        // an InsertPlugin into a graph-level send/return when it sits DIRECTLY in
+        // the track's plugin list (EditNodeBuilder special-case). Inside a
+        // RackType it would be processed as a normal plugin and hit
+        // InsertPlugin::applyToBuffer's jassertfalse (dead stub), with no audio
+        // routed. So never wrap it, even though it presents as an instrument.
+        const bool isExternalInsert =
+            classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert;
+        if (device.isInstrument && !isExternalInsert) {
             // Detect multi-output capability
             int numOutputChannels = 2;
             if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
@@ -2306,7 +2361,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             }
 
             if (rackPlugin) {
-                rackPlugin->setEnabled(!device.bypassed);
+                rackPlugin->setEnabled(
+                    TrackManager::getInstance().isDeviceEffectivelyEnabled(devicePath, device));
 
                 // Insert the rack instance back on the track at the original position
                 track->pluginList.insertPlugin(rackPlugin, pluginIdx, nullptr);

@@ -6,6 +6,7 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.cpp
     ai/AIPanelComponent.cpp
     slot/DeviceCustomUIManager.cpp
+    slot/ExternalInsertUI.cpp
     slot/DeviceSlotAnalyzerContextActions.cpp
     slot/DeviceSlotAutomationControls.cpp
     slot/DeviceSlotContentLayout.cpp
@@ -39,6 +40,7 @@ target_sources(magda_daw_app PRIVATE
     params/ParamLinkResolver.cpp
     params/ParamModulationPainter.cpp
     params/ParamLinkMenu.cpp
+    params/ModulationBakeAction.cpp
     params/ParamWidgetSetup.cpp
     params/PagedControlPanel.cpp
     layout/StandardDeviceLayout.cpp
@@ -77,6 +79,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/ChorusUI.cpp
     custom_ui/PhaserUI.cpp
     custom_ui/FilterUI.cpp
+    custom_ui/SidechainUI.cpp
     custom_ui/PitchShiftUI.cpp
     custom_ui/ImpulseResponseUI.cpp
     custom_ui/FaustUI.cpp
@@ -145,10 +148,12 @@ target_sources(magda_daw_app PRIVATE
     drum_grid/PadChainRangeRowComponent.hpp
     drum_grid/PadChainRowComponent.hpp
     params/ParamHostComponent.hpp
+    params/MomentaryParamButton.hpp
     params/ParamSlotComponent.hpp
     params/ParamLinkResolver.hpp
     params/ParamModulationPainter.hpp
     params/ParamLinkMenu.hpp
+    params/ModulationBakeAction.hpp
     params/ParamWidgetSetup.hpp
     params/PagedControlPanel.hpp
     layout/DeviceParamLayout.hpp

@@ -194,6 +194,8 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(
+            newDevice, ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
         notifyDeviceAdded(ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id),
@@ -248,6 +250,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
         notifyDeviceAdded(chainPath.withDevice(newDevice.id), newDevice);
@@ -301,6 +304,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
 
         // Add the device at the specified index
         DeviceInfo newDevice = prepareNewDevice(device);
+        seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
 
         // Clamp insert index to valid range
         int maxIndex = static_cast<int>(chain->elements.size());
@@ -1102,6 +1106,17 @@ const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devi
 void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
+        if (bypassed)
+            device->deltaSolo = false;
+        notifyDevicePropertyChanged(devicePath);
+    }
+}
+
+void TrackManager::setDeviceDeltaSoloByPath(const ChainNodePath& devicePath, bool deltaSolo) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        device->deltaSolo = deltaSolo;
+        if (deltaSolo)
+            device->bypassed = false;
         notifyDevicePropertyChanged(devicePath);
     }
 }
@@ -1922,6 +1937,10 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
             notifyDeviceModifiersChanged(track.id);
             return;
         }
+    }
+
+    if (updateElements(updateElements, masterTrack_.chain.fxChainElements)) {
+        notifyDeviceModifiersChanged(MASTER_TRACK_ID);
     }
 }
 

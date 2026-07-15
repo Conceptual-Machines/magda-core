@@ -31,6 +31,7 @@ class AutomationLaneComponent : public juce::Component,
     // Component
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
     void resized() override;
 
     // Mouse interaction
@@ -38,6 +39,7 @@ class AutomationLaneComponent : public juce::Component,
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
     bool hitTest(int x, int y) override;
 
     // AutomationManagerListener
@@ -69,6 +71,10 @@ class AutomationLaneComponent : public juce::Component,
     std::function<double(double)> snapBeatToGrid;
     std::function<double()> getGridSpacingBeats;
 
+    // Open a clip's curve in the big editor (bottom panel). Fired by
+    // double-clicking an automation clip or its "Edit Curve" menu item.
+    std::function<void(AutomationLaneId, AutomationClipId)> onOpenClipEditor;
+
     // Header dimensions
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int MIN_LANE_HEIGHT = 40;
@@ -95,6 +101,16 @@ class AutomationLaneComponent : public juce::Component,
      *                       these point IDs (all other points are left
      *                       untouched). Empty means "simplify the whole lane".
      */
+    /**
+     * @brief Draw the unit value scale (dB / pan / discrete / unit labels)
+     *        for a target into `area`. normToYOffset maps a normalized value
+     *        to a y offset within the area. Shared with the bottom-panel
+     *        clip editor's scale strip.
+     */
+    static void paintScaleLabelsFor(juce::Graphics& g, juce::Rectangle<int> area,
+                                    const ControlTarget& target,
+                                    const std::function<int(double)>& normToYOffset);
+
     static void simplifyLane(AutomationLaneId laneId, double epsilon,
                              const std::vector<AutomationPointId>& pointIdFilter = {});
 
@@ -114,6 +130,11 @@ class AutomationLaneComponent : public juce::Component,
     bool isCreatingTimeSelection_ = false;
     juce::Point<int> timeSelectionAnchor_;
     double timeSelectionStartBeat_ = 0.0;
+
+    // Alt+drag clip pencil state (clip-based lanes, empty area)
+    bool isDrawingClip_ = false;
+    double drawClipStartBeat_ = 0.0;
+    double drawClipEndBeat_ = 0.0;
 
     // UI components
     std::unique_ptr<AutomationCurveEditor> curveEditor_;
@@ -140,6 +161,8 @@ class AutomationLaneComponent : public juce::Component,
     // Resize helpers
     bool isInResizeArea(int y) const;
     bool isInTimeSelectionStrip(int x, int y) const;
+    // Empty clip-lane area where the Alt pencil can draw a clip.
+    bool canDrawClipAt(int x, int y) const;
     double xToBeat(int x) const;
     juce::Rectangle<int> getResizeHandleArea() const;
 

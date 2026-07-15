@@ -41,9 +41,26 @@ te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
         return nullptr;
     return findWaveAudioClipByEngineId(edit, it->second);
 }
+
+void storeWarpMarkersInClipModel(ClipId clipId, te::WarpTimeManager& warpManager) {
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr)
+        return;
+
+    const auto& markers = warpManager.getMarkers();
+    clip->warpMarkers.clear();
+    clip->warpMarkers.reserve(static_cast<size_t>(markers.size()));
+    for (auto* marker : markers) {
+        if (marker != nullptr) {
+            clip->warpMarkers.push_back(
+                {marker->sourceTime.inSeconds(), marker->warpTime.inSeconds()});
+        }
+    }
+}
 }  // namespace
 
 WarpMarkerManager::~WarpMarkerManager() {
+    stopTimer();
     for (auto& [_, active] : activeDetections_) {
         if (active.warpManager != nullptr)
             active.warpManager->removeListener(this);
@@ -55,16 +72,27 @@ void WarpMarkerManager::setTransientSensitivity(
     float sensitivity) {
     // Resolve the engineId at queue time (a single map lookup) instead
     // of snapshotting the whole clipIdToEngineId map per call.
-    PendingDetection det;
-    det.sensitivity = sensitivity;
+    auto& pending = pendingDetections_[clipId];
+    pending.sensitivity = sensitivity;
     auto it = clipIdToEngineId.find(clipId);
-    det.engineId = (it != clipIdToEngineId.end()) ? it->second : std::string{};
-    det.edit = &edit;
+    pending.engineId = (it != clipIdToEngineId.end()) ? it->second : std::string{};
+    pending.edit = &edit;
 
-    // Restart immediately so the latest sensitivity doesn't wait behind an old
-    // detection job. WarpTimeManager::detectTransients detaches/cancels the
-    // previous job before submitting the replacement.
-    applySensitivityNow(edit, det.engineId, clipId, sensitivity);
+    // A drag can generate dozens of values per second. Restart the quiet-period
+    // timer so only the final value clears the cache and launches detection.
+    startTimer(150);
+}
+
+void WarpMarkerManager::timerCallback() {
+    stopTimer();
+
+    auto pending = std::move(pendingDetections_);
+    pendingDetections_.clear();
+
+    for (const auto& [clipId, detection] : pending) {
+        if (detection.edit != nullptr && !detection.engineId.empty())
+            applySensitivityNow(*detection.edit, detection.engineId, clipId, detection.sensitivity);
+    }
 }
 
 void WarpMarkerManager::applySensitivityNow(te::Edit& edit, const std::string& engineId,
@@ -123,6 +151,9 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
     if (thumbnailManager.getCachedTransients(clip->audio().source.filePath) != nullptr)
         return true;
 
+    if (pendingDetections_.count(clipId))
+        return false;
+
     if (detectionInFlight_.count(clipId))
         return false;
 
@@ -138,9 +169,10 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
 void WarpMarkerManager::transientDetectionFinished(te::WarpTimeManager& warpManager,
                                                    bool completedOk) {
     if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
-        juce::MessageManager::callAsync([this, warpManagerPtr = &warpManager, completedOk]() {
-            if (warpManagerPtr != nullptr)
-                transientDetectionFinished(*warpManagerPtr, completedOk);
+        juce::WeakReference<WarpMarkerManager> weakThis(this);
+        juce::MessageManager::callAsync([weakThis, warpManagerPtr = &warpManager, completedOk]() {
+            if (auto* self = weakThis.get(); self != nullptr && warpManagerPtr != nullptr)
+                self->transientDetectionFinished(*warpManagerPtr, completedOk);
         });
         return;
     }
@@ -154,6 +186,7 @@ void WarpMarkerManager::transientDetectionFinished(te::WarpTimeManager& warpMana
 
 void WarpMarkerManager::finishDetection(ClipId clipId, te::WarpTimeManager& warpManager,
                                         bool completedOk) {
+    const bool replacementPending = pendingDetections_.count(clipId) != 0;
     warpManager.removeListener(this);
     clipByWarpManager_.erase(&warpManager);
     detectionInFlight_.erase(clipId);
@@ -164,7 +197,7 @@ void WarpMarkerManager::finishDetection(ClipId clipId, te::WarpTimeManager& warp
     activeDetections_.erase(clipId);
 
     auto [complete, transientPositions] = warpManager.getTransientTimes();
-    if (!completedOk || !complete || filePath.isEmpty())
+    if (replacementPending || !completedOk || !complete || filePath.isEmpty())
         return;
 
     juce::Array<double> times;
@@ -229,6 +262,10 @@ void WarpMarkerManager::enableWarp(te::Edit& edit,
 
     audioClipPtr->setWarpTime(true);
 
+    // ClipInfo is the source copied to MAGDA's clipboard. Keep it current as
+    // markers are created/edited instead of waiting for the project-save pass.
+    storeWarpMarkersInClipModel(clipId, warpManager);
+
     DBG("WarpMarkerManager::enableWarp clip " << clipId << " -> " << warpManager.getMarkers().size()
                                               << " markers");
 }
@@ -243,6 +280,9 @@ void WarpMarkerManager::disableWarp(te::Edit& edit,
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     warpManager.removeAllMarkers();
     audioClipPtr->setWarpTime(false);
+
+    if (auto* clip = ClipManager::getInstance().getClip(clipId))
+        clip->warpMarkers.clear();
 
     DBG("WarpMarkerManager::disableWarp clip " << clipId);
 }
@@ -287,6 +327,8 @@ int WarpMarkerManager::addWarpMarker(te::Edit& edit,
     int teIndex = warpManager.insertMarker(te::WarpMarker(te::TimePosition::fromSeconds(sourceTime),
                                                           te::TimePosition::fromSeconds(warpTime)));
 
+    storeWarpMarkersInClipModel(clipId, warpManager);
+
     int markerCountAfter = warpManager.getMarkers().size();
     DBG("WarpMarkerManager::addWarpMarker clip "
         << clipId << " src=" << sourceTime << " warp=" << warpTime << " -> teIndex=" << teIndex
@@ -306,6 +348,7 @@ double WarpMarkerManager::moveWarpMarker(te::Edit& edit,
     // Use TE index directly - UI now uses the same index space
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     auto result = warpManager.moveMarker(index, te::TimePosition::fromSeconds(newWarpTime));
+    storeWarpMarkersInClipModel(clipId, warpManager);
     return result.inSeconds();
 }
 
@@ -319,6 +362,7 @@ void WarpMarkerManager::removeWarpMarker(te::Edit& edit,
     // Use TE index directly - UI now uses the same index space
     auto& warpManager = audioClipPtr->getWarpTimeManager();
     warpManager.removeMarker(index);
+    storeWarpMarkersInClipModel(clipId, warpManager);
 }
 
 }  // namespace magda

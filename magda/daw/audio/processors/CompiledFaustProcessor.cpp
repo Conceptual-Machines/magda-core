@@ -61,8 +61,11 @@ void CompiledFaustProcessor::populateParameters(DeviceInfo& info) const {
 
     for (int i = 0; i < host->hostSlotCount(); ++i) {
         auto paramInfo = getParameterInfo(i);
+        // Base value, NOT getCurrentValue(): the current value includes live
+        // modifier output, so repopulating while an LFO runs would snapshot a
+        // random sweep sample into the model as if it were the knob position.
         if (auto* param = host->hostSlotParameter(i))
-            paramInfo.currentValue = host->normalizedToDisplay(i, param->getCurrentValue());
+            paramInfo.currentValue = host->normalizedToDisplay(i, param->getCurrentBaseValue());
         info.parameters.push_back(std::move(paramInfo));
     }
 }

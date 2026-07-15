@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cmath>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -52,6 +53,10 @@ enum class GestureContext {
     ValueLabel,
     Chain,
     Unknown,
+    // New values must be appended: contexts are persisted as integer codes.
+    Sampler,
+    StepSequencer,
+    EqCurveEditor,
 };
 
 /** The physical gesture kind. Older persisted rows omit this and default to
@@ -59,11 +64,12 @@ enum class GestureContext {
 enum class GestureInputKind {
     Wheel,
     Drag,
+    SmoothWheel,
 };
 
-/** The interactive area a gesture originated in. Wheel gestures use Main;
- *  drag gestures use this to distinguish ruler/body/keyboard/zoom-strip paths
- *  within the same editor context. */
+/** The interactive area a gesture originated in. Most wheels use Main; rulers
+ *  and drag gestures use the other values to distinguish paths within the
+ *  same editor context. */
 enum class GestureArea {
     Main,
     Ruler,
@@ -93,7 +99,33 @@ enum class GestureActionType {
     // modifier while dragging a clip duplicates it instead of moving it.
     // New values must be appended so persisted integer codes stay stable.
     DuplicateOnDrag,
+    // Like DuplicateOnDrag, but the copy is a ghost clip: it joins the
+    // source's link group and mirrors its content.
+    DuplicateAsGhostOnDrag,
+    // Adjust the parameter/value under the cursor. The target and its domain
+    // mapping remain owned by the component; the input and signed magnitude
+    // are resolved here.
+    AdjustValue,
+    AdjustValueFine,
+    AdjustSecondaryValue,
+    AdjustSecondaryValueFine,
 };
+
+inline bool isValueAdjustmentAction(GestureActionType action) {
+    return action == GestureActionType::AdjustValue ||
+           action == GestureActionType::AdjustValueFine ||
+           action == GestureActionType::AdjustSecondaryValue ||
+           action == GestureActionType::AdjustSecondaryValueFine;
+}
+
+/** Quantize a continuous resolved magnitude for integer-step consumers while
+ *  preserving at least one step for every non-zero wheel event. */
+inline int quantizedGestureStep(float magnitude) {
+    if (magnitude == 0.0f)
+        return 0;
+    const int steps = juce::jmax(1, static_cast<int>(std::round(std::abs(magnitude))));
+    return magnitude > 0.0f ? steps : -steps;
+}
 
 /** Normalized modifier bitmask. Command is the platform primary modifier
  *  (Cmd on macOS, Ctrl on Windows/Linux), mirroring juce::ModifierKeys. */
@@ -154,6 +186,12 @@ class GestureRouter {
     ResolvedGesture resolve(GestureContext context, const juce::MouseWheelDetails& wheel,
                             const juce::ModifierKeys& mods, juce::Point<int> position) const;
 
+    /** Area-aware wheel resolution for components such as editor rulers that
+     *  share a context but intentionally use a different wheel action. */
+    ResolvedGesture resolve(GestureContext context, GestureArea area,
+                            const juce::MouseWheelDetails& wheel, const juce::ModifierKeys& mods,
+                            juce::Point<int> position) const;
+
     /** Resolve a drag delta in a given context/area to a parametric action.
      *  rawDelta is the movement in the binding axis, already signed in the
      *  consumer's natural direction (e.g. drag up/right = positive zoom). */
@@ -166,6 +204,10 @@ class GestureRouter {
      *  copy-vs-move through the customisable binding instead of a hardcoded
      *  modifier, for both single- and multi-clip drags. */
     bool isDuplicateOnDrag(GestureContext context, const juce::ModifierKeys& mods) const;
+
+    /** True when the given modifier set is bound to DuplicateAsGhostOnDrag
+     *  for a clip-body drag in this context (default Alt+Shift). */
+    bool isDuplicateAsGhostOnDrag(GestureContext context, const juce::ModifierKeys& mods) const;
 
     /** Look up the binding for an exact (context, axis, modifiers) key, or
      *  nullptr if none is bound. */

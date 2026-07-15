@@ -313,6 +313,37 @@ void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
         playbackContext->reallocate();
 }
 
+bool MidiInputRouter::isExternalInstrumentSendbackInput(TrackId trackId,
+                                                        const juce::String& inputName) const {
+    // Arm-gated: a record-armed track re-admits the synth's own ports so its
+    // keyboard can be captured (Local Control off on the synth is the no-
+    // double-trigger companion). Un-armed, the ports stay dropped so playback
+    // through the insert can't double or loop back.
+    if (const auto* track = TrackManager::getInstance().getTrack(trackId);
+        track != nullptr && track->recordArmed)
+        return false;
+
+    auto routing = TrackManager::getInstance().getExternalInstrumentRouting(trackId);
+    return routing.present && routing.midiOut.isNotEmpty() &&
+           midi::sameMidiHardware(inputName, routing.midiOut);
+}
+
+void MidiInputRouter::reapplyExternalInstrumentSendbackGuard(TrackId trackId) {
+    // Re-apply the track's MIDI route so a changed send target drops the new
+    // port and readmits the previous one. The model's configured value ("all" /
+    // device id) is authoritative; tracks routed automatically by
+    // updateMidiInputRouting have an empty model value but are always in "all"
+    // mode.
+    juce::String route;
+    if (auto* info = TrackManager::getInstance().getTrack(trackId))
+        route = info->midiInputDevice;
+    if (route.isEmpty() && getTrackMidiInput(trackId).isNotEmpty())
+        route = "all";
+    if (route.isEmpty() || route.startsWith("track:"))
+        return;  // no hardware route to guard
+    setTrackMidiInput(trackId, route);
+}
+
 void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
     auto* track = trackController_.getAudioTrack(trackId);
     if (!track)
@@ -389,7 +420,8 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
-                if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
+                if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()) ||
+                    isExternalInstrumentSendbackInput(trackId, midiDevice->getName())) {
                     auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
                     if (result)
                         removedAnyRouting = true;
@@ -439,6 +471,9 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
         }
 
         if (midiDevice) {
+            // The sendback guard does NOT apply here: explicitly picking the
+            // synth's own port is the record-its-keyboard workflow (Local
+            // Control off on the synth); only "All Inputs" filters it out.
             if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
                 bool removedAnyRouting = false;
                 for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
@@ -499,18 +534,20 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
     bool changedRouting = false;
     bool armedSlot = false;
 
-    auto shouldUseDevice =
-        [this, configured = trackInfo->midiInputDevice](const te::MidiInputDevice& midiDevice) {
-            if (configured.isEmpty())
-                return false;
-            if (midiDevice.getName() == "All MIDI Ins")
-                return false;
-            if (isSurfaceOnlyMidiInput(midiDevice.getDeviceID(), midiDevice.getName()))
-                return false;
-            if (configured == "all")
-                return true;
-            return magda::midi::matches(configured, midiDevice.getDeviceID(), midiDevice.getName());
-        };
+    auto shouldUseDevice = [this, trackId, configured = trackInfo->midiInputDevice](
+                               const te::MidiInputDevice& midiDevice) {
+        if (configured.isEmpty())
+            return false;
+        if (midiDevice.getName() == "All MIDI Ins")
+            return false;
+        if (isSurfaceOnlyMidiInput(midiDevice.getDeviceID(), midiDevice.getName()))
+            return false;
+        // No sendback guard here: arming a session slot is an explicit
+        // capture intent, so the synth's own ports stay recordable.
+        if (configured == "all")
+            return true;
+        return magda::midi::matches(configured, midiDevice.getDeviceID(), midiDevice.getName());
+    };
 
     const auto teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
 

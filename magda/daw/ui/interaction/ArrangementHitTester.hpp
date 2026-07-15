@@ -49,9 +49,10 @@ enum class CursorKind {
     Crosshair,
     IBeam,
     Copying,
-    NoteDraw,  // CursorManager::getNoteDrawCursor()
-    Erase,     // CursorManager::getEraseCursor()
-    Blade,     // CursorManager::getBladeCursor()
+    NoteDraw,   // CursorManager::getNoteDrawCursor()
+    Erase,      // CursorManager::getEraseCursor()
+    Blade,      // CursorManager::getBladeCursor()
+    GhostCopy,  // CursorManager::getGhostCopyCursor() — link glyph, Alt+Shift copy-drag
 };
 
 /** Plain-bool modifier snapshot so tests don't need juce::ModifierKeys. */

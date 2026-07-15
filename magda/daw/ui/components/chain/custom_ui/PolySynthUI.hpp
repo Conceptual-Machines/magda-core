@@ -13,6 +13,10 @@
 #include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 
+namespace magda::daw::audio::compiled {
+class MagdaPolySynthCompiledPlugin;
+}
+
 namespace magda::daw::ui {
 
 /**
@@ -29,7 +33,7 @@ namespace magda::daw::ui {
  * (exactly like FourOscUI / FaustInstrumentTabbedUI). The manager pushes live
  * values in via updateFromParameters().
  */
-class PolySynthUI : public juce::Component {
+class PolySynthUI : public juce::Component, private juce::Timer {
   public:
     PolySynthUI();
     ~PolySynthUI() override;
@@ -40,6 +44,10 @@ class PolySynthUI : public juce::Component {
     /// Flat list of every slider (host slot index carried via setParamIndex).
     /// Consumed by DeviceSlotComponent::setupCustomUILinking().
     std::vector<LinkableTextSlider*> getLinkableSliders();
+
+    /// Bind the live plugin so the filter response follows effective
+    /// (automation/modulation-inclusive) parameter values.
+    void setLivePlugin(magda::daw::audio::compiled::MagdaPolySynthCompiledPlugin* plugin);
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
@@ -94,6 +102,8 @@ class PolySynthUI : public juce::Component {
     void syncFilterCurveFromParam(int paramIndex, float value);
     // Push the cached filter values into the shared response curve.
     void pushFilterCurve();
+    void pushFilterCurve(int type, float cutoffHz, float resonance, float drive, int slope);
+    void timerCallback() override;
     // Filter Type segmented buttons.
     void setFilterType(int type);  // user click: writes param + refreshes
     void updateTypeButtons();      // reflect filterType_ in the button states
@@ -127,6 +137,18 @@ class PolySynthUI : public juce::Component {
     // Shared filter response graph (the exact component the compiled Faust
     // filter device uses), driven from the synth's SVF filter params.
     std::unique_ptr<CompiledFilterCurveView> filterCurve_;
+    magda::daw::audio::compiled::MagdaPolySynthCompiledPlugin* livePlugin_ = nullptr;
+
+    // Last effective values read from the live AutomatableParameters. Stored
+    // separately from the base-value cache below so a regular model refresh
+    // cannot briefly pull a modulated curve back to its unmodulated position.
+    bool liveCurveInitialised_ = false;
+    bool liveCurveRefreshPending_ = false;
+    int liveFilterType_ = 0;
+    float liveFilterCutoffHz_ = 3000.0f;
+    float liveFilterRes_ = 0.3f;
+    float liveFilterDrive_ = 0.0f;
+    int liveFilterSlope_ = 0;
 
     // Cached filter values (dsp defaults) used to drive the response curve.
     int filterType_ = 0;

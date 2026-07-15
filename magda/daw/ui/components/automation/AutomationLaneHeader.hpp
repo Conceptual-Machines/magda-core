@@ -10,8 +10,8 @@
 namespace magda {
 
 /**
- * @brief The four per-lane header buttons (snap-edits / snap-value / bypass /
- *        delete) shown to the left of an automation lane.
+ * @brief The per-lane header buttons (snap-edits / snap-value / bypass /
+ *        lane mode / delete) shown to the left of an automation lane.
  *
  * The concrete button classes (custom LaneHeaderButton subclasses) live in the
  * .cpp; this struct only holds them as juce::Button base pointers. Owned by
@@ -24,6 +24,7 @@ struct AutoLaneHeaderButtons {
     std::unique_ptr<juce::Button> snapEditGridBtn;
     std::unique_ptr<juce::Button> snapValueBtn;
     std::unique_ptr<juce::Button> bypassBtn;
+    std::unique_ptr<juce::Button> modeBtn;  // clip lane vs free-drawn curve lane
     std::unique_ptr<juce::Button> deleteBtn;
 };
 
@@ -51,7 +52,7 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons, const Automa
  *                 its resize handle on the top edge); 0 for bottom-handle hosts.
  */
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
-                                 int laneTopY, int topInset = 0);
+                                 int laneTopY, int headerWidth, int topInset = 0);
 
 /**
  * @brief Paint a single automation lane header: background, parameter name, and

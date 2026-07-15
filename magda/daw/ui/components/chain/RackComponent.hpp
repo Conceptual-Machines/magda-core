@@ -101,6 +101,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
     std::unique_ptr<magda::SvgButton> modButton_;     // Modulators toggle
     std::unique_ptr<magda::SvgButton> macroButton_;   // Macros toggle
     std::unique_ptr<magda::SvgButton> presetButton_;  // MAGDA rack presets menu
+    std::unique_ptr<juce::TextButton> deltaButton_;
     juce::TextButton addChainButton_;
 
     // Currently-loaded preset name (empty when none) — used as the default

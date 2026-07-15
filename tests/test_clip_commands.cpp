@@ -6,6 +6,7 @@
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipPropertyCommands.hpp"
+#include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
 
@@ -62,6 +63,30 @@ static BeatPosition secondsToBeatPosition(double seconds, double bpm = 120.0) {
 
 static BeatDuration secondsToBeatDuration(double seconds, double bpm = 120.0) {
     return BeatDuration{seconds * bpm / 60.0};
+}
+
+class TestTempoMap final : public TempoMap {
+  public:
+    double beatToTime(double beat) const override {
+        return 3.0 + beat * 1.5;
+    }
+
+    double timeToBeat(double seconds) const override {
+        return (seconds - 3.0) / 1.5;
+    }
+
+    double bpmAt(double beat) const override {
+        juce::ignoreUnused(beat);
+        return 40.0;
+    }
+};
+
+static ClipInfo makeBounceClip(double startBeats, double lengthBeats) {
+    ClipInfo clip;
+    clip.view = ClipView::Arrangement;
+    clip.setMidiContent();
+    clip.setPlacementBeats(startBeats, lengthBeats);
+    return clip;
 }
 
 struct RecordingClipListener : ClipManagerListener {
@@ -565,6 +590,169 @@ TEST_CASE("JoinClipsCommand - basic MIDI join", "[clip][command][join]") {
         REQUIRE(joined->midiNotes[0].startBeat == Catch::Approx(0.0));
         REQUIRE(joined->midiNotes[1].startBeat == Catch::Approx(4.0));
         REQUIRE(joined->midiNotes[2].startBeat == Catch::Approx(8.0));
+    }
+}
+
+// ============================================================================
+// FlattenMidiClipCommand
+// ============================================================================
+
+TEST_CASE("FlattenMidiClipCommand - renders a looped MIDI clip across its full length",
+          "[clip][command][flatten]") {
+    resetState();
+    const TrackId track = createTrack();
+    auto& cm = ClipManager::getInstance();
+    const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 10.0, ClipView::Arrangement);
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+
+    for (const double startBeat : {0.0, 1.0}) {
+        MidiNote note;
+        note.noteNumber = 60;
+        note.startBeat = startBeat;
+        note.lengthBeats = 1.0;
+        note.velocity = 100;
+        clip->midiNotes.push_back(note);
+    }
+
+    // A two-beat pattern with one beat phase offset renders at beats 0..9,
+    // including controller data and pitch bends.
+    clip->loopEnabled = true;
+    clip->loopLengthBeats = 2.0;
+    clip->loopLength = 1.0;
+    clip->midiOffset = 1.0;
+    clip->midiTrimOffset = 1.25;
+    MidiCCData cc;
+    cc.controller = 1;
+    cc.value = 64;
+    cc.beatPosition = 0.5;
+    clip->midiCCData.push_back(cc);
+    MidiPitchBendData pitchBend;
+    pitchBend.value = 4096;
+    pitchBend.beatPosition = 0.5;
+    clip->midiPitchBendData.push_back(pitchBend);
+
+    const ClipInfo original = *clip;
+    FlattenMidiClipCommand cmd(clipId);
+    cmd.execute();
+
+    REQUIRE_FALSE(clip->loopEnabled);
+    REQUIRE(clip->loopLengthBeats == Catch::Approx(0.0));
+    REQUIRE(clip->loopLength == Catch::Approx(0.0));
+    REQUIRE(clip->midiOffset == Catch::Approx(0.0));
+    REQUIRE(clip->midiTrimOffset == Catch::Approx(0.0));
+    REQUIRE(clip->midiNotes.size() == 10);
+    for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+        REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i)));
+        REQUIRE(clip->midiNotes[i].lengthBeats == Catch::Approx(1.0));
+    }
+    REQUIRE(clip->midiCCData.size() == 5);
+    REQUIRE(clip->midiPitchBendData.size() == 5);
+    for (size_t i = 0; i < 5; ++i) {
+        const double expectedBeat = 1.5 + static_cast<double>(i) * 2.0;
+        REQUIRE(clip->midiCCData[i].beatPosition == Catch::Approx(expectedBeat));
+        REQUIRE(clip->midiPitchBendData[i].beatPosition == Catch::Approx(expectedBeat));
+    }
+
+    cmd.undo();
+    REQUIRE(clip->loopEnabled == original.loopEnabled);
+    REQUIRE(clip->loopLengthBeats == Catch::Approx(original.loopLengthBeats));
+    REQUIRE(clip->midiOffset == Catch::Approx(original.midiOffset));
+    REQUIRE(clip->midiTrimOffset == Catch::Approx(original.midiTrimOffset));
+    REQUIRE(clip->midiNotes.size() == original.midiNotes.size());
+    REQUIRE(clip->midiCCData.size() == original.midiCCData.size());
+    REQUIRE(clip->midiPitchBendData.size() == original.midiPitchBendData.size());
+}
+
+TEST_CASE("FlattenMidiClipCommand - respects loop and clip boundaries",
+          "[clip][command][flatten]") {
+    resetState();
+    const TrackId track = createTrack();
+    auto& cm = ClipManager::getInstance();
+
+    SECTION("an exact number of cycles does not add an extra repetition") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 8.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        MidiNote note;
+        note.startBeat = 0.0;
+        clip->midiNotes.push_back(note);
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 4);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i) * 2.0));
+    }
+
+    SECTION("notes crossing a loop boundary are trimmed in every repetition") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 6.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        MidiNote note;
+        note.startBeat = 1.5;
+        clip->midiNotes.push_back(note);
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 3);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            REQUIRE(clip->midiNotes[i].startBeat ==
+                    Catch::Approx(1.5 + static_cast<double>(i) * 2.0));
+            REQUIRE(clip->midiNotes[i].lengthBeats == Catch::Approx(0.5));
+        }
+    }
+
+    SECTION("phase offsets are wrapped into the loop range") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 6.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        clip->midiOffset = 3.0;
+        for (const double startBeat : {0.0, 1.0}) {
+            MidiNote note;
+            note.startBeat = startBeat;
+            clip->midiNotes.push_back(note);
+        }
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 6);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i)));
+    }
+
+    SECTION("negative serialized phase offsets wrap without dropping the clip head") {
+        const ClipId clipId = cm.createMidiClipBeats(track, 0.0, 6.0, ClipView::Arrangement);
+        auto* clip = cm.getClip(clipId);
+        REQUIRE(clip != nullptr);
+
+        clip->loopEnabled = true;
+        clip->loopLengthBeats = 2.0;
+        clip->midiOffset = -1.0;
+        for (const double startBeat : {0.0, 1.0}) {
+            MidiNote note;
+            note.startBeat = startBeat;
+            clip->midiNotes.push_back(note);
+        }
+
+        FlattenMidiClipCommand cmd(clipId);
+        cmd.execute();
+
+        REQUIRE(clip->midiNotes.size() == 6);
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            REQUIRE(clip->midiNotes[i].startBeat == Catch::Approx(static_cast<double>(i)));
     }
 }
 
@@ -1384,6 +1572,20 @@ TEST_CASE("PasteClipCommand - paste multiple clips", "[clip][command][paste]") {
     }
 }
 
+TEST_CASE("Paste preserves the enabled flag", "[clip][command][paste]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId original = createMidi(track, 0.0, 2.0, {0.0});
+
+    auto& cm = ClipManager::getInstance();
+    cm.getClip(original)->enabled = false;
+    cm.copyToClipboard({original});
+
+    const auto pasted = cm.pasteFromClipboardBeats(16.0, track, ClipView::Arrangement);
+    REQUIRE(pasted.size() == 1);
+    REQUIRE_FALSE(cm.getClip(pasted.front())->enabled);
+}
+
 // ============================================================================
 // resolveOverlaps - "C fully contains D" (regression for #1447)
 // ============================================================================
@@ -1442,4 +1644,105 @@ TEST_CASE("resolveOverlaps - dropping a clip inside a longer one splits it, no d
     REQUIRE(foundRight);
 
     proj.setTempo(originalTempo);
+}
+
+// ============================================================================
+// Bounce ranges (#1731)
+// ============================================================================
+
+TEST_CASE("Bounce selection range prioritizes time selection over clip selection",
+          "[clip][command][bounce]") {
+    const std::vector<ClipInfo> selectedClips = {makeBounceClip(4.0, 4.0),
+                                                 makeBounceClip(12.0, 6.0)};
+
+    const auto timeRange = resolveBounceSelectionRange({2.0, 10.0}, true, selectedClips);
+    REQUIRE(timeRange.startBeats == Catch::Approx(2.0));
+    REQUIRE(timeRange.endBeats == Catch::Approx(10.0));
+
+    const auto clipRange = resolveBounceSelectionRange({}, false, selectedClips);
+    REQUIRE(clipRange.startBeats == Catch::Approx(4.0));
+    REQUIRE(clipRange.endBeats == Catch::Approx(18.0));
+
+    REQUIRE_FALSE(resolveBounceSelectionRange({}, false, {}).isValid());
+}
+
+TEST_CASE("Bounce render range keeps beats authoritative through tempo conversion",
+          "[clip][command][bounce]") {
+    const TestTempoMap tempoMap;
+    const auto sourceClip = makeBounceClip(4.0, 12.0);
+
+    SECTION("in-place bounce constrains the selection to the source clip") {
+        const auto range = resolveBounceRenderRange(sourceClip, {2.0, 10.0}, &tempoMap, true);
+
+        REQUIRE(range.startBeats == Catch::Approx(4.0));
+        REQUIRE(range.endBeats == Catch::Approx(10.0));
+        REQUIRE(range.startSeconds == Catch::Approx(9.0));
+        REQUIRE(range.endSeconds == Catch::Approx(18.0));
+    }
+
+    SECTION("bounce to a new track keeps the requested range intact") {
+        const auto range = resolveBounceRenderRange(sourceClip, {2.0, 18.0}, &tempoMap, false);
+
+        REQUIRE(range.startBeats == Catch::Approx(2.0));
+        REQUIRE(range.endBeats == Catch::Approx(18.0));
+        REQUIRE(range.startSeconds == Catch::Approx(6.0));
+        REQUIRE(range.endSeconds == Catch::Approx(30.0));
+    }
+
+    SECTION("a non-overlapping in-place selection falls back to the source clip") {
+        const auto range = resolveBounceRenderRange(sourceClip, {20.0, 24.0}, &tempoMap, true);
+
+        REQUIRE(range.startBeats == Catch::Approx(4.0));
+        REQUIRE(range.endBeats == Catch::Approx(16.0));
+    }
+}
+
+TEST_CASE("BounceInPlaceReplacement preserves unselected source and undo restores it",
+          "[clip][command][bounce][undo]") {
+    resetState();
+    auto& clipManager = ClipManager::getInstance();
+    const auto trackId = createTrack();
+    const auto sourceClipId = clipManager.createMidiClipBeats(trackId, 0.0, 16.0);
+    const auto* sourceClip = clipManager.getClip(sourceClipId);
+    REQUIRE(sourceClip != nullptr);
+
+    BounceInPlaceReplacement replacement;
+    replacement.setOriginalClip(*sourceClip);
+    const BounceRenderRange range{4.0, 12.0, 2.0, 6.0};
+    REQUIRE(replacement.replace(clipManager, sourceClipId, range, "bounced.wav", 120.0));
+
+    const auto bouncedClipId = replacement.getNewClipId();
+    const auto* bouncedClip = clipManager.getClip(bouncedClipId);
+    REQUIRE(bouncedClip != nullptr);
+    REQUIRE(bouncedClip->isAudio());
+    REQUIRE(bouncedClip->placement.startBeat == Catch::Approx(4.0));
+    REQUIRE(bouncedClip->placement.lengthBeats == Catch::Approx(8.0));
+
+    const auto* leftSource = clipManager.getClip(sourceClipId);
+    REQUIRE(leftSource != nullptr);
+    REQUIRE(leftSource->isMidi());
+    REQUIRE(leftSource->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(leftSource->placement.lengthBeats == Catch::Approx(4.0));
+
+    bool foundRightSource = false;
+    for (const auto clipId : clipManager.getClipsOnTrack(trackId)) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip == nullptr || clipId == sourceClipId || clipId == bouncedClipId)
+            continue;
+        REQUIRE(clip->isMidi());
+        REQUIRE(clip->placement.startBeat == Catch::Approx(12.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
+        foundRightSource = true;
+    }
+    REQUIRE(foundRightSource);
+
+    replacement.undo(clipManager);
+
+    const auto clipsAfterUndo = clipManager.getClipsOnTrack(trackId);
+    REQUIRE(clipsAfterUndo.size() == 1);
+    const auto* restoredClip = clipManager.getClip(sourceClipId);
+    REQUIRE(restoredClip != nullptr);
+    REQUIRE(restoredClip->isMidi());
+    REQUIRE(restoredClip->placement.startBeat == Catch::Approx(0.0));
+    REQUIRE(restoredClip->placement.lengthBeats == Catch::Approx(16.0));
 }

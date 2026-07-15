@@ -18,6 +18,7 @@
 #include "PluginBrowserContent.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/PresetManager.hpp"
@@ -392,9 +393,10 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override {
-        // Alt/Option + scroll wheel also works for zoom
-        if (e.mods.isAltDown()) {
-            owner_.setZoomLevel(owner_.zoomLevel_ + (wheel.deltaY > 0 ? 0.1f : -0.1f));
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::Chain, wheel, e.mods, e.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+            owner_.setZoomLevel(owner_.zoomLevel_ + gesture.magnitude);
         } else {
             Component::mouseWheelMove(e, wheel);
         }
@@ -738,14 +740,11 @@ class TrackChainContent::ZoomableViewport : public juce::Viewport {
 
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override {
-        // Alt/Option + scroll wheel = zoom
-        if (event.mods.isAltDown()) {
-            float delta =
-                wheel.deltaY > 0 ? TrackChainContent::ZOOM_STEP : -TrackChainContent::ZOOM_STEP;
-            DBG("  -> Zooming by " << delta);
-            owner_.setZoomLevel(owner_.zoomLevel_ + delta);
+        const auto gesture = magda::GestureRouter::getInstance().resolve(
+            magda::GestureContext::Chain, wheel, event.mods, event.getPosition());
+        if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+            owner_.setZoomLevel(owner_.zoomLevel_ + gesture.magnitude);
         } else {
-            // Normal scroll - let viewport handle horizontal scrolling
             Viewport::mouseWheelMove(event, wheel);
         }
     }
@@ -1145,12 +1144,16 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->onClick = [this]() {
         bool active = chainBypassButton_->getToggleState();
         chainBypassButton_->setActive(active);
+        // Chain power is a real track-level state: it gates every insert-chain
+        // device in the engine without touching their own bypassed flags, so
+        // per-device bypass survives an off/on cycle (and it works on an empty
+        // chain too). Mirrored by the track inspector's enable switch.
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setChainBypassed(selectedTrackId_, !active);
+            magda::TrackManager::getInstance().setChainEnabled(selectedTrackId_, active);
         }
-        // Update all node components to reflect bypass state
+        // Grey the nodes immediately (also re-applied on every node rebuild)
         for (auto& node : nodeComponents_) {
-            node->setBypassed(!active);
+            node->setChainDisabled(!active);
         }
     };
     addChildComponent(*chainBypassButton_);
@@ -1161,6 +1164,9 @@ TrackChainContent::TrackChainContent()
     linkModeLabel_.setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     linkModeLabel_.setJustificationType(juce::Justification::centred);
+    // The banner spans the full header. It is status-only and must not trap
+    // clicks intended for the mod/macro controls underneath it.
+    linkModeLabel_.setInterceptsMouseClicks(false, false);
     linkModeLabel_.setVisible(false);
     addChildComponent(linkModeLabel_);
 
@@ -1802,12 +1808,11 @@ void TrackChainContent::mouseUp(const juce::MouseEvent&) {
 
 void TrackChainContent::mouseWheelMove(const juce::MouseEvent& e,
                                        const juce::MouseWheelDetails& wheel) {
-    // Alt/Option + scroll wheel = zoom
-    if (e.mods.isAltDown()) {
-        float delta = wheel.deltaY > 0 ? ZOOM_STEP : -ZOOM_STEP;
-        setZoomLevel(zoomLevel_ + delta);
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::Chain, wheel, e.mods, e.getPosition());
+    if (gesture.type == magda::GestureActionType::ZoomHorizontal) {
+        setZoomLevel(zoomLevel_ + gesture.magnitude);
     } else {
-        // Forward to viewport for scrolling
         chainViewport_->mouseWheelMove(e, wheel);
     }
 }
@@ -1989,6 +1994,13 @@ void TrackChainContent::trackSelectionChanged(magda::TrackId trackId) {
 
 void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
+        // Resync the chain power button — setChainEnabled notifies through
+        // this callback, so the inspector's enable switch and this button
+        // stay mirrored whichever one was pressed.
+        const bool chainEnabled = magda::TrackManager::getInstance().isChainEnabled(trackId);
+        chainBypassButton_->setToggleState(chainEnabled, juce::dontSendNotification);
+        chainBypassButton_->setActive(chainEnabled);
+
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         const int previousElementCount = static_cast<int>(nodeComponents_.size());
         const int nextElementCount =
@@ -2382,21 +2394,10 @@ void TrackChainContent::updateFromSelectedTrack() {
             panLabel_.setAutomationTarget(panTarget);
 
             // Check if any device in the chain is not bypassed
-            const auto& elements =
-                magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
-            bool anyActive = elements.empty();  // Empty chain = active (not bypassed)
-            for (const auto& element : elements) {
-                if (magda::isDevice(element) && !magda::getDevice(element).bypassed) {
-                    anyActive = true;
-                    break;
-                }
-                if (magda::isRack(element) && !magda::getRack(element).bypassed) {
-                    anyActive = true;
-                    break;
-                }
-            }
-            chainBypassButton_->setToggleState(anyActive, juce::dontSendNotification);
-            chainBypassButton_->setActive(anyActive);
+            const bool chainEnabled =
+                magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_);
+            chainBypassButton_->setToggleState(chainEnabled, juce::dontSendNotification);
+            chainBypassButton_->setActive(chainEnabled);
 
             const bool isMaster = track->type == magda::TrackType::Master;
             const bool isChord = track->type == magda::TrackType::Chord;
@@ -2805,11 +2806,14 @@ void TrackChainContent::rebuildNodeComponents() {
         }
     }
 
-    // Set frozen state on all nodes
+    // Set frozen + chain-power state on all nodes. Chain power off greys the
+    // nodes without touching their own bypass buttons.
     auto* trackInfo = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     bool trackFrozen = trackInfo && trackInfo->frozen;
+    const bool chainDisabled = !magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_);
     for (auto& node : nodeComponents_) {
         node->setFrozen(trackFrozen);
+        node->setChainDisabled(chainDisabled);
     }
 
     // Restore node states (collapsed, expanded chains) for ALL nodes

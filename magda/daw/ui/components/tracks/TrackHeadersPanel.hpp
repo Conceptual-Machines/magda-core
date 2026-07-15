@@ -53,6 +53,7 @@ class TrackHeadersPanel : public juce::Component,
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
+    void devicePropertyChanged(const magda::ChainNodePath& devicePath) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
 
     // SelectionManagerListener
@@ -170,6 +171,13 @@ class TrackHeadersPanel : public juce::Component,
         bool audioOutEnabled = true;
         bool midiInEnabled = true;
         bool midiOutEnabled = true;
+
+        // Last external-insert routing mirrored into the read-only selectors;
+        // lets devicePropertyChanged skip the full header re-layout when a
+        // device change didn't touch the routing (e.g. per-tick gain drags).
+        bool extRoutingPresent = false;
+        juce::String extRoutingMidiOut;
+        juce::String extRoutingAudioReturn;
 
         // UI components
         std::unique_ptr<juce::Label> nameLabel;

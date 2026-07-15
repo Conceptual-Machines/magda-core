@@ -98,8 +98,18 @@ The toggle itself is hidden automatically on narrow windows where the transport 
 
 ## Grid & Snap
 
-The grid controls how clips and edits snap to musical divisions.
+The grid controls how clips and edits snap to musical divisions. The grid cluster in the transport bar has three parts:
 
-- **Snap toggle** — Enable or disable snapping to the grid
-- **Grid quantize** — Set the grid resolution (e.g., 1/4, 1/8, 1/16 notes) using the numerator and denominator controls
-- **Auto-grid** — Automatically adjust the grid resolution based on the current zoom level
+- **Snap toggle** — Enable or disable snapping to the grid.
+- **AUTO** — When on, the grid resolution follows the current horizontal zoom: it picks a finer division as you zoom in and switches to bar multiples when you zoom far out (the readout then reads *1 bar*, *2 bars*, and so on). The manual numerator/denominator values are dimmed while AUTO is active.
+- **Grid division** — Click the division button (tooltip *Grid division*) to pick a fixed resolution from the menu:
+
+    | Section | Divisions |
+    |---|---|
+    | **Straight** | 1/1, 1/2, 1/4, 1/8, 1/16, 1/32 |
+    | **Triplet** | 1/4T, 1/8T, 1/16T, 1/32T |
+    | **Dotted** | 1/2., 1/4., 1/8., 1/16., 1/32. |
+
+    **Custom...** at the bottom opens a numerator/denominator editor that shows the nearest named division as you type.
+
+The same picker is used by the bottom-panel editors ([Piano Roll](panels/piano-roll.md), [Drum Grid Editor](panels/drum-grid-editor.md), and the automation-clip editor), each with its own AUTO button.

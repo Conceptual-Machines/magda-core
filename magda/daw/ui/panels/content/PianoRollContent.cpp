@@ -275,14 +275,15 @@ PianoRollContent::PianoRollContent() {
                                                 double lengthBeats) {
         auditionNoteOnce(clipId, noteNumber, velocity, lengthBeats);
     };
-    gridComponent_->onVerticalZoomRequested = [this](int gridY,
-                                                     const juce::MouseWheelDetails& wheel) {
+    gridComponent_->onVerticalZoomRequested = [this](int gridY, float magnitude) {
         const int anchorScreenY = gridY - viewport_->getViewPositionY();
         const int anchorNote =
             gridComponent_
                 ? gridComponent_->yToNoteNumber(gridY)
                 : juce::jlimit(MIN_NOTE, MAX_NOTE, MAX_NOTE - (gridY / juce::jmax(1, noteHeight_)));
-        const int heightDelta = wheel.deltaY > 0 ? 2 : -2;
+        const int heightDelta = magda::quantizedGestureStep(magnitude);
+        if (heightDelta == 0)
+            return;
         setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, anchorScreenY, true);
     };
     if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -1195,8 +1196,11 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
                                       const juce::MouseWheelDetails& wheel) {
     int headerHeight = getHeaderHeight();
     int leftPanelWidth = sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
+    const bool overRuler = e.y < RULER_HEIGHT && e.x >= leftPanelWidth;
     const auto gesture = magda::GestureRouter::getInstance().resolve(
-        magda::GestureContext::PianoRoll, wheel, e.mods, e.getPosition());
+        magda::GestureContext::PianoRoll,
+        overRuler ? magda::GestureArea::Ruler : magda::GestureArea::Main, wheel, e.mods,
+        e.getPosition());
 
     // Check if mouse is over the chord row band (below the ruler, when visible)
     if (showChordRow_ && e.y >= chordRowTop() && e.y < chordRowTop() + chordRowHeight() &&
@@ -1206,19 +1210,19 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
             int scrollAmount = static_cast<int>(-gesture.magnitude);
             if (scrollAmount != 0)
                 timeRuler_->onScrollRequested(scrollAmount);
+            return;
         }
-        return;
     }
 
     // Check if mouse is over the time ruler area (very top)
-    if (e.y < RULER_HEIGHT && e.x >= leftPanelWidth) {
+    if (overRuler) {
         if (gesture.type == magda::GestureActionType::ScrollHorizontal &&
             timeRuler_->onScrollRequested) {
             int scrollAmount = static_cast<int>(-gesture.magnitude);
             if (scrollAmount != 0)
                 timeRuler_->onScrollRequested(scrollAmount);
+            return;
         }
-        return;
     }
 
     // Check if mouse is over the keyboard area (left side, below header)
@@ -1228,8 +1232,8 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
             int scrollAmount = static_cast<int>(-gesture.magnitude);
             if (scrollAmount != 0)
                 keyboard_->onScrollRequested(scrollAmount);
+            return;
         }
-        return;
     }
 
     if (gesture.type == magda::GestureActionType::ScrollHorizontal && viewport_) {
@@ -1257,7 +1261,9 @@ void PianoRollContent::mouseWheelMove(const juce::MouseEvent& e,
         int mouseYInContent = e.y - headerHeight + viewport_->getViewPositionY();
         int anchorNote = MAX_NOTE - (mouseYInContent / noteHeight_);
 
-        const int heightDelta = gesture.magnitude > 0.0f ? 2 : -2;
+        const int heightDelta = magda::quantizedGestureStep(gesture.magnitude);
+        if (heightDelta == 0)
+            return;
         setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, e.y - headerHeight, true);
         return;
     }

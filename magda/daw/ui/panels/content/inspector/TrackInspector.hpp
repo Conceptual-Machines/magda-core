@@ -60,6 +60,7 @@ class TrackInspector : public BaseInspector,
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
+    void devicePropertyChanged(const magda::ChainNodePath& devicePath) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void masterChannelChanged() override;
     void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
@@ -96,6 +97,7 @@ class TrackInspector : public BaseInspector,
     std::unique_ptr<ChordAuditionControl> chordSpeakerButton_;  // 3-state chord audition control
     bool isChordTrack_ = false;                                 // selected track is the chord track
     std::unique_ptr<SvgButton> soloButton_;
+    std::unique_ptr<SvgButton> enableButton_;  // track enable/disable switch
     std::unique_ptr<SvgButton> recordButton_;
     MonitorControl monitorButton_;
     std::unique_ptr<SvgButton>

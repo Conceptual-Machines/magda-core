@@ -38,6 +38,8 @@ enum class InternalDeviceKind {
     TeFourOsc,
     TeToneGenerator,
     TeLevelMeter,
+    // --- Hardware insert (External FX / Instrument via te::InsertPlugin) -
+    ExternalInsert,
     // --- MAGDA native instrument / MIDI plugins ------------------------
     MagdaSampler,
     MutableElements,
@@ -50,6 +52,7 @@ enum class InternalDeviceKind {
     Strum,
     StepSequencer,
     PolyStepSequencer,
+    Sidechain,  // MIDI-triggered volume-shaper insert (issue #1591)
     SidechainMonitor,
     AudioSidechainMonitor,
     InstrumentMeterTap,

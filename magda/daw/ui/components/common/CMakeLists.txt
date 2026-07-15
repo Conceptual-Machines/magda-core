@@ -28,6 +28,7 @@ target_sources(magda_daw_app PRIVATE
     LinkableTextSlider.hpp
     ValueLabelControl.hpp
     DraggableValueLabel.hpp
+    GridDivisionMenu.hpp
     BarsBeatsTicksLabel.hpp
 )
 

@@ -794,6 +794,11 @@ void LFOCurveEditor::paint(juce::Graphics& g) {
     // Let base class paint background, grid, curve
     CurveEditorBase::paint(g);
 
+    if (drawContentBorder_) {
+        g.setColour(juce::Colour(0xFF3A3A3A));
+        g.drawRect(getContentBounds(), 1);
+    }
+
     // Paint phase indicator on top
     paintPhaseIndicator(g);
 }
@@ -831,11 +836,13 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
     g.drawEllipse(static_cast<float>(x) - dotRadius, static_cast<float>(y) - dotRadius, dotSize,
                   dotSize, 1.0f);
 
-    // Draw trigger indicator dot in top-right corner
+    // Trigger indicator dot in the padding frame (top-right corner of the
+    // widget), outside the curve field, so a point or the parked phase dot at
+    // (phase 1, value 1) never sits under it.
     constexpr float trigDotRadius = 3.0f;
-    auto trigBounds = juce::Rectangle<float>(
-        static_cast<float>(content.getRight()) - trigDotRadius * 2 - 4.0f,
-        static_cast<float>(content.getY()) + 4.0f, trigDotRadius * 2, trigDotRadius * 2);
+    auto trigBounds =
+        juce::Rectangle<float>(static_cast<float>(getWidth()) - trigDotRadius * 2 - 3.0f, 3.0f,
+                               trigDotRadius * 2, trigDotRadius * 2);
 
     if (triggerHoldFrames_ > 0) {
         g.setColour(curveColour_);

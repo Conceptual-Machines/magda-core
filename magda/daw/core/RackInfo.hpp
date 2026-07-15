@@ -153,6 +153,7 @@ struct RackInfo {
     juce::String name;              // e.g., "FX Rack"
     std::vector<ChainInfo> chains;  // Parallel chains
     bool bypassed = false;
+    bool deltaSolo = false;
     bool expanded = true;  // UI collapsed state
     float volume = 0.0f;   // Rack output volume in dB (0 = unity)
     float pan = 0.0f;      // Rack output pan (-1 to 1)
@@ -183,6 +184,7 @@ struct RackInfo {
           name(other.name),
           chains(other.chains),  // ChainInfo has its own deep copy
           bypassed(other.bypassed),
+          deltaSolo(other.deltaSolo),
           expanded(other.expanded),
           volume(other.volume),
           pan(other.pan),
@@ -199,6 +201,7 @@ struct RackInfo {
             name = other.name;
             chains = other.chains;  // ChainInfo has its own deep copy
             bypassed = other.bypassed;
+            deltaSolo = other.deltaSolo;
             expanded = other.expanded;
             volume = other.volume;
             pan = other.pan;

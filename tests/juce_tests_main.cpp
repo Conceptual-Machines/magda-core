@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "SharedTestEngine.hpp"
+#include "JuceTestStateGuard.hpp"
 
 /**
  * @brief Main entry point for JUCE unit tests
@@ -26,23 +26,32 @@ int main(int argc, char* argv[]) {
     std::cout << "Running MAGDA JUCE Unit Tests\n";
     std::cout << "========================================\n\n";
 
-    if (argc > 1) {
-        runner.runTestsWithName(argv[1]);
-    } else {
-        runner.runTestsInCategory("magda");
+    int numFailures = 0;
+    const auto tests = argc > 1 ? juce::UnitTest::getTestsWithName(argv[1])
+                                : juce::UnitTest::getTestsInCategory("magda");
+
+    // UnitTestRunner normally runs every suite in one loop. Running one suite
+    // at a time lets us enforce the async teardown boundary between suites.
+    for (auto* test : tests) {
+        magda::test::cleanJuceTestState();
+
+        juce::Array<juce::UnitTest*> singleTest;
+        singleTest.add(test);
+        runner.runTests(singleTest);
+
+        for (int i = 0; i < runner.getNumResults(); ++i) {
+            auto* result = runner.getResult(i);
+            std::cout << result->unitTestName << ": " << result->passes << " passed, "
+                      << result->failures << " failed\n";
+            numFailures += result->failures;
+        }
+
+        magda::test::cleanJuceTestState();
     }
 
     std::cout << "\n========================================\n";
     std::cout << "Test Results Summary\n";
     std::cout << "========================================\n";
-
-    int numFailures = 0;
-    for (int i = 0; i < runner.getNumResults(); ++i) {
-        auto* result = runner.getResult(i);
-        std::cout << result->unitTestName << ": " << result->passes << " passed, "
-                  << result->failures << " failed\n";
-        numFailures += result->failures;
-    }
 
     std::cout << "\n========================================\n";
 

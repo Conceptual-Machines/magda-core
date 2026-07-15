@@ -80,6 +80,10 @@ bool supportsMidiSourceToggle(const DeviceInfo& device);
 bool supportsMidiInputRouting(const DeviceInfo& device);
 bool supportsMidiInputThruToggle(const DeviceInfo& device);
 bool supportsExternalMidiInputRouting(const DeviceInfo& device);
+// True if the device can key off another track's MIDI: it either routes
+// external MIDI input into the plugin, or it is the Sidechain device, whose
+// bundled curve modulator is retriggered from the source track's notes.
+bool supportsMidiSidechainSource(const DeviceInfo& device);
 bool supportsSidechainRoutingMenu(const DeviceInfo& device);
 void applyCachedCapabilitiesToDevice(DeviceInfo& device);
 
