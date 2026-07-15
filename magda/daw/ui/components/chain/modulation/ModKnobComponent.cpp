@@ -159,7 +159,7 @@ void ModKnobComponent::paint(juce::Graphics& g) {
 
     // Border - grey when selected, default otherwise
     if (selected_) {
-        g.setColour(juce::Colour(0xff888888));  // Grey for selection
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 2.0f);
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));

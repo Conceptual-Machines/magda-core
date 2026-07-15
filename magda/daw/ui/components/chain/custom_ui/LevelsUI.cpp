@@ -25,10 +25,10 @@ juce::String fmtLu(float v) {
 // Colour a true-peak value: hot near/over 0 dBTP, warm approaching it.
 juce::Colour peakColour(float dbtp) {
     if (dbtp >= -0.1f)
-        return juce::Colour(magda::DarkTheme::ACCENT_RED);
+        return magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_RED);
     if (dbtp >= -3.0f)
-        return juce::Colour(magda::DarkTheme::STATUS_WARNING);
-    return juce::Colour(magda::DarkTheme::ACCENT_GREEN);
+        return magda::DarkTheme::getColour(magda::DarkTheme::STATUS_WARNING);
+    return magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_GREEN);
 }
 
 }  // namespace
@@ -79,12 +79,12 @@ void LevelsUI::timerCallback() {
 void LevelsUI::paint(juce::Graphics& g) {
     using DT = magda::DarkTheme;
     auto bounds = getLocalBounds().toFloat().reduced(2.0f);
-    g.setColour(juce::Colour(DT::BACKGROUND));
+    g.setColour(DT::getColour(DT::BACKGROUND));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     const auto& s = snapshot_;
-    const juce::Colour dim(DT::TEXT_DIM);
-    const juce::Colour primary(DT::TEXT_PRIMARY);
+    const auto dim = DT::getColour(DT::TEXT_DIM);
+    const auto primary = DT::getColour(DT::TEXT_PRIMARY);
 
     // Three columns: loudness | dynamics/peak | stereo.
     auto area = bounds.reduced(8.0f, 6.0f);
@@ -116,7 +116,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     const float rowH = juce::jmax(28.0f, loudCol.getHeight() / 3.0f);
 
     // Column 1: loudness.
-    g.setColour(juce::Colour(DT::ACCENT_CYAN));
+    g.setColour(DT::getColour(DT::ACCENT_CYAN));
     g.setFont(9.0f);
     g.drawText("LOUDNESS", loudCol.removeFromTop(11.0f), juce::Justification::topLeft);
     valueRow(loudCol, "Integrated", fmtLufs(s.integratedLufs), "LUFS", primary, rowH);
@@ -125,7 +125,7 @@ void LevelsUI::paint(juce::Graphics& g) {
              rowH * 0.8f);
 
     // Column 2: peak + dynamics.
-    g.setColour(juce::Colour(DT::ACCENT_CYAN));
+    g.setColour(DT::getColour(DT::ACCENT_CYAN));
     g.setFont(9.0f);
     g.drawText("PEAK / DYNAMICS", dynCol.removeFromTop(11.0f), juce::Justification::topLeft);
     const float tp = s.truePeakValid ? s.truePeakDb : s.samplePeakDb;
@@ -135,7 +135,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     valueRow(dynCol, "PSR", fmtLu(s.psr), "LU", dim.brighter(0.4f), rowH * 0.8f);
 
     // Column 3: stereo (correlation bar + width).
-    g.setColour(juce::Colour(DT::ACCENT_CYAN));
+    g.setColour(DT::getColour(DT::ACCENT_CYAN));
     g.setFont(9.0f);
     g.drawText("STEREO", stereoCol.removeFromTop(11.0f), juce::Justification::topLeft);
 
@@ -144,7 +144,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     g.setFont(10.0f);
     g.drawText("Correlation", stereoCol.removeFromTop(12.0f), juce::Justification::topLeft);
     auto corrBar = stereoCol.removeFromTop(10.0f);
-    g.setColour(juce::Colour(DT::SURFACE));
+    g.setColour(DT::getColour(DT::SURFACE));
     g.fillRoundedRectangle(corrBar, 2.0f);
     const float corr = juce::jlimit(-1.0f, 1.0f, s.correlation);
     const float midX = corrBar.getCentreX();
@@ -154,7 +154,7 @@ void LevelsUI::paint(juce::Graphics& g) {
                                      corrBar.getHeight())
             : juce::Rectangle<float>(midX + corr * corrBar.getWidth() * 0.5f, corrBar.getY(),
                                      -corr * corrBar.getWidth() * 0.5f, corrBar.getHeight());
-    g.setColour(corr < 0.0f ? juce::Colour(DT::STATUS_WARNING) : juce::Colour(DT::ACCENT_GREEN));
+    g.setColour(corr < 0.0f ? DT::getColour(DT::STATUS_WARNING) : DT::getColour(DT::ACCENT_GREEN));
     g.fillRoundedRectangle(fill, 2.0f);
     g.setColour(dim.withAlpha(0.6f));
     g.drawVerticalLine(static_cast<int>(midX), corrBar.getY(), corrBar.getBottom());
@@ -172,9 +172,9 @@ void LevelsUI::paint(juce::Graphics& g) {
     g.setFont(11.0f);
     g.drawText(juce::String(s.width, 2), widthLabelRow, juce::Justification::topRight);
     auto widthBar = stereoCol.removeFromTop(8.0f);
-    g.setColour(juce::Colour(DT::SURFACE));
+    g.setColour(DT::getColour(DT::SURFACE));
     g.fillRoundedRectangle(widthBar, 2.0f);
-    g.setColour(juce::Colour(DT::ACCENT_BLUE_LIGHT));
+    g.setColour(DT::getColour(DT::ACCENT_BLUE_LIGHT));
     g.fillRoundedRectangle(
         widthBar.withWidth(juce::jlimit(0.0f, 1.0f, s.width) * widthBar.getWidth()), 2.0f);
 

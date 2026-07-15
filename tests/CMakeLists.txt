@@ -254,6 +254,7 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_map_juce.cpp
     test_tempo_lane_bridge_juce.cpp
     test_tempo_lane_sync_juce.cpp
+    test_runtime_theme_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
@@ -270,7 +271,6 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
     ../magda/daw/ui/components/common/SvgButton.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
-    ../magda/daw/ui/themes/DarkTheme.cpp
     ../magda/daw/ui/themes/FontManager.cpp
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
@@ -326,6 +326,9 @@ add_test(NAME timeline_extreme_zoom_paint_juce
 
 add_test(NAME arrange_beat_native_juce
          COMMAND magda_juce_tests "Arrange Beat Native Tests")
+
+add_test(NAME runtime_theme_juce
+         COMMAND magda_juce_tests "Runtime Theme Tests")
 
 add_test(NAME tempo_map_juce
          COMMAND magda_juce_tests "Tempo Map Tests")

@@ -2,7 +2,11 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <optional>
+#include <string>
 
 namespace magda {
 
@@ -78,66 +82,202 @@ inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha = 1.0f) {
  * SideFX-inspired dark theme for MAGDA
  * Color palette derived from professional audio production interfaces
  */
+enum class ColourRole : std::size_t {
+    E0,
+    E1,
+    E2,
+    E3,
+    HAIRLINE,
+    BACKGROUND,
+    BACKGROUND_ALT,
+    PANEL_BACKGROUND,
+    SURFACE,
+    SURFACE_HOVER,
+    TRANSPORT_BACKGROUND,
+    BUTTON_NORMAL,
+    BUTTON_HOVER,
+    BUTTON_PRESSED,
+    BUTTON_ACTIVE,
+    BUTTON_STROKE,
+    CONTROL_VALUE_FILL,
+    CONTROL_SLIDER_THUMB,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    TEXT_DIM,
+    TEXT_DISABLED,
+    ACCENT_BLUE,
+    ACCENT_BLUE_LIGHT,
+    ACCENT_CYAN,
+    ACCENT_GREEN,
+    ACCENT_ORANGE,
+    ACCENT_PURPLE,
+    PRESET_INDIGO,
+    MIDI_LEARN,
+    STEP_RECORD,
+    MASTER_TRACK_COLOUR,
+    STATUS_SUCCESS,
+    STATUS_WARNING,
+    STATUS_ERROR,
+    STATUS_DANGER,
+    TRACK_BACKGROUND,
+    TRACK_SELECTED,
+    TRACK_HEADER_SELECTED,
+    TRACK_HEADER_SELECTED_TEXT,
+    TRACK_SEPARATOR,
+    TIMELINE_BACKGROUND,
+    GRID_LINE,
+    BEAT_LINE,
+    BAR_LINE,
+    BORDER,
+    SEPARATOR,
+    RESIZE_HANDLE,
+    WAVEFORM_NORMAL,
+    WAVEFORM_SELECTED,
+    LEVEL_METER_GREEN,
+    LEVEL_METER_YELLOW,
+    LEVEL_METER_RED,
+    GAIN_METER_LOW,
+    GAIN_METER_WARNING,
+    GAIN_METER_HIGH,
+    GATE_CURVE,
+    GATE_THRESHOLD,
+    MULTIBAND_LOW,
+    MULTIBAND_MID,
+    MULTIBAND_HIGH,
+    MULTIBAND_LIMIT,
+    SAMPLER_START_MARKER,
+    SAMPLER_END_MARKER,
+    SPECTRUM_OVERLAY,
+    INSTRUMENT_BACKGROUND,
+    INSTRUMENT_PANEL,
+    INSTRUMENT_BORDER,
+    INSTRUMENT_TEXT,
+    INSTRUMENT_TEXT_DIM,
+    TIME_SELECTION,
+    LOOP_REGION,
+    LOOP_MARKER,
+    OFFSET_MARKER,
+    TEXT_BRIGHT,
+    INPUT_BACKGROUND,
+    TOOLTIP_BACKGROUND,
+    ICON_NEUTRAL,
+    ICON_TRANSPORT,
+    AUTOMATION_LANE_BACKGROUND,
+    AUTOMATION_LANE_SELECTED,
+    AUTOMATION_LANE_HEADER,
+    AUTOMATION_LANE_SCALE_BACKGROUND,
+    AUTOMATION_DIVIDER,
+    AUTOMATION_DIVIDER_LIGHT,
+    AUTOMATION_GUIDE,
+    AUTOMATION_SCALE_TEXT,
+    AUTOMATION_SCALE_LABEL,
+    AUTOMATION_TEXT,
+    AUTOMATION_POINT,
+    AUTOMATION_POINT_HOVER,
+    AUTOMATION_BEZIER,
+    AUTOMATION_TENSION_HOVER,
+    CURVE_BACKGROUND,
+    CURVE_TOOLTIP_BACKGROUND,
+    CURVE_TOOLTIP_TEXT,
+    CURVE_POINT,
+    CURVE_HANDLE_BACKGROUND,
+    CURVE_HANDLE_NORMAL,
+    TEXT_DARK,
+    PIANO_ROLL_BACKGROUND,
+    PIANO_ROLL_KEY_WHITE,
+    PIANO_ROLL_KEY_HIGHLIGHT,
+    PIANO_ROLL_KEY_SEPARATOR,
+    PIANO_ROLL_PITCH_HIGHLIGHT,
+    PIANO_ROLL_GRID_BACKGROUND,
+    PIANO_ROLL_GRID_BLACK_KEY,
+    PIANO_ROLL_GRID_SUBDIVISION,
+    PIANO_ROLL_GRID_BEAT,
+    PIANO_ROLL_GRID_BAR,
+    PIANO_ROLL_CHORD_PREVIEW,
+    PIANO_ROLL_TOOLTIP_BACKGROUND,
+    PIANO_ROLL_FALLBACK_CLIP,
+    CLIP_BOUNDARY,
+    PIANO_ROLL_TAKE_LANE_ACTIVE,
+    PIANO_ROLL_TAKE_LANE_INACTIVE,
+    TEXT_SLIDER_THUMB,
+    TEXT_SLIDER_METER_LOW,
+    TEXT_SLIDER_METER_WARNING,
+    TEXT_SLIDER_METER_HIGH,
+    TOAST_BACKGROUND,
+    QWERTY_WHITE_KEY_NOTE_TEXT,
+    EQ_BAND_LOW,
+    EQ_BAND_LOW_MID,
+    EQ_BAND_HIGH_MID,
+    EQ_BAND_HIGH,
+    count
+};
+
 class DarkTheme {
   public:
+    using Palette = std::array<juce::uint32, static_cast<std::size_t>(ColourRole::count)>;
+
+    static constexpr const char* kDarkThemeId = "dark";
+    static constexpr const char* kHighContrastThemeId = "high-contrast";
+
     // ==========================================================================
     // Elevation ramp — each layer is one fixed value; depth comes from the
     // step between layers, not from per-component tuning.
     // ==========================================================================
-    static constexpr auto E0 = 0xFF0C0F14;  // App background
-    static constexpr auto E1 = 0xFF151A21;  // Panel
-    static constexpr auto E2 = 0xFF1E242D;  // Control / card
-    static constexpr auto E3 = 0xFF28303A;  // Raised / hover
-    static constexpr auto HAIRLINE = 0xFF2C343E;
+    static constexpr auto E0 = ColourRole::E0;
+    static constexpr auto E1 = ColourRole::E1;
+    static constexpr auto E2 = ColourRole::E2;
+    static constexpr auto E3 = ColourRole::E3;
+    static constexpr auto HAIRLINE = ColourRole::HAIRLINE;
 
     // Background colors — all panel-tier surfaces share E1 so the app stops
     // reading as a stack of near-identical greys.
-    static constexpr auto BACKGROUND = E0;        // Main background
-    static constexpr auto BACKGROUND_ALT = E1;    // Charcoal panel tier
-    static constexpr auto PANEL_BACKGROUND = E1;  // Panel background
-    static constexpr auto SURFACE = E2;           // Elevated surface
-    static constexpr auto SURFACE_HOVER = E3;     // Hovered surface
+    static constexpr auto BACKGROUND = ColourRole::BACKGROUND;
+    static constexpr auto BACKGROUND_ALT = ColourRole::BACKGROUND_ALT;
+    static constexpr auto PANEL_BACKGROUND = ColourRole::PANEL_BACKGROUND;
+    static constexpr auto SURFACE = ColourRole::SURFACE;
+    static constexpr auto SURFACE_HOVER = ColourRole::SURFACE_HOVER;
 
     // ==========================================================================
     // Transport and controls
     // ==========================================================================
-    static constexpr auto TRANSPORT_BACKGROUND = E1;        // Transport bar background
-    static constexpr auto BUTTON_NORMAL = E0;               // Normal button (off state)
-    static constexpr auto BUTTON_HOVER = E2;                // Hovered button
-    static constexpr auto BUTTON_PRESSED = E3;              // Pressed button
-    static constexpr auto BUTTON_ACTIVE = 0xFF5588AA;       // Active/selected button (SideFX blue)
-    static constexpr auto BUTTON_STROKE = HAIRLINE;         // Button border
-    static constexpr auto CONTROL_VALUE_FILL = 0x12E8EDF1;  // Neutral value fill
-    static constexpr auto CONTROL_SLIDER_THUMB = 0xFF999999;  // Neutral slider thumb
+    static constexpr auto TRANSPORT_BACKGROUND = ColourRole::TRANSPORT_BACKGROUND;
+    static constexpr auto BUTTON_NORMAL = ColourRole::BUTTON_NORMAL;
+    static constexpr auto BUTTON_HOVER = ColourRole::BUTTON_HOVER;
+    static constexpr auto BUTTON_PRESSED = ColourRole::BUTTON_PRESSED;
+    static constexpr auto BUTTON_ACTIVE = ColourRole::BUTTON_ACTIVE;
+    static constexpr auto BUTTON_STROKE = ColourRole::BUTTON_STROKE;
+    static constexpr auto CONTROL_VALUE_FILL = ColourRole::CONTROL_VALUE_FILL;
+    static constexpr auto CONTROL_SLIDER_THUMB = ColourRole::CONTROL_SLIDER_THUMB;
 
     // ==========================================================================
     // Text colors
     // ==========================================================================
-    static constexpr auto TEXT_PRIMARY = 0xFFE8EDF1;    // Primary text (soft white)
-    static constexpr auto TEXT_SECONDARY = 0xFFAEB6BD;  // Secondary text
-    static constexpr auto TEXT_DIM = 0xFF7C858D;        // Dimmed / tertiary text
-    static constexpr auto TEXT_DISABLED = 0xFF666666;   // Disabled text
+    static constexpr auto TEXT_PRIMARY = ColourRole::TEXT_PRIMARY;
+    static constexpr auto TEXT_SECONDARY = ColourRole::TEXT_SECONDARY;
+    static constexpr auto TEXT_DIM = ColourRole::TEXT_DIM;
+    static constexpr auto TEXT_DISABLED = ColourRole::TEXT_DISABLED;
 
     // ==========================================================================
     // Accent colors
     // ==========================================================================
-    static constexpr auto ACCENT_BLUE = 0xFF5588AA;        // Primary accent (muted blue)
-    static constexpr auto ACCENT_BLUE_LIGHT = 0xFF88AACC;  // Light blue
-    static constexpr auto ACCENT_CYAN = 0xFF66AAFF;        // Cyan (selection, highlight)
-    static constexpr auto ACCENT_GREEN = 0xFF43C07A;       // Bright green (enabled/monitor)
-    static constexpr auto ACCENT_ORANGE =
-        0xFFFF8822;  // Orange — transport chrome + mod type colour
-    static constexpr auto ACCENT_PURPLE =
-        0xFF7777DD;  // Purple — transport chrome + macro type colour
-    static constexpr auto MASTER_TRACK_COLOUR = 0xFF6655AA;  // Master track (muted purple)
+    static constexpr auto ACCENT_BLUE = ColourRole::ACCENT_BLUE;
+    static constexpr auto ACCENT_BLUE_LIGHT = ColourRole::ACCENT_BLUE_LIGHT;
+    static constexpr auto ACCENT_CYAN = ColourRole::ACCENT_CYAN;
+    static constexpr auto ACCENT_GREEN = ColourRole::ACCENT_GREEN;
+    static constexpr auto ACCENT_ORANGE = ColourRole::ACCENT_ORANGE;
+    static constexpr auto ACCENT_PURPLE = ColourRole::ACCENT_PURPLE;
+    static constexpr auto PRESET_INDIGO = ColourRole::PRESET_INDIGO;
+    static constexpr auto MIDI_LEARN = ColourRole::MIDI_LEARN;
+    static constexpr auto STEP_RECORD = ColourRole::STEP_RECORD;
+    static constexpr auto MASTER_TRACK_COLOUR = ColourRole::MASTER_TRACK_COLOUR;
 
     // ==========================================================================
     // Status colors
     // ==========================================================================
-    static constexpr auto STATUS_SUCCESS = 0xFF44AA44;  // Success/enabled (green)
-    static constexpr auto STATUS_WARNING = 0xFFFFAA44;  // Warning (orange)
-    static constexpr auto STATUS_ERROR = 0xFFAA4444;    // Error (muted red)
-    static constexpr auto STATUS_DANGER = 0xFFE64343;   // Danger/record
+    static constexpr auto STATUS_SUCCESS = ColourRole::STATUS_SUCCESS;
+    static constexpr auto STATUS_WARNING = ColourRole::STATUS_WARNING;
+    static constexpr auto STATUS_ERROR = ColourRole::STATUS_ERROR;
+    static constexpr auto STATUS_DANGER = ColourRole::STATUS_DANGER;
 
     // Backwards compatibility aliases
     static constexpr auto ACCENT_RED = STATUS_DANGER;  // Alias for STATUS_DANGER
@@ -145,56 +285,161 @@ class DarkTheme {
     // ==========================================================================
     // Track colors
     // ==========================================================================
-    static constexpr auto TRACK_BACKGROUND = E1;  // Track background
-    static constexpr auto TRACK_SELECTED = E2;    // Selected track (timeline lane tint)
+    static constexpr auto TRACK_BACKGROUND = ColourRole::TRACK_BACKGROUND;
+    static constexpr auto TRACK_SELECTED = ColourRole::TRACK_SELECTED;
     // Selected track header/strip fill, shared by the arrange headers, mixer
     // and session views. Near-white: selection inverts the header instead of
     // shifting it a step on the dark ramp, so it is unmissable and the dark
     // control chips gain contrast. Text on it flips to
     // TRACK_HEADER_SELECTED_TEXT.
-    static constexpr auto TRACK_HEADER_SELECTED = 0xFFB4BCC6;
-    static constexpr auto TRACK_HEADER_SELECTED_TEXT = E0;
-    static constexpr auto TRACK_SEPARATOR = E0;  // Track separator lines (flush with background)
+    static constexpr auto TRACK_HEADER_SELECTED = ColourRole::TRACK_HEADER_SELECTED;
+    static constexpr auto TRACK_HEADER_SELECTED_TEXT = ColourRole::TRACK_HEADER_SELECTED_TEXT;
+    static constexpr auto TRACK_SEPARATOR = ColourRole::TRACK_SEPARATOR;
 
     // ==========================================================================
     // Timeline and grid
     // ==========================================================================
-    static constexpr auto TIMELINE_BACKGROUND = E1;  // Timeline background
-    static constexpr auto GRID_LINE = 0xFF383840;    // Grid lines
-    static constexpr auto BEAT_LINE = 0xFF484850;    // Beat lines (stronger)
-    static constexpr auto BAR_LINE = 0xFF555555;     // Bar lines (strongest)
+    static constexpr auto TIMELINE_BACKGROUND = ColourRole::TIMELINE_BACKGROUND;
+    static constexpr auto GRID_LINE = ColourRole::GRID_LINE;
+    static constexpr auto BEAT_LINE = ColourRole::BEAT_LINE;
+    static constexpr auto BAR_LINE = ColourRole::BAR_LINE;
 
     // ==========================================================================
     // Borders and separators
     // ==========================================================================
-    static constexpr auto BORDER = HAIRLINE;     // General borders
-    static constexpr auto SEPARATOR = HAIRLINE;  // Panel separators
-    static constexpr auto RESIZE_HANDLE =
-        0xFF3A4450;  // Resize handles (a step brighter than hairline)
+    static constexpr auto BORDER = ColourRole::BORDER;
+    static constexpr auto SEPARATOR = ColourRole::SEPARATOR;
+    static constexpr auto RESIZE_HANDLE = ColourRole::RESIZE_HANDLE;
 
     // ==========================================================================
     // Audio visualization
     // ==========================================================================
-    static constexpr auto WAVEFORM_NORMAL = 0xFF33E680;     // Waveform color (green)
-    static constexpr auto WAVEFORM_SELECTED = 0xFF66AAFF;   // Selected waveform (cyan)
-    static constexpr auto LEVEL_METER_GREEN = 0xFF44AA44;   // Level meter (low)
-    static constexpr auto LEVEL_METER_YELLOW = 0xFFFFAA44;  // Level meter (mid)
-    static constexpr auto LEVEL_METER_RED = 0xFFAA4444;     // Level meter (high)
+    static constexpr auto WAVEFORM_NORMAL = ColourRole::WAVEFORM_NORMAL;
+    static constexpr auto WAVEFORM_SELECTED = ColourRole::WAVEFORM_SELECTED;
+    static constexpr auto LEVEL_METER_GREEN = ColourRole::LEVEL_METER_GREEN;
+    static constexpr auto LEVEL_METER_YELLOW = ColourRole::LEVEL_METER_YELLOW;
+    static constexpr auto LEVEL_METER_RED = ColourRole::LEVEL_METER_RED;
+    static constexpr auto GAIN_METER_LOW = ColourRole::GAIN_METER_LOW;
+    static constexpr auto GAIN_METER_WARNING = ColourRole::GAIN_METER_WARNING;
+    static constexpr auto GAIN_METER_HIGH = ColourRole::GAIN_METER_HIGH;
+    static constexpr auto GATE_CURVE = ColourRole::GATE_CURVE;
+    static constexpr auto GATE_THRESHOLD = ColourRole::GATE_THRESHOLD;
+    static constexpr auto MULTIBAND_LOW = ColourRole::MULTIBAND_LOW;
+    static constexpr auto MULTIBAND_MID = ColourRole::MULTIBAND_MID;
+    static constexpr auto MULTIBAND_HIGH = ColourRole::MULTIBAND_HIGH;
+    static constexpr auto MULTIBAND_LIMIT = ColourRole::MULTIBAND_LIMIT;
+    static constexpr auto SAMPLER_START_MARKER = ColourRole::SAMPLER_START_MARKER;
+    static constexpr auto SAMPLER_END_MARKER = ColourRole::SAMPLER_END_MARKER;
+    static constexpr auto SPECTRUM_OVERLAY = ColourRole::SPECTRUM_OVERLAY;
+    static constexpr auto INSTRUMENT_BACKGROUND = ColourRole::INSTRUMENT_BACKGROUND;
+    static constexpr auto INSTRUMENT_PANEL = ColourRole::INSTRUMENT_PANEL;
+    static constexpr auto INSTRUMENT_BORDER = ColourRole::INSTRUMENT_BORDER;
+    static constexpr auto INSTRUMENT_TEXT = ColourRole::INSTRUMENT_TEXT;
+    static constexpr auto INSTRUMENT_TEXT_DIM = ColourRole::INSTRUMENT_TEXT_DIM;
 
     // ==========================================================================
     // Selection and loop regions
     // ==========================================================================
-    static constexpr auto TIME_SELECTION = 0x335588AA;  // Semi-transparent blue for time selection
-    static constexpr auto LOOP_REGION = 0x08FFFFFF;     // Nearly transparent white for loop region
-    static constexpr auto LOOP_MARKER = 0xFF44AA66;     // Solid green for loop flag markers
-    static constexpr auto OFFSET_MARKER = 0xFFCCAA44;   // Solid yellow for content offset marker
+    static constexpr auto TIME_SELECTION = ColourRole::TIME_SELECTION;
+    static constexpr auto LOOP_REGION = ColourRole::LOOP_REGION;
+    static constexpr auto LOOP_MARKER = ColourRole::LOOP_MARKER;
+    static constexpr auto OFFSET_MARKER = ColourRole::OFFSET_MARKER;
+
+    // ========================================================================
+    // Shared UI and automation editor
+    // ========================================================================
+    static constexpr auto TEXT_BRIGHT = ColourRole::TEXT_BRIGHT;
+    static constexpr auto INPUT_BACKGROUND = ColourRole::INPUT_BACKGROUND;
+    static constexpr auto TOOLTIP_BACKGROUND = ColourRole::TOOLTIP_BACKGROUND;
+    static constexpr auto ICON_NEUTRAL = ColourRole::ICON_NEUTRAL;
+    static constexpr auto ICON_TRANSPORT = ColourRole::ICON_TRANSPORT;
+    static constexpr auto AUTOMATION_LANE_BACKGROUND = ColourRole::AUTOMATION_LANE_BACKGROUND;
+    static constexpr auto AUTOMATION_LANE_SELECTED = ColourRole::AUTOMATION_LANE_SELECTED;
+    static constexpr auto AUTOMATION_LANE_HEADER = ColourRole::AUTOMATION_LANE_HEADER;
+    static constexpr auto AUTOMATION_LANE_SCALE_BACKGROUND =
+        ColourRole::AUTOMATION_LANE_SCALE_BACKGROUND;
+    static constexpr auto AUTOMATION_DIVIDER = ColourRole::AUTOMATION_DIVIDER;
+    static constexpr auto AUTOMATION_DIVIDER_LIGHT = ColourRole::AUTOMATION_DIVIDER_LIGHT;
+    static constexpr auto AUTOMATION_GUIDE = ColourRole::AUTOMATION_GUIDE;
+    static constexpr auto AUTOMATION_SCALE_TEXT = ColourRole::AUTOMATION_SCALE_TEXT;
+    static constexpr auto AUTOMATION_SCALE_LABEL = ColourRole::AUTOMATION_SCALE_LABEL;
+    static constexpr auto AUTOMATION_TEXT = ColourRole::AUTOMATION_TEXT;
+    static constexpr auto AUTOMATION_POINT = ColourRole::AUTOMATION_POINT;
+    static constexpr auto AUTOMATION_POINT_HOVER = ColourRole::AUTOMATION_POINT_HOVER;
+    static constexpr auto AUTOMATION_BEZIER = ColourRole::AUTOMATION_BEZIER;
+    static constexpr auto AUTOMATION_TENSION_HOVER = ColourRole::AUTOMATION_TENSION_HOVER;
+    static constexpr auto CURVE_BACKGROUND = ColourRole::CURVE_BACKGROUND;
+    static constexpr auto CURVE_TOOLTIP_BACKGROUND = ColourRole::CURVE_TOOLTIP_BACKGROUND;
+    static constexpr auto CURVE_TOOLTIP_TEXT = ColourRole::CURVE_TOOLTIP_TEXT;
+    static constexpr auto CURVE_POINT = ColourRole::CURVE_POINT;
+    static constexpr auto CURVE_HANDLE_BACKGROUND = ColourRole::CURVE_HANDLE_BACKGROUND;
+    static constexpr auto CURVE_HANDLE_NORMAL = ColourRole::CURVE_HANDLE_NORMAL;
+
+    // ========================================================================
+    // Piano roll
+    // ========================================================================
+    static constexpr auto TEXT_DARK = ColourRole::TEXT_DARK;
+    static constexpr auto PIANO_ROLL_BACKGROUND = ColourRole::PIANO_ROLL_BACKGROUND;
+    static constexpr auto PIANO_ROLL_KEY_WHITE = ColourRole::PIANO_ROLL_KEY_WHITE;
+    static constexpr auto PIANO_ROLL_KEY_HIGHLIGHT = ColourRole::PIANO_ROLL_KEY_HIGHLIGHT;
+    static constexpr auto PIANO_ROLL_KEY_SEPARATOR = ColourRole::PIANO_ROLL_KEY_SEPARATOR;
+    static constexpr auto PIANO_ROLL_PITCH_HIGHLIGHT = ColourRole::PIANO_ROLL_PITCH_HIGHLIGHT;
+    static constexpr auto PIANO_ROLL_GRID_BACKGROUND = ColourRole::PIANO_ROLL_GRID_BACKGROUND;
+    static constexpr auto PIANO_ROLL_GRID_BLACK_KEY = ColourRole::PIANO_ROLL_GRID_BLACK_KEY;
+    static constexpr auto PIANO_ROLL_GRID_SUBDIVISION = ColourRole::PIANO_ROLL_GRID_SUBDIVISION;
+    static constexpr auto PIANO_ROLL_GRID_BEAT = ColourRole::PIANO_ROLL_GRID_BEAT;
+    static constexpr auto PIANO_ROLL_GRID_BAR = ColourRole::PIANO_ROLL_GRID_BAR;
+    static constexpr auto PIANO_ROLL_CHORD_PREVIEW = ColourRole::PIANO_ROLL_CHORD_PREVIEW;
+    static constexpr auto PIANO_ROLL_TOOLTIP_BACKGROUND = ColourRole::PIANO_ROLL_TOOLTIP_BACKGROUND;
+    static constexpr auto PIANO_ROLL_FALLBACK_CLIP = ColourRole::PIANO_ROLL_FALLBACK_CLIP;
+    static constexpr auto CLIP_BOUNDARY = ColourRole::CLIP_BOUNDARY;
+    static constexpr auto PIANO_ROLL_TAKE_LANE_ACTIVE = ColourRole::PIANO_ROLL_TAKE_LANE_ACTIVE;
+    static constexpr auto PIANO_ROLL_TAKE_LANE_INACTIVE = ColourRole::PIANO_ROLL_TAKE_LANE_INACTIVE;
+
+    // ========================================================================
+    // Shared controls whose original Dark shades have distinct visual roles
+    // ========================================================================
+    static constexpr auto TEXT_SLIDER_THUMB = ColourRole::TEXT_SLIDER_THUMB;
+    static constexpr auto TEXT_SLIDER_METER_LOW = ColourRole::TEXT_SLIDER_METER_LOW;
+    static constexpr auto TEXT_SLIDER_METER_WARNING = ColourRole::TEXT_SLIDER_METER_WARNING;
+    static constexpr auto TEXT_SLIDER_METER_HIGH = ColourRole::TEXT_SLIDER_METER_HIGH;
+    static constexpr auto TOAST_BACKGROUND = ColourRole::TOAST_BACKGROUND;
+    static constexpr auto QWERTY_WHITE_KEY_NOTE_TEXT = ColourRole::QWERTY_WHITE_KEY_NOTE_TEXT;
+    static constexpr auto EQ_BAND_LOW = ColourRole::EQ_BAND_LOW;
+    static constexpr auto EQ_BAND_LOW_MID = ColourRole::EQ_BAND_LOW_MID;
+    static constexpr auto EQ_BAND_HIGH_MID = ColourRole::EQ_BAND_HIGH_MID;
+    static constexpr auto EQ_BAND_HIGH = ColourRole::EQ_BAND_HIGH;
+
+    // Runtime palette API. Theme changes are expected to happen on JUCE's
+    // message thread, alongside the LookAndFeel refresh they trigger.
+    static const Palette& getDarkPalette();
+    static const Palette& getActivePalette();
+    static void setActivePalette(const Palette& palette);
+    static void resetToDarkPalette();
+
+    // Selects a built-in palette by its persisted Config identifier. Returns
+    // false without changing the active palette for an unknown identifier.
+    static bool setActiveBuiltInTheme(const std::string& themeId);
+    static bool isBuiltInTheme(const std::string& themeId);
+
+    // Maps a colour from the active or default-Dark palette to its runtime
+    // role. This lets legacy UI code that already supplies a DarkTheme colour
+    // retain its intent while resolving the final colour at paint time. Only
+    // RGB is considered: callers keep their own alpha value.
+    static std::optional<ColourRole> findDarkPaletteRole(juce::Colour colour);
+
+    // Replaces the shared source colours used by bundled SVG controls with
+    // their active palette roles. Source colours remain asset implementation
+    // details; callers only choose semantic colours in code.
+    static void applyToSvgIcon(juce::Drawable& drawable);
 
     // Apply the theme to JUCE's LookAndFeel
     static void applyToLookAndFeel(juce::LookAndFeel_V4& laf);
 
     // Get color as JUCE Colour object
-    static juce::Colour getColour(juce::uint32 colorValue) {
-        return juce::Colour(colorValue);
+    static juce::uint32 getColourValue(ColourRole role);
+    static juce::Colour getColour(ColourRole role) {
+        return juce::Colour(getColourValue(role));
     }
 
     // Helper methods for common color combinations
@@ -216,6 +461,33 @@ class DarkTheme {
     static juce::Colour getBorderColour() {
         return getColour(BORDER);
     }
+
+  private:
+    static Palette activePalette_;
+};
+
+// Keeps named colours in a custom device UI bound to a role without forcing
+// every paint call to spell out DarkTheme::getColour(). The conversion and
+// common modifiers resolve the active palette at the point of use.
+class ThemedColour {
+  public:
+    constexpr explicit ThemedColour(ColourRole role) : role_(role) {}
+
+    operator juce::Colour() const {
+        return DarkTheme::getColour(role_);
+    }
+    juce::Colour withAlpha(float alpha) const {
+        return DarkTheme::getColour(role_).withAlpha(alpha);
+    }
+    juce::Colour brighter(float amount = 0.4f) const {
+        return DarkTheme::getColour(role_).brighter(amount);
+    }
+    juce::Colour darker(float amount = 0.4f) const {
+        return DarkTheme::getColour(role_).darker(amount);
+    }
+
+  private:
+    ColourRole role_;
 };
 
 }  // namespace magda

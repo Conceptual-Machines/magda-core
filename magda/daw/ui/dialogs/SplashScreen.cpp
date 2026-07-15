@@ -28,7 +28,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             logo_ = juce::Drawable::createFromSVG(*xml);
             if (logo_) {
                 logo_->replaceColour(juce::Colour(0xFF000000),
-                                     juce::Colour(DarkTheme::TEXT_SECONDARY));
+                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
             }
         }
 
@@ -39,7 +39,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
             if (conceptualMachinesBadge_) {
                 conceptualMachinesBadge_->replaceColour(juce::Colour(0xFFE7DFD2),
-                                                        juce::Colour(DarkTheme::TEXT_DIM));
+                                                        DarkTheme::getColour(DarkTheme::TEXT_DIM));
             }
         }
 
@@ -48,7 +48,8 @@ class SplashScreen::ContentComponent : public juce::Component {
                 BinaryData::fadlogotracktion_svg, BinaryData::fadlogotracktion_svgSize))) {
             teLogo_ = juce::Drawable::createFromSVG(*xml);
             if (teLogo_) {
-                teLogo_->replaceColour(juce::Colour(0xFF000000), juce::Colour(DarkTheme::TEXT_DIM));
+                teLogo_->replaceColour(juce::Colour(0xFF000000),
+                                       DarkTheme::getColour(DarkTheme::TEXT_DIM));
             }
         }
 
@@ -58,7 +59,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             juceLogo_ = juce::Drawable::createFromSVG(*xml);
             if (juceLogo_) {
                 juceLogo_->replaceColour(juce::Colour(0xFF000000),
-                                         juce::Colour(DarkTheme::TEXT_DIM));
+                                         DarkTheme::getColour(DarkTheme::TEXT_DIM));
             }
         }
 
@@ -68,7 +69,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             faustLogo_ = juce::Drawable::createFromSVG(*xml);
             if (faustLogo_) {
                 faustLogo_->replaceColour(juce::Colour(0xFFD9D9D9),
-                                          juce::Colour(DarkTheme::TEXT_DIM));
+                                          DarkTheme::getColour(DarkTheme::TEXT_DIM));
             }
         }
     }
@@ -77,10 +78,10 @@ class SplashScreen::ContentComponent : public juce::Component {
         auto bounds = getLocalBounds();
 
         // Dark background
-        g.fillAll(juce::Colour(DarkTheme::PANEL_BACKGROUND));
+        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 
         // Subtle rounded border
-        g.setColour(juce::Colour(DarkTheme::BORDER));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 8.0f, 1.0f);
 
         // Draw logo centered in upper portion
@@ -94,26 +95,26 @@ class SplashScreen::ContentComponent : public juce::Component {
         // Title
         auto& fm = FontManager::getInstance();
         g.setFont(fm.getMicrogrammaFont(28.0f));
-        g.setColour(juce::Colour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         g.drawText("MAGDA", bounds.removeFromTop(40), juce::Justification::centred);
 
         // Subtitle
         g.setFont(fm.getUIFont(14.0f));
-        g.setColour(juce::Colour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         // Brand tagline — MAGDA acronym expansion, do not translate.
         g.drawText("Multi-Agent Digital Audio", bounds.removeFromTop(24),
                    juce::Justification::centred);
 
         // Version
         g.setFont(fm.getUIFont(12.0f));
-        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
         g.drawText(tr("splash.version_prefix") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
 
         // Status text
         bounds.removeFromTop(4);
         g.setFont(fm.getUIFont(11.0f));
-        g.setColour(juce::Colour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         g.drawText(statusText_, bounds.removeFromTop(18), juce::Justification::centred);
 
         // Credits line
@@ -125,13 +126,13 @@ class SplashScreen::ContentComponent : public juce::Component {
         int gap = 4;
         int dotGap = 4;
 
-        g.setColour(juce::Colour(DarkTheme::BORDER));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawHorizontalLine(creditsArea.getY(), (float)creditsArea.getX(),
                              (float)creditsArea.getRight());
         creditsArea.removeFromTop(6);
 
         auto row = creditsArea.removeFromTop(20);
-        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
 
         juce::GlyphArrangement ga;
         auto measure = [&](const juce::String& text) {
@@ -198,7 +199,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
                                                  juce::RectanglePlacement::centred, 1.0f);
             g.setFont(fm.getUIFont(9.0f));
-            g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
             g.drawText(kConceptualMachinesCopyright, linkArea, juce::Justification::centred);
             badgeBounds_ = badgeArea.getUnion(linkArea);
         } else {
@@ -230,7 +231,8 @@ class SplashScreen::ContentComponent : public juce::Component {
 // SplashScreen
 // =============================================================================
 
-SplashScreen::SplashScreen() : DocumentWindow("", juce::Colour(DarkTheme::PANEL_BACKGROUND), 0) {
+SplashScreen::SplashScreen()
+    : DocumentWindow("", DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), 0) {
     setContentOwned(new ContentComponent(), true);
     setUsingNativeTitleBar(false);
     setTitleBarHeight(0);

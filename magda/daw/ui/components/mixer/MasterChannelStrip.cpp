@@ -446,6 +446,8 @@ void MasterChannelStrip::setupControls() {
     // Headphone icon (non-interactive, just a label)
     auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
                                                       BinaryData::headphones_svgSize);
+    if (hpIcon)
+        DarkTheme::applyToSvgIcon(*hpIcon);
     headphoneIcon_ =
         std::make_unique<juce::DrawableButton>("Headphones", juce::DrawableButton::ImageFitted);
     headphoneIcon_->setImages(hpIcon.get());

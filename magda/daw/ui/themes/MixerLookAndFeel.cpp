@@ -31,6 +31,10 @@ void MixerLookAndFeel::loadIcons() {
     faderTrack_ = wrapDrawable(BinaryData::fader_track_svg, BinaryData::fader_track_svgSize);
     knobBody_ = wrapDrawable(BinaryData::knob_body_svg, BinaryData::knob_body_svgSize);
     knobPointer_ = wrapDrawable(BinaryData::knob_pointer_svg, BinaryData::knob_pointer_svgSize);
+
+    for (auto* icon : {faderThumb_.get(), faderTrack_.get(), knobBody_.get(), knobPointer_.get()})
+        if (icon)
+            DarkTheme::applyToSvgIcon(*icon);
 }
 
 void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,

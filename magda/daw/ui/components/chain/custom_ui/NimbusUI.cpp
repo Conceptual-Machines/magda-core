@@ -2,16 +2,17 @@
 
 #include <cmath>
 
+#include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-const juce::Colour kBg{0xff0d0d0f};
-const juce::Colour kPanel{0xff141417};
-const juce::Colour kBorder{0xff242428};
-const juce::Colour kText{0xffe4e4e8};
-const juce::Colour kDim{0xff7a7a84};
+const ThemedColour kBg{DarkTheme::INSTRUMENT_BACKGROUND};
+const ThemedColour kPanel{DarkTheme::INSTRUMENT_PANEL};
+const ThemedColour kBorder{DarkTheme::INSTRUMENT_BORDER};
+const ThemedColour kText{DarkTheme::INSTRUMENT_TEXT};
+const ThemedColour kDim{DarkTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour kCyan{0xff45c8d0};
 const juce::Colour kPink{0xffe0556f};
 const juce::Colour kBlue{0xff4f8fd6};
@@ -102,6 +103,24 @@ NimbusUI::NimbusUI() {
 
 NimbusUI::~NimbusUI() {
     stopTimer();
+}
+
+void NimbusUI::lookAndFeelChanged() {
+    for (int index = 0; index < kNumParams; ++index) {
+        auto& control = controls_[static_cast<size_t>(index)];
+        const auto colour = (index == kPosition || index == kDensity) ? kPink
+                            : (index == kSize || index == kTexture)   ? kCyan
+                                                                      : juce::Colour(kText);
+        if (control.label)
+            control.label->setColour(
+                juce::Label::textColourId,
+                (index == kPosition || index == kDensity || index == kSize || index == kTexture)
+                    ? colour
+                    : juce::Colour(kDim));
+        if (control.slider)
+            control.slider->setTextColour(colour);
+    }
+    repaint();
 }
 
 void NimbusUI::timerCallback() {

@@ -522,7 +522,7 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
 
     // Selection border (matches NodeComponent style)
     if (selected_) {
-        g.setColour(juce::Colour(0xff888888));
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(bounds.reduced(1.0f), 4.0f, 2.0f);
     }
 

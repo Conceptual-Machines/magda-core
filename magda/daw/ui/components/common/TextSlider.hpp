@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <optional>
 
 #include "ValueEditGesture.hpp"
 #include "ValueLabelControl.hpp"
@@ -30,6 +31,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
 
     TextSlider(Format format = Format::Decimal) : format_(format) {
         valueControl_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        textColourRole_ = DarkTheme::TEXT_PRIMARY;
         valueControl_.setTextColour(DarkTheme::getTextColour());
         valueControl_.setJustification(juce::Justification::centred);
         valueControl_.onMouseDown = [this](const juce::MouseEvent& e) { mouseDown(e); };
@@ -186,6 +188,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
     }
 
     void setTextColour(const juce::Colour& colour) {
+        textColourRole_ = DarkTheme::findDarkPaletteRole(colour);
         valueControl_.setTextColour(colour);
     }
 
@@ -352,10 +355,10 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
                 juce::Rectangle<int>(bounds.getX() - handleOverhang, handleY - handleH / 2,
                                      bounds.getWidth() + handleOverhang * 2, handleH);
 
-            g.setColour(juce::Colour(0xFF000000).withAlpha(0.55f));
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.55f));
             g.fillRect(thumbRect.translated(0, 1));
 
-            g.setColour(juce::Colour(0xFFBCD4E8));
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SLIDER_THUMB));
             g.fillRect(thumbRect);
         } else if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
             g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
@@ -383,13 +386,18 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
                     float barNorm = static_cast<float>(barW) / w;
 
                     if (barNorm <= zeroDbNorm * 0.7f) {
-                        g.setColour(juce::Colour(0xff4CAF50).withAlpha(0.5f));
+                        g.setColour(
+                            DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_LOW).withAlpha(0.5f));
                         g.fillRect(barArea);
                     } else {
                         juce::ColourGradient gradient(
-                            juce::Colour(0xff4CAF50).withAlpha(0.5f), 0.0f, 0.0f,
-                            juce::Colour(0xffF44336).withAlpha(0.5f), w, 0.0f, false);
-                        gradient.addColour(zeroDbNorm, juce::Colour(0xffFFC107).withAlpha(0.5f));
+                            DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_LOW).withAlpha(0.5f),
+                            0.0f, 0.0f,
+                            DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_HIGH).withAlpha(0.5f),
+                            w, 0.0f, false);
+                        gradient.addColour(
+                            zeroDbNorm, DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_WARNING)
+                                            .withAlpha(0.5f));
                         g.setGradientFill(gradient);
                         g.fillRect(barArea);
                     }
@@ -407,13 +415,21 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             auto boundsF = getLocalBounds().toFloat();
             const juce::Colour tint =
                 automationVisualState_ == magda::AutomationVisualState::Overridden
-                    ? juce::Colour(DarkTheme::TEXT_DISABLED)
-                    : juce::Colour(DarkTheme::ACCENT_PURPLE);
+                    ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
+                    : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
             g.setColour(tint.withAlpha(0.18f));
             g.fillRect(boundsF);
             g.setColour(tint);
             g.drawRect(boundsF, 1.5f);
         }
+    }
+
+    void lookAndFeelChanged() override {
+        if (textColourRole_)
+            valueControl_.setTextColour(DarkTheme::getColour(*textColourRole_));
+
+        valueControl_.repaint();
+        repaint();
     }
 
     void resized() override {
@@ -802,6 +818,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
 
     float meterPeakL_ = 0.f;
     float meterPeakR_ = 0.f;
+    std::optional<ColourRole> textColourRole_;
 
     // Automation state
     magda::AutomationTarget automationTarget_;

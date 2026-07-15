@@ -678,7 +678,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // Clash zones first, so the spectrum traces sit on top of the shading.
         // Kept faint (a tint, not a block) so it marks the region without burying
         // the traces; severity nudges the opacity within a narrow range.
-        const juce::Colour clash(0xffff6b35);  // warm warning hue
+        const auto clash = DarkTheme::getColour(DarkTheme::MIDI_LEARN);
         for (const auto& f : maskingFindings_) {
             const float x0 = freqToX(f.loHz, plot);
             const float x1 = freqToX(f.hiHz, plot);
@@ -706,8 +706,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
                     op.lineTo(x, y);
                 }
             }
-            g.setColour(
-                juce::Colour(0xffc8c8c8).withAlpha(0.7f));  // neutral, secondary to the trace
+            g.setColour(DarkTheme::getColour(DarkTheme::SPECTRUM_OVERLAY).withAlpha(0.7f));
             g.strokePath(op, juce::PathStrokeType(1.5f));
         }
     }

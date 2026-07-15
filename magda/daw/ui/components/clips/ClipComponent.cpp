@@ -902,18 +902,14 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     if (ghosted && headerArea.getWidth() > HEADER_HEIGHT + 4) {
         auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
         if (iconArea.intersects(g.getClipBounds())) {
-            static auto makeLinkIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::link_flat_svg,
-                                                                BinaryData::link_flat_svgSize);
-                if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
-                return icon;
-            };
-            static auto normalLink = makeLinkIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
-            static auto selectedLink = makeLinkIcon(juce::Colours::white);
-            const auto& icon = selected ? selectedLink : normalLink;
-            if (icon)
-                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+            static const auto linkIcon = juce::Drawable::createFromImageData(
+                BinaryData::link_flat_svg, BinaryData::link_flat_svgSize);
+            if (linkIcon) {
+                auto themedIcon = linkIcon->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
+                themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
+                                       1.0f);
+            }
         }
     }
 
@@ -921,18 +917,14 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     if (isChordClip(clip) && headerArea.getWidth() > HEADER_HEIGHT + 4) {
         auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
         if (iconArea.intersects(g.getClipBounds())) {
-            static auto makeChordIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::iconchordboldm_svg,
-                                                                BinaryData::iconchordboldm_svgSize);
-                if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
-                return icon;
-            };
-            static auto normalChord = makeChordIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
-            static auto selectedChord = makeChordIcon(juce::Colours::white);
-            const auto& icon = selected ? selectedChord : normalChord;
-            if (icon)
-                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+            static const auto chordIcon = juce::Drawable::createFromImageData(
+                BinaryData::iconchordboldm_svg, BinaryData::iconchordboldm_svgSize);
+            if (chordIcon) {
+                auto themedIcon = chordIcon->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
+                themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
+                                       1.0f);
+            }
         }
     }
 
@@ -973,18 +965,14 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         // by 3) so the two header glyphs read at the same size.
         auto loopArea = headerArea.removeFromRight(HEADER_HEIGHT).reduced(3);
         if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
-            static auto makeIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::loop_icon_svg,
-                                                                BinaryData::loop_icon_svgSize);
-                if (icon)
-                    icon->replaceColour(juce::Colour(0xFFBCBCBC), fg);
-                return icon;
-            };
-            static auto normalIcon = makeIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
-            static auto selectedIcon = makeIcon(juce::Colours::white);
-            const auto& icon = selected ? selectedIcon : normalIcon;
-            if (icon)
-                icon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+            static const auto loopIcon = juce::Drawable::createFromImageData(
+                BinaryData::loop_icon_svg, BinaryData::loop_icon_svgSize);
+            if (loopIcon) {
+                auto themedIcon = loopIcon->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFBCBCBC), headerForeground);
+                themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
+                                       1.0f);
+            }
         }
     }
 }
@@ -1159,7 +1147,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     float half = hs * 0.5f;
     float waveTop = static_cast<float>(waveformArea.getY());
 
-    auto handleColour = juce::Colour(DarkTheme::ACCENT_ORANGE);
+    auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
     const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover

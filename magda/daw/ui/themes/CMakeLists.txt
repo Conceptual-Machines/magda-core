@@ -1,5 +1,8 @@
-target_sources(magda_daw_app PRIVATE
+target_sources(magda_daw PRIVATE
     DarkTheme.cpp
+)
+
+target_sources(magda_daw_app PRIVATE
     FontManager.cpp
     CursorManager.cpp
     MixerLookAndFeel.cpp

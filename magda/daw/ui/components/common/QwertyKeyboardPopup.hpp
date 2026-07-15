@@ -23,6 +23,7 @@ class QwertyKeyboardPopup : public juce::Component, private juce::Timer {
     explicit QwertyKeyboardPopup(QwertyMidiKeyboard& keyboard);
     ~QwertyKeyboardPopup() override;
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 

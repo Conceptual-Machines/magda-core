@@ -289,8 +289,8 @@ void ValueLabelControl::paint(juce::Graphics& g) {
 
     const bool hasTint = tintState_ != TintState::None;
     const juce::Colour tintColour = tintState_ == TintState::Overridden
-                                        ? juce::Colour(DarkTheme::TEXT_DISABLED)
-                                        : juce::Colour(DarkTheme::ACCENT_PURPLE);
+                                        ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
+                                        : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
 
     if (hasTint) {
         // Automation highlight: a self-contained overlay (fill + outline) drawn

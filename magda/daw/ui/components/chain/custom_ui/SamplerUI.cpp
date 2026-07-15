@@ -321,7 +321,8 @@ SamplerUI::SamplerUI() {
         btn->setColour(juce::TextButton::buttonOnColourId,
                        DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        btn->setColour(juce::TextButton::textColourOnId,
+                       DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
         btn->setConnectedEdges((m > 0 ? juce::Button::ConnectedOnLeft : 0) |
                                (m < 2 ? juce::Button::ConnectedOnRight : 0));
         btn->onClick = [this, m]() { setVoiceMode(m); };
@@ -943,7 +944,7 @@ void SamplerUI::paint(juce::Graphics& g) {
         // Sample start marker (orange vertical line)
         if (sampleLength_ > 0.0) {
             float startX = secondsToPixelX(startSlider_.getValue(), waveformArea);
-            g.setColour(juce::Colour(0xFFFF9800));  // Orange
+            g.setColour(DarkTheme::getColour(DarkTheme::SAMPLER_START_MARKER));
             g.drawVerticalLine(static_cast<int>(startX), static_cast<float>(waveformArea.getY()),
                                static_cast<float>(waveformArea.getBottom()));
         }
@@ -951,7 +952,7 @@ void SamplerUI::paint(juce::Graphics& g) {
         // Sample end marker (red vertical line)
         if (sampleLength_ > 0.0) {
             float endX = secondsToPixelX(endSlider_.getValue(), waveformArea);
-            g.setColour(juce::Colour(0xFFE53935));  // Red
+            g.setColour(DarkTheme::getColour(DarkTheme::SAMPLER_END_MARKER));
             g.drawVerticalLine(static_cast<int>(endX), static_cast<float>(waveformArea.getY()),
                                static_cast<float>(waveformArea.getBottom()));
         }
@@ -974,7 +975,7 @@ void SamplerUI::paint(juce::Graphics& g) {
         // Playhead (white vertical line)
         if (playheadPosition_ > 0.0 && sampleLength_ > 0.0) {
             float phX = secondsToPixelX(playheadPosition_, waveformArea);
-            g.setColour(juce::Colours::white);
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
             g.drawVerticalLine(static_cast<int>(phX), static_cast<float>(waveformArea.getY()),
                                static_cast<float>(waveformArea.getBottom()));
         }

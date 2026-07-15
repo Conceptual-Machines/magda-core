@@ -50,6 +50,7 @@ class StruckInstrumentUI : public juce::Component, private juce::Timer {
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
+    void lookAndFeelChanged() override;
 
   private:
     enum class Kind { Marimba, Djembe, Bell };

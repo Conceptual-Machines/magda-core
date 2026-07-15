@@ -245,7 +245,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 
     // Border - grey when selected, default otherwise
     if (selected_) {
-        g.setColour(juce::Colour(0xff888888));  // Grey for selection
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 2.0f);
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -310,9 +310,9 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
                                    dotSize);
         juce::Colour colour;
         if (hasLearnedBinding_)
-            colour = juce::Colour(0xFFFF6B35).withAlpha(0.9f);  // matches plugin-param dot
+            colour = DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.9f);
         else if (automapShadowed_)
-            colour = juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
+            colour = DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
         else
             colour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.9f);
         g.setColour(colour);

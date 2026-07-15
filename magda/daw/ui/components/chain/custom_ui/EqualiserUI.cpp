@@ -23,11 +23,7 @@ static void setupLabelStatic(juce::Label& label, const juce::String& text,
 // =============================================================================
 
 EqualiserUI::EqualiserUI() : curveDisplay_(*this) {
-    // Band colours
-    bandColours_[0] = juce::Colour(0xFFE06C75);  // Red - Low Shelf
-    bandColours_[1] = juce::Colour(0xFF61AFEF);  // Blue - Mid 1
-    bandColours_[2] = juce::Colour(0xFF98C379);  // Green - Mid 2
-    bandColours_[3] = juce::Colour(0xFFE5C07B);  // Yellow - High Shelf
+    updateThemeColours();
 
     addAndMakeVisible(curveDisplay_);
 
@@ -113,6 +109,27 @@ void EqualiserUI::setupBandControls(int bandIndex, const juce::String& name) {
 
 void EqualiserUI::setupLabel(juce::Label& label, const juce::String& text) {
     setupLabelStatic(label, text, this);
+}
+
+void EqualiserUI::updateThemeColours() {
+    bandColours_[0] = DarkTheme::getColour(DarkTheme::EQ_BAND_LOW);
+    bandColours_[1] = DarkTheme::getColour(DarkTheme::EQ_BAND_LOW_MID);
+    bandColours_[2] = DarkTheme::getColour(DarkTheme::EQ_BAND_HIGH_MID);
+    bandColours_[3] = DarkTheme::getColour(DarkTheme::EQ_BAND_HIGH);
+}
+
+void EqualiserUI::lookAndFeelChanged() {
+    updateThemeColours();
+
+    for (int i = 0; i < kNumBands; ++i) {
+        auto& band = bands_[i];
+        band.nameLabel.setColour(juce::Label::textColourId, bandColours_[i]);
+        band.freqLabel.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        band.gainLabel.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        band.qLabel.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    }
+    phaseInvertLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    repaint();
 }
 
 void EqualiserUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {

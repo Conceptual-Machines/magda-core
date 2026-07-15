@@ -516,7 +516,7 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
                 x += dotSize + gapBetweenDots;
             }
             if (hasPinnedBindings_) {
-                g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.9f));
+                g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.9f));
                 g.fillEllipse(x, y, dotSize, dotSize);
             }
         }
@@ -524,7 +524,7 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
 
     // Selection border (over everything including side panels)
     if (selected_) {
-        g.setColour(juce::Colour(0xff888888));  // Grey
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
     }
 }
@@ -986,10 +986,11 @@ void NodeComponent::paintGainPanel(juce::Graphics& g, juce::Rectangle<int> panel
     auto fillArea = meterArea.removeFromBottom(fillHeight);
 
     // Gradient from green to yellow to red
-    juce::ColourGradient gradient(
-        juce::Colour(0xff2ecc71), 0.0f, static_cast<float>(meterArea.getBottom()),
-        juce::Colour(0xffe74c3c), 0.0f, static_cast<float>(meterArea.getY()), false);
-    gradient.addColour(0.7, juce::Colour(0xfff39c12));
+    juce::ColourGradient gradient(DarkTheme::getColour(DarkTheme::GAIN_METER_LOW), 0.0f,
+                                  static_cast<float>(meterArea.getBottom()),
+                                  DarkTheme::getColour(DarkTheme::GAIN_METER_HIGH), 0.0f,
+                                  static_cast<float>(meterArea.getY()), false);
+    gradient.addColour(0.7, DarkTheme::getColour(DarkTheme::GAIN_METER_WARNING));
     g.setGradientFill(gradient);
     g.fillRect(fillArea);
 

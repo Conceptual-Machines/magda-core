@@ -131,8 +131,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     presetButton_ =
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
-    constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
-    node_header::applyHeaderIconStyle(*presetButton_, juce::Colour(PRESET_INDIGO),
+    node_header::applyHeaderIconStyle(*presetButton_,
+                                      DarkTheme::getColour(DarkTheme::PRESET_INDIGO),
                                       /*toggling*/ false);
     presetButton_->setActive(true);
     presetButton_->setIconPadding(4.5f);

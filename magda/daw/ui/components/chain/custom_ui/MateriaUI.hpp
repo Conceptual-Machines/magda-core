@@ -45,6 +45,7 @@ class MateriaUI : public juce::Component {
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
+    void lookAndFeelChanged() override;
 
   private:
     // Param indices — must match MutableElementsPlugin::ParamIndex.

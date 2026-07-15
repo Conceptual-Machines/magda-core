@@ -404,23 +404,7 @@ class PluginBrowserContent::FolderTreeItem : public CategoryTreeItem {
 PluginBrowserContent::PluginBrowserContent() {
     setName("Plugin Browser");
 
-    instrumentIcon_ = juce::Drawable::createFromImageData(BinaryData::instrumentdevice_svg,
-                                                          BinaryData::instrumentdevice_svgSize);
-    if (instrumentIcon_)
-        instrumentIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
-                                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-
-    effectIcon_ = juce::Drawable::createFromImageData(BinaryData::audiodevice_svg,
-                                                      BinaryData::audiodevice_svgSize);
-    if (effectIcon_)
-        effectIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-
-    midiIcon_ = juce::Drawable::createFromImageData(BinaryData::mididevice_svg,
-                                                    BinaryData::mididevice_svgSize);
-    if (midiIcon_)
-        midiIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    loadCategoryIcons();
 
     // Setup search box
     searchBox_.setTextToShowWhenEmpty("Search plugins...", DarkTheme::getSecondaryTextColour());
@@ -467,6 +451,26 @@ PluginBrowserContent::PluginBrowserContent() {
     buildInternalPluginList();
     loadFolders();
     rebuildTree();
+}
+
+void PluginBrowserContent::loadCategoryIcons() {
+    const auto tint = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto loadIcon = [tint](const char* data, int size) {
+        auto icon = juce::Drawable::createFromImageData(data, size);
+        if (icon)
+            icon->replaceColour(juce::Colour(0xFFB3B3B3), tint);
+        return icon;
+    };
+
+    instrumentIcon_ =
+        loadIcon(BinaryData::instrumentdevice_svg, BinaryData::instrumentdevice_svgSize);
+    effectIcon_ = loadIcon(BinaryData::audiodevice_svg, BinaryData::audiodevice_svgSize);
+    midiIcon_ = loadIcon(BinaryData::mididevice_svg, BinaryData::mididevice_svgSize);
+}
+
+void PluginBrowserContent::lookAndFeelChanged() {
+    loadCategoryIcons();
+    repaint();
 }
 
 void PluginBrowserContent::paint(juce::Graphics& g) {

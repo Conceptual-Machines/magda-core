@@ -72,8 +72,11 @@ const std::vector<ProviderInfo>& getKnownProviders() {
 }
 
 std::unique_ptr<juce::Drawable> createProviderIcon(const ProviderInfo& info) {
-    return juce::Drawable::createFromImageData(info.iconData,
-                                               static_cast<size_t>(info.iconDataSize));
+    auto icon =
+        juce::Drawable::createFromImageData(info.iconData, static_cast<size_t>(info.iconDataSize));
+    if (icon)
+        DarkTheme::applyToSvgIcon(*icon);
+    return icon;
 }
 
 const ProviderInfo* findProviderInfo(const std::string& id) {

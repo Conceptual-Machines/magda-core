@@ -34,6 +34,11 @@ SvgButton::~SvgButton() {
     // RAII cleanup handled automatically by ManagedDrawable
 }
 
+juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
+                                           const std::optional<ColourRole>& role) {
+    return role ? DarkTheme::getColour(*role).withAlpha(colour.getFloatAlpha()) : colour;
+}
+
 void SvgButton::updateSvgData(const char* svgData, size_t svgDataSize) {
     // Load new SVG using RAII wrapper
     svgIcon = magda::ManagedDrawable::create(svgData, svgDataSize);
@@ -50,6 +55,21 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     if (getWidth() < 1 || getHeight() < 1)
         return;
 
+    const auto normal = hasNormalColor_ ? resolveThemeColour(normalColor, normalColorRole_)
+                                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto hover = hasHoverColor_ ? resolveThemeColour(hoverColor, hoverColorRole_)
+                                      : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    const auto pressed = hasPressedColor_ ? resolveThemeColour(pressedColor, pressedColorRole_)
+                                          : DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto activeColour = hasActiveColor_ ? resolveThemeColour(activeColor, activeColorRole_)
+                                              : DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto normalBackground =
+        resolveThemeColour(normalBackgroundColor, normalBackgroundColorRole_);
+    const auto activeBackground =
+        resolveThemeColour(activeBackgroundColor, activeBackgroundColorRole_);
+    const auto border = resolveThemeColour(borderColor, borderColorRole_);
+    const auto activeBorder = resolveThemeColour(activeBorderColor, activeBorderColorRole_);
+
     if (dualIconMode) {
         // Dual-icon mode: use pre-baked off/on images. Toggleable buttons
         // also count `getToggleState()` so callers using setClickingTogglesState
@@ -61,6 +81,9 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         if (!iconToDraw) {
             return;
         }
+
+        auto themedIcon = iconToDraw->createCopy();
+        DarkTheme::applyToSvgIcon(*themedIcon);
 
         float opacity = drawOn ? 1.0f : inactiveIconOpacity;
         if (shouldDrawButtonAsHighlighted && !drawOn && !shouldDrawButtonAsDown)
@@ -79,23 +102,23 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
                 // Active state fills the chip background (e.g. orange when muted)
                 // so the glyph (drawn padded on top) reads as a solid tile.
                 if (drawOn && hasActiveBackgroundColor) {
-                    g.setColour(activeBackgroundColor);
+                    g.setColour(activeBackground);
                     g.fillRoundedRectangle(getLocalBounds().toFloat(), radius);
                 } else if (hasNormalBackgroundColor) {
-                    g.setColour(normalBackgroundColor);
+                    g.setColour(normalBackground);
                     g.fillRoundedRectangle(getLocalBounds().toFloat(), radius);
                 }
-                iconToDraw->drawWithin(g, getLocalBounds().toFloat().reduced(iconPadding),
+                themedIcon->drawWithin(g, getLocalBounds().toFloat().reduced(iconPadding),
                                        juce::RectanglePlacement::centred, opacity);
             }
-            g.setColour(borderColor);
+            g.setColour(border);
             g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
                                    radius, borderThickness);
             return;
         }
 
         // Other dual-icon buttons (transport) fill the button edge-to-edge.
-        iconToDraw->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred,
+        themedIcon->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred,
                                opacity);
         return;
     }
@@ -103,25 +126,25 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Single-icon mode (legacy behavior)
     if (!svgIcon) {
         // Fallback: draw button name as text
-        g.setColour(normalColor);
+        g.setColour(normal);
         g.setFont(12.0f);
         g.drawText(getButtonText(), getLocalBounds(), juce::Justification::centred);
         return;
     }
 
     // Determine the color based on button state
-    juce::Colour iconColor = normalColor;
+    juce::Colour iconColor = normal;
 
     if (isEnabled()) {
         // Check both active flag and toggle state for toggleable buttons
         bool isActive = active || (getToggleState() && isToggleable());
 
         if (isActive) {
-            iconColor = activeColor;
+            iconColor = activeColour;
         } else if (shouldDrawButtonAsDown) {
-            iconColor = pressedColor;
+            iconColor = pressed;
         } else if (shouldDrawButtonAsHighlighted) {
-            iconColor = hoverColor;
+            iconColor = hover;
         }
     }
 
@@ -135,7 +158,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Draw background (reduced by 0.5f to match SmallButtonLookAndFeel sizing)
     auto bgBounds = getLocalBounds().toFloat().reduced(0.5f);
     if (isActive && hasActiveBackgroundColor) {
-        g.setColour(activeBackgroundColor);
+        g.setColour(activeBackground);
         g.fillRoundedRectangle(bgBounds, cornerRadius);
     } else if (shouldDrawButtonAsDown) {
         g.setColour(iconColor.withAlpha(0.2f));
@@ -144,13 +167,13 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         g.setColour(iconColor.withAlpha(0.1f));
         g.fillRoundedRectangle(bgBounds, cornerRadius);
     } else if (hasNormalBackgroundColor) {
-        g.setColour(normalBackgroundColor);
+        g.setColour(normalBackground);
         g.fillRoundedRectangle(bgBounds, cornerRadius);
     }
 
     // Draw border if set (colored differently while active, if configured)
     if (hasBorder) {
-        g.setColour(isActive && hasActiveBorderColor ? activeBorderColor : borderColor);
+        g.setColour(isActive && hasActiveBorderColor ? activeBorder : border);
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
                                cornerRadius, borderThickness);
     }
@@ -165,9 +188,11 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     if (hasOriginalColor) {
         iconCopy->replaceColour(originalColor, iconColor);
     } else {
-        // Fallback: try common fill colors
+        // Untinted legacy assets still get the active palette's neutral and
+        // state colours. Black remains the generic single-colour source and
+        // follows the button state below.
+        DarkTheme::applyToSvgIcon(*iconCopy);
         iconCopy->replaceColour(juce::Colours::black, iconColor);
-        iconCopy->replaceColour(juce::Colour(0xFF000000), iconColor);
     }
 
     // Draw the icon (dimmed when disabled)

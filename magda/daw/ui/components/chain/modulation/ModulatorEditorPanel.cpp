@@ -212,7 +212,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Curve editor (for curve mode - bezier editing with integrated phase indicator)
     curveEditor_.setName("miniLFO");
     curveEditor_.setVisible(false);
-    curveEditor_.setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    curveEditor_.setCurveColour(DarkTheme::ACCENT_ORANGE);
     curveEditor_.onWaveformChanged = [this]() {
         DBG("[HardCorner] ModulatorEditorPanel embedded curve onWaveformChanged");
         // Curve points are stored directly in ModInfo by LFOCurveEditor
@@ -1150,14 +1150,14 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
             auto r = sb.toFloat();
             juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
                                        dotSize);
-            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+            g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.85f));
             g.fillEllipse(dot);
         }
         if (!sb.isEmpty() && isRateInMidiLearnMode_) {
             float phase = std::fmod(
                 static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
             float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
-            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(alpha));
+            g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(alpha));
             g.drawRoundedRectangle(sb.toFloat().reduced(0.5f), 2.0f, 1.5f);
         }
     }

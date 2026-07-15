@@ -2,6 +2,361 @@
 
 namespace magda {
 
+namespace {
+
+constexpr DarkTheme::Palette darkPalette{
+    // Elevation ramp
+    0xFF0C0F14,  // E0
+    0xFF151A21,  // E1
+    0xFF1E242D,  // E2
+    0xFF28303A,  // E3
+    0xFF2C343E,  // HAIRLINE
+
+    // Backgrounds
+    0xFF0C0F14,  // BACKGROUND
+    0xFF151A21,  // BACKGROUND_ALT
+    0xFF151A21,  // PANEL_BACKGROUND
+    0xFF1E242D,  // SURFACE
+    0xFF28303A,  // SURFACE_HOVER
+
+    // Transport and controls
+    0xFF151A21,  // TRANSPORT_BACKGROUND
+    0xFF0C0F14,  // BUTTON_NORMAL
+    0xFF1E242D,  // BUTTON_HOVER
+    0xFF28303A,  // BUTTON_PRESSED
+    0xFF5588AA,  // BUTTON_ACTIVE
+    0xFF2C343E,  // BUTTON_STROKE
+    0x12E8EDF1,  // CONTROL_VALUE_FILL
+    0xFF999999,  // CONTROL_SLIDER_THUMB
+
+    // Text
+    0xFFE8EDF1,  // TEXT_PRIMARY
+    0xFFAEB6BD,  // TEXT_SECONDARY
+    0xFF7C858D,  // TEXT_DIM
+    0xFF666666,  // TEXT_DISABLED
+
+    // Accents
+    0xFF5588AA,  // ACCENT_BLUE
+    0xFF88AACC,  // ACCENT_BLUE_LIGHT
+    0xFF66AAFF,  // ACCENT_CYAN
+    0xFF43C07A,  // ACCENT_GREEN
+    0xFFFF8822,  // ACCENT_ORANGE
+    0xFF7777DD,  // ACCENT_PURPLE
+    0xFF5577CC,  // PRESET_INDIGO
+    0xFFFF6B35,  // MIDI_LEARN
+    0xFFCC3333,  // STEP_RECORD
+    0xFF6655AA,  // MASTER_TRACK_COLOUR
+
+    // Status
+    0xFF44AA44,  // STATUS_SUCCESS
+    0xFFFFAA44,  // STATUS_WARNING
+    0xFFAA4444,  // STATUS_ERROR
+    0xFFE64343,  // STATUS_DANGER
+
+    // Tracks
+    0xFF151A21,  // TRACK_BACKGROUND
+    0xFF1E242D,  // TRACK_SELECTED
+    0xFFB4BCC6,  // TRACK_HEADER_SELECTED
+    0xFF0C0F14,  // TRACK_HEADER_SELECTED_TEXT
+    0xFF0C0F14,  // TRACK_SEPARATOR
+
+    // Timeline and grid
+    0xFF151A21,  // TIMELINE_BACKGROUND
+    0xFF383840,  // GRID_LINE
+    0xFF484850,  // BEAT_LINE
+    0xFF555555,  // BAR_LINE
+
+    // Borders and separators
+    0xFF2C343E,  // BORDER
+    0xFF2C343E,  // SEPARATOR
+    0xFF3A4450,  // RESIZE_HANDLE
+
+    // Audio visualization
+    0xFF33E680,  // WAVEFORM_NORMAL
+    0xFF66AAFF,  // WAVEFORM_SELECTED
+    0xFF44AA44,  // LEVEL_METER_GREEN
+    0xFFFFAA44,  // LEVEL_METER_YELLOW
+    0xFFAA4444,  // LEVEL_METER_RED
+    0xFF2ECC71,  // GAIN_METER_LOW
+    0xFFF39C12,  // GAIN_METER_WARNING
+    0xFFE74C3C,  // GAIN_METER_HIGH
+    0xFF00D4FF,  // GATE_CURVE
+    0xFFFF8C00,  // GATE_THRESHOLD
+    0xFF43A0FF,  // MULTIBAND_LOW
+    0xFFFFB347,  // MULTIBAND_MID
+    0xFFAA66FF,  // MULTIBAND_HIGH
+    0xFFFF0000,  // MULTIBAND_LIMIT
+    0xFFFF9800,  // SAMPLER_START_MARKER
+    0xFFE53935,  // SAMPLER_END_MARKER
+    0xFFC8C8C8,  // SPECTRUM_OVERLAY
+    0xFF0D0D0F,  // INSTRUMENT_BACKGROUND
+    0xFF141417,  // INSTRUMENT_PANEL
+    0xFF242428,  // INSTRUMENT_BORDER
+    0xFFE4E4E8,  // INSTRUMENT_TEXT
+    0xFF7A7A84,  // INSTRUMENT_TEXT_DIM
+
+    // Selection and loop regions
+    0x335588AA,  // TIME_SELECTION
+    0x08FFFFFF,  // LOOP_REGION
+    0xFF44AA66,  // LOOP_MARKER
+    0xFFCCAA44,  // OFFSET_MARKER
+
+    // Shared UI and automation editor
+    0xFFFFFFFF,  // TEXT_BRIGHT
+    0xFF111111,  // INPUT_BACKGROUND
+    0xFF161616,  // TOOLTIP_BACKGROUND
+    0xFFB3B3B3,  // ICON_NEUTRAL
+    0xFFBCBCBC,  // ICON_TRANSPORT
+    0xFF1E1E1E,  // AUTOMATION_LANE_BACKGROUND
+    0xFF2A2A2A,  // AUTOMATION_LANE_SELECTED
+    0xFF252525,  // AUTOMATION_LANE_HEADER
+    0xFF1A1A1A,  // AUTOMATION_LANE_SCALE_BACKGROUND
+    0xFF333333,  // AUTOMATION_DIVIDER
+    0xFF444444,  // AUTOMATION_DIVIDER_LIGHT
+    0xFF3A3A3A,  // AUTOMATION_GUIDE
+    0xFF888888,  // AUTOMATION_SCALE_TEXT
+    0xFF777777,  // AUTOMATION_SCALE_LABEL
+    0xFFCCCCCC,  // AUTOMATION_TEXT
+    0xFFAAAAAA,  // AUTOMATION_POINT
+    0xFFCCCCCC,  // AUTOMATION_POINT_HOVER
+    0xFF6688CC,  // AUTOMATION_BEZIER
+    0xFFCCAA88,  // AUTOMATION_TENSION_HOVER
+    0xFF1A1A1A,  // CURVE_BACKGROUND
+    0xDD222222,  // CURVE_TOOLTIP_BACKGROUND
+    0xFFEEEEEE,  // CURVE_TOOLTIP_TEXT
+    0xFFFF8A2A,  // CURVE_POINT
+    0xFF141414,  // CURVE_HANDLE_BACKGROUND
+    0xFFE6E6E6,  // CURVE_HANDLE_NORMAL
+
+    // Piano roll
+    0xFF000000,  // TEXT_DARK
+    0xFF1A1A1A,  // PIANO_ROLL_BACKGROUND
+    0xFFE8E8E8,  // PIANO_ROLL_KEY_WHITE
+    0xFF4A9EFF,  // PIANO_ROLL_KEY_HIGHLIGHT
+    0xFFCCCCCC,  // PIANO_ROLL_KEY_SEPARATOR
+    0xFF6688CC,  // PIANO_ROLL_PITCH_HIGHLIGHT
+    0xFF3A3A3A,  // PIANO_ROLL_GRID_BACKGROUND
+    0xFF2A2A2A,  // PIANO_ROLL_GRID_BLACK_KEY
+    0xFF505050,  // PIANO_ROLL_GRID_SUBDIVISION
+    0xFF585858,  // PIANO_ROLL_GRID_BEAT
+    0xFF707070,  // PIANO_ROLL_GRID_BAR
+    0xFF5599FF,  // PIANO_ROLL_CHORD_PREVIEW
+    0xFF202020,  // PIANO_ROLL_TOOLTIP_BACKGROUND
+    0xFF808080,  // PIANO_ROLL_FALLBACK_CLIP
+    0xFF6A7280,  // CLIP_BOUNDARY
+    0xFF333333,  // PIANO_ROLL_TAKE_LANE_ACTIVE
+    0xFF262626,  // PIANO_ROLL_TAKE_LANE_INACTIVE
+
+    // Shared controls
+    0xFFBCD4E8,  // TEXT_SLIDER_THUMB
+    0xFF4CAF50,  // TEXT_SLIDER_METER_LOW
+    0xFFFFC107,  // TEXT_SLIDER_METER_WARNING
+    0xFFF44336,  // TEXT_SLIDER_METER_HIGH
+    0xFF222233,  // TOAST_BACKGROUND
+    0xFF1F1F1F,  // QWERTY_WHITE_KEY_NOTE_TEXT
+    0xFFE06C75,  // EQ_BAND_LOW
+    0xFF61AFEF,  // EQ_BAND_LOW_MID
+    0xFF98C379,  // EQ_BAND_HIGH_MID
+    0xFFE5C07B,  // EQ_BAND_HIGH
+};
+
+constexpr std::size_t colourRoleIndex(ColourRole role) {
+    return static_cast<std::size_t>(role);
+}
+
+constexpr DarkTheme::Palette highContrastPalette = [] {
+    auto palette = darkPalette;
+
+    // This deliberately pragmatic palette proves the live-selection path.
+    // It is not MAGDA's future Light theme, which will get its own contrast
+    // and derived-colour pass in issue #89.
+    palette[colourRoleIndex(ColourRole::E0)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::E1)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::E2)] = 0xFF1B1B1B;
+    palette[colourRoleIndex(ColourRole::E3)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::HAIRLINE)] = 0xFF707070;
+
+    palette[colourRoleIndex(ColourRole::BACKGROUND)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::BACKGROUND_ALT)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::PANEL_BACKGROUND)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::SURFACE)] = 0xFF1B1B1B;
+    palette[colourRoleIndex(ColourRole::SURFACE_HOVER)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_BACKGROUND)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::BUTTON_NORMAL)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::BUTTON_HOVER)] = 0xFF1B1B1B;
+    palette[colourRoleIndex(ColourRole::BUTTON_PRESSED)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::BUTTON_ACTIVE)] = 0xFF4DA3FF;
+    palette[colourRoleIndex(ColourRole::BUTTON_STROKE)] = 0xFF707070;
+    palette[colourRoleIndex(ColourRole::TEXT_PRIMARY)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::TEXT_SECONDARY)] = 0xFFE0E0E0;
+    palette[colourRoleIndex(ColourRole::TEXT_DIM)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::TEXT_DISABLED)] = 0xFF808080;
+    palette[colourRoleIndex(ColourRole::ACCENT_BLUE)] = 0xFF4DA3FF;
+    palette[colourRoleIndex(ColourRole::ACCENT_BLUE_LIGHT)] = 0xFF9DCCFF;
+    palette[colourRoleIndex(ColourRole::ACCENT_CYAN)] = 0xFF54C7FF;
+    palette[colourRoleIndex(ColourRole::ACCENT_GREEN)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::PRESET_INDIGO)] = 0xFF88B7FF;
+    palette[colourRoleIndex(ColourRole::MIDI_LEARN)] = 0xFFFF9A73;
+    palette[colourRoleIndex(ColourRole::STEP_RECORD)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::TRACK_HEADER_SELECTED)] = 0xFFF0F0F0;
+    palette[colourRoleIndex(ColourRole::TRACK_HEADER_SELECTED_TEXT)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::TRACK_SEPARATOR)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::TIMELINE_BACKGROUND)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::GRID_LINE)] = 0xFF4A4A4A;
+    palette[colourRoleIndex(ColourRole::BEAT_LINE)] = 0xFF656565;
+    palette[colourRoleIndex(ColourRole::BAR_LINE)] = 0xFF909090;
+    palette[colourRoleIndex(ColourRole::BORDER)] = 0xFF707070;
+    palette[colourRoleIndex(ColourRole::SEPARATOR)] = 0xFF707070;
+    palette[colourRoleIndex(ColourRole::RESIZE_HANDLE)] = 0xFF909090;
+    palette[colourRoleIndex(ColourRole::GAIN_METER_LOW)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::GAIN_METER_WARNING)] = 0xFFFFD166;
+    palette[colourRoleIndex(ColourRole::GAIN_METER_HIGH)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::GATE_CURVE)] = 0xFF54DFFF;
+    palette[colourRoleIndex(ColourRole::GATE_THRESHOLD)] = 0xFFFFC15A;
+    palette[colourRoleIndex(ColourRole::MULTIBAND_LOW)] = 0xFF76B7FF;
+    palette[colourRoleIndex(ColourRole::MULTIBAND_MID)] = 0xFFFFD166;
+    palette[colourRoleIndex(ColourRole::MULTIBAND_HIGH)] = 0xFFCD9BFF;
+    palette[colourRoleIndex(ColourRole::MULTIBAND_LIMIT)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::SAMPLER_START_MARKER)] = 0xFFFFB452;
+    palette[colourRoleIndex(ColourRole::SAMPLER_END_MARKER)] = 0xFFFF7171;
+    palette[colourRoleIndex(ColourRole::SPECTRUM_OVERLAY)] = 0xFFD8D8D8;
+    palette[colourRoleIndex(ColourRole::INSTRUMENT_BACKGROUND)] = 0xFF08080A;
+    palette[colourRoleIndex(ColourRole::INSTRUMENT_PANEL)] = 0xFF15151A;
+    palette[colourRoleIndex(ColourRole::INSTRUMENT_BORDER)] = 0xFF66666E;
+    palette[colourRoleIndex(ColourRole::INSTRUMENT_TEXT)] = 0xFFF3F3F8;
+    palette[colourRoleIndex(ColourRole::INSTRUMENT_TEXT_DIM)] = 0xFFB8B8C0;
+    palette[colourRoleIndex(ColourRole::TEXT_BRIGHT)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::INPUT_BACKGROUND)] = 0xFF080808;
+    palette[colourRoleIndex(ColourRole::TOOLTIP_BACKGROUND)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::ICON_NEUTRAL)] = 0xFFD0D0D0;
+    palette[colourRoleIndex(ColourRole::ICON_TRANSPORT)] = 0xFFD8D8D8;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_LANE_BACKGROUND)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_LANE_SELECTED)] = 0xFF202020;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_LANE_HEADER)] = 0xFF181818;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_LANE_SCALE_BACKGROUND)] = 0xFF080808;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_DIVIDER)] = 0xFF707070;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_DIVIDER_LIGHT)] = 0xFF909090;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_GUIDE)] = 0xFF808080;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_SCALE_TEXT)] = 0xFFC0C0C0;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_SCALE_LABEL)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_TEXT)] = 0xFFE0E0E0;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_POINT)] = 0xFFC0C0C0;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_POINT_HOVER)] = 0xFFE0E0E0;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_BEZIER)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::AUTOMATION_TENSION_HOVER)] = 0xFFFFCC88;
+    palette[colourRoleIndex(ColourRole::CURVE_BACKGROUND)] = 0xFF080808;
+    palette[colourRoleIndex(ColourRole::CURVE_TOOLTIP_BACKGROUND)] = 0xEE181818;
+    palette[colourRoleIndex(ColourRole::CURVE_TOOLTIP_TEXT)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::CURVE_POINT)] = 0xFFFFA24A;
+    palette[colourRoleIndex(ColourRole::CURVE_HANDLE_BACKGROUND)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::CURVE_HANDLE_NORMAL)] = 0xFFE0E0E0;
+    palette[colourRoleIndex(ColourRole::TEXT_DARK)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_BACKGROUND)] = 0xFF080808;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_KEY_WHITE)] = 0xFFF0F0F0;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_KEY_HIGHLIGHT)] = 0xFF4DA3FF;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_KEY_SEPARATOR)] = 0xFF909090;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_PITCH_HIGHLIGHT)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_GRID_BACKGROUND)] = 0xFF202020;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_GRID_BLACK_KEY)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_GRID_SUBDIVISION)] = 0xFF707070;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_GRID_BEAT)] = 0xFF909090;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_GRID_BAR)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_CHORD_PREVIEW)] = 0xFF4DA3FF;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_TOOLTIP_BACKGROUND)] = 0xFF181818;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_FALLBACK_CLIP)] = 0xFFA0A0A0;
+    palette[colourRoleIndex(ColourRole::CLIP_BOUNDARY)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_TAKE_LANE_ACTIVE)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::PIANO_ROLL_TAKE_LANE_INACTIVE)] = 0xFF181818;
+    palette[colourRoleIndex(ColourRole::TEXT_SLIDER_THUMB)] = 0xFFE5F1FF;
+    palette[colourRoleIndex(ColourRole::TEXT_SLIDER_METER_LOW)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::TEXT_SLIDER_METER_WARNING)] = 0xFFFFD166;
+    palette[colourRoleIndex(ColourRole::TEXT_SLIDER_METER_HIGH)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::TOAST_BACKGROUND)] = 0xFF181818;
+    palette[colourRoleIndex(ColourRole::QWERTY_WHITE_KEY_NOTE_TEXT)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::EQ_BAND_LOW)] = 0xFFFF8088;
+    palette[colourRoleIndex(ColourRole::EQ_BAND_LOW_MID)] = 0xFF7FC5FF;
+    palette[colourRoleIndex(ColourRole::EQ_BAND_HIGH_MID)] = 0xFFB0E890;
+    palette[colourRoleIndex(ColourRole::EQ_BAND_HIGH)] = 0xFFFFD58C;
+
+    return palette;
+}();
+
+}  // namespace
+
+DarkTheme::Palette DarkTheme::activePalette_ = darkPalette;
+
+const DarkTheme::Palette& DarkTheme::getDarkPalette() {
+    return darkPalette;
+}
+
+const DarkTheme::Palette& DarkTheme::getActivePalette() {
+    return activePalette_;
+}
+
+void DarkTheme::setActivePalette(const Palette& palette) {
+    activePalette_ = palette;
+}
+
+void DarkTheme::resetToDarkPalette() {
+    activePalette_ = darkPalette;
+}
+
+bool DarkTheme::setActiveBuiltInTheme(const std::string& themeId) {
+    if (themeId == kDarkThemeId) {
+        activePalette_ = darkPalette;
+        return true;
+    }
+
+    if (themeId == kHighContrastThemeId) {
+        activePalette_ = highContrastPalette;
+        return true;
+    }
+
+    return false;
+}
+
+bool DarkTheme::isBuiltInTheme(const std::string& themeId) {
+    return themeId == kDarkThemeId || themeId == kHighContrastThemeId;
+}
+
+std::optional<ColourRole> DarkTheme::findDarkPaletteRole(juce::Colour colour) {
+    const auto rgb = colour.getARGB() & 0x00FFFFFFu;
+    const auto findRole = [rgb](const Palette& palette) -> std::optional<ColourRole> {
+        for (std::size_t index = 0; index < palette.size(); ++index)
+            if ((palette[index] & 0x00FFFFFFu) == rgb)
+                return static_cast<ColourRole>(index);
+
+        return std::nullopt;
+    };
+
+    if (const auto activeRole = findRole(activePalette_))
+        return activeRole;
+
+    return findRole(darkPalette);
+}
+
+void DarkTheme::applyToSvgIcon(juce::Drawable& drawable) {
+    // All replacements preserve the current Dark output exactly. On another
+    // palette they let the control icon follow the corresponding semantic
+    // colour without editing its SVG payload.
+    drawable.replaceColour(juce::Colour(0xFFB3B3B3), getColour(ICON_NEUTRAL));
+    drawable.replaceColour(juce::Colour(0xFFBCBCBC), getColour(ICON_TRANSPORT));
+    drawable.replaceColour(juce::Colour(0xFF1A1A1A), getColour(PIANO_ROLL_BACKGROUND));
+    drawable.replaceColour(juce::Colour(0xFF1E1E1E), getColour(AUTOMATION_LANE_BACKGROUND));
+    drawable.replaceColour(juce::Colour(0xFF444444), getColour(AUTOMATION_DIVIDER_LIGHT));
+    drawable.replaceColour(juce::Colour(0xFF555555), getColour(BAR_LINE));
+    drawable.replaceColour(juce::Colour(0xFF5588AA), getColour(ACCENT_BLUE));
+    drawable.replaceColour(juce::Colour(0xFF7777DD), getColour(ACCENT_PURPLE));
+    drawable.replaceColour(juce::Colour(0xFFAA4444), getColour(STATUS_ERROR));
+    drawable.replaceColour(juce::Colour(0xFFFF8822), getColour(ACCENT_ORANGE));
+}
+
+juce::uint32 DarkTheme::getColourValue(ColourRole role) {
+    const auto index = static_cast<std::size_t>(role);
+    jassert(index < activePalette_.size());
+    return activePalette_[index];
+}
+
 void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     // V4 ColourScheme drives the title bar background (widgetBackground) and a
     // few other top-level surfaces that the colour-ID system doesn't reach.

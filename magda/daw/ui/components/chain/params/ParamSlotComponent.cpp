@@ -607,7 +607,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (selected_) {
-        g.setColour(juce::Colour(0xff888888));
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 2.0f, 2.0f);
     }
 
@@ -623,7 +623,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
         auto slider = valueSlider_.getBounds().toFloat();
         juce::Rectangle<float> dot(slider.getRight() - margin - dotSize, slider.getY() + margin,
                                    dotSize, dotSize);
-        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+        g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.85f));
         g.fillEllipse(dot);
     }
 
@@ -633,7 +633,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
             std::fmod(static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
         // 0.7 + 0.3*sin keeps alpha in [0.4, 1.0]; 0.4 + 0.6*sin went negative.
         float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
-        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(alpha));
+        g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(alpha));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 2.0f);
     }
 

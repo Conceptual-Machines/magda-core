@@ -7,9 +7,6 @@ namespace magda::daw::ui {
 
 void IconSelector::addOption(const char* svgData, int svgSize, const juce::String& tooltip) {
     auto icon = juce::Drawable::createFromImageData(svgData, svgSize);
-    if (icon) {
-        icon->replaceColour(juce::Colours::black, DarkTheme::getSecondaryTextColour());
-    }
     options_.push_back({std::move(icon), {}, tooltip});
 }
 
@@ -52,17 +49,13 @@ void IconSelector::paint(juce::Graphics& g) {
         }
 
         if (opt.icon) {
-            // Draw SVG icon
+            // Recolour from the original SVG on every paint so a live theme
+            // switch never leaves cached selector icons in the old palette.
             auto iconArea = bounds.reduced(3).toFloat();
             float opacity = selected ? 1.0f : (hovered ? 0.8f : 0.45f);
-
-            if (selected) {
-                auto copy = opt.icon->createCopy();
-                copy->replaceColour(textSecondary, textPrimary);
-                copy->drawWithin(g, iconArea, juce::RectanglePlacement::centred, opacity);
-            } else {
-                opt.icon->drawWithin(g, iconArea, juce::RectanglePlacement::centred, opacity);
-            }
+            auto copy = opt.icon->createCopy();
+            copy->replaceColour(juce::Colours::black, selected ? textPrimary : textSecondary);
+            copy->drawWithin(g, iconArea, juce::RectanglePlacement::centred, opacity);
         } else if (opt.text.isNotEmpty()) {
             // Draw text option
             g.setFont(FontManager::getInstance().getUIFont(9.0f));

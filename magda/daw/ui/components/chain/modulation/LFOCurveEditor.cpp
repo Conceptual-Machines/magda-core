@@ -6,6 +6,7 @@
 
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/themes/DarkTheme.hpp"
 
 namespace magda {
 
@@ -795,7 +796,7 @@ void LFOCurveEditor::paint(juce::Graphics& g) {
     CurveEditorBase::paint(g);
 
     if (drawContentBorder_) {
-        g.setColour(juce::Colour(0xFF3A3A3A));
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_GUIDE));
         g.drawRect(getContentBounds(), 1);
     }
 
@@ -817,7 +818,7 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
 
     // Draw crosshair lines (toggle with 'C' key)
     if (showCrosshair_) {
-        g.setColour(curveColour_.withAlpha(0.4f));
+        g.setColour(getCurveColour().withAlpha(0.4f));
         g.drawVerticalLine(x, static_cast<float>(content.getY()),
                            static_cast<float>(content.getBottom()));
         g.drawHorizontalLine(y, static_cast<float>(content.getX()),
@@ -827,7 +828,7 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
     // Draw indicator dot
     constexpr float dotSize = 5.0f;
     constexpr float dotRadius = dotSize / 2.0f;
-    g.setColour(curveColour_);
+    g.setColour(getCurveColour());
     g.fillEllipse(static_cast<float>(x) - dotRadius, static_cast<float>(y) - dotRadius, dotSize,
                   dotSize);
 
@@ -845,10 +846,10 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
                                trigDotRadius * 2, trigDotRadius * 2);
 
     if (triggerHoldFrames_ > 0) {
-        g.setColour(curveColour_);
+        g.setColour(getCurveColour());
         g.fillEllipse(trigBounds);
     } else {
-        g.setColour(curveColour_.withAlpha(0.3f));
+        g.setColour(getCurveColour().withAlpha(0.3f));
         g.drawEllipse(trigBounds, 1.0f);
     }
 }
@@ -866,7 +867,8 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
         int y = static_cast<int>(yToPixelF(value));
         // Center line is brighter
         bool isCenter = (i * 2 == gridDivisionsY_);
-        g.setColour(juce::Colour(isCenter ? 0x20FFFFFF : 0x10FFFFFF));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+                        .withAlpha((isCenter ? 0x20 : 0x10) / 255.0f));
         g.drawHorizontalLine(y, 0.0f, width);
     }
 
@@ -876,7 +878,8 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
         double phase = static_cast<double>(i) / gridDivisionsX_;
         int x = static_cast<int>(xToPixelF(phase));
         bool isCenter = (i * 2 == gridDivisionsX_);
-        g.setColour(juce::Colour(isCenter ? 0x20FFFFFF : 0x10FFFFFF));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+                        .withAlpha((isCenter ? 0x20 : 0x10) / 255.0f));
         g.drawVerticalLine(x, 0.0f, height);
     }
 
@@ -895,7 +898,7 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
     float loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
 
     // Shade areas outside the loop region
-    g.setColour(juce::Colour(0x30000000));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x30 / 255.0f));
     if (loopStartX > content.getX()) {
         g.fillRect(juce::Rectangle<float>(
             static_cast<float>(content.getX()), static_cast<float>(content.getY()),
@@ -908,7 +911,7 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
     }
 
     // Draw loop region markers
-    g.setColour(curveColour_.withAlpha(0.7f));
+    g.setColour(getCurveColour().withAlpha(0.7f));
     g.drawVerticalLine(static_cast<int>(loopStartX), static_cast<float>(content.getY()),
                        static_cast<float>(content.getBottom()));
     g.drawVerticalLine(static_cast<int>(loopEndX), static_cast<float>(content.getY()),

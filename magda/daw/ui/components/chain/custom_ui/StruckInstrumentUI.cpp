@@ -3,16 +3,17 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
+#include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-const juce::Colour kBg{0xff0d0d0f};
-const juce::Colour kPanel{0xff141417};
-const juce::Colour kBorder{0xff242428};
-const juce::Colour kText{0xffe4e4e8};
-const juce::Colour kDim{0xff7a7a84};
+const ThemedColour kBg{DarkTheme::INSTRUMENT_BACKGROUND};
+const ThemedColour kPanel{DarkTheme::INSTRUMENT_PANEL};
+const ThemedColour kBorder{DarkTheme::INSTRUMENT_BORDER};
+const ThemedColour kText{DarkTheme::INSTRUMENT_TEXT};
+const ThemedColour kDim{DarkTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour kExc{0xffd6a24c};   // exciter accent (amber)
 const juce::Colour kReso{0xff5b8fd0};  // resonator accent (blue)
 
@@ -75,6 +76,13 @@ StruckInstrumentUI::StruckInstrumentUI(const juce::String& pluginId)
 
 StruckInstrumentUI::~StruckInstrumentUI() {
     stopTimer();
+}
+
+void StruckInstrumentUI::lookAndFeelChanged() {
+    for (auto& control : controls_)
+        if (control.label)
+            control.label->setColour(juce::Label::textColourId, kDim);
+    repaint();
 }
 
 void StruckInstrumentUI::ensureControls(int count) {

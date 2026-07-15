@@ -3,7 +3,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <string>
 
+#include "../../core/Config.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../components/common/Toast.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
@@ -34,7 +36,9 @@ class QwertyMidiKeyboard;
 class PlaybackPositionTimer;
 class KeyMappingStore;
 
-class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
+class MainWindow : public juce::DocumentWindow,
+                   public ProjectManagerListener,
+                   private ConfigListener {
   public:
     MainWindow(AudioEngine* audioEngine = nullptr);
     ~MainWindow() override;
@@ -46,6 +50,9 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
     void projectSaved(const ProjectInfo& info) override;
     void projectClosed() override;
     void projectDirtyStateChanged(bool isDirty) override;
+
+    // ConfigListener
+    void configChanged() override;
 
     /** Open a .mgd project file (used by menu, command line, and OS file association). */
     void openProjectFile(const juce::File& file);
@@ -63,12 +70,14 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
 
   private:
     void updateWindowTitle();
+    void applyThemeFromConfig();
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
 
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
+    std::string appliedTheme_;
 
     void setupMenuBar();
     void setupMenuCallbacks();

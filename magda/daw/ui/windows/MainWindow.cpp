@@ -46,12 +46,12 @@
 #include "project/ProjectManager.hpp"
 
 #if JUCE_WINDOWS
-#include <dwmapi.h>
-#include <windows.h>
-#pragma comment(lib, "dwmapi.lib")
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
+    #include <dwmapi.h>
+    #include <windows.h>
+    #pragma comment(lib, "dwmapi.lib")
+    #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+        #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+    #endif
 #endif
 
 namespace magda {
@@ -291,6 +291,8 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 
     // Listen for project changes to update window title
     ProjectManager::getInstance().addListener(this);
+    Config::getInstance().addListener(this);
+    applyThemeFromConfig();
     updateWindowTitle();
 
     // Start modulation engine at 60 FPS (updates LFO values in background)
@@ -309,6 +311,7 @@ MainWindow::~MainWindow() {
     }
 
     ProjectManager::getInstance().removeListener(this);
+    Config::getInstance().removeListener(this);
 
 #if JUCE_DEBUG
     // Print profiling report if enabled, then shutdown to clear JUCE objects
@@ -330,6 +333,36 @@ MainWindow::~MainWindow() {
 
     removeKeyListener(mainComponent->getCommandManager().getKeyMappings());
     DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
+}
+
+void MainWindow::configChanged() {
+    applyThemeFromConfig();
+}
+
+void MainWindow::applyThemeFromConfig() {
+    const auto& requestedTheme = Config::getInstance().getTheme();
+    if (requestedTheme == appliedTheme_)
+        return;
+
+    if (!DarkTheme::setActiveBuiltInTheme(requestedTheme)) {
+        DBG("[Theme] Unknown theme '" << requestedTheme << "'; using dark");
+        DarkTheme::resetToDarkPalette();
+    }
+
+    if (auto* lookAndFeel =
+            dynamic_cast<juce::LookAndFeel_V4*>(&juce::LookAndFeel::getDefaultLookAndFeel())) {
+        DarkTheme::applyToLookAndFeel(*lookAndFeel);
+    }
+
+    // Theme colours live in both JUCE colour IDs and custom paint code. A
+    // look-and-feel change reaches every child so controls that cache colours
+    // can refresh, while repaint covers direct DarkTheme lookups at paint time.
+    for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
+        if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
+            window->sendLookAndFeelChange();
+    }
+
+    appliedTheme_ = requestedTheme;
 }
 
 void MainWindow::closeButtonPressed() {

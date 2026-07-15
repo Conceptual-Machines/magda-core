@@ -24,10 +24,10 @@ OctaveLabelStrip::OctaveLabelStrip() {
 void OctaveLabelStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    g.setColour(juce::Colour(0xFF1a1a1a));
+    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_BACKGROUND));
     g.fillRect(bounds);
 
-    g.setColour(juce::Colour(0xFFB3B3B3));
+    g.setColour(DarkTheme::getColour(DarkTheme::ICON_NEUTRAL));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
     const int labelHeight = LABEL_HEIGHT;
@@ -51,7 +51,7 @@ void OctaveLabelStrip::paint(juce::Graphics& g) {
             const int labelY = y + (noteHeight_ - labelHeight) / 2;
             auto labelArea =
                 juce::Rectangle<int>(bounds.getX(), labelY, bounds.getWidth(), labelHeight);
-            g.setColour(juce::Colour(0xFFB3B3B3));
+            g.setColour(DarkTheme::getColour(DarkTheme::ICON_NEUTRAL));
             g.drawText(noteLabel(note), labelArea.reduced(2, 0), juce::Justification::centred,
                        false);
             if (octave != prevOctave) {
@@ -76,7 +76,7 @@ void OctaveLabelStrip::paint(juce::Graphics& g) {
 
             auto labelArea =
                 juce::Rectangle<int>(bounds.getX(), labelY, bounds.getWidth(), labelHeight);
-            g.setColour(juce::Colour(0xFFB3B3B3));
+            g.setColour(DarkTheme::getColour(DarkTheme::ICON_NEUTRAL));
             g.drawText(noteLabel(note), labelArea.reduced(2, 0), juce::Justification::centred,
                        false);
 

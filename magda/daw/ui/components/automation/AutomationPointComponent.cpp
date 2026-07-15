@@ -1,5 +1,6 @@
 #include "AutomationPointComponent.hpp"
 
+#include "../../themes/DarkTheme.hpp"
 #include "AutomationCurveEditor.hpp"
 
 namespace magda {
@@ -24,7 +25,7 @@ void AutomationPointComponent::paint(juce::Graphics& g) {
 
     // Draw connection lines to handles if visible
     if (handlesVisible_ && isSelected_) {
-        g.setColour(juce::Colour(0x88FFFFFF));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x88 / 255.0f));
 
         if (inHandle_ && inHandle_->isVisible()) {
             auto handleCenter = inHandle_->getBounds().getCentre().toFloat();
@@ -44,11 +45,11 @@ void AutomationPointComponent::paint(juce::Graphics& g) {
     // Point fill color based on state
     juce::Colour fillColour;
     if (isSelected_) {
-        fillColour = juce::Colour(0xFFFFFFFF);
+        fillColour = DarkTheme::getColour(DarkTheme::TEXT_BRIGHT);
     } else if (isHovered_) {
-        fillColour = juce::Colour(0xFFCCCCCC);
+        fillColour = DarkTheme::getColour(DarkTheme::AUTOMATION_POINT_HOVER);
     } else {
-        fillColour = juce::Colour(0xFFAAAAAA);
+        fillColour = DarkTheme::getColour(DarkTheme::AUTOMATION_POINT);
     }
 
     // Draw point
@@ -56,12 +57,12 @@ void AutomationPointComponent::paint(juce::Graphics& g) {
     g.fillEllipse(centerX - radius, centerY - radius, pointSize, pointSize);
 
     // Outline
-    g.setColour(juce::Colour(0xFF333333));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
     g.drawEllipse(centerX - radius, centerY - radius, pointSize, pointSize, 1.5f);
 
     // Curve type indicator for bezier
     if (point_.curveType == AutomationCurveType::Bezier && isSelected_) {
-        g.setColour(juce::Colour(0xFF6688CC));
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_BEZIER));
         g.fillEllipse(centerX - 2, centerY - 2, 4, 4);
     }
 }

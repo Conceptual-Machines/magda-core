@@ -494,13 +494,6 @@ class SessionView::BeatBandContainer : public juce::Component {
         setInterceptsMouseClicks(true, false);
         rateIcon_ = magda::ManagedDrawable::create(BinaryData::rate_svg, BinaryData::rate_svgSize);
         hideIcon_ = magda::ManagedDrawable::create(BinaryData::hide_svg, BinaryData::hide_svgSize);
-        // SVGs ship with #B3B3B3 fills; tint to the theme's secondary text
-        // colour once so the icons read against the column BG.
-        const auto tint = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-        if (rateIcon_)
-            rateIcon_->replaceColour(juce::Colour(0xFFB3B3B3), tint);
-        if (hideIcon_)
-            hideIcon_->replaceColour(juce::Colour(0xFFB3B3B3), tint);
     }
 
     void setTrackLayout(int numTracks, const std::vector<int>& trackWidths, int separatorWidth,
@@ -582,12 +575,18 @@ class SessionView::BeatBandContainer : public juce::Component {
             }
 
             if (hideIcon_) {
-                hideIcon_->drawWithin(g, layout.hideIconBounds.toFloat(),
-                                      juce::RectanglePlacement::centred, hidden ? 0.55f : 0.3f);
+                auto themedIcon = hideIcon_->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                themedIcon->drawWithin(g, layout.hideIconBounds.toFloat(),
+                                       juce::RectanglePlacement::centred, hidden ? 0.55f : 0.3f);
             }
             if (rateIcon_) {
-                rateIcon_->drawWithin(g, layout.rateIconBounds.toFloat(),
-                                      juce::RectanglePlacement::centred, 0.3f);
+                auto themedIcon = rateIcon_->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                themedIcon->drawWithin(g, layout.rateIconBounds.toFloat(),
+                                       juce::RectanglePlacement::centred, 0.3f);
             }
 
             cursor += w;

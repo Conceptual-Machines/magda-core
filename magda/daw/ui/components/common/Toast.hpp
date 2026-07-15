@@ -35,6 +35,7 @@ class Toast : public juce::Component, private juce::Timer {
     static void showGlobal(const juce::String& text, int durationMs = 3000);
 
     // juce::Component
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 

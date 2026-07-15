@@ -212,6 +212,12 @@ class GeneralPage : public juce::Component {
         };
 
         setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
+        setupComboLabel(themeLabel, trOr("preferences.theme.label", "Theme"));
+        styleCombo(themeCombo);
+        themeCombo.addItem("Dark", 1);
+        themeCombo.addItem("High Contrast (preview)", 2);
+        addAndMakeVisible(themeCombo);
+
         setupComboLabel(scaleLabel, tr("preferences.scale.label"));
         styleCombo(scaleCombo);
         scaleCombo.addItem(tr("preferences.scale.auto"), 1);
@@ -312,6 +318,7 @@ class GeneralPage : public juce::Component {
         languageCombo.setSelectedId(selectedId, juce::dontSendNotification);
         restartHint.setVisible(false);
 
+        themeCombo.setSelectedId(themeIdForValue(config.getTheme()), juce::dontSendNotification);
         scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
         fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
         localizedFontScaleExplicit_ = config.hasExplicitLocalizedUIFontScale();
@@ -349,6 +356,8 @@ class GeneralPage : public juce::Component {
             }
         }
 
+        config.setTheme(themeValueForId(themeCombo.getSelectedId()));
+
         double newScale = scaleValueForId(scaleCombo.getSelectedId());
         if (newScale > 0.0) {
             applyUIScale(newScale);
@@ -378,7 +387,7 @@ class GeneralPage : public juce::Component {
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 7) + 16 + secGap + headerH + 4 +
-               rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
+               rowH + 18 + secGap + headerH + 4 + (rowH * 4) + 8 + padding;
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -401,9 +410,9 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH              // Layout
-               + secGap + headerH + 4 + (rowH * 7) + 20             // Behaviour
-               + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH  // Display Scale
+        return padding + headerH + 4 + rowH + 4 + rowH   // Layout
+               + secGap + headerH + 4 + (rowH * 7) + 20  // Behaviour
+               + secGap + headerH + 4 + (rowH * 4)       // Theme + Display Scale
                + padding;
     }
 
@@ -478,6 +487,8 @@ class GeneralPage : public juce::Component {
 
         // UI scale
         scaleHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, themeLabel, themeCombo, rowH);
         bounds.removeFromTop(4);
         layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
         bounds.removeFromTop(4);
@@ -565,6 +576,8 @@ class GeneralPage : public juce::Component {
         // Display Scale
         scaleHeader.setBounds(right.removeFromTop(headerH));
         right.removeFromTop(4);
+        layoutComboRow(right, themeLabel, themeCombo, rowH);
+        right.removeFromTop(4);
         layoutComboRow(right, scaleLabel, scaleCombo, rowH);
         right.removeFromTop(4);
         layoutTextSliderRow(right, fontScaleLabel, fontScaleSlider, rowH, sliderH);
@@ -627,6 +640,14 @@ class GeneralPage : public juce::Component {
         return 1;
     }
 
+    static int themeIdForValue(const std::string& theme) {
+        return theme == DarkTheme::kHighContrastThemeId ? 2 : 1;
+    }
+
+    static std::string themeValueForId(int id) {
+        return id == 2 ? DarkTheme::kHighContrastThemeId : DarkTheme::kDarkThemeId;
+    }
+
     static double scaleValueForId(int id) {
         switch (id) {
             case 2:
@@ -669,6 +690,8 @@ class GeneralPage : public juce::Component {
     juce::Label restartHint;
     std::vector<juce::String> availableLanguages_;
     juce::String initialLanguage_;
+    juce::Label themeLabel;
+    juce::ComboBox themeCombo;
     juce::Label scaleLabel;
     juce::ComboBox scaleCombo;
     juce::Label fontScaleLabel;

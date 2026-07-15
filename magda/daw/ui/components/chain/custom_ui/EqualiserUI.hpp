@@ -30,6 +30,7 @@ class EqualiserUI : public juce::Component, public juce::Timer {
     // Get all linkable sliders for mod/macro wiring (in parameter-index order)
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
@@ -84,6 +85,7 @@ class EqualiserUI : public juce::Component, public juce::Timer {
 
     void setupBandControls(int bandIndex, const juce::String& name);
     void setupLabel(juce::Label& label, const juce::String& text);
+    void updateThemeColours();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EqualiserUI)
 };

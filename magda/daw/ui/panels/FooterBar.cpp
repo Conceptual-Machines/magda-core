@@ -158,7 +158,7 @@ void FooterBar::paint(juce::Graphics& g) {
             static_cast<float>(b.hitArea.getCentreY() - kBadgeDotSize / 2.0f),
             static_cast<float>(kBadgeDotSize), static_cast<float>(kBadgeDotSize));
         g.setColour(b.connected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f)
-                                : juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f));
+                                : DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f));
         g.fillEllipse(dotArea);
 
         // Label.
@@ -187,7 +187,7 @@ void FooterBar::paint(juce::Graphics& g) {
                 dotColour = juce::Colour(0xFFE5B84B);
                 break;
             case LocalModelState::Unavailable:
-                dotColour = juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
+                dotColour = DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
                 break;
         }
 

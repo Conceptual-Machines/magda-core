@@ -1,5 +1,6 @@
 #include "BezierHandleComponent.hpp"
 
+#include "../../themes/DarkTheme.hpp"
 #include "AutomationPointComponent.hpp"
 
 namespace magda {
@@ -19,17 +20,18 @@ void BezierHandleComponent::paint(juce::Graphics& g) {
     float radius = HANDLE_SIZE / 2.0f;
 
     // Handle fill - lighter when hovered
-    juce::Colour handleColour = isHovered_ ? juce::Colour(0xFFAAAAAA) : juce::Colour(0xFF888888);
+    juce::Colour handleColour = isHovered_ ? DarkTheme::getColour(DarkTheme::AUTOMATION_POINT)
+                                           : DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT);
 
     if (isDragging_) {
-        handleColour = juce::Colour(0xFFFFFFFF);
+        handleColour = DarkTheme::getColour(DarkTheme::TEXT_BRIGHT);
     }
 
     g.setColour(handleColour);
     g.fillEllipse(centerX - radius, centerY - radius, HANDLE_SIZE, HANDLE_SIZE);
 
     // Handle outline
-    g.setColour(juce::Colour(0xFF444444));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT));
     g.drawEllipse(centerX - radius, centerY - radius, HANDLE_SIZE, HANDLE_SIZE, 1.0f);
 }
 

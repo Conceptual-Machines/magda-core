@@ -27,7 +27,7 @@ bool LFOPhaseOverlay::hitTest(int /*x*/, int /*y*/) {
 
 void LFOPhaseOverlay::paint(juce::Graphics& g) {
     // Background (opaque)
-    g.fillAll(juce::Colour(0xFF1A1A1A));
+    g.fillAll(DarkTheme::getColour(DarkTheme::CURVE_BACKGROUND));
 
     if (!modInfo_ || getWidth() <= 0 || getHeight() <= 0)
         return;
@@ -41,12 +41,12 @@ void LFOPhaseOverlay::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Horizontal center line (0.5 value)
-    g.setColour(juce::Colour(0x20FFFFFF));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x20 / 255.0f));
     int centerY = bounds.getHeight() / 2;
     g.drawHorizontalLine(centerY, 0.0f, static_cast<float>(bounds.getWidth()));
 
     // Quarter lines (0.25, 0.75 value)
-    g.setColour(juce::Colour(0x10FFFFFF));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x10 / 255.0f));
     g.drawHorizontalLine(bounds.getHeight() / 4, 0.0f, static_cast<float>(bounds.getWidth()));
     g.drawHorizontalLine(bounds.getHeight() * 3 / 4, 0.0f, static_cast<float>(bounds.getWidth()));
 
@@ -57,7 +57,7 @@ void LFOPhaseOverlay::paintGrid(juce::Graphics& g) {
     }
 
     // Phase 0.5 line (center) slightly brighter
-    g.setColour(juce::Colour(0x20FFFFFF));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x20 / 255.0f));
     g.drawVerticalLine(bounds.getWidth() / 2, 0.0f, static_cast<float>(bounds.getHeight()));
 }
 
@@ -111,7 +111,7 @@ void LFOPhaseOverlay::paintCurve(juce::Graphics& g) {
     }
 
     // Draw the curve
-    g.setColour(curveColour_);
+    g.setColour(getCurveColour());
     g.strokePath(curvePath, juce::PathStrokeType(2.0f));
 
     // Fill under curve
@@ -119,7 +119,7 @@ void LFOPhaseOverlay::paintCurve(juce::Graphics& g) {
     fillPath.lineTo(width, height);
     fillPath.lineTo(0.0f, height);
     fillPath.closeSubPath();
-    g.setColour(curveColour_.withAlpha(0.13f));
+    g.setColour(getCurveColour().withAlpha(0.13f));
     g.fillPath(fillPath);
 }
 
@@ -138,7 +138,7 @@ void LFOPhaseOverlay::paintPhaseIndicator(juce::Graphics& g) {
 
     // Draw crosshair lines (toggle with 'C' key)
     if (showCrosshair_) {
-        g.setColour(curveColour_.withAlpha(0.4f));
+        g.setColour(getCurveColour().withAlpha(0.4f));
         g.drawVerticalLine(x, 0.0f, static_cast<float>(bounds.getHeight()));
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
     }
@@ -146,12 +146,12 @@ void LFOPhaseOverlay::paintPhaseIndicator(juce::Graphics& g) {
     // Draw indicator dot
     constexpr float dotSize = 5.0f;
     constexpr float dotRadius = dotSize / 2.0f;
-    g.setColour(curveColour_);
+    g.setColour(getCurveColour());
     g.fillEllipse(static_cast<float>(x) - dotRadius, static_cast<float>(y) - dotRadius, dotSize,
                   dotSize);
 
     // Draw white outline
-    g.setColour(juce::Colours::white);
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
     g.drawEllipse(static_cast<float>(x) - dotRadius, static_cast<float>(y) - dotRadius, dotSize,
                   dotSize, 1.0f);
 }

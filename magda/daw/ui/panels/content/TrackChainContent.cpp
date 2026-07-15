@@ -187,10 +187,11 @@ class GainMeterComponent : public juce::Component,
         auto fillArea = meterArea.removeFromBottom(static_cast<int>(fillHeight));
 
         // Gradient from green (low) to yellow to red (high)
-        juce::ColourGradient gradient(
-            juce::Colour(0xff2ecc71), 0.0f, static_cast<float>(meterArea.getBottom()),
-            juce::Colour(0xffe74c3c), 0.0f, static_cast<float>(meterArea.getY()), false);
-        gradient.addColour(0.7, juce::Colour(0xfff39c12));  // Yellow at 70%
+        juce::ColourGradient gradient(DarkTheme::getColour(DarkTheme::GAIN_METER_LOW), 0.0f,
+                                      static_cast<float>(meterArea.getBottom()),
+                                      DarkTheme::getColour(DarkTheme::GAIN_METER_HIGH), 0.0f,
+                                      static_cast<float>(meterArea.getY()), false);
+        gradient.addColour(0.7, DarkTheme::getColour(DarkTheme::GAIN_METER_WARNING));
         g.setGradientFill(gradient);
         g.fillRect(fillArea);
 
@@ -892,10 +893,9 @@ TrackChainContent::TrackChainContent()
     presetButton_ =
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
-    constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
     presetButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    presetButton_->setNormalColor(juce::Colour(PRESET_INDIGO));
-    presetButton_->setHoverColor(juce::Colour(PRESET_INDIGO).brighter(0.2f));
+    presetButton_->setNormalColor(DarkTheme::getColour(DarkTheme::PRESET_INDIGO));
+    presetButton_->setHoverColor(DarkTheme::getColour(DarkTheme::PRESET_INDIGO).brighter(0.2f));
     presetButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     presetButton_->setTooltip("MAGDA Track Presets");
     presetButton_->onClick = [this]() {
@@ -969,8 +969,9 @@ TrackChainContent::TrackChainContent()
     };
     // Muted so they sit with the dark chrome rather than reading as candy
     // (and still clear of the mod orange / macro purple next door).
-    const auto muted = [](juce::uint32 c) {
-        return juce::Colour(c).withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
+    const auto muted = [](ColourRole role) {
+        return DarkTheme::getColour(role).withMultipliedSaturation(0.55f).withMultipliedBrightness(
+            0.85f);
     };
     setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope3_svg,
                         BinaryData::oscilloscope3_svgSize, "Oscilloscope (post-FX)", "oscilloscope",

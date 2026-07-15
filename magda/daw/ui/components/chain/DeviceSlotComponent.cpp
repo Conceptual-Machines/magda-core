@@ -287,8 +287,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                            BinaryData::iconpresetsroundboldm_svgSize);
     // Indigo sits between ACCENT_BLUE and ACCENT_PURPLE — distinct from both
     // utility blue (ui/multiOut) and macro purple, signals "MAGDA presets".
-    constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
-    applyHeaderIconStyle(*presetButton_, juce::Colour(PRESET_INDIGO),
+    applyHeaderIconStyle(*presetButton_, DarkTheme::getColour(DarkTheme::PRESET_INDIGO),
                          /*toggling*/ false);
     // Permanent "active" treatment: indigo pill + white icon. Using setActive()
     // (not normalBackgroundColor) so hover/pressed don't wipe out the pill —
@@ -456,7 +455,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         stepRecordButton_ = std::make_unique<magda::SvgButton>(
             "StepRecord", BinaryData::record_circle_svg, BinaryData::record_circle_svgSize);
         stepRecordButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        stepRecordButton_->setNormalColor(juce::Colour(0xFFCC3333));
+        stepRecordButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STEP_RECORD));
         stepRecordButton_->setTooltip("Step record: play notes to fill steps");
         stepRecordButton_->setToggleable(true);
         stepRecordButton_->onClick = [this]() {

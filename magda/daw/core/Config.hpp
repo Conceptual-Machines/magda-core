@@ -205,6 +205,15 @@ class Config {
         uiScale = scale;
     }
 
+    // Built-in UI theme identifier. Theme implementation stays in the UI
+    // layer; Config only persists the selected stable identifier.
+    const std::string& getTheme() const {
+        return theme;
+    }
+    void setTheme(std::string themeId) {
+        theme = themeId.empty() ? "dark" : std::move(themeId);
+    }
+
     // Font size scale for MAGDA-owned UI fonts. This is independent from
     // Desktop UI scale, which changes both text and component geometry.
     double getUIFontScale() const {
@@ -1130,6 +1139,10 @@ class Config {
 
     // UI scale: 0 = Auto (pick from display DPI), otherwise an explicit factor (1.0, 1.25, …)
     double uiScale = 0.0;
+
+    // Runtime theme selection. "dark" is deliberately the compatibility
+    // default for configurations written before themes existed.
+    std::string theme = "dark";
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;
