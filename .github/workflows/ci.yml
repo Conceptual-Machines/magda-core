@@ -17,6 +17,12 @@ on:
       - 'manual/**'
       - 'docs/**'
       - '**/*.md'
+  # Release PRs (dev/0.X.0 -> main): main's ruleset only accepts required
+  # checks from PR-associated runs, so push-event and workflow_dispatch runs
+  # never turn the merge box green. No paths filter: even a lang-only sync
+  # merge moving the PR head must still report the required checks.
+  pull_request:
+    branches: [ 'main' ]
   workflow_dispatch:
     inputs:
       skip-cpp-build:
@@ -42,15 +48,44 @@ env:
   CCACHE_COMPILERCHECK: content
 
 jobs:
+  # When a release PR into main is open for this branch, the pull_request run
+  # owns validation (it is the only event the main ruleset accepts required
+  # checks from), so the push run for the same commits stands down instead of
+  # duplicating every build on the self-hosted runners. Fails open: any API
+  # hiccup keeps the push run building.
+  release-pr-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+    - id: check
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        proceed=true
+        if [ "${{ github.event_name }}" = "push" ]; then
+          count=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" \
+            --base main --state open --json number --jq length 2>/dev/null || echo 0)
+          if [ -n "$count" ] && [ "$count" != "0" ]; then
+            proceed=false
+          fi
+        fi
+        echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
+
   build-and-test-linux:
+    needs: release-pr-gate
     runs-on: ubuntu-latest
     permissions:
       id-token: write  # assume the sccache S3 role via OIDC
       contents: read
     # Skip C++ build/test when explicitly requested or when only non-C++ files changed
     if: |
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.skip-cpp-build != 'true'
+      (github.event_name != 'workflow_dispatch' ||
+       github.event.inputs.skip-cpp-build != 'true') &&
+      (github.event_name != 'push' ||
+       needs.release-pr-gate.outputs.proceed == 'true')
 
     steps:
     - uses: actions/checkout@v7
@@ -206,11 +241,14 @@ jobs:
         echo "✅ Build and tests completed successfully on Linux"
 
   code-quality:
+    needs: release-pr-gate
     runs-on: ubuntu-latest
     # Skip code quality checks when explicitly requested
     if: |
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.skip-cpp-build != 'true'
+      (github.event_name != 'workflow_dispatch' ||
+       github.event.inputs.skip-cpp-build != 'true') &&
+      (github.event_name != 'push' ||
+       needs.release-pr-gate.outputs.proceed == 'true')
 
     steps:
     - uses: actions/checkout@v7
@@ -367,10 +405,13 @@ jobs:
         echo "- ✅ Binary file verification" >> $GITHUB_STEP_SUMMARY
 
   build-and-test-macos:
+    needs: release-pr-gate
     runs-on: [self-hosted, macOS]
     if: |
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.skip-cpp-build != 'true'
+      (github.event_name != 'workflow_dispatch' ||
+       github.event.inputs.skip-cpp-build != 'true') &&
+      (github.event_name != 'push' ||
+       needs.release-pr-gate.outputs.proceed == 'true')
 
     steps:
     - uses: actions/checkout@v7
@@ -512,10 +553,13 @@ jobs:
   # when it is online and idle; otherwise use the GitHub-hosted runner so PRs
   # do not block behind a busy/offline local machine.
   pick-windows-runner:
+    needs: release-pr-gate
     runs-on: ubuntu-latest
     if: |
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.skip-cpp-build != 'true'
+      (github.event_name != 'workflow_dispatch' ||
+       github.event.inputs.skip-cpp-build != 'true') &&
+      (github.event_name != 'push' ||
+       needs.release-pr-gate.outputs.proceed == 'true')
     outputs:
       labels: ${{ steps.pick.outputs.labels }}
     steps:
