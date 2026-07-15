@@ -1829,6 +1829,30 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#automation-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automation Clips
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Automation Clips">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baking-modulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Baking Modulation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#master-automation" class="md-nav__link">
     <span class="md-ellipsis">
       Master Automation
@@ -2208,6 +2232,30 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#automation-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automation Clips
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Automation Clips">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baking-modulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Baking Modulation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#master-automation" class="md-nav__link">
     <span class="md-ellipsis">
       Master Automation
@@ -2371,6 +2419,10 @@
 </thead>
 <tbody>
 <tr>
+<td><strong>Lane mode</strong></td>
+<td>Switch the lane between one free-drawn curve and discrete <a href="#automation-clips">automation clips</a> (tooltip <em>Lane mode: clips / free draw</em>)</td>
+</tr>
+<tr>
 <td><strong>Snap edits to beat grid</strong></td>
 <td>Snap point positions to the bar/beat grid while editing</td>
 </tr>
@@ -2388,6 +2440,40 @@
 </tr>
 </tbody>
 </table>
+<h2 id="automation-clips">Automation Clips<a class="headerlink" href="#automation-clips" title="Permanent link">&para;</a></h2>
+<p>A lane can hold its automation as discrete <strong>automation clips</strong> instead of one continuous curve. Switch a lane to clip mode with the <strong>Lane mode</strong> toggle in its header. Clip-based automation is handy when you want the same move to repeat, to loop, or to move and copy a shaped gesture around the timeline like any other clip.</p>
+<p>On a clip-based lane:</p>
+<ul>
+<li><strong>Double-click</strong> an empty part of the lane to drop a one-bar automation clip.</li>
+<li>Hold <span class="keys"><kbd class="key-alt">Alt</kbd></span> and <strong>drag</strong> to draw a clip of a specific length (a plain <span class="keys"><kbd class="key-alt">Alt</kbd></span>-click makes the default one-bar clip).</li>
+<li><strong>Right-click</strong> a clip for <strong>Edit Curve</strong>, <strong>Duplicate</strong>, <strong>Loop</strong> (a checkmark toggle that repeats the clip's curve to fill its length), and <strong>Delete</strong>.</li>
+</ul>
+<p><strong>Double-click a clip</strong> to open the automation-clip editor. Its header carries:</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Function</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SNAP X</strong></td>
+<td>Snap edits to the time grid; the adjacent division button (tooltip <em>Snap division</em>) sets the resolution</td>
+</tr>
+<tr>
+<td><strong>SNAP Y</strong></td>
+<td>Snap edits to the value grid; its division button sets the value step</td>
+</tr>
+<tr>
+<td><strong>Overlay track content</strong></td>
+<td>Show the underlying track's clips behind the curve for reference</td>
+</tr>
+</tbody>
+</table>
+<p>Inside the editor, left-click an empty spot to add a point and drag points to move them. Right-click a point to type its exact value; right-click a segment for <strong>Hard Corner</strong> and <strong>Simplify Selected Points</strong>.</p>
+<h3 id="baking-modulation">Baking Modulation<a class="headerlink" href="#baking-modulation" title="Permanent link">&para;</a></h3>
+<p>You can convert a live modulator (an LFO or envelope linked to a parameter) into automation you can edit by hand. Right-click the linked parameter and choose <strong>Bake Modulation to Automation</strong> to write the modulator's movement into lane points, or <strong>Bake Modulation to Automation Clip</strong> to capture it as an automation clip.</p>
 <h2 id="master-automation">Master Automation<a class="headerlink" href="#master-automation" title="Permanent link">&para;</a></h2>
 <p>The master channel has its own automation band above the master strip. Click the <strong>Automation</strong> button in the master header (or right-click the header) to open the master automation menu, where you can show or hide existing master lanes, hide them all, or <strong>Add New Lane</strong> for:</p>
 <ul>

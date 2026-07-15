@@ -771,6 +771,33 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#linked-ghost-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Linked (Ghost) Clips
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enabling-and-disabling-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Enabling and Disabling Clips
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flatten-midi-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flatten MIDI Loop
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#audio-clip-modes" class="md-nav__link">
     <span class="md-ellipsis">
       Audio Clip Modes
@@ -826,9 +853,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#time-stretch-algorithm" class="md-nav__link">
+  <a href="#time-stretch-engine" class="md-nav__link">
     <span class="md-ellipsis">
-      Time-Stretch Algorithm
+      Time-Stretch Engine
     </span>
   </a>
   
@@ -2361,6 +2388,33 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#linked-ghost-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Linked (Ghost) Clips
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enabling-and-disabling-clips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Enabling and Disabling Clips
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flatten-midi-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flatten MIDI Loop
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#audio-clip-modes" class="md-nav__link">
     <span class="md-ellipsis">
       Audio Clip Modes
@@ -2416,9 +2470,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#time-stretch-algorithm" class="md-nav__link">
+  <a href="#time-stretch-engine" class="md-nav__link">
     <span class="md-ellipsis">
-      Time-Stretch Algorithm
+      Time-Stretch Engine
     </span>
   </a>
   
@@ -2727,6 +2781,8 @@
 <li><strong>Split</strong> — Position the playhead and use <strong>Edit &gt; Split Clip</strong> or press <span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-e">E</kbd></span></li>
 <li><strong>Delete</strong> — Select the clip and press <span class="keys"><kbd class="key-delete">Del</kbd></span> or <span class="keys"><kbd class="key-backspace">Backspace</kbd></span></li>
 <li><strong>Erase under cursor</strong> — <span class="keys"><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-control">Ctrl</kbd></span> <strong>+ click</strong> a clip to delete it directly without selecting first. If the clip is part of a multi-selection, the whole group is erased. Acts as a rubber tool.</li>
+<li><strong>Duplicate as ghost</strong> — Right-click and choose <strong>Duplicate as Ghost</strong>, or hold <span class="keys"><kbd class="key-alt">Alt</kbd><span>+</span><kbd class="key-shift">Shift</kbd></span> and drag, to create a linked copy. See <a href="#linked-ghost-clips">Linked (Ghost) Clips</a>.</li>
+<li><strong>Enable / disable</strong> — Right-click and choose <strong>Disable Clip</strong> or <strong>Enable Clip</strong>, or press <span class="keys"><kbd class="key-0">0</kbd></span>. See <a href="#enabling-and-disabling-clips">Enabling and Disabling Clips</a>.</li>
 </ul>
 <h2 id="cut-copy-and-paste">Cut, Copy, and Paste<a class="headerlink" href="#cut-copy-and-paste" title="Permanent link">&para;</a></h2>
 <ul>
@@ -2734,6 +2790,48 @@
 <li><span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-c">C</kbd></span> — Copy the selected clip(s)</li>
 <li><span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-v">V</kbd></span> — Paste at the playhead position on the same track</li>
 </ul>
+<h2 id="linked-ghost-clips">Linked (Ghost) Clips<a class="headerlink" href="#linked-ghost-clips" title="Permanent link">&para;</a></h2>
+<p>A ghost clip is a linked copy: every clip in a link group shares the same underlying content, so editing one updates them all. Use them for a chorus that repeats, a drum pattern reused across a song, or a riff you want to develop in one place and hear everywhere.</p>
+<p>Create one by right-clicking a clip and choosing <strong>Duplicate as Ghost</strong>, or by holding <span class="keys"><kbd class="key-alt">Alt</kbd><span>+</span><kbd class="key-shift">Shift</kbd></span> and dragging a copy off the original. (Plain <span class="keys"><kbd class="key-alt">Alt</kbd></span>-drag makes an ordinary, independent duplicate.) The same command is available from the Edit menu as <strong>Duplicate Clip as Ghost</strong>.</p>
+<p>Ghost clips are drawn translucently, with their waveform or notes dimmed, a small link glyph in the header, and an italic name with a per-instance index appended (e.g. <em>Riff #2</em>). A link group with only one clip left is inert and shows no ghost styling.</p>
+<p><strong>What is shared, and what is not:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Shared across the group</th>
+<th>Independent per clip</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Notes and audio content, name</td>
+<td>Position, length, and offset</td>
+</tr>
+<tr>
+<td>Warp markers and time-stretch mode</td>
+<td>Playback speed (speed ratio) and loop settings</td>
+</tr>
+<tr>
+<td>Pitch, transpose, and auto-pitch</td>
+<td>Colour</td>
+</tr>
+<tr>
+<td>Groove, reverse, beat detection</td>
+<td>Volume, gain, pan, and fades</td>
+</tr>
+<tr>
+<td></td>
+<td>Launch and grid settings, enabled/disabled state</td>
+</tr>
+</tbody>
+</table>
+<p>Editing any shared field on one member mirrors instantly to the rest; the independent fields let each ghost sit in its own place, at its own level, without disturbing its siblings.</p>
+<p>To detach a clip from its group, right-click it and choose <strong>Make Unique</strong>. The clip keeps its current content but stops tracking, and future edits to it (or to its former siblings) no longer propagate. Splitting a ghost clip detaches both halves automatically.</p>
+<h2 id="enabling-and-disabling-clips">Enabling and Disabling Clips<a class="headerlink" href="#enabling-and-disabling-clips" title="Permanent link">&para;</a></h2>
+<p>Disabling a clip removes it from playback without deleting it. Right-click a clip and choose <strong>Disable Clip</strong> (or <strong>Enable Clip</strong> to bring it back), or press <span class="keys"><kbd class="key-0">0</kbd></span> with clips selected. A disabled clip is covered by a heavy dark overlay, including its header, so it reads as "off" at a glance, and it is excluded from the playback graph so it produces no sound.</p>
+<p>The enabled state is per-clip: disabling one member of a <a href="#linked-ghost-clips">link group</a> does not silence its ghost siblings.</p>
+<h2 id="flatten-midi-loop">Flatten MIDI Loop<a class="headerlink" href="#flatten-midi-loop" title="Permanent link">&para;</a></h2>
+<p>When a MIDI clip is looping, right-click it and choose <strong>Flatten MIDI Loop</strong> to write the repetitions out as real notes. The loop cycles (including any offset phase) are baked into actual MIDI across the clip's full length, looping is switched off, and the offset resets to zero. The clip stays a MIDI clip in place, ready for per-note editing in the <a href="../panels/piano-roll/">Piano Roll</a>; the operation is a single undoable step.</p>
 <h2 id="audio-clip-modes">Audio Clip Modes<a class="headerlink" href="#audio-clip-modes" title="Permanent link">&para;</a></h2>
 <p>Audio clips have several playback modes that control how the clip responds to tempo changes and pitch adjustments. Set the mode in the clip's Inspector panel.</p>
 <h3 id="raw-default">Raw (Default)<a class="headerlink" href="#raw-default" title="Permanent link">&para;</a></h3>
@@ -2758,8 +2856,35 @@
 <li><strong>Slice at Warp Markers to Drum Grid</strong> — Create a new Drum Grid track where each slice between warp markers becomes a pad, with a MIDI pattern that reproduces the original timing.</li>
 <li><strong>Slice at Grid to Drum Grid</strong> — Same as above but slicing at grid intervals instead of warp markers.</li>
 </ul>
-<h3 id="time-stretch-algorithm">Time-Stretch Algorithm<a class="headerlink" href="#time-stretch-algorithm" title="Permanent link">&para;</a></h3>
-<p>When Beat or Warp mode is active, MAGDA uses the <strong>SoundTouch</strong> algorithm for time-stretching.</p>
+<h3 id="time-stretch-engine">Time-Stretch Engine<a class="headerlink" href="#time-stretch-engine" title="Permanent link">&para;</a></h3>
+<p>When Beat or Warp mode is active (or whenever a clip is otherwise stretched or pitched), the audio is time-stretched by a selectable engine, set per clip:</p>
+<table>
+<thead>
+<tr>
+<th>Engine</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Signalsmith</strong></td>
+<td>Default. Modern, general-purpose stretcher with clean transients.</td>
+</tr>
+<tr>
+<td><strong>SoundTouch</strong></td>
+<td>Lighter-weight classic algorithm.</td>
+</tr>
+<tr>
+<td><strong>SoundTouch HQ</strong></td>
+<td>Higher-quality SoundTouch variant at more CPU cost.</td>
+</tr>
+<tr>
+<td><strong>Off</strong></td>
+<td>No stretch engine; the clip is left unprocessed.</td>
+</tr>
+</tbody>
+</table>
+<p>Choose the engine from the stretch mode dropdown in the clip <strong>Inspector</strong> (next to the WARP and BEAT toggles) or from the <strong>Mode</strong> dropdown in the <a href="../panels/waveform-editor/">Waveform Editor</a>'s audio-clip properties. New clips default to <strong>Signalsmith</strong> as soon as stretching becomes active.</p>
 <h2 id="groove-swing">Groove &amp; Swing<a class="headerlink" href="#groove-swing" title="Permanent link">&para;</a></h2>
 <p>Groove templates add a human feel to MIDI clips by shifting note timing away from the strict grid.</p>
 <p><img alt="Groove Inspector" src="../assets/images/panels/groove-inspector.png" width="300" /></p>

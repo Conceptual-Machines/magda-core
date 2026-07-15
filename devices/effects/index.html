@@ -1680,6 +1680,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sidechain" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sidechain
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#faust-custom-dsp" class="md-nav__link">
     <span class="md-ellipsis">
       Faust (Custom DSP)
@@ -2219,6 +2228,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sidechain" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sidechain
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#faust-custom-dsp" class="md-nav__link">
     <span class="md-ellipsis">
       Faust (Custom DSP)
@@ -2442,6 +2460,52 @@
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>Devices that bundle multiple engines (Compressor, Reverb, Dimension, Filter, Pitch) expose an engine selector at the top of the editor and switch DSP in place. Macros and modulator links survive the switch.</p>
+</div>
+<h2 id="sidechain">Sidechain<a class="headerlink" href="#sidechain" title="Permanent link">&para;</a></h2>
+<p>The <strong>Sidechain</strong> device is a native MAGDA device (not part of the Faust FX bank) that sits under <strong>Dynamics</strong> in the Plugin Browser. It is a MIDI-triggered volume shaper: the device holds its own gain at unity and a retriggerable curve ducks it toward silence, keyed from the notes of another track. This is the classic "sidechain pump" effect without a compressor — the curve <em>is</em> the gain envelope, so you draw exactly the ducking shape you want.</p>
+<p><strong>Choosing the trigger source.</strong> The device faceplate has no source picker; pick the source from the <strong>sidechain button in the device header</strong> (tooltip <em>Sidechain source</em>). It turns orange once a source is routed. Clicking it opens a menu with <strong>None</strong>, an <strong>Audio Sidechain</strong> section, and a <strong>MIDI Source</strong> section listing the other tracks; the Sidechain device keys off a track chosen under <strong>MIDI Source</strong>.</p>
+<p><strong>Controls:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Curve</strong></td>
+<td>The gain envelope. Edit it directly to shape how the level ducks and recovers on each trigger.</td>
+</tr>
+<tr>
+<td><strong>DEPTH</strong></td>
+<td>How far the curve pulls the gain down, 0–100%.</td>
+</tr>
+<tr>
+<td><strong>SYNC</strong></td>
+<td>Trigger sync division, which also sets the length of the duck curve.</td>
+</tr>
+<tr>
+<td><strong>MODE</strong></td>
+<td><strong>1-Shot</strong> (run the curve once per trigger) or <strong>Loop</strong> (repeat it).</td>
+</tr>
+<tr>
+<td><strong>CH</strong></td>
+<td><strong>ST</strong> ducks the full stereo signal; <strong>SD</strong> ducks the side channel only.</td>
+</tr>
+<tr>
+<td><strong>ATK</strong></td>
+<td>Attack, 0–50 ms.</td>
+</tr>
+<tr>
+<td><strong>REL</strong></td>
+<td>Release, 0–500 ms.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Placement</p>
+<p>The Sidechain device can go on the master track as a <em>destination</em>, but the master can never be a <em>source</em> (it has no notes to key from). The device cannot run in the post-FX area, since ducking has to happen before the fader.</p>
 </div>
 <h2 id="faust-custom-dsp">Faust (Custom DSP)<a class="headerlink" href="#faust-custom-dsp" title="Permanent link">&para;</a></h2>
 <p>The <strong>Faust</strong> device hosts a <a href="https://faust.grame.fr">Faust</a> DSP that you compile and load at runtime. Unlike the rest of the MAGDA FX bank, where each device wraps a fixed pre-compiled <code>.dsp</code> source, this device accepts any Faust program.</p>

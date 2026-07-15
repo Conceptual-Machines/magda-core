@@ -2412,12 +2412,38 @@
 <p>Modifier combinations (<code>⌘</code>, <code>⌃</code>, <code>⌥</code>) and the spacebar always pass through to regular shortcuts, so transport control and edit shortcuts keep working while the keyboard is on.</p>
 <p>The toggle itself is hidden automatically on narrow windows where the transport has to prioritise other controls.</p>
 <h2 id="grid-snap">Grid &amp; Snap<a class="headerlink" href="#grid-snap" title="Permanent link">&para;</a></h2>
-<p>The grid controls how clips and edits snap to musical divisions.</p>
+<p>The grid controls how clips and edits snap to musical divisions. The grid cluster in the transport bar has three parts:</p>
 <ul>
-<li><strong>Snap toggle</strong> — Enable or disable snapping to the grid</li>
-<li><strong>Grid quantize</strong> — Set the grid resolution (e.g., 1/4, 1/8, 1/16 notes) using the numerator and denominator controls</li>
-<li><strong>Auto-grid</strong> — Automatically adjust the grid resolution based on the current zoom level</li>
+<li><strong>Snap toggle</strong> — Enable or disable snapping to the grid.</li>
+<li><strong>AUTO</strong> — When on, the grid resolution follows the current horizontal zoom: it picks a finer division as you zoom in and switches to bar multiples when you zoom far out (the readout then reads <em>1 bar</em>, <em>2 bars</em>, and so on). The manual numerator/denominator values are dimmed while AUTO is active.</li>
+<li>
+<p><strong>Grid division</strong> — Click the division button (tooltip <em>Grid division</em>) to pick a fixed resolution from the menu:</p>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Divisions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Straight</strong></td>
+<td>1/1, 1/2, 1/4, 1/8, 1/16, 1/32</td>
+</tr>
+<tr>
+<td><strong>Triplet</strong></td>
+<td>1/4T, 1/8T, 1/16T, 1/32T</td>
+</tr>
+<tr>
+<td><strong>Dotted</strong></td>
+<td>1/2., 1/4., 1/8., 1/16., 1/32.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Custom...</strong> at the bottom opens a numerator/denominator editor that shows the nearest named division as you type.</p>
+</li>
 </ul>
+<p>The same picker is used by the bottom-panel editors (<a href="../panels/piano-roll/">Piano Roll</a>, <a href="../panels/drum-grid-editor/">Drum Grid Editor</a>, and the automation-clip editor), each with its own AUTO button.</p>
 
 
 

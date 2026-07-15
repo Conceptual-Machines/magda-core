@@ -720,6 +720,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Working with Devices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#delta-solo" class="md-nav__link">
+    <span class="md-ellipsis">
+      Delta Solo
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -821,6 +836,15 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#external-hardware-inserts" class="md-nav__link">
+    <span class="md-ellipsis">
+      External Hardware Inserts
+    </span>
+  </a>
   
 </li>
       
@@ -2202,6 +2226,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Working with Devices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#delta-solo" class="md-nav__link">
+    <span class="md-ellipsis">
+      Delta Solo
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2307,6 +2346,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#external-hardware-inserts" class="md-nav__link">
+    <span class="md-ellipsis">
+      External Hardware Inserts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#post-fx-section" class="md-nav__link">
     <span class="md-ellipsis">
       Post-FX Section
@@ -2367,8 +2415,12 @@
 <li><strong>Right-click</strong> a device for options: bypass, remove, replace, move to rack</li>
 <li>Each device has <strong>Mod</strong> and <strong>Macro</strong> buttons to toggle the modulation and macro panels</li>
 <li>Plugin devices have a <strong>Learn</strong> button that maps a control in the plugin's own UI back to the matching parameter slot — see <a href="../plugin-parameters/#learn-mode">Plugin Parameters</a></li>
+<li>Each device header carries a <strong>Δ</strong> delta-solo button — see <a href="#delta-solo">Delta Solo</a></li>
 </ul>
 <p>See <a href="../plugin-parameters/">Plugin Parameters</a> for per-plugin parameter visibility, custom units and ranges, and AI-assisted classification.</p>
+<h3 id="delta-solo">Delta Solo<a class="headerlink" href="#delta-solo" title="Permanent link">&para;</a></h3>
+<p>The <strong>Δ</strong> button in a device header (tooltip <em>Delta Solo: processed signal minus dry input</em>) lets you hear only what that device changes: MAGDA subtracts the device's latency-aligned dry input from its processed output, so you audition the difference alone. It is the direct way to check exactly what a compressor, EQ, or saturator is doing to the signal.</p>
+<p>Delta solo and bypass are mutually exclusive: turning on delta solo powers the device on, and powering the device off clears delta solo. The button lights cyan while active. Racks have their own delta-solo button in the same position (see <a href="#rack-controls">Rack Controls</a>).</p>
 <h2 id="presets">Presets<a class="headerlink" href="#presets" title="Permanent link">&para;</a></h2>
 <p>Three preset systems share the device header:</p>
 <h3 id="magda-presets-mps">MAGDA Presets (.mps)<a class="headerlink" href="#magda-presets-mps" title="Permanent link">&para;</a></h3>
@@ -2412,10 +2464,46 @@
 <ul>
 <li><strong>Volume</strong> — Master output level for the entire rack</li>
 <li><strong>Mod / Macro buttons</strong> — Access the rack's own modulation and macro panels</li>
+<li><strong>Delta Solo (Δ)</strong> — Hear the whole rack's processed output minus its dry input (tooltip <em>Delta Solo: processed rack signal minus dry input</em>). Works on nested racks and stays available when the rack is collapsed. See <a href="#delta-solo">Delta Solo</a>.</li>
 <li><strong>Collapse/Expand</strong> — Click the rack header to toggle between collapsed and expanded views</li>
 </ul>
 <h3 id="collapsible-devices">Collapsible Devices<a class="headerlink" href="#collapsible-devices" title="Permanent link">&para;</a></h3>
 <p>Individual devices inside a rack can be collapsed to save space. Click the collapse button on a device to shrink it to a compact header. The rack resizes dynamically as devices are collapsed or expanded. Collapsed states are preserved when the chain rebuilds (e.g. when adding or removing devices).</p>
+<h2 id="external-hardware-inserts">External Hardware Inserts<a class="headerlink" href="#external-hardware-inserts" title="Permanent link">&para;</a></h2>
+<p>MAGDA can route a track's signal out to outboard gear and back, treating a hardware unit as an insert in the chain. Two entries live under the <strong>External</strong> category in the <a href="../panels/browsers/">Plugin Browser</a>:</p>
+<ul>
+<li><strong>External FX</strong> — sends audio out to an outboard effect and returns its processed audio.</li>
+<li><strong>External Instrument</strong> — sends MIDI out to a hardware synth and returns its audio.</li>
+</ul>
+<p>Drag either onto a track's chain, then set its routing in the device slot:</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Send to</strong> / <strong>MIDI to</strong></td>
+<td>The hardware output to feed (audio out for External FX, MIDI out for External Instrument)</td>
+</tr>
+<tr>
+<td><strong>Return from</strong></td>
+<td>The audio input the hardware comes back on</td>
+</tr>
+<tr>
+<td><strong>Latency (ms)</strong></td>
+<td>Manual trim to align the return with the rest of the mix (default 0.0)</td>
+</tr>
+</tbody>
+</table>
+<p>Picking a hardware port that is currently disabled enables it automatically, and ports that no longer feed any insert are disabled again for you. If two inserts fight over the same port, a warning line appears in the slot (for example <em>Return uses the same port as the send</em>).</p>
+<p>For an <strong>External Instrument</strong>, the track's own MIDI-out and audio-in selectors become read-only mirrors of the insert's routing, and MAGDA blocks the synth's MIDI from being recorded straight back in so you don't get doubled or hanging notes.</p>
+<div class="admonition note">
+<p class="admonition-title">Export captures the hardware automatically</p>
+<p>Because outboard gear isn't part of an offline render, MAGDA captures it for you. When you export a project that contains a routed insert, it first plays the export range once in real time to record the hardware returns (a progress box titled <em>Capturing External Hardware</em> appears, with a <strong>Cancel</strong> button), then substitutes those captures into the offline render. Nothing is added to your project and there is no freeze step to manage.</p>
+</div>
 <h2 id="post-fx-section">Post-FX Section<a class="headerlink" href="#post-fx-section" title="Permanent link">&para;</a></h2>
 <p>In addition to the main FX chain, every track and the master have a <strong>post-FX area</strong> — a stage that runs <em>after</em> the main chain and <em>before</em> the track fader. It is the natural home for meters and analyzers, but any effect can live there.</p>
 <p>Toggle the post-FX area from the buttons in the track chain header, then drop an <a href="../devices/analysis/">Oscilloscope or Spectrum Analyzer</a>, or any effect, into it. The panel opens automatically when a track has post-FX devices.</p>
