@@ -558,8 +558,8 @@ void BottomPanel::setupHeaderControls() {
     // Clip enable/disable toggle (#1736). Same power language as the device
     // bypass button: on = green chip with a white glyph, off = red glyph.
     // Mirrors the Clip Inspector toggle; disabled clips do not play.
-    clipEnabledButton_ = std::make_unique<SvgButton>("ClipEnabled", BinaryData::power_on_svg,
-                                                     BinaryData::power_on_svgSize);
+    clipEnabledButton_ = std::make_unique<SvgButton>("ClipEnabled", BinaryData::power_svg,
+                                                     BinaryData::power_svgSize);
     clipEnabledButton_->setTooltip("Enable/disable clip");
     clipEnabledButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     clipEnabledButton_->setActiveColor(juce::Colours::white);
@@ -582,10 +582,11 @@ void BottomPanel::setupHeaderControls() {
     };
     headerBar_->addChildComponent(clipEnabledButton_.get());
 
-    // Note slice button (dual icon: off=grey, on=blue when notes selected)
-    sliceButton_ = std::make_unique<SvgButton>(
-        "NoteSlice", BinaryData::note_slice_off_svg, BinaryData::note_slice_off_svgSize,
-        BinaryData::note_slice_on_svg, BinaryData::note_slice_on_svgSize);
+    // Note slice button: one geometry, with pressed colour supplied in code.
+    sliceButton_ = std::make_unique<SvgButton>("NoteSlice", BinaryData::note_slice_svg,
+                                               BinaryData::note_slice_svgSize);
+    sliceButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                            DarkTheme::ACCENT_CYAN);
     sliceButton_->setTooltip("Slice selected notes");
     sliceButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     sliceButton_->setBorderThickness(1.0f);
@@ -608,10 +609,11 @@ void BottomPanel::setupHeaderControls() {
     };
     headerBar_->addChildComponent(sliceButton_.get());
 
-    // Time bend button (dual icon: off=grey, on=blue when notes selected)
-    bendButton_ = std::make_unique<SvgButton>(
-        "TimeBend", BinaryData::time_bend_off_svg, BinaryData::time_bend_off_svgSize,
-        BinaryData::time_bend_on_svg, BinaryData::time_bend_on_svgSize);
+    // Time bend button: one geometry, with pressed colour supplied in code.
+    bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::time_bend_svg,
+                                              BinaryData::time_bend_svgSize);
+    bendButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                           DarkTheme::ACCENT_CYAN);
     bendButton_->setTooltip("Time Bend selected notes");
     bendButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     bendButton_->setBorderThickness(1.0f);

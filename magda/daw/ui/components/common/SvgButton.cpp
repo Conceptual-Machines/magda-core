@@ -39,6 +39,50 @@ juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
     return role ? DarkTheme::getColour(*role).withAlpha(colour.getFloatAlpha()) : colour;
 }
 
+void SvgButton::setStateColourReplacement(juce::Colour sourceColour, juce::Colour inactiveColour,
+                                          juce::Colour activeColour) {
+    const auto replacement = StateColourReplacement{
+        sourceColour,
+        inactiveColour,
+        activeColour,
+        DarkTheme::findDarkPaletteRole(inactiveColour),
+        DarkTheme::findDarkPaletteRole(activeColour),
+    };
+
+    for (auto& existing : stateColourReplacements_) {
+        if (existing.source == sourceColour) {
+            existing = replacement;
+            repaint();
+            return;
+        }
+    }
+
+    stateColourReplacements_.push_back(replacement);
+    repaint();
+}
+
+void SvgButton::setStateColourReplacement(juce::Colour sourceColour, ColourRole inactiveRole,
+                                          ColourRole activeRole) {
+    const auto replacement = StateColourReplacement{
+        sourceColour,
+        DarkTheme::getColour(inactiveRole),
+        DarkTheme::getColour(activeRole),
+        inactiveRole,
+        activeRole,
+    };
+
+    for (auto& existing : stateColourReplacements_) {
+        if (existing.source == sourceColour) {
+            existing = replacement;
+            repaint();
+            return;
+        }
+    }
+
+    stateColourReplacements_.push_back(replacement);
+    repaint();
+}
+
 void SvgButton::updateSvgData(const char* svgData, size_t svgDataSize) {
     // Load new SVG using RAII wrapper
     svgIcon = magda::ManagedDrawable::create(svgData, svgDataSize);
@@ -83,6 +127,13 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         }
 
         auto themedIcon = iconToDraw->createCopy();
+
+        for (const auto& replacement : stateColourReplacements_) {
+            themedIcon->replaceColour(
+                replacement.source,
+                drawOn ? resolveThemeColour(replacement.active, replacement.activeRole)
+                       : resolveThemeColour(replacement.inactive, replacement.inactiveRole));
+        }
         DarkTheme::applyToSvgIcon(*themedIcon);
 
         float opacity = drawOn ? 1.0f : inactiveIconOpacity;
@@ -132,6 +183,8 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         return;
     }
 
+    const bool drawOn = active || shouldDrawButtonAsDown || (getToggleState() && isToggleable());
+
     // Determine the color based on button state
     juce::Colour iconColor = normal;
 
@@ -153,7 +206,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     cornerRadius = juce::jlimit(2.0f, 8.0f, cornerRadius);
 
     // Check active state (only when enabled)
-    bool isActive = isEnabled() && (active || (getToggleState() && isToggleable()));
+    const bool isActive = isEnabled() && (active || (getToggleState() && isToggleable()));
 
     // Draw background (reduced by 0.5f to match SmallButtonLookAndFeel sizing)
     auto bgBounds = getLocalBounds().toFloat().reduced(0.5f);
@@ -184,16 +237,23 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Create a copy of the drawable and replace colors
     auto iconCopy = svgIcon->createCopy();
 
+    for (const auto& replacement : stateColourReplacements_) {
+        iconCopy->replaceColour(
+            replacement.source,
+            drawOn ? resolveThemeColour(replacement.active, replacement.activeRole)
+                   : resolveThemeColour(replacement.inactive, replacement.inactiveRole));
+    }
+
     // Replace the original SVG color with our desired color
     if (hasOriginalColor) {
         iconCopy->replaceColour(originalColor, iconColor);
     } else {
         // Untinted legacy assets still get the active palette's neutral and
-        // state colours. Black remains the generic single-colour source and
-        // follows the button state below.
-        DarkTheme::applyToSvgIcon(*iconCopy);
+        // state colours. Apply the button-state tint before the generic SVG
+        // mapping so black/currentColor glyphs retain their per-button role.
         iconCopy->replaceColour(juce::Colours::black, iconColor);
     }
+    DarkTheme::applyToSvgIcon(*iconCopy);
 
     // Draw the icon (dimmed when disabled)
     float opacity = isEnabled() ? 1.0f : 0.25f;

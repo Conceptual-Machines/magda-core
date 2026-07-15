@@ -1,5 +1,7 @@
 #include "DSLTokeniser.hpp"
 
+#include "ui/themes/DarkTheme.hpp"
+
 namespace magda::daw::ui {
 
 bool DSLTokeniser::isKeyword(const juce::String& token) {
@@ -153,18 +155,19 @@ int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
 }
 
 juce::CodeEditorComponent::ColourScheme DSLTokeniser::getDefaultColourScheme() {
-    static const juce::CodeEditorComponent::ColourScheme::TokenType types[] = {
-        {"Error", juce::Colour(0xffcc0000)},       {"Comment", juce::Colour(0xff6a9955)},
-        {"Keyword", juce::Colour(0xff569cd6)},     {"Method", juce::Colour(0xffdcdcaa)},
-        {"Param", juce::Colour(0xff9cdcfe)},       {"Operator", juce::Colour(0xffd4d4d4)},
-        {"Identifier", juce::Colour(0xffd4d4d4)},  {"Number", juce::Colour(0xffb5cea8)},
-        {"String", juce::Colour(0xffce9178)},      {"Bracket", juce::Colour(0xffd4d4d4)},
-        {"Punctuation", juce::Colour(0xffd4d4d4)}, {"NoteName", juce::Colour(0xff4ec9b0)},
-    };
-
     juce::CodeEditorComponent::ColourScheme cs;
-    for (auto& t : types)
-        cs.set(t.name, t.colour);
+    cs.set("Error", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_ERROR));
+    cs.set("Comment", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_COMMENT));
+    cs.set("Keyword", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_KEYWORD));
+    cs.set("Method", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_METHOD));
+    cs.set("Param", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_PARAM));
+    cs.set("Operator", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_OPERATOR));
+    cs.set("Identifier", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_IDENTIFIER));
+    cs.set("Number", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_NUMBER));
+    cs.set("String", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_STRING));
+    cs.set("Bracket", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_BRACKET));
+    cs.set("Punctuation", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_PUNCTUATION));
+    cs.set("NoteName", DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_TOKEN_NOTE_NAME));
     return cs;
 }
 

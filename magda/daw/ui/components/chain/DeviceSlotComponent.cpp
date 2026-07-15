@@ -378,8 +378,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*learnButton_);
 
     // Bypass/On button (power icon)
-    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
-                                                   BinaryData::power_on_svgSize);
+    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
+                                                   BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
@@ -822,6 +822,8 @@ void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
         if (tracktionLogo_)
             tracktionLogo_->replaceColour(juce::Colours::black,
                                           DarkTheme::getSecondaryTextColour());
+        if (tracktionLogo_)
+            DarkTheme::applyToSvgIcon(*tracktionLogo_);
     } else if (!traits_.isTracktionDevice) {
         tracktionLogo_.reset();
     }

@@ -133,8 +133,8 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     addAndMakeVisible(soloButton_);
 
     // On/bypass button (power icon)
-    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
-                                                   BinaryData::power_on_svgSize);
+    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
+                                                   BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);  // On = not bypassed
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));

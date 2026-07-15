@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <optional>
+#include <vector>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../utils/ComponentManager.hpp"
@@ -14,7 +15,9 @@ class SvgButton : public juce::Button {
     // Single icon constructor (legacy - colors icon based on state)
     SvgButton(const juce::String& buttonName, const char* svgData, size_t svgDataSize);
 
-    // Dual icon constructor (uses separate off/on images with pre-baked colors)
+    // Dual icon constructor retained for controls whose states genuinely use
+    // different geometry. Colour-only state changes should use one SVG plus
+    // setStateColourReplacement().
     SvgButton(const juce::String& buttonName, const char* offSvgData, size_t offSvgDataSize,
               const char* onSvgData, size_t onSvgDataSize);
 
@@ -63,6 +66,13 @@ class SvgButton : public juce::Button {
         hasOriginalColor = true;
     }
 
+    // Recolour one stable SVG source key according to the button state. This
+    // keeps geometry in the asset and all visual state in code.
+    void setStateColourReplacement(juce::Colour sourceColour, juce::Colour inactiveColour,
+                                   juce::Colour activeColour);
+    void setStateColourReplacement(juce::Colour sourceColour, ColourRole inactiveRole,
+                                   ColourRole activeRole);
+
     // Border settings
     void setIconPadding(float padding) {
         iconPadding = padding;
@@ -104,6 +114,14 @@ class SvgButton : public juce::Button {
     static juce::Colour resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role);
 
+    struct StateColourReplacement {
+        juce::Colour source;
+        juce::Colour inactive;
+        juce::Colour active;
+        std::optional<ColourRole> inactiveRole;
+        std::optional<ColourRole> activeRole;
+    };
+
     magda::ManagedDrawable svgIcon;
     magda::ManagedDrawable svgIconOff;
     magda::ManagedDrawable svgIconOn;
@@ -125,6 +143,7 @@ class SvgButton : public juce::Button {
     bool hasActiveColor_ = false;
     juce::Colour originalColor;  // Original SVG fill color to replace
     bool hasOriginalColor = false;
+    std::vector<StateColourReplacement> stateColourReplacements_;
     juce::Colour activeBackgroundColor;  // Background color when active
     std::optional<ColourRole> activeBackgroundColorRole_;
     bool hasActiveBackgroundColor = false;

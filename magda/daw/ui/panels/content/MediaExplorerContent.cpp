@@ -974,16 +974,24 @@ MediaExplorerContent::MediaExplorerContent() {
     addAndMakeVisible(browseButton_);
 
     // Setup preview controls with icon buttons
-    playButton_ = std::make_unique<magda::SvgButton>(
-        "Play", BinaryData::play_off_svg, BinaryData::play_off_svgSize, BinaryData::play_on_svg,
-        BinaryData::play_on_svgSize);
+    const auto stylePreviewTransportButton = [](magda::SvgButton& button) {
+        button.setIconPadding(0.0f);
+        button.setStateColourReplacement(juce::Colour(0xFF1A1A1A), DarkTheme::PIANO_ROLL_BACKGROUND,
+                                         DarkTheme::ACCENT_BLUE);
+        button.setStateColourReplacement(juce::Colour(0xFFBCBCBC), DarkTheme::ICON_TRANSPORT,
+                                         DarkTheme::TEXT_BRIGHT);
+    };
+
+    playButton_ =
+        std::make_unique<magda::SvgButton>("Play", BinaryData::play_svg, BinaryData::play_svgSize);
+    stylePreviewTransportButton(*playButton_);
     playButton_->onClick = [this]() { playPreview(); };
     playButton_->setEnabled(false);
     addAndMakeVisible(*playButton_);
 
-    stopButton_ = std::make_unique<magda::SvgButton>(
-        "Stop", BinaryData::stop_off_svg, BinaryData::stop_off_svgSize, BinaryData::stop_on_svg,
-        BinaryData::stop_on_svgSize);
+    stopButton_ =
+        std::make_unique<magda::SvgButton>("Stop", BinaryData::stop_svg, BinaryData::stop_svgSize);
+    stylePreviewTransportButton(*stopButton_);
     stopButton_->onClick = [this]() { stopPreview(); };
     stopButton_->setEnabled(false);
     addAndMakeVisible(*stopButton_);

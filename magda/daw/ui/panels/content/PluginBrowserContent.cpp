@@ -457,8 +457,10 @@ void PluginBrowserContent::loadCategoryIcons() {
     const auto tint = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
     const auto loadIcon = [tint](const char* data, int size) {
         auto icon = juce::Drawable::createFromImageData(data, size);
-        if (icon)
+        if (icon) {
             icon->replaceColour(juce::Colour(0xFFB3B3B3), tint);
+            DarkTheme::applyToSvgIcon(*icon);
+        }
         return icon;
     };
 

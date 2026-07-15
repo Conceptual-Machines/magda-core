@@ -907,6 +907,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (linkIcon) {
                 auto themedIcon = linkIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
+                DarkTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -922,6 +923,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (chordIcon) {
                 auto themedIcon = chordIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
+                DarkTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -970,6 +972,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (loopIcon) {
                 auto themedIcon = loopIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFBCBCBC), headerForeground);
+                DarkTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }

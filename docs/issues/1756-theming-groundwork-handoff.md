@@ -1,6 +1,6 @@
 # Issue #1756 — theming groundwork handoff
 
-Branch: `dev016`
+Branch: `issue/1756-theming-groundwork`
 
 ## Current state
 
@@ -21,6 +21,11 @@ overlays. The Nimbus, Halo, Materia, and struck-instrument faceplates now use
 live roles for their shared background, panel, border, and text layers. Their
 instrument-specific accent colours remain intentionally distinct.
 
+The shared-control cleanup is also complete: text sliders, toasts, QWERTY
+keyboard labels, EQ band identities, code-editor syntax colours, and remaining
+shared SVG source keys have dedicated runtime roles. Syntax highlighting uses
+its own palette rather than application-surface roles.
+
 `ThemedColour` in `DarkTheme.hpp` is the preferred lightweight bridge for a
 custom UI that currently has file-local named `juce::Colour` constants. It
 resolves the role at paint time. For cached label or slider colours, add a
@@ -38,9 +43,15 @@ fills are stable implementation keys:
 - known blue, purple, red, and orange fills — semantic states
 
 `DarkTheme::applyToSvgIcon()` maps those keys to active roles. `SvgButton`
-also resolves role-matched explicit colours during painting. Preserve the
-source keys in assets so multi-layer icons, especially transport controls,
-retain their state information.
+also supports per-state source-key replacement for both single- and dual-icon
+controls. Background and glyph layers can therefore resolve independently on
+every paint, including when a light palette inverts their contrast.
+
+Colour-only state pairs have been consolidated to one SVG. This includes all
+transport controls plus solo, track record, chord audition, note slice, time
+bend, and resume. The remaining `master`, `monitor`, and `toggle` pairs are
+intentional: their state changes geometry or control position, while their
+colours are still supplied by semantic roles in code.
 
 ## Keep these colours user-owned
 
@@ -77,26 +88,13 @@ The full build and focused runtime-theme suite pass at this handoff. In the
 sandbox, the build may need permission to write ccache temporary files under
 the user cache; that is an environment restriction, not a project error.
 
-## Suggested next pass
+## Merge state
 
-1. Convert remaining fixed shared-control literals in `TextSlider.hpp`,
-   `Toast.cpp`, and `QwertyKeyboardPopup.cpp`. Add semantic roles only when an
-   existing role would alter the Dark output.
-2. Triage custom UI literals:
-   - `EqualiserUI.cpp`: fixed EQ-band identity colours; decide whether to add
-     four semantic EQ roles.
-   - `NimbusUI.cpp`, `HaloUI.cpp`, `MateriaUI.cpp`, and
-     `StruckInstrumentUI.cpp`: shared surface literals are complete; assess
-     the remaining source-specific accents individually.
-   - `AnalyzerColours.hpp`: leave persisted trace choices user-owned.
-3. Treat code-editor/tokeniser colours (`DSLTokeniser`, `ChatPromptTokeniser`,
-   AI console) as a separate syntax-highlighting palette rather than folding
-   them into generic application roles.
-4. Continue replacing direct SVG copies that are only tinted at construction
-   time; repaint-time mapping or `lookAndFeelChanged()` reloads are required
-   for a live theme switch.
-5. Run the validation commands above after each palette expansion, then do a
-   manual Preferences theme switch once the next broad UI layer is converted.
+The groundwork scope is complete. A future light theme only needs to provide
+values for the existing semantic application and syntax palettes; controls do
+not need new SVG exports or duplicated state assets. Before merging, run the
+validation commands above and smoke-test the Preferences theme switch in the
+application when a desktop session is available.
 
 ## Files to orient from
 

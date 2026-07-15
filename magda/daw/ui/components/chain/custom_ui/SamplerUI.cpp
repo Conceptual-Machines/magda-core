@@ -133,9 +133,13 @@ SamplerUI::SamplerUI() {
     setupTimeSlider(loopEndSlider_, 10, 0.0, 300.0, 0.0);
 
     // --- Loop toggle button (SVG icon) ---
-    loopButton_ = std::make_unique<magda::SvgButton>(
-        "Loop", BinaryData::loop_off_svg, BinaryData::loop_off_svgSize, BinaryData::loop_on_svg,
-        BinaryData::loop_on_svgSize);
+    loopButton_ =
+        std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
+    loopButton_->setIconPadding(0.0f);
+    loopButton_->setStateColourReplacement(
+        juce::Colour(0xFF1A1A1A), DarkTheme::PIANO_ROLL_BACKGROUND, DarkTheme::ACCENT_BLUE);
+    loopButton_->setStateColourReplacement(juce::Colour(0xFFBCBCBC), DarkTheme::ICON_TRANSPORT,
+                                           DarkTheme::TEXT_BRIGHT);
     loopButton_->onClick = [this]() {
         bool newState = !loopButton_->isActive();
         loopButton_->setActive(newState);

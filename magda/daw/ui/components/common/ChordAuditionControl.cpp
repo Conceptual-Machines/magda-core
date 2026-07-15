@@ -15,11 +15,12 @@ constexpr int kSilent = 1, kAudible = 2, kSolo = 3;
 }
 
 ChordAuditionControl::ChordAuditionControl()
-    : SvgButton("ChordAudition", BinaryData::chord_off_svg, BinaryData::chord_off_svgSize,
-                BinaryData::chord_on_1_svg, BinaryData::chord_on_1_svgSize) {
+    : SvgButton("ChordAudition", BinaryData::chord_svg, BinaryData::chord_svgSize) {
     setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                              DarkTheme::ICON_ON_ACCENT);
     setIconPadding(3.5f);
     setTooltip(tr("tracks.chord_audition.tooltip"));
 

@@ -971,9 +971,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     magda::MixAnalysisService::getInstance().addListener(this);
 
     // Send button (embedded in bottom bar) — SVG icon
-    auto enterSvg =
-        juce::Drawable::createFromImageData(BinaryData::enter_svg, BinaryData::enter_svgSize);
-    sendButton_.setImages(enterSvg.get());
+    setThemedButtonIcon(sendButton_, BinaryData::enter_svg, BinaryData::enter_svgSize);
     sendButton_.setEdgeIndent(5);
     sendButton_.setColour(juce::DrawableButton::backgroundColourId,
                           juce::Colours::transparentBlack);
@@ -993,9 +991,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     addAndMakeVisible(sendButton_);
 
     // Clear chat button
-    auto deleteSvg =
-        juce::Drawable::createFromImageData(BinaryData::delete_svg, BinaryData::delete_svgSize);
-    clearButton_.setImages(deleteSvg.get());
+    setThemedButtonIcon(clearButton_, BinaryData::delete_svg, BinaryData::delete_svgSize);
     clearButton_.setEdgeIndent(4);
     clearButton_.setColour(juce::DrawableButton::backgroundColourId,
                            juce::Colours::transparentBlack);
@@ -1013,9 +1009,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     addAndMakeVisible(clearButton_);
 
     // Copy chat button
-    auto copySvg = juce::Drawable::createFromImageData(BinaryData::copycontent_svg,
-                                                       BinaryData::copycontent_svgSize);
-    copyButton_.setImages(copySvg.get());
+    setThemedButtonIcon(copyButton_, BinaryData::copycontent_svg, BinaryData::copycontent_svgSize);
     copyButton_.setEdgeIndent(4);
     copyButton_.setColour(juce::DrawableButton::backgroundColourId,
                           juce::Colours::transparentBlack);
@@ -1313,9 +1307,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     inputBox_->setEnabled(false);
 
     // Swap send button to stop icon
-    auto stopSvg =
-        juce::Drawable::createFromImageData(BinaryData::stop_off_svg, BinaryData::stop_off_svgSize);
-    sendButton_.setImages(stopSvg.get());
+    setThemedButtonIcon(sendButton_, BinaryData::stop_svg, BinaryData::stop_svgSize);
     sendButton_.setAlpha(0.6f);
 
     appendToChat(juce::String::charToString(0x25CF) + " " + text);
@@ -1375,10 +1367,27 @@ void AIChatConsoleContent::cancelRequest() {
 }
 
 void AIChatConsoleContent::restoreSendIcon() {
-    auto enterSvg =
-        juce::Drawable::createFromImageData(BinaryData::enter_svg, BinaryData::enter_svgSize);
-    sendButton_.setImages(enterSvg.get());
+    setThemedButtonIcon(sendButton_, BinaryData::enter_svg, BinaryData::enter_svgSize);
     sendButton_.setAlpha(0.35f);
+}
+
+void AIChatConsoleContent::setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
+                                               std::size_t svgDataSize) {
+    auto icon = juce::Drawable::createFromImageData(svgData, svgDataSize);
+    if (icon)
+        DarkTheme::applyToSvgIcon(*icon);
+    button.setImages(icon.get());
+}
+
+void AIChatConsoleContent::lookAndFeelChanged() {
+    // DrawableButton retains its own copy of the supplied drawable. Recreate
+    // those copies when the active palette changes so the persistent chat
+    // controls follow the same code-side SVG mapping as SvgButton.
+    setThemedButtonIcon(sendButton_, processing_ ? BinaryData::stop_svg : BinaryData::enter_svg,
+                        processing_ ? BinaryData::stop_svgSize : BinaryData::enter_svgSize);
+    setThemedButtonIcon(clearButton_, BinaryData::delete_svg, BinaryData::delete_svgSize);
+    setThemedButtonIcon(copyButton_, BinaryData::copycontent_svg, BinaryData::copycontent_svgSize);
+    repaint();
 }
 
 void AIChatConsoleContent::timerCallback() {

@@ -215,7 +215,8 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     int timeRight_ = 0;
 
     // Button styling
-    void styleTransportButton(SvgButton& button, juce::Colour accentColor);
+    void styleTransportButton(SvgButton& button, ColourRole accentRole,
+                              bool activeGlyphUsesAccent = false);
     void setupTransportButtons();
     void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();

@@ -1132,8 +1132,8 @@ TrackChainContent::TrackChainContent()
     addChildComponent(panLabel_);
 
     // Chain bypass button (power icon - same as device bypass buttons)
-    chainBypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
-                                                            BinaryData::power_on_svgSize);
+    chainBypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
+                                                            BinaryData::power_svgSize);
     chainBypassButton_->setClickingTogglesState(true);
     chainBypassButton_->setToggleState(true,
                                        juce::dontSendNotification);  // Start active (not bypassed)

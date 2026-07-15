@@ -12,6 +12,7 @@
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
+#include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/MonitorControl.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../components/common/TextSlider.hpp"
@@ -578,6 +579,7 @@ class SessionView::BeatBandContainer : public juce::Component {
                 auto themedIcon = hideIcon_->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
                                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                DarkTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, layout.hideIconBounds.toFloat(),
                                        juce::RectanglePlacement::centred, hidden ? 0.55f : 0.3f);
             }
@@ -585,6 +587,7 @@ class SessionView::BeatBandContainer : public juce::Component {
                 auto themedIcon = rateIcon_->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
                                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                DarkTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, layout.rateIconBounds.toFloat(),
                                        juce::RectanglePlacement::centred, 0.3f);
             }
@@ -1198,12 +1201,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
         muteButton_ = std::make_unique<SvgButton>(
             "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
             BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-        muteButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        muteButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        muteButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+        configureMasterSpeakerButton(*muteButton_);
         muteButton_->setIconPadding(3.0f);
         muteButton_->setTooltip("Mute");
-        muteButton_->setClickingTogglesState(true);
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         muteButton_->onClick = [this]() {
             const bool newState = muteButton_->getToggleState();
@@ -1214,12 +1214,13 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*muteButton_);
 
         // Solo target toggle.
-        soloButton_ = std::make_unique<SvgButton>(
-            "solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize, BinaryData::solo_on_svg,
-            BinaryData::solo_on_svgSize);
+        soloButton_ =
+            std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
         soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
         soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                               DarkTheme::ICON_ON_ACCENT);
         soloButton_->setIconPadding(5.0f);
         soloButton_->setTooltip("Solo");
         soloButton_->setClickingTogglesState(true);
@@ -1233,12 +1234,13 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*soloButton_);
 
         // Record arm dot toggle.
-        recordButton_ = std::make_unique<SvgButton>(
-            "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
-            BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+        recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
+                                                    BinaryData::track_record_svgSize);
         recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
         recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                                 DarkTheme::ICON_ON_ACCENT);
         recordButton_->setIconPadding(5.0f);
         recordButton_->setTooltip("Record arm");
         recordButton_->setClickingTogglesState(true);

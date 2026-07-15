@@ -12,6 +12,7 @@
 #include "../../engine/PluginWindowManager.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
+#include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
@@ -543,12 +544,8 @@ void MixerView::ChannelStrip::setupControls() {
     muteButton = std::make_unique<magda::SvgButton>(
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-    muteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    muteButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton->setIconPadding(3.5f);
+    configureMasterSpeakerButton(*muteButton);
     muteButton->setTooltip(tr("tracks.mute.tooltip"));
-    muteButton->setClickingTogglesState(true);
     muteButton->onClick = [this]() {
         const bool newState = muteButton->getToggleState();
         for (auto tid : getMultiEditTargets(trackId_, isMaster_))
@@ -564,12 +561,13 @@ void MixerView::ChannelStrip::setupControls() {
     addChildComponent(*chordSpeakerButton);
 
     // Solo target toggle, matching the track header.
-    soloButton = std::make_unique<magda::SvgButton>(
-        "solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize, BinaryData::solo_on_svg,
-        BinaryData::solo_on_svgSize);
+    soloButton =
+        std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                          DarkTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
@@ -583,12 +581,13 @@ void MixerView::ChannelStrip::setupControls() {
 
     // Record arm button (not on master)
     if (!isMaster_) {
-        recordButton = std::make_unique<magda::SvgButton>(
-            "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
-            BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+        recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
+                                                          BinaryData::track_record_svgSize);
         recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
         recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                                DarkTheme::ICON_ON_ACCENT);
         recordButton->setIconPadding(5.0f);
         recordButton->setTooltip(tr("tracks.record.tooltip"));
         recordButton->setClickingTogglesState(true);

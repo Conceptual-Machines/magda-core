@@ -162,6 +162,7 @@ enum class ColourRole : std::size_t {
     TOOLTIP_BACKGROUND,
     ICON_NEUTRAL,
     ICON_TRANSPORT,
+    ICON_ON_ACCENT,
     AUTOMATION_LANE_BACKGROUND,
     AUTOMATION_LANE_SELECTED,
     AUTOMATION_LANE_HEADER,
@@ -209,12 +210,63 @@ enum class ColourRole : std::size_t {
     EQ_BAND_LOW_MID,
     EQ_BAND_HIGH_MID,
     EQ_BAND_HIGH,
+    ICON_BACKGROUND,
+    ICON_BRIGHT,
+    ICON_SUBTLE,
+    ICON_MODULATION,
+    ICON_BRAND,
+    ICON_POWER,
+    MIXER_FADER_THUMB,
+    MIXER_KNOB_OUTER,
+    MIXER_KNOB_OUTER_STROKE,
+    MIXER_KNOB_INNER,
+    MIXER_KNOB_GUIDE,
+    count
+};
+
+// Syntax colours deliberately live outside the application-surface palette.
+// Code editors need their own contrast hierarchy and token meanings, rather
+// than inheriting generic text and accent roles.
+enum class SyntaxColourRole : std::size_t {
+    EDITOR_BACKGROUND,
+    EDITOR_DEFAULT_TEXT,
+    LINE_NUMBER_BACKGROUND,
+    LINE_NUMBER_TEXT,
+    EDITOR_CARET,
+    DSL_CARET,
+    EDITOR_SELECTION,
+    DSL_SELECTION,
+    DSL_STATUS_BACKGROUND,
+    DSL_STATUS_TEXT,
+    DSL_OUTPUT_PROMPT,
+    DSL_OUTPUT_INFO,
+    DSL_OUTPUT_TEXT,
+    DSL_OUTPUT_ERROR,
+    DSL_TOKEN_ERROR,
+    DSL_TOKEN_COMMENT,
+    DSL_TOKEN_KEYWORD,
+    DSL_TOKEN_METHOD,
+    DSL_TOKEN_PARAM,
+    DSL_TOKEN_OPERATOR,
+    DSL_TOKEN_IDENTIFIER,
+    DSL_TOKEN_NUMBER,
+    DSL_TOKEN_STRING,
+    DSL_TOKEN_BRACKET,
+    DSL_TOKEN_PUNCTUATION,
+    DSL_TOKEN_NOTE_NAME,
+    CHAT_TOKEN_TEXT,
+    CHAT_TOKEN_PLUGIN_ALIAS,
+    CHAT_TOKEN_PARAM_ALIAS,
+    CHAT_TOKEN_SLASH_COMMAND,
+    CHAT_TOKEN_PUNCTUATION,
     count
 };
 
 class DarkTheme {
   public:
     using Palette = std::array<juce::uint32, static_cast<std::size_t>(ColourRole::count)>;
+    using SyntaxPalette =
+        std::array<juce::uint32, static_cast<std::size_t>(SyntaxColourRole::count)>;
 
     static constexpr const char* kDarkThemeId = "dark";
     static constexpr const char* kHighContrastThemeId = "high-contrast";
@@ -353,6 +405,7 @@ class DarkTheme {
     static constexpr auto TOOLTIP_BACKGROUND = ColourRole::TOOLTIP_BACKGROUND;
     static constexpr auto ICON_NEUTRAL = ColourRole::ICON_NEUTRAL;
     static constexpr auto ICON_TRANSPORT = ColourRole::ICON_TRANSPORT;
+    static constexpr auto ICON_ON_ACCENT = ColourRole::ICON_ON_ACCENT;
     static constexpr auto AUTOMATION_LANE_BACKGROUND = ColourRole::AUTOMATION_LANE_BACKGROUND;
     static constexpr auto AUTOMATION_LANE_SELECTED = ColourRole::AUTOMATION_LANE_SELECTED;
     static constexpr auto AUTOMATION_LANE_HEADER = ColourRole::AUTOMATION_LANE_HEADER;
@@ -409,6 +462,17 @@ class DarkTheme {
     static constexpr auto EQ_BAND_LOW_MID = ColourRole::EQ_BAND_LOW_MID;
     static constexpr auto EQ_BAND_HIGH_MID = ColourRole::EQ_BAND_HIGH_MID;
     static constexpr auto EQ_BAND_HIGH = ColourRole::EQ_BAND_HIGH;
+    static constexpr auto ICON_BACKGROUND = ColourRole::ICON_BACKGROUND;
+    static constexpr auto ICON_BRIGHT = ColourRole::ICON_BRIGHT;
+    static constexpr auto ICON_SUBTLE = ColourRole::ICON_SUBTLE;
+    static constexpr auto ICON_MODULATION = ColourRole::ICON_MODULATION;
+    static constexpr auto ICON_BRAND = ColourRole::ICON_BRAND;
+    static constexpr auto ICON_POWER = ColourRole::ICON_POWER;
+    static constexpr auto MIXER_FADER_THUMB = ColourRole::MIXER_FADER_THUMB;
+    static constexpr auto MIXER_KNOB_OUTER = ColourRole::MIXER_KNOB_OUTER;
+    static constexpr auto MIXER_KNOB_OUTER_STROKE = ColourRole::MIXER_KNOB_OUTER_STROKE;
+    static constexpr auto MIXER_KNOB_INNER = ColourRole::MIXER_KNOB_INNER;
+    static constexpr auto MIXER_KNOB_GUIDE = ColourRole::MIXER_KNOB_GUIDE;
 
     // Runtime palette API. Theme changes are expected to happen on JUCE's
     // message thread, alongside the LookAndFeel refresh they trigger.
@@ -416,6 +480,10 @@ class DarkTheme {
     static const Palette& getActivePalette();
     static void setActivePalette(const Palette& palette);
     static void resetToDarkPalette();
+
+    static const SyntaxPalette& getDarkSyntaxPalette();
+    static const SyntaxPalette& getActiveSyntaxPalette();
+    static void setActiveSyntaxPalette(const SyntaxPalette& palette);
 
     // Selects a built-in palette by its persisted Config identifier. Returns
     // false without changing the active palette for an unknown identifier.
@@ -441,6 +509,10 @@ class DarkTheme {
     static juce::Colour getColour(ColourRole role) {
         return juce::Colour(getColourValue(role));
     }
+    static juce::uint32 getSyntaxColourValue(SyntaxColourRole role);
+    static juce::Colour getSyntaxColour(SyntaxColourRole role) {
+        return juce::Colour(getSyntaxColourValue(role));
+    }
 
     // Helper methods for common color combinations
     static juce::Colour getBackgroundColour() {
@@ -464,6 +536,7 @@ class DarkTheme {
 
   private:
     static Palette activePalette_;
+    static SyntaxPalette activeSyntaxPalette_;
 };
 
 // Keeps named colours in a custom device UI bound to a role without forcing

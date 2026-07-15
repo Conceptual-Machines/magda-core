@@ -20,6 +20,10 @@ MonitorControl::MonitorControl()
     setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                              DarkTheme::ICON_ON_ACCENT);
+    setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_NEUTRAL,
+                              DarkTheme::ICON_ON_ACCENT);
     setIconPadding(5.0f);
     setTooltip(tr("tracks.input_monitoring"));
 

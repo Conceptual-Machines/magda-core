@@ -107,6 +107,7 @@ constexpr DarkTheme::Palette darkPalette{
     0xFF161616,  // TOOLTIP_BACKGROUND
     0xFFB3B3B3,  // ICON_NEUTRAL
     0xFFBCBCBC,  // ICON_TRANSPORT
+    0xFF1E1E1E,  // ICON_ON_ACCENT
     0xFF1E1E1E,  // AUTOMATION_LANE_BACKGROUND
     0xFF2A2A2A,  // AUTOMATION_LANE_SELECTED
     0xFF252525,  // AUTOMATION_LANE_HEADER
@@ -158,9 +159,58 @@ constexpr DarkTheme::Palette darkPalette{
     0xFF61AFEF,  // EQ_BAND_LOW_MID
     0xFF98C379,  // EQ_BAND_HIGH_MID
     0xFFE5C07B,  // EQ_BAND_HIGH
+    0xFF2E2E33,  // ICON_BACKGROUND
+    0xFFE3E3E3,  // ICON_BRIGHT
+    0xFF808080,  // ICON_SUBTLE
+    0xFF979797,  // ICON_MODULATION
+    0xFFD9D9D9,  // ICON_BRAND
+    0xFFE6E6E6,  // ICON_POWER
+    0xFF2A3A4A,  // MIXER_FADER_THUMB
+    0xFF2A2A35,  // MIXER_KNOB_OUTER
+    0xFF3A3A45,  // MIXER_KNOB_OUTER_STROKE
+    0xFF1E1E22,  // MIXER_KNOB_INNER
+    0xFF404050,  // MIXER_KNOB_GUIDE
+};
+
+constexpr DarkTheme::SyntaxPalette darkSyntaxPalette{
+    0xFF0C0F14,  // EDITOR_BACKGROUND
+    0xFFE8EDF1,  // EDITOR_DEFAULT_TEXT
+    0xFF252526,  // LINE_NUMBER_BACKGROUND
+    0xFF858585,  // LINE_NUMBER_TEXT
+    0xFFE8EDF1,  // EDITOR_CARET
+    0xFF88FF88,  // DSL_CARET
+    0x4D5588AA,  // EDITOR_SELECTION
+    0xFF264F78,  // DSL_SELECTION
+    0xFF007ACC,  // DSL_STATUS_BACKGROUND
+    0xFFFFFFFF,  // DSL_STATUS_TEXT
+    0xFF88FF88,  // DSL_OUTPUT_PROMPT
+    0xFF569CD6,  // DSL_OUTPUT_INFO
+    0xFFD4D4D4,  // DSL_OUTPUT_TEXT
+    0xFFF48771,  // DSL_OUTPUT_ERROR
+    0xFFCC0000,  // DSL_TOKEN_ERROR
+    0xFF6A9955,  // DSL_TOKEN_COMMENT
+    0xFF569CD6,  // DSL_TOKEN_KEYWORD
+    0xFFDCDCAA,  // DSL_TOKEN_METHOD
+    0xFF9CDCFE,  // DSL_TOKEN_PARAM
+    0xFFD4D4D4,  // DSL_TOKEN_OPERATOR
+    0xFFD4D4D4,  // DSL_TOKEN_IDENTIFIER
+    0xFFB5CEA8,  // DSL_TOKEN_NUMBER
+    0xFFCE9178,  // DSL_TOKEN_STRING
+    0xFFD4D4D4,  // DSL_TOKEN_BRACKET
+    0xFFD4D4D4,  // DSL_TOKEN_PUNCTUATION
+    0xFF4EC9B0,  // DSL_TOKEN_NOTE_NAME
+    0xFFE0E0E0,  // CHAT_TOKEN_TEXT
+    0xFF5FA8FF,  // CHAT_TOKEN_PLUGIN_ALIAS
+    0xFFE0A85A,  // CHAT_TOKEN_PARAM_ALIAS
+    0xFF7ACF68,  // CHAT_TOKEN_SLASH_COMMAND
+    0xFFD4D4D4,  // CHAT_TOKEN_PUNCTUATION
 };
 
 constexpr std::size_t colourRoleIndex(ColourRole role) {
+    return static_cast<std::size_t>(role);
+}
+
+constexpr std::size_t syntaxColourRoleIndex(SyntaxColourRole role) {
     return static_cast<std::size_t>(role);
 }
 
@@ -230,6 +280,7 @@ constexpr DarkTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::TOOLTIP_BACKGROUND)] = 0xFF101010;
     palette[colourRoleIndex(ColourRole::ICON_NEUTRAL)] = 0xFFD0D0D0;
     palette[colourRoleIndex(ColourRole::ICON_TRANSPORT)] = 0xFFD8D8D8;
+    palette[colourRoleIndex(ColourRole::ICON_ON_ACCENT)] = 0xFF101010;
     palette[colourRoleIndex(ColourRole::AUTOMATION_LANE_BACKGROUND)] = 0xFF101010;
     palette[colourRoleIndex(ColourRole::AUTOMATION_LANE_SELECTED)] = 0xFF202020;
     palette[colourRoleIndex(ColourRole::AUTOMATION_LANE_HEADER)] = 0xFF181818;
@@ -277,6 +328,55 @@ constexpr DarkTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::EQ_BAND_LOW_MID)] = 0xFF7FC5FF;
     palette[colourRoleIndex(ColourRole::EQ_BAND_HIGH_MID)] = 0xFFB0E890;
     palette[colourRoleIndex(ColourRole::EQ_BAND_HIGH)] = 0xFFFFD58C;
+    palette[colourRoleIndex(ColourRole::ICON_BACKGROUND)] = 0xFF1B1B1B;
+    palette[colourRoleIndex(ColourRole::ICON_BRIGHT)] = 0xFFF0F0F0;
+    palette[colourRoleIndex(ColourRole::ICON_SUBTLE)] = 0xFFB8B8B8;
+    palette[colourRoleIndex(ColourRole::ICON_MODULATION)] = 0xFFB8B8B8;
+    palette[colourRoleIndex(ColourRole::ICON_BRAND)] = 0xFFF0F0F0;
+    palette[colourRoleIndex(ColourRole::ICON_POWER)] = 0xFFE0E0E0;
+    palette[colourRoleIndex(ColourRole::MIXER_FADER_THUMB)] = 0xFF2E4C66;
+    palette[colourRoleIndex(ColourRole::MIXER_KNOB_OUTER)] = 0xFF1B1B1B;
+    palette[colourRoleIndex(ColourRole::MIXER_KNOB_OUTER_STROKE)] = 0xFF707070;
+    palette[colourRoleIndex(ColourRole::MIXER_KNOB_INNER)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::MIXER_KNOB_GUIDE)] = 0xFF808080;
+
+    return palette;
+}();
+
+constexpr DarkTheme::SyntaxPalette highContrastSyntaxPalette = [] {
+    auto palette = darkSyntaxPalette;
+
+    palette[syntaxColourRoleIndex(SyntaxColourRole::EDITOR_BACKGROUND)] = 0xFF000000;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::EDITOR_DEFAULT_TEXT)] = 0xFFF5F5F5;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::LINE_NUMBER_BACKGROUND)] = 0xFF101010;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::LINE_NUMBER_TEXT)] = 0xFFB8B8B8;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::EDITOR_CARET)] = 0xFFFFFFFF;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_CARET)] = 0xFFB8FFB8;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::EDITOR_SELECTION)] = 0x994DA3FF;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_SELECTION)] = 0xFF174F80;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_STATUS_BACKGROUND)] = 0xFF147DCC;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_STATUS_TEXT)] = 0xFFFFFFFF;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_OUTPUT_PROMPT)] = 0xFFB8FFB8;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_OUTPUT_INFO)] = 0xFF7FC5FF;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_OUTPUT_TEXT)] = 0xFFE6E6E6;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_OUTPUT_ERROR)] = 0xFFFF9A8F;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_ERROR)] = 0xFFFF6B6B;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_COMMENT)] = 0xFFA6D59A;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_KEYWORD)] = 0xFF7FC5FF;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_METHOD)] = 0xFFF1E3A0;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_PARAM)] = 0xFF9DD7FF;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_OPERATOR)] = 0xFFE6E6E6;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_IDENTIFIER)] = 0xFFE6E6E6;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_NUMBER)] = 0xFFC6E8BC;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_STRING)] = 0xFFFFBE9C;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_BRACKET)] = 0xFFE6E6E6;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_PUNCTUATION)] = 0xFFE6E6E6;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::DSL_TOKEN_NOTE_NAME)] = 0xFF72DFC7;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::CHAT_TOKEN_TEXT)] = 0xFFE8E8E8;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::CHAT_TOKEN_PLUGIN_ALIAS)] = 0xFF7FC5FF;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::CHAT_TOKEN_PARAM_ALIAS)] = 0xFFFFC77D;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::CHAT_TOKEN_SLASH_COMMAND)] = 0xFF94E881;
+    palette[syntaxColourRoleIndex(SyntaxColourRole::CHAT_TOKEN_PUNCTUATION)] = 0xFFE6E6E6;
 
     return palette;
 }();
@@ -284,6 +384,7 @@ constexpr DarkTheme::Palette highContrastPalette = [] {
 }  // namespace
 
 DarkTheme::Palette DarkTheme::activePalette_ = darkPalette;
+DarkTheme::SyntaxPalette DarkTheme::activeSyntaxPalette_ = darkSyntaxPalette;
 
 const DarkTheme::Palette& DarkTheme::getDarkPalette() {
     return darkPalette;
@@ -299,16 +400,31 @@ void DarkTheme::setActivePalette(const Palette& palette) {
 
 void DarkTheme::resetToDarkPalette() {
     activePalette_ = darkPalette;
+    activeSyntaxPalette_ = darkSyntaxPalette;
+}
+
+const DarkTheme::SyntaxPalette& DarkTheme::getDarkSyntaxPalette() {
+    return darkSyntaxPalette;
+}
+
+const DarkTheme::SyntaxPalette& DarkTheme::getActiveSyntaxPalette() {
+    return activeSyntaxPalette_;
+}
+
+void DarkTheme::setActiveSyntaxPalette(const SyntaxPalette& palette) {
+    activeSyntaxPalette_ = palette;
 }
 
 bool DarkTheme::setActiveBuiltInTheme(const std::string& themeId) {
     if (themeId == kDarkThemeId) {
         activePalette_ = darkPalette;
+        activeSyntaxPalette_ = darkSyntaxPalette;
         return true;
     }
 
     if (themeId == kHighContrastThemeId) {
         activePalette_ = highContrastPalette;
+        activeSyntaxPalette_ = highContrastSyntaxPalette;
         return true;
     }
 
@@ -341,6 +457,7 @@ void DarkTheme::applyToSvgIcon(juce::Drawable& drawable) {
     // colour without editing its SVG payload.
     drawable.replaceColour(juce::Colour(0xFFB3B3B3), getColour(ICON_NEUTRAL));
     drawable.replaceColour(juce::Colour(0xFFBCBCBC), getColour(ICON_TRANSPORT));
+    drawable.replaceColour(juce::Colour(0xFF2E2E33), getColour(ICON_BACKGROUND));
     drawable.replaceColour(juce::Colour(0xFF1A1A1A), getColour(PIANO_ROLL_BACKGROUND));
     drawable.replaceColour(juce::Colour(0xFF1E1E1E), getColour(AUTOMATION_LANE_BACKGROUND));
     drawable.replaceColour(juce::Colour(0xFF444444), getColour(AUTOMATION_DIVIDER_LIGHT));
@@ -349,12 +466,32 @@ void DarkTheme::applyToSvgIcon(juce::Drawable& drawable) {
     drawable.replaceColour(juce::Colour(0xFF7777DD), getColour(ACCENT_PURPLE));
     drawable.replaceColour(juce::Colour(0xFFAA4444), getColour(STATUS_ERROR));
     drawable.replaceColour(juce::Colour(0xFFFF8822), getColour(ACCENT_ORANGE));
+    drawable.replaceColour(juce::Colour(0xFF66AAFF), getColour(ACCENT_CYAN));
+    drawable.replaceColour(juce::Colour(0xFF88AACC), getColour(ACCENT_BLUE_LIGHT));
+    drawable.replaceColour(juce::Colour(0xFFE3E3E3), getColour(ICON_BRIGHT));
+    drawable.replaceColour(juce::Colour(0xFFE6E6E6), getColour(ICON_POWER));
+    drawable.replaceColour(juce::Colour(0xFF808080), getColour(ICON_SUBTLE));
+    drawable.replaceColour(juce::Colour(0xFF979797), getColour(ICON_MODULATION));
+    drawable.replaceColour(juce::Colour(0xFFD9D9D9), getColour(ICON_BRAND));
+    drawable.replaceColour(juce::Colour(0xFF2A3A4A), getColour(MIXER_FADER_THUMB));
+    drawable.replaceColour(juce::Colour(0xFF2A2A35), getColour(MIXER_KNOB_OUTER));
+    drawable.replaceColour(juce::Colour(0xFF3A3A45), getColour(MIXER_KNOB_OUTER_STROKE));
+    drawable.replaceColour(juce::Colour(0xFF1E1E22), getColour(MIXER_KNOB_INNER));
+    drawable.replaceColour(juce::Colour(0xFF404050), getColour(MIXER_KNOB_GUIDE));
+    drawable.replaceColour(juce::Colours::black, getColour(ICON_NEUTRAL));
+    drawable.replaceColour(juce::Colours::white, getColour(TEXT_BRIGHT));
 }
 
 juce::uint32 DarkTheme::getColourValue(ColourRole role) {
     const auto index = static_cast<std::size_t>(role);
     jassert(index < activePalette_.size());
     return activePalette_[index];
+}
+
+juce::uint32 DarkTheme::getSyntaxColourValue(SyntaxColourRole role) {
+    const auto index = static_cast<std::size_t>(role);
+    jassert(index < activeSyntaxPalette_.size());
+    return activeSyntaxPalette_[index];
 }
 
 void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {

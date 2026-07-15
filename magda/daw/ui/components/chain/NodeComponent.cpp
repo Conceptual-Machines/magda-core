@@ -207,8 +207,8 @@ NodeComponent::NodeComponent() {
     // === HEADER ===
 
     // Bypass button (power icon)
-    bypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
-                                                       BinaryData::power_on_svgSize);
+    bypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
+                                                       BinaryData::power_svgSize);
     bypassButton_->setClickingTogglesState(true);
     bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     bypassButton_->setActiveColor(juce::Colours::white);

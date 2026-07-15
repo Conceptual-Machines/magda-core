@@ -4,6 +4,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <atomic>
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
@@ -72,6 +73,7 @@ class AIChatConsoleContent : public PanelContent,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     void onActivated() override;
     void onDeactivated() override;
@@ -113,6 +115,8 @@ class AIChatConsoleContent : public PanelContent,
     void sendMessage(const juce::String& text);
     void cancelRequest();
     void restoreSendIcon();
+    void setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
+                             std::size_t svgDataSize);
     void appendToChat(const juce::String& text);
     void updateContextBar();
 

@@ -177,12 +177,8 @@ TrackInspector::TrackInspector() {
     muteButton_ = std::make_unique<SvgButton>(
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-    muteButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    muteButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_->setIconPadding(3.5f);
+    configureMasterSpeakerButton(*muteButton_);
     muteButton_->setInactiveIconOpacity(0.58f);
-    muteButton_->setClickingTogglesState(true);
     muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
@@ -212,11 +208,12 @@ TrackInspector::TrackInspector() {
 
     // Solo button (arrange track-header style)
     soloButton_ =
-        std::make_unique<SvgButton>("solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize,
-                                    BinaryData::solo_on_svg, BinaryData::solo_on_svgSize);
+        std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                           DarkTheme::ICON_ON_ACCENT);
     soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
     soloButton_->setInactiveIconOpacity(0.58f);
     soloButton_->setClickingTogglesState(true);
@@ -230,12 +227,13 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*soloButton_);
 
     // Record button (arrange track-header style)
-    recordButton_ = std::make_unique<SvgButton>(
-        "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
-        BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+    recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
+                                                BinaryData::track_record_svgSize);
     recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                             DarkTheme::ICON_ON_ACCENT);
     recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
     recordButton_->setInactiveIconOpacity(0.58f);
     recordButton_->setClickingTogglesState(true);
@@ -255,8 +253,12 @@ TrackInspector::TrackInspector() {
     enableButton_ = std::make_unique<SvgButton>(
         "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
-    enableButton_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
-    enableButton_->setBorderColor(juce::Colour(0xff555555));
+    enableButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    enableButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                             DarkTheme::ICON_NEUTRAL);
+    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_ON_ACCENT,
+                                             DarkTheme::ICON_ON_ACCENT);
     enableButton_->setBorderThickness(1.0f);
     enableButton_->setIconPadding(2.0f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
@@ -425,6 +427,7 @@ TrackInspector::TrackInspector() {
         std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
     if (auto svg =
             juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
+        DarkTheme::applyToSvgIcon(*svg);
         inputDrawable->setImages(svg.get());
     }
     inputDrawable->setInterceptsMouseClicks(false, false);
@@ -435,6 +438,7 @@ TrackInspector::TrackInspector() {
         std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
     if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
                                                        BinaryData::Output_svgSize)) {
+        DarkTheme::applyToSvgIcon(*svg);
         outputDrawable->setImages(svg.get());
     }
     outputDrawable->setInterceptsMouseClicks(false, false);

@@ -80,6 +80,7 @@ class SnapIconLaneButton : public LaneHeaderButton {
             return;
         auto copy = drawable_->createCopy();
         copy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+        DarkTheme::applyToSvgIcon(*copy);
         copy->drawWithin(g, getLocalBounds().toFloat().reduced(1.0f),
                          juce::RectanglePlacement::centred, 1.0f);
     }

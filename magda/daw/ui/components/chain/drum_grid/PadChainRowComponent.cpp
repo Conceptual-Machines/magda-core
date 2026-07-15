@@ -95,8 +95,8 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     addAndMakeVisible(soloButton_);
 
     // On/bypass button (power icon)
-    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
-                                                   BinaryData::power_on_svgSize);
+    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
+                                                   BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(true, juce::dontSendNotification);
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));

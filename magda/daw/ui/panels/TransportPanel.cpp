@@ -610,8 +610,8 @@ void TransportPanel::showOverflowMenu() {
 void TransportPanel::setupTransportButtons() {
     // Play button
     playButton =
-        std::make_unique<SvgButton>("Play", BinaryData::play_off_svg, BinaryData::play_off_svgSize,
-                                    BinaryData::play_on_svg, BinaryData::play_on_svgSize);
+        std::make_unique<SvgButton>("Play", BinaryData::play_svg, BinaryData::play_svgSize);
+    styleTransportButton(*playButton, DarkTheme::ACCENT_BLUE);
     playButton->onClick = [this]() {
         DBG("[TransportPanel] playButton->onClick: isPlaying was "
             << (int)isPlaying << ", toggling to " << (int)!isPlaying);
@@ -631,8 +631,8 @@ void TransportPanel::setupTransportButtons() {
 
     // Stop button
     stopButton =
-        std::make_unique<SvgButton>("Stop", BinaryData::stop_off_svg, BinaryData::stop_off_svgSize,
-                                    BinaryData::stop_on_svg, BinaryData::stop_on_svgSize);
+        std::make_unique<SvgButton>("Stop", BinaryData::stop_svg, BinaryData::stop_svgSize);
+    styleTransportButton(*stopButton, DarkTheme::ACCENT_BLUE);
     stopButton->onClick = [this]() {
         auto mousePos = juce::Desktop::getMousePosition();
         auto localPos = stopButton->getScreenBounds();
@@ -663,9 +663,9 @@ void TransportPanel::setupTransportButtons() {
     addAndMakeVisible(*stopButton);
 
     // Record button
-    recordButton = std::make_unique<SvgButton>(
-        "Record", BinaryData::record_off_svg, BinaryData::record_off_svgSize,
-        BinaryData::record_on_svg, BinaryData::record_on_svgSize);
+    recordButton =
+        std::make_unique<SvgButton>("Record", BinaryData::record_svg, BinaryData::record_svgSize);
+    styleTransportButton(*recordButton, DarkTheme::STATUS_ERROR);
     recordButton->onClick = [this]() {
         isRecording = !isRecording;
         recordButton->setActive(isRecording);
@@ -680,9 +680,8 @@ void TransportPanel::setupTransportButtons() {
     // grey when disabled. Matches the purple automation accent used on
     // lane headers and control tints.
     automationWriteButton = std::make_unique<SvgButton>(
-        "Automation Write", BinaryData::automation_off_svg, BinaryData::automation_off_svgSize,
-        BinaryData::automation_on_svg, BinaryData::automation_on_svgSize);
-    styleTransportButton(*automationWriteButton, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        "Automation Write", BinaryData::automation_write_svg, BinaryData::automation_write_svgSize);
+    styleTransportButton(*automationWriteButton, DarkTheme::ACCENT_PURPLE);
     automationWriteButton->setActive(false);
     automationWriteButton->onClick = [this]() {
         isAutomationWriteEnabled = !isAutomationWriteEnabled;
@@ -699,9 +698,9 @@ void TransportPanel::setupTransportButtons() {
     addAndMakeVisible(*automationWriteButton);
 
     // Pause button
-    pauseButton = std::make_unique<SvgButton>(
-        "Pause", BinaryData::pause_off_svg, BinaryData::pause_off_svgSize, BinaryData::pause_on_svg,
-        BinaryData::pause_on_svgSize);
+    pauseButton =
+        std::make_unique<SvgButton>("Pause", BinaryData::pause_svg, BinaryData::pause_svgSize);
+    styleTransportButton(*pauseButton, DarkTheme::ACCENT_BLUE);
     pauseButton->onClick = [this]() {
         if (isPlaying) {
             isPaused = !isPaused;
@@ -714,9 +713,9 @@ void TransportPanel::setupTransportButtons() {
     addAndMakeVisible(*pauseButton);
 
     // Home button
-    homeButton = std::make_unique<SvgButton>(
-        "Home", BinaryData::rewind_off_svg, BinaryData::rewind_off_svgSize,
-        BinaryData::rewind_on_svg, BinaryData::rewind_on_svgSize);
+    homeButton =
+        std::make_unique<SvgButton>("Home", BinaryData::rewind_svg, BinaryData::rewind_svgSize);
+    styleTransportButton(*homeButton, DarkTheme::ACCENT_BLUE);
     homeButton->onClick = [this]() {
         if (onGoHome)
             onGoHome();
@@ -725,8 +724,8 @@ void TransportPanel::setupTransportButtons() {
 
     // Prev button
     prevButton =
-        std::make_unique<SvgButton>("Prev", BinaryData::prev_off_svg, BinaryData::prev_off_svgSize,
-                                    BinaryData::prev_on_svg, BinaryData::prev_on_svgSize);
+        std::make_unique<SvgButton>("Prev", BinaryData::prev_svg, BinaryData::prev_svgSize);
+    styleTransportButton(*prevButton, DarkTheme::ACCENT_BLUE);
     prevButton->onClick = [this]() {
         if (onGoToPrev)
             onGoToPrev();
@@ -735,8 +734,8 @@ void TransportPanel::setupTransportButtons() {
 
     // Next button
     nextButton =
-        std::make_unique<SvgButton>("Next", BinaryData::next_off_svg, BinaryData::next_off_svgSize,
-                                    BinaryData::next_on_svg, BinaryData::next_on_svgSize);
+        std::make_unique<SvgButton>("Next", BinaryData::next_svg, BinaryData::next_svgSize);
+    styleTransportButton(*nextButton, DarkTheme::ACCENT_BLUE);
     nextButton->onClick = [this]() {
         if (onGoToNext)
             onGoToNext();
@@ -745,8 +744,8 @@ void TransportPanel::setupTransportButtons() {
 
     // Loop button
     loopButton =
-        std::make_unique<SvgButton>("Loop", BinaryData::loop_off_svg, BinaryData::loop_off_svgSize,
-                                    BinaryData::loop_on_svg, BinaryData::loop_on_svgSize);
+        std::make_unique<SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
+    styleTransportButton(*loopButton, DarkTheme::ACCENT_BLUE);
     loopButton->onClick = [this]() {
         isLooping = !isLooping;
         loopButton->setActive(isLooping);
@@ -757,8 +756,8 @@ void TransportPanel::setupTransportButtons() {
 
     // Back to Arrangement button
     backToArrangementButton = std::make_unique<SvgButton>(
-        "BackToArrangement", BinaryData::resume_svg, BinaryData::resume_svgSize,
-        BinaryData::resume_on_svg, BinaryData::resume_on_svgSize);
+        "BackToArrangement", BinaryData::resume_svg, BinaryData::resume_svgSize);
+    styleTransportButton(*backToArrangementButton, DarkTheme::ACCENT_ORANGE);
     backToArrangementButton->onClick = [this]() {
         if (onBackToArrangement)
             onBackToArrangement();
@@ -767,8 +766,8 @@ void TransportPanel::setupTransportButtons() {
 
     // QWERTY MIDI keyboard toggle
     qwertyKeyboardButton = std::make_unique<SvgButton>(
-        "QwertyKeyboard", BinaryData::midi_qwerty_off_svg, BinaryData::midi_qwerty_off_svgSize,
-        BinaryData::midi_qwerty_on_svg, BinaryData::midi_qwerty_on_svgSize);
+        "QwertyKeyboard", BinaryData::midi_qwerty_svg, BinaryData::midi_qwerty_svgSize);
+    styleTransportButton(*qwertyKeyboardButton, DarkTheme::ACCENT_PURPLE);
     qwertyKeyboardButton->onClick = [this]() {
         bool active = !qwertyKeyboardButton->isActive();
         qwertyKeyboardButton->setActive(active);
@@ -778,10 +777,10 @@ void TransportPanel::setupTransportButtons() {
     qwertyKeyboardButton->addMouseListener(this, false);
     addAndMakeVisible(*qwertyKeyboardButton);
 
-    // Punch In button (dual-icon: off/on)
-    punchInButton =
-        std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg, BinaryData::punchin_svgSize,
-                                    BinaryData::punchin_on_svg, BinaryData::punchin_on_svgSize);
+    // Punch buttons use one geometry; their active purple is injected in code.
+    punchInButton = std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg,
+                                                BinaryData::punchin_svgSize);
+    styleTransportButton(*punchInButton, DarkTheme::ACCENT_PURPLE, true);
     punchInButton->onClick = [this]() {
         isPunchInEnabled = !isPunchInEnabled;
         punchInButton->setActive(isPunchInEnabled);
@@ -791,10 +790,10 @@ void TransportPanel::setupTransportButtons() {
     };
     addAndMakeVisible(*punchInButton);
 
-    // Punch Out button (dual-icon: off/on, independent toggle)
-    punchOutButton = std::make_unique<SvgButton>(
-        "PunchOut", BinaryData::punchout_svg, BinaryData::punchout_svgSize,
-        BinaryData::punchout_on_svg, BinaryData::punchout_on_svgSize);
+    // Punch Out is an independent toggle using the same code-coloured state.
+    punchOutButton = std::make_unique<SvgButton>("PunchOut", BinaryData::punchout_svg,
+                                                 BinaryData::punchout_svgSize);
+    styleTransportButton(*punchOutButton, DarkTheme::ACCENT_PURPLE, true);
     punchOutButton->onClick = [this]() {
         isPunchOutEnabled = !isPunchOutEnabled;
         punchOutButton->setActive(isPunchOutEnabled);
@@ -1116,7 +1115,7 @@ void TransportPanel::setupTempoAndQuantize() {
     // Metronome button
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
                                                   BinaryData::metronome_svgSize);
-    styleTransportButton(*metronomeButton, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    styleTransportButton(*metronomeButton, DarkTheme::ACCENT_BLUE);
     metronomeButton->setNormalColor(juce::Colour(0xFFBCBCBC));
     metronomeButton->onClick = [this]() {
         bool newState = !metronomeButton->isActive();
@@ -1176,11 +1175,24 @@ void TransportPanel::setTransportEnabled(bool enabled) {
     punchOutButton->setAlpha(alpha);
 }
 
-void TransportPanel::styleTransportButton(SvgButton& button, juce::Colour accentColor) {
+void TransportPanel::styleTransportButton(SvgButton& button, ColourRole accentRole,
+                                          bool activeGlyphUsesAccent) {
+    const auto accentColor = DarkTheme::getColour(accentRole);
     button.setActiveColor(accentColor);
     button.setPressedColor(accentColor);
     button.setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     button.setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    button.setIconPadding(0.0f);
+
+    // Transport SVGs are geometry templates. Their stable source keys are
+    // replaced at paint time; no active colour is stored in a second asset.
+    button.setStateColourReplacement(juce::Colour(0xFF1A1A1A), DarkTheme::PIANO_ROLL_BACKGROUND,
+                                     accentRole);
+    const auto activeGlyphRole = activeGlyphUsesAccent ? accentRole : DarkTheme::TEXT_BRIGHT;
+    button.setStateColourReplacement(juce::Colour(0xFFBCBCBC), DarkTheme::ICON_TRANSPORT,
+                                     activeGlyphRole);
+    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                     activeGlyphRole);
 }
 
 void TransportPanel::setPlayheadPosition(double positionInSeconds) {

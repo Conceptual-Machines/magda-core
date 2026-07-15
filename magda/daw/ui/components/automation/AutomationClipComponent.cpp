@@ -71,6 +71,7 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
             auto themedIcon = loopIcon->createCopy();
             themedIcon->replaceColour(juce::Colour(0xFFBCBCBC),
                                       DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+            DarkTheme::applyToSvgIcon(*themedIcon);
             themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
         }
     }

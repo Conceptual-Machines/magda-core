@@ -186,6 +186,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
                 auto themedIcon = midiDrawable_->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
                                           DarkTheme::getSecondaryTextColour());
+                DarkTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(
                     g,
                     juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),

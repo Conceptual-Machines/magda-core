@@ -55,6 +55,7 @@ void IconSelector::paint(juce::Graphics& g) {
             float opacity = selected ? 1.0f : (hovered ? 0.8f : 0.45f);
             auto copy = opt.icon->createCopy();
             copy->replaceColour(juce::Colours::black, selected ? textPrimary : textSecondary);
+            DarkTheme::applyToSvgIcon(*copy);
             copy->drawWithin(g, iconArea, juce::RectanglePlacement::centred, opacity);
         } else if (opt.text.isNotEmpty()) {
             // Draw text option
