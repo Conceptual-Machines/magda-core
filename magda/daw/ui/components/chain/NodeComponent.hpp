@@ -70,6 +70,7 @@ class NodeComponent : public juce::Component,
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     // Header accessors
     void setNodeName(const juce::String& name);

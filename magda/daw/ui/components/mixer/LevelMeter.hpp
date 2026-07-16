@@ -38,6 +38,17 @@ class LevelMeter : public juce::Component, private juce::Timer {
         repaint();
     }
 
+    // Anchor the vertical meter's 0 dB point to a component-local Y position.
+    // The scale is remapped above and below that point so the fill, gradient,
+    // peak marker, and reference tick continue to agree.
+    void setVerticalZeroDbY(float y) {
+        if (std::abs(verticalZeroDbY_ - y) < 0.01f)
+            return;
+
+        verticalZeroDbY_ = y;
+        repaint();
+    }
+
     void setLevel(float newLevel) {
         setLevels(newLevel, newLevel);
     }
@@ -100,7 +111,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
             drawMeterBar(g, leftBounds, displayLeftLevel_, peakLeftDb_);
             drawMeterBar(g, rightBounds, displayRightLevel_, peakRightDb_);
 
-            float zeroDbPos = dbToMeterPos(0.0f);
+            float zeroDbPos = meterPositionForDb(0.0f);
             float tickX = getLocalBounds().toFloat().getWidth() * zeroDbPos;
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
             g.drawVerticalLine(static_cast<int>(tickX), 0.0f, static_cast<float>(getHeight()));
@@ -115,7 +126,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
         drawMeterBar(g, leftBounds, displayLeftLevel_, peakLeftDb_);
         drawMeterBar(g, rightBounds, displayRightLevel_, peakRightDb_);
 
-        float zeroDbPos = dbToMeterPos(0.0f);
+        float zeroDbPos = meterPositionForDb(0.0f);
         float tickY = effectiveBounds.getBottom() - effectiveBounds.getHeight() * zeroDbPos;
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
         g.drawHorizontalLine(static_cast<int>(tickY), effectiveBounds.getX(),
@@ -140,6 +151,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
 
   private:
     Orientation orientation_ = Orientation::Vertical;
+    float verticalZeroDbY_ = -1.0f;
 
     // Target levels (raw input)
     float targetLeftLevel_ = 0.0f;
@@ -181,7 +193,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
-        float displayLevel = dbToMeterPos(gainToDb(level));
+        float displayLevel = meterPositionForDb(gainToDb(level));
 
         if (orientation_ == Orientation::Horizontal) {
             float meterWidth = bounds.getWidth() * displayLevel;
@@ -191,7 +203,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
                 g.fillRoundedRectangle(fillBounds, 1.0f);
             }
 
-            float peakPos = dbToMeterPos(peakDb);
+            float peakPos = meterPositionForDb(peakDb);
             if (peakPos > 0.01f) {
                 float peakX = bounds.getX() + bounds.getWidth() * peakPos;
                 auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
@@ -213,7 +225,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
         }
 
         // Peak hold indicator
-        float peakPos = dbToMeterPos(peakDb);
+        float peakPos = meterPositionForDb(peakDb);
         if (peakPos > 0.01f) {
             float peakY = bounds.getBottom() - bounds.getHeight() * peakPos;
             auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
@@ -225,15 +237,15 @@ class LevelMeter : public juce::Component, private juce::Timer {
     }
 
     // Vertical gradient: green at bottom, yellow at -12dB, red at 0dB, with short fades
-    static juce::ColourGradient createMeterGradient(juce::Rectangle<float> bounds,
-                                                    Orientation orientation) {
+    juce::ColourGradient createMeterGradient(juce::Rectangle<float> bounds,
+                                             Orientation orientation) const {
         const juce::Colour green(0xFF55AA55);
         const juce::Colour yellow(0xFFAAAA55);
         const juce::Colour red(0xFFAA5555);
 
         // Normalized positions along the gradient (0 = bottom, 1 = top)
-        float yellowPos = dbToMeterPos(-12.0f);
-        float redPos = dbToMeterPos(0.0f);
+        float yellowPos = meterPositionForDb(-12.0f);
+        float redPos = meterPositionForDb(0.0f);
         constexpr float fade = 0.03f;
 
         juce::ColourGradient grad = orientation == Orientation::Horizontal
@@ -248,6 +260,27 @@ class LevelMeter : public juce::Component, private juce::Timer {
         grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
         grad.addColour(std::min(1.0, (double)redPos + fade), red);
         return grad;
+    }
+
+    float meterPositionForDb(float db) const {
+        const float basePosition = dbToMeterPos(db);
+        if (orientation_ != Orientation::Vertical || verticalZeroDbY_ < 0.0f || getHeight() <= 0)
+            return basePosition;
+
+        const float baseZeroPosition = dbToMeterPos(0.0f);
+        const float anchoredZeroPosition =
+            juce::jlimit(0.0f, 1.0f, 1.0f - verticalZeroDbY_ / static_cast<float>(getHeight()));
+
+        if (basePosition <= baseZeroPosition) {
+            return baseZeroPosition > 0.0f ? basePosition * anchoredZeroPosition / baseZeroPosition
+                                           : 0.0f;
+        }
+
+        const float upperRange = 1.0f - baseZeroPosition;
+        return upperRange > 0.0f
+                   ? anchoredZeroPosition + (basePosition - baseZeroPosition) *
+                                                (1.0f - anchoredZeroPosition) / upperRange
+                   : 1.0f;
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LevelMeter)

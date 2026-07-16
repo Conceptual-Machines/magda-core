@@ -382,6 +382,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                                    BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
+    onButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
     onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
@@ -557,6 +558,55 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // Start timer for UI button state sync and meter updates (~30 FPS)
     startTimerHz(30);
+}
+
+void DeviceSlotComponent::lookAndFeelChanged() {
+    NodeComponent::lookAndFeelChanged();
+
+    if (modButton_)
+        applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    if (macroButton_)
+        applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    if (aiButton_)
+        applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    if (presetButton_)
+        applyHeaderIconStyle(*presetButton_, DarkTheme::getColour(DarkTheme::PRESET_INDIGO), false);
+    if (multiOutButton_)
+        applyHeaderIconStyle(*multiOutButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE), false);
+    if (uiButton_)
+        applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    if (learnButton_)
+        applyHeaderIconStyle(*learnButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    if (exportClipButton_)
+        applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_GREEN),
+                             false);
+    if (randomButton_)
+        applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE), false);
+
+    if (scButton_)
+        scButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
+    if (onButton_) {
+        onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        onButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    }
+    if (deltaButton_) {
+        deltaButton_->setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+        deltaButton_->setColour(juce::TextButton::buttonOnColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_CYAN).darker(0.3f));
+        deltaButton_->setColour(juce::TextButton::textColourOffId,
+                                DarkTheme::getSecondaryTextColour());
+    }
+    if (stepRecordButton_)
+        stepRecordButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STEP_RECORD));
+    if (midiThruButton_) {
+        midiThruButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    }
+
+    repaint();
 }
 
 DeviceSlotComponent::~DeviceSlotComponent() {

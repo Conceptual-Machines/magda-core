@@ -72,11 +72,7 @@ inline float sRgbToOklchHue(juce::Colour colour) {
 // same hue, but normalized to a fixed lightness and chroma so every track
 // reads at the same visual energy. Colours near the "no colour" sentinel
 // (near-zero saturation) pass through unchanged.
-inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha = 1.0f) {
-    if (stored.getSaturation() < 0.05f)
-        return stored.withAlpha(alpha);
-    return oklchToColour(0.55f, 0.10f, sRgbToOklchHue(stored), alpha);
-}
+juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha = 1.0f);
 
 /**
  * SideFX-inspired dark theme for MAGDA
@@ -267,9 +263,6 @@ class DarkTheme {
     using Palette = std::array<juce::uint32, static_cast<std::size_t>(ColourRole::count)>;
     using SyntaxPalette =
         std::array<juce::uint32, static_cast<std::size_t>(SyntaxColourRole::count)>;
-
-    static constexpr const char* kDarkThemeId = "dark";
-    static constexpr const char* kHighContrastThemeId = "high-contrast";
 
     // ==========================================================================
     // Elevation ramp — each layer is one fixed value; depth comes from the
@@ -485,11 +478,6 @@ class DarkTheme {
     static const SyntaxPalette& getActiveSyntaxPalette();
     static void setActiveSyntaxPalette(const SyntaxPalette& palette);
 
-    // Selects a built-in palette by its persisted Config identifier. Returns
-    // false without changing the active palette for an unknown identifier.
-    static bool setActiveBuiltInTheme(const std::string& themeId);
-    static bool isBuiltInTheme(const std::string& themeId);
-
     // Maps a colour from the active or default-Dark palette to its runtime
     // role. This lets legacy UI code that already supplies a DarkTheme colour
     // retain its intent while resolving the final colour at paint time. Only
@@ -535,9 +523,37 @@ class DarkTheme {
     }
 
   private:
+    friend class ThemeManager;
     static Palette activePalette_;
     static SyntaxPalette activeSyntaxPalette_;
 };
+
+// Owns theme identity and runtime selection. DarkTheme remains the legacy
+// colour-role facade; neutral theme lifecycle APIs live here so Light and
+// future JSON themes do not inherit dark-only naming.
+class ThemeManager {
+  public:
+    static constexpr const char* kDarkThemeId = "dark";
+    static constexpr const char* kLightThemeId = "light";
+    static constexpr const char* kHighContrastThemeId = "high-contrast";
+
+    // Returns false without changing the active theme for an unknown ID.
+    static bool setActiveBuiltInTheme(const std::string& themeId);
+    static bool isBuiltInTheme(const std::string& themeId);
+    static bool isLightTheme();
+};
+
+// User colours stay stored verbatim. Only their presentation swatch is
+// normalized, with a slightly deeper target on light surfaces so clips and
+// headers retain contrast without changing hue.
+inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
+    if (stored.getSaturation() < 0.05f)
+        return stored.withAlpha(alpha);
+
+    const float lightness = ThemeManager::isLightTheme() ? 0.48f : 0.55f;
+    const float chroma = ThemeManager::isLightTheme() ? 0.12f : 0.10f;
+    return oklchToColour(lightness, chroma, sRgbToOklchHue(stored), alpha);
+}
 
 // Keeps named colours in a custom device UI bound to a role without forcing
 // every paint call to spell out DarkTheme::getColour(). The conversion and

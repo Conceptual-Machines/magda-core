@@ -210,6 +210,7 @@ NodeComponent::NodeComponent() {
     bypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
                                                        BinaryData::power_svgSize);
     bypassButton_->setClickingTogglesState(true);
+    bypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
     bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     bypassButton_->setActiveColor(juce::Colours::white);
     bypassButton_->setActiveBackgroundColor(
@@ -290,6 +291,31 @@ NodeComponent::~NodeComponent() {
     magda::SelectionManager::getInstance().removeListener(this);
     magda::BindingRegistry::getInstance().removeListener(this);
     magda::ControllerRegistry::getInstance().removeListener(this);
+}
+
+void NodeComponent::lookAndFeelChanged() {
+    bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    bypassButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    deleteButton_.setColour(
+        juce::TextButton::buttonColourId,
+        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+            .darker(0.2f));
+
+    for (auto& button : modSlotButtons_) {
+        button->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+        button->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    }
+    for (auto& knob : paramKnobs_) {
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        knob->setColour(juce::Slider::rotarySliderOutlineColourId,
+                        DarkTheme::getColour(DarkTheme::SURFACE));
+    }
+    repaint();
 }
 
 void NodeComponent::paint(juce::Graphics& g) {

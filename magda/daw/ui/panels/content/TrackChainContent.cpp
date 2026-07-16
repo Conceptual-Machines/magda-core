@@ -116,6 +116,24 @@ std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::Dynamic
     }
     return paths;
 }
+
+juce::Colour analysisToggleAccent(ColourRole role) {
+    const auto accent = DarkTheme::getColour(role);
+    if (ThemeManager::isLightTheme())
+        return accent.withMultipliedSaturation(1.15f).darker(0.10f);
+
+    return accent.withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
+}
+
+void applyAnalysisToggleTheme(magda::SvgButton& button, juce::Colour activeColour) {
+    const bool light = ThemeManager::isLightTheme();
+    button.setNormalColor(DarkTheme::getSecondaryTextColour());
+    button.setHoverColor(DarkTheme::getTextColour());
+    button.setActiveColor(light ? activeColour.darker(0.12f) : juce::Colours::white.darker(0.18f));
+    button.setActiveBackgroundColor(activeColour.withAlpha(light ? 0.10f : 0.20f));
+    button.setActiveBorderColor(activeColour);
+    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+}
 }  // namespace
 
 //==============================================================================
@@ -955,46 +973,30 @@ TrackChainContent::TrackChainContent()
         // idle, white when engaged). Engaged look = subtle tint + coloured
         // border rather than a solid candy fill.
         button->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        button->setNormalColor(DarkTheme::getSecondaryTextColour());
-        button->setHoverColor(DarkTheme::getTextColour());
-        button->setActiveColor(juce::Colours::white.darker(0.18f));
-        button->setActiveBackgroundColor(activeBg.withAlpha(0.20f));
-        button->setActiveBorderColor(activeBg);
-        button->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        applyAnalysisToggleTheme(*button, activeBg);
         button->setTooltip(tooltip);
         button->onClick = [this, pluginId, displayName]() {
             togglePostFxAnalysisDevice(pluginId, displayName);
         };
         addChildComponent(*button);
     };
-    // Muted so they sit with the dark chrome rather than reading as candy
-    // (and still clear of the mod orange / macro purple next door).
-    const auto muted = [](ColourRole role) {
-        return DarkTheme::getColour(role).withMultipliedSaturation(0.55f).withMultipliedBrightness(
-            0.85f);
-    };
     setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope3_svg,
                         BinaryData::oscilloscope3_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
-                        "Oscilloscope", muted(DarkTheme::ACCENT_GREEN));
+                        "Oscilloscope", analysisToggleAccent(DarkTheme::ACCENT_GREEN));
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::iconspectrumboldm_svg,
                         BinaryData::iconspectrumboldm_svgSize, "Spectrum Analyzer (post-FX)",
-                        "spectrumanalyzer", "Spectrum Analyzer", muted(DarkTheme::ACCENT_CYAN));
+                        "spectrumanalyzer", "Spectrum Analyzer",
+                        analysisToggleAccent(DarkTheme::ACCENT_CYAN));
     setupAnalysisToggle(levelsToggleButton_, "Levels", BinaryData::iconlevelsboldm_svg,
                         BinaryData::iconlevelsboldm_svgSize, "Levels meter (post-FX)", "levels",
-                        "Levels", muted(DarkTheme::ACCENT_BLUE));
+                        "Levels", analysisToggleAccent(DarkTheme::ACCENT_BLUE));
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.
     postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
                                                             BinaryData::postfx_svgSize);
     postFxPanelButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    postFxPanelButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    postFxPanelButton_->setHoverColor(DarkTheme::getTextColour());
-    postFxPanelButton_->setActiveColor(juce::Colours::white.darker(0.18f));
-    postFxPanelButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
-    postFxPanelButton_->setActiveBorderColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    postFxPanelButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    applyAnalysisToggleTheme(*postFxPanelButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     postFxPanelButton_->setTooltip("Show/hide the post-FX panel");
     postFxPanelButton_->onClick = [this]() {
         if (onPostFxPanelToggled)
@@ -1137,6 +1139,7 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->setClickingTogglesState(true);
     chainBypassButton_->setToggleState(true,
                                        juce::dontSendNotification);  // Start active (not bypassed)
+    chainBypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
     chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     chainBypassButton_->setActiveColor(juce::Colours::white);
     chainBypassButton_->setActiveBackgroundColor(
@@ -1204,6 +1207,27 @@ TrackChainContent::TrackChainContent()
     // Check if there's already a selected track
     selectedTrackId_ = magda::TrackManager::getInstance().getSelectedTrack();
     updateFromSelectedTrack();
+}
+
+void TrackChainContent::lookAndFeelChanged() {
+    if (chainBypassButton_) {
+        chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        chainBypassButton_->setActiveColor(juce::Colours::white);
+        chainBypassButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+        chainBypassButton_->repaint();
+    }
+
+    if (oscToggleButton_)
+        applyAnalysisToggleTheme(*oscToggleButton_, analysisToggleAccent(DarkTheme::ACCENT_GREEN));
+    if (specToggleButton_)
+        applyAnalysisToggleTheme(*specToggleButton_, analysisToggleAccent(DarkTheme::ACCENT_CYAN));
+    if (levelsToggleButton_)
+        applyAnalysisToggleTheme(*levelsToggleButton_,
+                                 analysisToggleAccent(DarkTheme::ACCENT_BLUE));
+    if (postFxPanelButton_)
+        applyAnalysisToggleTheme(*postFxPanelButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    repaint();
 }
 
 TrackChainContent::~TrackChainContent() {

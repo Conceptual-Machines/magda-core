@@ -48,6 +48,7 @@ class SessionView : public juce::Component,
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     // Timer callback for meter updates
     void timerCallback() override;
@@ -228,6 +229,7 @@ class SessionView : public juce::Component,
     std::unique_ptr<MiniMasterStrip> masterStrip_;
 
     void rebuildTracks();
+    void applyThemeColours();
     void setupSceneButtons();
     void addScene();
     void removeScene();

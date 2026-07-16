@@ -924,6 +924,7 @@ void TransportPanel::setupTempoAndQuantize() {
     tempoLabel->setDoubleClickResetsValue(false);
     tempoLabel->setSnapToInteger(true);
     tempoLabel->setDrawBorder(false);
+    tempoLabel->setDrawBackground(false);
     tempoLabel->onValueChange = [this]() {
         currentTempo = tempoLabel->getValue();
         if (onTempoChange)
@@ -988,7 +989,7 @@ void TransportPanel::setupTempoAndQuantize() {
                               DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     autoGridButton->setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    autoGridButton->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    autoGridButton->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     autoGridButton->setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -1116,6 +1117,7 @@ void TransportPanel::setupTempoAndQuantize() {
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
                                                   BinaryData::metronome_svgSize);
     styleTransportButton(*metronomeButton, DarkTheme::ACCENT_BLUE);
+    metronomeButton->setIconPadding(2.0f);
     metronomeButton->setNormalColor(juce::Colour(0xFFBCBCBC));
     metronomeButton->onClick = [this]() {
         bool newState = !metronomeButton->isActive();
@@ -1134,7 +1136,7 @@ void TransportPanel::setupTempoAndQuantize() {
                           DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     snapButton->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    snapButton->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    snapButton->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     snapButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                   juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     snapButton->setWantsKeyboardFocus(false);

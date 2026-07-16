@@ -214,6 +214,204 @@ constexpr std::size_t syntaxColourRoleIndex(SyntaxColourRole role) {
     return static_cast<std::size_t>(role);
 }
 
+constexpr DarkTheme::Palette lightPalette = [] {
+    auto palette = darkPalette;
+    const auto set = [&palette](ColourRole role, juce::uint32 colour) {
+        palette[colourRoleIndex(role)] = colour;
+    };
+
+    // Elevation and application surfaces
+    set(ColourRole::E0, 0xFFF4F6F8);
+    set(ColourRole::E1, 0xFFECF0F3);
+    set(ColourRole::E2, 0xFFE3E8EC);
+    set(ColourRole::E3, 0xFFD8DEE4);
+    set(ColourRole::HAIRLINE, 0xFFC2CAD2);
+    set(ColourRole::BACKGROUND, 0xFFF4F6F8);
+    set(ColourRole::BACKGROUND_ALT, 0xFFECF0F3);
+    set(ColourRole::PANEL_BACKGROUND, 0xFFECF0F3);
+    set(ColourRole::SURFACE, 0xFFE3E8EC);
+    set(ColourRole::SURFACE_HOVER, 0xFFD8DEE4);
+
+    // Transport, controls, and text
+    set(ColourRole::TRANSPORT_BACKGROUND, 0xFFECF0F3);
+    set(ColourRole::BUTTON_NORMAL, 0xFFF7F9FA);
+    set(ColourRole::BUTTON_HOVER, 0xFFE3E8EC);
+    set(ColourRole::BUTTON_PRESSED, 0xFFD2D9E0);
+    set(ColourRole::BUTTON_ACTIVE, 0xFF2E668C);
+    set(ColourRole::BUTTON_STROKE, 0xFFB8C2CB);
+    set(ColourRole::CONTROL_VALUE_FILL, 0x242E668C);
+    set(ColourRole::CONTROL_SLIDER_THUMB, 0xFF52606C);
+    set(ColourRole::TEXT_PRIMARY, 0xFF1B242C);
+    set(ColourRole::TEXT_SECONDARY, 0xFF52606C);
+    set(ColourRole::TEXT_DIM, 0xFF71808C);
+    set(ColourRole::TEXT_DISABLED, 0xFF9AA4AD);
+
+    // Accents and status colours are deliberately deeper than Dark's so they
+    // meet light-surface contrast without changing their semantic hue.
+    set(ColourRole::ACCENT_BLUE, 0xFF2E668C);
+    set(ColourRole::ACCENT_BLUE_LIGHT, 0xFF4E7897);
+    set(ColourRole::ACCENT_CYAN, 0xFF087B8C);
+    set(ColourRole::ACCENT_GREEN, 0xFF197A4B);
+    set(ColourRole::ACCENT_ORANGE, 0xFFC45A00);
+    set(ColourRole::ACCENT_PURPLE, 0xFF6250B5);
+    set(ColourRole::PRESET_INDIGO, 0xFF405EA8);
+    set(ColourRole::MIDI_LEARN, 0xFFC94D1A);
+    set(ColourRole::STEP_RECORD, 0xFFB82929);
+    set(ColourRole::MASTER_TRACK_COLOUR, 0xFF57469A);
+    set(ColourRole::STATUS_SUCCESS, 0xFF237A36);
+    set(ColourRole::STATUS_WARNING, 0xFF9B6500);
+    set(ColourRole::STATUS_ERROR, 0xFFA93636);
+    set(ColourRole::STATUS_DANGER, 0xFFC52E2E);
+
+    // Tracks, timeline, grid, and separators
+    set(ColourRole::TRACK_BACKGROUND, 0xFFECF0F3);
+    set(ColourRole::TRACK_SELECTED, 0xFFDCE7EE);
+    set(ColourRole::TRACK_HEADER_SELECTED, 0xFF304B5E);
+    set(ColourRole::TRACK_HEADER_SELECTED_TEXT, 0xFFFFFFFF);
+    set(ColourRole::TRACK_SEPARATOR, 0xFFC4CCD3);
+    set(ColourRole::TIMELINE_BACKGROUND, 0xFFE9EDF0);
+    set(ColourRole::GRID_LINE, 0xFFD1D7DC);
+    set(ColourRole::BEAT_LINE, 0xFFB9C2CA);
+    set(ColourRole::BAR_LINE, 0xFF929EA8);
+    set(ColourRole::BORDER, 0xFFB8C2CB);
+    set(ColourRole::SEPARATOR, 0xFFC2CAD2);
+    set(ColourRole::RESIZE_HANDLE, 0xFF98A5AF);
+
+    // Waveforms, meters, analyzers, and device visualizations
+    set(ColourRole::WAVEFORM_NORMAL, 0xFF087A43);
+    set(ColourRole::WAVEFORM_SELECTED, 0xFF185FA8);
+    set(ColourRole::LEVEL_METER_GREEN, 0xFF237A36);
+    set(ColourRole::LEVEL_METER_YELLOW, 0xFF9B6500);
+    set(ColourRole::LEVEL_METER_RED, 0xFFA93636);
+    set(ColourRole::GAIN_METER_LOW, 0xFF168044);
+    set(ColourRole::GAIN_METER_WARNING, 0xFFB36B00);
+    set(ColourRole::GAIN_METER_HIGH, 0xFFC0392B);
+    set(ColourRole::GATE_CURVE, 0xFF00758A);
+    set(ColourRole::GATE_THRESHOLD, 0xFFB85F00);
+    set(ColourRole::MULTIBAND_LOW, 0xFF1E64B0);
+    set(ColourRole::MULTIBAND_MID, 0xFF9B6500);
+    set(ColourRole::MULTIBAND_HIGH, 0xFF7848B5);
+    set(ColourRole::MULTIBAND_LIMIT, 0xFFC52E2E);
+    set(ColourRole::SAMPLER_START_MARKER, 0xFFB85F00);
+    set(ColourRole::SAMPLER_END_MARKER, 0xFFBE2F2B);
+    set(ColourRole::SPECTRUM_OVERLAY, 0xFF4D5963);
+    set(ColourRole::INSTRUMENT_BACKGROUND, 0xFFF2F4F6);
+    set(ColourRole::INSTRUMENT_PANEL, 0xFFE7EBEF);
+    set(ColourRole::INSTRUMENT_BORDER, 0xFFB7C0C8);
+    set(ColourRole::INSTRUMENT_TEXT, 0xFF202830);
+    set(ColourRole::INSTRUMENT_TEXT_DIM, 0xFF687681);
+
+    // Regions, shared UI, and automation editor
+    set(ColourRole::TIME_SELECTION, 0x4D2E668C);
+    set(ColourRole::LOOP_REGION, 0x10000000);
+    set(ColourRole::LOOP_MARKER, 0xFF287441);
+    set(ColourRole::OFFSET_MARKER, 0xFF8D681C);
+    set(ColourRole::TEXT_BRIGHT, 0xFFFFFFFF);
+    set(ColourRole::INPUT_BACKGROUND, 0xFFFFFFFF);
+    set(ColourRole::TOOLTIP_BACKGROUND, 0xEE26313A);
+    set(ColourRole::ICON_NEUTRAL, 0xFF46535E);
+    set(ColourRole::ICON_TRANSPORT, 0xFF35434E);
+    set(ColourRole::ICON_ON_ACCENT, 0xFFFFFFFF);
+    set(ColourRole::AUTOMATION_LANE_BACKGROUND, 0xFFF0F2F4);
+    set(ColourRole::AUTOMATION_LANE_SELECTED, 0xFFDDE7EE);
+    set(ColourRole::AUTOMATION_LANE_HEADER, 0xFFE5E9ED);
+    set(ColourRole::AUTOMATION_LANE_SCALE_BACKGROUND, 0xFFE9EDF0);
+    set(ColourRole::AUTOMATION_DIVIDER, 0xFFB4BDC5);
+    set(ColourRole::AUTOMATION_DIVIDER_LIGHT, 0xFF929EA8);
+    set(ColourRole::AUTOMATION_GUIDE, 0xFFA6B0B8);
+    set(ColourRole::AUTOMATION_SCALE_TEXT, 0xFF53616C);
+    set(ColourRole::AUTOMATION_SCALE_LABEL, 0xFF687681);
+    set(ColourRole::AUTOMATION_TEXT, 0xFF26313A);
+    set(ColourRole::AUTOMATION_POINT, 0xFF52606C);
+    set(ColourRole::AUTOMATION_POINT_HOVER, 0xFF1B242C);
+    set(ColourRole::AUTOMATION_BEZIER, 0xFF356BA0);
+    set(ColourRole::AUTOMATION_TENSION_HOVER, 0xFF9A5A20);
+    set(ColourRole::CURVE_BACKGROUND, 0xFFF5F6F7);
+    set(ColourRole::CURVE_TOOLTIP_BACKGROUND, 0xEE26313A);
+    set(ColourRole::CURVE_TOOLTIP_TEXT, 0xFFFFFFFF);
+    set(ColourRole::CURVE_POINT, 0xFFC45A00);
+    set(ColourRole::CURVE_HANDLE_BACKGROUND, 0xFFE2E7EB);
+    set(ColourRole::CURVE_HANDLE_NORMAL, 0xFF35434E);
+
+    // Piano roll and take lanes
+    set(ColourRole::TEXT_DARK, 0xFF111820);
+    set(ColourRole::PIANO_ROLL_BACKGROUND, 0xFFF1F3F5);
+    set(ColourRole::PIANO_ROLL_KEY_WHITE, 0xFFFAFBFC);
+    set(ColourRole::PIANO_ROLL_KEY_HIGHLIGHT, 0xFF3477B8);
+    set(ColourRole::PIANO_ROLL_KEY_SEPARATOR, 0xFFAFB8C0);
+    set(ColourRole::PIANO_ROLL_PITCH_HIGHLIGHT, 0xFF4D78A4);
+    set(ColourRole::PIANO_ROLL_GRID_BACKGROUND, 0xFFE7EAED);
+    set(ColourRole::PIANO_ROLL_GRID_BLACK_KEY, 0xFFD9DEE3);
+    set(ColourRole::PIANO_ROLL_GRID_SUBDIVISION, 0xFFC9D0D6);
+    set(ColourRole::PIANO_ROLL_GRID_BEAT, 0xFFABB5BD);
+    set(ColourRole::PIANO_ROLL_GRID_BAR, 0xFF87949E);
+    set(ColourRole::PIANO_ROLL_CHORD_PREVIEW, 0xFF2469A8);
+    set(ColourRole::PIANO_ROLL_TOOLTIP_BACKGROUND, 0xEE26313A);
+    set(ColourRole::PIANO_ROLL_FALLBACK_CLIP, 0xFF667681);
+    set(ColourRole::CLIP_BOUNDARY, 0xFF536778);
+    set(ColourRole::PIANO_ROLL_TAKE_LANE_ACTIVE, 0xFFDDE4E9);
+    set(ColourRole::PIANO_ROLL_TAKE_LANE_INACTIVE, 0xFFEDF0F2);
+
+    // Shared controls and mixer-specific rendering
+    set(ColourRole::TEXT_SLIDER_THUMB, 0xFF34536B);
+    set(ColourRole::TEXT_SLIDER_METER_LOW, 0xFF237A36);
+    set(ColourRole::TEXT_SLIDER_METER_WARNING, 0xFF9B6500);
+    set(ColourRole::TEXT_SLIDER_METER_HIGH, 0xFFB8322B);
+    set(ColourRole::TOAST_BACKGROUND, 0xEE26313A);
+    set(ColourRole::QWERTY_WHITE_KEY_NOTE_TEXT, 0xFF202830);
+    set(ColourRole::EQ_BAND_LOW, 0xFFB33C46);
+    set(ColourRole::EQ_BAND_LOW_MID, 0xFF276DA1);
+    set(ColourRole::EQ_BAND_HIGH_MID, 0xFF4F7D38);
+    set(ColourRole::EQ_BAND_HIGH, 0xFF98701F);
+    set(ColourRole::ICON_BACKGROUND, 0xFFE0E5E9);
+    set(ColourRole::ICON_BRIGHT, 0xFF27343E);
+    set(ColourRole::ICON_SUBTLE, 0xFF71808C);
+    set(ColourRole::ICON_MODULATION, 0xFF64727D);
+    set(ColourRole::ICON_BRAND, 0xFF26313A);
+    set(ColourRole::ICON_POWER, 0xFF35434E);
+    set(ColourRole::MIXER_FADER_THUMB, 0xFF7890A3);
+    set(ColourRole::MIXER_KNOB_OUTER, 0xFFD4DAE0);
+    set(ColourRole::MIXER_KNOB_OUTER_STROKE, 0xFF9EABB5);
+    set(ColourRole::MIXER_KNOB_INNER, 0xFFEEF1F3);
+    set(ColourRole::MIXER_KNOB_GUIDE, 0xFF8997A2);
+
+    return palette;
+}();
+
+constexpr DarkTheme::SyntaxPalette lightSyntaxPalette{
+    0xFFF7F8FA,  // EDITOR_BACKGROUND
+    0xFF202830,  // EDITOR_DEFAULT_TEXT
+    0xFFEAEDF0,  // LINE_NUMBER_BACKGROUND
+    0xFF687681,  // LINE_NUMBER_TEXT
+    0xFF111820,  // EDITOR_CARET
+    0xFF176B34,  // DSL_CARET
+    0x4D3477B8,  // EDITOR_SELECTION
+    0xFFBED9F2,  // DSL_SELECTION
+    0xFF2469A8,  // DSL_STATUS_BACKGROUND
+    0xFFFFFFFF,  // DSL_STATUS_TEXT
+    0xFF176B34,  // DSL_OUTPUT_PROMPT
+    0xFF1C659B,  // DSL_OUTPUT_INFO
+    0xFF26313A,  // DSL_OUTPUT_TEXT
+    0xFFB8322B,  // DSL_OUTPUT_ERROR
+    0xFFB52222,  // DSL_TOKEN_ERROR
+    0xFF4F762F,  // DSL_TOKEN_COMMENT
+    0xFF1D5F91,  // DSL_TOKEN_KEYWORD
+    0xFF765F00,  // DSL_TOKEN_METHOD
+    0xFF27618B,  // DSL_TOKEN_PARAM
+    0xFF35434E,  // DSL_TOKEN_OPERATOR
+    0xFF202830,  // DSL_TOKEN_IDENTIFIER
+    0xFF466B2C,  // DSL_TOKEN_NUMBER
+    0xFF9B4B28,  // DSL_TOKEN_STRING
+    0xFF35434E,  // DSL_TOKEN_BRACKET
+    0xFF35434E,  // DSL_TOKEN_PUNCTUATION
+    0xFF08725F,  // DSL_TOKEN_NOTE_NAME
+    0xFF26313A,  // CHAT_TOKEN_TEXT
+    0xFF1C659B,  // CHAT_TOKEN_PLUGIN_ALIAS
+    0xFF9A5A20,  // CHAT_TOKEN_PARAM_ALIAS
+    0xFF34792F,  // CHAT_TOKEN_SLASH_COMMAND
+    0xFF35434E,  // CHAT_TOKEN_PUNCTUATION
+};
+
 constexpr DarkTheme::Palette highContrastPalette = [] {
     auto palette = darkPalette;
 
@@ -415,24 +613,34 @@ void DarkTheme::setActiveSyntaxPalette(const SyntaxPalette& palette) {
     activeSyntaxPalette_ = palette;
 }
 
-bool DarkTheme::setActiveBuiltInTheme(const std::string& themeId) {
+bool ThemeManager::setActiveBuiltInTheme(const std::string& themeId) {
     if (themeId == kDarkThemeId) {
-        activePalette_ = darkPalette;
-        activeSyntaxPalette_ = darkSyntaxPalette;
+        DarkTheme::activePalette_ = darkPalette;
+        DarkTheme::activeSyntaxPalette_ = darkSyntaxPalette;
+        return true;
+    }
+
+    if (themeId == kLightThemeId) {
+        DarkTheme::activePalette_ = lightPalette;
+        DarkTheme::activeSyntaxPalette_ = lightSyntaxPalette;
         return true;
     }
 
     if (themeId == kHighContrastThemeId) {
-        activePalette_ = highContrastPalette;
-        activeSyntaxPalette_ = highContrastSyntaxPalette;
+        DarkTheme::activePalette_ = highContrastPalette;
+        DarkTheme::activeSyntaxPalette_ = highContrastSyntaxPalette;
         return true;
     }
 
     return false;
 }
 
-bool DarkTheme::isBuiltInTheme(const std::string& themeId) {
-    return themeId == kDarkThemeId || themeId == kHighContrastThemeId;
+bool ThemeManager::isBuiltInTheme(const std::string& themeId) {
+    return themeId == kDarkThemeId || themeId == kLightThemeId || themeId == kHighContrastThemeId;
+}
+
+bool ThemeManager::isLightTheme() {
+    return DarkTheme::getColour(DarkTheme::BACKGROUND).getPerceivedBrightness() >= 0.5f;
 }
 
 std::optional<ColourRole> DarkTheme::findDarkPaletteRole(juce::Colour colour) {
@@ -504,7 +712,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
         getColour(BORDER),            // outline
         getColour(TEXT_PRIMARY),      // defaultText
         getColour(BUTTON_NORMAL),     // defaultFill
-        getColour(TEXT_PRIMARY),      // highlightedText
+        getColour(ICON_ON_ACCENT),    // highlightedText
         getColour(ACCENT_BLUE),       // highlightedFill
         getColour(TEXT_PRIMARY),      // menuText
     });
@@ -526,7 +734,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     laf.setColour(juce::TextButton::buttonColourId, getColour(BUTTON_NORMAL));
     laf.setColour(juce::TextButton::buttonOnColourId, getColour(BUTTON_ACTIVE));
     laf.setColour(juce::TextButton::textColourOffId, getColour(TEXT_PRIMARY));
-    laf.setColour(juce::TextButton::textColourOnId, getColour(TEXT_PRIMARY));
+    laf.setColour(juce::TextButton::textColourOnId, getColour(ICON_ON_ACCENT));
 
     // Toggle button colors
     laf.setColour(juce::ToggleButton::textColourId, getColour(TEXT_PRIMARY));

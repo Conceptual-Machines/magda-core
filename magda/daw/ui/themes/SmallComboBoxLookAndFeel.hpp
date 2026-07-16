@@ -17,16 +17,16 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
 
     void drawComboBox(juce::Graphics& g, int width, int height, bool /*isButtonDown*/,
                       int /*buttonX*/, int /*buttonY*/, int /*buttonW*/, int /*buttonH*/,
-                      juce::ComboBox& box) override {
+                      juce::ComboBox& /*box*/) override {
         auto bounds = juce::Rectangle<int>(0, 0, width, height).toFloat();
         float cornerRadius = 2.0f;
 
         // Background
-        g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, cornerRadius);
 
         // Border
-        g.setColour(box.findColour(juce::ComboBox::outlineColourId));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawRoundedRectangle(bounds.reduced(0.5f), cornerRadius, 1.0f);
 
         // Draw chevron arrow on the right
@@ -49,6 +49,11 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
         const int arrowSpace = 14;
         label.setBounds(4, 0, box.getWidth() - arrowSpace, box.getHeight());
         label.setFont(FontManager::getInstance().getUIFont(9.0f));
+    }
+
+    void drawLabel(juce::Graphics& g, juce::Label& label) override {
+        label.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        juce::LookAndFeel_V4::drawLabel(g, label);
     }
 
     juce::Font getComboBoxFont(juce::ComboBox& /*box*/) override {
