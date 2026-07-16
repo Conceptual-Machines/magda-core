@@ -2393,8 +2393,7 @@ void SessionView::setupSceneButtons() {
 
     for (int i = 0; i < numScenes_; ++i) {
         auto btn = std::make_unique<SceneButton>();
-        btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         btn->setColour(juce::TextButton::textColourOffId,
                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -2404,6 +2403,33 @@ void SessionView::setupSceneButtons() {
     }
 
     syncMixerVisibilityFromConfig();
+}
+
+void SessionView::applyThemeColours() {
+    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+    const auto primary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+
+    for (auto& button : sceneButtons) {
+        button->setColour(juce::TextButton::buttonColourId, surface);
+        button->setColour(juce::TextButton::textColourOffId, primary);
+        button->repaint();
+    }
+
+    if (dragGhostLabel_) {
+        dragGhostLabel_->setColour(juce::Label::backgroundColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+        dragGhostLabel_->setColour(juce::Label::textColourId, primary);
+        dragGhostLabel_->setColour(juce::Label::outlineColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    }
+
+    updateHeaderSelectionVisuals();
+    updateAllClipSlots();
+}
+
+void SessionView::lookAndFeelChanged() {
+    applyThemeColours();
+    repaint();
 }
 
 void SessionView::syncMixerVisibilityFromConfig() {

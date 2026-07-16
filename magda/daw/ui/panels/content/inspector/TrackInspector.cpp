@@ -56,13 +56,9 @@ TrackInspector::TrackInspector() {
     // Track name
     trackNameLabel_.setText(tr("inspector.name"), juce::dontSendNotification);
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(trackNameLabel_);
 
     trackNameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    trackNameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    trackNameValue_.setColour(juce::Label::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
         // The master track cannot be renamed; its name is fixed.
@@ -295,6 +291,8 @@ TrackInspector::TrackInspector() {
     automationIndicator_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationIndicator_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     automationIndicator_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationIndicator_->setStateColourReplacement(
+        juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL, DarkTheme::TEXT_BRIGHT);
     automationIndicator_->setIconPadding(2.5f);
     automationIndicator_->onClick = [this]() {
         automatedSectionExpanded_ = !automatedSectionExpanded_;
@@ -499,6 +497,60 @@ TrackInspector::TrackInspector() {
           &latencyLabel_, &latencyValue_}) {
         useLocalizedLabelPainter(*label);
     }
+
+    applyThemeColours();
+}
+
+void TrackInspector::applyThemeColours() {
+    const auto primary = DarkTheme::getTextColour();
+    const auto secondary = DarkTheme::getSecondaryTextColour();
+    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+    const auto border = DarkTheme::getBorderColour();
+
+    for (auto* label :
+         {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_, &midiColumnLabel_,
+          &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_, &clipsSectionLabel_,
+          &automatedSectionLabel_, &latencyLabel_})
+        label->setColour(juce::Label::textColourId, secondary);
+
+    for (auto* label : {&automatedParamsLabel_, &clipCountLabel_, &latencyValue_})
+        label->setColour(juce::Label::textColourId, primary);
+
+    trackNameValue_.setColour(juce::Label::textColourId, primary);
+    trackNameValue_.setColour(juce::Label::backgroundColourId, surface);
+    trackNameValue_.setColour(juce::Label::outlineColourId, border);
+    trackNameValue_.setColour(juce::Label::textWhenEditingColourId, primary);
+    trackNameValue_.setColour(juce::Label::backgroundWhenEditingColourId, surface);
+    trackNameValue_.setColour(juce::Label::outlineWhenEditingColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+
+    for (auto& label : sendDestLabels_)
+        label->setColour(juce::Label::textColourId, primary);
+    for (auto& button : sendDeleteButtons_) {
+        button->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        button->setColour(juce::TextButton::textColourOffId, secondary);
+    }
+
+    if (soloButton_) {
+        soloButton_->setBorderColor(border);
+        soloButton_->setNormalBackgroundColor(surface);
+    }
+    if (recordButton_) {
+        recordButton_->setBorderColor(border);
+        recordButton_->setNormalBackgroundColor(surface);
+    }
+    if (enableButton_) {
+        enableButton_->setBorderColor(border);
+        enableButton_->setNormalBackgroundColor(surface);
+    }
+    if (addSendButton_)
+        addSendButton_->setOriginalColor(secondary);
+}
+
+void TrackInspector::lookAndFeelChanged() {
+    applyThemeColours();
+    repaint();
 }
 
 void TrackInspector::midiDeviceListChanged() {

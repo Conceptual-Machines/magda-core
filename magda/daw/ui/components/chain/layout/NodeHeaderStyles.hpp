@@ -149,7 +149,7 @@ inline void applyHeaderIconStyle(magda::SvgButton& btn, juce::Colour activeBg,
                                  bool toggling = true) {
     btn.setIconPadding(2.0f);
     btn.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    btn.setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
+    btn.setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
     btn.setActiveColor(juce::Colours::white);
     btn.setActiveBackgroundColor(activeBg);
     if (toggling)

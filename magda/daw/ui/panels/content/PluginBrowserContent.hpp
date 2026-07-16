@@ -121,6 +121,7 @@ class PluginBrowserContent : public PanelContent,
 
     void buildInternalPluginList();
     void loadExternalPlugins();
+    void applyThemeColours();
     void loadCategoryIcons();
     void rebuildTree();
     void filterBySearch(const juce::String& searchText);

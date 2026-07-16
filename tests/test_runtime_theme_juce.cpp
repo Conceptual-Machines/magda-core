@@ -53,9 +53,41 @@ class RuntimeThemeTest final : public juce::UnitTest {
         expect(magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE).getARGB() == 0xFF5588AA);
 
         beginTest("Built-in themes can switch at runtime");
-        expect(magda::DarkTheme::isBuiltInTheme(magda::DarkTheme::kDarkThemeId));
-        expect(magda::DarkTheme::isBuiltInTheme(magda::DarkTheme::kHighContrastThemeId));
-        expect(magda::DarkTheme::setActiveBuiltInTheme(magda::DarkTheme::kHighContrastThemeId));
+        expect(magda::ThemeManager::isBuiltInTheme(magda::ThemeManager::kDarkThemeId));
+        expect(magda::ThemeManager::isBuiltInTheme(magda::ThemeManager::kLightThemeId));
+        expect(magda::ThemeManager::isBuiltInTheme(magda::ThemeManager::kHighContrastThemeId));
+
+        expect(magda::ThemeManager::setActiveBuiltInTheme(magda::ThemeManager::kLightThemeId));
+        expect(magda::ThemeManager::isLightTheme());
+        expect(magda::DarkTheme::getBackgroundColour().getARGB() == 0xFFF4F6F8);
+        expect(magda::DarkTheme::getTextColour().getARGB() == 0xFF1B242C);
+        expect(
+            magda::DarkTheme::getColour(magda::DarkTheme::AUTOMATION_LANE_BACKGROUND).getARGB() ==
+            0xFFF0F2F4);
+        expect(
+            magda::DarkTheme::getColour(magda::DarkTheme::PIANO_ROLL_GRID_BACKGROUND).getARGB() ==
+            0xFFE7EAED);
+        expect(magda::DarkTheme::getColour(magda::DarkTheme::ICON_NEUTRAL).getARGB() == 0xFF46535E);
+        expect(magda::DarkTheme::getColour(magda::DarkTheme::WAVEFORM_NORMAL).getARGB() ==
+               0xFF087A43);
+        expect(magda::DarkTheme::getSyntaxColour(magda::SyntaxColourRole::EDITOR_BACKGROUND)
+                   .getARGB() == 0xFFF7F8FA);
+        expect(magda::DarkTheme::getSyntaxColour(magda::SyntaxColourRole::DSL_TOKEN_COMMENT)
+                   .getARGB() == 0xFF4F762F);
+
+        juce::LookAndFeel_V4 lightLookAndFeel;
+        magda::DarkTheme::applyToLookAndFeel(lightLookAndFeel);
+        expect(lightLookAndFeel.findColour(juce::TextButton::textColourOnId).getARGB() ==
+               0xFFFFFFFF);
+
+        const auto storedTrackColour = juce::Colour(0xFFFF0000);
+        const auto lightSwatch = magda::deriveTrackSwatch(storedTrackColour);
+        expect(storedTrackColour.getARGB() == 0xFFFF0000);
+        expect(lightSwatch.getARGB() != storedTrackColour.getARGB());
+
+        expect(
+            magda::ThemeManager::setActiveBuiltInTheme(magda::ThemeManager::kHighContrastThemeId));
+        expect(!magda::ThemeManager::isLightTheme());
         expect(magda::DarkTheme::getBackgroundColour().getARGB() == 0xFF000000);
         expect(magda::DarkTheme::getTextColour().getARGB() == 0xFFFFFFFF);
         expect(
@@ -84,7 +116,7 @@ class RuntimeThemeTest final : public juce::UnitTest {
         expect(magda::DarkTheme::getColour(magda::DarkTheme::ICON_POWER).getARGB() == 0xFFE0E0E0);
         expect(magda::DarkTheme::getColour(magda::DarkTheme::ICON_ON_ACCENT).getARGB() ==
                0xFF101010);
-        expect(!magda::DarkTheme::setActiveBuiltInTheme("missing-theme"));
+        expect(!magda::ThemeManager::setActiveBuiltInTheme("missing-theme"));
         expect(magda::DarkTheme::getTextColour().getARGB() == 0xFFFFFFFF);
 
         beginTest("Bundled SVG source colours resolve through the active palette");

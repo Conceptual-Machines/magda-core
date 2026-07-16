@@ -328,7 +328,7 @@ void BottomPanel::setupHeaderControls() {
                                DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     timeModeButton_->setColour(juce::TextButton::textColourOffId,
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    timeModeButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    timeModeButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     timeModeButton_->setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -450,7 +450,7 @@ void BottomPanel::setupHeaderControls() {
                                DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     autoGridButton_->setColour(juce::TextButton::textColourOffId,
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    autoGridButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    autoGridButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     autoGridButton_->setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -485,7 +485,7 @@ void BottomPanel::setupHeaderControls() {
                            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     snapButton_->setColour(juce::TextButton::textColourOffId,
                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    snapButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    snapButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     snapButton_->setWantsKeyboardFocus(false);

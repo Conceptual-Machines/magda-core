@@ -30,7 +30,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
 
     valueSlider_.setRange(0.0, 1.0, 0.01);
     valueSlider_.setValue(0.5, juce::dontSendNotification);
-    valueSlider_.setTextColour(juce::Colours::white);
+    valueSlider_.setTextColour(DarkTheme::getTextColour());
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
     valueSlider_.setShowFillIndicator(false);
     valueSlider_.onValueChanged = [this](double value) {
@@ -562,8 +562,33 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
 void ParamSlotComponent::setFonts(const juce::Font& labelFont, const juce::Font& valueFont) {
     nameLabel_.setFont(labelFont);
     valueSlider_.setFont(valueFont);
-    valueSlider_.setTextColour(juce::Colours::white);
+    valueSlider_.setTextColour(DarkTheme::getTextColour());
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
+}
+
+void ParamSlotComponent::lookAndFeelChanged() {
+    const auto primaryText = DarkTheme::getTextColour();
+
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    valueSlider_.setTextColour(primaryText);
+
+    if (boolToggle_) {
+        boolToggle_->setColour(juce::ToggleButton::textColourId, primaryText);
+        boolToggle_->setColour(juce::ToggleButton::tickColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    }
+
+    if (momentaryButton_) {
+        momentaryButton_->setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
+        momentaryButton_->setColour(juce::TextButton::textColourOffId, primaryText);
+    }
+
+    if (discreteCombo_) {
+        discreteCombo_->setColour(juce::ComboBox::textColourId, primaryText);
+    }
+
+    repaint();
 }
 
 // ============================================================================

@@ -212,12 +212,6 @@ class GeneralPage : public juce::Component {
         };
 
         setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
-        setupComboLabel(themeLabel, trOr("preferences.theme.label", "Theme"));
-        styleCombo(themeCombo);
-        themeCombo.addItem("Dark", 1);
-        themeCombo.addItem("High Contrast (preview)", 2);
-        addAndMakeVisible(themeCombo);
-
         setupComboLabel(scaleLabel, tr("preferences.scale.label"));
         styleCombo(scaleCombo);
         scaleCombo.addItem(tr("preferences.scale.auto"), 1);
@@ -318,7 +312,6 @@ class GeneralPage : public juce::Component {
         languageCombo.setSelectedId(selectedId, juce::dontSendNotification);
         restartHint.setVisible(false);
 
-        themeCombo.setSelectedId(themeIdForValue(config.getTheme()), juce::dontSendNotification);
         scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
         fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
         localizedFontScaleExplicit_ = config.hasExplicitLocalizedUIFontScale();
@@ -356,8 +349,6 @@ class GeneralPage : public juce::Component {
             }
         }
 
-        config.setTheme(themeValueForId(themeCombo.getSelectedId()));
-
         double newScale = scaleValueForId(scaleCombo.getSelectedId());
         if (newScale > 0.0) {
             applyUIScale(newScale);
@@ -387,7 +378,7 @@ class GeneralPage : public juce::Component {
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 7) + 16 + secGap + headerH + 4 +
-               rowH + 18 + secGap + headerH + 4 + (rowH * 4) + 8 + padding;
+               rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -412,7 +403,7 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + rowH + 4 + rowH   // Layout
                + secGap + headerH + 4 + (rowH * 7) + 20  // Behaviour
-               + secGap + headerH + 4 + (rowH * 4)       // Theme + Display Scale
+               + secGap + headerH + 4 + (rowH * 3)       // Display Scale
                + padding;
     }
 
@@ -487,8 +478,6 @@ class GeneralPage : public juce::Component {
 
         // UI scale
         scaleHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, themeLabel, themeCombo, rowH);
         bounds.removeFromTop(4);
         layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
         bounds.removeFromTop(4);
@@ -576,8 +565,6 @@ class GeneralPage : public juce::Component {
         // Display Scale
         scaleHeader.setBounds(right.removeFromTop(headerH));
         right.removeFromTop(4);
-        layoutComboRow(right, themeLabel, themeCombo, rowH);
-        right.removeFromTop(4);
         layoutComboRow(right, scaleLabel, scaleCombo, rowH);
         right.removeFromTop(4);
         layoutTextSliderRow(right, fontScaleLabel, fontScaleSlider, rowH, sliderH);
@@ -640,14 +627,6 @@ class GeneralPage : public juce::Component {
         return 1;
     }
 
-    static int themeIdForValue(const std::string& theme) {
-        return theme == DarkTheme::kHighContrastThemeId ? 2 : 1;
-    }
-
-    static std::string themeValueForId(int id) {
-        return id == 2 ? DarkTheme::kHighContrastThemeId : DarkTheme::kDarkThemeId;
-    }
-
     static double scaleValueForId(int id) {
         switch (id) {
             case 2:
@@ -690,8 +669,6 @@ class GeneralPage : public juce::Component {
     juce::Label restartHint;
     std::vector<juce::String> availableLanguages_;
     juce::String initialLanguage_;
-    juce::Label themeLabel;
-    juce::ComboBox themeCombo;
     juce::Label scaleLabel;
     juce::ComboBox scaleCombo;
     juce::Label fontScaleLabel;
@@ -701,13 +678,33 @@ class GeneralPage : public juce::Component {
     bool localizedFontScaleExplicit_ = false;
 };
 
-// ---- Colours tab: Track colour palette ------------------------------------
+// ---- Appearance tab: Application theme and track colours ------------------
 
-class ColoursPage : public juce::Component {
+class AppearancePage : public juce::Component {
   public:
     static constexpr int MAX_PALETTE_SIZE = 16;
 
-    ColoursPage() {
+    AppearancePage() {
+        setupSectionHeader(*this, themeHeader, trOr("preferences.section.theme", "Theme"));
+
+        themeLabel.setText(trOr("preferences.theme.label", "Application theme"),
+                           juce::dontSendNotification);
+        themeLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
+        themeLabel.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        themeLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(themeLabel);
+
+        for (const auto& option : builtInThemeOptions_)
+            themeCombo.addItem(option.label, option.comboId);
+        themeCombo.setColour(juce::ComboBox::backgroundColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+        themeCombo.setColour(juce::ComboBox::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        themeCombo.setColour(juce::ComboBox::outlineColourId,
+                             DarkTheme::getColour(DarkTheme::BORDER));
+        addAndMakeVisible(themeCombo);
+
         setupSectionHeader(*this, coloursHeader, tr("preferences.section.track_colour_palette"));
 
         colourHeaderLabel.setText(tr("preferences.colours.colour"), juce::dontSendNotification);
@@ -765,13 +762,53 @@ class ColoursPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int colourRowH = 26;
 
-        return padding + headerH + 4 + 18 + 4 + ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 +
-               16 + headerH + 4 + 32 + padding;
+        return padding + headerH + 4 + 32 + 16 + headerH + 4 + 18 + 4 +
+               ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 + 16 + headerH + 4 + 32 + padding;
+    }
+
+    void lookAndFeelChanged() override {
+        const auto primary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+        const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto border = DarkTheme::getColour(DarkTheme::BORDER);
+
+        for (auto* label : {&themeHeader, &coloursHeader, &colourHeaderLabel, &hexHeaderLabel,
+                            &nameHeaderLabel, &clipColourHeader})
+            label->setColour(juce::Label::textColourId, secondary);
+        themeLabel.setColour(juce::Label::textColourId, primary);
+        clipColourModeLabel.setColour(juce::Label::textColourId, primary);
+
+        for (auto* combo : {&themeCombo, &clipColourModeCombo}) {
+            combo->setColour(juce::ComboBox::backgroundColourId, surface);
+            combo->setColour(juce::ComboBox::textColourId, primary);
+            combo->setColour(juce::ComboBox::outlineColourId, border);
+        }
+
+        for (auto& editor : hexEditors_) {
+            editor->setColour(juce::TextEditor::backgroundColourId, surface);
+            editor->setColour(juce::TextEditor::textColourId, primary);
+            editor->setColour(juce::TextEditor::outlineColourId, border);
+        }
+        for (auto& editor : nameEditors_) {
+            editor->setColour(juce::TextEditor::backgroundColourId, surface);
+            editor->setColour(juce::TextEditor::textColourId, primary);
+            editor->setColour(juce::TextEditor::outlineColourId, border);
+        }
+        repaint();
     }
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
         const int headerH = 28;
+
+        themeHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        {
+            auto row = bounds.removeFromTop(32);
+            themeLabel.setBounds(row.removeFromLeft(140));
+            themeCombo.setBounds(row.reduced(0, 4));
+        }
+        bounds.removeFromTop(16);
 
         coloursHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
@@ -822,6 +859,8 @@ class ColoursPage : public juce::Component {
     }
 
     void loadSettings(Config& config) {
+        themeCombo.setSelectedId(themeIdForValue(config.getTheme()), juce::dontSendNotification);
+
         clearColourRows();
         const auto& palette = config.getTrackColourPalette();
         for (const auto& entry : palette)
@@ -832,6 +871,8 @@ class ColoursPage : public juce::Component {
     }
 
     void applySettings(Config& config) {
+        config.setTheme(themeValueForId(themeCombo.getSelectedId()));
+
         std::vector<Config::TrackColourEntry> palette;
         for (size_t i = 0; i < hexEditors_.size(); ++i) {
             Config::TrackColourEntry entry;
@@ -848,6 +889,34 @@ class ColoursPage : public juce::Component {
     }
 
   private:
+    struct BuiltInThemeOption {
+        int comboId;
+        const char* themeId;
+        const char* label;
+    };
+
+    inline static constexpr std::array<BuiltInThemeOption, 3> builtInThemeOptions_{{
+        {1, ThemeManager::kDarkThemeId, "Dark"},
+        {2, ThemeManager::kLightThemeId, "Light"},
+        {3, ThemeManager::kHighContrastThemeId, "High Contrast (preview)"},
+    }};
+
+    static int themeIdForValue(const std::string& theme) {
+        for (const auto& option : builtInThemeOptions_)
+            if (theme == option.themeId)
+                return option.comboId;
+
+        return 1;
+    }
+
+    static std::string themeValueForId(int id) {
+        for (const auto& option : builtInThemeOptions_)
+            if (id == option.comboId)
+                return option.themeId;
+
+        return ThemeManager::kDarkThemeId;
+    }
+
     void addColourRow(uint32_t colour, const std::string& name) {
         if (static_cast<int>(colourSwatches_.size()) >= MAX_PALETTE_SIZE)
             return;
@@ -959,6 +1028,9 @@ class ColoursPage : public juce::Component {
         }
     }
 
+    juce::Label themeHeader;
+    juce::Label themeLabel;
+    juce::ComboBox themeCombo;
     juce::Label coloursHeader;
     juce::Label colourHeaderLabel, hexHeaderLabel, nameHeaderLabel;
     std::vector<std::unique_ptr<juce::Component>> colourSwatches_;
@@ -2560,7 +2632,7 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     generalPage = std::make_unique<GeneralPage>();
-    coloursPage = std::make_unique<ColoursPage>();
+    appearancePage = std::make_unique<AppearancePage>();
     renderingPage = std::make_unique<RenderingPage>();
     pathsPage = std::make_unique<PathsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>(commandManager);
@@ -2572,13 +2644,14 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
         page.setViewportIgnoreDragFlag(true);
     };
     setupPageViewport(generalPageViewport, *generalPage);
-    setupPageViewport(coloursPageViewport, *coloursPage);
+    setupPageViewport(appearancePageViewport, *appearancePage);
     setupPageViewport(renderingPageViewport, *renderingPage);
     setupPageViewport(pathsPageViewport, *pathsPage);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
-    tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, &coloursPageViewport, false);
+    tabbedComponent.addTab(trOr("preferences.tab.appearance", "Appearance"), tabBg,
+                           &appearancePageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, &renderingPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, &pathsPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
@@ -2615,6 +2688,19 @@ PreferencesDialog::~PreferencesDialog() {
 
 void PreferencesDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+}
+
+void PreferencesDialog::lookAndFeelChanged() {
+    const auto background = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    for (int i = 0; i < tabbedComponent.getNumTabs(); ++i)
+        tabbedComponent.setTabBackgroundColour(i, background);
+
+    if (auto* window = findParentComponentOfClass<juce::DialogWindow>()) {
+        window->setBackgroundColour(background);
+        window->repaint();
+    }
+
+    repaint();
 }
 
 void PreferencesDialog::resized() {
@@ -2656,10 +2742,10 @@ void PreferencesDialog::updatePageViewports() {
             updateContentSize(generalPageViewport, *generalPage,
                               generalPage->getPreferredHeight(viewW));
         }
-        if (coloursPage) {
-            const int viewW = juce::jmax(1, coloursPageViewport.getMaximumVisibleWidth());
-            updateContentSize(coloursPageViewport, *coloursPage,
-                              coloursPage->getPreferredHeight(viewW));
+        if (appearancePage) {
+            const int viewW = juce::jmax(1, appearancePageViewport.getMaximumVisibleWidth());
+            updateContentSize(appearancePageViewport, *appearancePage,
+                              appearancePage->getPreferredHeight(viewW));
         }
         if (renderingPage) {
             const int viewW = juce::jmax(1, renderingPageViewport.getMaximumVisibleWidth());
@@ -2679,7 +2765,7 @@ void PreferencesDialog::updatePageViewports() {
 void PreferencesDialog::loadCurrentSettings() {
     auto& config = Config::getInstance();
     generalPage->loadSettings(config);
-    coloursPage->loadSettings(config);
+    appearancePage->loadSettings(config);
     renderingPage->loadSettings(config);
     pathsPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
@@ -2767,7 +2853,7 @@ void PreferencesDialog::applySettings() {
 
     // Apply non-path pages and persist.
     generalPage->applySettings(config);
-    coloursPage->applySettings(config);
+    appearancePage->applySettings(config);
     renderingPage->applySettings(config);
     shortcutsPage->applySettings(config);
     pathsPage->applySettings(config);  // no-op for path values

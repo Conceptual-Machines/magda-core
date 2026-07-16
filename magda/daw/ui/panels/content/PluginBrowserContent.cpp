@@ -404,17 +404,7 @@ class PluginBrowserContent::FolderTreeItem : public CategoryTreeItem {
 PluginBrowserContent::PluginBrowserContent() {
     setName("Plugin Browser");
 
-    loadCategoryIcons();
-
     // Setup search box
-    searchBox_.setTextToShowWhenEmpty("Search plugins...", DarkTheme::getSecondaryTextColour());
-    searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.45f));
-    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
     searchBox_.setSelectAllWhenFocused(true);
     searchBox_.onTextChange = [this]() { filterBySearch(searchBox_.getText()); };
     addAndMakeVisible(searchBox_);
@@ -426,10 +416,6 @@ PluginBrowserContent::PluginBrowserContent() {
     viewModeSelector_.addItem("Favorites", 4);
     viewModeSelector_.addItem("Folders", 5);
     viewModeSelector_.setSelectedId(1, juce::dontSendNotification);
-    viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
     viewModeSelector_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     viewModeSelector_.onChange = [this]() {
         currentViewMode_ = static_cast<ViewMode>(viewModeSelector_.getSelectedId() - 1);
@@ -438,19 +424,40 @@ PluginBrowserContent::PluginBrowserContent() {
     addAndMakeVisible(viewModeSelector_);
 
     // Setup tree view
-    pluginTree_.setColour(juce::TreeView::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    pluginTree_.setColour(juce::TreeView::linesColourId, DarkTheme::getBorderColour());
     pluginTree_.setDefaultOpenness(false);
     pluginTree_.setMultiSelectEnabled(false);
     pluginTree_.setOpenCloseButtonsVisible(false);  // We draw our own
     addAndMakeVisible(pluginTree_);
+
+    applyThemeColours();
 
     // Build internal plugins and tree (external plugins are loaded when engine is set)
     magda::PluginPreferences::getInstance().addListener(this);
     buildInternalPluginList();
     loadFolders();
     rebuildTree();
+}
+
+void PluginBrowserContent::applyThemeColours() {
+    searchBox_.setTextToShowWhenEmpty("Search plugins...", DarkTheme::getSecondaryTextColour());
+    searchBox_.setColour(juce::TextEditor::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.45f));
+    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+
+    viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+
+    pluginTree_.setColour(juce::TreeView::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    pluginTree_.setColour(juce::TreeView::linesColourId, DarkTheme::getBorderColour());
+
+    loadCategoryIcons();
 }
 
 void PluginBrowserContent::loadCategoryIcons() {
@@ -471,7 +478,10 @@ void PluginBrowserContent::loadCategoryIcons() {
 }
 
 void PluginBrowserContent::lookAndFeelChanged() {
-    loadCategoryIcons();
+    applyThemeColours();
+    searchBox_.repaint();
+    viewModeSelector_.repaint();
+    pluginTree_.repaint();
     repaint();
 }
 

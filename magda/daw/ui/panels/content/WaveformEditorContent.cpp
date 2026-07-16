@@ -415,7 +415,7 @@ WaveformEditorContent::WaveformEditorContent() {
                            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     snapButton_->setColour(juce::TextButton::textColourOffId,
                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    snapButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    snapButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     snapButton_->setWantsKeyboardFocus(false);
@@ -433,7 +433,7 @@ WaveformEditorContent::WaveformEditorContent() {
                            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
     gridButton_->setColour(juce::TextButton::textColourOffId,
                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    gridButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    gridButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     gridButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     gridButton_->setWantsKeyboardFocus(false);

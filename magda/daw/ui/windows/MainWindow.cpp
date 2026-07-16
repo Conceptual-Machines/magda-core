@@ -25,6 +25,9 @@
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/SmallButtonLookAndFeel.hpp"
+#include "../themes/SmallComboBoxLookAndFeel.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
@@ -275,20 +278,6 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     setVisible(true);
     juce::Logger::writeToLog("[MainWindow] Window is now visible");
 
-#if JUCE_WINDOWS
-    // The native title bar (setUsingNativeTitleBar(true) above) renders with
-    // Windows' light chrome by default, which shows up as a white strip above
-    // MAGDA's dark UI. Opting the HWND into immersive dark mode makes DWM draw
-    // the title bar/frame dark to match.
-    if (auto* peer = getPeer()) {
-        if (auto hwnd = static_cast<HWND>(peer->getNativeHandle())) {
-            BOOL useDarkMode = TRUE;
-            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode,
-                                  sizeof(useDarkMode));
-        }
-    }
-#endif
-
     // Listen for project changes to update window title
     ProjectManager::getInstance().addListener(this);
     Config::getInstance().addListener(this);
@@ -344,7 +333,7 @@ void MainWindow::applyThemeFromConfig() {
     if (requestedTheme == appliedTheme_)
         return;
 
-    if (!DarkTheme::setActiveBuiltInTheme(requestedTheme)) {
+    if (!ThemeManager::setActiveBuiltInTheme(requestedTheme)) {
         DBG("[Theme] Unknown theme '" << requestedTheme << "'; using dark");
         DarkTheme::resetToDarkPalette();
     }
@@ -353,6 +342,22 @@ void MainWindow::applyThemeFromConfig() {
             dynamic_cast<juce::LookAndFeel_V4*>(&juce::LookAndFeel::getDefaultLookAndFeel())) {
         DarkTheme::applyToLookAndFeel(*lookAndFeel);
     }
+    DarkTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
+    DarkTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
+    DarkTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
+    DarkTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
+
+#if JUCE_WINDOWS
+    // Keep native chrome in step with live theme changes. DWM expects FALSE
+    // for a light title bar and TRUE for Dark/High Contrast.
+    if (auto* peer = getPeer()) {
+        if (auto hwnd = static_cast<HWND>(peer->getNativeHandle())) {
+            BOOL useDarkMode = ThemeManager::isLightTheme() ? FALSE : TRUE;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode,
+                                  sizeof(useDarkMode));
+        }
+    }
+#endif
 
     // Theme colours live in both JUCE colour IDs and custom paint code. A
     // look-and-feel change reaches every child so controls that cache colours

@@ -256,6 +256,24 @@ class TrackNameLabel : public juce::Label {
     using juce::Label::Label;
 
   protected:
+    juce::TextEditor* createEditorComponent() override {
+        auto* editor = juce::Label::createEditorComponent();
+        editor->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+        editor->setColour(juce::TextEditor::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+        editor->setColour(juce::TextEditor::outlineColourId,
+                          DarkTheme::getColour(DarkTheme::BORDER));
+        editor->setColour(juce::TextEditor::focusedOutlineColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        editor->setColour(juce::CaretComponent::caretColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        editor->setColour(juce::TextEditor::highlightColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        editor->setColour(juce::TextEditor::highlightedTextColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+        return editor;
+    }
+
     void mouseUp(const juce::MouseEvent& e) override {
         if (magda::isToggleSelectClick(e.mods) || magda::isRangeSelectClick(e.mods))
             return;
@@ -267,9 +285,14 @@ class TrackNameLabel : public juce::Label {
 TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : name(trackName) {
     // Create UI components
     nameLabel = std::make_unique<TrackNameLabel>("trackName", trackName);
-    nameLabel->setEditable(true);
+    nameLabel->setEditable(false, true);
     nameLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    nameLabel->setColour(juce::Label::textWhenEditingColourId, DarkTheme::getTextColour());
+    nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     nameLabel->setFont(FontManager::getInstance().getUIFontBold(12.0f));
 
     // Track mute: speaker toggle (matching the master/inspector speaker instead
@@ -336,6 +359,8 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                                DarkTheme::TEXT_BRIGHT);
     automationButton->setIconPadding(2.5f);
 
     // Volume label (shows dB, draggable)
@@ -1329,6 +1354,12 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
             juce::Label::textColourId,
             DarkTheme::getColour(sel ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
                                      : DarkTheme::TEXT_PRIMARY));
+        trackHeaders[i]->nameLabel->setColour(juce::Label::textWhenEditingColourId,
+                                              DarkTheme::getTextColour());
+        trackHeaders[i]->nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
+                                              DarkTheme::getColour(DarkTheme::SURFACE));
+        trackHeaders[i]->nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
+                                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
         static_cast<MidiActivityIndicator*>(trackHeaders[i]->midiIndicator.get())
             ->setOnSelectedHeader(sel);
     }
@@ -2133,8 +2164,13 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
     outer.removeSpacing(workArea, meterPadding);
 
     // Audio meter spans full track height.
-    if (auto* meter = dynamic_cast<LevelMeter*>(header.meterComponent.get()))
+    // Leave the header's one-pixel bottom border exposed so it joins the
+    // resize handle with the same apparent thickness as the control area.
+    meterArea.removeFromBottom(1);
+    if (auto* meter = dynamic_cast<LevelMeter*>(header.meterComponent.get())) {
         meter->setOrientation(LevelMeter::Orientation::Vertical);
+        meter->setVerticalZeroDbY(static_cast<float>(header.nameRowBottomY - meterArea.getY()));
+    }
     header.meterComponent->setBounds(meterArea);
     header.meterComponent->setVisible(header.policy.meter);
 }
@@ -2521,7 +2557,9 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                 // visible header area is covered by interactive children). The
                 // child's own onClick still fires (e.g. cmd-clicking the mute
                 // button still toggles mute); accepted trade-off.
-                const bool fromChild = event.originalComponent != this;
+                const bool fromNameLabel =
+                    event.originalComponent == trackHeaders[i]->nameLabel.get();
+                const bool fromChild = event.originalComponent != this && !fromNameLabel;
 
                 // Right-click is an action target, not a selection gesture. If
                 // the clicked track is already part of a multi-selection, keep
