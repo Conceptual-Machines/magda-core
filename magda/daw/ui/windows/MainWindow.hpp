@@ -72,6 +72,9 @@ class MainWindow : public juce::DocumentWindow,
   private:
     void updateWindowTitle();
     void applyThemeFromConfig();
+    // Re-broadcasts a look-and-feel change when the UI font family changes, so
+    // components re-fetch fonts from FontManager and repaint.
+    void applyFontFromConfig();
     // Re-applies the active palette to every shared LookAndFeel and broadcasts
     // a look-and-feel change to all top-level windows. Shared by the config
     // switch and hot-reload.
@@ -85,6 +88,7 @@ class MainWindow : public juce::DocumentWindow,
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::string appliedTheme_;
+    std::string appliedFontFamily_;
 
     // Hot-reload for user JSON themes: armed while a user theme is active,
     // idle for built-ins. activeThemeFile_ is the file currently watched.

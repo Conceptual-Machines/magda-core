@@ -342,6 +342,8 @@
     "scale.label": "UI Scale",
     "scale.auto": "Auto (from display DPI)",
     "font_scale.label": "Font Size",
+    "font_family.label": "UI Font",
+    "font_family.default": "Inter (default)",
     "tab.general": "General",
     "tab.appearance": "Appearance",
     "tab.colours": "Colours",

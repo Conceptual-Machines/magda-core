@@ -65,9 +65,15 @@ class FontManager {
     juce::Typeface::Ptr notoSansCJK;
     juce::String notoSansCJKFamily;
 
-    // Apply the CJK family as a fallback on the given font so characters not
-    // covered by the primary typeface are resolved via Noto Sans CJK.
-    juce::Font withCJKFallback(juce::Font font) const;
+    // Bundled Inter family name, used as a script fallback for user-selected UI
+    // fonts: Inter covers Latin, Cyrillic, Greek, and Vietnamese, so a Latin-only
+    // system font still renders Russian (and other supported locales) correctly.
+    juce::String interFamily;
+
+    // Apply the bundled fallback families to the given font so characters not
+    // covered by the primary typeface resolve via Inter (Latin/Cyrillic/Greek)
+    // then Noto Sans CJK (zh/ja/ko).
+    juce::Font withScriptFallbacks(juce::Font font) const;
 
     // Fallback system font name
     static constexpr const char* FALLBACK_FONT = "Helvetica";
