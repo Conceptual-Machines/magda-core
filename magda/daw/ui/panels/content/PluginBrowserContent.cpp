@@ -189,7 +189,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
 
         // Highlight if selected
         if (isSelected()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(bounds);
         }
 
@@ -444,7 +444,7 @@ void PluginBrowserContent::applyThemeColours() {
                          DarkTheme::getColour(DarkTheme::SURFACE));
     searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.45f));
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.45f));
     searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
 

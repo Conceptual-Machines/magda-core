@@ -77,7 +77,7 @@ void CompiledBitcrusherEditorView::paint(juce::Graphics& g) {
         return;
 
     const auto textColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
 
     // Centre axis.
     g.setColour(textColour.withAlpha(0.15f));

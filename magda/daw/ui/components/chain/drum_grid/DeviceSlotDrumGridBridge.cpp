@@ -244,7 +244,7 @@ bool paintHeaderLogo(juce::Graphics& g, bool isDrumGrid, bool collapsed, int hea
 
     auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
     g.setFont(font);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     g.drawText("MDG2000", textStartX, textY, availableWidth, textHeight,
                juce::Justification::centredLeft, false);
     return true;

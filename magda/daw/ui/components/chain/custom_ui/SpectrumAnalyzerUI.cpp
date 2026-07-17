@@ -152,7 +152,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
     daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
-                                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
 
@@ -771,7 +771,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
 
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.6f));
         g.drawVerticalLine(static_cast<int>(mx), plot.getY(), plot.getBottom());
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
         g.fillEllipse(mx - 2.5f, dbToY(db, plot) - 2.5f, 5.0f, 5.0f);
 
         const juce::String fTxt =

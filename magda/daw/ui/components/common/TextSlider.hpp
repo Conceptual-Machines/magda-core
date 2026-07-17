@@ -416,7 +416,7 @@ class TextSlider : public juce::Component, public magda::AutomationManagerListen
             const juce::Colour tint =
                 automationVisualState_ == magda::AutomationVisualState::Overridden
                     ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
-                    : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+                    : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
             g.setColour(tint.withAlpha(0.18f));
             g.fillRect(boundsF);
             g.setColour(tint);

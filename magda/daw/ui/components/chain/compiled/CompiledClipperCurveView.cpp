@@ -151,7 +151,7 @@ void CompiledClipperCurveView::paint(juce::Graphics& g) {
         return;
 
     const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
 
     g.setColour(border.withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
@@ -214,7 +214,7 @@ void CompiledClipperCurveView::paint(juce::Graphics& g) {
     const float drivenAmp = smoothedInputAmp_ * driveLin;
     const float dotX = xToScreen(drivenAmp);
     const float dotY = yToScreen(clipForMode(mode_, drivenAmp));
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f));
     g.fillEllipse(dotX - 3.5f, dotY - 3.5f, 7.0f, 7.0f);
 }
 

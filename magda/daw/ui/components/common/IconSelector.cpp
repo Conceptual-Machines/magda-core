@@ -27,7 +27,7 @@ void IconSelector::setSelectedIndex(int index, juce::NotificationType notificati
 }
 
 void IconSelector::paint(juce::Graphics& g) {
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     auto textPrimary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
     auto textSecondary = DarkTheme::getSecondaryTextColour();
 

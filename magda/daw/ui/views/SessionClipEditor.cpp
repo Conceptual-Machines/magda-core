@@ -61,7 +61,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
             double endTime = di.sourceFileEnd;
 
             // Draw waveform
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             thumbnail->drawChannels(g, waveformBounds, startTime, endTime, 1.0f);
 
             // Draw loop region overlay. Loop X positions come from the
@@ -86,10 +86,10 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
                                                     loopEndX - loopStartX,
                                                     waveformBounds.getHeight());
 
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.2f));
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.2f));
                     g.fillRect(loopRegion);
 
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
                     g.drawVerticalLine(loopStartX, waveformBounds.getY(),
                                        waveformBounds.getBottom());
                     g.drawVerticalLine(loopEndX, waveformBounds.getY(), waveformBounds.getBottom());

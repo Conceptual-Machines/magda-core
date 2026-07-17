@@ -59,7 +59,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     latchButton_.setColour(juce::TextButton::buttonColourId,
                            DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
     latchButton_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.6f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
     latchButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     latchButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
     latchButton_.onClick = [this] {

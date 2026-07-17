@@ -182,7 +182,7 @@ class SessionView::SessionToggleRail : public juce::Component {
         btn = std::make_unique<SvgButton>(name, svgData, svgSize);
         btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
         btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setTooltip(tooltip);
@@ -556,7 +556,7 @@ class SessionView::BeatBandContainer : public juce::Component {
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
-        const auto pulseColour = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+        const auto pulseColour = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
         constexpr float kDotRadius = 2.5f;
 
         int cursor = -scrollOffset_;
@@ -668,7 +668,7 @@ class SessionView::MasterBeatIndicator : public juce::Component {
         const float alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase_ * 0.85));
         constexpr float kDotRadius = 3.0f;
         const auto centre = getLocalBounds().toFloat().getCentre();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(alpha));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(alpha));
         g.fillEllipse(centre.getX() - kDotRadius, centre.getY() - kDotRadius, kDotRadius * 2.0f,
                       kDotRadius * 2.0f);
     }
@@ -1218,7 +1218,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
             std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
         soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
                                                DarkTheme::ICON_ON_ACCENT);
         soloButton_->setIconPadding(5.0f);
@@ -1469,7 +1469,7 @@ class SessionView::MiniMasterStrip : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
         // Orange accent bar at top
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         g.fillRect(bounds.removeFromTop(3));
     }
 
@@ -1657,10 +1657,10 @@ SessionView::SessionView() {
     dragGhostLabel_->setFont(FontManager::getInstance().getUIFontBold(11.0f));
     dragGhostLabel_->setJustificationType(juce::Justification::centred);
     dragGhostLabel_->setColour(juce::Label::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
     dragGhostLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     dragGhostLabel_->setColour(juce::Label::outlineColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     dragGhostLabel_->setVisible(false);
     gridContent->addAndMakeVisible(*dragGhostLabel_);
 
@@ -2098,9 +2098,9 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
                              ? trackColumnWidths_[pluginDropTrackIndex_]
                              : DEFAULT_CLIP_SLOT_WIDTH;
             auto colBounds = juce::Rectangle<int>(trackX, 0, trackW, vpBounds.getBottom());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
             g.fillRect(colBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             g.drawRect(colBounds, 2);
         } else {
             // Past last track — show "new track" indicator
@@ -2109,14 +2109,14 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
             int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
             auto indicatorBounds =
                 juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.12f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.12f));
             g.fillRect(indicatorBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
             g.drawRect(indicatorBounds, 2);
 
             // Draw "+" icon
             auto centre = indicatorBounds.getCentre().toFloat();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
             g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
             g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
         }
@@ -2129,14 +2129,14 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
         auto indicatorBounds =
             juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.12f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.12f));
         g.fillRect(indicatorBounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
         g.drawRect(indicatorBounds, 2);
 
         // Draw "+" icon
         auto centre = indicatorBounds.getCentre().toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
         g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
         g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
     }
@@ -2178,7 +2178,7 @@ void SessionView::paintControllerSceneWindowHighlight(juce::Graphics& g) {
     if (highlight.isEmpty())
         return;
 
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.82f));
     g.drawRoundedRectangle(highlight.toFloat(), 7.0f, 3.0f);
 }
@@ -2417,10 +2417,10 @@ void SessionView::applyThemeColours() {
 
     if (dragGhostLabel_) {
         dragGhostLabel_->setColour(juce::Label::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
         dragGhostLabel_->setColour(juce::Label::textColourId, primary);
         dragGhostLabel_->setColour(juce::Label::outlineColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     }
 
     updateHeaderSelectionVisuals();
@@ -3082,7 +3082,7 @@ void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
     // Highlight dragged header
     int dx = getTrackX(headerDragIndex_) - trackHeaderScrollOffset;
     int dw = trackColumnWidths_[headerDragIndex_];
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     g.fillRect(dx, 0, dw, headerContainer->getHeight());
 
     if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
@@ -3091,14 +3091,14 @@ void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
             lineX = getTotalTracksWidth() - trackHeaderScrollOffset;
         else
             lineX = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         g.fillRect(lineX - 2, 0, 4, headerContainer->getHeight());
     } else if (headerDropType_ == HeaderDropType::OntoGroup && headerDropIndex_ >= 0) {
         int gx = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
         int gw = trackColumnWidths_[headerDropIndex_];
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         g.drawRect(gx, 0, gw, headerContainer->getHeight(), 3);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
         g.fillRect(gx, 0, gw, headerContainer->getHeight());
     }
 }
@@ -3915,7 +3915,7 @@ void SessionView::updateDragHighlight(int x, int y) {
             if (slot) {
                 // Highlight with accent color
                 slot->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             }
         }
 

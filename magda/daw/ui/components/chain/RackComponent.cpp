@@ -85,7 +85,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::iconmodsboldm_svg,
                                                     BinaryData::iconmodsboldm_svgSize);
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
-    node_header::applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    node_header::applyHeaderIconStyle(*modButton_,
+                                      DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
@@ -98,7 +99,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*macroButton_,
-                                      DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                                      DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
@@ -114,7 +115,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     deltaButton_->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_CYAN).darker(0.3f));
+                            DarkTheme::getColour(DarkTheme::ACCENT_INFO).darker(0.3f));
     deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     deltaButton_->onClick = [this]() {

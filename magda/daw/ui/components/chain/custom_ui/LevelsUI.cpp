@@ -28,7 +28,7 @@ juce::Colour peakColour(float dbtp) {
         return magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_RED);
     if (dbtp >= -3.0f)
         return magda::DarkTheme::getColour(magda::DarkTheme::STATUS_WARNING);
-    return magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_GREEN);
+    return magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_POSITIVE);
 }
 
 }  // namespace
@@ -116,7 +116,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     const float rowH = juce::jmax(28.0f, loudCol.getHeight() / 3.0f);
 
     // Column 1: loudness.
-    g.setColour(DT::getColour(DT::ACCENT_CYAN));
+    g.setColour(DT::getColour(DT::ACCENT_INFO));
     g.setFont(9.0f);
     g.drawText("LOUDNESS", loudCol.removeFromTop(11.0f), juce::Justification::topLeft);
     valueRow(loudCol, "Integrated", fmtLufs(s.integratedLufs), "LUFS", primary, rowH);
@@ -125,7 +125,7 @@ void LevelsUI::paint(juce::Graphics& g) {
              rowH * 0.8f);
 
     // Column 2: peak + dynamics.
-    g.setColour(DT::getColour(DT::ACCENT_CYAN));
+    g.setColour(DT::getColour(DT::ACCENT_INFO));
     g.setFont(9.0f);
     g.drawText("PEAK / DYNAMICS", dynCol.removeFromTop(11.0f), juce::Justification::topLeft);
     const float tp = s.truePeakValid ? s.truePeakDb : s.samplePeakDb;
@@ -135,7 +135,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     valueRow(dynCol, "PSR", fmtLu(s.psr), "LU", dim.brighter(0.4f), rowH * 0.8f);
 
     // Column 3: stereo (correlation bar + width).
-    g.setColour(DT::getColour(DT::ACCENT_CYAN));
+    g.setColour(DT::getColour(DT::ACCENT_INFO));
     g.setFont(9.0f);
     g.drawText("STEREO", stereoCol.removeFromTop(11.0f), juce::Justification::topLeft);
 
@@ -154,7 +154,8 @@ void LevelsUI::paint(juce::Graphics& g) {
                                      corrBar.getHeight())
             : juce::Rectangle<float>(midX + corr * corrBar.getWidth() * 0.5f, corrBar.getY(),
                                      -corr * corrBar.getWidth() * 0.5f, corrBar.getHeight());
-    g.setColour(corr < 0.0f ? DT::getColour(DT::STATUS_WARNING) : DT::getColour(DT::ACCENT_GREEN));
+    g.setColour(corr < 0.0f ? DT::getColour(DT::STATUS_WARNING)
+                            : DT::getColour(DT::ACCENT_POSITIVE));
     g.fillRoundedRectangle(fill, 2.0f);
     g.setColour(dim.withAlpha(0.6f));
     g.drawVerticalLine(static_cast<int>(midX), corrBar.getY(), corrBar.getBottom());
@@ -174,7 +175,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     auto widthBar = stereoCol.removeFromTop(8.0f);
     g.setColour(DT::getColour(DT::SURFACE));
     g.fillRoundedRectangle(widthBar, 2.0f);
-    g.setColour(DT::getColour(DT::ACCENT_BLUE_LIGHT));
+    g.setColour(DT::getColour(DT::ACCENT_PRIMARY_SOFT));
     g.fillRoundedRectangle(
         widthBar.withWidth(juce::jlimit(0.0f, 1.0f, s.width) * widthBar.getWidth()), 2.0f);
 

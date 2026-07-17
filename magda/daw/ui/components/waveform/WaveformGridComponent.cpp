@@ -659,7 +659,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     // offset is represented by the phase marker inside the loop region.
     if (!isLooped) {
         int offsetX = timeToPixel(baseTime + offsetPosition);
-        auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+        auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
         float offsetAlpha = 0.8f;
         g.setColour(offsetColour.withAlpha(offsetAlpha));
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
@@ -670,7 +670,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     // Loop phase marker (orange) — only visible when looped, shows phase within loop region
     if (hasVisibleLoopPhase) {
         int phaseX = timeToPixel(baseTime + displayInfo_.loopPhasePositionSeconds);
-        auto phaseColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+        auto phaseColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
         g.setColour(phaseColour.withAlpha(0.8f));
         g.fillRect(phaseX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -760,7 +760,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
             if (activeClipEnd > offsetPosition &&
                 activeClipEnd < displayInfo_.fileExtentTimeline() - 0.0001) {
                 int activeClipEndX = timeToPixel(baseTime + activeClipEnd);
-                auto activeEndColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+                auto activeEndColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
                 g.setColour(activeEndColour.withAlpha(0.9f));
                 g.fillRect(activeClipEndX - 1, 0, 2, bounds.getHeight());
             }

@@ -114,7 +114,7 @@ class SplashScreen::ContentComponent : public juce::Component {
         // Status text
         bounds.removeFromTop(4);
         g.setFont(fm.getUIFont(11.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         g.drawText(statusText_, bounds.removeFromTop(18), juce::Justification::centred);
 
         // Credits line

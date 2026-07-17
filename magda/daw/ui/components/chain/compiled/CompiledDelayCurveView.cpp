@@ -159,7 +159,7 @@ void CompiledDelayCurveView::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
     const float halfH = plot.getHeight() * 0.5f;
     constexpr float kBarMinPx = 1.5f;
     const float barWidthPx =

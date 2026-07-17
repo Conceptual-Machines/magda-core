@@ -115,7 +115,7 @@ CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     addAndMakeVisible(xoverName_);
 
     const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
     const auto inactive = DarkTheme::getSecondaryTextColour();
     const auto bg = DarkTheme::getColour(DarkTheme::BACKGROUND);
 

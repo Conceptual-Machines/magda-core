@@ -63,7 +63,7 @@ class MidiNoteStrip : public juce::Component, private juce::Timer {
         if (noteRange <= 0.0f)
             return;
 
-        auto accent = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+        auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
 
         for (int n = lowNote_; n <= highNote_; ++n) {
             float level = notes_[static_cast<size_t>(n)].display;

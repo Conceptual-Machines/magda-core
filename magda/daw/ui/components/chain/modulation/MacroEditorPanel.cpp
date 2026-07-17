@@ -41,7 +41,7 @@ void MacroLinkMatrixContent::paint(juce::Graphics& g) {
 
         // Bipolar toggle - 16px
         auto bipolarBounds = remaining.removeFromRight(16);
-        g.setColour(link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+        g.setColour(link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
                                  : DarkTheme::getSecondaryTextColour());
         g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
         remaining.removeFromRight(2);

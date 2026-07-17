@@ -85,7 +85,7 @@ void AutomationClipEditorContent::buildHeaderControls() {
         button->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
         button->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
         button->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);

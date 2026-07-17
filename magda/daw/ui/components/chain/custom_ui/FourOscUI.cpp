@@ -1378,7 +1378,7 @@ void FourOscUI::LFOTab::paint(juce::Graphics& g) {
                     p.lineTo(px, py);
             }
         }
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).brighter(0.3f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).brighter(0.3f));
         g.strokePath(p, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
                                              juce::PathStrokeType::rounded));
     }
@@ -1787,7 +1787,7 @@ void FourOscUI::LFOTab::showAddDestPopup(int modSourceId, const juce::String& so
     auto* addBtn = new juce::TextButton("Add");
     addBtn->setBounds(60, 40, 80, 24);
     addBtn->setColour(juce::TextButton::buttonColourId,
-                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                      DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     popup->addAndMakeVisible(addBtn);
 
     auto& addBtnRef = (modSourceId == 0) ? addDestBtn1_ : addDestBtn2_;
@@ -1912,7 +1912,7 @@ void FourOscUI::ModEnvTab::showAddDestPopup(int modSourceId, const juce::String&
     auto* addBtn = new juce::TextButton("Add");
     addBtn->setBounds(60, 40, 80, 24);
     addBtn->setColour(juce::TextButton::buttonColourId,
-                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                      DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     popup->addAndMakeVisible(addBtn);
 
     // env1=2, env2=3 -> button index 0 or 1

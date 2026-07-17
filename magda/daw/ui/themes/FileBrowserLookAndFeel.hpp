@@ -16,7 +16,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     FileBrowserLookAndFeel() {
         setColour(juce::ScrollBar::thumbColourId,
-                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
         setColour(juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
 
         // Keep the source drawable untouched; drawFileItem tints a short-lived
@@ -96,7 +96,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.3f));
             g.fillRect(area);
         }
 

@@ -122,7 +122,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     soloButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     soloButton_.setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -139,7 +139,8 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);  // On = not bypassed
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
-    onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    onButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(!chain.bypassed);
     onButton_->onClick = [this]() {
         onButton_->setActive(onButton_->getToggleState());
@@ -151,7 +152,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
             .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -180,7 +181,7 @@ void ChainRowComponent::paint(juce::Graphics& g) {
 
     // Background - highlight if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
     }
@@ -188,7 +189,7 @@ void ChainRowComponent::paint(juce::Graphics& g) {
 
     // Border - accent color if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     }

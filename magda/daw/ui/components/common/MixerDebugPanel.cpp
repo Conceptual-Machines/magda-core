@@ -53,7 +53,7 @@ void MixerDebugPanel::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1), 8.0f, 2.0f);
 
     // Resize handle indicator at top
@@ -181,9 +181,9 @@ void MixerDebugPanel::addIntSlider(const juce::String& name, int* valuePtr, int 
     row.slider->setColour(juce::Slider::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     row.slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     row.slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).brighter());
+                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).brighter());
 
     auto* labelPtr = row.label.get();
     auto* slider = row.slider.get();
@@ -221,9 +221,9 @@ void MixerDebugPanel::addFloatSlider(const juce::String& name, float* valuePtr, 
     row.slider->setColour(juce::Slider::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     row.slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     row.slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).brighter());
+                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).brighter());
 
     auto* labelPtr = row.label.get();
     auto* slider = row.slider.get();

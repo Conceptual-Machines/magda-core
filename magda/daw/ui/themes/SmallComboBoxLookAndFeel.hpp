@@ -78,7 +78,7 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.3f));
             g.fillRect(area);
         }
 

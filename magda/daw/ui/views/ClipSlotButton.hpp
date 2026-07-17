@@ -240,7 +240,7 @@ class ClipSlotButton : public juce::TextButton {
             // icon the same way as a direct click. Idle non-selected slots
             // stay black against the grey strip for contrast.
             const auto iconColour = (isSelected || clipIsPlaying || clipIsQueued)
-                                        ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN)
+                                        ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
                                         : juce::Colours::black;
 
             juce::Path triangle;
@@ -371,7 +371,7 @@ class SceneButton : public juce::TextButton {
             triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
                                  centre.getX() - size * 0.7f, centre.getY() + size,
                                  centre.getX() + size, centre.getY());
-            g.setColour(hasAnyPlaying ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN)
+            g.setColour(hasAnyPlaying ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
                                       : juce::Colours::white);
             g.fillPath(triangle);
         } else {

@@ -18,7 +18,7 @@ ChordAuditionControl::ChordAuditionControl()
     : SvgButton("ChordAudition", BinaryData::chord_svg, BinaryData::chord_svgSize) {
     setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
     setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
                               DarkTheme::ICON_ON_ACCENT);
     setIconPadding(3.5f);
@@ -125,11 +125,11 @@ void ChordAuditionControl::updateVisual(State state) {
             setActive(false);
             break;
         case State::Audible:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
             setActive(true);
             break;
         case State::Solo:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
             setActive(true);
             break;
     }

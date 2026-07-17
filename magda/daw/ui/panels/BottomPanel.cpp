@@ -322,13 +322,6 @@ void BottomPanel::setupHeaderControls() {
     timeModeButton_->setTooltip("Toggle between Absolute and Relative time display");
     timeModeButton_->setClickingTogglesState(true);
     timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
-    timeModeButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
-    timeModeButton_->setColour(juce::TextButton::buttonOnColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
-    timeModeButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    timeModeButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     timeModeButton_->setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -349,7 +342,6 @@ void BottomPanel::setupHeaderControls() {
         std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
     gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
     gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
-    gridNumeratorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     gridNumeratorLabel_->setShowFillIndicator(false);
     gridNumeratorLabel_->setFontSize(12.0f);
     gridNumeratorLabel_->setDoubleClickResetsValue(true);
@@ -376,8 +368,6 @@ void BottomPanel::setupHeaderControls() {
     gridSlashLabel_ = std::make_unique<juce::Label>();
     gridSlashLabel_->setText("/", juce::dontSendNotification);
     gridSlashLabel_->setFont(FontManager::getInstance().getUIFont(12.0f));
-    gridSlashLabel_->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     gridSlashLabel_->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     gridSlashLabel_->setJustificationType(juce::Justification::centred);
     gridSlashLabel_->setAlpha(isAutoGrid_ ? 0.6f : 1.0f);
@@ -389,7 +379,6 @@ void BottomPanel::setupHeaderControls() {
     gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                     juce::dontSendNotification);
-    gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     gridDenominatorLabel_->setShowFillIndicator(false);
     gridDenominatorLabel_->setFontSize(12.0f);
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
@@ -444,13 +433,6 @@ void BottomPanel::setupHeaderControls() {
 
     // AUTO toggle
     autoGridButton_ = std::make_unique<juce::TextButton>("AUTO");
-    autoGridButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
-    autoGridButton_->setColour(juce::TextButton::buttonOnColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
-    autoGridButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    autoGridButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     autoGridButton_->setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -479,13 +461,6 @@ void BottomPanel::setupHeaderControls() {
 
     // SNAP toggle
     snapButton_ = std::make_unique<juce::TextButton>("SNAP");
-    snapButton_->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
-    snapButton_->setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
-    snapButton_->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    snapButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     snapButton_->setWantsKeyboardFocus(false);
@@ -519,7 +494,7 @@ void BottomPanel::setupHeaderControls() {
     loopButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     loopButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     loopButton_->setActiveColor(juce::Colours::white);
-    loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     loopButton_->setClickingTogglesState(false);  // manual active state
     loopButton_->onClick = [this]() {
         // Automation clip editor: loop lives on the automation clip (same
@@ -564,7 +539,7 @@ void BottomPanel::setupHeaderControls() {
     clipEnabledButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     clipEnabledButton_->setActiveColor(juce::Colours::white);
     clipEnabledButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
     clipEnabledButton_->setClickingTogglesState(false);  // manual active state
     clipEnabledButton_->onClick = [this]() {
         const auto clipId = getActiveEditingClipId();
@@ -586,7 +561,7 @@ void BottomPanel::setupHeaderControls() {
     sliceButton_ = std::make_unique<SvgButton>("NoteSlice", BinaryData::note_slice_svg,
                                                BinaryData::note_slice_svgSize);
     sliceButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                            DarkTheme::ACCENT_CYAN);
+                                            DarkTheme::ACCENT_INFO);
     sliceButton_->setTooltip("Slice selected notes");
     sliceButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     sliceButton_->setBorderThickness(1.0f);
@@ -613,7 +588,7 @@ void BottomPanel::setupHeaderControls() {
     bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::time_bend_svg,
                                               BinaryData::time_bend_svgSize);
     bendButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                           DarkTheme::ACCENT_CYAN);
+                                           DarkTheme::ACCENT_INFO);
     bendButton_->setTooltip("Time Bend selected notes");
     bendButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     bendButton_->setBorderThickness(1.0f);
@@ -637,7 +612,36 @@ void BottomPanel::setupHeaderControls() {
     };
     headerBar_->addChildComponent(bendButton_.get());
 
+    refreshHeaderControlColours();
     hideMidiHeaderControls();
+}
+
+void BottomPanel::refreshHeaderControlColours() {
+    // These are timing/quantize controls, so they follow the primary accent
+    // (like the loop toggle beside them), not the modulation accent.
+    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f);
+    const auto accentOn = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.3f);
+    const auto textOff = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+
+    for (auto* button : {timeModeButton_.get(), autoGridButton_.get(), snapButton_.get()}) {
+        if (button == nullptr)
+            continue;
+        button->setColour(juce::TextButton::buttonColourId, surface);
+        button->setColour(juce::TextButton::buttonOnColourId, accentOn);
+        button->setColour(juce::TextButton::textColourOffId, textOff);
+        button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    }
+    if (gridNumeratorLabel_ != nullptr)
+        gridNumeratorLabel_->setTextColour(accent);
+    if (gridDenominatorLabel_ != nullptr)
+        gridDenominatorLabel_->setTextColour(accent);
+    if (gridSlashLabel_ != nullptr)
+        gridSlashLabel_->setColour(juce::Label::textColourId, textOff);
+}
+
+void BottomPanel::lookAndFeelChanged() {
+    refreshHeaderControlColours();
 }
 
 void BottomPanel::setCollapsed(bool collapsed) {

@@ -19,7 +19,7 @@ MonitorControl::MonitorControl()
                 BinaryData::monitor_on_svg, BinaryData::monitor_on_svgSize) {
     setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
     setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
                               DarkTheme::ICON_ON_ACCENT);
     setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_NEUTRAL,
@@ -115,11 +115,11 @@ void MonitorControl::updateVisual(InputMonitorMode mode) {
             setActive(false);
             break;
         case InputMonitorMode::In:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
             setActive(true);
             break;
         case InputMonitorMode::Auto:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             setActive(true);
             break;
     }

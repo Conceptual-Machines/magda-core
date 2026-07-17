@@ -85,7 +85,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
     void paintRowBackground(juce::Graphics& g, int rowNumber, int /*width*/, int /*height*/,
                             bool rowIsSelected) override {
         if (rowIsSelected) {
-            g.fillAll(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.fillAll(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         } else if (rowNumber % 2 == 0) {
             g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.05f));
         }
@@ -102,7 +102,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
         if (row.isMaster) {
             if (columnId == TrackName) {
                 // Draw master track name with special styling
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
                 g.drawText(magda::technicalText(magda::TechnicalTextToken::Master), 5, 0,
                            width - 10, height, juce::Justification::centredLeft);
             } else {
@@ -152,7 +152,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
 
         // Checked state
         if (isChecked) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             g.fillRect(checkBounds.reduced(3));
 
             // Draw checkmark

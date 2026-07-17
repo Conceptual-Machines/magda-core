@@ -193,9 +193,9 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
 
     // LFO trace. Phase scrolls so the playhead stays at the right edge —
     // the part visible is "what already happened" for the LFO.
-    const auto accent = mode_ == 1   ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
-                        : mode_ == 2 ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
-                                     : DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT);
+    const auto accent = mode_ == 1   ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
+                        : mode_ == 2 ? DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
+                                     : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT);
 
     const float depthScale = 0.10f + 0.85f * depth_;
     const float halfHeight = plot.getHeight() * 0.45f * depthScale;

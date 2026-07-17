@@ -55,7 +55,7 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
         uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
                                                 BinaryData::open_in_new_svgSize);
         daw::ui::node_header::applyHeaderIconStyle(*uiButton_,
-                                                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         uiButton_->onClick = [this]() {
             if (engine_ == nullptr)
                 return;
@@ -298,7 +298,7 @@ void MiniChainRow::paint(juce::Graphics& g) {
     constexpr int dotSize = 8;
     auto dotBounds = bypassRect_.withSizeKeepingCentre(dotSize, dotSize).toFloat();
     g.setColour(bypassed_ ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
-                          : DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+                          : DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
     g.fillEllipse(dotBounds);
 
     // Device name

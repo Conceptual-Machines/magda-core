@@ -137,7 +137,7 @@ SamplerUI::SamplerUI() {
         std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
     loopButton_->setIconPadding(0.0f);
     loopButton_->setStateColourReplacement(
-        juce::Colour(0xFF1A1A1A), DarkTheme::PIANO_ROLL_BACKGROUND, DarkTheme::ACCENT_BLUE);
+        juce::Colour(0xFF1A1A1A), DarkTheme::PIANO_ROLL_BACKGROUND, DarkTheme::ACCENT_PRIMARY);
     loopButton_->setStateColourReplacement(juce::Colour(0xFFBCBCBC), DarkTheme::ICON_TRANSPORT,
                                            DarkTheme::TEXT_BRIGHT);
     loopButton_->onClick = [this]() {
@@ -323,7 +323,7 @@ SamplerUI::SamplerUI() {
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId,
                        DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
@@ -916,12 +916,12 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.reduceClipRegion(waveformArea);
 
         // Draw waveform
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         auto pathBounds = waveformArea.reduced(0, 2).toFloat();
         g.saveState();
         g.addTransform(juce::AffineTransform::translation(pathBounds.getX(), pathBounds.getY()));
         g.fillPath(waveformPath_);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.7f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
         g.strokePath(waveformPath_, juce::PathStrokeType(0.5f));
         g.restoreState();
 
@@ -934,12 +934,12 @@ void SamplerUI::paint(juce::Graphics& g) {
             float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveformArea);
             float lEndX = secondsToPixelX(loopEndSlider_.getValue(), waveformArea);
             if (lEndX > lStartX) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.15f));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.15f));
                 g.fillRect(lStartX, static_cast<float>(waveformArea.getY()), lEndX - lStartX,
                            static_cast<float>(waveformArea.getHeight()));
 
                 // Top drag bar
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.5f));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.5f));
                 g.fillRect(lStartX, static_cast<float>(waveformArea.getY()), lEndX - lStartX,
                            static_cast<float>(kLoopBarHeight));
             }
@@ -963,7 +963,7 @@ void SamplerUI::paint(juce::Graphics& g) {
 
         // Loop start/end markers (green vertical lines)
         if (loopButton_->isActive() && sampleLength_ > 0.0) {
-            auto green = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+            auto green = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
 
             float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveformArea);
             g.setColour(green);

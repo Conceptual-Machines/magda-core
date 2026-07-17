@@ -417,7 +417,7 @@ void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area)
 
     // Highlight the playing step.
     if (currentPlayStep_ >= 0 && currentPlayStep_ < count) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.45f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.45f));
         g.fillRect(
             juce::Rectangle<float>(area.getX() + currentPlayStep_ * colW, top, colW, bottom - top));
     }
@@ -460,11 +460,11 @@ void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area
         // Background
         juce::Colour bg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f);
         if (i == currentPlayStep_)
-            bg = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.3f);
+            bg = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.3f);
         if (i == selectedStep_)
             bg = bg.brighter(0.15f);
         if (i == dragTargetStep_ && dragSourceStep_ >= 0 && i != dragSourceStep_)
-            bg = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f);
+            bg = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f);
         if (!step.gate)
             bg = bg.darker(0.3f);
 
@@ -474,7 +474,7 @@ void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area
         // Border
         juce::Colour border = DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f);
         if (i == selectedStep_)
-            border = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+            border = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
         g.setColour(border);
         g.drawRoundedRectangle(boxRect, 2.0f, 0.5f);
 
@@ -511,7 +511,7 @@ void StepSequencerUI::drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         if (step.accent) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.7f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
             g.setColour(DarkTheme::getTextColour());
             g.drawText("A", rect.toNearestInt(), juce::Justification::centred);
@@ -544,12 +544,12 @@ void StepSequencerUI::drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> ar
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         if (step.tie) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.7f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
             g.setColour(DarkTheme::getTextColour());
             g.drawText("T", rect.toNearestInt(), juce::Justification::centred);
         } else if (step.glide) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.7f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
             g.setColour(DarkTheme::getTextColour());
             g.drawText("~", rect.toNearestInt(), juce::Justification::centred);
@@ -597,7 +597,7 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
         int midiNote = keyboardBaseNote_ + note;
         bool isSelected = (midiNote == selectedNote);
 
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.4f)
+        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.4f)
                                : juce::Colours::white.withAlpha(0.85f));
         g.fillRoundedRectangle(keyRect, 1.0f);
 
@@ -629,7 +629,7 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
         int midiNote = keyboardBaseNote_ + note;
         bool isSelected = (midiNote == selectedNote);
 
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.6f)
+        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f)
                                : juce::Colours::black.withAlpha(0.85f));
         g.fillRoundedRectangle(keyRect, 1.0f);
 

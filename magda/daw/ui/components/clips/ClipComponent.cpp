@@ -809,7 +809,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         // The chord blocks (glassy card + spine) take the chord track's colour
         // live, so they stay correct after a track recolour (matches the
         // piano-roll grid notes for chord clips).
-        auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
         if (auto* chordTrack = magda::TrackManager::getInstance().getTrack(
                 magda::TrackManager::getInstance().getChordTrackId()))
             blockColour = chordTrack->colour;
@@ -1150,7 +1150,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     float half = hs * 0.5f;
     float waveTop = static_cast<float>(waveformArea.getY());
 
-    auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+    auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
     const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover
