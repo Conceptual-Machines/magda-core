@@ -1399,6 +1399,26 @@ void AIChatConsoleContent::lookAndFeelChanged() {
                         processing_ ? BinaryData::stop_svgSize : BinaryData::enter_svgSize);
     setThemedButtonIcon(clearButton_, BinaryData::delete_svg, BinaryData::delete_svgSize);
     setThemedButtonIcon(copyButton_, BinaryData::copycontent_svg, BinaryData::copycontent_svgSize);
+
+    // The chat/input editors and footer labels all capture a resolved
+    // juce::Colour at construction, so re-apply them here or they keep the old
+    // palette after a live theme change. updateConfigStatus() re-applies
+    // configStatusLabel_'s state colour.
+    chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    if (inputBox_ != nullptr) {
+        inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
+                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
+                             DarkTheme::getTextColour());
+        inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
+                             DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+    }
+    contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    analysisChip_.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+    updateConfigStatus();
+
     repaint();
 }
 
