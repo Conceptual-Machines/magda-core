@@ -89,6 +89,7 @@ void Config::save() {
     root->setProperty("uiScale", uiScale);
     root->setProperty("theme", toJuceString(theme));
     root->setProperty("uiFontScale", uiFontScale);
+    root->setProperty("uiFontFamily", toJuceString(uiFontFamily));
     root->setProperty("localizedUIFontScale", localizedUIFontScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("duplicateLoopGrows", duplicateLoopGrows);
@@ -416,6 +417,7 @@ void Config::load() {
     uiScale = getDouble("uiScale", uiScale);
     setTheme(getString("theme", theme));
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
+    setUIFontFamily(getString("uiFontFamily", uiFontFamily));
     localizedUIFontScaleExplicit = obj->hasProperty("localizedUIFontScale");
     if (localizedUIFontScaleExplicit)
         setLocalizedUIFontScale(getDouble("localizedUIFontScale", localizedUIFontScale));
