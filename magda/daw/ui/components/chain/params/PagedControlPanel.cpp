@@ -28,7 +28,7 @@ PagedControlPanel::PagedControlPanel(int itemsPerPage) : itemsPerPage_(itemsPerP
     addPageButton_.setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     addPageButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                             DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     addPageButton_.onClick = [this]() {
         onAddPage();
         if (onAddPageRequested) {

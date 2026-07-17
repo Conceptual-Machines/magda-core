@@ -451,7 +451,7 @@ void ChordClipContent::paintOverChildren(juce::Graphics& g) {
         return;
 
     const juce::Rectangle<int> ghost(x1 + 1, chordRowTop() + 2, x2 - x1 - 2, chordRowHeight() - 4);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.22f));
     g.fillRoundedRectangle(ghost.toFloat(), 4.0f);
     g.setColour(accent.withAlpha(0.7f));

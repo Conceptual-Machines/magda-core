@@ -366,9 +366,9 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     fill.lineTo(plotArea_.getRight(), dbToY(0.0f, plotArea_));
     fill.lineTo(plotArea_.getX(), dbToY(0.0f, plotArea_));
     fill.closeSubPath();
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.18f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.18f));
     g.fillPath(fill);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
     g.strokePath(curve, juce::PathStrokeType(1.5f));
 
     // Per-band dot. Position uses band's centre freq and (for shelf/bell)
@@ -396,11 +396,11 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         // Halo on the active band so the user has a clear "I'm grabbing
         // this one" cue while dragging.
         if (isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.25f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.25f));
             g.fillEllipse(dotX - 9.0f, dotY - 9.0f, 18.0f, 18.0f);
         }
         const float dotRadius = isActive ? 4.5f : 3.5f;
-        const auto dotColour = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+        const auto dotColour = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
         if (bandEnabled) {
             g.setColour(dotColour.withAlpha(0.95f));
             g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
@@ -745,7 +745,7 @@ void CompiledEqCurveView::drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle
     const auto postPath = buildPath(postSpectrumDb_);
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.16f));
     g.strokePath(prePath, juce::PathStrokeType(1.0f));
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.32f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.32f));
     g.strokePath(postPath, juce::PathStrokeType(1.1f));
 }
 

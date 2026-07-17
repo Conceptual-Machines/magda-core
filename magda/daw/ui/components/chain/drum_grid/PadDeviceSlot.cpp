@@ -40,7 +40,7 @@ PadDeviceSlot::PadDeviceSlot() {
     addAndMakeVisible(nameLabel_);
 
     deleteButton_.setButtonText(juce::CharPointer_UTF8("\xc3\x97"));  // multiplication sign
-    auto deleteColour = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+    auto deleteColour = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
                             .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
                             .darker(0.2f);
     deleteButton_.setColour(juce::TextButton::buttonColourId, deleteColour);
@@ -60,7 +60,7 @@ PadDeviceSlot::PadDeviceSlot() {
     uiButton_->setClickingTogglesState(true);
     uiButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
     uiButton_->setActiveColor(juce::Colours::white);
-    uiButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    uiButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     addChildComponent(*uiButton_);
 
     // On/power button
@@ -70,7 +70,8 @@ PadDeviceSlot::PadDeviceSlot() {
     onButton_->setToggleState(true, juce::dontSendNotification);
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
-    onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    onButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(true);
     onButton_->onClick = [this]() {
         if (plugin_) {

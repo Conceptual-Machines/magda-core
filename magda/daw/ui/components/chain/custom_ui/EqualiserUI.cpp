@@ -414,7 +414,7 @@ void EqualiserUI::CurveDisplay::paint(juce::Graphics& g) {
         fillPath.closeSubPath();
 
         // Gradient fill under curve
-        auto accentColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        auto accentColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
         g.setGradientFill(juce::ColourGradient(accentColour.withAlpha(0.15f), 0.0f, 0.0f,
                                                accentColour.withAlpha(0.02f), 0.0f, h, false));
         g.fillPath(fillPath);

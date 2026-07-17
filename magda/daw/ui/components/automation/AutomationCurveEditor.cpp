@@ -60,7 +60,7 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
 void AutomationCurveEditor::refreshCurveColour() {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     const bool disabled = lane && isAutomationPersistentlyDisabled(lane->authorityState);
-    setCurveColour(disabled ? DarkTheme::TEXT_DISABLED : DarkTheme::ACCENT_PURPLE);
+    setCurveColour(disabled ? DarkTheme::TEXT_DISABLED : DarkTheme::ACCENT_MODULATION);
 }
 
 AutomationCurveEditor::~AutomationCurveEditor() {
@@ -376,12 +376,12 @@ void AutomationCurveEditor::showPointValueEditor(uint32_t pointId) {
                                 DarkTheme::getColour(DarkTheme::INPUT_BACKGROUND));
         valueEditor_->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
         valueEditor_->setColour(juce::TextEditor::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         valueEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         valueEditor_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
         valueEditor_->setColour(juce::TextEditor::highlightColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.4f));
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f));
         valueEditor_->onReturnKey = [this]() { commitPointValueEdit(); };
         valueEditor_->onEscapeKey = [this]() { hidePointValueEditor(); };
         valueEditor_->onFocusLost = [this]() { commitPointValueEdit(); };
@@ -497,7 +497,7 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
         return;
 
     const int y = yToPixel(*currentValue);
-    const auto overlayColour = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.65f);
+    const auto overlayColour = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.65f);
 
     g.setColour(overlayColour.withAlpha(0.12f));
     g.fillRect(content.withY(y - 2).withHeight(4));

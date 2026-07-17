@@ -1422,7 +1422,7 @@ class DrumGridClipGrid : public juce::Component,
         const int width =
             juce::jmax(4, static_cast<int>(getDefaultNoteLengthBeats() * pixelsPerBeat_));
         const int height = rowHeight_ - 2;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
         for (double beat : repeatStampBeats()) {
             const int x = beatToPixel(clipBeatToDisplayBeat(beat));
             g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y + 1),
@@ -1788,9 +1788,9 @@ class DrumGridRowLabels : public juce::Component {
         rowEditor_->setColour(juce::TextEditor::textColourId,
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         rowEditor_->setColour(juce::TextEditor::outlineColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         rowEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         juce::String seed;
         if (getRowLabel)
             seed = getRowLabel(noteNumber);
@@ -1843,7 +1843,7 @@ class DrumGridRowLabels : public juce::Component {
 
             // Live-input highlight for monitored notes currently held.
             if (pressedNotes_.count(padRow.noteNumber) != 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
                 g.fillRect(0, y, bounds.getWidth(), rowHeight_);
             }
 
@@ -1862,7 +1862,8 @@ class DrumGridRowLabels : public juce::Component {
                             static_cast<float>(textX),
                             static_cast<float>(y + (rowHeight_ - pillH) / 2),
                             static_cast<float>(pillW), static_cast<float>(pillH));
-                        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.85f));
+                        g.setColour(
+                            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.85f));
                         g.fillRoundedRectangle(pill, 3.0f);
                         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
                         g.drawText(shortTag, pill.toNearestInt(), juce::Justification::centred,
@@ -1886,7 +1887,7 @@ class DrumGridRowLabels : public juce::Component {
             bool isHovered = (hoverRow_ == i);
 
             if (isPlaying) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             } else if (isHovered) {
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.7f));
             } else {
@@ -2045,7 +2046,7 @@ class DrumGridLabelDivider : public juce::Component {
         // Idle: invisible (inherits the parent's bg). Hover/drag: subtle accent
         // so the user can see the hit zone they grabbed.
         if (isMouseOverOrDragging()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             g.fillRect(getLocalBounds());
         }
     }
@@ -2111,7 +2112,7 @@ DrumGridClipContent::DrumGridClipContent() {
                                                         BinaryData::master_off_svgSize);
     previewToggle_->setTooltip("Preview notes (click a note to hear it)");
     previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());

@@ -86,7 +86,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
         b.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
         b.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         b.setColour(juce::TextButton::buttonOnColourId,
-                    DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+                    DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
         b.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         b.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
         b.onClick = [this, &b, field, &freq]() {

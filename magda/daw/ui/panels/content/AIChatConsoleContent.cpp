@@ -249,7 +249,7 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
             return;
 
         if (rowIsSelected) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(0, 0, width, height);
         }
 
@@ -913,7 +913,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     inputBox_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
                          juce::Colours::transparentBlack);
     inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
     inputDocument_.addListener(this);
     addAndMakeVisible(*inputBox_);
@@ -967,7 +967,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     analysisChip_.setJustificationType(juce::Justification::centredLeft);
     analysisChip_.setFont(juce::Font(11.0f));
     analysisChip_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+                            DarkTheme::getColour(DarkTheme::ACCENT_INFO));
     analysisChip_.setInterceptsMouseClicks(false, false);
     addChildComponent(analysisChip_);
     magda::MixAnalysisService::getInstance().addListener(this);

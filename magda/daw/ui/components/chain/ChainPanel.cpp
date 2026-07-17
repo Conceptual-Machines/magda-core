@@ -168,11 +168,11 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         const bool appendHighlighted =
             owner_.dragInsertIndex_ == static_cast<int>(elementSlots_->size()) ||
             owner_.dropInsertIndex_ == static_cast<int>(elementSlots_->size());
-        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
                                 .withAlpha(appendHighlighted ? 0.18f : 0.07f);
         g.setColour(appendColour);
         g.fillRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
                         .withAlpha(appendHighlighted ? 0.75f : 0.28f));
         g.drawRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f, 1.0f);
 
@@ -181,7 +181,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             int indicatorIndex =
                 owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
             int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
 

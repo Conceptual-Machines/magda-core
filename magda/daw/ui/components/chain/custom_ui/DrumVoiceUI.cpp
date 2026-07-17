@@ -309,7 +309,7 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
         p.lineTo(xA + (xD - xA) * pn, bot - (bot - top) * e);
     }
 
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.18f));
     juce::Path fill = p;
     fill.lineTo(r.getX(), bot);

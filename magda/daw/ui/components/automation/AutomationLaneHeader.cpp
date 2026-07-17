@@ -70,7 +70,7 @@ class LaneHeaderButton : public juce::Button {
 class SnapIconLaneButton : public LaneHeaderButton {
   public:
     SnapIconLaneButton(const juce::String& name, const void* svgData, int svgSize)
-        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {
+        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {
         setClickingTogglesState(true);
         drawable_ = juce::Drawable::createFromImageData(svgData, svgSize);
     }
@@ -96,7 +96,7 @@ class DeleteLaneButton : public LaneHeaderButton {
   public:
     DeleteLaneButton()
         : LaneHeaderButton(
-              "Delete", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+              "Delete", DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
                             .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
                             .darker(0.2f)) {}
 
@@ -109,7 +109,7 @@ class DeleteLaneButton : public LaneHeaderButton {
         // destructive action without a loud fill.
         const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
         const auto accent =
-            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+            DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
                 .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f);
         juce::Colour bg = surface;
         if (isButtonDown)
@@ -138,7 +138,8 @@ class DeleteLaneButton : public LaneHeaderButton {
 // grey on SURFACE, On = white on cyan — same colour rules as snap toggles.
 class PowerGlyphButton : public LaneHeaderButton {
   public:
-    PowerGlyphButton() : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {
+    PowerGlyphButton()
+        : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {
         setClickingTogglesState(true);
     }
 
@@ -179,7 +180,8 @@ class PowerGlyphButton : public LaneHeaderButton {
 // (undoable ConvertAutomationLaneTypeCommand).
 class LaneModeButton : public LaneHeaderButton {
   public:
-    LaneModeButton() : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {}
+    LaneModeButton()
+        : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {}
 
     // Not an on/off toggle — both modes are first-class states with their
     // own hue: clips = blue (the arrangement-object language), free-drawn
@@ -189,8 +191,8 @@ class LaneModeButton : public LaneHeaderButton {
         auto bounds = getLocalBounds().toFloat().reduced(0.5f);
         constexpr float corner = 3.0f;
         const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-        const auto accent = getToggleState() ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
-                                             : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+        const auto accent = getToggleState() ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+                                             : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
         juce::Colour bg = accent.interpolatedWith(surface, 0.62f);
         if (isButtonDown)
             bg = bg.darker(0.2f);

@@ -226,7 +226,7 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     const bool active = enabled && connected;
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.20f));
         g.fillRect(0, 0, width, height);
     }
 
@@ -239,7 +239,7 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     const int lineH = (height - 2 * pad) / 2;
 
     const int dotY = (height - dotSize) / 2;
-    g.setColour(active ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
+    g.setColour(active ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
                        : DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY), static_cast<float>(dotSize),
                   static_cast<float>(dotSize));
@@ -895,7 +895,7 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     const bool isActive = name == active && active.isNotEmpty();
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.20f));
         g.fillRect(0, 0, width, height);
     }
 
@@ -909,7 +909,7 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     const int nameW = juce::jmax(40, portOutX - textX - 8);
 
     if (isActive) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
         g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
                       static_cast<float>(dotSize), static_cast<float>(dotSize));
     } else {

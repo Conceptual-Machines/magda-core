@@ -262,8 +262,8 @@ void CompiledPhaserCurveView::paint(juce::Graphics& g) {
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
     }
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT);
-    const auto sweepColour = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT);
+    const auto sweepColour = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
     const float minX = freqToX(minHz_);
     const float maxX = freqToX(maxHz_);
     const float sweepLeft = std::min(minX, maxX);

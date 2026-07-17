@@ -44,7 +44,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
     amountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     amountLabel_.setColour(juce::Label::textColourId, juce::Colours::white);
     amountLabel_.setColour(juce::Label::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.95f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
     amountLabel_.setJustificationType(juce::Justification::centred);
     amountLabel_.setVisible(false);
     amountLabel_.setAlwaysOnTop(true);
@@ -468,8 +468,8 @@ void LinkableTextSlider::resized() {
 void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
     if (isInLinkMode_) {
         auto color = activeMod_.isValid()
-                         ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f)
-                         : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.15f);
+                         ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f)
+                         : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.15f);
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     }
@@ -589,7 +589,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
         int percent = static_cast<int>(initialAmount * 100);
         amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
         amountLabel_.setColour(juce::Label::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.95f));
+                               DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
 
         if (!amountLabel_.isOnDesktop()) {
             amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |
@@ -638,7 +638,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
         int percent = static_cast<int>(initialAmount * 100);
         amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
         amountLabel_.setColour(juce::Label::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.95f));
+                               DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.95f));
 
         if (!amountLabel_.isOnDesktop()) {
             amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |

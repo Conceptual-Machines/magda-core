@@ -104,9 +104,9 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     const auto hover = hasHoverColor_ ? resolveThemeColour(hoverColor, hoverColorRole_)
                                       : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
     const auto pressed = hasPressedColor_ ? resolveThemeColour(pressedColor, pressedColorRole_)
-                                          : DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+                                          : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     const auto activeColour = hasActiveColor_ ? resolveThemeColour(activeColor, activeColorRole_)
-                                              : DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+                                              : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     const auto normalBackground =
         resolveThemeColour(normalBackgroundColor, normalBackgroundColorRole_);
     const auto activeBackground =

@@ -165,7 +165,7 @@ class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         // Single subtle line, highlights on hover
-        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
                                 : DarkTheme::getColour(DarkTheme::SEPARATOR));
         int y = getHeight() / 2;
         g.fillRect(4, y, getWidth() - 8, 2);
@@ -565,7 +565,7 @@ void MixerView::ChannelStrip::setupControls() {
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
                                           DarkTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
@@ -2231,9 +2231,9 @@ void MixerView::paint(juce::Graphics& g) {
             // Highlight the specific strip being hovered
             auto* strip = orderedStrips_[dropTargetStripIndex_];
             auto stripBounds = getLocalArea(strip, strip->getLocalBounds());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
             g.fillRect(stripBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
             g.drawRect(stripBounds, 2);
         } else {
             // Hovering empty area — show "new track" indicator at right edge of channel area
@@ -2245,14 +2245,14 @@ void MixerView::paint(juce::Graphics& g) {
                 indicatorX = vpBounds.getX();
             auto indicatorBounds = juce::Rectangle<int>(indicatorX, vpBounds.getY(), indicatorWidth,
                                                         vpBounds.getHeight());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.15f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.15f));
             g.fillRect(indicatorBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.4f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f));
             g.drawRect(indicatorBounds, 2);
 
             // Draw "+" icon
             auto centre = indicatorBounds.getCentre().toFloat();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.7f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
             g.drawLine(centre.getX() - 10, centre.getY(), centre.getX() + 10, centre.getY(), 2.0f);
             g.drawLine(centre.getX(), centre.getY() - 10, centre.getX(), centre.getY() + 10, 2.0f);
         }

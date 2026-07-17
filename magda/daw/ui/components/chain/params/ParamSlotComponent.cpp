@@ -66,7 +66,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     amountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     amountLabel_.setColour(juce::Label::textColourId, juce::Colours::white);
     amountLabel_.setColour(juce::Label::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.95f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
     amountLabel_.setJustificationType(juce::Justification::centred);
     amountLabel_.setVisible(false);
     amountLabel_.setAlwaysOnTop(true);
@@ -411,8 +411,8 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
         linkModeSlider_->setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 18);
     }
 
-    auto accentColor = activeMod_.isValid() ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
-                                            : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    auto accentColor = activeMod_.isValid() ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
+                                            : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
     linkModeSlider_->setColour(juce::Slider::thumbColourId, accentColor);
     linkModeSlider_->setColour(juce::Slider::trackColourId, accentColor.withAlpha(0.5f));
 
@@ -575,7 +575,7 @@ void ParamSlotComponent::lookAndFeelChanged() {
     if (boolToggle_) {
         boolToggle_->setColour(juce::ToggleButton::textColourId, primaryText);
         boolToggle_->setColour(juce::ToggleButton::tickColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     }
 
     if (momentaryButton_) {
@@ -624,12 +624,12 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     // Draw link mode / drag-over / selection highlight
     if (isInLinkMode_) {
         auto color = activeMod_.isValid()
-                         ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f)
-                         : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.15f);
+                         ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f)
+                         : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.15f);
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (isDragOver_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (selected_) {
         g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
@@ -792,8 +792,9 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
             int percent = static_cast<int>(initialAmount * 100);
             amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
-            amountLabel_.setColour(juce::Label::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.95f));
+            amountLabel_.setColour(
+                juce::Label::backgroundColourId,
+                DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
 
             if (!amountLabel_.isOnDesktop()) {
                 amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |
@@ -834,8 +835,9 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
             int percent = static_cast<int>(initialAmount * 100);
             amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
-            amountLabel_.setColour(juce::Label::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.95f));
+            amountLabel_.setColour(
+                juce::Label::backgroundColourId,
+                DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.95f));
 
             if (!amountLabel_.isOnDesktop()) {
                 amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |

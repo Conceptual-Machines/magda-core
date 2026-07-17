@@ -89,7 +89,7 @@ void Toast::paint(juce::Graphics& g) {
     g.setColour(bgColour);
     g.fillRoundedRectangle(bounds, 6.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT).withAlpha(0.6f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT).withAlpha(0.6f));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 }
 

@@ -38,8 +38,8 @@ class UserThemeTest final : public juce::UnitTest {
         expect(findColourRole("TEXT_PRIMARY") == ColourRole::TEXT_PRIMARY);
         expect(findColourRole("text-primary") == ColourRole::TEXT_PRIMARY);
         expect(findColourRole("Text Primary") == ColourRole::TEXT_PRIMARY);
-        expect(findColourRole("accent1") == ColourRole::ACCENT_BLUE);
-        expect(findColourRole("accent2") == ColourRole::ACCENT_ORANGE);
+        expect(findColourRole("accent1") == ColourRole::ACCENT_PRIMARY);
+        expect(findColourRole("accent2") == ColourRole::ACCENT_ATTENTION);
         expect(!findColourRole("accentBlue").has_value());  // hue names are gone
         expect(!findColourRole("noSuchRole").has_value());
         expect(!findColourRole("").has_value());
@@ -91,7 +91,7 @@ class UserThemeTest final : public juce::UnitTest {
             expect(loaded->base == "dark");
             // Overridden roles take the file's value.
             expect(loaded->palette[idx(ColourRole::BACKGROUND)] == 0xFF101014);
-            expect(loaded->palette[idx(ColourRole::ACCENT_BLUE)] == 0xFFFF6B35);
+            expect(loaded->palette[idx(ColourRole::ACCENT_PRIMARY)] == 0xFFFF6B35);
             // A role not mentioned inherits the base verbatim.
             expect(loaded->palette[idx(ColourRole::TEXT_SECONDARY)] ==
                    darkBase[idx(ColourRole::TEXT_SECONDARY)]);
@@ -118,7 +118,7 @@ class UserThemeTest final : public juce::UnitTest {
             expect(loaded.has_value());
             expect(loaded->base == "light");
             expect(loaded->name == loaded->id, "missing name falls back to file stem");
-            expect(loaded->palette[idx(ColourRole::ACCENT_BLUE)] == 0xFF123456);
+            expect(loaded->palette[idx(ColourRole::ACCENT_PRIMARY)] == 0xFF123456);
             expect(loaded->palette[idx(ColourRole::BACKGROUND)] ==
                    lightBase[idx(ColourRole::BACKGROUND)]);
             expect(loaded->syntaxPalette[idx(SyntaxColourRole::DSL_TOKEN_KEYWORD)] == 0xFF0055AA);

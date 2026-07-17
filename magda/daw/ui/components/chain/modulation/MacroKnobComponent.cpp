@@ -102,10 +102,10 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
     linkButton_ = std::make_unique<magda::SvgButton>("Link", BinaryData::link_flat_svg,
                                                      BinaryData::link_flat_svgSize);
     linkButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    linkButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    linkButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    linkButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    linkButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     linkButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.2f));
+        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.2f));
     linkButton_->onClick = [this]() { onLinkButtonClicked(); };
     addAndMakeVisible(*linkButton_);
 
@@ -236,7 +236,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 
     // Background - purple tint when in link mode, normal otherwise
     if (isInLinkMode) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.15f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.15f));
         g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.04f));
@@ -283,7 +283,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
     float arcRadius = knobDiameter / 2.0f - 3.0f;
     arcPath.addCentredArc(knobRect.getCentreX(), knobRect.getCentreY(), arcRadius, arcRadius, 0.0f,
                           startAngle, valueAngle, true);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     g.strokePath(arcPath, juce::PathStrokeType(2.0f));
 
     // Draw pointer line - JUCE angles: 0 at top, clockwise positive
@@ -314,7 +314,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
         else if (automapShadowed_)
             colour = DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
         else
-            colour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.9f);
+            colour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.9f);
         g.setColour(colour);
         g.fillEllipse(dot);
     }

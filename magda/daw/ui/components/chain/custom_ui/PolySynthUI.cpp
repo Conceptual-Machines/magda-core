@@ -103,7 +103,7 @@ PolySynthUI::PolySynthUI() {
     addAndMakeVisible(*filterGraph_);
 
     filterCurve_ = std::make_unique<CompiledFilterCurveView>("magda_polysynth");
-    filterCurve_->setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    filterCurve_->setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     addAndMakeVisible(*filterCurve_);
     pushFilterCurve();
 
@@ -120,7 +120,7 @@ PolySynthUI::PolySynthUI() {
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setConnectedEdges((t > 0 ? juce::Button::ConnectedOnLeft : 0) |
@@ -138,7 +138,7 @@ PolySynthUI::PolySynthUI() {
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setConnectedEdges(s == 0 ? juce::Button::ConnectedOnRight
@@ -157,7 +157,7 @@ PolySynthUI::PolySynthUI() {
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setConnectedEdges((v > 0 ? juce::Button::ConnectedOnLeft : 0) |
@@ -183,7 +183,7 @@ PolySynthUI::PolySynthUI() {
         en->setColour(juce::TextButton::buttonColourId,
                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         en->setColour(juce::TextButton::buttonOnColourId,
-                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                      DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         en->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         en->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         en->setTooltip("Enable / disable this oscillator");
@@ -197,7 +197,7 @@ PolySynthUI::PolySynthUI() {
         rst->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         rst->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         rst->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         rst->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         rst->setTooltip("Reset oscillator phase on note-on");

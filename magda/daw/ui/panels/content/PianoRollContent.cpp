@@ -69,7 +69,7 @@ PianoRollContent::PianoRollContent() {
                                                         BinaryData::master_off_svgSize);
     previewToggle_->setTooltip("Preview notes (click a note to hear it)");
     previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
@@ -1907,7 +1907,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     // The accent spine takes its colour from the chord track (the chord that
     // owns the spine always belongs to the chord track, whether shown on its
     // own lane or as an overlay on a MIDI track).
-    juce::Colour chordTrackColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    juce::Colour chordTrackColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     if (auto* chordTrackInfo = magda::TrackManager::getInstance().getTrack(
             magda::TrackManager::getInstance().getChordTrackId()))
         chordTrackColour = chordTrackInfo->colour;
@@ -1939,7 +1939,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
         const bool previewing =
             previewChordGroup() != 0 && annotation.chordGroup == previewChordGroup();
-        const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
 
         // The intended chord-track chord shown alongside this track's chord.
         // (Agreement/disagreement signalling is deferred — see follow-up issue.)

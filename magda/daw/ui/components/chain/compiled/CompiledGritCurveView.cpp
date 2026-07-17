@@ -138,7 +138,7 @@ void CompiledGritCurveView::paint(juce::Graphics& g) {
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
     }
 
-    const auto carrierColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto carrierColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     const float amount01 = juce::jlimit(0.0f, 1.0f, amount_);
     const float plotBottom = plot.getBottom();
     const float plotTop = plot.getY();

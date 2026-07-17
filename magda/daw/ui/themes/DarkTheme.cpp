@@ -36,12 +36,12 @@ constexpr DarkTheme::Palette darkPalette{
     0xFF666666,  // TEXT_DISABLED
 
     // Accents
-    0xFF5588AA,  // ACCENT_BLUE
-    0xFF88AACC,  // ACCENT_BLUE_LIGHT
-    0xFF66AAFF,  // ACCENT_CYAN
-    0xFF43C07A,  // ACCENT_GREEN
-    0xFFFF8822,  // ACCENT_ORANGE
-    0xFF7777DD,  // ACCENT_PURPLE
+    0xFF5588AA,  // ACCENT_PRIMARY
+    0xFF88AACC,  // ACCENT_PRIMARY_SOFT
+    0xFF66AAFF,  // ACCENT_INFO
+    0xFF43C07A,  // ACCENT_POSITIVE
+    0xFFFF8822,  // ACCENT_ATTENTION
+    0xFF7777DD,  // ACCENT_MODULATION
     0xFF5577CC,  // PRESET_INDIGO
     0xFFFF6B35,  // MIDI_LEARN
     0xFFCC3333,  // STEP_RECORD
@@ -248,12 +248,12 @@ constexpr DarkTheme::Palette lightPalette = [] {
 
     // Accents and status colours are deliberately deeper than Dark's so they
     // meet light-surface contrast without changing their semantic hue.
-    set(ColourRole::ACCENT_BLUE, 0xFF2E668C);
-    set(ColourRole::ACCENT_BLUE_LIGHT, 0xFF4E7897);
-    set(ColourRole::ACCENT_CYAN, 0xFF087B8C);
-    set(ColourRole::ACCENT_GREEN, 0xFF197A4B);
-    set(ColourRole::ACCENT_ORANGE, 0xFFC45A00);
-    set(ColourRole::ACCENT_PURPLE, 0xFF6250B5);
+    set(ColourRole::ACCENT_PRIMARY, 0xFF2E668C);
+    set(ColourRole::ACCENT_PRIMARY_SOFT, 0xFF4E7897);
+    set(ColourRole::ACCENT_INFO, 0xFF087B8C);
+    set(ColourRole::ACCENT_POSITIVE, 0xFF197A4B);
+    set(ColourRole::ACCENT_ATTENTION, 0xFFC45A00);
+    set(ColourRole::ACCENT_MODULATION, 0xFF6250B5);
     set(ColourRole::PRESET_INDIGO, 0xFF405EA8);
     set(ColourRole::MIDI_LEARN, 0xFFC94D1A);
     set(ColourRole::STEP_RECORD, 0xFFB82929);
@@ -439,10 +439,10 @@ constexpr DarkTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::TEXT_SECONDARY)] = 0xFFE0E0E0;
     palette[colourRoleIndex(ColourRole::TEXT_DIM)] = 0xFFB0B0B0;
     palette[colourRoleIndex(ColourRole::TEXT_DISABLED)] = 0xFF808080;
-    palette[colourRoleIndex(ColourRole::ACCENT_BLUE)] = 0xFF4DA3FF;
-    palette[colourRoleIndex(ColourRole::ACCENT_BLUE_LIGHT)] = 0xFF9DCCFF;
-    palette[colourRoleIndex(ColourRole::ACCENT_CYAN)] = 0xFF54C7FF;
-    palette[colourRoleIndex(ColourRole::ACCENT_GREEN)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::ACCENT_PRIMARY)] = 0xFF4DA3FF;
+    palette[colourRoleIndex(ColourRole::ACCENT_PRIMARY_SOFT)] = 0xFF9DCCFF;
+    palette[colourRoleIndex(ColourRole::ACCENT_INFO)] = 0xFF54C7FF;
+    palette[colourRoleIndex(ColourRole::ACCENT_POSITIVE)] = 0xFF54D68B;
     palette[colourRoleIndex(ColourRole::PRESET_INDIGO)] = 0xFF88B7FF;
     palette[colourRoleIndex(ColourRole::MIDI_LEARN)] = 0xFFFF9A73;
     palette[colourRoleIndex(ColourRole::STEP_RECORD)] = 0xFFFF6B6B;
@@ -686,12 +686,12 @@ void DarkTheme::applyToSvgIcon(juce::Drawable& drawable) {
     drawable.replaceColour(juce::Colour(0xFF1E1E1E), getColour(AUTOMATION_LANE_BACKGROUND));
     drawable.replaceColour(juce::Colour(0xFF444444), getColour(AUTOMATION_DIVIDER_LIGHT));
     drawable.replaceColour(juce::Colour(0xFF555555), getColour(BAR_LINE));
-    drawable.replaceColour(juce::Colour(0xFF5588AA), getColour(ACCENT_BLUE));
-    drawable.replaceColour(juce::Colour(0xFF7777DD), getColour(ACCENT_PURPLE));
+    drawable.replaceColour(juce::Colour(0xFF5588AA), getColour(ACCENT_PRIMARY));
+    drawable.replaceColour(juce::Colour(0xFF7777DD), getColour(ACCENT_MODULATION));
     drawable.replaceColour(juce::Colour(0xFFAA4444), getColour(STATUS_ERROR));
-    drawable.replaceColour(juce::Colour(0xFFFF8822), getColour(ACCENT_ORANGE));
-    drawable.replaceColour(juce::Colour(0xFF66AAFF), getColour(ACCENT_CYAN));
-    drawable.replaceColour(juce::Colour(0xFF88AACC), getColour(ACCENT_BLUE_LIGHT));
+    drawable.replaceColour(juce::Colour(0xFFFF8822), getColour(ACCENT_ATTENTION));
+    drawable.replaceColour(juce::Colour(0xFF66AAFF), getColour(ACCENT_INFO));
+    drawable.replaceColour(juce::Colour(0xFF88AACC), getColour(ACCENT_PRIMARY_SOFT));
     drawable.replaceColour(juce::Colour(0xFFE3E3E3), getColour(ICON_BRIGHT));
     drawable.replaceColour(juce::Colour(0xFFE6E6E6), getColour(ICON_POWER));
     drawable.replaceColour(juce::Colour(0xFF808080), getColour(ICON_SUBTLE));
@@ -729,7 +729,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
         getColour(TEXT_PRIMARY),      // defaultText
         getColour(BUTTON_NORMAL),     // defaultFill
         getColour(ICON_ON_ACCENT),    // highlightedText
-        getColour(ACCENT_BLUE),       // highlightedFill
+        getColour(ACCENT_PRIMARY),    // highlightedFill
         getColour(TEXT_PRIMARY),      // menuText
     });
 
@@ -743,7 +743,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     laf.setColour(juce::TextEditor::textColourId, getColour(TEXT_PRIMARY));
     laf.setColour(juce::TextEditor::backgroundColourId, getColour(SURFACE));
     laf.setColour(juce::TextEditor::outlineColourId, getColour(BORDER));
-    laf.setColour(juce::TextEditor::focusedOutlineColourId, getColour(ACCENT_BLUE));
+    laf.setColour(juce::TextEditor::focusedOutlineColourId, getColour(ACCENT_PRIMARY));
     laf.setColour(juce::CaretComponent::caretColourId, getColour(TEXT_PRIMARY));
 
     // Button colors
@@ -754,7 +754,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
 
     // Toggle button colors
     laf.setColour(juce::ToggleButton::textColourId, getColour(TEXT_PRIMARY));
-    laf.setColour(juce::ToggleButton::tickColourId, getColour(ACCENT_BLUE));
+    laf.setColour(juce::ToggleButton::tickColourId, getColour(ACCENT_PRIMARY));
     laf.setColour(juce::ToggleButton::tickDisabledColourId, getColour(TEXT_DISABLED));
 
     // Slider colors
@@ -789,7 +789,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     // TreeView colors
     laf.setColour(juce::TreeView::backgroundColourId, getColour(PANEL_BACKGROUND));
     laf.setColour(juce::TreeView::linesColourId, getColour(BORDER));
-    laf.setColour(juce::TreeView::dragAndDropIndicatorColourId, getColour(ACCENT_BLUE));
+    laf.setColour(juce::TreeView::dragAndDropIndicatorColourId, getColour(ACCENT_PRIMARY));
     laf.setColour(juce::TreeView::selectedItemBackgroundColourId, getColour(SURFACE_HOVER));
 
     // ListBox colors
@@ -813,7 +813,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     laf.setColour(juce::TabbedComponent::outlineColourId, getColour(BORDER));
     laf.setColour(juce::TabbedButtonBar::tabOutlineColourId, getColour(BORDER));
     laf.setColour(juce::TabbedButtonBar::tabTextColourId, getColour(TEXT_SECONDARY));
-    laf.setColour(juce::TabbedButtonBar::frontOutlineColourId, getColour(ACCENT_BLUE));
+    laf.setColour(juce::TabbedButtonBar::frontOutlineColourId, getColour(ACCENT_PRIMARY));
     laf.setColour(juce::TabbedButtonBar::frontTextColourId, getColour(TEXT_PRIMARY));
 
     // PropertyPanel colors

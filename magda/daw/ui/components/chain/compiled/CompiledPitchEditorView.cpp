@@ -96,7 +96,7 @@ void CompiledPitchEditorView::paint(juce::Graphics& g) {
 
     const float baselineY = plot.getCentreY() + 4.0f;
     const auto textColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
 
     // Ruler baseline.
     g.setColour(textColour.withAlpha(0.18f));

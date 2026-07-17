@@ -16,12 +16,12 @@ void ChordBlockComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
     // Background — accent blue at 20% alpha (matches piano roll chord row style)
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     g.fillRoundedRectangle(bounds, 3.0f);
 
     // Border on hover
     if (isMouseOver()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
     }
 

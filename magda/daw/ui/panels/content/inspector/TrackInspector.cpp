@@ -207,7 +207,7 @@ TrackInspector::TrackInspector() {
         std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
                                            DarkTheme::ICON_ON_ACCENT);
     soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
@@ -290,7 +290,8 @@ TrackInspector::TrackInspector() {
                                                        BinaryData::automation_svgSize);
     automationIndicator_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationIndicator_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationIndicator_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationIndicator_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     automationIndicator_->setStateColourReplacement(
         juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL, DarkTheme::TEXT_BRIGHT);
     automationIndicator_->setIconPadding(2.5f);
@@ -522,7 +523,7 @@ void TrackInspector::applyThemeColours() {
     trackNameValue_.setColour(juce::Label::textWhenEditingColourId, primary);
     trackNameValue_.setColour(juce::Label::backgroundWhenEditingColourId, surface);
     trackNameValue_.setColour(juce::Label::outlineWhenEditingColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
 
     for (auto& label : sendDestLabels_)
         label->setColour(juce::Label::textColourId, primary);

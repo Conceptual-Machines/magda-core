@@ -173,7 +173,7 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (!categories_ || row < 0 || row >= static_cast<int>(categories_->size()))
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
             g.setColour(rowIsSelected ? DarkTheme::getTextColour()
@@ -214,7 +214,7 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (row < 0 || row >= items_.size())
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
             g.setColour(DarkTheme::getTextColour());
@@ -695,7 +695,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipLoopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipLoopToggle_->setActiveColor(juce::Colours::white);
-    clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     clipLoopToggle_->setClickingTogglesState(false);
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipIds_.empty())

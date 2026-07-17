@@ -381,7 +381,7 @@ void MainView::setupComponents() {
         btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
         btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setWantsKeyboardFocus(false);
@@ -2501,7 +2501,7 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     // Crisp accent-blue edges at the selection's vertical boundaries, matching
     // the blue range strip in the ruler and keeping the selection distinct from
     // the near-white playhead.
-    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.9f);
+    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.9f);
     g.setColour(edgeColour);
     for (const auto& r : litRects) {
         g.fillRect(r.getX(), r.getY(), 1, r.getHeight());
@@ -2664,10 +2664,10 @@ void MainView::MasterHeaderPanel::setupControls() {
     automationButton->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     automationButton->setIconPadding(2.5f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
@@ -2686,7 +2686,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     hideButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
     hideButton->setNormalColor(juce::Colour(0xFFB3B3B3));
     hideButton->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    hideButton->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    hideButton->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     hideButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     hideButton->setBorderThickness(1.0f);
     hideButton->onClick = []() {
@@ -3060,7 +3060,7 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         row->soloButton->setColour(juce::TextButton::buttonColourId,
                                    DarkTheme::getColour(DarkTheme::SURFACE));
         row->soloButton->setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                                   DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         row->soloButton->setColour(juce::TextButton::textColourOffId,
                                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         row->soloButton->setColour(juce::TextButton::textColourOnId,

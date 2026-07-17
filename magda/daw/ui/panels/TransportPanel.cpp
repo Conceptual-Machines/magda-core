@@ -36,7 +36,7 @@ TransportPanel::TransportPanel() {
     // Automation write indicator label — purple text, visible only when write mode on
     automationWriteLabel = std::make_unique<juce::Label>("automationWrite", "AUTOMATION WRITE");
     automationWriteLabel->setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                                    DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     automationWriteLabel->setColour(juce::Label::backgroundColourId,
                                     juce::Colours::transparentBlack);
     automationWriteLabel->setFont(FontManager::getInstance().getUIFont(10.0f).boldened());
@@ -49,7 +49,7 @@ TransportPanel::TransportPanel() {
     overflowButton->setNormalColor(DarkTheme::getSecondaryTextColour());
     overflowButton->setActiveColor(juce::Colours::white);
     overflowButton->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.6f));
+        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.6f));
     overflowButton->onClick = [this]() { showOverflowMenu(); };
     addChildComponent(*overflowButton);
 }
@@ -100,7 +100,7 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
     labelArea.translate(1, -3);
 
     // When active, the button background fills with the purple from
-    // automation_on.svg — drawing the letter in ACCENT_PURPLE made it
+    // automation_on.svg — drawing the letter in ACCENT_MODULATION made it
     // invisible against that fill. Use white in the active state to match
     // the icon foreground.
     juce::Colour textColour = isAutomationWriteEnabled
@@ -147,29 +147,29 @@ void TransportPanel::paint(juce::Graphics& g) {
 
     if (selLoopTimesVisible_) {
         drawGroupWrapper(selectionStartLabel->getBounds().getUnion(selectionEndLabel->getBounds()),
-                         "SEL", DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                         "SEL", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         drawGroupWrapper(loopStartLabel->getBounds().getUnion(loopEndLabel->getBounds()), "LOOP",
-                         DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+                         DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
     }
     drawGroupWrapper(playheadPositionLabel->getBounds().getUnion(editCursorLabel->getBounds()),
-                     "CUR", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                     "CUR", DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     if (punchVisible_) {
         drawGroupWrapper(punchInButton->getBounds()
                              .getUnion(punchStartLabel->getBounds())
                              .getUnion(punchOutButton->getBounds())
                              .getUnion(punchEndLabel->getBounds()),
-                         "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                         "", DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     }
     drawGroupWrapper(tempoLabel->getBounds()
                          .getUnion(timeSigNumeratorLabel->getBounds())
                          .getUnion(timeSigDenominatorLabel->getBounds())
                          .getUnion(metronomeButton->getBounds()),
-                     "", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                     "", DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     if (gridVisible_) {
         drawGroupWrapper(gridDivisionButton->getBounds(), "",
-                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                         DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
         drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
-                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                         DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     }
 
     // CPU frame — rounded rectangle matching transport group wrapper style.
@@ -611,7 +611,7 @@ void TransportPanel::setupTransportButtons() {
     // Play button
     playButton =
         std::make_unique<SvgButton>("Play", BinaryData::play_svg, BinaryData::play_svgSize);
-    styleTransportButton(*playButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*playButton, DarkTheme::ACCENT_PRIMARY);
     playButton->onClick = [this]() {
         DBG("[TransportPanel] playButton->onClick: isPlaying was "
             << (int)isPlaying << ", toggling to " << (int)!isPlaying);
@@ -632,7 +632,7 @@ void TransportPanel::setupTransportButtons() {
     // Stop button
     stopButton =
         std::make_unique<SvgButton>("Stop", BinaryData::stop_svg, BinaryData::stop_svgSize);
-    styleTransportButton(*stopButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*stopButton, DarkTheme::ACCENT_PRIMARY);
     stopButton->onClick = [this]() {
         auto mousePos = juce::Desktop::getMousePosition();
         auto localPos = stopButton->getScreenBounds();
@@ -681,7 +681,7 @@ void TransportPanel::setupTransportButtons() {
     // lane headers and control tints.
     automationWriteButton = std::make_unique<SvgButton>(
         "Automation Write", BinaryData::automation_write_svg, BinaryData::automation_write_svgSize);
-    styleTransportButton(*automationWriteButton, DarkTheme::ACCENT_PURPLE);
+    styleTransportButton(*automationWriteButton, DarkTheme::ACCENT_MODULATION);
     automationWriteButton->setActive(false);
     automationWriteButton->onClick = [this]() {
         isAutomationWriteEnabled = !isAutomationWriteEnabled;
@@ -700,7 +700,7 @@ void TransportPanel::setupTransportButtons() {
     // Pause button
     pauseButton =
         std::make_unique<SvgButton>("Pause", BinaryData::pause_svg, BinaryData::pause_svgSize);
-    styleTransportButton(*pauseButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*pauseButton, DarkTheme::ACCENT_PRIMARY);
     pauseButton->onClick = [this]() {
         if (isPlaying) {
             isPaused = !isPaused;
@@ -715,7 +715,7 @@ void TransportPanel::setupTransportButtons() {
     // Home button
     homeButton =
         std::make_unique<SvgButton>("Home", BinaryData::rewind_svg, BinaryData::rewind_svgSize);
-    styleTransportButton(*homeButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*homeButton, DarkTheme::ACCENT_PRIMARY);
     homeButton->onClick = [this]() {
         if (onGoHome)
             onGoHome();
@@ -725,7 +725,7 @@ void TransportPanel::setupTransportButtons() {
     // Prev button
     prevButton =
         std::make_unique<SvgButton>("Prev", BinaryData::prev_svg, BinaryData::prev_svgSize);
-    styleTransportButton(*prevButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*prevButton, DarkTheme::ACCENT_PRIMARY);
     prevButton->onClick = [this]() {
         if (onGoToPrev)
             onGoToPrev();
@@ -735,7 +735,7 @@ void TransportPanel::setupTransportButtons() {
     // Next button
     nextButton =
         std::make_unique<SvgButton>("Next", BinaryData::next_svg, BinaryData::next_svgSize);
-    styleTransportButton(*nextButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*nextButton, DarkTheme::ACCENT_PRIMARY);
     nextButton->onClick = [this]() {
         if (onGoToNext)
             onGoToNext();
@@ -745,7 +745,7 @@ void TransportPanel::setupTransportButtons() {
     // Loop button
     loopButton =
         std::make_unique<SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
-    styleTransportButton(*loopButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*loopButton, DarkTheme::ACCENT_PRIMARY);
     loopButton->onClick = [this]() {
         isLooping = !isLooping;
         loopButton->setActive(isLooping);
@@ -757,7 +757,7 @@ void TransportPanel::setupTransportButtons() {
     // Back to Arrangement button
     backToArrangementButton = std::make_unique<SvgButton>(
         "BackToArrangement", BinaryData::resume_svg, BinaryData::resume_svgSize);
-    styleTransportButton(*backToArrangementButton, DarkTheme::ACCENT_ORANGE);
+    styleTransportButton(*backToArrangementButton, DarkTheme::ACCENT_ATTENTION);
     backToArrangementButton->onClick = [this]() {
         if (onBackToArrangement)
             onBackToArrangement();
@@ -767,7 +767,7 @@ void TransportPanel::setupTransportButtons() {
     // QWERTY MIDI keyboard toggle
     qwertyKeyboardButton = std::make_unique<SvgButton>(
         "QwertyKeyboard", BinaryData::midi_qwerty_svg, BinaryData::midi_qwerty_svgSize);
-    styleTransportButton(*qwertyKeyboardButton, DarkTheme::ACCENT_PURPLE);
+    styleTransportButton(*qwertyKeyboardButton, DarkTheme::ACCENT_MODULATION);
     qwertyKeyboardButton->onClick = [this]() {
         bool active = !qwertyKeyboardButton->isActive();
         qwertyKeyboardButton->setActive(active);
@@ -780,7 +780,7 @@ void TransportPanel::setupTransportButtons() {
     // Punch buttons use one geometry; their active purple is injected in code.
     punchInButton = std::make_unique<SvgButton>("PunchIn", BinaryData::punchin_svg,
                                                 BinaryData::punchin_svgSize);
-    styleTransportButton(*punchInButton, DarkTheme::ACCENT_PURPLE, true);
+    styleTransportButton(*punchInButton, DarkTheme::ACCENT_MODULATION, true);
     punchInButton->onClick = [this]() {
         isPunchInEnabled = !isPunchInEnabled;
         punchInButton->setActive(isPunchInEnabled);
@@ -793,7 +793,7 @@ void TransportPanel::setupTransportButtons() {
     // Punch Out is an independent toggle using the same code-coloured state.
     punchOutButton = std::make_unique<SvgButton>("PunchOut", BinaryData::punchout_svg,
                                                  BinaryData::punchout_svgSize);
-    styleTransportButton(*punchOutButton, DarkTheme::ACCENT_PURPLE, true);
+    styleTransportButton(*punchOutButton, DarkTheme::ACCENT_MODULATION, true);
     punchOutButton->onClick = [this]() {
         isPunchOutEnabled = !isPunchOutEnabled;
         punchOutButton->setActive(isPunchOutEnabled);
@@ -817,8 +817,8 @@ void TransportPanel::setupTimeDisplayBoxes() {
         addAndMakeVisible(*label);
     };
 
-    auto accentBlue = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-    auto accentOrange = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+    auto accentBlue = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    auto accentOrange = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
 
     // Selection start/end
     setupBBTLabel(selectionStartLabel, "S", accentBlue);
@@ -842,7 +842,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
         if (!isLooping) {
             isLooping = true;
             loopButton->setActive(true);
-            auto green = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+            auto green = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
             loopStartLabel->setTextColour(green);
             loopEndLabel->setTextColour(green);
             if (onLoop)
@@ -886,7 +886,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
     };
 
     // Punch start/end — stacked box in time display area
-    auto accentPurple = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    auto accentPurple = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
 
     setupBBTLabel(punchStartLabel, "I", accentPurple);
     punchStartLabel->onValueChange = [this]() {
@@ -918,7 +918,7 @@ void TransportPanel::setupTempoAndQuantize() {
     tempoLabel->setValue(currentTempo, juce::dontSendNotification);
     tempoLabel->setSuffix("");
     tempoLabel->setDecimalPlaces(2);
-    tempoLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    tempoLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     tempoLabel->setShowFillIndicator(false);
     tempoLabel->setFontSize(14.0f);
     tempoLabel->setDoubleClickResetsValue(false);
@@ -986,7 +986,7 @@ void TransportPanel::setupTempoAndQuantize() {
     autoGridButton->setColour(juce::TextButton::buttonColourId,
                               DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
     autoGridButton->setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+                              DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
     autoGridButton->setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     autoGridButton->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
@@ -1033,7 +1033,7 @@ void TransportPanel::setupTempoAndQuantize() {
         std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
     gridNumeratorLabel->setRange(1.0, 128.0, 1.0);
     gridNumeratorLabel->setValue(static_cast<double>(gridNumerator), juce::dontSendNotification);
-    gridNumeratorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridNumeratorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     gridNumeratorLabel->setShowFillIndicator(false);
     gridNumeratorLabel->setFontSize(12.0f);
     gridNumeratorLabel->setDoubleClickResetsValue(true);
@@ -1065,7 +1065,7 @@ void TransportPanel::setupTempoAndQuantize() {
     gridDenominatorLabel->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel->setValue(static_cast<double>(gridDenominator),
                                    juce::dontSendNotification);
-    gridDenominatorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridDenominatorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     gridDenominatorLabel->setShowFillIndicator(false);
     gridDenominatorLabel->setFontSize(12.0f);
     gridDenominatorLabel->setDoubleClickResetsValue(true);
@@ -1116,7 +1116,7 @@ void TransportPanel::setupTempoAndQuantize() {
     // Metronome button
     metronomeButton = std::make_unique<SvgButton>("Metronome", BinaryData::metronome_svg,
                                                   BinaryData::metronome_svgSize);
-    styleTransportButton(*metronomeButton, DarkTheme::ACCENT_BLUE);
+    styleTransportButton(*metronomeButton, DarkTheme::ACCENT_PRIMARY);
     metronomeButton->setIconPadding(2.0f);
     metronomeButton->setNormalColor(juce::Colour(0xFFBCBCBC));
     metronomeButton->onClick = [this]() {
@@ -1133,7 +1133,7 @@ void TransportPanel::setupTempoAndQuantize() {
     snapButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
     snapButton->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
     snapButton->setColour(juce::TextButton::textColourOffId,
                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     snapButton->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
@@ -1258,7 +1258,7 @@ void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEn
 
     // Grey out when no valid loop region, green when active
     bool hasValidLoop = loopEnabled && hasLoop;
-    auto colour = hasValidLoop ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
+    auto colour = hasValidLoop ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
                                : DarkTheme::getColour(DarkTheme::TEXT_DIM);
     loopStartLabel->setTextColour(colour);
     loopEndLabel->setTextColour(colour);
@@ -1416,7 +1416,7 @@ void TransportPanel::setAnyTrackInSessionMode(bool anyInSession) {
 }
 
 void TransportPanel::updatePunchLabelColors() {
-    auto activeColor = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    auto activeColor = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
     auto inactiveColor = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
 
     // Punch start label color matches punch in button state
@@ -1439,8 +1439,8 @@ void TransportPanel::applyThemedLabelColours() {
     if (overflowButton == nullptr)
         return;
 
-    const auto accentBlue = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-    const auto accentOrange = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+    const auto accentBlue = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto accentOrange = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
     const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
 
     // BPM readout.
@@ -1456,7 +1456,7 @@ void TransportPanel::applyThemedLabelColours() {
     // setLoopRegion), recomputed from cached loop state.
     const bool hasValidLoop =
         cachedLoopEnabled && cachedLoopEnd > cachedLoopStart && cachedLoopStart >= 0.0;
-    const auto loopColour = hasValidLoop ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
+    const auto loopColour = hasValidLoop ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
                                          : DarkTheme::getColour(DarkTheme::TEXT_DIM);
     loopStartLabel->setTextColour(loopColour);
     loopEndLabel->setTextColour(loopColour);
@@ -1467,7 +1467,7 @@ void TransportPanel::applyThemedLabelColours() {
     cpuTitleLabel->setColour(juce::Label::textColourId, secondary);
     cpuValueLabel->setColour(juce::Label::textColourId, secondary);
     automationWriteLabel->setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                                    DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
 
     overflowButton->setNormalColor(DarkTheme::getSecondaryTextColour());
     overflowButton->setActiveBackgroundColor(accentBlue.darker(0.6f));

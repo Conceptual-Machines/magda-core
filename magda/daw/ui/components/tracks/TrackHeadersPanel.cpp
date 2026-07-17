@@ -226,7 +226,7 @@ class SessionModeButton : public juce::Component {
             // draw time, matching the transport's SvgButton path.
             auto themedIcon = resumeDrawable_->createCopy();
             themedIcon->replaceColour(juce::Colour(0xFF1A1A1A),
-                                      DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                                      DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
             themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
                                       DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
             DarkTheme::applyToSvgIcon(*themedIcon);
@@ -265,11 +265,11 @@ class TrackNameLabel : public juce::Label {
         editor->setColour(juce::TextEditor::outlineColourId,
                           DarkTheme::getColour(DarkTheme::BORDER));
         editor->setColour(juce::TextEditor::focusedOutlineColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         editor->setColour(juce::CaretComponent::caretColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         editor->setColour(juce::TextEditor::highlightColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         editor->setColour(juce::TextEditor::highlightedTextColourId,
                           DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
         return editor;
@@ -293,7 +293,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
     nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     nameLabel->setFont(FontManager::getInstance().getUIFontBold(12.0f));
 
     // Track mute: speaker toggle (matching the master/inspector speaker instead
@@ -321,7 +321,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
                                           DarkTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
@@ -356,10 +356,10 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     automationButton->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
                                                 DarkTheme::TEXT_BRIGHT);
     automationButton->setIconPadding(2.5f);
@@ -1360,7 +1360,7 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
         trackHeaders[i]->nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
                                               DarkTheme::getColour(DarkTheme::SURFACE));
         trackHeaders[i]->nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
-                                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         static_cast<MidiActivityIndicator*>(trackHeaders[i]->midiIndicator.get())
             ->setOnSelectedHeader(sel);
     }
@@ -3408,7 +3408,7 @@ void TrackHeadersPanel::paintDragFeedback(juce::Graphics& g) {
         return;
 
     // Draw semi-transparent overlay on all dragged tracks
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     bool isMultiDrag =
         selectedTrackIndices_.size() > 1 && selectedTrackIndices_.count(draggedTrackIndex_) > 0;
     if (isMultiDrag) {
@@ -3440,7 +3440,7 @@ void TrackHeadersPanel::paintDropIndicatorLine(juce::Graphics& g) {
     }
 
     // Draw cyan line with arrow indicators
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
 
     // Main line
     g.fillRect(0, indicatorY - 2, getWidth(), 4);
@@ -3464,11 +3464,11 @@ void TrackHeadersPanel::paintDropTargetGroupHighlight(juce::Graphics& g) {
     auto targetArea = getTrackHeaderArea(dropTargetIndex_);
 
     // Draw orange border around the group
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     g.drawRect(targetArea, 3);
 
     // Draw subtle fill
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
     g.fillRect(targetArea);
 }
 

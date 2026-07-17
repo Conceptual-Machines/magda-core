@@ -101,12 +101,12 @@ enum class ColourRole : std::size_t {
     TEXT_SECONDARY,
     TEXT_DIM,
     TEXT_DISABLED,
-    ACCENT_BLUE,
-    ACCENT_BLUE_LIGHT,
-    ACCENT_CYAN,
-    ACCENT_GREEN,
-    ACCENT_ORANGE,
-    ACCENT_PURPLE,
+    ACCENT_PRIMARY,
+    ACCENT_PRIMARY_SOFT,
+    ACCENT_INFO,
+    ACCENT_POSITIVE,
+    ACCENT_ATTENTION,
+    ACCENT_MODULATION,
     PRESET_INDIGO,
     MIDI_LEARN,
     STEP_RECORD,
@@ -305,12 +305,12 @@ class DarkTheme {
     // ==========================================================================
     // Accent colors
     // ==========================================================================
-    static constexpr auto ACCENT_BLUE = ColourRole::ACCENT_BLUE;
-    static constexpr auto ACCENT_BLUE_LIGHT = ColourRole::ACCENT_BLUE_LIGHT;
-    static constexpr auto ACCENT_CYAN = ColourRole::ACCENT_CYAN;
-    static constexpr auto ACCENT_GREEN = ColourRole::ACCENT_GREEN;
-    static constexpr auto ACCENT_ORANGE = ColourRole::ACCENT_ORANGE;
-    static constexpr auto ACCENT_PURPLE = ColourRole::ACCENT_PURPLE;
+    static constexpr auto ACCENT_PRIMARY = ColourRole::ACCENT_PRIMARY;
+    static constexpr auto ACCENT_PRIMARY_SOFT = ColourRole::ACCENT_PRIMARY_SOFT;
+    static constexpr auto ACCENT_INFO = ColourRole::ACCENT_INFO;
+    static constexpr auto ACCENT_POSITIVE = ColourRole::ACCENT_POSITIVE;
+    static constexpr auto ACCENT_ATTENTION = ColourRole::ACCENT_ATTENTION;
+    static constexpr auto ACCENT_MODULATION = ColourRole::ACCENT_MODULATION;
     static constexpr auto PRESET_INDIGO = ColourRole::PRESET_INDIGO;
     static constexpr auto MIDI_LEARN = ColourRole::MIDI_LEARN;
     static constexpr auto STEP_RECORD = ColourRole::STEP_RECORD;
@@ -516,7 +516,7 @@ class DarkTheme {
         return getColour(TEXT_SECONDARY);
     }
     static juce::Colour getAccentColour() {
-        return getColour(ACCENT_BLUE);
+        return getColour(ACCENT_PRIMARY);
     }
     static juce::Colour getBorderColour() {
         return getColour(BORDER);

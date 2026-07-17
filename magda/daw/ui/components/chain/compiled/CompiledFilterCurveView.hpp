@@ -35,7 +35,7 @@ class CompiledFilterCurveView final : public juce::Component,
     void setRawState(int engine, int modeIndex, float cutoffHz, float resonance01, float drive01,
                      bool doubleSlope = false);
 
-    /// Override the curve/fill accent (defaults to ACCENT_GREEN). Lets a host
+    /// Override the curve/fill accent (defaults to ACCENT_POSITIVE). Lets a host
     /// match the curve to its own theme (e.g. the poly synth's blue envelopes).
     void setCurveColour(juce::Colour colour) {
         curveColour_ = colour;

@@ -29,7 +29,7 @@ class ChainTreeItemBase : public juce::TreeViewItem {
 
         // Highlight if selected
         if (isSelected()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(bounds);
         }
 
@@ -181,7 +181,7 @@ class RackTreeItem : public ChainTreeItemBase {
 
   protected:
     juce::Colour getItemColour() const override {
-        return DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        return DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     }
 };
 

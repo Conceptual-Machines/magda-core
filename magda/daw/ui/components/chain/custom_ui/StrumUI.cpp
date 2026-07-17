@@ -42,7 +42,7 @@ void StrumUI::OnsetStrip::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
     g.drawLine(inner.getX(), inner.getBottom(), inner.getRight(), inner.getBottom(), 1.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.7f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
     for (float u : onsets_) {
         float tx = inner.getX() + juce::jlimit(0.0f, 1.0f, u) * inner.getWidth();
         g.drawLine(tx, inner.getY(), tx, inner.getBottom(), 1.5f);

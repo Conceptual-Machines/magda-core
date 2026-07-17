@@ -70,7 +70,7 @@ void setupToggle(juce::Component& owner, juce::ToggleButton& toggle, const juce:
     toggle.setColour(juce::ToggleButton::textColourId,
                      magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
     toggle.setColour(juce::ToggleButton::tickColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE));
+                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_PRIMARY));
     toggle.setColour(juce::ToggleButton::tickDisabledColourId,
                      magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DIM));
     owner.addAndMakeVisible(toggle);
@@ -2711,7 +2711,7 @@ class ShortcutsPage : public juce::Component {
 
             row->invert.setButtonText({});
             row->invert.setColour(juce::ToggleButton::tickColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             row->invert.setColour(juce::ToggleButton::tickDisabledColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
 

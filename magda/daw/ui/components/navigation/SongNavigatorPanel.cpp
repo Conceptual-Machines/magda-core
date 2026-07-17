@@ -222,7 +222,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     if (controller_) {
         const double playBeats = controller_->getState().playhead.playbackPositionBeats;
         const int px = beatToX(playBeats);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.9f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.9f));
         g.drawVerticalLine(px, static_cast<float>(kRulerHeight), static_cast<float>(getHeight()));
     }
 
@@ -230,9 +230,9 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     // project is empty - a big selection rectangle over a blank strip is noise.
     if (hasContent) {
         const auto box = getViewportBox();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.15f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.15f));
         g.fillRect(box);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.9f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.9f));
         g.drawRect(box, 1.5f);
     }
 

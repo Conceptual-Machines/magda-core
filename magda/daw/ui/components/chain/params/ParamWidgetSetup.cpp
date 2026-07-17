@@ -95,7 +95,7 @@ void configureBoolToggle(juce::ToggleButton& toggle, const magda::ParameterInfo&
                          std::function<void(double)> onValueChanged) {
     toggle.setColour(juce::ToggleButton::textColourId, DarkTheme::getTextColour());
     toggle.setColour(juce::ToggleButton::tickColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     toggle.onClick = [&toggle, cb = std::move(onValueChanged)]() {
         if (cb) {
             cb(toggle.getToggleState() ? 1.0 : 0.0);

@@ -50,7 +50,8 @@ class RuntimeThemeTest final : public juce::UnitTest {
 
         expect(magda::DarkTheme::getBackgroundColour().getARGB() == 0xFFF2F2F2);
         expect(magda::DarkTheme::getTextColour().getARGB() == 0xFF121212);
-        expect(magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE).getARGB() == 0xFF5588AA);
+        expect(magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_PRIMARY).getARGB() ==
+               0xFF5588AA);
 
         beginTest("Built-in themes can switch at runtime");
         expect(magda::ThemeManager::isBuiltInTheme(magda::ThemeManager::kDarkThemeId));
@@ -219,7 +220,7 @@ class RuntimeThemeTest final : public juce::UnitTest {
         statefulButton.setIconPadding(0.0f);
         statefulButton.setStateColourReplacement(juce::Colour(0xFF1A1A1A),
                                                  magda::DarkTheme::PIANO_ROLL_BACKGROUND,
-                                                 magda::DarkTheme::ACCENT_BLUE);
+                                                 magda::DarkTheme::ACCENT_PRIMARY);
         statefulButton.setStateColourReplacement(juce::Colour(0xFFBCBCBC),
                                                  magda::DarkTheme::ICON_TRANSPORT,
                                                  magda::DarkTheme::TEXT_BRIGHT);
@@ -247,7 +248,7 @@ class RuntimeThemeTest final : public juce::UnitTest {
             0xFFF2F2F2;
         lightLikePalette[static_cast<std::size_t>(magda::DarkTheme::ICON_TRANSPORT)] = 0xFF303030;
         lightLikePalette[static_cast<std::size_t>(magda::DarkTheme::ICON_ON_ACCENT)] = 0xFF202020;
-        lightLikePalette[static_cast<std::size_t>(magda::DarkTheme::ACCENT_BLUE)] = 0xFF1769CC;
+        lightLikePalette[static_cast<std::size_t>(magda::DarkTheme::ACCENT_PRIMARY)] = 0xFF1769CC;
         lightLikePalette[static_cast<std::size_t>(magda::DarkTheme::TEXT_BRIGHT)] = 0xFF101010;
         magda::DarkTheme::setActivePalette(lightLikePalette);
 

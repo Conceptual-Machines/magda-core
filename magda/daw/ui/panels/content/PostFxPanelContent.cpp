@@ -31,10 +31,10 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
         const bool appendHi = owner_.dragInsertIndex_ == static_cast<int>(owner_.slots_.size()) ||
                               owner_.dropInsertIndex_ == static_cast<int>(owner_.slots_.size());
         g.setColour(
-            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(appendHi ? 0.18f : 0.06f));
+            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(appendHi ? 0.18f : 0.06f));
         g.fillRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f);
         g.setColour(
-            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(appendHi ? 0.75f : 0.24f));
+            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(appendHi ? 0.75f : 0.24f));
         g.drawRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f, 1.0f);
 
         // "POST-FX" watermark as upright stacked letters, sitting above the "+"
@@ -70,7 +70,7 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
             owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
         if (insertIndex >= 0) {
             const int x = owner_.indicatorX(insertIndex);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             g.fillRect(x - 1, 2, 2, getHeight() - 4);
         }
     }
@@ -144,7 +144,7 @@ PostFxPanelContent::PostFxPanelContent() {
 
     addButton_.setButtonText("+");
     addButton_.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.24f));
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.24f));
     addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
     addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addButton_.onClick = [this]() { showAddDeviceMenu(); };

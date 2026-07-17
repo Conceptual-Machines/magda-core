@@ -108,7 +108,7 @@ class GridDivisionButton final : public juce::Button {
 
         const auto drawFraction = [&](juce::Rectangle<int> area) {
             const auto numberColour =
-                DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withMultipliedAlpha(alpha);
+                DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withMultipliedAlpha(alpha);
             const auto slashColour = DarkTheme::getSecondaryTextColour().withMultipliedAlpha(alpha);
             const int numWidth =
                 static_cast<int>(std::ceil(g.getCurrentFont().getStringWidthFloat(numeratorText)));
@@ -135,7 +135,8 @@ class GridDivisionButton final : public juce::Button {
         } else {
             auto top = getLocalBounds().reduced(2);
             auto bottom = top.removeFromBottom(top.getHeight() / 2);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withMultipliedAlpha(alpha));
+            g.setColour(
+                DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withMultipliedAlpha(alpha));
             g.drawText(numeratorText, top, juce::Justification::centred, false);
             g.setColour(DarkTheme::getSecondaryTextColour().withMultipliedAlpha(alpha));
             g.drawText(denominatorText, bottom, juce::Justification::centred, false);
@@ -160,7 +161,7 @@ class GridDivisionCustomEditor final : public juce::Component {
             control->setJustification(juce::Justification::centred);
             control->setFont(FontManager::getInstance().getUIFont(12.0f));
             control->setColour(juce::TextEditor::textColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                               DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
             control->setColour(juce::TextEditor::backgroundColourId,
                                DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
             control->setColour(juce::TextEditor::outlineColourId,

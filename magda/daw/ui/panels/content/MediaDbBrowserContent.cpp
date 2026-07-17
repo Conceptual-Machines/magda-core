@@ -159,16 +159,16 @@ juce::Image makePresetDragImage(const juce::StringArray& names) {
             .reduced(0.5F);
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(bounds, 6.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(bounds, 6.0F, 1.5F);
 
     // Two offset squares read as a stacked "preset".
     const float gy = static_cast<float>(height) * 0.5F;
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.fillRoundedRectangle(8.0F, gy - 6.0F, 8.0F, 8.0F, 2.0F);
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F, 1.0F);
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -554,7 +554,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 break;
             }
             case kColFamily:
-                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
                          true);
                 break;
             case kColShape:

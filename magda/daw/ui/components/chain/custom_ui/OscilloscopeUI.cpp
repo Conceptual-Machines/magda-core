@@ -93,7 +93,7 @@ OscilloscopeUI::OscilloscopeUI() {
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
     daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
-                                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
 

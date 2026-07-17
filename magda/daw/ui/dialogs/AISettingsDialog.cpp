@@ -931,7 +931,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         faustMcpToggle_.setColour(juce::ToggleButton::textColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         faustMcpToggle_.setColour(juce::ToggleButton::tickColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         addAndMakeVisible(faustMcpToggle_);
 
         faustMcpHint_.setText("Validates AI-generated Faust code before loading (requires npx)",
@@ -1381,7 +1381,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         progressBar_.setColour(juce::ProgressBar::backgroundColourId,
                                DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
         progressBar_.setColour(juce::ProgressBar::foregroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         progressBar_.setPercentageDisplay(false);
         progressBar_.setVisible(false);
         addAndMakeVisible(progressBar_);
