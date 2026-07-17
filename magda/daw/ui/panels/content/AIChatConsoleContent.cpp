@@ -23,6 +23,7 @@
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
+#include "../../../../agents/theme_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
 #include "../../../audio/analysis/OfflineMixAnalysis.hpp"
 #include "../../../core/AppPaths.hpp"
@@ -46,6 +47,7 @@
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
+#include "../../themes/ThemePrompt.hpp"
 #include "BinaryData.h"
 #include "PluginBrowserContent.hpp"
 #include "audio/AudioBridge.hpp"
@@ -1156,6 +1158,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     automationAgent_ = std::make_unique<magda::AutomationAgent>(*magdaApi_);
     controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();
     fourOscAgent_ = std::make_unique<magda::FourOscAgent>();
+    themeAgent_ = std::make_unique<magda::ThemeAgent>();
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
@@ -1187,6 +1190,8 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         automationAgent_->requestCancel();
     if (controllerAgent_)
         controllerAgent_->requestCancel();
+    if (themeAgent_)
+        themeAgent_->requestCancel();
 
     // Stop the background thread with a timeout
     if (requestThread_) {
@@ -1201,6 +1206,13 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         if (!controllerThread_->stopThread(5000))
             DBG("AIChatConsole: Warning - controller thread did not stop within timeout");
         controllerThread_.reset();
+    }
+
+    if (themeThread_) {
+        themeThread_->signalThreadShouldExit();
+        if (!themeThread_->stopThread(5000))
+            DBG("AIChatConsole: Warning - theme thread did not stop within timeout");
+        themeThread_.reset();
     }
 }
 
@@ -2551,6 +2563,41 @@ void AIChatConsoleContent::buildSlashCommands() {
     };
     slashRegistry_->add(std::move(design));
 
+    // /theme — generate a UI colour theme. The handler kicks the agent
+    // thread; on success the theme is written to the Themes folder, selected,
+    // and rendered live via the existing apply + hot-reload path.
+    SlashCommand theme;
+    theme.name = "theme";
+    theme.description = "Design a UI colour theme from a description";
+    theme.usage = "/theme <description>";
+    theme.details =
+        "Generate a custom colour theme from a natural-language description and apply it "
+        "immediately.\n"
+        "The theme is saved as an editable JSON file in Documents/MAGDA/Themes and stays "
+        "selected; edit the file to tweak it live, or switch back under Preferences > "
+        "Appearance.";
+    theme.examples = {
+        {"Mood",
+         {"warm sunset, dark", "cold arctic blue", "forest green dark theme",
+          "high-contrast light theme", "muted pastel light theme"}},
+        {"Style",
+         {"retro amber terminal", "cyberpunk neon on black", "sepia paper light theme",
+          "monochrome slate"}},
+    };
+    theme.handler = [this](const juce::String& originalText,
+                           const std::map<juce::String, juce::String>& /*flags*/,
+                           const juce::String& positional) {
+        appendToChat(juce::String::charToString(0x25CF) + " " + originalText);
+        if (positional.isEmpty()) {
+            appendToChat(juce::String::charToString(0x25C6) +
+                         " Usage: /theme <description>  (run /theme --help for examples)");
+            return true;
+        }
+        startThemeGeneration(positional);
+        return true;
+    };
+    slashRegistry_->add(std::move(theme));
+
     // /controller — generate a hardware controller profile JSON.
     SlashCommand controller;
     controller.name = "controller";
@@ -2973,6 +3020,184 @@ void AIChatConsoleContent::startPresetGeneration(const juce::String& description
 
     fourOscThread_ = std::make_unique<FourOscRequestThread>(*this, description);
     fourOscThread_->startThread();
+}
+
+AIChatConsoleContent::ThemeRequestThread::ThemeRequestThread(AIChatConsoleContent& owner,
+                                                             juce::String description)
+    : juce::Thread("MAGDA-ThemeAgent"), owner_(owner), description_(std::move(description)) {}
+
+void AIChatConsoleContent::ThemeRequestThread::run() {
+    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
+
+    if (threadShouldExit() || !owner_.themeAgent_)
+        return;
+
+    // The themes layer owns the theme schema: it builds the prompt, the JSON
+    // schema for provider-side structured output, and later validates the
+    // result. The agent only does the LLM round-trip.
+    const auto systemPrompt = magda::buildThemeSystemPrompt().toStdString();
+    const auto schema = magda::buildThemeSchema();
+
+    // Stream the JSON into an anchored region. The first flush drops the
+    // "Designing theme..." placeholder and records the anchor; finishThemeGeneration
+    // collapses everything from the anchor onward into the summary. Tokens are
+    // coalesced so a fast stream doesn't bury the message queue.
+    auto anchor = std::make_shared<std::atomic<int>>(-1);
+
+    struct StreamBuf {
+        std::mutex mu;
+        juce::String pending;
+        std::atomic<bool> flushPending{false};
+    };
+    auto buf = std::make_shared<StreamBuf>();
+
+    auto onToken = [this, safeThis, anchor, buf](const juce::String& token) -> bool {
+        if (threadShouldExit())
+            return false;
+        {
+            std::lock_guard<std::mutex> lk(buf->mu);
+            buf->pending += token;
+        }
+        bool expected = false;
+        if (!buf->flushPending.compare_exchange_strong(expected, true))
+            return true;  // a flush is already queued; it will read the buffer
+        juce::MessageManager::callAsync([safeThis, anchor, buf]() {
+            buf->flushPending.store(false);
+            if (!safeThis)
+                return;
+            juce::String chunk;
+            {
+                std::lock_guard<std::mutex> lk(buf->mu);
+                chunk = std::move(buf->pending);
+                buf->pending.clear();
+            }
+            if (chunk.isEmpty())
+                return;
+            auto text = safeThis->chatHistory_.getText();
+            if (anchor->load() < 0) {
+                auto pos =
+                    text.lastIndexOf(juce::String::charToString(0x25C6) + " Designing theme");
+                if (pos >= 0) {
+                    auto lineEnd = text.indexOf(pos, "\n");
+                    if (lineEnd < 0)
+                        lineEnd = text.length();
+                    text = text.substring(0, pos) + text.substring(lineEnd + 1);
+                }
+                anchor->store(text.length());
+            }
+            safeThis->chatHistory_.setText(text + chunk);
+            safeThis->chatHistory_.moveCaretToEnd();
+        });
+        return true;
+    };
+
+    auto result = owner_.themeAgent_->generateStreaming(systemPrompt, description_.toStdString(),
+                                                        schema, onToken);
+    if (threadShouldExit())
+        return;
+
+    bool success = !result.hasError;
+    juce::String jsonOrError;
+    juce::String name;
+    juce::String base;
+    int colourCount = 0;
+
+    if (success) {
+        std::string validationError;
+        if (auto theme =
+                magda::validateGeneratedTheme(juce::String(result.text), validationError)) {
+            jsonOrError = juce::String(theme->json);
+            name = juce::String(theme->name);
+            base = juce::String(theme->base);
+            colourCount = theme->colourCount;
+        } else {
+            success = false;
+            jsonOrError = juce::String(validationError);
+        }
+    } else {
+        jsonOrError = juce::String(result.error);
+    }
+
+    // Read the anchor on the message thread (inside the callback), after the
+    // queued token flushes have run, so it reflects the streamed region.
+    juce::MessageManager::callAsync(
+        [safeThis, success, jsonOrError, name, base, colourCount, anchor]() {
+            if (!safeThis)
+                return;
+            safeThis->finishThemeGeneration(success, jsonOrError, name, base, colourCount,
+                                            anchor->load());
+        });
+}
+
+void AIChatConsoleContent::startThemeGeneration(const juce::String& description) {
+    if (themeThread_ && themeThread_->isThreadRunning()) {
+        if (themeAgent_)
+            themeAgent_->requestCancel();
+        themeThread_->signalThreadShouldExit();
+        themeThread_->stopThread(2000);
+        themeThread_.reset();
+    }
+    if (themeAgent_)
+        themeAgent_->resetCancel();
+
+    appendToChat(juce::String::charToString(0x25C6) + " Designing theme...");
+
+    themeThread_ = std::make_unique<ThemeRequestThread>(*this, description);
+    themeThread_->startThread();
+}
+
+void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::String& jsonOrError,
+                                                 juce::String name, juce::String base,
+                                                 int colourCount, int streamAnchor) {
+    // Collapse the streamed JSON (or, if nothing streamed, the "Designing
+    // theme..." placeholder) so only the final summary/error remains.
+    if (streamAnchor >= 0) {
+        auto text = chatHistory_.getText();
+        if (streamAnchor <= text.length())
+            chatHistory_.setText(text.substring(0, streamAnchor));
+    } else {
+        auto text = chatHistory_.getText();
+        auto pos = text.lastIndexOf(juce::String::charToString(0x25C6) + " Designing theme");
+        if (pos >= 0) {
+            auto lineEnd = text.indexOf(pos, "\n");
+            if (lineEnd < 0)
+                lineEnd = text.length();
+            chatHistory_.setText(text.substring(0, pos) + text.substring(lineEnd + 1));
+        }
+    }
+
+    if (!success) {
+        appendToChat(juce::String::charToString(0x25C6) + " Error: " + jsonOrError);
+        return;
+    }
+
+    auto dir = magda::paths::themesDir();
+    dir.createDirectory();
+
+    const juce::String safeName =
+        juce::File::createLegalFileName(name.isEmpty() ? juce::String("AI Theme") : name);
+    auto file = dir.getChildFile(safeName + ".json");
+    if (!file.replaceWithText(jsonOrError)) {
+        appendToChat(juce::String::charToString(0x25C6) + " Error: could not write theme file to " +
+                     file.getFullPathName());
+        return;
+    }
+
+    // Select the new theme. Config::save() notifies MainWindow, which swaps
+    // the palette and arms hot-reload. If this id was already the active theme
+    // the config guard skips re-apply, but the file rewrite is caught by the
+    // watcher instead - so the edit shows up either way.
+    auto& config = magda::Config::getInstance();
+    config.setTheme(file.getFileNameWithoutExtension().toStdString());
+    config.save();
+
+    juce::String body = juce::String::charToString(0x25C6) + " " +
+                        (name.isEmpty() ? juce::String("Theme") : name) + "\n";
+    body << "  " << juce::String(colourCount) << " colours over the " << base << " base\n";
+    body << "  saved to " << file.getFullPathName() << "\n";
+    body << "  applied - edit the file to tweak it live, or switch under "
+            "Preferences > Appearance";
+    appendToChat(body);
 }
 
 // Format a seconds value as a compact human-readable string ("5ms",

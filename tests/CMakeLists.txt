@@ -255,6 +255,7 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_lane_bridge_juce.cpp
     test_tempo_lane_sync_juce.cpp
     test_runtime_theme_juce.cpp
+    test_user_theme_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
@@ -329,6 +330,9 @@ add_test(NAME arrange_beat_native_juce
 
 add_test(NAME runtime_theme_juce
          COMMAND magda_juce_tests "Runtime Theme Tests")
+
+add_test(NAME user_theme_juce
+         COMMAND magda_juce_tests "User Theme Tests")
 
 add_test(NAME tempo_map_juce
          COMMAND magda_juce_tests "Tempo Map Tests")

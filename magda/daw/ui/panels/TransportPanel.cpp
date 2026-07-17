@@ -1428,6 +1428,53 @@ void TransportPanel::updatePunchLabelColors() {
     punchEndLabel->setAlpha(isPunchOutEnabled ? 1.0f : 0.5f);
 }
 
+void TransportPanel::lookAndFeelChanged() {
+    applyThemedLabelColours();
+}
+
+void TransportPanel::applyThemedLabelColours() {
+    // overflowButton is created last in the constructor, so its presence means
+    // every child below exists. Guards against a look-and-feel change arriving
+    // before construction finishes.
+    if (overflowButton == nullptr)
+        return;
+
+    const auto accentBlue = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto accentOrange = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
+    const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+
+    // BPM readout.
+    tempoLabel->setTextColour(accentOrange);
+
+    // Bars/beats "measures" readouts.
+    selectionStartLabel->setTextColour(accentBlue);
+    selectionEndLabel->setTextColour(accentBlue);
+    playheadPositionLabel->setTextColour(accentOrange);
+    editCursorLabel->setTextColour(accentOrange);
+
+    // Loop labels: green when a valid loop is active, dim otherwise (mirrors
+    // setLoopRegion), recomputed from cached loop state.
+    const bool hasValidLoop =
+        cachedLoopEnabled && cachedLoopEnd > cachedLoopStart && cachedLoopStart >= 0.0;
+    const auto loopColour = hasValidLoop ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
+                                         : DarkTheme::getColour(DarkTheme::TEXT_DIM);
+    loopStartLabel->setTextColour(loopColour);
+    loopEndLabel->setTextColour(loopColour);
+
+    // Punch labels track their arm state and the active palette.
+    updatePunchLabelColors();
+
+    cpuTitleLabel->setColour(juce::Label::textColourId, secondary);
+    cpuValueLabel->setColour(juce::Label::textColourId, secondary);
+    automationWriteLabel->setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+
+    overflowButton->setNormalColor(DarkTheme::getSecondaryTextColour());
+    overflowButton->setActiveBackgroundColor(accentBlue.darker(0.6f));
+
+    repaint();
+}
+
 void TransportPanel::setCpuUsage(float usage) {
     float clamped = juce::jlimit(0.0f, 1.0f, usage);
     // Exponential moving average for stable display

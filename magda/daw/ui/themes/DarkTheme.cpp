@@ -643,6 +643,22 @@ bool ThemeManager::isLightTheme() {
     return DarkTheme::getColour(DarkTheme::BACKGROUND).getPerceivedBrightness() >= 0.5f;
 }
 
+const DarkTheme::Palette& ThemeManager::builtInPalette(const std::string& themeId) {
+    if (themeId == kLightThemeId)
+        return lightPalette;
+    if (themeId == kHighContrastThemeId)
+        return highContrastPalette;
+    return darkPalette;
+}
+
+const DarkTheme::SyntaxPalette& ThemeManager::builtInSyntaxPalette(const std::string& themeId) {
+    if (themeId == kLightThemeId)
+        return lightSyntaxPalette;
+    if (themeId == kHighContrastThemeId)
+        return highContrastSyntaxPalette;
+    return darkSyntaxPalette;
+}
+
 std::optional<ColourRole> DarkTheme::findDarkPaletteRole(juce::Colour colour) {
     const auto rgb = colour.getARGB() & 0x00FFFFFFu;
     const auto findRole = [rgb](const Palette& palette) -> std::optional<ColourRole> {

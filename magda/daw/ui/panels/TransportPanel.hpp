@@ -31,6 +31,10 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     // button. Runs after children paint, so the glyph sits above the SVG.
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
+    // Re-pulls every child's themed text colour from the active palette on a
+    // runtime theme switch. The value labels cache a concrete Colour, so they
+    // need re-applying rather than repainting to pick up the new theme.
+    void lookAndFeelChanged() override;
 
     // Transport control callbacks
     std::function<void()> onPlay;
@@ -221,6 +225,9 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();
     void updatePunchLabelColors();
+    // Applies every themed text colour to the child value labels from the
+    // active palette. Shared by initial setup and runtime theme changes.
+    void applyThemedLabelColours();
 
     // State
     bool isPlaying = false;

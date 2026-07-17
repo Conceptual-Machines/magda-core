@@ -141,6 +141,15 @@ juce::File drumkitsDir() {
     return presetsDir().getChildFile("Drumkits");
 }
 
+// User-authored JSON themes. Anchored to the fixed Documents/MAGDA location
+// (not the overridable presets root) so a relocated preset library never
+// silently moves where themes are discovered.
+juce::File themesDir() {
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+        .getChildFile("MAGDA")
+        .getChildFile("Themes");
+}
+
 juce::File configFile() {
     return alwaysOSDefault().getChildFile("config.json");
 }
