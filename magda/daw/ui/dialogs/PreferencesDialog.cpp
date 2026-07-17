@@ -725,6 +725,12 @@ class AppearancePage : public juce::Component {
         };
         addAndMakeVisible(openThemesFolderButton);
 
+        // Layout density: spacing/padding multiplier applied on top of UI scale.
+        setupSectionHeader(*this, densityHeader, trOr("preferences.section.density", "Density"));
+        setupTextSlider(*this, densitySlider, densityLabel,
+                        trOr("preferences.density.label", "Spacing"), 60.0, 140.0, 5.0,
+                        magda::TechnicalTextToken::Percent);
+
         setupSectionHeader(*this, coloursHeader, tr("preferences.section.track_colour_palette"));
 
         colourHeaderLabel.setText(tr("preferences.colours.colour"), juce::dontSendNotification);
@@ -782,7 +788,9 @@ class AppearancePage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int colourRowH = 26;
 
-        return padding + headerH + 4 + 32 + 28 + 16 + headerH + 4 + 18 + 4 +
+        return padding + headerH + 4 + 32 + 28 + 16  // Theme
+               + headerH + 4 + 32 + 16               // Density
+               + headerH + 4 + 18 + 4 +              // Track colours (header + columns)
                ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 + 16 + headerH + 4 + 32 + padding;
     }
 
@@ -792,10 +800,11 @@ class AppearancePage : public juce::Component {
         const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
         const auto border = DarkTheme::getColour(DarkTheme::BORDER);
 
-        for (auto* label : {&themeHeader, &coloursHeader, &colourHeaderLabel, &hexHeaderLabel,
-                            &nameHeaderLabel, &clipColourHeader})
+        for (auto* label : {&themeHeader, &densityHeader, &coloursHeader, &colourHeaderLabel,
+                            &hexHeaderLabel, &nameHeaderLabel, &clipColourHeader})
             label->setColour(juce::Label::textColourId, secondary);
         themeLabel.setColour(juce::Label::textColourId, primary);
+        densityLabel.setColour(juce::Label::textColourId, primary);
         clipColourModeLabel.setColour(juce::Label::textColourId, primary);
 
         for (auto* combo : {&themeCombo, &clipColourModeCombo}) {
@@ -839,6 +848,21 @@ class AppearancePage : public juce::Component {
             loadThemeButton.setBounds(row.removeFromLeft(buttonW).reduced(0, 2));
             row.removeFromLeft(gap);
             openThemesFolderButton.setBounds(row.reduced(0, 2));
+        }
+        bounds.removeFromTop(16);
+
+        // Density
+        densityHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        {
+            constexpr int sliderW = 96;
+            constexpr int gap = 12;
+            constexpr int sliderH = 24;
+            auto row = bounds.removeFromTop(32);
+            auto sliderArea = row.removeFromRight(sliderW);
+            row.removeFromRight(gap);
+            densityLabel.setBounds(row);
+            densitySlider.setBounds(sliderArea.reduced(0, (32 - sliderH) / 2));
         }
         bounds.removeFromTop(16);
 
@@ -894,6 +918,8 @@ class AppearancePage : public juce::Component {
         rebuildThemeCombo();  // pick up any theme files added since construction
         themeCombo.setSelectedId(themeIdForValue(config.getTheme()), juce::dontSendNotification);
 
+        densitySlider.setValue(config.getUIDensityScale() * 100.0, juce::dontSendNotification);
+
         clearColourRows();
         const auto& palette = config.getTrackColourPalette();
         for (const auto& entry : palette)
@@ -905,6 +931,7 @@ class AppearancePage : public juce::Component {
 
     void applySettings(Config& config) {
         config.setTheme(themeValueForId(themeCombo.getSelectedId()));
+        config.setUIDensityScale(densitySlider.getValue() / 100.0);
 
         std::vector<Config::TrackColourEntry> palette;
         for (size_t i = 0; i < hexEditors_.size(); ++i) {
@@ -1153,6 +1180,12 @@ class AppearancePage : public juce::Component {
     juce::TextButton getTemplateButton;
     juce::TextButton loadThemeButton;
     juce::TextButton openThemesFolderButton;
+
+    // Layout density (spacing/padding multiplier)
+    juce::Label densityHeader;
+    juce::Label densityLabel;
+    magda::daw::ui::TextSlider densitySlider;
+
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::vector<ThemeFileEntry> userThemes_;
     juce::Label coloursHeader;

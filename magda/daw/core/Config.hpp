@@ -214,6 +214,17 @@ class Config {
         theme = themeId.empty() ? "dark" : std::move(themeId);
     }
 
+    // UI spacing density multiplier (1.0 = normal). Scales spacing/padding
+    // tokens only (not fonts or widget/track sizes), applied live via the
+    // ConfigListener broadcast. Independent from UI scale. Consumed by
+    // LayoutConfig / MixerMetrics::applyDensityScale() and densityScaled().
+    double getUIDensityScale() const {
+        return uiDensityScale;
+    }
+    void setUIDensityScale(double scale) {
+        uiDensityScale = std::clamp(scale, 0.6, 1.4);
+    }
+
     // Font size scale for MAGDA-owned UI fonts. This is independent from
     // Desktop UI scale, which changes both text and component geometry.
     double getUIFontScale() const {
@@ -1143,6 +1154,9 @@ class Config {
     // Runtime theme selection. "dark" is deliberately the compatibility
     // default for configurations written before themes existed.
     std::string theme = "dark";
+
+    // UI spacing density multiplier (1.0 = normal). Clamped to [0.6, 1.4].
+    double uiDensityScale = 1.0;
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;

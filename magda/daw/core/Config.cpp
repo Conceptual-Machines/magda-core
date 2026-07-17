@@ -88,6 +88,7 @@ void Config::save() {
     root->setProperty("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     root->setProperty("uiScale", uiScale);
     root->setProperty("theme", toJuceString(theme));
+    root->setProperty("uiDensityScale", uiDensityScale);
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("localizedUIFontScale", localizedUIFontScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
@@ -415,6 +416,7 @@ void Config::load() {
         getBool("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     uiScale = getDouble("uiScale", uiScale);
     setTheme(getString("theme", theme));
+    setUIDensityScale(getDouble("uiDensityScale", uiDensityScale));
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
     localizedUIFontScaleExplicit = obj->hasProperty("localizedUIFontScale");
     if (localizedUIFontScaleExplicit)

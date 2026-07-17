@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 namespace magda {
 
 /**
@@ -71,10 +73,26 @@ struct MixerMetrics {
     // mixerShowFxChain) — see MixerToggleRail.
 
     // === Spacing ===
+    // Density-scaled: derived from the kBase* values by applyDensityScale().
+    // Fader/knob/meter/strip dimensions above are widget sizes and stay put;
+    // density only tightens or loosens the padding and gaps between them.
     int controlSpacing = 4;
     int tickToFaderGap = 0;
     int tickToLabelGap = 0;
     int tickToMeterGap = 2;
+
+    // Base (normal-density) spacing values for applyDensityScale().
+    static constexpr int kBaseChannelPadding = 4;
+    static constexpr int kBaseControlSpacing = 4;
+    static constexpr int kBaseTickToMeterGap = 2;
+
+    // Recompute density-scaled spacing tokens from their base values.
+    // Idempotent: always derived from kBase*, so re-applying never compounds.
+    void applyDensityScale(float scale) {
+        channelPadding = static_cast<int>(std::lround(kBaseChannelPadding * scale));
+        controlSpacing = static_cast<int>(std::lround(kBaseControlSpacing * scale));
+        tickToMeterGap = static_cast<int>(std::lround(kBaseTickToMeterGap * scale));
+    }
 
     // === Singleton access ===
     static MixerMetrics& getInstance() {

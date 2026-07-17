@@ -21,6 +21,7 @@
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../../engine/TracktionEngineWrapper.hpp"
+#include "../../layout/LayoutConfig.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -2184,10 +2185,12 @@ track_controls::Metrics headerControlMetrics() {
     m.buttonW = TH_BTN_MAX;
     m.buttonH = 18;
     m.cellW = TH_PAN_W;
-    m.gap = 4;
-    m.rowGap = 5;
+    // Gaps between the fixed-size control cells/rows scale with UI density; the
+    // cell/button widths above stay put so the controls keep their hit targets.
+    m.gap = densityScaled(4);
+    m.rowGap = densityScaled(5);
     m.iconW = TH_ICON_SIZE;
-    m.ddGap = TH_DD_GAP;
+    m.ddGap = densityScaled(TH_DD_GAP);
     return m;
 }
 
