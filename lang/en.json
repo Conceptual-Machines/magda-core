@@ -362,6 +362,8 @@
     "button.get_template": "Download Theme Template",
     "button.load_theme": "Load Theme",
     "button.open_themes_folder": "Open Themes Folder",
+    "section.density": "Density",
+    "density.label": "Spacing",
     "section.track_colour_palette": "Track Colour Palette",
     "section.clip_colours": "Clip Colours",
     "section.output": "Output",

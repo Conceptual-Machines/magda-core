@@ -72,6 +72,11 @@ class MainWindow : public juce::DocumentWindow,
   private:
     void updateWindowTitle();
     void applyThemeFromConfig();
+    // Re-reads the UI density multiplier, rescales the spacing tokens on
+    // LayoutConfig / MixerMetrics, and relayouts every window. Spacing-only
+    // token changes don't resize parent panels, so a plain resized() won't
+    // cascade; this forces a recursive relayout.
+    void applyDensityFromConfig();
     // Re-broadcasts a look-and-feel change when the UI font family changes, so
     // components re-fetch fonts from FontManager and repaint.
     void applyFontFromConfig();
@@ -88,6 +93,8 @@ class MainWindow : public juce::DocumentWindow,
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::string appliedTheme_;
+    // Last-applied density multiplier; -1 forces the first apply to run.
+    float appliedDensityScale_ = -1.0f;
     std::string appliedFontFamily_;
 
     // Hot-reload for user JSON themes: armed while a user theme is active,

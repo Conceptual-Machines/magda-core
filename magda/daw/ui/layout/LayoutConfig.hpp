@@ -52,9 +52,35 @@ struct LayoutConfig {
     int maxTrackHeaderWidth = 300;
 
     // Spacing and padding
+    //
+    // These are density-scaled: the base (normal-density) values live in the
+    // kBase* constants below, and applyDensityScale() recomputes the live
+    // fields as base * densityScale. Density affects spacing/padding only, not
+    // fonts or widget/track/panel sizes (those stay at the user's chosen size).
     int headerContentPadding = 8;
     int componentSpacing = 4;
     int panelPadding = 8;
+
+    // Base (normal-density) spacing values. applyDensityScale() derives the
+    // live fields above from these, so re-applying a scale never compounds.
+    static constexpr int kBaseHeaderContentPadding = 8;
+    static constexpr int kBaseComponentSpacing = 4;
+    static constexpr int kBasePanelPadding = 8;
+    static constexpr int kBaseRulerLabelTopMargin = 10;
+
+    // Active UI spacing-density multiplier (1.0 = normal). Read by the
+    // densityScaled() free helper so inline spacing literals can scale too.
+    float densityScale = 1.0f;
+
+    // Recompute all density-scaled spacing tokens from their base values.
+    // Idempotent: always derived from kBase*, so calling repeatedly is safe.
+    void applyDensityScale(float scale) {
+        densityScale = scale;
+        headerContentPadding = juce::roundToInt(kBaseHeaderContentPadding * scale);
+        componentSpacing = juce::roundToInt(kBaseComponentSpacing * scale);
+        panelPadding = juce::roundToInt(kBasePanelPadding * scale);
+        rulerLabelTopMargin = juce::roundToInt(kBaseRulerLabelTopMargin * scale);
+    }
 
     // Timeline content left padding - shared across timeline, track content, automation lanes
     static constexpr int TIMELINE_LEFT_PADDING = 8;
@@ -124,5 +150,12 @@ struct LayoutConfig {
   private:
     LayoutConfig() = default;
 };
+
+// Scales a raw spacing/padding literal by the active UI density. Use this when
+// migrating inline spacing (e.g. `area.reduced(densityScaled(4))`) so it tracks
+// the compact/normal/spacious preset instead of staying pinned at one density.
+inline int densityScaled(int basePx) {
+    return juce::roundToInt(basePx * LayoutConfig::getInstance().densityScale);
+}
 
 }  // namespace magda

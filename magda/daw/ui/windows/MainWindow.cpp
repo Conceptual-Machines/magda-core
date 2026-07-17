@@ -16,6 +16,7 @@
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
+#include "../layout/LayoutConfig.hpp"
 #include "../panels/BottomPanel.hpp"
 #include "../panels/FooterBar.hpp"
 #include "../panels/LeftPanel.hpp"
@@ -26,6 +27,7 @@
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/MixerMetrics.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../themes/SmallComboBoxLookAndFeel.hpp"
 #include "../themes/ThemeFileWatcher.hpp"
@@ -284,6 +286,7 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     ProjectManager::getInstance().addListener(this);
     Config::getInstance().addListener(this);
     applyThemeFromConfig();
+    applyDensityFromConfig();
     updateWindowTitle();
 
     // Start modulation engine at 60 FPS (updates LFO values in background)
@@ -328,7 +331,39 @@ MainWindow::~MainWindow() {
 
 void MainWindow::configChanged() {
     applyThemeFromConfig();
+    applyDensityFromConfig();
     applyFontFromConfig();
+}
+
+namespace {
+// Force a recursive relayout: parent resized() repositions children, but a
+// child whose bounds don't change (as with spacing-only density edits) is not
+// re-laid-out by JUCE, so descend and resized() every component explicitly.
+void relayoutRecursively(juce::Component& c) {
+    c.resized();
+    for (auto* child : c.getChildren())
+        if (child != nullptr)
+            relayoutRecursively(*child);
+}
+}  // namespace
+
+void MainWindow::applyDensityFromConfig() {
+    const auto scale = static_cast<float>(Config::getInstance().getUIDensityScale());
+    if (scale == appliedDensityScale_)
+        return;
+    appliedDensityScale_ = scale;
+
+    LayoutConfig::getInstance().applyDensityScale(scale);
+    MixerMetrics::getInstance().applyDensityScale(scale);
+
+    // Density touches spacing tokens read throughout the tree; relayout and
+    // repaint every open window so the new spacing takes effect immediately.
+    for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
+        if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i)) {
+            relayoutRecursively(*window);
+            window->repaint();
+        }
+    }
 }
 
 void MainWindow::applyFontFromConfig() {
