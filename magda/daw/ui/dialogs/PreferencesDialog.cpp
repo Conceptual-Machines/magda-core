@@ -19,6 +19,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "../themes/UserTheme.hpp"
 #include "../windows/MainWindow.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
@@ -695,15 +696,34 @@ class AppearancePage : public juce::Component {
         themeLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(themeLabel);
 
-        for (const auto& option : builtInThemeOptions_)
-            themeCombo.addItem(option.label, option.comboId);
         themeCombo.setColour(juce::ComboBox::backgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
         themeCombo.setColour(juce::ComboBox::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         themeCombo.setColour(juce::ComboBox::outlineColourId,
                              DarkTheme::getColour(DarkTheme::BORDER));
+        rebuildThemeCombo();
         addAndMakeVisible(themeCombo);
+
+        // Get Template: export the current base palette as a complete, valid
+        // JSON file the user can edit. Load: pick an edited JSON and adopt it.
+        getTemplateButton.setButtonText(
+            trOr("preferences.button.get_template", "Download Theme Template"));
+        getTemplateButton.onClick = [this]() { saveThemeTemplate(); };
+        addAndMakeVisible(getTemplateButton);
+
+        loadThemeButton.setButtonText(trOr("preferences.button.load_theme", "Load Theme"));
+        loadThemeButton.onClick = [this]() { loadThemeFromFile(); };
+        addAndMakeVisible(loadThemeButton);
+
+        openThemesFolderButton.setButtonText(
+            trOr("preferences.button.open_themes_folder", "Open Themes Folder"));
+        openThemesFolderButton.onClick = [this]() {
+            auto dir = paths::themesDir();
+            dir.createDirectory();
+            dir.revealToUser();
+        };
+        addAndMakeVisible(openThemesFolderButton);
 
         setupSectionHeader(*this, coloursHeader, tr("preferences.section.track_colour_palette"));
 
@@ -762,7 +782,7 @@ class AppearancePage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int colourRowH = 26;
 
-        return padding + headerH + 4 + 32 + 16 + headerH + 4 + 18 + 4 +
+        return padding + headerH + 4 + 32 + 28 + 16 + headerH + 4 + 18 + 4 +
                ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 + 16 + headerH + 4 + 32 + padding;
     }
 
@@ -807,6 +827,18 @@ class AppearancePage : public juce::Component {
             auto row = bounds.removeFromTop(32);
             themeLabel.setBounds(row.removeFromLeft(140));
             themeCombo.setBounds(row.reduced(0, 4));
+        }
+        {
+            // Buttons on their own row, under the combo.
+            auto row = bounds.removeFromTop(28);
+            row.removeFromLeft(140);
+            const int gap = 8;
+            const int buttonW = (row.getWidth() - 2 * gap) / 3;
+            getTemplateButton.setBounds(row.removeFromLeft(buttonW).reduced(0, 2));
+            row.removeFromLeft(gap);
+            loadThemeButton.setBounds(row.removeFromLeft(buttonW).reduced(0, 2));
+            row.removeFromLeft(gap);
+            openThemesFolderButton.setBounds(row.reduced(0, 2));
         }
         bounds.removeFromTop(16);
 
@@ -859,6 +891,7 @@ class AppearancePage : public juce::Component {
     }
 
     void loadSettings(Config& config) {
+        rebuildThemeCombo();  // pick up any theme files added since construction
         themeCombo.setSelectedId(themeIdForValue(config.getTheme()), juce::dontSendNotification);
 
         clearColourRows();
@@ -901,20 +934,106 @@ class AppearancePage : public juce::Component {
         {3, ThemeManager::kHighContrastThemeId, "High Contrast (preview)"},
     }};
 
-    static int themeIdForValue(const std::string& theme) {
+    // User theme combo ids start here, above the built-in ids, and index into
+    // userThemes_ (id - kUserThemeIdBase).
+    static constexpr int kUserThemeIdBase = 100;
+
+    // Repopulates the combo: built-ins first, then discovered user themes.
+    // Called on construction, each time the dialog loads, and after New Theme.
+    void rebuildThemeCombo() {
+        themeCombo.clear(juce::dontSendNotification);
+        for (const auto& option : builtInThemeOptions_)
+            themeCombo.addItem(option.label, option.comboId);
+
+        userThemes_ = scanUserThemes();
+        if (!userThemes_.empty()) {
+            themeCombo.addSeparator();
+            for (size_t i = 0; i < userThemes_.size(); ++i)
+                themeCombo.addItem(juce::String(userThemes_[i].name),
+                                   kUserThemeIdBase + static_cast<int>(i));
+        }
+    }
+
+    int themeIdForValue(const std::string& theme) const {
         for (const auto& option : builtInThemeOptions_)
             if (theme == option.themeId)
                 return option.comboId;
-
-        return 1;
+        for (size_t i = 0; i < userThemes_.size(); ++i)
+            if (theme == userThemes_[i].id)
+                return kUserThemeIdBase + static_cast<int>(i);
+        return 1;  // persisted theme no longer on disk -> fall back to Dark
     }
 
-    static std::string themeValueForId(int id) {
+    std::string themeValueForId(int id) const {
+        if (id >= kUserThemeIdBase) {
+            const size_t index = static_cast<size_t>(id - kUserThemeIdBase);
+            if (index < userThemes_.size())
+                return userThemes_[index].id;
+        }
         for (const auto& option : builtInThemeOptions_)
             if (id == option.comboId)
                 return option.themeId;
-
         return ThemeManager::kDarkThemeId;
+    }
+
+    // Exports the current selection's base table (dark/light) as a complete,
+    // editable JSON template to a location the user picks.
+    void saveThemeTemplate() {
+        const std::string selectedId = themeValueForId(themeCombo.getSelectedId());
+        const std::string baseId = (selectedId == ThemeManager::kLightThemeId)
+                                       ? ThemeManager::kLightThemeId
+                                       : ThemeManager::kDarkThemeId;
+
+        auto dir = paths::themesDir();
+        dir.createDirectory();
+        const juce::String suggested =
+            (baseId == ThemeManager::kLightThemeId) ? "Light Theme.json" : "Dark Theme.json";
+
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            trOr("preferences.dialog.save_theme_template", "Save theme template"),
+            dir.getChildFile(suggested), "*.json");
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
+                juce::FileBrowserComponent::warnAboutOverwriting,
+            [this, baseId](const juce::FileChooser& fc) {
+                auto dest = fc.getResult();
+                if (dest == juce::File())
+                    return;
+                if (!dest.hasFileExtension("json"))
+                    dest = dest.withFileExtension("json");
+                writeThemeTemplate(dest, baseId, dest.getFileNameWithoutExtension().toStdString());
+            });
+    }
+
+    // Picks a theme JSON, copies it into the Themes folder (so it persists and
+    // hot-reloads via the id = filename-stem resolution), then selects it. It
+    // is applied when the dialog is accepted, like every other setting here.
+    void loadThemeFromFile() {
+        auto dir = paths::themesDir();
+        dir.createDirectory();
+
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            trOr("preferences.dialog.load_theme", "Load a theme"), dir, "*.json");
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this](const juce::FileChooser& fc) {
+                const auto file = fc.getResult();
+                if (!file.existsAsFile() || !loadThemeFile(file).has_value())
+                    return;  // not a usable theme file
+
+                auto themesDir = paths::themesDir();
+                themesDir.createDirectory();
+                juce::File dest = file;
+                if (file.getParentDirectory() != themesDir) {
+                    dest = themesDir.getChildFile(file.getFileName());
+                    file.copyFileTo(dest);
+                }
+
+                rebuildThemeCombo();
+                themeCombo.setSelectedId(
+                    themeIdForValue(dest.getFileNameWithoutExtension().toStdString()),
+                    juce::dontSendNotification);
+            });
     }
 
     void addColourRow(uint32_t colour, const std::string& name) {
@@ -1031,6 +1150,11 @@ class AppearancePage : public juce::Component {
     juce::Label themeHeader;
     juce::Label themeLabel;
     juce::ComboBox themeCombo;
+    juce::TextButton getTemplateButton;
+    juce::TextButton loadThemeButton;
+    juce::TextButton openThemesFolderButton;
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+    std::vector<ThemeFileEntry> userThemes_;
     juce::Label coloursHeader;
     juce::Label colourHeaderLabel, hexHeaderLabel, nameHeaderLabel;
     std::vector<std::unique_ptr<juce::Component>> colourSwatches_;

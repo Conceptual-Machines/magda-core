@@ -23,6 +23,7 @@ namespace magda {
 
 class TracktionEngineWrapper;
 class TransportPanel;
+class ThemeFileWatcher;
 
 class LeftPanel;
 class RightPanel;
@@ -71,6 +72,12 @@ class MainWindow : public juce::DocumentWindow,
   private:
     void updateWindowTitle();
     void applyThemeFromConfig();
+    // Re-applies the active palette to every shared LookAndFeel and broadcasts
+    // a look-and-feel change to all top-level windows. Shared by the config
+    // switch and hot-reload.
+    void refreshThemedLookAndFeels();
+    // Hot-reload callback: the active user theme file changed on disk.
+    void onActiveThemeFileChanged();
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
@@ -78,6 +85,11 @@ class MainWindow : public juce::DocumentWindow,
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::string appliedTheme_;
+
+    // Hot-reload for user JSON themes: armed while a user theme is active,
+    // idle for built-ins. activeThemeFile_ is the file currently watched.
+    std::unique_ptr<ThemeFileWatcher> themeWatcher_;
+    juce::File activeThemeFile_;
 
     void setupMenuBar();
     void setupMenuCallbacks();

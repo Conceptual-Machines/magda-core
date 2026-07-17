@@ -541,6 +541,12 @@ class ThemeManager {
     static bool setActiveBuiltInTheme(const std::string& themeId);
     static bool isBuiltInTheme(const std::string& themeId);
     static bool isLightTheme();
+
+    // Read-only access to a built-in table by id (dark/light/high-contrast;
+    // unknown ids resolve to dark). Lets the JSON theme loader inherit a base
+    // palette without disturbing the currently active one.
+    static const DarkTheme::Palette& builtInPalette(const std::string& themeId);
+    static const DarkTheme::SyntaxPalette& builtInSyntaxPalette(const std::string& themeId);
 };
 
 // User colours stay stored verbatim. Only their presentation swatch is

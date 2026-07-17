@@ -28,6 +28,8 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../themes/SmallComboBoxLookAndFeel.hpp"
+#include "../themes/ThemeFileWatcher.hpp"
+#include "../themes/UserTheme.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
@@ -333,11 +335,41 @@ void MainWindow::applyThemeFromConfig() {
     if (requestedTheme == appliedTheme_)
         return;
 
-    if (!ThemeManager::setActiveBuiltInTheme(requestedTheme)) {
-        DBG("[Theme] Unknown theme '" << requestedTheme << "'; using dark");
-        DarkTheme::resetToDarkPalette();
+    const auto result = applyThemeById(requestedTheme);
+    for (const auto& warning : result.warnings)
+        DBG("[Theme] " << requestedTheme << ": " << warning);
+    if (!result.ok)
+        DBG("[Theme] Unknown/invalid theme '" << requestedTheme << "'; using dark");
+
+    refreshThemedLookAndFeels();
+
+    // Hot-reload only makes sense for editable user files; built-ins never
+    // change on disk, so disarm the watcher when one is selected.
+    if (result.isUserTheme) {
+        activeThemeFile_ = result.sourceFile;
+        if (themeWatcher_ == nullptr)
+            themeWatcher_ =
+                std::make_unique<ThemeFileWatcher>([this]() { onActiveThemeFileChanged(); });
+        themeWatcher_->watch(activeThemeFile_);
+    } else if (themeWatcher_ != nullptr) {
+        themeWatcher_->stop();
     }
 
+    appliedTheme_ = requestedTheme;
+}
+
+void MainWindow::onActiveThemeFileChanged() {
+    const auto warnings = reapplyUserThemeFile(activeThemeFile_);
+    if (!warnings)
+        return;  // a bad in-progress edit; keep the last good palette on screen
+
+    for (const auto& warning : *warnings)
+        DBG("[Theme] hot-reload " << activeThemeFile_.getFileName() << ": " << warning);
+
+    refreshThemedLookAndFeels();
+}
+
+void MainWindow::refreshThemedLookAndFeels() {
     if (auto* lookAndFeel =
             dynamic_cast<juce::LookAndFeel_V4*>(&juce::LookAndFeel::getDefaultLookAndFeel())) {
         DarkTheme::applyToLookAndFeel(*lookAndFeel);
@@ -366,8 +398,6 @@ void MainWindow::applyThemeFromConfig() {
         if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
             window->sendLookAndFeelChange();
     }
-
-    appliedTheme_ = requestedTheme;
 }
 
 void MainWindow::closeButtonPressed() {
