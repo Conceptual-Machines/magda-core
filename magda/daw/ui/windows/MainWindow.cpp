@@ -332,6 +332,7 @@ MainWindow::~MainWindow() {
 void MainWindow::configChanged() {
     applyThemeFromConfig();
     applyDensityFromConfig();
+    applyFontFromConfig();
 }
 
 namespace {
@@ -363,6 +364,19 @@ void MainWindow::applyDensityFromConfig() {
             window->repaint();
         }
     }
+}
+
+void MainWindow::applyFontFromConfig() {
+    const auto& family = Config::getInstance().getUIFontFamily();
+    if (family == appliedFontFamily_)
+        return;
+    appliedFontFamily_ = family;
+
+    // FontManager resolves the family live; broadcast a look-and-feel change so
+    // every component re-fetches its fonts and repaints. Components that fetch
+    // fonts in paint()/lookAndFeelChanged update immediately; the few that cache
+    // a juce::Font at construction pick it up on their next rebuild.
+    refreshThemedLookAndFeels();
 }
 
 void MainWindow::applyThemeFromConfig() {

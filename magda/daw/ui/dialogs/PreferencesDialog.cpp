@@ -85,6 +85,46 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     owner.addAndMakeVisible(header);
 }
 
+void styleCombo(juce::ComboBox& combo) {
+    combo.setColour(juce::ComboBox::backgroundColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
+    combo.setColour(juce::ComboBox::textColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    combo.setColour(juce::ComboBox::outlineColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
+}
+
+void setupComboLabel(juce::Component& owner, juce::Label& label, const juce::String& text) {
+    label.setText(text, juce::dontSendNotification);
+    label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
+    label.setColour(juce::Label::textColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    label.setJustificationType(juce::Justification::centredLeft);
+    owner.addAndMakeVisible(label);
+}
+
+void layoutTextSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
+                         magda::daw::ui::TextSlider& slider, int rowH, int sliderH) {
+    constexpr int sliderW = 96;
+    constexpr int gap = 12;
+    auto row = bounds.removeFromTop(rowH);
+    auto sliderArea = row.removeFromRight(sliderW);
+    row.removeFromRight(gap);
+    label.setBounds(row);
+    slider.setBounds(sliderArea.reduced(0, (rowH - sliderH) / 2));
+}
+
+void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label, juce::ComboBox& combo,
+                    int rowH) {
+    const int comboW = juce::jlimit(160, 240, bounds.getWidth() / 2);
+    constexpr int gap = 12;
+    auto row = bounds.removeFromTop(rowH);
+    auto comboArea = row.removeFromRight(comboW);
+    row.removeFromRight(gap);
+    label.setBounds(row);
+    combo.setBounds(comboArea.reduced(0, 4));
+}
+
 juce::String trOr(const juce::String& key, const juce::String& fallback) {
     const auto translated = magda::tr(key);
     return translated == key ? fallback : translated;
@@ -187,7 +227,7 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.auto_crossfade_default"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
-        setupComboLabel(languageLabel, tr("preferences.language.label"));
+        setupComboLabel(*this, languageLabel, tr("preferences.language.label"));
         styleCombo(languageCombo);
         addAndMakeVisible(languageCombo);
 
@@ -212,19 +252,9 @@ class GeneralPage : public juce::Component {
             }
         };
 
-        setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
-        setupComboLabel(scaleLabel, tr("preferences.scale.label"));
-        styleCombo(scaleCombo);
-        scaleCombo.addItem(tr("preferences.scale.auto"), 1);
-        scaleCombo.addItem("100%", 2);
-        scaleCombo.addItem("125%", 3);
-        scaleCombo.addItem("150%", 4);
-        scaleCombo.addItem("175%", 5);
-        scaleCombo.addItem("200%", 6);
-        addAndMakeVisible(scaleCombo);
-
-        setupTextSlider(*this, fontScaleSlider, fontScaleLabel, tr("preferences.font_scale.label"),
-                        80.0, 150.0, 5.0, magda::TechnicalTextToken::Percent);
+        // Localized Font Size lives with Language: its default is language-driven
+        // (see languageCombo.onChange). UI Scale, UI Font, and Font Size moved to
+        // the Appearance tab.
         setupTextSlider(*this, localizedFontScaleSlider, localizedFontScaleLabel,
                         trOr("preferences.localized_font_scale.label", "Localized Font Size"),
                         100.0, 300.0, 5.0, magda::TechnicalTextToken::Percent);
@@ -313,8 +343,6 @@ class GeneralPage : public juce::Component {
         languageCombo.setSelectedId(selectedId, juce::dontSendNotification);
         restartHint.setVisible(false);
 
-        scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
-        fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
         localizedFontScaleExplicit_ = config.hasExplicitLocalizedUIFontScale();
         localizedFontScaleSlider.setValue(config.getLocalizedUIFontScale() * 100.0,
                                           juce::dontSendNotification);
@@ -350,16 +378,6 @@ class GeneralPage : public juce::Component {
             }
         }
 
-        double newScale = scaleValueForId(scaleCombo.getSelectedId());
-        if (newScale > 0.0) {
-            applyUIScale(newScale);
-        } else {
-            applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
-            config.setUIScale(0.0);
-            config.save();
-        }
-
-        config.setUIFontScale(fontScaleSlider.getValue() / 100.0);
         config.setLocalizedUIFontScale(localizedFontScaleSlider.getValue() / 100.0);
     }
 
@@ -379,7 +397,7 @@ class GeneralPage : public juce::Component {
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 7) + 16 + secGap + headerH + 4 +
-               rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
+               rowH + 18 + 4 + rowH + padding;
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -388,11 +406,11 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + (rowH * 3) + 8    // Zoom
-               + secGap + headerH + 4 + rowH             // Timeline
-               + secGap + headerH + 4 + rowH + 4 + rowH  // Transport
-               + secGap + headerH + 4 + rowH + 4 + rowH  // Auto-Save
-               + secGap + headerH + 4 + rowH + 18        // Language
+        return padding + headerH + 4 + (rowH * 3) + 8         // Zoom
+               + secGap + headerH + 4 + rowH                  // Timeline
+               + secGap + headerH + 4 + rowH + 4 + rowH       // Transport
+               + secGap + headerH + 4 + rowH + 4 + rowH       // Auto-Save
+               + secGap + headerH + 4 + rowH + 18 + 4 + rowH  // Language + Localized Font Size
                + padding;
     }
 
@@ -404,7 +422,6 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + rowH + 4 + rowH   // Layout
                + secGap + headerH + 4 + (rowH * 7) + 20  // Behaviour
-               + secGap + headerH + 4 + (rowH * 3)       // Display Scale
                + padding;
     }
 
@@ -475,14 +492,6 @@ class GeneralPage : public juce::Component {
         bounds.removeFromTop(4);
         layoutComboRow(bounds, languageLabel, languageCombo, rowH);
         restartHint.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(secGap);
-
-        // UI scale
-        scaleHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, fontScaleLabel, fontScaleSlider, rowH, sliderH);
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
                             sliderH);
@@ -534,6 +543,8 @@ class GeneralPage : public juce::Component {
         left.removeFromTop(4);
         layoutComboRow(left, languageLabel, languageCombo, rowH);
         restartHint.setBounds(left.removeFromTop(18));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, localizedFontScaleLabel, localizedFontScaleSlider, rowH, sliderH);
 
         // Layout
         layoutHeader.setBounds(right.removeFromTop(headerH));
@@ -561,88 +572,6 @@ class GeneralPage : public juce::Component {
         chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
-        right.removeFromTop(secGap);
-
-        // Display Scale
-        scaleHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        layoutComboRow(right, scaleLabel, scaleCombo, rowH);
-        right.removeFromTop(4);
-        layoutTextSliderRow(right, fontScaleLabel, fontScaleSlider, rowH, sliderH);
-        right.removeFromTop(4);
-        layoutTextSliderRow(right, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
-                            sliderH);
-    }
-
-    void setupComboLabel(juce::Label& label, const juce::String& text) {
-        label.setText(text, juce::dontSendNotification);
-        label.setFont(FontManager::getInstance().getUIFont(12.0f));
-        label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        label.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(label);
-    }
-
-    void styleCombo(juce::ComboBox& combo) {
-        combo.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
-        combo.setColour(juce::ComboBox::textColourId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-    }
-
-    static void layoutTextSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                                    magda::daw::ui::TextSlider& slider, int rowH, int sliderH) {
-        constexpr int sliderW = 96;
-        constexpr int gap = 12;
-        auto row = bounds.removeFromTop(rowH);
-        auto sliderArea = row.removeFromRight(sliderW);
-        row.removeFromRight(gap);
-        label.setBounds(row);
-        slider.setBounds(sliderArea.reduced(0, (rowH - sliderH) / 2));
-    }
-
-    static void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                               juce::ComboBox& combo, int rowH) {
-        const int comboW = juce::jlimit(160, 240, bounds.getWidth() / 2);
-        constexpr int gap = 12;
-        auto row = bounds.removeFromTop(rowH);
-        auto comboArea = row.removeFromRight(comboW);
-        row.removeFromRight(gap);
-        label.setBounds(row);
-        combo.setBounds(comboArea.reduced(0, 4));
-    }
-
-    static int scaleIdForValue(double v) {
-        if (v <= 0.0)
-            return 1;
-        if (std::abs(v - 1.0) < 0.01)
-            return 2;
-        if (std::abs(v - 1.25) < 0.01)
-            return 3;
-        if (std::abs(v - 1.5) < 0.01)
-            return 4;
-        if (std::abs(v - 1.75) < 0.01)
-            return 5;
-        if (std::abs(v - 2.0) < 0.01)
-            return 6;
-        return 1;
-    }
-
-    static double scaleValueForId(int id) {
-        switch (id) {
-            case 2:
-                return 1.0;
-            case 3:
-                return 1.25;
-            case 4:
-                return 1.5;
-            case 5:
-                return 1.75;
-            case 6:
-                return 2.0;
-            default:
-                return 0.0;
-        }
     }
 
     juce::Label zoomHeader, timelineHeader, transportHeader, autoSaveHeader;
@@ -656,7 +585,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton autoSaveToggle;
     magda::daw::ui::TextSlider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;
-    juce::Label layoutHeader, behaviorHeader, languageHeader, scaleHeader;
+    juce::Label layoutHeader, behaviorHeader, languageHeader;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
@@ -670,10 +599,6 @@ class GeneralPage : public juce::Component {
     juce::Label restartHint;
     std::vector<juce::String> availableLanguages_;
     juce::String initialLanguage_;
-    juce::Label scaleLabel;
-    juce::ComboBox scaleCombo;
-    juce::Label fontScaleLabel;
-    magda::daw::ui::TextSlider fontScaleSlider;
     juce::Label localizedFontScaleLabel;
     magda::daw::ui::TextSlider localizedFontScaleSlider;
     bool localizedFontScaleExplicit_ = false;
@@ -724,6 +649,30 @@ class AppearancePage : public juce::Component {
             dir.revealToUser();
         };
         addAndMakeVisible(openThemesFolderButton);
+
+        // Display Scale: UI scale (DPI), UI font family, and global font size.
+        setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
+        setupComboLabel(*this, scaleLabel, tr("preferences.scale.label"));
+        styleCombo(scaleCombo);
+        scaleCombo.addItem(tr("preferences.scale.auto"), 1);
+        scaleCombo.addItem("100%", 2);
+        scaleCombo.addItem("125%", 3);
+        scaleCombo.addItem("150%", 4);
+        scaleCombo.addItem("175%", 5);
+        scaleCombo.addItem("200%", 6);
+        addAndMakeVisible(scaleCombo);
+
+        setupComboLabel(*this, fontFamilyLabel, trOr("preferences.font_family.label", "UI Font"));
+        styleCombo(fontFamilyCombo);
+        fontFamilyCombo.addItem(trOr("preferences.font_family.default", "Inter (default)"), 1);
+        fontFamilies_ = juce::Font::findAllTypefaceNames();
+        fontFamilies_.sort(true);
+        for (int i = 0; i < fontFamilies_.size(); ++i)
+            fontFamilyCombo.addItem(fontFamilies_[i], kFontFamilyIdBase + i);
+        addAndMakeVisible(fontFamilyCombo);
+
+        setupTextSlider(*this, fontScaleSlider, fontScaleLabel, tr("preferences.font_scale.label"),
+                        80.0, 150.0, 5.0, magda::TechnicalTextToken::Percent);
 
         // Layout density: spacing/padding multiplier applied on top of UI scale.
         setupSectionHeader(*this, densityHeader, trOr("preferences.section.density", "Density"));
@@ -788,10 +737,13 @@ class AppearancePage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int colourRowH = 26;
 
-        return padding + headerH + 4 + 32 + 28 + 16  // Theme
-               + headerH + 4 + 32 + 16               // Density
-               + headerH + 4 + 18 + 4 +              // Track colours (header + columns)
-               ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 + 16 + headerH + 4 + 32 + padding;
+        return padding + headerH + 4 + 32 + 28 + 16       // Theme
+               + headerH + 4 + 32 + 4 + 32 + 4 + 32 + 16  // Display Scale
+               + headerH + 4 + 32 + 16                    // Density
+               + headerH + 4 + 18 + 4 + ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 +
+               16                  // Track colours
+               + headerH + 4 + 32  // Clip colours
+               + padding;
     }
 
     void lookAndFeelChanged() override {
@@ -800,14 +752,15 @@ class AppearancePage : public juce::Component {
         const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
         const auto border = DarkTheme::getColour(DarkTheme::BORDER);
 
-        for (auto* label : {&themeHeader, &densityHeader, &coloursHeader, &colourHeaderLabel,
-                            &hexHeaderLabel, &nameHeaderLabel, &clipColourHeader})
+        for (auto* label :
+             {&themeHeader, &scaleHeader, &densityHeader, &coloursHeader, &colourHeaderLabel,
+              &hexHeaderLabel, &nameHeaderLabel, &clipColourHeader})
             label->setColour(juce::Label::textColourId, secondary);
-        themeLabel.setColour(juce::Label::textColourId, primary);
-        densityLabel.setColour(juce::Label::textColourId, primary);
-        clipColourModeLabel.setColour(juce::Label::textColourId, primary);
+        for (auto* label : {&themeLabel, &scaleLabel, &fontFamilyLabel, &fontScaleLabel,
+                            &densityLabel, &clipColourModeLabel})
+            label->setColour(juce::Label::textColourId, primary);
 
-        for (auto* combo : {&themeCombo, &clipColourModeCombo}) {
+        for (auto* combo : {&themeCombo, &scaleCombo, &fontFamilyCombo, &clipColourModeCombo}) {
             combo->setColour(juce::ComboBox::backgroundColourId, surface);
             combo->setColour(juce::ComboBox::textColourId, primary);
             combo->setColour(juce::ComboBox::outlineColourId, border);
@@ -851,19 +804,22 @@ class AppearancePage : public juce::Component {
         }
         bounds.removeFromTop(16);
 
+        // Display Scale
+        scaleHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        constexpr int rowH = 32;
+        constexpr int sliderH = 24;
+        layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, fontFamilyLabel, fontFamilyCombo, rowH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, fontScaleLabel, fontScaleSlider, rowH, sliderH);
+        bounds.removeFromTop(16);
+
         // Density
         densityHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
-        {
-            constexpr int sliderW = 96;
-            constexpr int gap = 12;
-            constexpr int sliderH = 24;
-            auto row = bounds.removeFromTop(32);
-            auto sliderArea = row.removeFromRight(sliderW);
-            row.removeFromRight(gap);
-            densityLabel.setBounds(row);
-            densitySlider.setBounds(sliderArea.reduced(0, (32 - sliderH) / 2));
-        }
+        layoutTextSliderRow(bounds, densityLabel, densitySlider, rowH, sliderH);
         bounds.removeFromTop(16);
 
         coloursHeader.setBounds(bounds.removeFromTop(headerH));
@@ -918,6 +874,10 @@ class AppearancePage : public juce::Component {
         rebuildThemeCombo();  // pick up any theme files added since construction
         themeCombo.setSelectedId(themeIdForValue(config.getTheme()), juce::dontSendNotification);
 
+        scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
+        fontFamilyCombo.setSelectedId(fontFamilyIdForValue(config.getUIFontFamily()),
+                                      juce::dontSendNotification);
+        fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
         densitySlider.setValue(config.getUIDensityScale() * 100.0, juce::dontSendNotification);
 
         clearColourRows();
@@ -932,6 +892,17 @@ class AppearancePage : public juce::Component {
     void applySettings(Config& config) {
         config.setTheme(themeValueForId(themeCombo.getSelectedId()));
         config.setUIDensityScale(densitySlider.getValue() / 100.0);
+
+        const double newScale = scaleValueForId(scaleCombo.getSelectedId());
+        if (newScale > 0.0) {
+            applyUIScale(newScale);
+        } else {
+            applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
+            config.setUIScale(0.0);
+            config.save();
+        }
+        config.setUIFontFamily(fontFamilyValueForId(fontFamilyCombo.getSelectedId()));
+        config.setUIFontScale(fontScaleSlider.getValue() / 100.0);
 
         std::vector<Config::TrackColourEntry> palette;
         for (size_t i = 0; i < hexEditors_.size(); ++i) {
@@ -1001,6 +972,57 @@ class AppearancePage : public juce::Component {
             if (id == option.comboId)
                 return option.themeId;
         return ThemeManager::kDarkThemeId;
+    }
+
+    // Display Scale id schemes. Font family: id 1 is "Inter (default)"; ids from
+    // kFontFamilyIdBase index into fontFamilies_.
+    static constexpr int kFontFamilyIdBase = 100;
+
+    int fontFamilyIdForValue(const std::string& family) const {
+        if (family.empty())
+            return 1;
+        const int idx = fontFamilies_.indexOf(juce::String(family));
+        return idx >= 0 ? kFontFamilyIdBase + idx : 1;
+    }
+
+    std::string fontFamilyValueForId(int id) const {
+        const int idx = id - kFontFamilyIdBase;
+        if (idx >= 0 && idx < fontFamilies_.size())
+            return fontFamilies_[idx].toStdString();
+        return {};  // "Inter (default)"
+    }
+
+    static int scaleIdForValue(double v) {
+        if (v <= 0.0)
+            return 1;
+        if (std::abs(v - 1.0) < 0.01)
+            return 2;
+        if (std::abs(v - 1.25) < 0.01)
+            return 3;
+        if (std::abs(v - 1.5) < 0.01)
+            return 4;
+        if (std::abs(v - 1.75) < 0.01)
+            return 5;
+        if (std::abs(v - 2.0) < 0.01)
+            return 6;
+        return 1;
+    }
+
+    static double scaleValueForId(int id) {
+        switch (id) {
+            case 2:
+                return 1.0;
+            case 3:
+                return 1.25;
+            case 4:
+                return 1.5;
+            case 5:
+                return 1.75;
+            case 6:
+                return 2.0;
+            default:
+                return 0.0;
+        }
     }
 
     // Exports the current selection's base table (dark/light) as a complete,
@@ -1196,6 +1218,16 @@ class AppearancePage : public juce::Component {
     std::vector<std::unique_ptr<juce::TextEditor>> nameEditors_;
     std::vector<std::unique_ptr<juce::TextButton>> deleteButtons_;
     juce::TextButton addColourButton;
+
+    // Display Scale controls (UI scale, UI font family, global font size).
+    juce::Label scaleHeader;
+    juce::Label scaleLabel;
+    juce::ComboBox scaleCombo;
+    juce::Label fontFamilyLabel;
+    juce::ComboBox fontFamilyCombo;
+    juce::StringArray fontFamilies_;  // system families, combo-order (id = base + index)
+    juce::Label fontScaleLabel;
+    magda::daw::ui::TextSlider fontScaleSlider;
 
     // Clip colour mode
     juce::Label clipColourHeader;

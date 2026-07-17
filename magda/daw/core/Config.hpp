@@ -234,6 +234,15 @@ class Config {
         uiFontScale = std::clamp(scale, 0.8, 1.5);
     }
 
+    // UI font family for MAGDA-owned text. Empty = the bundled Inter default;
+    // otherwise a system font family name that FontManager resolves.
+    const std::string& getUIFontFamily() const {
+        return uiFontFamily;
+    }
+    void setUIFontFamily(std::string family) {
+        uiFontFamily = std::move(family);
+    }
+
     // Extra font multiplier for UI text. This compounds with the global UI font scale.
     // English defaults to 100%; locale defaults can seed it higher for denser scripts.
     double getLocalizedUIFontScale() const {
@@ -1160,6 +1169,9 @@ class Config {
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;
+
+    // UI font family: empty = bundled Inter default; else a system family name.
+    std::string uiFontFamily;
 
     // Localized UI font scale: additional multiplier for non-English UI languages.
     double localizedUIFontScale = 1.0;
