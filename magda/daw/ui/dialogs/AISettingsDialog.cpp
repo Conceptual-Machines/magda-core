@@ -1182,8 +1182,14 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     void fillRowModel(AgentRow& row, const juce::String& desiredModel) {
         auto pid = rowProviderId(row);
         row.modelCombo.clear(juce::dontSendNotification);
-        if (pid == magda::provider::LLAMA_LOCAL) {
-            row.modelCombo.setText("", juce::dontSendNotification);
+        // Local providers take no per-agent model: embedded uses the loaded
+        // GGUF, local-server uses the shared model from the Local/Config tabs.
+        // The combo is disabled; local-server shows the shared id read-only.
+        if (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER) {
+            juce::String note = (pid == magda::provider::LOCAL_SERVER)
+                                    ? juce::String(Config::getInstance().getLocalServerModel())
+                                    : juce::String();
+            row.modelCombo.setText(note, juce::dontSendNotification);
             row.modelCombo.setEnabled(false);
             return;
         }
@@ -1192,11 +1198,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         for (const auto& m : knownModelsForProvider(pid))
             row.modelCombo.addItem(m, id++);
 
-        juce::String want = desiredModel;
-        if (want.isEmpty() && pid == magda::provider::LOCAL_SERVER)
-            want = juce::String(Config::getInstance().getLocalServerModel());
-        if (want.isNotEmpty())
-            row.modelCombo.setText(want, juce::dontSendNotification);
+        if (desiredModel.isNotEmpty())
+            row.modelCombo.setText(desiredModel, juce::dontSendNotification);
         else if (row.modelCombo.getNumItems() > 0)
             row.modelCombo.setSelectedId(1, juce::dontSendNotification);
     }
@@ -1463,7 +1466,11 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             if (pid == magda::provider::OPENAI_CHAT && model.startsWith("gpt-5"))
                 pid = magda::provider::OPENAI_RESPONSES;
             cfg.provider = pid;
-            cfg.model = (pid == magda::provider::LLAMA_LOCAL) ? std::string{} : model.toStdString();
+            // Local providers carry no per-agent model — it resolves from the
+            // loaded GGUF / shared local-server config at request time.
+            const bool isLocal =
+                (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER);
+            cfg.model = isLocal ? std::string{} : model.toStdString();
             // apiKey left empty — resolved from Cloud-tab credentials at request
             // time (per-agent key first, then per-provider credential).
             config.setAgentLLMConfig(row.role, cfg);
