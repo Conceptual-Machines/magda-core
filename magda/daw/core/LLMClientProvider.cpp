@@ -96,14 +96,18 @@ llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& config,
     if (isLocalServer && pc.model.isEmpty())
         pc.model = juce::String(Config::getInstance().getLocalServerModel());
 
-    if (pc.model.startsWith("claude-opus-"))
-        pc.model = model::CLAUDE_OPUS;
-    else if (pc.model.startsWith("claude-sonnet-"))
-        pc.model = model::CLAUDE_SONNET;
-    else if (pc.model.startsWith("claude-haiku-"))
+    // Collapse Haiku to its dated snapshot (the id the API accepts). Opus and
+    // Sonnet versions pass through as-is so per-agent Advanced-panel choices are
+    // honoured.
+    if (pc.model.startsWith("claude-haiku-"))
         pc.model = model::CLAUDE_HAIKU;
 
-    if (pc.model.startsWith("claude-opus-"))
+    // Gate temperature by API, not by model. The Anthropic Messages API and the
+    // OpenAI Responses API reject temperature outright (Fable 5, Sonnet 5, Opus,
+    // gpt-5, o-series...), so never send it there. OpenAI Chat Completions (plus
+    // its compatibles DeepSeek / OpenRouter / local llama-server) and Gemini
+    // both accept it, so it's left on for them.
+    if (providerEnum == llm::Provider::Anthropic || providerEnum == llm::Provider::OpenAIResponses)
         pc.noTemperature = true;
 
     if (isLocalServer) {

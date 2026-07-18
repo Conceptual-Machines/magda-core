@@ -1274,10 +1274,9 @@ class Config {
     // AI settings
     std::string aiPreset = "local_embedded";
     std::map<std::string, AgentLLMConfig> agentConfigs = {
-        {"router", {"llama_local", "", "", ""}},
-        {"command", {"llama_local", "", "", ""}},
-        {"music", {"llama_local", "", "", ""}},
-        {"controller", {"llama_local", "", "", ""}},
+        {"router", {"llama_local", "", "", ""}}, {"command", {"llama_local", "", "", ""}},
+        {"music", {"llama_local", "", "", ""}},  {"controller", {"llama_local", "", "", ""}},
+        {"theme", {"llama_local", "", "", ""}},
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";

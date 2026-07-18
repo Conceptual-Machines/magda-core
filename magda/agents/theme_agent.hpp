@@ -18,8 +18,9 @@ namespace magda {
  * LLM round-trip + cancellation, so the agents library stays free of any UI
  * dependency. The caller supplies the (theme-specific) system prompt.
  *
- * Reuses role::MUSIC for the LLM config so users don't have to configure a
- * separate provider just to generate themes.
+ * Uses role::THEME for the LLM config so the theme agent's provider/model can
+ * be set independently in the Advanced AI config panel (defaults to the music
+ * tier for saved configs that predate the role).
  */
 class ThemeAgent {
   public:
