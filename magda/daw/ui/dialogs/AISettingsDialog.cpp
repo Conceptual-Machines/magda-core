@@ -1022,7 +1022,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             r.providerCombo.onChange = [this, rp]() { fillRowModel(*rp, {}); };
             addAndMakeVisible(r.providerCombo);
 
-            r.modelCombo.setEditableText(true);
+            // Pick-from-list only — no free-text model entry.
             styleCombo(r.modelCombo);
             addAndMakeVisible(r.modelCombo);
         }
@@ -1178,31 +1178,49 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             row.providerCombo.setSelectedId(1, juce::dontSendNotification);
     }
 
-    // Fill a row's model combo from the selected provider's catalogue. Embedded
-    // has no model to pick; local-server falls back to the shared model id.
+    // Fill a row's model combo from the selected provider's catalogue. The combo
+    // is pick-from-list only (no free text). Local providers take no per-agent
+    // model, so the combo is disabled: embedded shows nothing, local-server
+    // shows the shared model id read-only.
     void fillRowModel(AgentRow& row, const juce::String& desiredModel) {
         auto pid = rowProviderId(row);
         row.modelCombo.clear(juce::dontSendNotification);
-        // Local providers take no per-agent model: embedded uses the loaded
-        // GGUF, local-server uses the shared model from the Local/Config tabs.
-        // The combo is disabled; local-server shows the shared id read-only.
         if (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER) {
-            juce::String note = (pid == magda::provider::LOCAL_SERVER)
-                                    ? juce::String(Config::getInstance().getLocalServerModel())
-                                    : juce::String();
-            row.modelCombo.setText(note, juce::dontSendNotification);
+            if (pid == magda::provider::LOCAL_SERVER) {
+                auto shared = Config::getInstance().getLocalServerModel();
+                if (!shared.empty()) {
+                    row.modelCombo.addItem(juce::String(shared), 1);
+                    row.modelCombo.setSelectedId(1, juce::dontSendNotification);
+                }
+            }
             row.modelCombo.setEnabled(false);
             return;
         }
         row.modelCombo.setEnabled(true);
-        int id = 1;
-        for (const auto& m : knownModelsForProvider(pid))
-            row.modelCombo.addItem(m, id++);
 
-        if (desiredModel.isNotEmpty())
-            row.modelCombo.setText(desiredModel, juce::dontSendNotification);
-        else if (row.modelCombo.getNumItems() > 0)
-            row.modelCombo.setSelectedId(1, juce::dontSendNotification);
+        auto models = knownModelsForProvider(pid);
+        bool desiredInCatalogue = false;
+        for (const auto& m : models)
+            if (m == desiredModel) {
+                desiredInCatalogue = true;
+                break;
+            }
+
+        int id = 1;
+        int selectId = 0;
+        // Keep any saved model selectable even if it predates the catalogue.
+        if (desiredModel.isNotEmpty() && !desiredInCatalogue) {
+            row.modelCombo.addItem(desiredModel, id);
+            selectId = id;
+            ++id;
+        }
+        for (const auto& m : models) {
+            row.modelCombo.addItem(m, id);
+            if (m == desiredModel)
+                selectId = id;
+            ++id;
+        }
+        row.modelCombo.setSelectedId(selectId > 0 ? selectId : 1, juce::dontSendNotification);
     }
 
     // Rebuild every row's provider combo from the current configured
