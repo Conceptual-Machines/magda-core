@@ -18,8 +18,6 @@ ThemeAgent::Result ThemeAgent::generate(const std::string& systemPrompt,
         return result;
     }
 
-    // Reuse the MUSIC role: the user already has it configured for creative
-    // generation, and a dedicated theme provider isn't warranted yet.
     auto agentConfig = Config::getInstance().getAgentLLMConfig(role::THEME);
     auto providerConfig = toLLMProviderConfig(agentConfig, "theme");
 
