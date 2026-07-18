@@ -96,11 +96,10 @@ llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& config,
     if (isLocalServer && pc.model.isEmpty())
         pc.model = juce::String(Config::getInstance().getLocalServerModel());
 
-    if (pc.model.startsWith("claude-opus-"))
-        pc.model = model::CLAUDE_OPUS;
-    else if (pc.model.startsWith("claude-sonnet-"))
-        pc.model = model::CLAUDE_SONNET;
-    else if (pc.model.startsWith("claude-haiku-"))
+    // Collapse Haiku to its dated snapshot (the id the API accepts). Opus and
+    // Sonnet versions pass through as-is so per-agent Advanced-panel choices are
+    // honoured; Opus additionally rejects the temperature parameter.
+    if (pc.model.startsWith("claude-haiku-"))
         pc.model = model::CLAUDE_HAIKU;
 
     if (pc.model.startsWith("claude-opus-"))
