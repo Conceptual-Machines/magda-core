@@ -1,3 +1,9 @@
+// The shared_ptr atomic free functions used below are deprecated in C++20, but
+// Apple's libc++ does not ship the std::atomic<std::shared_ptr> replacement, so
+// they remain the only portable option. Silence MSVC's STL4029 deprecation
+// warning; must be defined before any standard header is included.
+#define _SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING
+
 #include "llama_model_manager.hpp"
 
 #include <llama.h>
@@ -27,9 +33,8 @@ bool LlamaModelManager::loadModel(const Config& config) {
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Status reads happen on the message thread, so publish state separately from the mutex held
-    // across model loading and inference.
-    loaded_.store(false, std::memory_order_release);
+    // Status reads happen on the message thread, so publish state via the lock-free
+    // snapshot instead of the mutex held across model loading and inference.
     std::atomic_store_explicit(&loadedPathSnapshot_, std::shared_ptr<const std::string>{},
                                std::memory_order_release);
 
@@ -67,14 +72,12 @@ bool LlamaModelManager::loadModel(const Config& config) {
     std::atomic_store_explicit(&loadedPathSnapshot_,
                                std::make_shared<const std::string>(config.modelPath),
                                std::memory_order_release);
-    loaded_.store(true, std::memory_order_release);
     return true;
 }
 
 void LlamaModelManager::unloadModel() {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    loaded_.store(false, std::memory_order_release);
     std::atomic_store_explicit(&loadedPathSnapshot_, std::shared_ptr<const std::string>{},
                                std::memory_order_release);
 
@@ -89,7 +92,7 @@ void LlamaModelManager::unloadModel() {
 }
 
 bool LlamaModelManager::isLoaded() const noexcept {
-    return loaded_.load(std::memory_order_acquire);
+    return std::atomic_load_explicit(&loadedPathSnapshot_, std::memory_order_acquire) != nullptr;
 }
 
 bool LlamaModelManager::isLoading() const noexcept {

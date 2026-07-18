@@ -200,6 +200,11 @@ target_compile_definitions(magda_tests
     # attaches to the AutomationManager singleton and would perturb other tests.
     # TempoLaneSync is tested directly in test_tempo_lane_sync_juce.cpp instead.
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
+    # Friend access for test_llama_model_manager.cpp. The define also happens to
+    # arrive transitively via magda_daw's INTERFACE re-export of its own
+    # COMPILE_DEFINITIONS; set it explicitly so this target does not depend on
+    # that re-export staying broad.
+    MAGDA_ENABLE_TEST_HOOKS=1
 )
 
 # Add the test to CTest
