@@ -42,6 +42,7 @@
 #include "../../../core/controllers/ControllerRegistry.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "../../components/common/SvgButton.hpp"
+#include "../../dialogs/AISettingsDialog.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
@@ -1079,6 +1080,11 @@ AIChatConsoleContent::AIChatConsoleContent() {
                                  DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
     configStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     configStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    // Clickable: opens AI Settings so the footer both reports and edits config.
+    configStatusLabel_.setInterceptsMouseClicks(true, false);
+    configStatusLabel_.addMouseListener(this, false);
+    configStatusLabel_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    configStatusLabel_.setTooltip("Open AI Settings");
     addAndMakeVisible(configStatusLabel_);
 
     // Model load/unload button (shown only for local_embedded preset)
@@ -2086,7 +2092,10 @@ void AIChatConsoleContent::updateConfigStatus() {
             status = status.substring(0, 1).toUpperCase() + status.substring(1);
     }
 
-    if (preset == magda::preset::LOCAL_SERVER) {
+    if (preset == magda::preset::ADVANCED) {
+        // Per-agent config: no single model — the router picks per agent.
+        status += juce::String::fromUTF8(" \xc2\xb7 per-agent");
+    } else if (preset == magda::preset::LOCAL_SERVER) {
         auto serverModel = config.getLocalServerModel();
         status +=
             " | " + (serverModel.empty() ? juce::String("No model") : juce::String(serverModel));
@@ -2139,6 +2148,10 @@ bool AIChatConsoleContent::isLocalPreset() const {
 }
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
+    if (event.originalComponent == &configStatusLabel_) {
+        magda::AISettingsDialog::showDialog(this);
+        return;
+    }
     if (event.originalComponent == &contextLabel_ ||
         (event.originalComponent == this && contextIconBounds_.contains(event.getPosition()))) {
         contextEnabled_ = !contextEnabled_;
