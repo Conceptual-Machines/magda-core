@@ -97,6 +97,7 @@ inline constexpr const char* ROUTER = "router";
 inline constexpr const char* COMMAND = "command";
 inline constexpr const char* MUSIC = "music";
 inline constexpr const char* CONTROLLER = "controller";
+inline constexpr const char* THEME = "theme";
 }  // namespace role
 
 std::string normalizeOpenAIBaseUrl(std::string url);

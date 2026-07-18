@@ -1003,11 +1003,12 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                                      DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(advancedHintLabel_);
 
-        static constexpr std::array<std::pair<const char*, const char*>, 4> kRoles = {{
+        static constexpr std::array<std::pair<const char*, const char*>, 5> kRoles = {{
             {magda::role::ROUTER, "Router"},
             {magda::role::COMMAND, "Command"},
             {magda::role::MUSIC, "Music"},
             {magda::role::CONTROLLER, "Controller"},
+            {magda::role::THEME, "Theme"},
         }};
         for (size_t i = 0; i < agentRows_.size(); ++i) {
             auto& r = agentRows_[i];
@@ -1527,6 +1528,10 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 out[magda::role::COMMAND] = cmdLocal;
             }
         }
+        // Theme is not part of the built-in presets — default it to the music
+        // tier (creative, structured-JSON generation, same as themes).
+        if (auto it = out.find(magda::role::MUSIC); it != out.end())
+            out[magda::role::THEME] = it->second;
         return out;
     }
 
@@ -1643,7 +1648,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     // Advanced per-agent grid (AgentRow defined near the top of the class).
     juce::Label advancedHintLabel_;
-    std::array<AgentRow, 4> agentRows_;
+    std::array<AgentRow, 5> agentRows_;
 
     // MCP Tools
     juce::Label mcpSectionLabel_;

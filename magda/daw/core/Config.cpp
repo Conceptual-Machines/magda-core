@@ -473,6 +473,7 @@ void Config::load() {
             if (auto* agentsObj = agentsVar.getDynamicObject()) {
                 bool jsonHadController = false;
                 bool jsonHadMusic = false;
+                bool jsonHadTheme = false;
 
                 for (const auto& prop : agentsObj->getProperties()) {
                     auto role = prop.name.toString().toStdString();
@@ -498,14 +499,18 @@ void Config::load() {
                             jsonHadController = true;
                         if (role == "music")
                             jsonHadMusic = true;
+                        if (role == "theme")
+                            jsonHadTheme = true;
                     }
                 }
 
-                // Saved configs that predate the "controller" role need a live
-                // config. Clone music so the user's cloud setup carries over
-                // instead of leaving the class-default llama_local in place.
+                // Saved configs that predate the "controller"/"theme" roles need
+                // a live config. Clone music so the user's cloud setup carries
+                // over instead of leaving the class-default llama_local in place.
                 if (!jsonHadController && jsonHadMusic)
                     agentConfigs["controller"] = agentConfigs["music"];
+                if (!jsonHadTheme && jsonHadMusic)
+                    agentConfigs["theme"] = agentConfigs["music"];
             }
 
             // Local llama settings
