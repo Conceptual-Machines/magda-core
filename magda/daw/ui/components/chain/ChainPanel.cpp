@@ -482,6 +482,15 @@ int ChainPanel::getScaledWidth(int width) const {
     return static_cast<int>(std::round(width * zoomLevel_));
 }
 
+void ChainPanel::lookAndFeelChanged() {
+    // The add-device button captures concrete colours at construction;
+    // re-apply so a live theme switch restyles it.
+    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
+                               DarkTheme::getColour(DarkTheme::SURFACE));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId,
+                               DarkTheme::getSecondaryTextColour());
+}
+
 void ChainPanel::mouseEnter(const juce::MouseEvent&) {
     DBG("ChainPanel::mouseEnter - visible=" << (isVisible() ? "yes" : "no")
                                             << " bounds=" << getBounds().toString());

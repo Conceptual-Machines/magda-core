@@ -39,24 +39,14 @@ juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
     return role ? DarkTheme::getColour(*role).withAlpha(colour.getFloatAlpha()) : colour;
 }
 
-std::optional<ColourRole> SvgButton::resolveConfiguredRole(juce::Colour colour,
-                                                           const char* context) {
-    auto role = DarkTheme::findDarkPaletteRole(colour);
-    if (!role.has_value())
-        DBG(juce::String("SvgButton [") + context + "]: colour #" + colour.toString() +
-            " maps to no theme role; it will not follow live theme changes. Configure it "
-            "from a DarkTheme role instead.");
-    return role;
-}
-
 void SvgButton::setStateColourReplacement(juce::Colour sourceColour, juce::Colour inactiveColour,
                                           juce::Colour activeColour) {
     const auto replacement = StateColourReplacement{
         sourceColour,
         inactiveColour,
         activeColour,
-        resolveConfiguredRole(inactiveColour, "setStateColourReplacement(inactive)"),
-        resolveConfiguredRole(activeColour, "setStateColourReplacement(active)"),
+        DarkTheme::findDarkPaletteRole(inactiveColour),
+        DarkTheme::findDarkPaletteRole(activeColour),
     };
 
     for (auto& existing : stateColourReplacements_) {
@@ -91,6 +81,38 @@ void SvgButton::setStateColourReplacement(juce::Colour sourceColour, ColourRole 
 
     stateColourReplacements_.push_back(replacement);
     repaint();
+}
+
+void SvgButton::applyThemedTints(juce::Drawable& icon, bool drawOn,
+                                 const std::optional<juce::Colour>& glyphTint) const {
+    // Stage 1: move every deliberate tint source onto a sentinel key. The
+    // sentinels carry a near-zero alpha no asset colour ever uses, so they
+    // can collide with neither the artwork nor the generic mapping below.
+    juce::uint32 sentinelKey = 0x02000001;
+    std::vector<std::pair<juce::Colour, juce::Colour>> staged;
+    const auto stage = [&](juce::Colour source, juce::Colour target) {
+        const juce::Colour sentinel(sentinelKey++);
+        icon.replaceColour(source, sentinel);
+        staged.emplace_back(sentinel, target);
+    };
+
+    for (const auto& replacement : stateColourReplacements_)
+        stage(replacement.source,
+              drawOn ? resolveThemeColour(replacement.active, replacement.activeRole)
+                     : resolveThemeColour(replacement.inactive, replacement.inactiveRole));
+
+    if (glyphTint.has_value()) {
+        // Untinted legacy assets key their glyph on black/currentColor.
+        stage(hasOriginalColor ? originalColor : juce::Colours::black, *glyphTint);
+    }
+
+    // Stage 2: generic role mapping for everything that is not a per-button
+    // tint (backgrounds, secondary strokes, shared glyph greys).
+    DarkTheme::applyToSvgIcon(icon);
+
+    // Stage 3: land the tints. Nothing can re-map them now.
+    for (const auto& [sentinel, target] : staged)
+        icon.replaceColour(sentinel, target);
 }
 
 void SvgButton::updateSvgData(const char* svgData, size_t svgDataSize) {
@@ -137,14 +159,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         }
 
         auto themedIcon = iconToDraw->createCopy();
-
-        for (const auto& replacement : stateColourReplacements_) {
-            themedIcon->replaceColour(
-                replacement.source,
-                drawOn ? resolveThemeColour(replacement.active, replacement.activeRole)
-                       : resolveThemeColour(replacement.inactive, replacement.inactiveRole));
-        }
-        DarkTheme::applyToSvgIcon(*themedIcon);
+        applyThemedTints(*themedIcon, drawOn, std::nullopt);
 
         float opacity = drawOn ? 1.0f : inactiveIconOpacity;
         if (shouldDrawButtonAsHighlighted && !drawOn && !shouldDrawButtonAsDown)
@@ -244,26 +259,10 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Calculate icon bounds (centered with some padding)
     auto bounds = getLocalBounds().toFloat().reduced(iconPadding);
 
-    // Create a copy of the drawable and replace colors
+    // Create a copy of the drawable, tint the glyph with the state colour, and
+    // theme the remaining artwork.
     auto iconCopy = svgIcon->createCopy();
-
-    for (const auto& replacement : stateColourReplacements_) {
-        iconCopy->replaceColour(
-            replacement.source,
-            drawOn ? resolveThemeColour(replacement.active, replacement.activeRole)
-                   : resolveThemeColour(replacement.inactive, replacement.inactiveRole));
-    }
-
-    // Replace the original SVG color with our desired color
-    if (hasOriginalColor) {
-        iconCopy->replaceColour(originalColor, iconColor);
-    } else {
-        // Untinted legacy assets still get the active palette's neutral and
-        // state colours. Apply the button-state tint before the generic SVG
-        // mapping so black/currentColor glyphs retain their per-button role.
-        iconCopy->replaceColour(juce::Colours::black, iconColor);
-    }
-    DarkTheme::applyToSvgIcon(*iconCopy);
+    applyThemedTints(*iconCopy, drawOn, iconColor);
 
     // Draw the icon (dimmed when disabled)
     float opacity = isEnabled() ? 1.0f : 0.25f;

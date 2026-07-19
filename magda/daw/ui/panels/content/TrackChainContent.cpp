@@ -1229,6 +1229,13 @@ void TrackChainContent::lookAndFeelChanged() {
     if (postFxPanelButton_)
         applyAnalysisToggleTheme(*postFxPanelButton_,
                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+
+    // The add-device button captures concrete colours at construction;
+    // re-apply so a live theme switch restyles it.
+    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.24f));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+
     repaint();
 }
 
