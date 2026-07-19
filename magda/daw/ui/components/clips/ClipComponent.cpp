@@ -582,7 +582,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // Ghost clips paint a translucent body + dimmed waveform so link-group
     // members read as mirrors of shared content.
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
@@ -637,7 +637,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Ghost clips paint a translucent body + dimmed notes (see paintAudioClip).
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
