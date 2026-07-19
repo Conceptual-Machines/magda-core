@@ -992,11 +992,14 @@ class AppearancePage : public juce::Component {
         {3, ThemeManager::kHighContrastThemeId, "High Contrast"},
     }};
 
-    // User theme combo ids start here, above the built-in ids, and index into
-    // userThemes_ (id - kUserThemeIdBase).
+    // Factory (embedded) theme ids start here, user theme ids above them;
+    // each range indexes into its list (id - base).
+    static constexpr int kFactoryThemeIdBase = 50;
     static constexpr int kUserThemeIdBase = 100;
 
-    // Repopulates the combo: built-ins first, then discovered user themes.
+    // Repopulates the combo: built-ins first, then the embedded factory
+    // themes, then discovered user themes. A user theme with a factory id
+    // shadows the factory entry (matching applyThemeById resolution).
     // Called on construction, each time the dialog loads, and after New Theme.
     void rebuildThemeCombo() {
         themeCombo.clear(juce::dontSendNotification);
@@ -1004,6 +1007,22 @@ class AppearancePage : public juce::Component {
             themeCombo.addItem(option.label, option.comboId);
 
         userThemes_ = scanUserThemes();
+
+        factoryThemes_.clear();
+        for (const auto& factory : factoryThemes()) {
+            bool shadowed = false;
+            for (const auto& user : userThemes_)
+                shadowed = shadowed || user.id == factory.id;
+            if (!shadowed)
+                factoryThemes_.push_back(factory);
+        }
+        if (!factoryThemes_.empty()) {
+            themeCombo.addSeparator();
+            for (size_t i = 0; i < factoryThemes_.size(); ++i)
+                themeCombo.addItem(juce::String(factoryThemes_[i].name),
+                                   kFactoryThemeIdBase + static_cast<int>(i));
+        }
+
         if (!userThemes_.empty()) {
             themeCombo.addSeparator();
             for (size_t i = 0; i < userThemes_.size(); ++i)
@@ -1019,6 +1038,9 @@ class AppearancePage : public juce::Component {
         for (size_t i = 0; i < userThemes_.size(); ++i)
             if (theme == userThemes_[i].id)
                 return kUserThemeIdBase + static_cast<int>(i);
+        for (size_t i = 0; i < factoryThemes_.size(); ++i)
+            if (theme == factoryThemes_[i].id)
+                return kFactoryThemeIdBase + static_cast<int>(i);
         return 1;  // persisted theme no longer on disk -> fall back to Dark
     }
 
@@ -1027,6 +1049,11 @@ class AppearancePage : public juce::Component {
             const size_t index = static_cast<size_t>(id - kUserThemeIdBase);
             if (index < userThemes_.size())
                 return userThemes_[index].id;
+        }
+        if (id >= kFactoryThemeIdBase) {
+            const size_t index = static_cast<size_t>(id - kFactoryThemeIdBase);
+            if (index < factoryThemes_.size())
+                return factoryThemes_[index].id;
         }
         for (const auto& option : builtInThemeOptions_)
             if (id == option.comboId)
@@ -1270,6 +1297,7 @@ class AppearancePage : public juce::Component {
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::vector<ThemeFileEntry> userThemes_;
+    std::vector<FactoryThemeEntry> factoryThemes_;
     juce::Label coloursHeader;
     juce::Label colourHeaderLabel, hexHeaderLabel, nameHeaderLabel;
     std::vector<std::unique_ptr<juce::Component>> colourSwatches_;

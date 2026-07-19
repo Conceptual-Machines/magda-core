@@ -2,6 +2,7 @@
 
 #include "magda/daw/ui/components/common/SvgButton.hpp"
 #include "magda/daw/ui/themes/DarkTheme.hpp"
+#include "magda/daw/ui/themes/UserTheme.hpp"
 
 class RuntimeThemeTest final : public juce::UnitTest {
   public:
@@ -289,6 +290,29 @@ class RuntimeThemeTest final : public juce::UnitTest {
         juce::Graphics dualActiveGraphics(dualActiveImage);
         dualButton.paintButton(dualActiveGraphics, false, false);
         expect(dualActiveImage.getPixelAt(0, 0).getARGB() == 0xFF202020);
+
+        beginTest("Factory themes load from the embedded assets");
+        expect(magda::factoryThemes().size() == 2);
+
+        const auto neon = magda::loadFactoryTheme("neon-cyberpunk");
+        expect(neon.has_value());
+        if (neon) {
+            expect(neon->name == "Neon Cyberpunk");
+            expect(neon->warnings.empty());
+            magda::DarkTheme::setActivePalette(neon->palette);
+            expect(magda::DarkTheme::getBackgroundColour().getARGB() == 0xFF0A0A14);
+            expect(magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_PRIMARY).getARGB() ==
+                   0xFFFF2D9E);
+        }
+
+        const auto concrete = magda::loadFactoryTheme("concrete-warehouse");
+        expect(concrete.has_value());
+        if (concrete) {
+            expect(concrete->name == "Concrete Warehouse");
+            expect(concrete->warnings.empty());
+        }
+
+        expect(!magda::loadFactoryTheme("missing-factory-theme").has_value());
 
         beginTest("Reset restores the built-in dark palette");
         magda::DarkTheme::resetToDarkPalette();

@@ -49,6 +49,20 @@ struct ThemeFileEntry {
 // individual fields never fail the load — they inherit the base and warn.
 std::optional<LoadedTheme> loadThemeFile(const juce::File& file);
 
+// A theme compiled into the binary (assets/themes). Factory themes sit
+// between the built-ins and the user's files in the picker; a user theme
+// file with the same id overrides the embedded copy.
+struct FactoryThemeEntry {
+    std::string id;    // stable identifier (asset file stem, kebab-case)
+    std::string name;  // display name from the embedded JSON
+};
+
+// The factory themes shipped in BinaryData, sorted by display name.
+const std::vector<FactoryThemeEntry>& factoryThemes();
+
+// Loads a factory theme by id. Returns nullopt for unknown ids.
+std::optional<LoadedTheme> loadFactoryTheme(const std::string& id);
+
 // Discovers *.json themes in paths::themesDir(), sorted by display name. Only
 // lightweight metadata (id, name) is read here; the palette is loaded lazily
 // via loadThemeFile when a theme is actually applied.
