@@ -33,32 +33,32 @@ class SvgButton : public juce::Button {
     // Set custom colors (only used in single-icon mode)
     void setNormalColor(juce::Colour color) {
         normalColor = color;
-        normalColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        normalColorRole_ = resolveConfiguredRole(color, "setNormalColor");
         hasNormalColor_ = true;
     }
     void setHoverColor(juce::Colour color) {
         hoverColor = color;
-        hoverColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        hoverColorRole_ = resolveConfiguredRole(color, "setHoverColor");
         hasHoverColor_ = true;
     }
     void setPressedColor(juce::Colour color) {
         pressedColor = color;
-        pressedColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        pressedColorRole_ = resolveConfiguredRole(color, "setPressedColor");
         hasPressedColor_ = true;
     }
     void setActiveColor(juce::Colour color) {
         activeColor = color;
-        activeColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        activeColorRole_ = resolveConfiguredRole(color, "setActiveColor");
         hasActiveColor_ = true;
     }
     void setActiveBackgroundColor(juce::Colour color) {
         activeBackgroundColor = color;
-        activeBackgroundColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        activeBackgroundColorRole_ = resolveConfiguredRole(color, "setActiveBackgroundColor");
         hasActiveBackgroundColor = true;
     }
     void setNormalBackgroundColor(juce::Colour color) {
         normalBackgroundColor = color;
-        normalBackgroundColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        normalBackgroundColorRole_ = resolveConfiguredRole(color, "setNormalBackgroundColor");
         hasNormalBackgroundColor = true;
     }
     void setOriginalColor(juce::Colour color) {
@@ -84,13 +84,13 @@ class SvgButton : public juce::Button {
 
     void setBorderColor(juce::Colour color) {
         borderColor = color;
-        borderColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        borderColorRole_ = resolveConfiguredRole(color, "setBorderColor");
         hasBorder = true;
     }
     // Border colour used while active/engaged (falls back to borderColor).
     void setActiveBorderColor(juce::Colour color) {
         activeBorderColor = color;
-        activeBorderColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        activeBorderColorRole_ = resolveConfiguredRole(color, "setActiveBorderColor");
         hasActiveBorderColor = true;
         hasBorder = true;
     }
@@ -113,6 +113,13 @@ class SvgButton : public juce::Button {
   private:
     static juce::Colour resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role);
+
+    // Resolves a configured colour to the palette role that produced it, so the
+    // button re-themes on a live theme switch. A colour matching no palette
+    // entry can't follow the theme and is cached as a literal; in debug builds
+    // this warns so the call site is routed through a themed role instead.
+    static std::optional<ColourRole> resolveConfiguredRole(juce::Colour colour,
+                                                           const char* context);
 
     struct StateColourReplacement {
         juce::Colour source;

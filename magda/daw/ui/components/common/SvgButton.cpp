@@ -39,14 +39,24 @@ juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
     return role ? DarkTheme::getColour(*role).withAlpha(colour.getFloatAlpha()) : colour;
 }
 
+std::optional<ColourRole> SvgButton::resolveConfiguredRole(juce::Colour colour,
+                                                           const char* context) {
+    auto role = DarkTheme::findDarkPaletteRole(colour);
+    if (!role.has_value())
+        DBG(juce::String("SvgButton [") + context + "]: colour #" + colour.toString() +
+            " maps to no theme role; it will not follow live theme changes. Configure it "
+            "from a DarkTheme role instead.");
+    return role;
+}
+
 void SvgButton::setStateColourReplacement(juce::Colour sourceColour, juce::Colour inactiveColour,
                                           juce::Colour activeColour) {
     const auto replacement = StateColourReplacement{
         sourceColour,
         inactiveColour,
         activeColour,
-        DarkTheme::findDarkPaletteRole(inactiveColour),
-        DarkTheme::findDarkPaletteRole(activeColour),
+        resolveConfiguredRole(inactiveColour, "setStateColourReplacement(inactive)"),
+        resolveConfiguredRole(activeColour, "setStateColourReplacement(active)"),
     };
 
     for (auto& existing : stateColourReplacements_) {

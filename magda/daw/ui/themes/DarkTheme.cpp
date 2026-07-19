@@ -415,9 +415,10 @@ constexpr DarkTheme::SyntaxPalette lightSyntaxPalette{
 constexpr DarkTheme::Palette highContrastPalette = [] {
     auto palette = darkPalette;
 
-    // This deliberately pragmatic palette proves the live-selection path.
-    // It is not MAGDA's future Light theme, which will get its own contrast
-    // and derived-colour pass in issue #89.
+    // High-contrast palette: pure-black surfaces with bright, saturated
+    // accents, meters, and status colours for maximum legibility on an
+    // all-black background. Every colour role is given an explicit value
+    // here rather than silently inheriting the Dark theme.
     palette[colourRoleIndex(ColourRole::E0)] = 0xFF000000;
     palette[colourRoleIndex(ColourRole::E1)] = 0xFF101010;
     palette[colourRoleIndex(ColourRole::E2)] = 0xFF1B1B1B;
@@ -537,6 +538,31 @@ constexpr DarkTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::MIXER_KNOB_OUTER_STROKE)] = 0xFF707070;
     palette[colourRoleIndex(ColourRole::MIXER_KNOB_INNER)] = 0xFF101010;
     palette[colourRoleIndex(ColourRole::MIXER_KNOB_GUIDE)] = 0xFF808080;
+
+    // Roles that previously fell through to the Dark palette. Give them
+    // explicit high-contrast values so nothing on the all-black background
+    // reads as a muted, low-contrast Dark leftover. Status and meter colours
+    // reuse the bright gain-meter ramp already defined above.
+    palette[colourRoleIndex(ColourRole::CONTROL_VALUE_FILL)] = 0x22FFFFFF;
+    palette[colourRoleIndex(ColourRole::CONTROL_SLIDER_THUMB)] = 0xFFE0E0E0;
+    palette[colourRoleIndex(ColourRole::ACCENT_ATTENTION)] = 0xFFFFA24A;
+    palette[colourRoleIndex(ColourRole::ACCENT_MODULATION)] = 0xFFA79BFF;
+    palette[colourRoleIndex(ColourRole::MASTER_TRACK_COLOUR)] = 0xFF9A88E0;
+    palette[colourRoleIndex(ColourRole::STATUS_SUCCESS)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::STATUS_WARNING)] = 0xFFFFD166;
+    palette[colourRoleIndex(ColourRole::STATUS_ERROR)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::STATUS_DANGER)] = 0xFFFF5A5A;
+    palette[colourRoleIndex(ColourRole::TRACK_BACKGROUND)] = 0xFF0A0A0A;
+    palette[colourRoleIndex(ColourRole::TRACK_SELECTED)] = 0xFF202020;
+    palette[colourRoleIndex(ColourRole::WAVEFORM_NORMAL)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::WAVEFORM_SELECTED)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::LEVEL_METER_GREEN)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::LEVEL_METER_YELLOW)] = 0xFFFFD166;
+    palette[colourRoleIndex(ColourRole::LEVEL_METER_RED)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::TIME_SELECTION)] = 0x554DA3FF;
+    palette[colourRoleIndex(ColourRole::LOOP_REGION)] = 0x14FFFFFF;
+    palette[colourRoleIndex(ColourRole::LOOP_MARKER)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::OFFSET_MARKER)] = 0xFFFFD166;
 
     return palette;
 }();

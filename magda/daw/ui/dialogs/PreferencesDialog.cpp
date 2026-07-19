@@ -989,7 +989,7 @@ class AppearancePage : public juce::Component {
     inline static constexpr std::array<BuiltInThemeOption, 3> builtInThemeOptions_{{
         {1, ThemeManager::kDarkThemeId, "Dark"},
         {2, ThemeManager::kLightThemeId, "Light"},
-        {3, ThemeManager::kHighContrastThemeId, "High Contrast (preview)"},
+        {3, ThemeManager::kHighContrastThemeId, "High Contrast"},
     }};
 
     // User theme combo ids start here, above the built-in ids, and index into

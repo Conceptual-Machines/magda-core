@@ -1366,6 +1366,25 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
     }
 }
 
+void TrackHeadersPanel::lookAndFeelChanged() {
+    // Per-track header labels cache concrete text colours, so a repaint alone
+    // won't refresh them after a theme switch. Name labels are selection-aware
+    // (handled by updateHeaderSelectionColours); the compact peak and column
+    // labels are plain secondary-text labels.
+    updateHeaderSelectionColours();
+    const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    for (auto& header : trackHeaders) {
+        if (!header)
+            continue;
+        if (header->masterPeakLabel)
+            header->masterPeakLabel->setColour(juce::Label::textColourId, secondary);
+        if (header->audioColumnLabel)
+            header->audioColumnLabel->setColour(juce::Label::textColourId, secondary);
+        if (header->midiColumnLabel)
+            header->midiColumnLabel->setColour(juce::Label::textColourId, secondary);
+    }
+}
+
 void TrackHeadersPanel::selectTrack(int index) {
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         selectedTrackIndices_.clear();
