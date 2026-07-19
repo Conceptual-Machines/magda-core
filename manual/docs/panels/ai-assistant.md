@@ -131,8 +131,17 @@ Prefix your message with a slash command to constrain the AI to a specific domai
 |---------|-------------|
 | `/groove <request>` | Create or apply swing/groove timing templates |
 | `/design <description>` | Generate a 4OSC preset from a natural-language description and apply it to the focused 4OSC device |
+| `/theme <description>` | Generate a UI colour theme from a natural-language description and apply it live |
 
 Typing `/` shows an autocomplete popup with available commands.
+
+#### `/theme` — AI Theme Generator
+
+Type `/theme <description>` to design a MAGDA colour theme from words — for example `warm sunset, dark`, `cold arctic blue`, `retro amber terminal`, or `cyberpunk neon on black`. The assistant produces a full palette, saves it as an editable JSON file in `Documents/MAGDA/Themes`, selects it, and applies it live.
+
+The theme stays selected afterwards. Edit its `.json` on disk to tweak it — changes re-apply instantly — or switch themes at any time under **Preferences > Appearance**. See [Preferences — Theme](../interface/preferences.md#theme) for the theme file format and the manual load/template buttons.
+
+Which model powers `/theme` is set by the **Theme** agent role in **AI Settings > Config** (Advanced mode).
 
 #### `/design` — AI Sound Design
 
