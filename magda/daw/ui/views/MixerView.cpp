@@ -1683,6 +1683,19 @@ void MixerView::ChannelStrip::resetPeak() {
         peakLabel->setText("-inf", juce::dontSendNotification);
 }
 
+void MixerView::ChannelStrip::lookAndFeelChanged() {
+    // trackLabel and peakLabel cache a concrete text colour, so a repaint alone
+    // won't refresh them after a theme switch. trackLabel's colour is
+    // selection-dependent, so mirror the logic in setSelected().
+    if (trackLabel)
+        trackLabel->setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
+                                                            : DarkTheme::TEXT_PRIMARY));
+    if (peakLabel)
+        peakLabel->setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+}
+
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;

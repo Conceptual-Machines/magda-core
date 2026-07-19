@@ -582,7 +582,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // Ghost clips paint a translucent body + dimmed waveform so link-group
     // members read as mirrors of shared content.
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
@@ -637,7 +637,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Ghost clips paint a translucent body + dimmed notes (see paintAudioClip).
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
@@ -2284,13 +2284,15 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
         isCommitting_ = true;
         const double commitTempoBPM = parentPanel_ ? parentPanel_->getTempo() : 120.0;
 
+        // SafePointer guard: any commit below can trigger rebuildClipComponents()
+        // (overlap resolution, model listeners relayouting the arrangement),
+        // which destroys this component mid-switch. Checked after the switch
+        // before touching any member.
+        juce::Component::SafePointer<ClipComponent> safeThis(this);
+
         // Now apply snapping and commit to ClipManager
         switch (savedDragMode) {
             case DragMode::Move: {
-                // SafePointer guard: overlap resolution during move/duplicate can
-                // trigger rebuildClipComponents() which destroys this component.
-                juce::Component::SafePointer<ClipComponent> safeThis(this);
-
                 double finalStartTime = previewStartTime_;
                 if (snapTimeToGrid) {
                     finalStartTime = snapTimeToGrid(finalStartTime);
@@ -2705,6 +2707,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
             default:
                 break;
         }
+        // The commit may have destroyed this component (see SafePointer above);
+        // touch no members after this point if it did.
+        if (safeThis == nullptr)
+            return;
         isCommitting_ = false;
     } else {
         // No drag occurred — if this was a plain click on a multi-selected clip,

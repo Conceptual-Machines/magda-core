@@ -1,5 +1,7 @@
 #include "UserTheme.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
 
 #include "ThemeSerialization.hpp"
@@ -48,20 +50,17 @@ void applyColourMap(const juce::DynamicObject& source, PaletteT& palette, FindFn
     }
 }
 
-}  // namespace
-
-std::optional<LoadedTheme> loadThemeFile(const juce::File& file) {
-    if (!file.existsAsFile())
-        return std::nullopt;
-
+// One parse path for file-based and embedded themes; only the source of the
+// JSON text and the id differ.
+std::optional<LoadedTheme> loadThemeFromText(const juce::String& text, std::string id) {
     juce::var parsed;
-    const auto result = juce::JSON::parse(file.loadFileAsString(), parsed);
+    const auto result = juce::JSON::parse(text, parsed);
     auto* obj = parsed.getDynamicObject();
     if (result.failed() || obj == nullptr)
         return std::nullopt;
 
     LoadedTheme theme;
-    theme.id = file.getFileNameWithoutExtension().toStdString();
+    theme.id = std::move(id);
 
     if (obj->hasProperty("schemaVersion")) {
         const int version = static_cast<int>(obj->getProperty("schemaVersion"));
@@ -91,6 +90,59 @@ std::optional<LoadedTheme> loadThemeFile(const juce::File& file) {
                        theme.warnings);
 
     return theme;
+}
+
+// Embedded factory themes. The id is the persisted identifier and follows the
+// built-in kebab style; display names come from the JSON payloads.
+struct FactoryThemeAsset {
+    const char* id;
+    const char* data;
+    int size;
+};
+
+const FactoryThemeAsset kFactoryThemeAssets[] = {
+    {"concrete-warehouse", BinaryData::concrete_warehouse_json,
+     BinaryData::concrete_warehouse_jsonSize},
+    {"neon-cyberpunk", BinaryData::neon_cyberpunk_json, BinaryData::neon_cyberpunk_jsonSize},
+};
+
+}  // namespace
+
+std::optional<LoadedTheme> loadThemeFile(const juce::File& file) {
+    if (!file.existsAsFile())
+        return std::nullopt;
+
+    return loadThemeFromText(file.loadFileAsString(),
+                             file.getFileNameWithoutExtension().toStdString());
+}
+
+const std::vector<FactoryThemeEntry>& factoryThemes() {
+    static const std::vector<FactoryThemeEntry> entries = [] {
+        std::vector<FactoryThemeEntry> list;
+        for (const auto& asset : kFactoryThemeAssets) {
+            FactoryThemeEntry entry;
+            entry.id = asset.id;
+            entry.name = asset.id;
+            if (auto loaded =
+                    loadThemeFromText(juce::String::fromUTF8(asset.data, asset.size), asset.id))
+                entry.name = loaded->name;
+            list.push_back(std::move(entry));
+        }
+        std::sort(list.begin(), list.end(),
+                  [](const FactoryThemeEntry& a, const FactoryThemeEntry& b) {
+                      return juce::String(a.name).compareIgnoreCase(juce::String(b.name)) < 0;
+                  });
+        return list;
+    }();
+    return entries;
+}
+
+std::optional<LoadedTheme> loadFactoryTheme(const std::string& id) {
+    for (const auto& asset : kFactoryThemeAssets)
+        if (id == asset.id)
+            return loadThemeFromText(juce::String::fromUTF8(asset.data, asset.size), asset.id);
+
+    return std::nullopt;
 }
 
 std::vector<ThemeFileEntry> scanUserThemes() {
@@ -173,6 +225,16 @@ ThemeApplyResult applyThemeById(const std::string& themeId) {
         result.isUserTheme = true;
         result.sourceFile = file;
         result.warnings = std::move(loaded->warnings);
+        return result;
+    }
+
+    // Factory themes resolve after the user file so a same-id file in the
+    // Themes folder overrides the embedded copy (and stays hot-reloadable).
+    if (auto factory = loadFactoryTheme(themeId)) {
+        DarkTheme::setActivePalette(factory->palette);
+        DarkTheme::setActiveSyntaxPalette(factory->syntaxPalette);
+        result.ok = true;
+        result.warnings = std::move(factory->warnings);
         return result;
     }
 

@@ -561,6 +561,14 @@ inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
     return oklchToColour(lightness, chroma, sRgbToOklchHue(stored), alpha);
 }
 
+// Clip bodies darken the swatch on dark surfaces so the border and the black
+// note/waveform ink read against it. The light swatch is already the deeper
+// variant, so darkening it again would land near-black on light surfaces.
+inline juce::Colour deriveClipBody(juce::Colour stored) {
+    const auto swatch = deriveTrackSwatch(stored);
+    return ThemeManager::isLightTheme() ? swatch : swatch.darker(0.3f);
+}
+
 // Keeps named colours in a custom device UI bound to a role without forcing
 // every paint call to spell out DarkTheme::getColour(). The conversion and
 // common modifiers resolve the active palette at the point of use.

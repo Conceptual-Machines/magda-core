@@ -351,6 +351,15 @@ void MiniChainRow::resized() {
     }
 }
 
+void MiniChainRow::lookAndFeelChanged() {
+    // Param name labels cache a concrete text colour, so a theme switch needs
+    // them re-applied rather than just repainted. The TextSlider values and the
+    // SvgButton re-resolve their own colours from stored roles on repaint.
+    for (auto& label : paramLabels_)
+        if (label)
+            label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+}
+
 void MiniChainRow::mouseDown(const juce::MouseEvent& event) {
     if (!devicePath_.isValid())
         return;

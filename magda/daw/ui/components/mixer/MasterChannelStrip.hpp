@@ -34,6 +34,7 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
+    void lookAndFeelChanged() override;
 
     // TrackManagerListener
     void tracksChanged() override {}

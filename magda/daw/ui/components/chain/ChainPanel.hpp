@@ -64,6 +64,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
   protected:
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
+    void lookAndFeelChanged() override;
     void mouseEnter(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override;

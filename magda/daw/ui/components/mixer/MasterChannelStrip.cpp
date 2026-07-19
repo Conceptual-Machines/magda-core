@@ -515,6 +515,19 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
     g.fillRect(1, labelRowBottom, ownBounds.getWidth() - 2, 1);
 }
 
+void MasterChannelStrip::lookAndFeelChanged() {
+    // titleLabel and peakValueLabel cache a concrete text colour, so a repaint
+    // alone won't refresh them after a theme switch. titleLabel's colour is
+    // selection-dependent, so mirror the logic in setSelected().
+    if (titleLabel)
+        titleLabel->setColour(juce::Label::textColourId,
+                              selected_ ? juce::Colours::white
+                                        : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    if (peakValueLabel)
+        peakValueLabel->setColour(juce::Label::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+}
+
 void MasterChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected_ != shouldBeSelected) {
         selected_ = shouldBeSelected;

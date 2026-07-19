@@ -34,9 +34,11 @@ Pick MAGDA's colour scheme from the **Application Theme** dropdown. Three themes
 |---|---|
 | **Dark** | The default. |
 | **Light** | Light-background variant. |
-| **High Contrast (preview)** | Higher-contrast palette, still being refined. |
+| **High Contrast** | Black background with brighter colours throughout, for maximum legibility. |
 
-Any custom themes you have installed appear below a separator, listed by name.
+Two factory themes ship alongside them, listed below a separator: **Concrete Warehouse**, a muted industrial palette with amber accents, and **Neon Cyberpunk**, saturated pinks and cyans on deep violet. They behave exactly like custom themes, so they double as worked examples of the JSON format.
+
+Any custom themes you have installed appear below a further separator, listed by name.
 
 #### Custom themes
 

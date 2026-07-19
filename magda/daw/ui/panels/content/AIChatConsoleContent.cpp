@@ -1635,9 +1635,12 @@ void AIChatConsoleContent::setupTabButtons() {
     aiTabButton_ =
         std::make_unique<magda::SvgButton>("AITab", BinaryData::ai_svg, BinaryData::ai_svgSize);
     aiTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiTabButton_->setActiveColor(juce::Colours::white);
-    aiTabButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    aiTabButton_->setActiveBackgroundColor(DarkTheme::getAccentColour());
+    // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
+    // every theme; a literal white got funnelled to TEXT_BRIGHT and vanished
+    // on themes whose bright text sits near the accent.
+    aiTabButton_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
+    aiTabButton_->setNormalBackgroundColor(DarkTheme::SURFACE);
+    aiTabButton_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
     aiTabButton_->setClickingTogglesState(true);
     aiTabButton_->setRadioGroupId(9001);
     aiTabButton_->setToggleState(true, juce::dontSendNotification);
@@ -1648,9 +1651,9 @@ void AIChatConsoleContent::setupTabButtons() {
     dslTabButton_ = std::make_unique<magda::SvgButton>("DSLTab", BinaryData::script_svg,
                                                        BinaryData::script_svgSize);
     dslTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    dslTabButton_->setActiveColor(juce::Colours::white);
-    dslTabButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    dslTabButton_->setActiveBackgroundColor(DarkTheme::getAccentColour());
+    dslTabButton_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
+    dslTabButton_->setNormalBackgroundColor(DarkTheme::SURFACE);
+    dslTabButton_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
     dslTabButton_->setClickingTogglesState(true);
     dslTabButton_->setRadioGroupId(9001);
     dslTabButton_->setTooltip("DSL Console");
@@ -3149,6 +3152,8 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
         }
     } else {
         jsonOrError = juce::String(result.error);
+        if (jsonOrError.isEmpty())
+            jsonOrError = "provider returned an error with no message";
     }
 
     // Read the anchor on the message thread (inside the callback), after the

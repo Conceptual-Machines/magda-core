@@ -1472,6 +1472,20 @@ void TransportPanel::applyThemedLabelColours() {
     overflowButton->setNormalColor(DarkTheme::getSecondaryTextColour());
     overflowButton->setActiveBackgroundColor(accentBlue.darker(0.6f));
 
+    // AUTO/SNAP capture concrete colours at construction; re-apply them so a
+    // live theme switch restyles the toggles instead of leaving the old
+    // palette behind.
+    for (auto* button : {autoGridButton.get(), snapButton.get()}) {
+        if (button == nullptr)
+            continue;
+        button->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+        button->setColour(juce::TextButton::buttonOnColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
+        button->setColour(juce::TextButton::textColourOffId, secondary);
+        button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    }
+
     repaint();
 }
 

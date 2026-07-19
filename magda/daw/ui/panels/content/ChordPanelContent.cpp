@@ -1681,9 +1681,11 @@ void ChordPanelContent::setupFooterControls() {
     ksTabBtn_->setRadioGroupId(1001);
     ksTabBtn_->setToggleState(true, juce::dontSendNotification);
     ksTabBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    ksTabBtn_->setActiveColor(juce::Colours::white);
-    ksTabBtn_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    ksTabBtn_->setActiveBackgroundColor(DarkTheme::getAccentColour());
+    // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
+    // every theme (see the AI console tab buttons).
+    ksTabBtn_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
+    ksTabBtn_->setNormalBackgroundColor(DarkTheme::SURFACE);
+    ksTabBtn_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
     ksTabBtn_->setTooltip("Krumhansl-Schmuckler profile suggestions");
     ksTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::KS); };
     addAndMakeVisible(ksTabBtn_.get());
@@ -1693,9 +1695,9 @@ void ChordPanelContent::setupFooterControls() {
     aiTabBtn_->setClickingTogglesState(true);
     aiTabBtn_->setRadioGroupId(1001);
     aiTabBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiTabBtn_->setActiveColor(juce::Colours::white);
-    aiTabBtn_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    aiTabBtn_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    aiTabBtn_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
+    aiTabBtn_->setNormalBackgroundColor(DarkTheme::SURFACE);
+    aiTabBtn_->setActiveBackgroundColor(DarkTheme::ACCENT_MODULATION);
     aiTabBtn_->setTooltip("AI chord progression suggestions");
     aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
     addAndMakeVisible(aiTabBtn_.get());
