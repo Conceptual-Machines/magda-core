@@ -159,7 +159,7 @@ class RuntimeThemeTest final : public juce::UnitTest {
             expect(image.getPixelAt(1, 0).getARGB() == 0xFF909090);
             expect(image.getPixelAt(2, 0).getARGB() == 0xFFD8D8D8);
             expect(image.getPixelAt(3, 0).getARGB() == 0xFF4DA3FF);
-            expect(image.getPixelAt(4, 0).getARGB() == 0xFFAA4444);
+            expect(image.getPixelAt(4, 0).getARGB() == 0xFFFF6B6B);
             expect(image.getPixelAt(5, 0).getARGB() == 0xFFFFFFFF);
             expect(image.getPixelAt(6, 0).getARGB() == 0xFF1B1B1B);
             expect(image.getPixelAt(7, 0).getARGB() == 0xFFD0D0D0);
