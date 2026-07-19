@@ -800,6 +800,14 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     laf.setColour(juce::ComboBox::arrowColourId, getColour(TEXT_SECONDARY));
     laf.setColour(juce::ComboBox::buttonColourId, getColour(BUTTON_NORMAL));
 
+    // Table header colors (e.g. the media library results table). Without
+    // these the header row draws JUCE's stock defaults and ignores the theme.
+    laf.setColour(juce::TableHeaderComponent::backgroundColourId, getColour(SURFACE));
+    laf.setColour(juce::TableHeaderComponent::textColourId, getColour(TEXT_PRIMARY));
+    laf.setColour(juce::TableHeaderComponent::outlineColourId, getColour(SEPARATOR));
+    laf.setColour(juce::TableHeaderComponent::highlightColourId,
+                  getColour(ACCENT_PRIMARY).withAlpha(0.3f));
+
     // PopupMenu colors
     laf.setColour(juce::PopupMenu::backgroundColourId, getColour(PANEL_BACKGROUND));
     laf.setColour(juce::PopupMenu::textColourId, getColour(TEXT_PRIMARY));
