@@ -34,7 +34,7 @@ Pick MAGDA's colour scheme from the **Application Theme** dropdown. Three themes
 |---|---|
 | **Dark** | The default. |
 | **Light** | Light-background variant. |
-| **High Contrast (preview)** | Higher-contrast palette, still being refined. |
+| **High Contrast** | Black background with brighter colours throughout, for maximum legibility. |
 
 Any custom themes you have installed appear below a separator, listed by name.
 
