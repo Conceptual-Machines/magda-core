@@ -85,10 +85,11 @@ CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     };
     addAndMakeVisible(panLabel_);
 
-    widthLabel_.setRange(0.0, 2.0, 1.0);
-    widthLabel_.setValue(1.0, juce::dontSendNotification);
+    widthLabel_.setRange(0.0, 200.0, 100.0);
+    widthLabel_.setValue(100.0, juce::dontSendNotification);
     widthLabel_.setFontSize(9.0f);
-    widthLabel_.setDecimalPlaces(2);
+    widthLabel_.setDecimalPlaces(0);
+    widthLabel_.setSuffix("%");
     widthLabel_.setFillColour(fillColour);
     widthLabel_.onValueChange = [this]() {
         writeParameter(Util::kWidthSlot, static_cast<float>(widthLabel_.getValue()));
@@ -184,7 +185,7 @@ void CompiledUtilityView::syncFromDevice() {
     gainValue_.setText(formatGainDb(gain), juce::dontSendNotification);
     panLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kPanSlot, 0.0f),
                        juce::dontSendNotification);
-    widthLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kWidthSlot, 1.0f),
+    widthLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kWidthSlot, 100.0f),
                          juce::dontSendNotification);
     xoverLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kLowMonoFreqSlot, 120.0f),
                          juce::dontSendNotification);

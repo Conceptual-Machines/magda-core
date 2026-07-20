@@ -86,6 +86,7 @@ set(TEST_SOURCES
     # Internal track-to-track routing (issue #1690)
     test_internal_track_routing.cpp
     test_master_track_serialization.cpp
+    test_utility_width_migration.cpp
     test_automation_agent.cpp
     test_mix_analysis_agent.cpp
     test_mix_analysis_audio.cpp
