@@ -10,6 +10,27 @@ namespace magda {
 
 namespace {
 
+// Pre-0.16 projects stored the Utility device's Width parameter as a 0-2 M/S
+// multiplier; it is now 0-200 %. The old shape is unambiguous in the file
+// (maxValue 2 vs 200), so rescale in place — no version gate needed. The
+// plugin state chunk stores the normalized knob position, which is
+// scale-independent and needs no migration.
+void migrateUtilityWidthToPercent(DeviceInfo& device) {
+    constexpr int kUtilityWidthSlot = 2;  // MagdaUtilityCompiledPlugin::kWidthSlot
+    if (!device.pluginId.equalsIgnoreCase("magda_utility"))
+        return;
+
+    for (auto& param : device.parameters) {
+        if (param.paramIndex != kUtilityWidthSlot || param.maxValue > 2.001f)
+            continue;
+        param.currentValue *= 100.0f;
+        param.minValue = 0.0f;
+        param.maxValue = 200.0f;
+        param.defaultValue = 100.0f;
+        param.unit = technicalText(TechnicalTextToken::Percent);
+    }
+}
+
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
     auto findAnalysis = [&elements](int order) {
         return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
@@ -567,6 +588,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
             outDevice.parameters.push_back(param);
         }
     }
+
+    migrateUtilityWidthToPercent(outDevice);
 
     // Visible parameters
     auto visibleParamsVar = obj->getProperty("visibleParameters");
