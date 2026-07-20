@@ -241,7 +241,7 @@ juce_add_binary_data(MagdaAssets
     # plugin packs; MAGDA-internal plugin aliases live in
     # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
-    # Factory themes — embedded JSON palettes listed between the built-in
+    # Factory themes - embedded JSON palettes listed between the built-in
     # themes and the user's own files (see UserTheme.cpp).
     ../../assets/themes/concrete_warehouse.json
     ../../assets/themes/neon_cyberpunk.json

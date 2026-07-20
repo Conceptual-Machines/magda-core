@@ -471,7 +471,7 @@ void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
             const auto y = static_cast<float>(yToPixelF(value));
             constexpr float dotSize = 7.0f;
             constexpr float dotRadius = dotSize / 2.0f;
-            g.setColour(curveColour_);
+            g.setColour(getCurveColour());
             g.fillEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize);
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
             g.drawEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize, 1.5f);

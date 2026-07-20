@@ -281,6 +281,20 @@ class TrackNameLabel : public juce::Label {
         juce::Label::mouseUp(e);
     }
 };
+
+// (Re)builds a routing icon's drawable with the active palette's tint. Called
+// at construction and again from lookAndFeelChanged: the tint is baked into
+// the drawable, so a live theme switch must rebuild the image to take effect.
+void applyRoutingIconImage(juce::Component* component, const char* svgData, int svgSize) {
+    auto* button = dynamic_cast<juce::DrawableButton*>(component);
+    if (button == nullptr)
+        return;
+    if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
+        svg->replaceColour(juce::Colour(0xFFB3B3B3), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        DarkTheme::applyToSvgIcon(*svg);
+        button->setImages(svg.get());
+    }
+}
 }  // namespace
 
 TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : name(trackName) {
@@ -443,24 +457,14 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // I/O routing icons (non-interactive visual indicators)
     auto inputDrawable =
         std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg =
-            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
-        svg->replaceColour(juce::Colour(0xFFB3B3B3), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        DarkTheme::applyToSvgIcon(*svg);
-        inputDrawable->setImages(svg.get());
-    }
+    applyRoutingIconImage(inputDrawable.get(), BinaryData::Input_svg, BinaryData::Input_svgSize);
     inputDrawable->setInterceptsMouseClicks(false, false);
     inputDrawable->setAlpha(0.38f);
     inputIcon = std::move(inputDrawable);
 
     auto outputDrawable =
         std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
-                                                       BinaryData::Output_svgSize)) {
-        svg->replaceColour(juce::Colour(0xFFB3B3B3), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        DarkTheme::applyToSvgIcon(*svg);
-        outputDrawable->setImages(svg.get());
-    }
+    applyRoutingIconImage(outputDrawable.get(), BinaryData::Output_svg, BinaryData::Output_svgSize);
     outputDrawable->setInterceptsMouseClicks(false, false);
     outputDrawable->setAlpha(0.38f);
     outputIcon = std::move(outputDrawable);
@@ -1382,6 +1386,14 @@ void TrackHeadersPanel::lookAndFeelChanged() {
             header->audioColumnLabel->setColour(juce::Label::textColourId, secondary);
         if (header->midiColumnLabel)
             header->midiColumnLabel->setColour(juce::Label::textColourId, secondary);
+        // The routing icons and collapse chevrons bake the palette into their
+        // drawables at construction; rebuild them with the active palette.
+        applyRoutingIconImage(header->inputIcon.get(), BinaryData::Input_svg,
+                              BinaryData::Input_svgSize);
+        applyRoutingIconImage(header->outputIcon.get(), BinaryData::Output_svg,
+                              BinaryData::Output_svgSize);
+        if (header->collapseButton)
+            updateCollapseButtonIcon(*header);
     }
 }
 

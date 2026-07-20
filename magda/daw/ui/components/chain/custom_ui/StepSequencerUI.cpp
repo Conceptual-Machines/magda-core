@@ -935,6 +935,21 @@ void StepSequencerUI::setupSlider(LinkableTextSlider& slider, double min, double
     addAndMakeVisible(slider);
 }
 
+void StepSequencerUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label :
+         {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &glideLabel_, &rampLabel_,
+          &depthLabel_, &skewLabel_, &cyclesLabel_, &quantizeLabel_, &quantizeSubLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    dirCombo_.setColour(juce::ComboBox::backgroundColourId,
+                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+
+    repaint();
+}
+
 std::vector<LinkableTextSlider*> StepSequencerUI::getLinkableSliders() {
     magda::ChainNodePath dummy;
     // Param indices match AutomatableParameter registration order:

@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "AppPaths.hpp"
+#include "LLMClientProvider.hpp"
 
 // ---------------------------------------------------------------------------
 // Path helper
@@ -535,10 +536,11 @@ void Config::load() {
                 localLlamaContextSize =
                     static_cast<int>(aiObj->getProperty("localLlamaContextSize"));
 
-            // Migrate: openai_chat + GPT-5 → openai_responses (older configs used wrong provider)
+            // Migrate: openai_chat + a Responses-only model (gpt-5*, o-series)
+            // -> openai_responses (older configs used the wrong provider)
             for (auto& [role, cfg] : agentConfigs) {
                 if (cfg.provider == "openai_chat" && cfg.baseUrl.empty()) {
-                    if (juce::String(cfg.model).startsWith("gpt-5")) {
+                    if (requiresOpenAIResponsesAPI(juce::String(cfg.model))) {
                         cfg.provider = "openai_responses";
                     } else if (role == "command" || role == "music") {
                         // Older configs had command/music on gpt-4.1-mini — upgrade

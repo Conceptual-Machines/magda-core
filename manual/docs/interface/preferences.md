@@ -24,7 +24,7 @@ The dialog is organised into sections; each section is described below.
 
 ## Appearance
 
-The **Appearance** tab groups everything that controls how MAGDA looks: the colour theme, interface scale, typeface, layout density, and the track/clip colour palettes. Every control here applies **live** the moment you click **OK** or **Apply** — no restart required.
+The **Appearance** tab groups everything that controls how MAGDA looks: the colour theme, interface scale, typeface, layout density, and the track/clip colour palettes. Every control here applies **live** the moment you click **OK** or **Apply** - no restart required.
 
 ### Theme
 
@@ -44,16 +44,16 @@ Any custom themes you have installed appear below a further separator, listed by
 
 Three buttons under the dropdown let you build and manage your own themes:
 
-- **Download Theme Template** — exports the current theme's palette as a complete, editable `.json` file to start from.
-- **Load Theme** — pick an edited `.json`; MAGDA copies it into the Themes folder and selects it.
-- **Open Themes Folder** — reveals the Themes folder in your file browser.
+- **Download Theme Template** - exports the current theme's palette as a complete, editable `.json` file to start from.
+- **Load Theme** - pick an edited `.json`; MAGDA copies it into the Themes folder and selects it.
+- **Open Themes Folder** - reveals the Themes folder in your file browser.
 
 Themes are plain JSON files in `Documents/MAGDA/Themes`. Each file declares:
 
-- **`name`** — the display name shown in the dropdown.
-- **`base`** — either `dark` or `light`. Any colour role you do not override is inherited from that base, so you only need to list what you want to change.
-- **`colours`** — a map of colour role to hex value. Roles include a six-step accent ramp (`accent1` is the primary selection/active colour, through `accent6`) plus surface and text roles.
-- **`syntaxColours`** — optional; themes the code/console text.
+- **`name`** - the display name shown in the dropdown.
+- **`base`** - either `dark` or `light`. Any colour role you do not override is inherited from that base, so you only need to list what you want to change.
+- **`colours`** - a map of colour role to hex value. Roles include a six-step accent ramp (`accent1` is the primary selection/active colour, through `accent6`) plus surface and text roles.
+- **`syntaxColours`** - optional; themes the code/console text.
 
 The filename (without `.json`) is the theme's id. Unknown keys and invalid colours are skipped, so a partial file is safe to load.
 
@@ -61,7 +61,7 @@ MAGDA watches the selected theme file while it is active: edit its JSON on disk 
 
 #### Generate a theme with AI
 
-You can also describe a theme in plain language. In the [AI Assistant](../panels/ai-assistant.md#slash-commands) console, type `/theme <description>` — for example `warm sunset, dark` or `cyberpunk neon on black`. MAGDA writes the generated theme to `Documents/MAGDA/Themes`, selects it, and applies it live. Edit the resulting file to fine-tune it.
+You can also describe a theme in plain language. In the [AI Assistant](../panels/ai-assistant.md#slash-commands) console, type `/theme <description>` - for example `warm sunset, dark` or `cyberpunk neon on black`. MAGDA writes the generated theme to `Documents/MAGDA/Themes`, selects it, and applies it live. Edit the resulting file to fine-tune it.
 
 ### UI Scale
 
@@ -72,11 +72,11 @@ Pick a global scale factor for the whole interface. Useful on HiDPI / 4K screens
 | **Auto (from display DPI)** | Scale is derived from the display's reported DPI. |
 | **100% – 200%** | Fixed multiplier, ignoring DPI auto-detection. Common picks: 125% on a regular 4K monitor, 150% on a Retina laptop with external scaling, 200% if you want to see fewer rows from across the room. |
 
-Changes apply live — no restart required. The shortcuts ++cmd+plus++ and ++cmd+minus++ also bump the scale up and down by one preset.
+Changes apply live - no restart required. The shortcuts ++cmd+plus++ and ++cmd+minus++ also bump the scale up and down by one preset.
 
 ### UI Font
 
-Choose the interface typeface from the **UI Font** dropdown. The first entry, **Inter (default)**, is MAGDA's bundled font; below it every typeface installed on your system is listed alphabetically, so the available fonts depend on your machine. **UI Font** changes the typeface only — use **Font Size** to change how large it renders.
+Choose the interface typeface from the **UI Font** dropdown. The first entry, **Inter (default)**, is MAGDA's bundled font; below it every typeface installed on your system is listed alphabetically, so the available fonts depend on your machine. **UI Font** changes the typeface only - use **Font Size** to change how large it renders.
 
 ### Font Size
 
@@ -88,9 +88,9 @@ The **Spacing** slider tightens or loosens the padding between interface element
 
 ### Track & Clip Colours
 
-- **Track Colour Palette** — Define the swatch set offered when you colour tracks and clips
-- **Track colours** — Right-click any track header to assign a colour; the colour tints headers in the arrangement, session view, and mixer strips
-- **Clip Colours** — Clips can have their own colour or follow the track colour
+- **Track Colour Palette** - Define the swatch set offered when you colour tracks and clips
+- **Track colours** - Right-click any track header to assign a colour; the colour tints headers in the arrangement, session view, and mixer strips
+- **Clip Colours** - Clips can have their own colour or follow the track colour
 
 ## Storage
 

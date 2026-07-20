@@ -1510,6 +1510,28 @@ void PolyStepSequencerUI::setupSlider(LinkableTextSlider& slider, double min, do
     addAndMakeVisible(slider);
 }
 
+void PolyStepSequencerUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label :
+         {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &gateLengthLabel_, &quantizeLabel_,
+          &quantizeSubLabel_, &rampLabel_, &depthLabel_, &skewLabel_, &cyclesLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    dirCombo_.setColour(juce::ComboBox::backgroundColourId,
+                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+
+    viewModeButton_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    viewModeButton_.setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getAccentColour().withAlpha(0.6f));
+    viewModeButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    viewModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+
+    repaint();
+}
+
 std::vector<LinkableTextSlider*> PolyStepSequencerUI::getLinkableSliders() {
     magda::ChainNodePath dummy;
     // Param indices match AutomatableParameter registration order:

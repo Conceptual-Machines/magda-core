@@ -725,6 +725,39 @@ void PolySynthUI::resized() {
         {kFilterAttackSlot, kFilterAttackSlot + 1, kFilterAttackSlot + 2, kFilterAttackSlot + 3});
 }
 
+void PolySynthUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto& c : controls_)
+        if (c.label)
+            c.label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    if (filterCurve_)
+        filterCurve_->setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+
+    auto refreshSegmentButton = [](juce::TextButton* btn) {
+        if (!btn)
+            return;
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    };
+    for (auto& btn : typeButtons_)
+        refreshSegmentButton(btn.get());
+    for (auto& btn : slopeButtons_)
+        refreshSegmentButton(btn.get());
+    for (auto& btn : voiceModeButtons_)
+        refreshSegmentButton(btn.get());
+    for (auto& btn : oscEnableButtons_)
+        refreshSegmentButton(btn.get());
+    for (auto& btn : oscResetButtons_)
+        refreshSegmentButton(btn.get());
+
+    repaint();
+}
+
 void PolySynthUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds());

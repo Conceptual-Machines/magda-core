@@ -238,7 +238,10 @@ ThemeApplyResult applyThemeById(const std::string& themeId) {
         return result;
     }
 
-    // Unknown id, or the file is missing/unreadable/not an object.
+    // Unknown id, or the file is missing/unreadable/not an object. Report the
+    // candidate user-file path anyway so the caller can keep watching it and
+    // recover the moment a valid file appears (built-in ids returned above).
+    result.sourceFile = file;
     DarkTheme::resetToDarkPalette();
     return result;
 }

@@ -145,6 +145,7 @@ class TrackInspector : public BaseInspector,
 
     // Update methods
     void applyThemeColours();
+    void rebuildRoutingIcons();
     void updateFromSelectedTrack();
     void updateFromMultiTrackSelection();
     void updateAutomatedParametersSummary();

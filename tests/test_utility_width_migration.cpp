@@ -115,6 +115,7 @@ TEST_CASE("Old-scale Utility Width migrates to percent on load",
     CHECK(width.minValue == 0.0f);
     CHECK(width.maxValue == 200.0f);
     CHECK(width.defaultValue == 100.0f);
+    CHECK(width.unit == "%");
 }
 
 TEST_CASE("Percent-scale Utility Width passes through load unchanged",

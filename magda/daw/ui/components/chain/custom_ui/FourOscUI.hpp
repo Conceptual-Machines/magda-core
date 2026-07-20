@@ -59,6 +59,7 @@ class FourOscUI : public juce::Component {
     int getCurrentTabIndex() const;
     void setCurrentTabIndex(int index);
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -98,6 +99,7 @@ class FourOscUI : public juce::Component {
         LinkableTextSlider masterLevelSlider_{TextSlider::Format::Decibels};
         juce::Label modeLabel_, gVoicesLabel_, legatoLabel_, masterLabel_;
         void setupLabel(juce::Label& label, const juce::String& text);
+        void refreshThemeColours();
         static void setupWaveSelector(IconSelector& selector);
         juce::Label hdrWave_, hdrTune_, hdrFine_, hdrLevel_, hdrPW_, hdrDetune_, hdrSpread_,
             hdrPan_, hdrVoices_;
@@ -133,6 +135,7 @@ class FourOscUI : public juce::Component {
             amountLabel_;
         juce::Label atkLabel_, decLabel_, susLabel_, relLabel_;
         void setupLabel(juce::Label& label, const juce::String& text);
+        void refreshThemeColours();
     };
 
     class AmpTab : public juce::Component {
@@ -157,6 +160,7 @@ class FourOscUI : public juce::Component {
         juce::ToggleButton analogButton_{"Analog"};
         juce::Label atkLabel_, decLabel_, susLabel_, relLabel_, velLabel_;
         void setupLabel(juce::Label& label, const juce::String& text);
+        void refreshThemeColours();
     };
 
     class ModEnvTab : public juce::Component {
@@ -186,6 +190,7 @@ class FourOscUI : public juce::Component {
         EnvRow rows_[2];
         juce::Label hdrAtk_, hdrDec_, hdrSus_, hdrRel_;
         void setupLabel(juce::Label& label, const juce::String& text);
+        void refreshThemeColours();
 
         // Mod destination assignments
         juce::TextButton addDestBtn1_{"+ Env 1"}, addDestBtn2_{"+ Env 2"};
@@ -233,6 +238,7 @@ class FourOscUI : public juce::Component {
         static void setupWaveSelector(IconSelector& selector);
         juce::Label hdrWave_, hdrRate_, hdrDepth_, hdrSync_;
         void setupLabel(juce::Label& label, const juce::String& text);
+        void refreshThemeColours();
 
         // Mod destination assignments
         juce::TextButton addDestBtn1_{"+ LFO 1"}, addDestBtn2_{"+ LFO 2"};
@@ -284,6 +290,7 @@ class FourOscUI : public juce::Component {
         juce::Label delFbLabel_, delXfLabel_, delMixLabel_;
         juce::Label chSpeedLabel_, chDepthLabel_, chWidthLabel_, chMixLabel_;
         void setupLabel(juce::Label& label, const juce::String& text);
+        void refreshThemeColours();
     };
 
     // =========================================================================

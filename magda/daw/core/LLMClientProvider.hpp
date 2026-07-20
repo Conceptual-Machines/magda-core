@@ -34,7 +34,7 @@ inline constexpr const char* CLOUD_OPENROUTER = "cloud_openrouter";
 inline constexpr const char* HYBRID_SPEED = "hybrid_speed";
 inline constexpr const char* HYBRID_QUALITY = "hybrid_quality";
 // Sentinel: per-agent provider/model mapping set from the Advanced config
-// panel. Not a built-in preset — agent configs are persisted directly.
+// panel. Not a built-in preset; agent configs are persisted directly.
 inline constexpr const char* ADVANCED = "advanced";
 }  // namespace preset
 
@@ -99,6 +99,16 @@ inline constexpr const char* MUSIC = "music";
 inline constexpr const char* CONTROLLER = "controller";
 inline constexpr const char* THEME = "theme";
 }  // namespace role
+
+// OpenAI models that must go through the Responses API (which also rejects
+// temperature): gpt-5* and the o-series reasoning models (o3, o3-pro, ...).
+// The single source of truth for the openai_chat -> openai_responses upgrade.
+inline bool requiresOpenAIResponsesAPI(const juce::String& modelId) {
+    if (modelId.startsWith("gpt-5"))
+        return true;
+    return modelId.length() > 1 && modelId[0] == 'o' &&
+           juce::CharacterFunctions::isDigit(modelId[1]);
+}
 
 std::string normalizeOpenAIBaseUrl(std::string url);
 llm::Provider providerFromString(const std::string& s);

@@ -470,6 +470,7 @@ class ModulatorEditorPanel : public juce::Component,
     std::function<void(int modIndex, magda::ControlTarget target, float amount)>
         onModLinkAmountChanged;
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;

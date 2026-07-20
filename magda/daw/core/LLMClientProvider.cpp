@@ -149,7 +149,7 @@ llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& config,
         }
     }
 
-    if (pc.model.startsWith("gpt-5")) {
+    if (requiresOpenAIResponsesAPI(pc.model)) {
         pc.noTemperature = true;
         if (pc.reasoningEffort.isEmpty())
             pc.reasoningEffort = "low";

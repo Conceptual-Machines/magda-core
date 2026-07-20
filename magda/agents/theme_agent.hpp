@@ -12,7 +12,7 @@ namespace magda {
 /**
  * @brief Thin LLM wrapper for theme generation.
  *
- * Deliberately knows nothing about colours, roles, or the theme file format —
+ * Deliberately knows nothing about colours, roles, or the theme file format -
  * that domain knowledge lives in the UI themes layer (ThemePrompt.hpp), which
  * builds the system prompt and validates the result. This class only owns the
  * LLM round-trip + cancellation, so the agents library stays free of any UI

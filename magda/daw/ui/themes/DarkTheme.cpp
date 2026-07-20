@@ -705,31 +705,52 @@ void DarkTheme::applyToSvgIcon(juce::Drawable& drawable) {
     // All replacements preserve the current Dark output exactly. On another
     // palette they let the control icon follow the corresponding semantic
     // colour without editing its SVG payload.
-    drawable.replaceColour(juce::Colour(0xFFB3B3B3), getColour(ICON_NEUTRAL));
-    drawable.replaceColour(juce::Colour(0xFFBCBCBC), getColour(ICON_TRANSPORT));
-    drawable.replaceColour(juce::Colour(0xFF2E2E33), getColour(ICON_BACKGROUND));
-    drawable.replaceColour(juce::Colour(0xFF1A1A1A), getColour(PIANO_ROLL_BACKGROUND));
-    drawable.replaceColour(juce::Colour(0xFF1E1E1E), getColour(AUTOMATION_LANE_BACKGROUND));
-    drawable.replaceColour(juce::Colour(0xFF444444), getColour(AUTOMATION_DIVIDER_LIGHT));
-    drawable.replaceColour(juce::Colour(0xFF555555), getColour(BAR_LINE));
-    drawable.replaceColour(juce::Colour(0xFF5588AA), getColour(ACCENT_PRIMARY));
-    drawable.replaceColour(juce::Colour(0xFF7777DD), getColour(ACCENT_MODULATION));
-    drawable.replaceColour(juce::Colour(0xFFAA4444), getColour(STATUS_ERROR));
-    drawable.replaceColour(juce::Colour(0xFFFF8822), getColour(ACCENT_ATTENTION));
-    drawable.replaceColour(juce::Colour(0xFF66AAFF), getColour(ACCENT_INFO));
-    drawable.replaceColour(juce::Colour(0xFF88AACC), getColour(ACCENT_PRIMARY_SOFT));
-    drawable.replaceColour(juce::Colour(0xFFE3E3E3), getColour(ICON_BRIGHT));
-    drawable.replaceColour(juce::Colour(0xFFE6E6E6), getColour(ICON_POWER));
-    drawable.replaceColour(juce::Colour(0xFF808080), getColour(ICON_SUBTLE));
-    drawable.replaceColour(juce::Colour(0xFF979797), getColour(ICON_MODULATION));
-    drawable.replaceColour(juce::Colour(0xFFD9D9D9), getColour(ICON_BRAND));
-    drawable.replaceColour(juce::Colour(0xFF2A3A4A), getColour(MIXER_FADER_THUMB));
-    drawable.replaceColour(juce::Colour(0xFF2A2A35), getColour(MIXER_KNOB_OUTER));
-    drawable.replaceColour(juce::Colour(0xFF3A3A45), getColour(MIXER_KNOB_OUTER_STROKE));
-    drawable.replaceColour(juce::Colour(0xFF1E1E22), getColour(MIXER_KNOB_INNER));
-    drawable.replaceColour(juce::Colour(0xFF404050), getColour(MIXER_KNOB_GUIDE));
-    drawable.replaceColour(juce::Colours::black, getColour(ICON_NEUTRAL));
-    drawable.replaceColour(juce::Colours::white, getColour(TEXT_BRIGHT));
+    struct Mapping {
+        juce::uint32 source;
+        ColourRole role;
+    };
+    static constexpr Mapping kIconColourMap[] = {
+        {0xFFB3B3B3, ICON_NEUTRAL},
+        {0xFFBCBCBC, ICON_TRANSPORT},
+        {0xFF2E2E33, ICON_BACKGROUND},
+        {0xFF1A1A1A, PIANO_ROLL_BACKGROUND},
+        {0xFF1E1E1E, AUTOMATION_LANE_BACKGROUND},
+        {0xFF444444, AUTOMATION_DIVIDER_LIGHT},
+        {0xFF555555, BAR_LINE},
+        {0xFF5588AA, ACCENT_PRIMARY},
+        {0xFF7777DD, ACCENT_MODULATION},
+        {0xFFAA4444, STATUS_ERROR},
+        {0xFFFF8822, ACCENT_ATTENTION},
+        {0xFF66AAFF, ACCENT_INFO},
+        {0xFF88AACC, ACCENT_PRIMARY_SOFT},
+        {0xFFE3E3E3, ICON_BRIGHT},
+        {0xFFE6E6E6, ICON_POWER},
+        {0xFF808080, ICON_SUBTLE},
+        {0xFF979797, ICON_MODULATION},
+        {0xFFD9D9D9, ICON_BRAND},
+        {0xFF2A3A4A, MIXER_FADER_THUMB},
+        {0xFF2A2A35, MIXER_KNOB_OUTER},
+        {0xFF3A3A45, MIXER_KNOB_OUTER_STROKE},
+        {0xFF1E1E22, MIXER_KNOB_INNER},
+        {0xFF404050, MIXER_KNOB_GUIDE},
+        {0xFF000000, ICON_NEUTRAL},  // juce::Colours::black
+        {0xFFFFFFFF, TEXT_BRIGHT},   // juce::Colours::white
+    };
+
+    // Staged through unique sentinels so the mapping is order-independent. A
+    // user palette can set an earlier mapping's target to a later mapping's
+    // source key (e.g. iconNeutral = #555555); replacing directly in sequence
+    // would then re-map those pixels a second time. The sentinel alphas are
+    // near-zero values no asset colour uses; the 0x03 range stays clear of
+    // SvgButton::applyThemedTints' 0x02 staging range, which composes with
+    // this function.
+    juce::uint32 sentinelKey = 0x03000001;
+    for (const auto& mapping : kIconColourMap)
+        drawable.replaceColour(juce::Colour(mapping.source), juce::Colour(sentinelKey++));
+
+    sentinelKey = 0x03000001;
+    for (const auto& mapping : kIconColourMap)
+        drawable.replaceColour(juce::Colour(sentinelKey++), getColour(mapping.role));
 }
 
 juce::uint32 DarkTheme::getColourValue(ColourRole role) {

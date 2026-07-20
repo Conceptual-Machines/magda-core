@@ -243,7 +243,7 @@ class AIChatConsoleContent : public PanelContent,
     void finishPresetGeneration(bool success, const juce::String& errorOrPretty,
                                 juce::String presetName);
 
-    // /theme <description> — kick the ThemeAgent on a background thread. On
+    // /theme <description> - kick the ThemeAgent on a background thread. On
     // success the generated JSON is written into paths::themesDir() and
     // selected via Config, so the app's existing apply + hot-reload path
     // renders it. Its own thread for the same reason as FourOsc.

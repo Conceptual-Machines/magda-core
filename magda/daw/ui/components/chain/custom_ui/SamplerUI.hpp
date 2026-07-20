@@ -92,6 +92,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
         return hasWaveform_;
     }
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -117,6 +118,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
 
     // Sample info
     juce::Label sampleNameLabel_;
+    bool hasSampleName_ = false;
     std::unique_ptr<magda::SvgButton> loadButton_;
     TextSlider rootNoteSlider_{TextSlider::Format::Decimal};
     juce::Label rootNoteLabel_;
