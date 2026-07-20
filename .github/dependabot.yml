@@ -3,6 +3,12 @@ updates:
   # Git submodules (JUCE, llama.cpp, etc.)
   - package-ecosystem: "gitsubmodule"
     directory: "/"
+    # Base bumps on the active dev branch, not the default branch (main).
+    # main's only PR trigger is `pull_request: [main]`, so PRs into main run the
+    # full CI matrix (incl. the self-hosted macOS/Windows jobs); targeting dev
+    # keeps bumps off that path and in line with the normal contribution flow.
+    # Update this each release cycle when the active dev branch rolls over.
+    target-branch: "dev/0.16.0"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -19,6 +25,9 @@ updates:
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
+    # See the gitsubmodule note above: base on the active dev branch so bumps
+    # don't trip the pull_request-into-main CI. Bump each release cycle.
+    target-branch: "dev/0.16.0"
     schedule:
       interval: "weekly"
       day: "monday"
