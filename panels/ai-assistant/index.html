@@ -1122,6 +1122,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#theme-ai-theme-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      /theme - AI Theme Generator
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#design-ai-sound-design" class="md-nav__link">
     <span class="md-ellipsis">
       /design — AI Sound Design
@@ -2368,6 +2377,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#theme-ai-theme-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      /theme - AI Theme Generator
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#design-ai-sound-design" class="md-nav__link">
     <span class="md-ellipsis">
       /design — AI Sound Design
@@ -2547,9 +2565,17 @@ groove.set(template=&quot;Basic 8th Swing&quot;, strength=0.5)
 <td><code>/design &lt;description&gt;</code></td>
 <td>Generate a 4OSC preset from a natural-language description and apply it to the focused 4OSC device</td>
 </tr>
+<tr>
+<td><code>/theme &lt;description&gt;</code></td>
+<td>Generate a UI colour theme from a natural-language description and apply it live</td>
+</tr>
 </tbody>
 </table>
 <p>Typing <code>/</code> shows an autocomplete popup with available commands.</p>
+<h4 id="theme-ai-theme-generator"><code>/theme</code> - AI Theme Generator<a class="headerlink" href="#theme-ai-theme-generator" title="Permanent link">&para;</a></h4>
+<p>Type <code>/theme &lt;description&gt;</code> to design a MAGDA colour theme from words - for example <code>warm sunset, dark</code>, <code>cold arctic blue</code>, <code>retro amber terminal</code>, or <code>cyberpunk neon on black</code>. The assistant produces a full palette, saves it as an editable JSON file in <code>Documents/MAGDA/Themes</code>, selects it, and applies it live.</p>
+<p>The theme stays selected afterwards. Edit its <code>.json</code> on disk to tweak it - changes re-apply instantly - or switch themes at any time under <strong>Preferences &gt; Appearance</strong>. See <a href="../../interface/preferences/#theme">Preferences - Theme</a> for the theme file format and the manual load/template buttons.</p>
+<p>Which model powers <code>/theme</code> is set by the <strong>Theme</strong> agent role in <strong>AI Settings &gt; Config</strong> (Advanced mode).</p>
 <h4 id="design-ai-sound-design"><code>/design</code> — AI Sound Design<a class="headerlink" href="#design-ai-sound-design" title="Permanent link">&para;</a></h4>
 <p>Select a 4OSC device, then type <code>/design &lt;description&gt;</code>. The assistant produces a preset (waves, filter type, voice mode, FX gates, ADSR, levels) and applies it directly to the focused device.</p>
 <p>The chat shows a categorised summary of what changed, plus a one-line apply status. The preset name and category the AI chose become the default values when you save the preset from the device header — just click save and hit Enter.</p>
