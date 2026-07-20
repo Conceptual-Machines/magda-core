@@ -12,7 +12,7 @@ namespace {
 
 // Pre-0.16 projects stored the Utility device's Width parameter as a 0-2 M/S
 // multiplier; it is now 0-200 %. The old shape is unambiguous in the file
-// (maxValue 2 vs 200), so rescale in place — no version gate needed. The
+// (maxValue 2 vs 200), so rescale in place - no version gate needed. The
 // plugin state chunk stores the normalized knob position, which is
 // scale-independent and needs no migration.
 void migrateUtilityWidthToPercent(DeviceInfo& device) {

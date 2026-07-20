@@ -171,6 +171,25 @@ SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
     overlayCombo_.setLookAndFeel(nullptr);
 }
 
+void SpectrumAnalyzerUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label : {&fftLabel_, &slopeLabel_, &speedLabel_, &colourLabel_, &overlayLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    for (auto* combo : {&fftCombo_, &slopeCombo_, &speedCombo_, &colourCombo_, &overlayCombo_}) {
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    if (popoutButton_)
+        daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
+                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+
+    repaint();
+}
+
 void SpectrumAnalyzerUI::rebuildFft(int order) {
     fftOrder_ = juce::jlimit(11, 12, order);
     fftSize_ = 1 << fftOrder_;

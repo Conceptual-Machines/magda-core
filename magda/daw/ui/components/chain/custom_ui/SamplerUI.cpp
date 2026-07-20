@@ -382,6 +382,33 @@ void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
     addAndMakeVisible(label);
 }
 
+void SamplerUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    sampleNameLabel_.setColour(juce::Label::textColourId,
+                               hasSampleName_ ? DarkTheme::getTextColour()
+                                              : DarkTheme::getSecondaryTextColour());
+
+    for (auto& btn : voiceModeButtons_) {
+        if (!btn)
+            continue;
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId,
+                       DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+    }
+
+    for (auto* label :
+         {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
+          &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_, &fineLabel_,
+          &levelLabel_, &velAmountLabel_, &voiceModeLabel_, &glideLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    repaint();
+}
+
 void SamplerUI::updateParameters(float attack, float decay, float sustain, float release,
                                  float pitch, float fine, float level, float sampleStart,
                                  float sampleEnd, bool loopEnabled, float loopStart, float loopEnd,
@@ -411,7 +438,8 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     loopStartSlider_.setValue(loopStart, juce::dontSendNotification);
     loopEndSlider_.setValue(loopEnd, juce::dontSendNotification);
 
-    if (sampleName.isNotEmpty()) {
+    hasSampleName_ = sampleName.isNotEmpty();
+    if (hasSampleName_) {
         sampleNameLabel_.setText(sampleName, juce::dontSendNotification);
         sampleNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     } else {

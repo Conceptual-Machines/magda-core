@@ -2096,7 +2096,7 @@ void AIChatConsoleContent::updateConfigStatus() {
     }
 
     if (preset == magda::preset::ADVANCED) {
-        // Per-agent config: no single model — the router picks per agent.
+        // Per-agent config: no single model - the router picks per agent.
         status += juce::String::fromUTF8(" \xc2\xb7 per-agent");
     } else if (preset == magda::preset::LOCAL_SERVER) {
         auto serverModel = config.getLocalServerModel();
@@ -2599,7 +2599,7 @@ void AIChatConsoleContent::buildSlashCommands() {
     };
     slashRegistry_->add(std::move(design));
 
-    // /theme — generate a UI colour theme. The handler kicks the agent
+    // /theme - generate a UI colour theme. The handler kicks the agent
     // thread; on success the theme is written to the Themes folder, selected,
     // and rendered live via the existing apply + hot-reload path.
     SlashCommand theme;

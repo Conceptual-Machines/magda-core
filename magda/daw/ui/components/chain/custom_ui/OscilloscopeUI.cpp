@@ -105,6 +105,32 @@ OscilloscopeUI::~OscilloscopeUI() {
     colourCombo_.setLookAndFeel(nullptr);
 }
 
+void OscilloscopeUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    timeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    colourLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    timeValueLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+
+    timeSlider_.setColour(juce::Slider::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+    timeSlider_.setColour(juce::Slider::trackColourId,
+                          DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    timeSlider_.setColour(juce::Slider::thumbColourId,
+                          DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
+
+    colourCombo_.setColour(juce::ComboBox::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    colourCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    colourCombo_.setColour(juce::ComboBox::outlineColourId,
+                           DarkTheme::getColour(DarkTheme::BORDER));
+
+    if (popoutButton_)
+        daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
+                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+
+    repaint();
+}
+
 void OscilloscopeUI::setTelemetrySource(std::shared_ptr<OscilloscopeTelemetrySource> telemetry) {
     if (telemetry_ == telemetry)
         return;

@@ -2,8 +2,6 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "../utils/ComponentManager.hpp"
-
 namespace magda {
 
 /**
@@ -38,13 +36,6 @@ class MixerLookAndFeel : public juce::LookAndFeel_V4 {
     void drawComboBoxArrow(juce::Graphics& g, juce::Rectangle<int> arrowZone);
 
   private:
-    magda::ManagedDrawable faderThumb_;
-    magda::ManagedDrawable faderTrack_;
-    magda::ManagedDrawable knobBody_;
-    magda::ManagedDrawable knobPointer_;
-
-    void loadIcons();
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixerLookAndFeel)
 };
 

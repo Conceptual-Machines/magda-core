@@ -1294,6 +1294,45 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
             DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.6f));
 }
 
+void ModulatorEditorPanel::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+
+    for (auto* combo :
+         {&waveformCombo_, &curvePresetCombo_, &triggerModeCombo_, &randomTypeCombo_}) {
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    syncToggle_.setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+    syncToggle_.setColour(juce::TextButton::buttonOnColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    syncToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    syncToggle_.setColour(juce::TextButton::textColourOnId,
+                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+    if (curveEditorButton_) {
+        curveEditorButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        curveEditorButton_->setHoverColor(DarkTheme::getTextColour());
+        curveEditorButton_->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        curveEditorButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    }
+    if (savePresetButton_) {
+        savePresetButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        savePresetButton_->setHoverColor(DarkTheme::getTextColour());
+    }
+    if (advancedButton_) {
+        advancedButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        advancedButton_->setHoverColor(DarkTheme::getTextColour());
+    }
+
+    repaint();
+}
+
 void ModulatorEditorPanel::paint(juce::Graphics& g) {
     // Background
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));

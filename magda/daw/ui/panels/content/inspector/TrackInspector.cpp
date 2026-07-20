@@ -421,25 +421,16 @@ TrackInspector::TrackInspector() {
     midiColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(midiColumnLabel_);
 
-    // I/O routing icons (non-interactive visual indicators)
+    // I/O routing icons (non-interactive visual indicators). The tint is baked
+    // into the drawables, so applyThemeColours rebuilds them on theme change.
     auto inputDrawable =
         std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg =
-            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
-        DarkTheme::applyToSvgIcon(*svg);
-        inputDrawable->setImages(svg.get());
-    }
     inputDrawable->setInterceptsMouseClicks(false, false);
     inputIcon_ = std::move(inputDrawable);
     addAndMakeVisible(*inputIcon_);
 
     auto outputDrawable =
         std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
-                                                       BinaryData::Output_svgSize)) {
-        DarkTheme::applyToSvgIcon(*svg);
-        outputDrawable->setImages(svg.get());
-    }
     outputDrawable->setInterceptsMouseClicks(false, false);
     outputIcon_ = std::move(outputDrawable);
     addAndMakeVisible(*outputIcon_);
@@ -547,6 +538,22 @@ void TrackInspector::applyThemeColours() {
     }
     if (addSendButton_)
         addSendButton_->setOriginalColor(secondary);
+
+    rebuildRoutingIcons();
+}
+
+void TrackInspector::rebuildRoutingIcons() {
+    const auto applyIcon = [](juce::Component* component, const char* svgData, int svgSize) {
+        auto* button = dynamic_cast<juce::DrawableButton*>(component);
+        if (button == nullptr)
+            return;
+        if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
+            DarkTheme::applyToSvgIcon(*svg);
+            button->setImages(svg.get());
+        }
+    };
+    applyIcon(inputIcon_.get(), BinaryData::Input_svg, BinaryData::Input_svgSize);
+    applyIcon(outputIcon_.get(), BinaryData::Output_svg, BinaryData::Output_svgSize);
 }
 
 void TrackInspector::lookAndFeelChanged() {

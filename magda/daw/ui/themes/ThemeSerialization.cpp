@@ -36,12 +36,12 @@ constexpr std::array<const char*, static_cast<std::size_t>(ColourRole::count)> k
     // Accents are exposed as a hue-neutral ramp: a theme is free to recolour
     // them, so the JSON keys must not bake in the default hue. The enum keeps
     // its hue names for call-site readability; this table is the mapping.
-    "accent1",  // ACCENT_PRIMARY       — primary accent (selection, active)
-    "accent6",  // ACCENT_PRIMARY_SOFT — soft variant of accent1
-    "accent5",  // ACCENT_INFO       — secondary / info
-    "accent3",  // ACCENT_POSITIVE      — positive (waveforms, success)
-    "accent2",  // ACCENT_ATTENTION     — attention (tempo, cursors)
-    "accent4",  // ACCENT_MODULATION     — modulation (automation)
+    "accent1",  // ACCENT_PRIMARY       - primary accent (selection, active)
+    "accent6",  // ACCENT_PRIMARY_SOFT - soft variant of accent1
+    "accent5",  // ACCENT_INFO       - secondary / info
+    "accent3",  // ACCENT_POSITIVE      - positive (waveforms, success)
+    "accent2",  // ACCENT_ATTENTION     - attention (tempo, cursors)
+    "accent4",  // ACCENT_MODULATION     - modulation (automation)
     "presetIndigo",
     "midiLearn",
     "stepRecord",

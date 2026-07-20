@@ -91,7 +91,7 @@ const ProviderInfo* findProviderInfo(const std::string& id) {
 
 // Known model ids offered per provider in the Advanced grid. The model combos
 // stay editable, so this is a convenience list, not a hard constraint. Local
-// providers return {} — embedded uses the loaded GGUF, local-server models are
+// providers return {} - embedded uses the loaded GGUF, local-server models are
 // entered/probed on the Config Local-server picker.
 std::vector<juce::String> knownModelsForProvider(const std::string& providerId) {
     namespace m = magda::model;
@@ -1022,7 +1022,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             r.providerCombo.onChange = [this, rp]() { fillRowModel(*rp, {}); };
             addAndMakeVisible(r.providerCombo);
 
-            // Pick-from-list only — no free-text model entry.
+            // Pick-from-list only - no free-text model entry.
             styleCombo(r.modelCombo);
             addAndMakeVisible(r.modelCombo);
         }
@@ -1480,17 +1480,17 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             Config::AgentLLMConfig cfg;
             auto pid = rowProviderId(row);
             auto model = row.modelCombo.getText().trim();
-            // OpenAI: gpt-5* requires the Responses API provider; others (and
-            // gpt-4.1) use the Chat provider.
-            if (pid == magda::provider::OPENAI_CHAT && model.startsWith("gpt-5"))
+            // OpenAI: gpt-5* and the o-series require the Responses API
+            // provider; gpt-4.1* use the Chat provider.
+            if (pid == magda::provider::OPENAI_CHAT && magda::requiresOpenAIResponsesAPI(model))
                 pid = magda::provider::OPENAI_RESPONSES;
             cfg.provider = pid;
-            // Local providers carry no per-agent model — it resolves from the
+            // Local providers carry no per-agent model - it resolves from the
             // loaded GGUF / shared local-server config at request time.
             const bool isLocal =
                 (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER);
             cfg.model = isLocal ? std::string{} : model.toStdString();
-            // apiKey left empty — resolved from Cloud-tab credentials at request
+            // apiKey left empty - resolved from Cloud-tab credentials at request
             // time (per-agent key first, then per-provider credential).
             config.setAgentLLMConfig(row.role, cfg);
         }
@@ -1546,7 +1546,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 out[magda::role::COMMAND] = cmdLocal;
             }
         }
-        // Theme is not part of the built-in presets — default it to the music
+        // Theme is not part of the built-in presets - default it to the music
         // tier (creative, structured-JSON generation, same as themes).
         if (auto it = out.find(magda::role::MUSIC); it != out.end())
             out[magda::role::THEME] = it->second;

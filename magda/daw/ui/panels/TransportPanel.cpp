@@ -1452,6 +1452,13 @@ void TransportPanel::applyThemedLabelColours() {
     playheadPositionLabel->setTextColour(accentOrange);
     editCursorLabel->setTextColour(accentOrange);
 
+    // Time-signature digits and the grid numerator/denominator/slash readouts.
+    timeSigNumeratorLabel->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    timeSigDenominatorLabel->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    gridNumeratorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    gridDenominatorLabel->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    gridSlashLabel->setColour(juce::Label::textColourId, secondary);
+
     // Loop labels: green when a valid loop is active, dim otherwise (mirrors
     // setLoopRegion), recomputed from cached loop state.
     const bool hasValidLoop =

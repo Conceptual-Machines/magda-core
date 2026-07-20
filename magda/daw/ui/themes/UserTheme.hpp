@@ -46,7 +46,7 @@ struct ThemeFileEntry {
 
 // Parses a theme file. Returns nullopt only on a hard failure (unreadable, or
 // not a JSON object) so the caller can fall back to a built-in. Malformed
-// individual fields never fail the load — they inherit the base and warn.
+// individual fields never fail the load - they inherit the base and warn.
 std::optional<LoadedTheme> loadThemeFile(const juce::File& file);
 
 // A theme compiled into the binary (assets/themes). Factory themes sit
@@ -76,7 +76,10 @@ bool writeThemeTemplate(const juce::File& dest, const std::string& baseId,
 struct ThemeApplyResult {
     bool ok = false;           // a palette was installed (built-in or user)
     bool isUserTheme = false;  // resolved to a user JSON file (vs a built-in)
-    juce::File sourceFile;     // the loaded file, when isUserTheme (for hot-reload)
+    // When isUserTheme: the loaded file (for hot-reload). When !ok for a
+    // non-built-in id: the candidate user file, so the caller can watch it
+    // and recover once a valid file appears. Empty otherwise.
+    juce::File sourceFile;
     std::vector<std::string> warnings;
 };
 

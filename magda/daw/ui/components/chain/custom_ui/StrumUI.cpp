@@ -293,6 +293,23 @@ void StrumUI::setupSlider(LinkableTextSlider& slider, double min, double max, do
     addAndMakeVisible(slider);
 }
 
+void StrumUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label : {&triggerLabel_, &orderLabel_, &shapeLabel_, &cyclesLabel_, &lengthLabel_,
+                        &loopModeLabel_, &loopLabel_, &vizLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    for (auto* combo :
+         {&triggerCombo_, &orderCombo_, &shapeCombo_, &loopModeCombo_, &loopRateCombo_}) {
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    repaint();
+}
+
 std::vector<LinkableTextSlider*> StrumUI::getLinkableSliders() {
     // Param registration order: 0=trigger, 1=order, 2=shape, 3=cycles,
     // 4=loopsync, 5=looprate, 6=strumlength, 7=syncinterval. Only the sliders are

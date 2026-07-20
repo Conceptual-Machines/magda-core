@@ -393,8 +393,10 @@ void MainWindow::applyThemeFromConfig() {
     refreshThemedLookAndFeels();
 
     // Hot-reload only makes sense for editable user files; built-ins never
-    // change on disk, so disarm the watcher when one is selected.
-    if (result.isUserTheme) {
+    // change on disk, so disarm the watcher when one is selected. After a
+    // failed load, keep watching the requested file (sourceFile is the
+    // candidate path) so fixing or creating it recovers without a restart.
+    if (result.sourceFile != juce::File()) {
         activeThemeFile_ = result.sourceFile;
         if (themeWatcher_ == nullptr)
             themeWatcher_ =
@@ -404,7 +406,11 @@ void MainWindow::applyThemeFromConfig() {
         themeWatcher_->stop();
     }
 
-    appliedTheme_ = requestedTheme;
+    // Record what is actually installed: the requested theme on success, the
+    // dark fallback otherwise. Recording the failed request would make the
+    // requested == applied early-return above swallow every later attempt to
+    // re-apply the same id after the user fixes the file.
+    appliedTheme_ = result.ok ? requestedTheme : DarkTheme::kDarkThemeId;
 }
 
 void MainWindow::onActiveThemeFileChanged() {
@@ -414,6 +420,11 @@ void MainWindow::onActiveThemeFileChanged() {
 
     for (const auto& warning : *warnings)
         DBG("[Theme] hot-reload " << activeThemeFile_.getFileName() << ": " << warning);
+
+    // The watched file always belongs to the currently-configured theme, so a
+    // successful (re)load means that theme is now installed. Keep the dedupe
+    // key in step: after a failed initial load it still says "dark".
+    appliedTheme_ = Config::getInstance().getTheme();
 
     refreshThemedLookAndFeels();
 }

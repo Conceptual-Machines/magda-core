@@ -208,7 +208,11 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         return;
     }
 
-    const bool drawOn = active || shouldDrawButtonAsDown || (getToggleState() && isToggleable());
+    // Gated on isEnabled() to match iconColor below: a disabled button must
+    // not render its state replacements in the engaged colours while the main
+    // glyph reverts to the normal colour.
+    const bool drawOn =
+        isEnabled() && (active || shouldDrawButtonAsDown || (getToggleState() && isToggleable()));
 
     // Determine the color based on button state
     juce::Colour iconColor = normal;

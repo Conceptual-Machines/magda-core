@@ -205,13 +205,19 @@ jobs:
         path: third_party/eurorack/build/lib
         key: ${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug
 
+    # The launcher flags are always passed, with an explicit empty value in the
+    # no-sccache case: the restored build/ cache carries CMakeCache.txt, and a
+    # warm cache from a normal run has CMAKE_*_COMPILER_LAUNCHER=sccache baked
+    # in. Omitting the -D flags would leave those cached values active with no
+    # sccache binary installed, failing every compile; -DVAR= overrides them.
     - name: Configure CMake
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
-          ${{ steps.sccache.outcome == 'success' && '-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache' || '' }} \
+          "-DCMAKE_C_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
           ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
           ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
