@@ -410,7 +410,7 @@ void MainWindow::applyThemeFromConfig() {
     // dark fallback otherwise. Recording the failed request would make the
     // requested == applied early-return above swallow every later attempt to
     // re-apply the same id after the user fixes the file.
-    appliedTheme_ = result.ok ? requestedTheme : DarkTheme::kDarkThemeId;
+    appliedTheme_ = result.ok ? requestedTheme : ThemeManager::kDarkThemeId;
 }
 
 void MainWindow::onActiveThemeFileChanged() {
