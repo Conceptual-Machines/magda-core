@@ -108,7 +108,7 @@ void ClipFadesSection::initControls() {
         btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
         btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setTooltip(icon.tooltip);
@@ -153,7 +153,7 @@ void ClipFadesSection::initControls() {
         btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
         btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setTooltip(icon.tooltip);

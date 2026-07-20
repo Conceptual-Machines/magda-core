@@ -74,11 +74,12 @@ void MonitorSelector::paint(juce::Graphics& g) {
     // tinted green / blue. Colour conveys the active state.
     if (auto* icon = isActiveMode() ? speakerIcon_.get() : speakerOffIcon_.get()) {
         const auto tint =
-            mode_ == InputMonitorMode::In     ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
-            : mode_ == InputMonitorMode::Auto ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+            mode_ == InputMonitorMode::In     ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
+            : mode_ == InputMonitorMode::Auto ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
                                               : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
         auto iconCopy = icon->createCopy();
         iconCopy->replaceColour(juce::Colour(kSpeakerSourceColour), tint);
+        DarkTheme::applyToSvgIcon(*iconCopy);
         iconCopy->drawWithin(g, iconArea.reduced(3.0f), juce::RectanglePlacement::centred, 1.0f);
     }
 

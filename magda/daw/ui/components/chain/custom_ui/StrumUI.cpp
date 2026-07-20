@@ -42,7 +42,7 @@ void StrumUI::OnsetStrip::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
     g.drawLine(inner.getX(), inner.getBottom(), inner.getRight(), inner.getBottom(), 1.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.7f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
     for (float u : onsets_) {
         float tx = inner.getX() + juce::jlimit(0.0f, 1.0f, u) * inner.getWidth();
         g.drawLine(tx, inner.getY(), tx, inner.getBottom(), 1.5f);
@@ -291,6 +291,23 @@ void StrumUI::setupCombo(juce::ComboBox& combo) {
 void StrumUI::setupSlider(LinkableTextSlider& slider, double min, double max, double step) {
     slider.setRange(min, max, step);
     addAndMakeVisible(slider);
+}
+
+void StrumUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label : {&triggerLabel_, &orderLabel_, &shapeLabel_, &cyclesLabel_, &lengthLabel_,
+                        &loopModeLabel_, &loopLabel_, &vizLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    for (auto* combo :
+         {&triggerCombo_, &orderCombo_, &shapeCombo_, &loopModeCombo_, &loopRateCombo_}) {
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    repaint();
 }
 
 std::vector<LinkableTextSlider*> StrumUI::getLinkableSliders() {

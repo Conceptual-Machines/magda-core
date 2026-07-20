@@ -20,6 +20,10 @@ inline void configureMasterSpeakerButton(SvgButton& button) {
     button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                     DarkTheme::ICON_ON_ACCENT);
+    button.setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_NEUTRAL,
+                                     DarkTheme::ICON_ON_ACCENT);
     button.setIconPadding(3.5f);  // larger speaker glyph
 }
 

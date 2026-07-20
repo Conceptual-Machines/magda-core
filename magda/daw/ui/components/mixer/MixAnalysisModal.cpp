@@ -67,7 +67,7 @@ void MixAnalysisModal::Spinner::paint(juce::Graphics& g) {
     juce::Path arc;
     arc.addCentredArc(cx, cy, sz * 0.5f, sz * 0.5f, 0.0f, angle,
                       angle + juce::MathConstants<float>::pi * 1.5f, true);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.85f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.85f));
     g.strokePath(arc, juce::PathStrokeType(2.0f));
 }
 

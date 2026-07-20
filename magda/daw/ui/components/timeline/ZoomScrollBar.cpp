@@ -29,7 +29,7 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(trackBounds.toFloat(), 3.0f, 1.0f);
 
     // Draw thumb
-    auto thumbColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    auto thumbColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     if (dragMode != DragMode::None) {
         thumbColour = thumbColour.brighter(0.2f);
     }

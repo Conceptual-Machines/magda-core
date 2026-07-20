@@ -14,13 +14,19 @@ Toast* Toast::globalHost_ = nullptr;
 
 Toast::Toast() {
     label_.setFont(FontManager::getInstance().getUIFont(13.0f));
-    label_.setColour(juce::Label::textColourId, juce::Colours::white);
+    label_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
     label_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     label_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(label_);
 
     setInterceptsMouseClicks(false, false);
     setVisible(false);
+}
+
+void Toast::lookAndFeelChanged() {
+    label_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+    label_.repaint();
+    repaint();
 }
 
 Toast::~Toast() {
@@ -79,11 +85,11 @@ void Toast::showGlobal(const juce::String& text, int durationMs) {
 
 void Toast::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    auto bgColour = juce::Colour(0xFF222233).withAlpha(0.92f);
+    auto bgColour = DarkTheme::getColour(DarkTheme::TOAST_BACKGROUND).withAlpha(0.92f);
     g.setColour(bgColour);
     g.fillRoundedRectangle(bounds, 6.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT).withAlpha(0.6f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT).withAlpha(0.6f));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 }
 

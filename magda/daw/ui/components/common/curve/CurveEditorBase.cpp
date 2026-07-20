@@ -33,7 +33,7 @@ bool CurveEditorBase::isPointSelected(uint32_t pointId) const {
 
 void CurveEditorBase::paint(juce::Graphics& g) {
     // Background
-    g.fillAll(juce::Colour(0xFF1A1A1A));
+    g.fillAll(DarkTheme::getColour(DarkTheme::CURVE_BACKGROUND));
 
     // Grid
     paintGrid(g);
@@ -48,9 +48,9 @@ void CurveEditorBase::paint(juce::Graphics& g) {
 
     // Lasso selection rectangle
     if (isLassoActive_ && !lassoRect_.isEmpty()) {
-        g.setColour(curveColour_.withAlpha(0.15f));
+        g.setColour(getCurveColour().withAlpha(0.15f));
         g.fillRect(lassoRect_);
-        g.setColour(curveColour_.withAlpha(0.6f));
+        g.setColour(getCurveColour().withAlpha(0.6f));
         g.drawRect(lassoRect_, 1);
     }
 }
@@ -87,9 +87,9 @@ void CurveEditorBase::paintOverChildren(juce::Graphics& g) {
             ty = pcBounds.getBottom() + 2;
 
         auto tooltipRect = juce::Rectangle<int>(tx, ty, textW, textH);
-        g.setColour(juce::Colour(0xDD222222));
+        g.setColour(DarkTheme::getColour(DarkTheme::CURVE_TOOLTIP_BACKGROUND));
         g.fillRoundedRectangle(tooltipRect.toFloat(), 3.0f);
-        g.setColour(juce::Colour(0xFFEEEEEE));
+        g.setColour(DarkTheme::getColour(DarkTheme::CURVE_TOOLTIP_TEXT));
         g.drawText(label, tooltipRect, juce::Justification::centred, false);
         break;
     }
@@ -103,7 +103,7 @@ void CurveEditorBase::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Subtle horizontal grid lines (value levels at 25%, 50%, 75%)
-    g.setColour(juce::Colour(0x15FFFFFF));
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x15 / 255.0f));
     for (int i = 1; i < 4; ++i) {
         int y = bounds.getHeight() * i / 4;
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
@@ -217,7 +217,7 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     }
 
     // Draw the curve
-    g.setColour(curveColour_);
+    g.setColour(getCurveColour());
     // Scale the stroke with the editor's size so the small inline preview and the
     // large popped-out editor look consistent (a fixed width reads as too fat on
     // the small one).
@@ -240,7 +240,7 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     fillPath.lineTo(curveEnd.x, fillBaseY);
     fillPath.lineTo(pathStartX, fillBaseY);
     fillPath.closeSubPath();
-    g.setColour(curveColour_.withAlpha(0.13f));
+    g.setColour(getCurveColour().withAlpha(0.13f));
     g.fillPath(fillPath);
 }
 

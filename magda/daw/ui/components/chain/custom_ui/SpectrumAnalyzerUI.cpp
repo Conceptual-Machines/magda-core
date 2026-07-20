@@ -152,7 +152,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
     daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
-                                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
 
@@ -169,6 +169,25 @@ SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
     speedCombo_.setLookAndFeel(nullptr);
     colourCombo_.setLookAndFeel(nullptr);
     overlayCombo_.setLookAndFeel(nullptr);
+}
+
+void SpectrumAnalyzerUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label : {&fftLabel_, &slopeLabel_, &speedLabel_, &colourLabel_, &overlayLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    for (auto* combo : {&fftCombo_, &slopeCombo_, &speedCombo_, &colourCombo_, &overlayCombo_}) {
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    if (popoutButton_)
+        daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
+                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+
+    repaint();
 }
 
 void SpectrumAnalyzerUI::rebuildFft(int order) {
@@ -678,7 +697,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // Clash zones first, so the spectrum traces sit on top of the shading.
         // Kept faint (a tint, not a block) so it marks the region without burying
         // the traces; severity nudges the opacity within a narrow range.
-        const juce::Colour clash(0xffff6b35);  // warm warning hue
+        const auto clash = DarkTheme::getColour(DarkTheme::MIDI_LEARN);
         for (const auto& f : maskingFindings_) {
             const float x0 = freqToX(f.loHz, plot);
             const float x1 = freqToX(f.hiHz, plot);
@@ -706,8 +725,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
                     op.lineTo(x, y);
                 }
             }
-            g.setColour(
-                juce::Colour(0xffc8c8c8).withAlpha(0.7f));  // neutral, secondary to the trace
+            g.setColour(DarkTheme::getColour(DarkTheme::SPECTRUM_OVERLAY).withAlpha(0.7f));
             g.strokePath(op, juce::PathStrokeType(1.5f));
         }
     }
@@ -772,7 +790,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
 
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.6f));
         g.drawVerticalLine(static_cast<int>(mx), plot.getY(), plot.getBottom());
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
         g.fillEllipse(mx - 2.5f, dbToY(db, plot) - 2.5f, 5.0f, 5.0f);
 
         const juce::String fTxt =

@@ -92,7 +92,7 @@ void MixerToggleRail::setupButton(std::unique_ptr<SvgButton>& btn, const juce::S
     btn = std::make_unique<SvgButton>(name, svgData, svgSize);
     btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
     btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     btn->setBorderThickness(1.0f);
     btn->setTooltip(tooltip);
@@ -134,9 +134,9 @@ void MixerToggleRail::setupAnalyzeButton() {
     analyzeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+    analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
     analyzeButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.25f));
+        DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.25f));
     analyzeButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     analyzeButton_->setBorderThickness(1.0f);
     analyzeButton_->setTooltip("Analyze the mix");

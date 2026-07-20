@@ -51,6 +51,7 @@ class PolySynthUI : public juce::Component, private juce::Timer {
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 

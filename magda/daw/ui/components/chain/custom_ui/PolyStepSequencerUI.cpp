@@ -50,7 +50,7 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
 
     // Highlight the playing step.
     if (playStep >= 0 && playStep < count) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.45f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.45f));
         g.fillRect(
             juce::Rectangle<float>(cellArea.getX() + playStep * colW, top, colW, bottom - top));
     }
@@ -167,7 +167,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
                                       .brighter(isBlackKey(note) ? 0.04f : 0.10f);
                 if (i == playStep_)
                     bg = bg.overlaidWith(
-                        DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.18f));
+                        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.18f));
                 if (!step.gate)
                     bg = bg.darker(0.3f);
                 g.setColour(bg);
@@ -185,7 +185,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
                 }
                 if (noteVel > 0) {
                     const float alpha = 0.35f + 0.6f * static_cast<float>(noteVel) / 127.0f;
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(alpha));
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(alpha));
                     g.fillRoundedRectangle(cellRect, 1.5f);
                 }
             }
@@ -540,7 +540,7 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
                                       .brighter(laneIdx % 2 == 0 ? 0.10f : 0.04f);
                 if (i == playStep_)
                     bg = bg.overlaidWith(
-                        DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.18f));
+                        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.18f));
                 if (!step.gate)
                     bg = bg.darker(0.3f);
                 g.setColour(bg);
@@ -558,7 +558,7 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
                 }
                 if (noteVel > 0) {
                     const float alpha = 0.35f + 0.6f * static_cast<float>(noteVel) / 127.0f;
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(alpha));
+                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(alpha));
                     g.fillRoundedRectangle(cellRect, 1.5f);
                 }
             }
@@ -1356,7 +1356,7 @@ void PolyStepSequencerUI::drawToggleRow(juce::Graphics& g, juce::Rectangle<int> 
 
         bool on = isTieRow ? step.tie : step.gate;
         if (on) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.7f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
             g.setColour(DarkTheme::getTextColour());
             g.drawText(isTieRow ? "T" : "G", rect.toNearestInt(), juce::Justification::centred);
@@ -1397,8 +1397,8 @@ void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> ar
                                     : static_cast<float>(step.velocity) / 127.0f;
         if (ratio > 0.0f) {
             auto bar = rect.withTrimmedTop(rect.getHeight() * (1.0f - ratio));
-            g.setColour((isProbability ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
-                                       : DarkTheme::getColour(DarkTheme::ACCENT_BLUE))
+            g.setColour((isProbability ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
+                                       : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY))
                             .withAlpha(0.7f));
             g.fillRoundedRectangle(bar, 2.0f);
         }
@@ -1508,6 +1508,28 @@ void PolyStepSequencerUI::setupSlider(LinkableTextSlider& slider, double min, do
                                       double step) {
     slider.setRange(min, max, step);
     addAndMakeVisible(slider);
+}
+
+void PolyStepSequencerUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label :
+         {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &gateLengthLabel_, &quantizeLabel_,
+          &quantizeSubLabel_, &rampLabel_, &depthLabel_, &skewLabel_, &cyclesLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    dirCombo_.setColour(juce::ComboBox::backgroundColourId,
+                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+
+    viewModeButton_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    viewModeButton_.setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getAccentColour().withAlpha(0.6f));
+    viewModeButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    viewModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+
+    repaint();
 }
 
 std::vector<LinkableTextSlider*> PolyStepSequencerUI::getLinkableSliders() {

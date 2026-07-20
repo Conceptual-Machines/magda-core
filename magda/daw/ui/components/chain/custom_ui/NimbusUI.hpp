@@ -44,6 +44,7 @@ class NimbusUI : public juce::Component, private juce::Timer {
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void lookAndFeelChanged() override;
 
   private:
     // Param indices — must match MutableCloudsPlugin::ParamIndex.

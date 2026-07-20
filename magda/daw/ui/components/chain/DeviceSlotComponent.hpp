@@ -98,6 +98,7 @@ class DeviceSlotComponent : public NodeComponent,
     // on top of the slot's children.
     void paintOverChildren(juce::Graphics& g) override;
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
+    void lookAndFeelChanged() override;
 
     // Drum Grid clears the standard nameLabel_ and paints its custom
     // "MDG2000" logo in paint(); anchor the dot to that logo's right

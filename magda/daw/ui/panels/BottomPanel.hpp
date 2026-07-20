@@ -47,6 +47,12 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
+    // Re-applies themed colours to the editor-header controls that capture a
+    // resolved juce::Colour at construction (the plain TextButtons and grid
+    // labels), so a runtime theme change takes effect without a rebuild. The
+    // SvgButtons re-resolve from stored palette roles on repaint and need no
+    // help here.
+    void lookAndFeelChanged() override;
 
     // Legacy API for compatibility
     void setCollapsed(bool collapsed);
@@ -229,6 +235,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void syncPostFxToggleButton();  // wire + light the TrackChain header toggle
     void setPostFxOpen(bool open);  // header-toggle handler
     void setupHeaderControls();
+    // Single source for the header controls' themed colours; shared by
+    // setupHeaderControls() and lookAndFeelChanged().
+    void refreshHeaderControlColours();
     void applyTimeModeToContent();
     void syncGridStateFromTimeline();
     void syncGridControlsFromContent();

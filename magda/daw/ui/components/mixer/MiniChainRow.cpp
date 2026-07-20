@@ -55,7 +55,7 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
         uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
                                                 BinaryData::open_in_new_svgSize);
         daw::ui::node_header::applyHeaderIconStyle(*uiButton_,
-                                                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         uiButton_->onClick = [this]() {
             if (engine_ == nullptr)
                 return;
@@ -298,7 +298,7 @@ void MiniChainRow::paint(juce::Graphics& g) {
     constexpr int dotSize = 8;
     auto dotBounds = bypassRect_.withSizeKeepingCentre(dotSize, dotSize).toFloat();
     g.setColour(bypassed_ ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
-                          : DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+                          : DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
     g.fillEllipse(dotBounds);
 
     // Device name
@@ -349,6 +349,15 @@ void MiniChainRow::resized() {
             slider->setBounds(row.reduced(2, 2));
         }
     }
+}
+
+void MiniChainRow::lookAndFeelChanged() {
+    // Param name labels cache a concrete text colour, so a theme switch needs
+    // them re-applied rather than just repainted. The TextSlider values and the
+    // SvgButton re-resolve their own colours from stored roles on repaint.
+    for (auto& label : paramLabels_)
+        if (label)
+            label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
 }
 
 void MiniChainRow::mouseDown(const juce::MouseEvent& event) {

@@ -1,10 +1,20 @@
-target_sources(magda_daw_app PRIVATE
+target_sources(magda_daw PRIVATE
     DarkTheme.cpp
+    ThemeSerialization.cpp
+    UserTheme.cpp
+    ThemePrompt.cpp
+)
+
+target_sources(magda_daw_app PRIVATE
     FontManager.cpp
     CursorManager.cpp
     MixerLookAndFeel.cpp
     StyledText.cpp
     DarkTheme.hpp
+    ThemeSerialization.hpp
+    UserTheme.hpp
+    ThemeFileWatcher.hpp
+    ThemePrompt.hpp
     FontManager.hpp
     LocalizedText.hpp
     CursorManager.hpp

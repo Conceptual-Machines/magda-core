@@ -59,6 +59,7 @@ class FaustInstrumentTabbedUI : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
   private:
     struct Row {

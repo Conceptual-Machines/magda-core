@@ -4,6 +4,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <atomic>
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
@@ -32,6 +33,7 @@ class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
 class FourOscAgent;
+class ThemeAgent;
 class DrummerAgent;
 class MagdaApi;
 class MagdaApiLive;
@@ -72,6 +74,7 @@ class AIChatConsoleContent : public PanelContent,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     void onActivated() override;
     void onDeactivated() override;
@@ -113,6 +116,8 @@ class AIChatConsoleContent : public PanelContent,
     void sendMessage(const juce::String& text);
     void cancelRequest();
     void restoreSendIcon();
+    void setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
+                             std::size_t svgDataSize);
     void appendToChat(const juce::String& text);
     void updateContextBar();
 
@@ -198,6 +203,7 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<magda::AutomationAgent> automationAgent_;
     std::unique_ptr<magda::ControllerProfileAgent> controllerAgent_;
     std::unique_ptr<magda::FourOscAgent> fourOscAgent_;
+    std::unique_ptr<magda::ThemeAgent> themeAgent_;
     std::unique_ptr<RequestThread> requestThread_;
 
     // Dedicated thread for the controller profile agent (kept separate from
@@ -236,6 +242,26 @@ class AIChatConsoleContent : public PanelContent,
     void startPresetGeneration(const juce::String& description);
     void finishPresetGeneration(bool success, const juce::String& errorOrPretty,
                                 juce::String presetName);
+
+    // /theme <description> - kick the ThemeAgent on a background thread. On
+    // success the generated JSON is written into paths::themesDir() and
+    // selected via Config, so the app's existing apply + hot-reload path
+    // renders it. Its own thread for the same reason as FourOsc.
+    class ThemeRequestThread : public juce::Thread {
+      public:
+        ThemeRequestThread(AIChatConsoleContent& owner, juce::String description);
+        void run() override;
+
+      private:
+        AIChatConsoleContent& owner_;
+        juce::String description_;
+    };
+    std::unique_ptr<ThemeRequestThread> themeThread_;
+    void startThemeGeneration(const juce::String& description);
+    // streamAnchor is the text position where the streamed JSON began (or -1 if
+    // nothing streamed); the streamed region is collapsed to the summary here.
+    void finishThemeGeneration(bool success, const juce::String& jsonOrError, juce::String name,
+                               juce::String base, int colourCount, int streamAnchor);
 
     // Optional category override set by `/design --category=<cat>`. When
     // non-empty, finishPresetGeneration substitutes this value for the

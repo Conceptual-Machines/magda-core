@@ -102,7 +102,7 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
         bg = juce::Colour(0xFF5A5A2A);
         borderThickness = 1.5f;
     } else if (selected_) {
-        bg = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.4f);
+        bg = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f);
         borderThickness = 1.5f;
     } else if (hasSample_) {
         bg = DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.1f);
@@ -121,7 +121,7 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
 
     // Border
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     }
@@ -129,7 +129,7 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
 
     // Solo indicator — orange top bar
     if (soloed_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         g.fillRoundedRectangle(bounds.removeFromTop(3).toFloat(), 1.0f);
     }
 
@@ -356,7 +356,7 @@ DrumGridUI::DrumGridUI() {
     chainsToggleButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     chainsToggleButton_->setActiveColor(juce::Colours::white);
     chainsToggleButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.6f));
+        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.6f));
     chainsToggleButton_->setActive(chainsPanelVisible_);
     chainsToggleButton_->onClick = [this]() {
         setChainsPanelVisible(chainsToggleButton_->getToggleState());
@@ -1141,7 +1141,28 @@ void DrumGridUI::refreshDetailPanel() {
                           DarkTheme::getColour(DarkTheme::ACCENT_RED));
     soloButton_.setToggleState(info.solo, juce::dontSendNotification);
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+}
+
+void DrumGridUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    pageLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    detailPadNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    for (auto* label : {&levelLabel_, &panLabel_, &chainsLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    for (auto* btn : {&muteButton_, &soloButton_, &loadButton_, &clearButton_})
+        setupButton(*btn);
+
+    if (chainsToggleButton_) {
+        chainsToggleButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        chainsToggleButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.6f));
+    }
+
+    // Re-applies the state-dependent sample-name and mute/solo colours.
+    refreshDetailPanel();
+    repaint();
 }
 
 void DrumGridUI::goToPrevPage() {

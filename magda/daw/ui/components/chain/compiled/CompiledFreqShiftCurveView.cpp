@@ -114,7 +114,7 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
     const auto dimText = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f);
 
     // Linear frequency axis grid at 500 Hz / 1 kHz / 1.5 kHz.

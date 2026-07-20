@@ -191,8 +191,8 @@ void CompiledGrainDelayCurveView::paint(juce::Graphics& g) {
         }
     }
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
-    const auto grainColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+    const auto grainColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
 
     // Pitch shifts the wet rectangles vertically — grains float above the
     // midline at +st and below at -st. ±0.7·halfH at ±24 st leaves room

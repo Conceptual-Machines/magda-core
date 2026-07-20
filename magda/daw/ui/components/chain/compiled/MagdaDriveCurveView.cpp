@@ -124,7 +124,7 @@ void MagdaDriveCurveView::paint(juce::Graphics& g) {
             curve.lineTo(px, py);
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
     g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
                                              juce::PathStrokeType::rounded));
 }

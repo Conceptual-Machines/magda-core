@@ -37,6 +37,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     /**
      * @brief Set the currently selected clips (batch)

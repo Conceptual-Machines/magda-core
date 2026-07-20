@@ -195,7 +195,7 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     // be narrower than a single pixel, so we oversample each output column
     // and average — kills the per-frame aliasing flicker that comes from
     // sample positions snapping past razor-thin notches.
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
     const int pixelCount = std::max(64, static_cast<int>(std::round(plot.getWidth())));
     constexpr int kSubSamples = 8;
     constexpr float kDisplayRangeDb = 24.0f;  // ±24 dB fills the plot

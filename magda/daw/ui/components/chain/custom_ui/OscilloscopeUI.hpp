@@ -50,6 +50,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     int compactExtraHeight() const;
     std::function<void()> onControlsExpandedChanged;
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;

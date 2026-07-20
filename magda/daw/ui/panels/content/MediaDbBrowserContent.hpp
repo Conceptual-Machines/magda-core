@@ -79,6 +79,7 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
     void visibilityChanged() override;
 
   private:
@@ -132,6 +133,10 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     // New-query entry points: resets pagination to the initial page and
     // clears similar-sounds mode before calling runSearch().
     void restartSearch();
+
+    // Re-appliable theme-derived widget colours (called from the constructor
+    // and lookAndFeelChanged so a live theme switch restyles the panel).
+    void applyThemeColours();
     // Enter similar-sounds mode: re-run the query as a cosine search
     // around the given file's audio embedding instead of text / FTS.
     // Cleared by the next restartSearch().

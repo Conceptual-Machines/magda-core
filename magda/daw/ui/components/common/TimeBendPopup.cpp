@@ -149,7 +149,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
 
     // Apply button
     applyButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.6f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
     applyButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
     applyButton_.onClick = [this] {
         if (!syncSelectionFromManager())

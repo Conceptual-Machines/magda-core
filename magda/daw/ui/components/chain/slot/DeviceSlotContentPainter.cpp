@@ -84,9 +84,9 @@ void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
         const int maxSteps = juce::jmax(1, state.stepRecording.maxSteps);
         const int displayPosition = juce::jlimit(0, maxSteps - 1, state.stepRecording.position);
         g.saveState();
-        g.setColour(juce::Colour(0xFFCC3333).withAlpha(0.9f));
+        g.setColour(DarkTheme::getColour(DarkTheme::STEP_RECORD).withAlpha(0.9f));
         g.fillRect(headerArea);
-        g.setColour(juce::Colours::white);
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
         g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
         g.drawText("STEP RECORDING  " + juce::String(displayPosition + 1) + "/" +
                        juce::String(maxSteps),

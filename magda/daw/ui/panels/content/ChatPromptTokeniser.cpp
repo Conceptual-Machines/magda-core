@@ -1,5 +1,7 @@
 #include "ChatPromptTokeniser.hpp"
 
+#include "ui/themes/DarkTheme.hpp"
+
 namespace magda::daw::ui {
 
 namespace {
@@ -95,19 +97,12 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
 }
 
 juce::CodeEditorComponent::ColourScheme ChatPromptTokeniser::getDefaultColourScheme() {
-    // Two clearly distinct hues for the two alias halves: cool blue for the
-    // plugin alias and warm amber for the parameter alias. Plain prose stays
-    // white so the user can see immediately which words are tokenised vs
-    // freeform.
-    static const juce::CodeEditorComponent::ColourScheme::TokenType types[] = {
-        {"Text", juce::Colour(0xffe0e0e0)},        {"PluginAlias", juce::Colour(0xff5fa8ff)},
-        {"ParamAlias", juce::Colour(0xffe0a85a)},  {"SlashCommand", juce::Colour(0xff7acf68)},
-        {"Punctuation", juce::Colour(0xffd4d4d4)},
-    };
-
     juce::CodeEditorComponent::ColourScheme cs;
-    for (const auto& t : types)
-        cs.set(t.name, t.colour);
+    cs.set("Text", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_TEXT));
+    cs.set("PluginAlias", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PLUGIN_ALIAS));
+    cs.set("ParamAlias", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PARAM_ALIAS));
+    cs.set("SlashCommand", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_SLASH_COMMAND));
+    cs.set("Punctuation", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PUNCTUATION));
     return cs;
 }
 

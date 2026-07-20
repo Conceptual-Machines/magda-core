@@ -259,9 +259,9 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
 
     const auto border = DarkTheme::getColour(DarkTheme::BORDER);
     const auto text = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
-    const auto grColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
-    const auto keyColour = externalSidechain_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT)
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+    const auto grColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+    const auto keyColour = externalSidechain_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT)
                                               : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
 
     g.setColour(border.withAlpha(0.55f));
@@ -332,7 +332,7 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
 
         const float inY = dbToY(smoothedInputPeakDb_);
         const float outY = dbToY(smoothedOutputPeakDb_);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.65f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.65f));
         g.drawLine(plotArea_.getX(), inY, plotArea_.getRight(), inY, 1.0f);
         g.setColour(accent.withAlpha(0.65f));
         g.drawLine(plotArea_.getX(), outY, plotArea_.getRight(), outY, 1.0f);

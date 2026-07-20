@@ -143,7 +143,7 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.3f));
             g.fillRect(area);
         }
 
@@ -233,7 +233,7 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         // Bottom accent for front tab, subtle separator for others
         if (o == juce::TabbedButtonBar::TabsAtTop || o == juce::TabbedButtonBar::TabsAtBottom) {
             if (isFrontTab) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
                 if (o == juce::TabbedButtonBar::TabsAtTop)
                     g.fillRect(area.getX(), area.getBottom() - 2, area.getWidth(), 2);
                 else

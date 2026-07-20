@@ -13,6 +13,7 @@
 #include "CurvePointComponent.hpp"
 #include "CurveTensionHandle.hpp"
 #include "CurveTypes.hpp"
+#include "magda/daw/ui/themes/DarkTheme.hpp"
 
 namespace magda {
 
@@ -60,10 +61,16 @@ class CurveEditorBase : public juce::Component {
     }
 
     void setCurveColour(juce::Colour colour) {
+        curveColourRole_.reset();
         curveColour_ = colour;
+        repaint();
+    }
+    void setCurveColour(ColourRole role) {
+        curveColourRole_ = role;
+        repaint();
     }
     juce::Colour getCurveColour() const {
-        return curveColour_;
+        return curveColourRole_ ? DarkTheme::getColour(*curveColourRole_) : curveColour_;
     }
 
     // Padding for content area
@@ -139,8 +146,9 @@ class CurveEditorBase : public juce::Component {
 
   protected:
     CurveDrawMode drawMode_ = CurveDrawMode::Select;
-    juce::Colour curveColour_{0xFF6688CC};  // Default curve color
-    int padding_ = 5;                       // Content area padding (>= half of point size)
+    juce::Colour curveColour_{DarkTheme::getColour(DarkTheme::AUTOMATION_BEZIER)};
+    std::optional<ColourRole> curveColourRole_{DarkTheme::AUTOMATION_BEZIER};
+    int padding_ = 5;  // Content area padding (>= half of point size)
 
     // Components
     std::vector<std::unique_ptr<CurvePointComponent>> pointComponents_;

@@ -43,7 +43,7 @@ NoteSlicePopup::NoteSlicePopup(magda::ClipId clipId, size_t noteCount)
     addAndMakeVisible(subdivisionsSlider_);
 
     applyButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.6f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
     applyButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
     applyButton_.onClick = [this] { apply(); };
     addAndMakeVisible(applyButton_);
@@ -111,9 +111,9 @@ void NoteSlicePopup::paint(juce::Graphics& g) {
     preview = preview.removeFromTop(PREVIEW_HEIGHT).reduced(PADDING, 4);
 
     auto note = preview.reduced(4, 8).toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.16f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.16f));
     g.fillRoundedRectangle(note, 3.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.85f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.85f));
     g.drawRoundedRectangle(note, 3.0f, 1.0f);
 
     const int subdivisions = juce::roundToInt(subdivisionsSlider_.getValue());

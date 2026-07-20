@@ -86,7 +86,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
         b.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
         b.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         b.setColour(juce::TextButton::buttonOnColourId,
-                    DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+                    DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
         b.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         b.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
         b.onClick = [this, &b, field, &freq]() {
@@ -153,6 +153,25 @@ FollowerEditorPanel::FollowerEditorPanel() {
         if (selectedModIndex_ >= 0 && onModLinkAmountChanged)
             onModLinkAmountChanged(selectedModIndex_, target, amount);
     };
+}
+
+void FollowerEditorPanel::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+
+    sourceButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    sourceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+
+    for (auto* btn : {&hpEnableButton_, &lpEnableButton_}) {
+        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    }
+
+    repaint();
 }
 
 void FollowerEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod,

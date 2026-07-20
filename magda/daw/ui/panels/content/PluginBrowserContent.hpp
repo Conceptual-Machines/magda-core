@@ -75,6 +75,7 @@ class PluginBrowserContent : public PanelContent,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     void onActivated() override;
     void onDeactivated() override;
@@ -120,6 +121,8 @@ class PluginBrowserContent : public PanelContent,
 
     void buildInternalPluginList();
     void loadExternalPlugins();
+    void applyThemeColours();
+    void loadCategoryIcons();
     void rebuildTree();
     void filterBySearch(const juce::String& searchText);
 

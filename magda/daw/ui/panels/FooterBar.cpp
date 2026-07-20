@@ -157,8 +157,8 @@ void FooterBar::paint(juce::Graphics& g) {
             static_cast<float>(b.hitArea.getX() + kBadgeDotPad),
             static_cast<float>(b.hitArea.getCentreY() - kBadgeDotSize / 2.0f),
             static_cast<float>(kBadgeDotSize), static_cast<float>(kBadgeDotSize));
-        g.setColour(b.connected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f)
-                                : juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f));
+        g.setColour(b.connected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f)
+                                : DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f));
         g.fillEllipse(dotArea);
 
         // Label.
@@ -178,16 +178,16 @@ void FooterBar::paint(juce::Graphics& g) {
         juce::Colour dotColour;
         switch (localModelStates_[i]) {
             case LocalModelState::Loaded:
-                dotColour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f);
+                dotColour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f);
                 break;
             case LocalModelState::Loading:
-                dotColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.95f);
+                dotColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.95f);
                 break;
             case LocalModelState::Idle:
                 dotColour = juce::Colour(0xFFE5B84B);
                 break;
             case LocalModelState::Unavailable:
-                dotColour = juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
+                dotColour = DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
                 break;
         }
 
@@ -286,12 +286,12 @@ void FooterBar::setupButtons() {
 
     const std::array<IconData, NUM_MODES> icons = {{
         {BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize, ViewMode::Live,
-         "Session", "footer.tooltip.session", DarkTheme::getColour(DarkTheme::ACCENT_GREEN)},
+         "Session", "footer.tooltip.session", DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)},
         {BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize,
          ViewMode::Arrange, "Arrangement", "footer.tooltip.arrangement",
-         DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)},
+         DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)},
         {BinaryData::iconmixboldm_svg, BinaryData::iconmixboldm_svgSize, ViewMode::Mix, "Mix",
-         "footer.tooltip.mix", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)},
+         "footer.tooltip.mix", DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)},
     }};
 
     for (size_t i = 0; i < NUM_MODES; ++i) {
@@ -348,7 +348,7 @@ void FooterBar::setupLocalModelButtons() {
                                                             static_cast<size_t>(icons[i].size));
         localModelButtons_[i]->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         localModelButtons_[i]->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        localModelButtons_[i]->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        localModelButtons_[i]->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         localModelButtons_[i]->setIconPadding(3.0f);
         localModelButtons_[i]->onClick = [this]() {
             if (onLocalModelsClicked)

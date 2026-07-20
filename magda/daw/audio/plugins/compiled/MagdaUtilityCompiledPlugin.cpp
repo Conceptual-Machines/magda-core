@@ -75,10 +75,11 @@ void MagdaUtilityCompiledPlugin::buildHostParameters() {
                                .maxValue = 1.0f,
                                .defaultValue = 0.0f};
     hostSlotInfo_[kWidthSlot] = {.name = "Width",
+                                 .unit = magda::technicalText(magda::TechnicalTextToken::Percent),
                                  .scale = magda::ParameterScale::Linear,
                                  .minValue = 0.0f,
-                                 .maxValue = 2.0f,
-                                 .defaultValue = 1.0f};
+                                 .maxValue = 200.0f,
+                                 .defaultValue = 100.0f};
     hostSlotInfo_[kLowMonoFreqSlot] = {.name = "Low Mono Freq",
                                        .unit =
                                            magda::technicalText(magda::TechnicalTextToken::Hertz),
@@ -173,7 +174,7 @@ void MagdaUtilityCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc
     const float gainDb = slotDisplayValue(kGainSlot);
     const float gain = gainDb <= -59.99f ? 0.0f : juce::Decibels::decibelsToGain(gainDb);
     const float pan = juce::jlimit(-1.0f, 1.0f, slotDisplayValue(kPanSlot));
-    const float width = juce::jlimit(0.0f, 2.0f, slotDisplayValue(kWidthSlot));
+    const float width = juce::jlimit(0.0f, 200.0f, slotDisplayValue(kWidthSlot)) * 0.01f;
     const float lowMonoFreq = slotDisplayValue(kLowMonoFreqSlot);
     const bool mono = slotDisplayValue(kMonoSlot) >= 0.5f;
     const bool lowMono = slotDisplayValue(kLowMonoSlot) >= 0.5f && !mono;

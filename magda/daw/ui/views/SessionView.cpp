@@ -12,6 +12,7 @@
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
+#include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/MonitorControl.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../components/common/TextSlider.hpp"
@@ -181,7 +182,7 @@ class SessionView::SessionToggleRail : public juce::Component {
         btn = std::make_unique<SvgButton>(name, svgData, svgSize);
         btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
         btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setTooltip(tooltip);
@@ -494,13 +495,6 @@ class SessionView::BeatBandContainer : public juce::Component {
         setInterceptsMouseClicks(true, false);
         rateIcon_ = magda::ManagedDrawable::create(BinaryData::rate_svg, BinaryData::rate_svgSize);
         hideIcon_ = magda::ManagedDrawable::create(BinaryData::hide_svg, BinaryData::hide_svgSize);
-        // SVGs ship with #B3B3B3 fills; tint to the theme's secondary text
-        // colour once so the icons read against the column BG.
-        const auto tint = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-        if (rateIcon_)
-            rateIcon_->replaceColour(juce::Colour(0xFFB3B3B3), tint);
-        if (hideIcon_)
-            hideIcon_->replaceColour(juce::Colour(0xFFB3B3B3), tint);
     }
 
     void setTrackLayout(int numTracks, const std::vector<int>& trackWidths, int separatorWidth,
@@ -562,7 +556,7 @@ class SessionView::BeatBandContainer : public juce::Component {
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
-        const auto pulseColour = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+        const auto pulseColour = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
         constexpr float kDotRadius = 2.5f;
 
         int cursor = -scrollOffset_;
@@ -582,12 +576,20 @@ class SessionView::BeatBandContainer : public juce::Component {
             }
 
             if (hideIcon_) {
-                hideIcon_->drawWithin(g, layout.hideIconBounds.toFloat(),
-                                      juce::RectanglePlacement::centred, hidden ? 0.55f : 0.3f);
+                auto themedIcon = hideIcon_->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                DarkTheme::applyToSvgIcon(*themedIcon);
+                themedIcon->drawWithin(g, layout.hideIconBounds.toFloat(),
+                                       juce::RectanglePlacement::centred, hidden ? 0.55f : 0.3f);
             }
             if (rateIcon_) {
-                rateIcon_->drawWithin(g, layout.rateIconBounds.toFloat(),
-                                      juce::RectanglePlacement::centred, 0.3f);
+                auto themedIcon = rateIcon_->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                DarkTheme::applyToSvgIcon(*themedIcon);
+                themedIcon->drawWithin(g, layout.rateIconBounds.toFloat(),
+                                       juce::RectanglePlacement::centred, 0.3f);
             }
 
             cursor += w;
@@ -666,7 +668,7 @@ class SessionView::MasterBeatIndicator : public juce::Component {
         const float alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase_ * 0.85));
         constexpr float kDotRadius = 3.0f;
         const auto centre = getLocalBounds().toFloat().getCentre();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(alpha));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(alpha));
         g.fillEllipse(centre.getX() - kDotRadius, centre.getY() - kDotRadius, kDotRadius * 2.0f,
                       kDotRadius * 2.0f);
     }
@@ -1199,12 +1201,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
         muteButton_ = std::make_unique<SvgButton>(
             "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
             BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-        muteButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        muteButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        muteButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+        configureMasterSpeakerButton(*muteButton_);
         muteButton_->setIconPadding(3.0f);
         muteButton_->setTooltip("Mute");
-        muteButton_->setClickingTogglesState(true);
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         muteButton_->onClick = [this]() {
             const bool newState = muteButton_->getToggleState();
@@ -1215,12 +1214,13 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*muteButton_);
 
         // Solo target toggle.
-        soloButton_ = std::make_unique<SvgButton>(
-            "solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize, BinaryData::solo_on_svg,
-            BinaryData::solo_on_svgSize);
+        soloButton_ =
+            std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
         soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                               DarkTheme::ICON_ON_ACCENT);
         soloButton_->setIconPadding(5.0f);
         soloButton_->setTooltip("Solo");
         soloButton_->setClickingTogglesState(true);
@@ -1234,12 +1234,13 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*soloButton_);
 
         // Record arm dot toggle.
-        recordButton_ = std::make_unique<SvgButton>(
-            "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
-            BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+        recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
+                                                    BinaryData::track_record_svgSize);
         recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
         recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                                 DarkTheme::ICON_ON_ACCENT);
         recordButton_->setIconPadding(5.0f);
         recordButton_->setTooltip("Record arm");
         recordButton_->setClickingTogglesState(true);
@@ -1468,7 +1469,7 @@ class SessionView::MiniMasterStrip : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
         // Orange accent bar at top
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         g.fillRect(bounds.removeFromTop(3));
     }
 
@@ -1656,10 +1657,10 @@ SessionView::SessionView() {
     dragGhostLabel_->setFont(FontManager::getInstance().getUIFontBold(11.0f));
     dragGhostLabel_->setJustificationType(juce::Justification::centred);
     dragGhostLabel_->setColour(juce::Label::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
     dragGhostLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     dragGhostLabel_->setColour(juce::Label::outlineColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     dragGhostLabel_->setVisible(false);
     gridContent->addAndMakeVisible(*dragGhostLabel_);
 
@@ -2097,9 +2098,9 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
                              ? trackColumnWidths_[pluginDropTrackIndex_]
                              : DEFAULT_CLIP_SLOT_WIDTH;
             auto colBounds = juce::Rectangle<int>(trackX, 0, trackW, vpBounds.getBottom());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
             g.fillRect(colBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             g.drawRect(colBounds, 2);
         } else {
             // Past last track — show "new track" indicator
@@ -2108,14 +2109,14 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
             int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
             auto indicatorBounds =
                 juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.12f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.12f));
             g.fillRect(indicatorBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
             g.drawRect(indicatorBounds, 2);
 
             // Draw "+" icon
             auto centre = indicatorBounds.getCentre().toFloat();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
             g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
             g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
         }
@@ -2128,14 +2129,14 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
         auto indicatorBounds =
             juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.12f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.12f));
         g.fillRect(indicatorBounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
         g.drawRect(indicatorBounds, 2);
 
         // Draw "+" icon
         auto centre = indicatorBounds.getCentre().toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
         g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
         g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
     }
@@ -2177,7 +2178,7 @@ void SessionView::paintControllerSceneWindowHighlight(juce::Graphics& g) {
     if (highlight.isEmpty())
         return;
 
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.82f));
     g.drawRoundedRectangle(highlight.toFloat(), 7.0f, 3.0f);
 }
@@ -2392,8 +2393,7 @@ void SessionView::setupSceneButtons() {
 
     for (int i = 0; i < numScenes_; ++i) {
         auto btn = std::make_unique<SceneButton>();
-        btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
         btn->setColour(juce::TextButton::textColourOffId,
                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -2403,6 +2403,33 @@ void SessionView::setupSceneButtons() {
     }
 
     syncMixerVisibilityFromConfig();
+}
+
+void SessionView::applyThemeColours() {
+    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+    const auto primary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+
+    for (auto& button : sceneButtons) {
+        button->setColour(juce::TextButton::buttonColourId, surface);
+        button->setColour(juce::TextButton::textColourOffId, primary);
+        button->repaint();
+    }
+
+    if (dragGhostLabel_) {
+        dragGhostLabel_->setColour(juce::Label::backgroundColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
+        dragGhostLabel_->setColour(juce::Label::textColourId, primary);
+        dragGhostLabel_->setColour(juce::Label::outlineColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    }
+
+    updateHeaderSelectionVisuals();
+    updateAllClipSlots();
+}
+
+void SessionView::lookAndFeelChanged() {
+    applyThemeColours();
+    repaint();
 }
 
 void SessionView::syncMixerVisibilityFromConfig() {
@@ -3055,7 +3082,7 @@ void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
     // Highlight dragged header
     int dx = getTrackX(headerDragIndex_) - trackHeaderScrollOffset;
     int dw = trackColumnWidths_[headerDragIndex_];
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     g.fillRect(dx, 0, dw, headerContainer->getHeight());
 
     if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
@@ -3064,14 +3091,14 @@ void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
             lineX = getTotalTracksWidth() - trackHeaderScrollOffset;
         else
             lineX = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         g.fillRect(lineX - 2, 0, 4, headerContainer->getHeight());
     } else if (headerDropType_ == HeaderDropType::OntoGroup && headerDropIndex_ >= 0) {
         int gx = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
         int gw = trackColumnWidths_[headerDropIndex_];
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         g.drawRect(gx, 0, gw, headerContainer->getHeight(), 3);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
         g.fillRect(gx, 0, gw, headerContainer->getHeight());
     }
 }
@@ -3888,7 +3915,7 @@ void SessionView::updateDragHighlight(int x, int y) {
             if (slot) {
                 // Highlight with accent color
                 slot->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             }
         }
 

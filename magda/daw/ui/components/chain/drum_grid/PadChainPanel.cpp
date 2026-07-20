@@ -333,7 +333,7 @@ void PadChainPanel::paint(juce::Graphics& g) {
                       ARROW_WIDTH / 2;
         }
 
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         g.fillRect(insertX, 4, 2, getHeight() - 8);
     }
 }

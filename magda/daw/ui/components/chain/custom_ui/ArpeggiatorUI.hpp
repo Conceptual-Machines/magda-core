@@ -21,6 +21,7 @@ class ArpeggiatorUI : public juce::Component,
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 

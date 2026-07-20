@@ -12,7 +12,7 @@ namespace magda::daw::ui {
  * @brief Small draggable block showing a chord name
  *
  * Matches the visual style used in the piano roll chord row:
- * ACCENT_BLUE at 20% alpha, 3px rounded corners, TEXT_PRIMARY text.
+ * ACCENT_PRIMARY at 20% alpha, 3px rounded corners, TEXT_PRIMARY text.
  *
  * Dragging a chord block creates a drag description containing
  * the chord data, which the piano roll can accept as a drop target

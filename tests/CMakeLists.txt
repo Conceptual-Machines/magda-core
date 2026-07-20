@@ -86,11 +86,13 @@ set(TEST_SOURCES
     # Internal track-to-track routing (issue #1690)
     test_internal_track_routing.cpp
     test_master_track_serialization.cpp
+    test_utility_width_migration.cpp
     test_automation_agent.cpp
     test_mix_analysis_agent.cpp
     test_mix_analysis_audio.cpp
     test_console_routing.cpp
     test_conversation_store.cpp
+    test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp
     test_automation_singleton.cpp
@@ -199,6 +201,11 @@ target_compile_definitions(magda_tests
     # attaches to the AutomationManager singleton and would perturb other tests.
     # TempoLaneSync is tested directly in test_tempo_lane_sync_juce.cpp instead.
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
+    # Friend access for test_llama_model_manager.cpp. The define also happens to
+    # arrive transitively via magda_daw's INTERFACE re-export of its own
+    # COMPILE_DEFINITIONS; set it explicitly so this target does not depend on
+    # that re-export staying broad.
+    MAGDA_ENABLE_TEST_HOOKS=1
 )
 
 # Add the test to CTest
@@ -244,6 +251,7 @@ target_sources(magda_juce_tests PRIVATE
     test_track_midi_recording_preview_juce.cpp
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
+    test_drum_grid_serialization_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
@@ -254,6 +262,8 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_map_juce.cpp
     test_tempo_lane_bridge_juce.cpp
     test_tempo_lane_sync_juce.cpp
+    test_runtime_theme_juce.cpp
+    test_user_theme_juce.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
@@ -270,7 +280,6 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
     ../magda/daw/ui/components/common/SvgButton.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
-    ../magda/daw/ui/themes/DarkTheme.cpp
     ../magda/daw/ui/themes/FontManager.cpp
     test_automation_modes_juce.cpp
     test_arrangement_transport_loop_juce.cpp
@@ -326,6 +335,12 @@ add_test(NAME timeline_extreme_zoom_paint_juce
 
 add_test(NAME arrange_beat_native_juce
          COMMAND magda_juce_tests "Arrange Beat Native Tests")
+
+add_test(NAME runtime_theme_juce
+         COMMAND magda_juce_tests "Runtime Theme Tests")
+
+add_test(NAME user_theme_juce
+         COMMAND magda_juce_tests "User Theme Tests")
 
 add_test(NAME tempo_map_juce
          COMMAND magda_juce_tests "Tempo Map Tests")

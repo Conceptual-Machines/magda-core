@@ -159,16 +159,16 @@ juce::Image makePresetDragImage(const juce::StringArray& names) {
             .reduced(0.5F);
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(bounds, 6.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(bounds, 6.0F, 1.5F);
 
     // Two offset squares read as a stacked "preset".
     const float gy = static_cast<float>(height) * 0.5F;
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.fillRoundedRectangle(8.0F, gy - 6.0F, 8.0F, 8.0F, 2.0F);
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F, 1.0F);
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -554,7 +554,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 break;
             }
             case kColFamily:
-                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
                          true);
                 break;
             case kColShape:
@@ -890,15 +890,9 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
 
     bpmLabel_.setText("bpm", juce::dontSendNotification);
     bpmLabel_.setFont(uiFont);
-    bpmLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     bpmLabel_.setJustificationType(juce::Justification::centredRight);
 
-    auto styleCombo = [&](juce::ComboBox& cb) {
-        cb.setColour(juce::ComboBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        cb.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        cb.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
-        cb.setLookAndFeel(&comboLnf);
-    };
+    auto styleCombo = [&](juce::ComboBox& cb) { cb.setLookAndFeel(&comboLnf); };
 
     // Family — strict closed-set dropdown (same shape as key/shape). The
     // tags free-text field below is for matching anything that doesn't fit
@@ -927,18 +921,14 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     styleCombo(keyFilter_);
     keyFilter_.onChange = [this]() { restartSearch(); };
 
-    auto setupBpm = [&](juce::TextEditor& e, const juce::String& placeholder) {
-        e.setTextToShowWhenEmpty(placeholder, DarkTheme::getSecondaryTextColour());
-        e.setColour(juce::TextEditor::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        e.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-        e.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    auto setupBpm = [&](juce::TextEditor& e) {
         e.setInputRestrictions(4, "0123456789.");
         e.setFont(uiFont);
         e.onReturnKey = [this]() { restartSearch(); };
         e.onFocusLost = [this]() { restartSearch(); };
     };
-    setupBpm(bpmMinBox_, "min");
-    setupBpm(bpmMaxBox_, "max");
+    setupBpm(bpmMinBox_);
+    setupBpm(bpmMaxBox_);
 
     tonalOnly_.setLookAndFeel(&fbLnf);
     tonalOnly_.onClick = [this]() { restartSearch(); };
@@ -946,11 +936,6 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     // Tags free-text filter — whitespace-separated tokens are AND-combined
     // via FTS5 MATCH against media_fts.tag_text. Updates on Enter / blur,
     // matching the BPM range editors so we don't query on every keystroke.
-    tagsFilter_.setTextToShowWhenEmpty("tags (e.g. drum 808)", DarkTheme::getSecondaryTextColour());
-    tagsFilter_.setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    tagsFilter_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    tagsFilter_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
     tagsFilter_.setFont(uiFont);
     tagsFilter_.onReturnKey = [this]() { restartSearch(); };
     tagsFilter_.onFocusLost = [this]() { restartSearch(); };
@@ -992,10 +977,12 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     resultsTable_.setRowHeight(28);
     resultsTable_.setMultipleSelectionEnabled(true);
     resultsTable_.setHeaderHeight(22);
-    resultsTable_.setColour(juce::ListBox::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
-    resultsTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
     resultsTable_.setOutlineThickness(1);
+
+    // All theme-derived widget colours (including the header replaced by
+    // setHeader above) live in applyThemeColours() so a live theme switch can
+    // re-apply them (lookAndFeelChanged).
+    applyThemeColours();
 
     // Issue #1339: keyboard nav over the results list should audition the
     // highlighted row (same path as the model's cellClicked) and
@@ -1144,6 +1131,47 @@ MediaDbBrowserContent::~MediaDbBrowserContent() {
     bpmMinBox_.setLookAndFeel(nullptr);
     bpmMaxBox_.setLookAndFeel(nullptr);
     tonalOnly_.setLookAndFeel(nullptr);
+}
+
+void MediaDbBrowserContent::applyThemeColours() {
+    bpmLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+    for (auto* cb : {&familyFilter_, &shapeFilter_, &keyFilter_}) {
+        cb->setColour(juce::ComboBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        cb->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        cb->setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+    }
+
+    const auto styleEditor = [](juce::TextEditor& e, const juce::String& placeholder) {
+        e.setTextToShowWhenEmpty(placeholder, DarkTheme::getSecondaryTextColour());
+        e.setColour(juce::TextEditor::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        e.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+        e.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    };
+    styleEditor(bpmMinBox_, "min");
+    styleEditor(bpmMaxBox_, "max");
+    styleEditor(tagsFilter_, "tags (e.g. drum 808)");
+
+    resultsTable_.setColour(juce::ListBox::backgroundColourId,
+                            DarkTheme::getColour(DarkTheme::BACKGROUND));
+    resultsTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+
+    // The column-label header draws through the LookAndFeel with its own
+    // colour ids; set them on the component (same pattern as the
+    // TrackManager/ParameterConfig/PluginSettings tables).
+    auto& header = resultsTable_.getHeader();
+    header.setColour(juce::TableHeaderComponent::backgroundColourId,
+                     DarkTheme::getColour(DarkTheme::SURFACE));
+    header.setColour(juce::TableHeaderComponent::textColourId, DarkTheme::getTextColour());
+    header.setColour(juce::TableHeaderComponent::outlineColourId,
+                     DarkTheme::getColour(DarkTheme::SEPARATOR));
+    header.setColour(juce::TableHeaderComponent::highlightColourId,
+                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+}
+
+void MediaDbBrowserContent::lookAndFeelChanged() {
+    applyThemeColours();
+    repaint();
 }
 
 void MediaDbBrowserContent::paint(juce::Graphics& g) {

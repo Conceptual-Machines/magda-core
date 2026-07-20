@@ -82,7 +82,7 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     soloButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     soloButton_.setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -95,13 +95,14 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     addAndMakeVisible(soloButton_);
 
     // On/bypass button (power icon)
-    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
-                                                   BinaryData::power_on_svgSize);
+    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
+                                                   BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(true, juce::dontSendNotification);
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
-    onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    onButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(true);
     onButton_->onClick = [this]() {
         bool active = onButton_->getToggleState();
@@ -121,7 +122,7 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // x symbol
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
             .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -145,7 +146,7 @@ void PadChainRowComponent::paint(juce::Graphics& g) {
 
     // Background - highlight if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
     }
@@ -153,7 +154,7 @@ void PadChainRowComponent::paint(juce::Graphics& g) {
 
     // Border - accent color if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     }

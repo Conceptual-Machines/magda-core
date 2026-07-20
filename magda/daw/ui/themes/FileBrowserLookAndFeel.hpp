@@ -16,15 +16,13 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     FileBrowserLookAndFeel() {
         setColour(juce::ScrollBar::thumbColourId,
-                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
+                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
         setColour(juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
 
-        // Pre-create and colour the MIDI icon once (avoid per-row replaceColour cost)
+        // Keep the source drawable untouched; drawFileItem tints a short-lived
+        // copy so existing rows follow a live theme switch.
         midiDrawable_ =
             juce::Drawable::createFromImageData(BinaryData::midi_svg, BinaryData::midi_svgSize);
-        if (midiDrawable_)
-            midiDrawable_->replaceColour(juce::Colour(0xFFB3B3B3),
-                                         DarkTheme::getSecondaryTextColour());
     }
     ~FileBrowserLookAndFeel() override = default;
 
@@ -98,7 +96,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.3f));
             g.fillRect(area);
         }
 
@@ -185,7 +183,11 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         auto ext = file.getFileExtension().toLowerCase();
         if (!isDirectory && (ext == ".mid" || ext == ".midi")) {
             if (midiDrawable_) {
-                midiDrawable_->drawWithin(
+                auto themedIcon = midiDrawable_->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                          DarkTheme::getSecondaryTextColour());
+                DarkTheme::applyToSvgIcon(*themedIcon);
+                themedIcon->drawWithin(
                     g,
                     juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),
                     juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,

@@ -110,6 +110,8 @@ AIPanelComponent::AIPanelComponent() {
 
     auto deleteSvg =
         juce::Drawable::createFromImageData(BinaryData::delete_svg, BinaryData::delete_svgSize);
+    if (deleteSvg)
+        DarkTheme::applyToSvgIcon(*deleteSvg);
     clearButton_.setImages(deleteSvg.get());
     clearButton_.setEdgeIndent(2);
     clearButton_.setColour(juce::DrawableButton::backgroundColourId,

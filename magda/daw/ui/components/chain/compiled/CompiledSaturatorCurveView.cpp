@@ -209,7 +209,7 @@ void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
     fillPath.lineTo(plot.getRight(), midY);
     fillPath.closeSubPath();
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
     g.setColour(accent.withAlpha(0.13f));
     g.fillPath(fillPath);
     g.setColour(accent.withAlpha(0.9f));

@@ -58,6 +58,7 @@ class TrackChainContent : public PanelContent,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -192,8 +193,7 @@ class TrackChainContent : public PanelContent,
     SvgButton masterMuteButton_{"masterMute", BinaryData::master_on_svg,
                                 BinaryData::master_on_svgSize, BinaryData::master_off_svg,
                                 BinaryData::master_off_svgSize};
-    SvgButton soloButton_{"solo", BinaryData::solo_off_svg,
-                          BinaryData::solo_off_svgSize};  // Track solo
+    SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};  // Track solo
     // Chord track mirrors its header: audition (mute) speaker + input monitor.
     std::unique_ptr<magda::ChordAuditionControl> chordSpeakerButton_;
     juce::TextButton monitorButton_;

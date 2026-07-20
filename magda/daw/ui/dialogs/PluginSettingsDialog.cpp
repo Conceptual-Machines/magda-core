@@ -27,7 +27,7 @@ void PluginSettingsDialog::DirectoryListModel::paintListBoxItem(int rowNumber, j
         return;
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         g.fillRect(0, 0, width, height);
     }
 
@@ -49,7 +49,7 @@ void PluginSettingsDialog::ExcludedTableModel::paintRowBackground(juce::Graphics
                                                                   int /*rowNumber*/, int width,
                                                                   int height, bool rowIsSelected) {
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     }

@@ -456,7 +456,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                     }
                 }
 
-                g.setColour(juce::Colours::white.withAlpha(0.6f));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.6f));
                 g.strokePath(curvePath, juce::PathStrokeType(1.5f));
             }
 
@@ -474,10 +474,11 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                 diamond.lineTo(hx - hs, hy);
                 diamond.closeSubPath();
 
-                g.setColour(isCurveHandleDragging_ ? juce::Colours::white
-                                                   : juce::Colours::white.withAlpha(0.8f));
+                g.setColour(isCurveHandleDragging_
+                                ? DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+                                : DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.8f));
                 g.fillPath(diamond);
-                g.setColour(juce::Colours::black.withAlpha(0.5f));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.5f));
                 g.strokePath(diamond, juce::PathStrokeType(1.0f));
             }
         }

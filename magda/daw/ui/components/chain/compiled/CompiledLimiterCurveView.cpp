@@ -194,9 +194,9 @@ void CompiledLimiterCurveView::paint(juce::Graphics& g) {
 
     const auto border = DarkTheme::getColour(DarkTheme::BORDER);
     const auto text = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
-    const auto grColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
-    const auto inColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+    const auto grColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+    const auto inColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
 
     g.setColour(border.withAlpha(0.55f));
     g.drawRect(meterArea_, 1.0f);

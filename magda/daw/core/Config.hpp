@@ -205,6 +205,26 @@ class Config {
         uiScale = scale;
     }
 
+    // Built-in UI theme identifier. Theme implementation stays in the UI
+    // layer; Config only persists the selected stable identifier.
+    const std::string& getTheme() const {
+        return theme;
+    }
+    void setTheme(std::string themeId) {
+        theme = themeId.empty() ? "dark" : std::move(themeId);
+    }
+
+    // UI spacing density multiplier (1.0 = normal). Scales spacing/padding
+    // tokens only (not fonts or widget/track sizes), applied live via the
+    // ConfigListener broadcast. Independent from UI scale. Consumed by
+    // LayoutConfig / MixerMetrics::applyDensityScale() and densityScaled().
+    double getUIDensityScale() const {
+        return uiDensityScale;
+    }
+    void setUIDensityScale(double scale) {
+        uiDensityScale = std::clamp(scale, 0.6, 1.4);
+    }
+
     // Font size scale for MAGDA-owned UI fonts. This is independent from
     // Desktop UI scale, which changes both text and component geometry.
     double getUIFontScale() const {
@@ -212,6 +232,15 @@ class Config {
     }
     void setUIFontScale(double scale) {
         uiFontScale = std::clamp(scale, 0.8, 1.5);
+    }
+
+    // UI font family for MAGDA-owned text. Empty = the bundled Inter default;
+    // otherwise a system font family name that FontManager resolves.
+    const std::string& getUIFontFamily() const {
+        return uiFontFamily;
+    }
+    void setUIFontFamily(std::string family) {
+        uiFontFamily = std::move(family);
     }
 
     // Extra font multiplier for UI text. This compounds with the global UI font scale.
@@ -1131,8 +1160,18 @@ class Config {
     // UI scale: 0 = Auto (pick from display DPI), otherwise an explicit factor (1.0, 1.25, …)
     double uiScale = 0.0;
 
+    // Runtime theme selection. "dark" is deliberately the compatibility
+    // default for configurations written before themes existed.
+    std::string theme = "dark";
+
+    // UI spacing density multiplier (1.0 = normal). Clamped to [0.6, 1.4].
+    double uiDensityScale = 1.0;
+
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;
+
+    // UI font family: empty = bundled Inter default; else a system family name.
+    std::string uiFontFamily;
 
     // Localized UI font scale: additional multiplier for non-English UI languages.
     double localizedUIFontScale = 1.0;
@@ -1235,10 +1274,9 @@ class Config {
     // AI settings
     std::string aiPreset = "local_embedded";
     std::map<std::string, AgentLLMConfig> agentConfigs = {
-        {"router", {"llama_local", "", "", ""}},
-        {"command", {"llama_local", "", "", ""}},
-        {"music", {"llama_local", "", "", ""}},
-        {"controller", {"llama_local", "", "", ""}},
+        {"router", {"llama_local", "", "", ""}}, {"command", {"llama_local", "", "", ""}},
+        {"music", {"llama_local", "", "", ""}},  {"controller", {"llama_local", "", "", ""}},
+        {"theme", {"llama_local", "", "", ""}},
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";

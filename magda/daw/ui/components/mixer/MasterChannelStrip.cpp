@@ -69,7 +69,7 @@ class MasterChannelStrip::ResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
                                 : DarkTheme::getColour(DarkTheme::SEPARATOR));
         int y = getHeight() / 2;
         g.fillRect(4, y, getWidth() - 8, 2);
@@ -446,6 +446,8 @@ void MasterChannelStrip::setupControls() {
     // Headphone icon (non-interactive, just a label)
     auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
                                                       BinaryData::headphones_svgSize);
+    if (hpIcon)
+        DarkTheme::applyToSvgIcon(*hpIcon);
     headphoneIcon_ =
         std::make_unique<juce::DrawableButton>("Headphones", juce::DrawableButton::ImageFitted);
     headphoneIcon_->setImages(hpIcon.get());
@@ -511,6 +513,19 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
     }
     g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
     g.fillRect(1, labelRowBottom, ownBounds.getWidth() - 2, 1);
+}
+
+void MasterChannelStrip::lookAndFeelChanged() {
+    // titleLabel and peakValueLabel cache a concrete text colour, so a repaint
+    // alone won't refresh them after a theme switch. titleLabel's colour is
+    // selection-dependent, so mirror the logic in setSelected().
+    if (titleLabel)
+        titleLabel->setColour(juce::Label::textColourId,
+                              selected_ ? juce::Colours::white
+                                        : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    if (peakValueLabel)
+        peakValueLabel->setColour(juce::Label::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
 }
 
 void MasterChannelStrip::setSelected(bool shouldBeSelected) {

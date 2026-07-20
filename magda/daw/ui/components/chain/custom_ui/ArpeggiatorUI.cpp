@@ -59,7 +59,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     latchButton_.setColour(juce::TextButton::buttonColourId,
                            DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
     latchButton_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.6f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
     latchButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     latchButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
     latchButton_.onClick = [this] {
@@ -375,6 +375,31 @@ void ArpeggiatorUI::setupCombo(juce::ComboBox& combo) {
 void ArpeggiatorUI::setupSlider(LinkableTextSlider& slider, double min, double max, double step) {
     slider.setRange(min, max, step);
     addAndMakeVisible(slider);
+}
+
+void ArpeggiatorUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto* label :
+         {&patternLabel_, &rateLabel_, &octavesLabel_, &latchLabel_, &rampLabel_, &depthLabel_,
+          &skewLabel_, &cyclesLabel_, &quantizeLabel_, &quantizeSubLabel_, &gateLabel_,
+          &swingLabel_, &velModeLabel_, &fixedVelLabel_})
+        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    for (auto* combo : {&patternCombo_, &velModeCombo_}) {
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    latchButton_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    latchButton_.setColour(juce::TextButton::buttonOnColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
+    latchButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    latchButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+
+    repaint();
 }
 
 std::vector<LinkableTextSlider*> ArpeggiatorUI::getLinkableSliders() {

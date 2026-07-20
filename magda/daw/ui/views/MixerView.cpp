@@ -12,6 +12,7 @@
 #include "../../engine/PluginWindowManager.hpp"
 #include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
+#include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
@@ -164,7 +165,7 @@ class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         // Single subtle line, highlights on hover
-        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
                                 : DarkTheme::getColour(DarkTheme::SEPARATOR));
         int y = getHeight() / 2;
         g.fillRect(4, y, getWidth() - 8, 2);
@@ -543,12 +544,8 @@ void MixerView::ChannelStrip::setupControls() {
     muteButton = std::make_unique<magda::SvgButton>(
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-    muteButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    muteButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton->setIconPadding(3.5f);
+    configureMasterSpeakerButton(*muteButton);
     muteButton->setTooltip(tr("tracks.mute.tooltip"));
-    muteButton->setClickingTogglesState(true);
     muteButton->onClick = [this]() {
         const bool newState = muteButton->getToggleState();
         for (auto tid : getMultiEditTargets(trackId_, isMaster_))
@@ -564,12 +561,13 @@ void MixerView::ChannelStrip::setupControls() {
     addChildComponent(*chordSpeakerButton);
 
     // Solo target toggle, matching the track header.
-    soloButton = std::make_unique<magda::SvgButton>(
-        "solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize, BinaryData::solo_on_svg,
-        BinaryData::solo_on_svgSize);
+    soloButton =
+        std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                          DarkTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
@@ -583,12 +581,13 @@ void MixerView::ChannelStrip::setupControls() {
 
     // Record arm button (not on master)
     if (!isMaster_) {
-        recordButton = std::make_unique<magda::SvgButton>(
-            "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
-            BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+        recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
+                                                          BinaryData::track_record_svgSize);
         recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
         recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
         recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                                DarkTheme::ICON_ON_ACCENT);
         recordButton->setIconPadding(5.0f);
         recordButton->setTooltip(tr("tracks.record.tooltip"));
         recordButton->setClickingTogglesState(true);
@@ -1684,6 +1683,19 @@ void MixerView::ChannelStrip::resetPeak() {
         peakLabel->setText("-inf", juce::dontSendNotification);
 }
 
+void MixerView::ChannelStrip::lookAndFeelChanged() {
+    // trackLabel and peakLabel cache a concrete text colour, so a repaint alone
+    // won't refresh them after a theme switch. trackLabel's colour is
+    // selection-dependent, so mirror the logic in setSelected().
+    if (trackLabel)
+        trackLabel->setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
+                                                            : DarkTheme::TEXT_PRIMARY));
+    if (peakLabel)
+        peakLabel->setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+}
+
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
@@ -2232,9 +2244,9 @@ void MixerView::paint(juce::Graphics& g) {
             // Highlight the specific strip being hovered
             auto* strip = orderedStrips_[dropTargetStripIndex_];
             auto stripBounds = getLocalArea(strip, strip->getLocalBounds());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
             g.fillRect(stripBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
             g.drawRect(stripBounds, 2);
         } else {
             // Hovering empty area — show "new track" indicator at right edge of channel area
@@ -2246,14 +2258,14 @@ void MixerView::paint(juce::Graphics& g) {
                 indicatorX = vpBounds.getX();
             auto indicatorBounds = juce::Rectangle<int>(indicatorX, vpBounds.getY(), indicatorWidth,
                                                         vpBounds.getHeight());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.15f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.15f));
             g.fillRect(indicatorBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.4f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f));
             g.drawRect(indicatorBounds, 2);
 
             // Draw "+" icon
             auto centre = indicatorBounds.getCentre().toFloat();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.7f));
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
             g.drawLine(centre.getX() - 10, centre.getY(), centre.getX() + 10, centre.getY(), 2.0f);
             g.drawLine(centre.getX(), centre.getY() - 10, centre.getX(), centre.getY() + 10, 2.0f);
         }

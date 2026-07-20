@@ -48,7 +48,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/copycontent.svg
     ../../assets/icons/general/delete.svg
     ../../assets/icons/general/random.svg
-    ../../assets/icons/general/loop.svg
     ../../assets/icons/general/sidechain.svg
     ../../assets/icons/general/compare.svg
     ../../assets/icons/general/add.svg
@@ -67,7 +66,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/server_play.svg
     ../../assets/icons/general/server_stop.svg
     ../../assets/icons/general/open_in_new.svg
-    ../../assets/icons/general/power_on.svg
+    ../../assets/icons/general/power.svg
     ../../assets/icons/general/toggle_off.svg
     ../../assets/icons/general/toggle_on.svg
     ../../assets/icons/general/input-output.svg
@@ -81,12 +80,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/speaker_simple.svg
     ../../assets/icons/general/master_on.svg
     ../../assets/icons/general/master_off.svg
-    ../../assets/icons/general/chord_off.svg
-    ../../assets/icons/general/chord_on_1.svg
-    ../../assets/icons/general/solo_off.svg
-    ../../assets/icons/general/solo_on.svg
-    ../../assets/icons/general/track_record_off.svg
-    ../../assets/icons/general/track_record_on.svg
+    ../../assets/icons/general/chord.svg
+    ../../assets/icons/general/solo.svg
+    ../../assets/icons/general/track_record.svg
     ../../assets/icons/general/monitor_off.svg
     ../../assets/icons/general/monitor_on.svg
     ../../assets/BoldMGlyph.svg
@@ -121,34 +117,21 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/trackchain/devices/instrument-device.svg
     ../../assets/icons/trackchain/gain-staging.svg
     # Transport icons
-    ../../assets/icons/transport/play_off.svg
-    ../../assets/icons/transport/play_on.svg
-    ../../assets/icons/transport/pause_off.svg
-    ../../assets/icons/transport/pause_on.svg
-    ../../assets/icons/transport/stop_off.svg
-    ../../assets/icons/transport/stop_on.svg
-    ../../assets/icons/transport/record_off.svg
-    ../../assets/icons/transport/record_on.svg
+    ../../assets/icons/transport/play.svg
+    ../../assets/icons/transport/pause.svg
+    ../../assets/icons/transport/stop.svg
+    ../../assets/icons/transport/record.svg
     ../../assets/icons/transport/record_circle.svg
-    ../../assets/icons/transport/loop_off.svg
-    ../../assets/icons/transport/loop_on.svg
+    ../../assets/icons/transport/loop.svg
     ../../assets/icons/transport/loop_icon.svg
-    ../../assets/icons/transport/rewind_off.svg
-    ../../assets/icons/transport/rewind_on.svg
-    ../../assets/icons/transport/prev_off.svg
-    ../../assets/icons/transport/prev_on.svg
-    ../../assets/icons/transport/next_off.svg
-    ../../assets/icons/transport/next_on.svg
+    ../../assets/icons/transport/rewind.svg
+    ../../assets/icons/transport/prev.svg
+    ../../assets/icons/transport/next.svg
     ../../assets/icons/transport/punchin.svg
-    ../../assets/icons/transport/punchin_on.svg
     ../../assets/icons/transport/punchout.svg
-    ../../assets/icons/transport/punchout_on.svg
-    ../../assets/icons/transport/automation_off.svg
-    ../../assets/icons/transport/automation_on.svg
-    ../../assets/icons/transport/midi_qwerty_off.svg
-    ../../assets/icons/transport/midi_qwerty_on.svg
+    ../../assets/icons/transport/automation_write.svg
+    ../../assets/icons/transport/midi_qwerty.svg
     # Inspector icons
-    ../../assets/icons/inspector/infinito.svg
     ../../assets/icons/inspector/position.svg
     ../../assets/icons/inspector/fade_linear.svg
     ../../assets/icons/inspector/fade_convex.svg
@@ -158,7 +141,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/inspector/fade_speedramp.svg
     # Resume/arrangement icons
     ../../assets/icons/resume/resume.svg
-    ../../assets/icons/resume/resume_on.svg
     # Automation icons
     ../../assets/icons/automation/horizontal_snap.svg
     ../../assets/icons/automation/vertical_snap.svg
@@ -166,10 +148,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/automation/automation_master_header.svg
     # Waveform icons
     ../../assets/icons/waveform/sine-wave.svg
-    ../../assets/icons/waveform/time_bend_off.svg
-    ../../assets/icons/waveform/time_bend_on.svg
-    ../../assets/icons/waveform/note_slice_off.svg
-    ../../assets/icons/waveform/note_slice_on.svg
+    ../../assets/icons/waveform/time_bend.svg
+    ../../assets/icons/waveform/note_slice.svg
     ../../assets/icons/waveform/curve.svg
     # Analysis device icons
     ../../assets/icons/analysis/postfx.svg
@@ -261,6 +241,10 @@ juce_add_binary_data(MagdaAssets
     # plugin packs; MAGDA-internal plugin aliases live in
     # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
+    # Factory themes - embedded JSON palettes listed between the built-in
+    # themes and the user's own files (see UserTheme.cpp).
+    ../../assets/themes/concrete_warehouse.json
+    ../../assets/themes/neon_cyberpunk.json
     # Bundled Faust starter DSPs — embedded so users always have something
     # in the loader picker even on a fresh install.
     audio/faust_dsp/magda_drive.dsp

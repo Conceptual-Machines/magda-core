@@ -116,6 +116,7 @@ class MixerView : public juce::Component,
         void paintOverChildren(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& event) override;
+        void lookAndFeelChanged() override;
 
         void setMeterLevel(float level);
         void setMeterLevels(float leftLevel, float rightLevel);
