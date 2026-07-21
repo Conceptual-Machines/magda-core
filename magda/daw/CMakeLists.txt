@@ -368,6 +368,7 @@ add_subdirectory(profiling)
 add_subdirectory(ui)
 add_subdirectory(media_db)
 add_subdirectory(transcription)
+add_subdirectory(stem_separation)
 
 # =============================================================================
 # Linking, compile defs, includes
