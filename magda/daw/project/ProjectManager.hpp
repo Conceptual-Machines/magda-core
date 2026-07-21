@@ -301,6 +301,14 @@ class ProjectManager : private juce::Timer {
     juce::File getImportedDirectory() const;
 
     /**
+     * @brief Get the stem separation output subdirectory (#1288).
+     *
+     * Where "Split into Stems" writes the separated stem WAVs, one
+     * sub-folder per split.
+     */
+    juce::File getStemsDirectory() const;
+
+    /**
      * @brief Delete temp media directories older than 7 days.
      * Call once at app launch.
      */

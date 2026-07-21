@@ -19,13 +19,16 @@ class AISettingsDialog : public juce::Component {
     void resized() override;
     void paint(juce::Graphics& g) override;
 
-    static void showDialog(juce::Component* parent);
+    // initialTabName selects a tab by its title (e.g. "Stems") once the
+    // dialog is up; empty keeps the default tab.
+    static void showDialog(juce::Component* parent, const juce::String& initialTabName = {});
 
   private:
     class CloudPage;
     class LocalPage;
     class ConfigPage;
     class SampleTaggerPage;
+    class StemSeparationPage;
 
     class TabComponent : public juce::TabbedComponent {
       public:
@@ -42,6 +45,7 @@ class AISettingsDialog : public juce::Component {
     std::unique_ptr<LocalPage> localPage_;
     std::unique_ptr<ConfigPage> configPage_;
     std::unique_ptr<SampleTaggerPage> samplePage_;
+    std::unique_ptr<StemSeparationPage> stemsPage_;
 
     juce::TextButton okBtn_{"OK"};
     juce::TextButton cancelBtn_{"Cancel"};

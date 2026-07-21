@@ -294,6 +294,7 @@
   "main_window": {
     "loading.initializing": "Initializing",
     "loading.scanning_devices": "Scanning {0} & {1} devices",
+    "loading.splitting_stems": "Splitting into stems",
     "undo.render_clips": "Render Clips"
   },
   "export": {

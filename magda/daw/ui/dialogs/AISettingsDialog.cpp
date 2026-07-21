@@ -13,6 +13,8 @@
 #include "../../core/Config.hpp"
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/SampleTaggerDownloader.hpp"
+#include "../../stem_separation/DemucsSeparator.hpp"
+#include "../../stem_separation/StemModelDownloader.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
@@ -1953,6 +1955,147 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
 };
 
 // ============================================================================
+// StemSeparationPage — stem separation model weights (issue #1288)
+// ============================================================================
+
+class AISettingsDialog::StemSeparationPage : public juce::Component {
+  public:
+    StemSeparationPage() {
+        statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        statusLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        statusLabel_.setJustificationType(juce::Justification::topLeft);
+        addAndMakeVisible(statusLabel_);
+
+        locationCaption_.setText("Models location", juce::dontSendNotification);
+        styleLabel(locationCaption_);
+        addAndMakeVisible(locationCaption_);
+
+        locationField_.setReadOnly(true);
+        styleEditor(locationField_, "");
+        addAndMakeVisible(locationField_);
+
+        progressBar_.setColour(juce::ProgressBar::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        progressBar_.setColour(juce::ProgressBar::foregroundColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        progressBar_.setPercentageDisplay(false);
+        progressBar_.setVisible(false);
+        addAndMakeVisible(progressBar_);
+
+        actionButton_.onClick = [this]() { handleActionClick(); };
+        addAndMakeVisible(actionButton_);
+
+        refreshStatus();
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        const int rowH = 24;
+        const int labelW = 110;
+
+        statusLabel_.setBounds(bounds.removeFromTop(80));
+        bounds.removeFromTop(10);
+
+        auto locRow = bounds.removeFromTop(rowH);
+        locationCaption_.setBounds(locRow.removeFromLeft(labelW));
+        locationField_.setBounds(locRow.reduced(0, 1));
+        bounds.removeFromTop(10);
+
+        progressBar_.setBounds(bounds.removeFromTop(22));
+        bounds.removeFromTop(8);
+
+        actionButton_.setBounds(bounds.removeFromTop(28).removeFromLeft(220));
+    }
+
+    void load(const magda::Config&) {
+        refreshStatus();
+    }
+    // Download / remove act immediately; nothing batches up for OK.
+    void apply(magda::Config&) const {}
+
+  private:
+    static constexpr auto kModel = magda::stems::StemModel::Htdemucs;
+
+    void refreshStatus() {
+        locationField_.setText(magda::stems::StemModelDownloader::modelsDir().getFullPathName(),
+                               juce::dontSendNotification);
+
+        const bool installed = magda::stems::StemModelDownloader::isInstalled(kModel);
+        const auto sizeMb = juce::String(
+            magda::stems::StemModelDownloader::expectedTotalBytes(kModel) / (1024 * 1024));
+
+        if (installed) {
+            statusLabel_.setText(
+                "Demucs (4-stem) is installed.\n\nRight-click an audio clip and choose Split "
+                "into Stems to separate it into vocals, drums, bass and other. Click Remove to "
+                "free " +
+                    sizeMb + " MB of disk space.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Remove");
+        } else {
+            statusLabel_.setText(
+                "Demucs (4-stem) separates audio into vocals, drums, bass and other stems.\n\n"
+                "The model weights (" +
+                    sizeMb +
+                    " MB) are downloaded from HuggingFace on demand. Weights are published by "
+                    "Meta for research use.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Download Demucs (" + sizeMb + " MB)");
+        }
+    }
+
+    void handleActionClick() {
+        if (downloader_.isRunning()) {
+            downloader_.cancel();
+            return;
+        }
+        if (magda::stems::StemModelDownloader::isInstalled(kModel)) {
+            magda::stems::StemModelDownloader::remove(kModel);
+            refreshStatus();
+            return;
+        }
+
+        progressValue_ = 0.0;
+        progressBar_.setVisible(true);
+        actionButton_.setButtonText("Cancel");
+
+        // SafePointer: the download outlives dialog dismissal, and the
+        // callback hops through callAsync.
+        juce::Component::SafePointer<StemSeparationPage> safe(this);
+        downloader_.start([safe](const magda::stems::StemModelDownloader::Progress& p) {
+            auto* self = safe.getComponent();
+            if (self == nullptr)
+                return;
+
+            using Phase = magda::stems::StemModelDownloader::Phase;
+            if (p.phase == Phase::Downloading && p.bytesTotal > 0) {
+                self->progressValue_ =
+                    static_cast<double>(p.bytesDone) / static_cast<double>(p.bytesTotal);
+            } else if (p.phase == Phase::Verifying) {
+                self->progressValue_ = 1.0;
+            } else if (p.phase == Phase::Done || p.phase == Phase::Failed ||
+                       p.phase == Phase::Cancelled) {
+                self->progressBar_.setVisible(false);
+                self->refreshStatus();
+                if (p.phase == Phase::Failed) {
+                    self->statusLabel_.setText("Download failed: " + p.errorMessage,
+                                               juce::dontSendNotification);
+                }
+            }
+        });
+    }
+
+    juce::Label statusLabel_;
+    juce::Label locationCaption_;
+    juce::TextEditor locationField_;
+    // ProgressBar holds a reference to the value; declare the value first.
+    double progressValue_ = 0.0;
+    juce::ProgressBar progressBar_{progressValue_};
+    juce::TextButton actionButton_;
+    magda::stems::StemModelDownloader downloader_{magda::stems::StemModel::Htdemucs};
+};
+
+// ============================================================================
 // AISettingsDialog
 // ============================================================================
 
@@ -1965,6 +2108,9 @@ AISettingsDialog::AISettingsDialog() {
     if constexpr (magda::media::clapBackendAvailable()) {
         samplePage_ = std::make_unique<SampleTaggerPage>();
     }
+    if constexpr (magda::stems::DemucsSeparator::backendAvailable()) {
+        stemsPage_ = std::make_unique<StemSeparationPage>();
+    }
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
@@ -1976,6 +2122,9 @@ AISettingsDialog::AISettingsDialog() {
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
     if (samplePage_) {
         tabbedComponent_.addTab("Sample Analyzer", tabBg, samplePage_.get(), false);
+    }
+    if (stemsPage_) {
+        tabbedComponent_.addTab("Stems", tabBg, stemsPage_.get(), false);
     }
 
     // Refresh config combos when switching to Config tab
@@ -2032,6 +2181,9 @@ void AISettingsDialog::loadSettings() {
     if (samplePage_) {
         samplePage_->load(config);
     }
+    if (stemsPage_) {
+        stemsPage_->load(config);
+    }
 }
 
 void AISettingsDialog::applySettings() {
@@ -2042,12 +2194,22 @@ void AISettingsDialog::applySettings() {
     if (samplePage_) {
         samplePage_->apply(config);
     }
+    if (stemsPage_) {
+        stemsPage_->apply(config);
+    }
     config.save();
 }
 
-void AISettingsDialog::showDialog(juce::Component* parent) {
+void AISettingsDialog::showDialog(juce::Component* parent, const juce::String& initialTabName) {
     (void)parent;
     auto* dialog = new AISettingsDialog();
+
+    if (initialTabName.isNotEmpty()) {
+        const auto names = dialog->tabbedComponent_.getTabNames();
+        const int idx = names.indexOf(initialTabName);
+        if (idx >= 0)
+            dialog->tabbedComponent_.setCurrentTabIndex(idx);
+    }
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "AI Settings";

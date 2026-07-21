@@ -7,6 +7,7 @@
 #include <numeric>
 #include <unordered_set>
 
+#include "../../dialogs/AISettingsDialog.hpp"
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
@@ -35,6 +36,8 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "stem_separation/DemucsSeparator.hpp"
+#include "stem_separation/StemSeparationService.hpp"
 #include "transcription/TranscriptionService.hpp"
 
 namespace magda {
@@ -3149,6 +3152,35 @@ void ClipComponent::showContextMenu() {
                             magda::transcription::TranscriptionService::getInstance().isAvailable();
         }
         menu.addItem(22, "Transcribe to MIDI", canTranscribe);
+
+        // Split into stems (#1288): audio clips only, one item per engine.
+        {
+            bool canSplit = false;
+            if (!isMultiSelection && canEdit) {
+                const auto* singleClip = getClipInfo();
+                canSplit = singleClip && singleClip->isAudio() &&
+                           juce::File(singleClip->audio().source.filePath).existsAsFile();
+            }
+            auto& stemService = magda::stems::StemSeparationService::getInstance();
+            juce::PopupMenu stemMenu;
+            stemMenu.addItem(50, "Harmonic / Percussive (HPSS)",
+                             canSplit &&
+                                 stemService.isEngineAvailable(
+                                     magda::stems::StemSeparationService::Engine::Hpss) &&
+                                 !stemService.isBusy());
+            // Demucs needs the ONNX backend (not built on Intel macOS) and
+            // its weights. Backend-but-no-weights stays clickable: the
+            // action deep-links to the download page ("..." marks it).
+            if (magda::stems::DemucsSeparator::backendAvailable()) {
+                const bool installed = stemService.isEngineAvailable(
+                    magda::stems::StemSeparationService::Engine::Demucs);
+                stemMenu.addItem(51,
+                                 juce::String("Vocals / Drums / Bass / Other (Demucs)") +
+                                     (installed ? "" : "..."),
+                                 canSplit && !stemService.isBusy());
+            }
+            menu.addSubMenu("Split into Stems", stemMenu, canSplit);
+        }
         menu.addSeparator();
     }
 
@@ -3608,6 +3640,29 @@ void ClipComponent::showContextMenu() {
                                 err.isNotEmpty() ? err : juce::String("Transcription failed"));
                         else
                             magda::daw::ui::Toast::showGlobal("Transcription complete");
+                    });
+                break;
+            }
+
+            case 50:    // Split into Stems: HPSS
+            case 51: {  // Split into Stems: Demucs
+                const auto engine = result == 50
+                                        ? magda::stems::StemSeparationService::Engine::Hpss
+                                        : magda::stems::StemSeparationService::Engine::Demucs;
+                auto& stemService = magda::stems::StemSeparationService::getInstance();
+                if (!stemService.isEngineAvailable(engine)) {
+                    // Weights not downloaded yet: deep-link to the page that
+                    // installs them instead of failing.
+                    AISettingsDialog::showDialog(getTopLevelComponent(), "Stems");
+                    break;
+                }
+                stemService.splitClipIntoStems(
+                    clipId_, engine, [](magda::TrackId groupTrackId, juce::String err) {
+                        if (groupTrackId == magda::INVALID_TRACK_ID)
+                            magda::daw::ui::Toast::showGlobal(
+                                err.isNotEmpty() ? err : juce::String("Stem split failed"));
+                        else
+                            magda::daw::ui::Toast::showGlobal("Stem split complete");
                     });
                 break;
             }

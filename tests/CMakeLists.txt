@@ -169,6 +169,10 @@ set(TEST_SOURCES
     # Media database (issue #1319) — CLAP zero-shot tagging
     test_media_db_zero_shot_tags.cpp
     test_limiter_dsp.cpp
+    # Stem separation (issue #1288) — HPSS DSP engine + Demucs OLA geometry
+    test_hpss_separator.cpp
+    test_demucs_chunking.cpp
+    test_demucs_separator.cpp
 )
 
 # Create test executable
