@@ -25,6 +25,7 @@ struct ManifestEntry {
 
 struct ModelManifest {
     const char* displayName;
+    const char* sourceUrl;  // human-facing HuggingFace repo page
     const ManifestEntry* files;
     int numFiles;
 };
@@ -59,8 +60,11 @@ constexpr ManifestEntry kSpleeter2sFiles[] = {
     },
 };
 
-constexpr ModelManifest kHtdemucs = {"Demucs (4-stem)", kHtdemucsFiles, 1};
-constexpr ModelManifest kSpleeter2s = {"Spleeter (2-stem)", kSpleeter2sFiles, 2};
+constexpr ModelManifest kHtdemucs = {
+    "Demucs (4-stem)", "https://huggingface.co/StemSplitio/htdemucs-onnx", kHtdemucsFiles, 1};
+constexpr ModelManifest kSpleeter2s = {
+    "Spleeter (2-stem)", "https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems",
+    kSpleeter2sFiles, 2};
 
 const ModelManifest& manifestFor(StemModel model) {
     switch (model) {
@@ -236,6 +240,10 @@ std::vector<juce::File> StemModelDownloader::modelFiles(StemModel model) {
 
 const char* StemModelDownloader::displayName(StemModel model) {
     return manifestFor(model).displayName;
+}
+
+const char* StemModelDownloader::sourceUrl(StemModel model) {
+    return manifestFor(model).sourceUrl;
 }
 
 bool StemModelDownloader::isInstalled(StemModel model) {

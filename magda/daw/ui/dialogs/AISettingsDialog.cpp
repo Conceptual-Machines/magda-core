@@ -2025,6 +2025,16 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
             nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
             addAndMakeVisible(nameLabel_);
 
+            // Where the weights come from, as a clickable HuggingFace link.
+            const juce::String url = magda::stems::StemModelDownloader::sourceUrl(model_);
+            sourceLink_ = std::make_unique<juce::HyperlinkButton>(url.replace("https://", ""),
+                                                                  juce::URL(url));
+            sourceLink_->setFont(FontManager::getInstance().getUIFont(11.0f), false,
+                                 juce::Justification::centredLeft);
+            sourceLink_->setColour(juce::HyperlinkButton::textColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            addAndMakeVisible(*sourceLink_);
+
             progressBar_.setColour(juce::ProgressBar::backgroundColourId,
                                    DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
             progressBar_.setColour(juce::ProgressBar::foregroundColourId,
@@ -2042,6 +2052,7 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
         void resized() override {
             auto bounds = getLocalBounds();
             nameLabel_.setBounds(bounds.removeFromTop(30));
+            sourceLink_->setBounds(bounds.removeFromTop(16));
             bounds.removeFromTop(4);
             progressBar_.setBounds(bounds.removeFromTop(18));
             bounds.removeFromTop(6);
@@ -2105,6 +2116,7 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
         magda::stems::StemModel model_;
         juce::String blurb_;
         juce::Label nameLabel_;
+        std::unique_ptr<juce::HyperlinkButton> sourceLink_;
         // ProgressBar holds a reference to the value; declare the value first.
         double progressValue_ = 0.0;
         juce::ProgressBar progressBar_{progressValue_};

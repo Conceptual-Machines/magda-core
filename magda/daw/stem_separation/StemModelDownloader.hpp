@@ -63,6 +63,10 @@ class StemModelDownloader {
 
     [[nodiscard]] static const char* displayName(StemModel model);
 
+    // The human-facing HuggingFace repo page the weights come from,
+    // shown (and linkable) in the download UI.
+    [[nodiscard]] static const char* sourceUrl(StemModel model);
+
     // Existence + size check only; skips the hash so UI can poll it cheaply.
     [[nodiscard]] static bool isInstalled(StemModel model);
 
