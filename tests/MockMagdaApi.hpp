@@ -579,6 +579,11 @@ class MockMidiApi : public MidiApi {
         juce::MidiMessage msg;
     };
     std::vector<Send> sends;
+    struct Injection {
+        TrackId trackId;
+        juce::MidiMessage msg;
+    };
+    std::vector<Injection> injections;
     std::vector<juce::String> outputPortNames;
     juce::String defaultOutputPort;
 
@@ -596,6 +601,10 @@ class MockMidiApi : public MidiApi {
     }
     juce::String getDefaultOutputPort() const override {
         return defaultOutputPort;
+    }
+    bool injectTrackMidi(TrackId trackId, const juce::MidiMessage& msg) override {
+        injections.push_back({trackId, msg});
+        return true;
     }
 };
 

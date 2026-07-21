@@ -398,6 +398,25 @@ TEST_CASE("magda.midi.send_note_on / send_note_off forward note messages", "[lua
     REQUIRE(mock.midi_.sends[1].msg.getNoteNumber() == 0x60);
 }
 
+TEST_CASE("magda.midi inject_note_on / inject_note_off target one track", "[lua_bindings][midi]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.midi.inject_note_on(42, 6, 36, 100)"));
+    REQUIRE(rt.eval("magda.midi.inject_note_off(42, 6, 36, 7)"));
+
+    REQUIRE(mock.midi_.injections.size() == 2);
+    REQUIRE(mock.midi_.injections[0].trackId == 42);
+    REQUIRE(mock.midi_.injections[0].msg.isNoteOn());
+    REQUIRE(mock.midi_.injections[0].msg.getChannel() == 6);
+    REQUIRE(mock.midi_.injections[0].msg.getNoteNumber() == 36);
+    REQUIRE(mock.midi_.injections[0].msg.getVelocity() == 100);
+    REQUIRE(mock.midi_.injections[1].trackId == 42);
+    REQUIRE(mock.midi_.injections[1].msg.isNoteOff());
+    REQUIRE(mock.midi_.injections[1].msg.getVelocity() == 7);
+}
+
 TEST_CASE("magda.midi.send_sysex builds a SysEx message with framing", "[lua_bindings][midi]") {
     MockMagdaApi mock;
     LuaRuntime rt;

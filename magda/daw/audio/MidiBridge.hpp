@@ -146,6 +146,10 @@ class MidiBridge : public juce::MidiInputCallback {
      */
     bool sendSysEx(const juce::String& deviceNameOrId, const juce::uint8* data, size_t numBytes);
 
+    /** Inject a message into one track's live plugin chain. Used by controller
+     *  script User/Note modes whose physical input is otherwise surface-only. */
+    bool injectMidiToTrack(TrackId trackId, const juce::MidiMessage& msg);
+
     // =========================================================================
     // MIDI Device Enable/Disable
     // =========================================================================

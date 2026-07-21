@@ -734,6 +734,30 @@ int lua_midi_send_note_off(lua_State* L) {
     return 1;
 }
 
+int lua_midi_inject_note_on(lua_State* L) {
+    auto* api = getApi(L);
+    auto trackId = static_cast<TrackId>(luaL_checkinteger(L, 1));
+    int channel = static_cast<int>(luaL_checkinteger(L, 2));
+    int note = static_cast<int>(luaL_checkinteger(L, 3));
+    int velocity = static_cast<int>(luaL_checkinteger(L, 4));
+    bool ok = api->midi().injectTrackMidi(
+        trackId, juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(velocity)));
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int lua_midi_inject_note_off(lua_State* L) {
+    auto* api = getApi(L);
+    auto trackId = static_cast<TrackId>(luaL_checkinteger(L, 1));
+    int channel = static_cast<int>(luaL_checkinteger(L, 2));
+    int note = static_cast<int>(luaL_checkinteger(L, 3));
+    int velocity = static_cast<int>(luaL_optinteger(L, 4, 0));
+    bool ok = api->midi().injectTrackMidi(
+        trackId, juce::MidiMessage::noteOff(channel, note, static_cast<juce::uint8>(velocity)));
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
 // magda.midi.send(port, status, data1[, data2]) — escape hatch for any raw
 // channel-voice message the convenience helpers don't cover.
 int lua_midi_send(lua_State* L) {
@@ -973,6 +997,8 @@ const FnReg kMidiFns[] = {
     {"send_cc", lua_midi_send_cc},
     {"send_note_on", lua_midi_send_note_on},
     {"send_note_off", lua_midi_send_note_off},
+    {"inject_note_on", lua_midi_inject_note_on},
+    {"inject_note_off", lua_midi_inject_note_off},
     {"send_sysex", lua_midi_send_sysex},
     {"outputs", lua_midi_outputs},
     {"default_output", lua_midi_default_output},
