@@ -31,6 +31,26 @@ juce::File writeTempScript(const juce::String& source, const juce::String& name)
     return file;
 }
 
+juce::File bundledControllerScript(const juce::String& name) {
+    return juce::File(juce::String(MAGDA_REPO_ROOT))
+        .getChildFile("resources/controllers/scripts")
+        .getChildFile(name);
+}
+
+void seedLaunchpadTracks(MockMagdaApi& mock) {
+    for (int i = 0; i < 10; ++i) {
+        magda::TrackInfo track;
+        track.id = 10 + i * 10;  // deliberately non-contiguous: scripts must use track order
+        track.name = "Track " + juce::String(i + 1);
+        track.volume = 0.5f;
+        track.pan = 0.0f;
+        mock.tracks_.tracks.push_back(track);
+    }
+    mock.selection_.selectedTrack = 10;
+    mock.session_.slots[{10, 0}] = 100;
+    mock.session_.slots[{20, 0}] = 200;
+}
+
 }  // namespace
 
 TEST_CASE("LuaController dispatches MIDI to on_midi with full event table", "[lua_controller]") {
@@ -301,6 +321,111 @@ TEST_CASE("LuaController survives an error in on_midi and keeps dispatching", "[
     REQUIRE(mock.tracks_.volumeWrites.size() == 1);
 
     script.deleteFile();
+}
+
+TEST_CASE("Launchpad MK1 factory script uses classic grid, mixer, and User modes",
+          "[lua_controller][launchpad]") {
+    MockMagdaApi mock;
+    seedLaunchpadTracks(mock);
+    mock.midi_.defaultOutputPort = "Launchpad MK1";
+
+    LuaController controller(mock);
+    REQUIRE(controller.loadScript(bundledControllerScript("launchpad_mk1.lua")));
+
+    // MK1 X/Y layout: top-left is note 0, top scene button is note 8.
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::noteOn(1, 0, juce::uint8(127)));
+    REQUIRE(mock.session_.launchedClips == std::vector<magda::ClipId>{100});
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::noteOn(1, 8, juce::uint8(127)));
+    REQUIRE(mock.session_.launchedScenes == std::vector<int>{0});
+
+    // Right arrow banks one track; the same pad now addresses track id 20.
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::controllerEvent(1, 107, 127));
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::noteOn(1, 0, juce::uint8(127)));
+    REQUIRE(mock.session_.launchedClips.back() == 200);
+
+    // User 1 switches to drum layout and injects notes into the selected track.
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::controllerEvent(1, 109, 127));
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::noteOn(1, 36, juce::uint8(100)));
+    controller.dispatchEventForTest("Launchpad MK1", juce::MidiMessage::noteOff(1, 36));
+    REQUIRE(mock.midi_.injections.size() == 2);
+    REQUIRE(mock.midi_.injections[0].trackId == 10);
+    REQUIRE(mock.midi_.injections[0].msg.isNoteOn());
+    REQUIRE(mock.midi_.injections[1].msg.isNoteOff());
+
+    // Mixer starts on volume; top pad is full-scale. Press Mixer again for pan.
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::controllerEvent(1, 111, 127));
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::noteOn(1, 0, juce::uint8(127)));
+    REQUIRE(mock.tracks_.volumeWrites.size() == 1);
+    REQUIRE(mock.tracks_.volumeWrites[0].id == 20);  // bank offset remains active
+    REQUIRE(mock.tracks_.volumeWrites[0].value == 1.0f);
+
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::controllerEvent(1, 111, 127));
+    controller.dispatchEventForTest("Launchpad MK1",
+                                    juce::MidiMessage::noteOn(1, 112, juce::uint8(127)));
+    REQUIRE(mock.tracks_.panWrites.size() == 1);
+    REQUIRE(mock.tracks_.panWrites[0].id == 20);
+    REQUIRE(mock.tracks_.panWrites[0].value == -1.0f);
+}
+
+TEST_CASE("Launchpad MK2 factory script uses MK2 grid, native faders, and User modes",
+          "[lua_controller][launchpad]") {
+    MockMagdaApi mock;
+    seedLaunchpadTracks(mock);
+    mock.midi_.defaultOutputPort = "Launchpad MK2";
+
+    LuaController controller(mock);
+    REQUIRE(controller.loadScript(bundledControllerScript("launchpad_mk2.lua")));
+
+    // MK2 Session layout: top-left is note 81, its scene button is note 89.
+    controller.dispatchEventForTest("Launchpad MK2",
+                                    juce::MidiMessage::noteOn(1, 81, juce::uint8(127)));
+    REQUIRE(mock.session_.launchedClips == std::vector<magda::ClipId>{100});
+    controller.dispatchEventForTest("Launchpad MK2",
+                                    juce::MidiMessage::noteOn(1, 89, juce::uint8(127)));
+    REQUIRE(mock.session_.launchedScenes == std::vector<int>{0});
+
+    // User 1 can use its configured MIDI channel and still targets selection.
+    controller.dispatchEventForTest("Launchpad MK2",
+                                    juce::MidiMessage::controllerEvent(1, 109, 127));
+    controller.dispatchEventForTest("Launchpad MK2",
+                                    juce::MidiMessage::noteOn(6, 36, juce::uint8(96)));
+    controller.dispatchEventForTest("Launchpad MK2", juce::MidiMessage::noteOff(6, 36));
+    REQUIRE(mock.midi_.injections.size() == 2);
+    REQUIRE(mock.midi_.injections[0].trackId == 10);
+    REQUIRE(mock.midi_.injections[0].msg.getChannel() == 6);
+
+    // Native fader CCs 21..28 write volume, then pan after a second Mixer press.
+    controller.dispatchEventForTest("Launchpad MK2",
+                                    juce::MidiMessage::controllerEvent(1, 111, 127));
+    controller.dispatchEventForTest("Launchpad MK2", juce::MidiMessage::controllerEvent(1, 21, 64));
+    REQUIRE(mock.tracks_.volumeWrites.size() == 1);
+    REQUIRE(mock.tracks_.volumeWrites[0].id == 10);
+    REQUIRE(mock.tracks_.volumeWrites[0].value > 0.50f);
+    REQUIRE(mock.tracks_.volumeWrites[0].value < 0.51f);
+
+    controller.dispatchEventForTest("Launchpad MK2",
+                                    juce::MidiMessage::controllerEvent(1, 111, 127));
+    controller.dispatchEventForTest("Launchpad MK2", juce::MidiMessage::controllerEvent(1, 21, 0));
+    REQUIRE(mock.tracks_.panWrites.size() == 1);
+    REQUIRE(mock.tracks_.panWrites[0].id == 10);
+    REQUIRE(mock.tracks_.panWrites[0].value == -1.0f);
+
+    // Loading and entering mixer emitted model-specific layout/fader SysEx.
+    REQUIRE(std::any_of(mock.midi_.sends.begin(), mock.midi_.sends.end(), [](const auto& send) {
+        if (!send.msg.isSysEx() || send.msg.getSysExDataSize() < 7)
+            return false;
+        const auto* bytes = send.msg.getSysExData();
+        return bytes[5] == 0x22 && (bytes[6] == 4 || bytes[6] == 5);
+    }));
 }
 
 TEST_CASE("LuaController loadScript with a syntax error reports it", "[lua_controller]") {

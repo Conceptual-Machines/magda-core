@@ -151,6 +151,26 @@ bool MidiBridge::sendSysEx(const juce::String& deviceNameOrId, const juce::uint8
                     juce::MidiMessage::createSysExMessage(data, static_cast<int>(numBytes)));
 }
 
+bool MidiBridge::injectMidiToTrack(TrackId trackId, const juce::MidiMessage& msg) {
+    if (audioBridge_ == nullptr)
+        return false;
+
+    auto* audioTrack = audioBridge_->getAudioTrack(trackId);
+    if (audioTrack == nullptr)
+        return false;
+
+    audioTrack->injectLiveMidiMessage(msg, {});
+
+    if (msg.isNoteOn()) {
+        audioBridge_->triggerMidiActivity(trackId);
+        TrackManager::getInstance().triggerMidiNoteOn(trackId);
+    } else if (msg.isNoteOff()) {
+        TrackManager::getInstance().triggerMidiNoteOff(trackId);
+    }
+
+    return true;
+}
+
 void MidiBridge::enableMidiInput(const juce::String& deviceId) {
     juce::ScopedLock lock(routingLock_);
 
