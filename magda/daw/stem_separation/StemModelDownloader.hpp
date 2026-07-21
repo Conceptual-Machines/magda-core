@@ -17,12 +17,14 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace magda::stems {
 
-// Downloadable model bundles. Spleeter joins this enum with its own entry.
+// Downloadable model bundles.
 enum class StemModel {
-    Htdemucs,  // Demucs v4 hybrid transformer, 4 stems, fp32 ONNX (~316 MB)
+    Htdemucs,    // Demucs v4 hybrid transformer, 4 stems, fp32 ONNX (~316 MB)
+    Spleeter2s,  // Spleeter 2-stem (vocals/accompaniment), two UNets (~78 MB)
 };
 
 class StemModelDownloader {
@@ -55,8 +57,9 @@ class StemModelDownloader {
     // Where all stem-separation models live.
     [[nodiscard]] static juce::File modelsDir();
 
-    // The model's .onnx file on disk (whether or not it exists yet).
-    [[nodiscard]] static juce::File modelFile(StemModel model);
+    // The model's files on disk, in manifest order (whether or not they
+    // exist yet). Single-file models return one entry.
+    [[nodiscard]] static std::vector<juce::File> modelFiles(StemModel model);
 
     [[nodiscard]] static const char* displayName(StemModel model);
 

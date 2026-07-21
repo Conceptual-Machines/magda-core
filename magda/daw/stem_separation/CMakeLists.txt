@@ -7,6 +7,7 @@
 target_sources(magda_daw PRIVATE
     DemucsSeparator.cpp
     HpssSeparator.cpp
+    SpleeterSeparator.cpp
     StemModelDownloader.cpp
     StemSeparationService.cpp
 )

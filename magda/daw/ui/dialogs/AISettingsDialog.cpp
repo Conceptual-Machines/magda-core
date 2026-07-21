@@ -1964,6 +1964,10 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
         statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
         statusLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
         statusLabel_.setJustificationType(juce::Justification::topLeft);
+        statusLabel_.setText(
+            "Split into Stems (right-click an audio clip) separates audio onto new tracks. "
+            "HPSS needs no model; the engines below download their weights on demand.",
+            juce::dontSendNotification);
         addAndMakeVisible(statusLabel_);
 
         locationCaption_.setText("Models location", juce::dontSendNotification);
@@ -1972,20 +1976,17 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
 
         locationField_.setReadOnly(true);
         styleEditor(locationField_, "");
+        locationField_.setText(magda::stems::StemModelDownloader::modelsDir().getFullPathName(),
+                               juce::dontSendNotification);
         addAndMakeVisible(locationField_);
 
-        progressBar_.setColour(juce::ProgressBar::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
-        progressBar_.setColour(juce::ProgressBar::foregroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        progressBar_.setPercentageDisplay(false);
-        progressBar_.setVisible(false);
-        addAndMakeVisible(progressBar_);
-
-        actionButton_.onClick = [this]() { handleActionClick(); };
-        addAndMakeVisible(actionButton_);
-
-        refreshStatus();
+        rows_[0] = std::make_unique<ModelRow>(
+            magda::stems::StemModel::Htdemucs,
+            "Best quality, slowest. Weights are published by Meta for research use.");
+        rows_[1] = std::make_unique<ModelRow>(magda::stems::StemModel::Spleeter2s,
+                                              "Faster and lighter, vocals/accompaniment only.");
+        for (auto& row : rows_)
+            addAndMakeVisible(*row);
     }
 
     void resized() override {
@@ -1993,106 +1994,128 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
         const int rowH = 24;
         const int labelW = 110;
 
-        statusLabel_.setBounds(bounds.removeFromTop(80));
-        bounds.removeFromTop(10);
+        statusLabel_.setBounds(bounds.removeFromTop(48));
+        bounds.removeFromTop(8);
 
         auto locRow = bounds.removeFromTop(rowH);
         locationCaption_.setBounds(locRow.removeFromLeft(labelW));
         locationField_.setBounds(locRow.reduced(0, 1));
-        bounds.removeFromTop(10);
+        bounds.removeFromTop(12);
 
-        progressBar_.setBounds(bounds.removeFromTop(22));
-        bounds.removeFromTop(8);
-
-        actionButton_.setBounds(bounds.removeFromTop(28).removeFromLeft(220));
+        for (auto& row : rows_) {
+            row->setBounds(bounds.removeFromTop(84));
+            bounds.removeFromTop(8);
+        }
     }
 
     void load(const magda::Config&) {
-        refreshStatus();
+        for (auto& row : rows_)
+            row->refreshStatus();
     }
     // Download / remove act immediately; nothing batches up for OK.
     void apply(magda::Config&) const {}
 
   private:
-    static constexpr auto kModel = magda::stems::StemModel::Htdemucs;
+    // One downloadable model: name + status, progress bar, download/remove.
+    class ModelRow : public juce::Component {
+      public:
+        ModelRow(magda::stems::StemModel model, juce::String blurb)
+            : model_(model), blurb_(std::move(blurb)), downloader_(model) {
+            nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+            nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+            addAndMakeVisible(nameLabel_);
 
-    void refreshStatus() {
-        locationField_.setText(magda::stems::StemModelDownloader::modelsDir().getFullPathName(),
-                               juce::dontSendNotification);
+            progressBar_.setColour(juce::ProgressBar::backgroundColourId,
+                                   DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+            progressBar_.setColour(juce::ProgressBar::foregroundColourId,
+                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            progressBar_.setPercentageDisplay(false);
+            progressBar_.setVisible(false);
+            addAndMakeVisible(progressBar_);
 
-        const bool installed = magda::stems::StemModelDownloader::isInstalled(kModel);
-        const auto sizeMb = juce::String(
-            magda::stems::StemModelDownloader::expectedTotalBytes(kModel) / (1024 * 1024));
+            actionButton_.onClick = [this]() { handleActionClick(); };
+            addAndMakeVisible(actionButton_);
 
-        if (installed) {
-            statusLabel_.setText(
-                "Demucs (4-stem) is installed.\n\nRight-click an audio clip and choose Split "
-                "into Stems to separate it into vocals, drums, bass and other. Click Remove to "
-                "free " +
-                    sizeMb + " MB of disk space.",
-                juce::dontSendNotification);
-            actionButton_.setButtonText("Remove");
-        } else {
-            statusLabel_.setText(
-                "Demucs (4-stem) separates audio into vocals, drums, bass and other stems.\n\n"
-                "The model weights (" +
-                    sizeMb +
-                    " MB) are downloaded from HuggingFace on demand. Weights are published by "
-                    "Meta for research use.",
-                juce::dontSendNotification);
-            actionButton_.setButtonText("Download Demucs (" + sizeMb + " MB)");
-        }
-    }
-
-    void handleActionClick() {
-        if (downloader_.isRunning()) {
-            downloader_.cancel();
-            return;
-        }
-        if (magda::stems::StemModelDownloader::isInstalled(kModel)) {
-            magda::stems::StemModelDownloader::remove(kModel);
             refreshStatus();
-            return;
         }
 
-        progressValue_ = 0.0;
-        progressBar_.setVisible(true);
-        actionButton_.setButtonText("Cancel");
+        void resized() override {
+            auto bounds = getLocalBounds();
+            nameLabel_.setBounds(bounds.removeFromTop(30));
+            bounds.removeFromTop(4);
+            progressBar_.setBounds(bounds.removeFromTop(18));
+            bounds.removeFromTop(6);
+            actionButton_.setBounds(bounds.removeFromTop(26).removeFromLeft(200));
+        }
 
-        // SafePointer: the download outlives dialog dismissal, and the
-        // callback hops through callAsync.
-        juce::Component::SafePointer<StemSeparationPage> safe(this);
-        downloader_.start([safe](const magda::stems::StemModelDownloader::Progress& p) {
-            auto* self = safe.getComponent();
-            if (self == nullptr)
+        void refreshStatus() {
+            const auto sizeMb = juce::String(
+                magda::stems::StemModelDownloader::expectedTotalBytes(model_) / (1024 * 1024));
+            const bool installed = magda::stems::StemModelDownloader::isInstalled(model_);
+            const juce::String name = magda::stems::StemModelDownloader::displayName(model_);
+
+            nameLabel_.setText(name + " - " + blurb_ + (installed ? " Installed." : ""),
+                               juce::dontSendNotification);
+            actionButton_.setButtonText(installed ? "Remove " + name
+                                                  : "Download " + name + " (" + sizeMb + " MB)");
+        }
+
+      private:
+        void handleActionClick() {
+            if (downloader_.isRunning()) {
+                downloader_.cancel();
                 return;
-
-            using Phase = magda::stems::StemModelDownloader::Phase;
-            if (p.phase == Phase::Downloading && p.bytesTotal > 0) {
-                self->progressValue_ =
-                    static_cast<double>(p.bytesDone) / static_cast<double>(p.bytesTotal);
-            } else if (p.phase == Phase::Verifying) {
-                self->progressValue_ = 1.0;
-            } else if (p.phase == Phase::Done || p.phase == Phase::Failed ||
-                       p.phase == Phase::Cancelled) {
-                self->progressBar_.setVisible(false);
-                self->refreshStatus();
-                if (p.phase == Phase::Failed) {
-                    self->statusLabel_.setText("Download failed: " + p.errorMessage,
-                                               juce::dontSendNotification);
-                }
             }
-        });
-    }
+            if (magda::stems::StemModelDownloader::isInstalled(model_)) {
+                magda::stems::StemModelDownloader::remove(model_);
+                refreshStatus();
+                return;
+            }
+
+            progressValue_ = 0.0;
+            progressBar_.setVisible(true);
+            actionButton_.setButtonText("Cancel");
+
+            // SafePointer: the download outlives dialog dismissal, and the
+            // callback hops through callAsync.
+            juce::Component::SafePointer<ModelRow> safe(this);
+            downloader_.start([safe](const magda::stems::StemModelDownloader::Progress& p) {
+                auto* self = safe.getComponent();
+                if (self == nullptr)
+                    return;
+
+                using Phase = magda::stems::StemModelDownloader::Phase;
+                if (p.phase == Phase::Downloading && p.bytesTotal > 0) {
+                    self->progressValue_ =
+                        static_cast<double>(p.bytesDone) / static_cast<double>(p.bytesTotal);
+                } else if (p.phase == Phase::Verifying) {
+                    self->progressValue_ = 1.0;
+                } else if (p.phase == Phase::Done || p.phase == Phase::Failed ||
+                           p.phase == Phase::Cancelled) {
+                    self->progressBar_.setVisible(false);
+                    self->refreshStatus();
+                    if (p.phase == Phase::Failed) {
+                        self->nameLabel_.setText("Download failed: " + p.errorMessage,
+                                                 juce::dontSendNotification);
+                    }
+                }
+            });
+        }
+
+        magda::stems::StemModel model_;
+        juce::String blurb_;
+        juce::Label nameLabel_;
+        // ProgressBar holds a reference to the value; declare the value first.
+        double progressValue_ = 0.0;
+        juce::ProgressBar progressBar_{progressValue_};
+        juce::TextButton actionButton_;
+        magda::stems::StemModelDownloader downloader_;
+    };
 
     juce::Label statusLabel_;
     juce::Label locationCaption_;
     juce::TextEditor locationField_;
-    // ProgressBar holds a reference to the value; declare the value first.
-    double progressValue_ = 0.0;
-    juce::ProgressBar progressBar_{progressValue_};
-    juce::TextButton actionButton_;
-    magda::stems::StemModelDownloader downloader_{magda::stems::StemModel::Htdemucs};
+    std::array<std::unique_ptr<ModelRow>, 2> rows_;
 };
 
 // ============================================================================

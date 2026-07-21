@@ -3172,11 +3172,17 @@ void ClipComponent::showContextMenu() {
             // its weights. Backend-but-no-weights stays clickable: the
             // action deep-links to the download page ("..." marks it).
             if (magda::stems::DemucsSeparator::backendAvailable()) {
-                const bool installed = stemService.isEngineAvailable(
+                const bool demucsInstalled = stemService.isEngineAvailable(
                     magda::stems::StemSeparationService::Engine::Demucs);
                 stemMenu.addItem(51,
                                  juce::String("Vocals / Drums / Bass / Other (Demucs)") +
-                                     (installed ? "" : "..."),
+                                     (demucsInstalled ? "" : "..."),
+                                 canSplit && !stemService.isBusy());
+                const bool spleeterInstalled = stemService.isEngineAvailable(
+                    magda::stems::StemSeparationService::Engine::Spleeter);
+                stemMenu.addItem(52,
+                                 juce::String("Vocals / Accompaniment (Spleeter)") +
+                                     (spleeterInstalled ? "" : "..."),
                                  canSplit && !stemService.isBusy());
             }
             menu.addSubMenu("Split into Stems", stemMenu, canSplit);
@@ -3645,10 +3651,12 @@ void ClipComponent::showContextMenu() {
             }
 
             case 50:    // Split into Stems: HPSS
-            case 51: {  // Split into Stems: Demucs
-                const auto engine = result == 50
-                                        ? magda::stems::StemSeparationService::Engine::Hpss
-                                        : magda::stems::StemSeparationService::Engine::Demucs;
+            case 51:    // Split into Stems: Demucs
+            case 52: {  // Split into Stems: Spleeter
+                const auto engine = result == 50 ? magda::stems::StemSeparationService::Engine::Hpss
+                                    : result == 51
+                                        ? magda::stems::StemSeparationService::Engine::Demucs
+                                        : magda::stems::StemSeparationService::Engine::Spleeter;
                 auto& stemService = magda::stems::StemSeparationService::getInstance();
                 if (!stemService.isEngineAvailable(engine)) {
                     // Weights not downloaded yet: deep-link to the page that

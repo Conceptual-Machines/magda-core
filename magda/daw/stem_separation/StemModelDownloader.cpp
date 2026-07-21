@@ -21,24 +21,53 @@ struct ManifestEntry {
     const char* url;
     const char* sha256;
     juce::int64 size;
+};
+
+struct ModelManifest {
     const char* displayName;
+    const ManifestEntry* files;
+    int numFiles;
 };
 
 // StemSplitio/htdemucs-onnx revision d54ed9eb, fp32 single-file export of
 // Meta's htdemucs (STFT/iSTFT in-graph, so the host contract is waveform
 // in, stems out).
-constexpr ManifestEntry kHtdemucs = {
-    "htdemucs.onnx",
-    "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs.onnx",
-    "68d0bf16428ef66e692cdff8a9ccf28f1ef3f69440d57e58605a4cc55fcc5e74",
-    316446953,
-    "Demucs (4-stem)",
+constexpr ManifestEntry kHtdemucsFiles[] = {
+    {
+        "htdemucs.onnx",
+        "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs.onnx",
+        "68d0bf16428ef66e692cdff8a9ccf28f1ef3f69440d57e58605a4cc55fcc5e74",
+        316446953,
+    },
 };
 
-const ManifestEntry& manifestFor(StemModel model) {
+// csukuangfj/sherpa-onnx-spleeter-2stems fp32 conversion of Deezer's
+// Spleeter 2-stem release: one UNet per stem over a host-side STFT.
+constexpr ManifestEntry kSpleeter2sFiles[] = {
+    {
+        "vocals.onnx",
+        "https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems/resolve/main/vocals.onnx",
+        "bdc16ab6bf6117ddd4842c19e80e40e2be188fc555295064d424616b0224ac97",
+        39318336,
+    },
+    {
+        "accompaniment.onnx",
+        "https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems/resolve/main/"
+        "accompaniment.onnx",
+        "671ace17acd3720674a2bc14de32ac6292453dec20d9eb0ba4255d4ad8e3d8c0",
+        39318343,
+    },
+};
+
+constexpr ModelManifest kHtdemucs = {"Demucs (4-stem)", kHtdemucsFiles, 1};
+constexpr ModelManifest kSpleeter2s = {"Spleeter (2-stem)", kSpleeter2sFiles, 2};
+
+const ModelManifest& manifestFor(StemModel model) {
     switch (model) {
         case StemModel::Htdemucs:
-            break;
+            return kHtdemucs;
+        case StemModel::Spleeter2s:
+            return kSpleeter2s;
     }
     return kHtdemucs;
 }
@@ -57,22 +86,27 @@ class StemModelDownloader::Worker : public juce::Thread {
           onProgress_(std::move(onProgress)) {}
 
     void run() override {
-        const auto& entry = manifestFor(model_);
+        const auto& manifest = manifestFor(model_);
 
         Progress p;
-        p.currentFilename = entry.filename;
-        p.bytesTotal = entry.size;
+        p.bytesTotal = StemModelDownloader::expectedTotalBytes(model_);
         p.phase = Phase::Downloading;
-        postProgress(p);
 
         auto destDir = StemModelDownloader::modelsDir();
         if (!destDir.exists())
             destDir.createDirectory();
 
-        if (!downloadOne(entry, p)) {
-            p.phase = threadShouldExit() ? Phase::Cancelled : Phase::Failed;
+        for (int i = 0; i < manifest.numFiles; ++i) {
+            const auto& entry = manifest.files[i];
+            p.currentFilename = entry.filename;
+            p.phase = Phase::Downloading;
             postProgress(p);
-            return;
+
+            if (!downloadOne(entry, p)) {
+                p.phase = threadShouldExit() ? Phase::Cancelled : Phase::Failed;
+                postProgress(p);
+                return;
+            }
         }
 
         p.phase = Phase::Done;
@@ -84,7 +118,7 @@ class StemModelDownloader::Worker : public juce::Thread {
     // Stream `entry.url` into place via a temp file, verifying the SHA-256
     // before the atomic rename; mirrors SampleTaggerDownloader.
     bool downloadOne(const ManifestEntry& entry, Progress& p) {
-        const auto dest = StemModelDownloader::modelFile(model_);
+        const auto dest = StemModelDownloader::modelsDir().getChildFile(entry.filename);
 
         juce::URL url(entry.url);
         int statusCode = 0;
@@ -191,8 +225,13 @@ juce::File StemModelDownloader::modelsDir() {
     return paths::dataDir().getChildFile("StemSeparation").getChildFile("models");
 }
 
-juce::File StemModelDownloader::modelFile(StemModel model) {
-    return modelsDir().getChildFile(manifestFor(model).filename);
+std::vector<juce::File> StemModelDownloader::modelFiles(StemModel model) {
+    const auto& manifest = manifestFor(model);
+    std::vector<juce::File> files;
+    files.reserve(static_cast<size_t>(manifest.numFiles));
+    for (int i = 0; i < manifest.numFiles; ++i)
+        files.push_back(modelsDir().getChildFile(manifest.files[i].filename));
+    return files;
 }
 
 const char* StemModelDownloader::displayName(StemModel model) {
@@ -200,18 +239,29 @@ const char* StemModelDownloader::displayName(StemModel model) {
 }
 
 bool StemModelDownloader::isInstalled(StemModel model) {
-    const auto& entry = manifestFor(model);
-    auto f = modelFile(model);
-    return f.existsAsFile() && f.getSize() == entry.size;
+    const auto& manifest = manifestFor(model);
+    for (int i = 0; i < manifest.numFiles; ++i) {
+        auto f = modelsDir().getChildFile(manifest.files[i].filename);
+        if (!f.existsAsFile() || f.getSize() != manifest.files[i].size)
+            return false;
+    }
+    return true;
 }
 
 juce::int64 StemModelDownloader::expectedTotalBytes(StemModel model) {
-    return manifestFor(model).size;
+    const auto& manifest = manifestFor(model);
+    juce::int64 total = 0;
+    for (int i = 0; i < manifest.numFiles; ++i)
+        total += manifest.files[i].size;
+    return total;
 }
 
 bool StemModelDownloader::remove(StemModel model) {
-    auto f = modelFile(model);
-    return !f.existsAsFile() || f.deleteFile();
+    bool ok = true;
+    for (const auto& f : modelFiles(model))
+        if (f.existsAsFile() && !f.deleteFile())
+            ok = false;
+    return ok;
 }
 
 void StemModelDownloader::start(ProgressCallback onProgress) {

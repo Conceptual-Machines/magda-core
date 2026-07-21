@@ -32,6 +32,7 @@ class StemSeparationService {
     enum class Engine {
         Hpss,
         Demucs,
+        Spleeter,
     };
 
     static StemSeparationService& getInstance();

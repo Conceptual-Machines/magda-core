@@ -15,6 +15,7 @@
 #include "DemucsSeparator.hpp"
 #include "HpssSeparator.hpp"
 #include "ProjectManager.hpp"
+#include "SpleeterSeparator.hpp"
 #include "StemModelDownloader.hpp"
 #include "StemSeparator.hpp"
 #include "TempoUtils.hpp"
@@ -92,6 +93,8 @@ std::vector<juce::String> stemNamesFor(StemSeparationService::Engine engine) {
             return HpssSeparator{}.stemNames();
         case StemSeparationService::Engine::Demucs:
             return {"Drums", "Bass", "Other", "Vocals"};
+        case StemSeparationService::Engine::Spleeter:
+            return {"Vocals", "Accompaniment"};
     }
     return {};
 }
@@ -105,12 +108,21 @@ std::unique_ptr<StemSeparator> makeSeparator(StemSeparationService::Engine engin
             // ~300 MB graph in memory, and separation is rare enough that
             // a few seconds of load beats keeping it resident.
             auto demucs = std::make_unique<DemucsSeparator>(
-                StemModelDownloader::modelFile(StemModel::Htdemucs)
+                StemModelDownloader::modelFiles(StemModel::Htdemucs)
+                    .front()
                     .getFullPathName()
                     .toStdString());
             if (!demucs->isLoaded())
                 return nullptr;
             return demucs;
+        }
+        case StemSeparationService::Engine::Spleeter: {
+            const auto files = StemModelDownloader::modelFiles(StemModel::Spleeter2s);
+            auto spleeter = std::make_unique<SpleeterSeparator>(
+                files[0].getFullPathName().toStdString(), files[1].getFullPathName().toStdString());
+            if (!spleeter->isLoaded())
+                return nullptr;
+            return spleeter;
         }
     }
     return nullptr;
@@ -139,6 +151,9 @@ bool StemSeparationService::isEngineAvailable(Engine engine) {
         case Engine::Demucs:
             return DemucsSeparator::backendAvailable() &&
                    StemModelDownloader::isInstalled(StemModel::Htdemucs);
+        case Engine::Spleeter:
+            return SpleeterSeparator::backendAvailable() &&
+                   StemModelDownloader::isInstalled(StemModel::Spleeter2s);
     }
     return false;
 }

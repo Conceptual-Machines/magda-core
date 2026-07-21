@@ -173,6 +173,7 @@ set(TEST_SOURCES
     test_hpss_separator.cpp
     test_demucs_chunking.cpp
     test_demucs_separator.cpp
+    test_spleeter_separator.cpp
 )
 
 # Create test executable
