@@ -32,9 +32,9 @@ void ScaleBlockComponent::paint(juce::Graphics& g) {
 
     // Green-tinted background — brighter when selected
     float baseAlpha = selected_ ? 0.35f : 0.15f;
-    auto colour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(baseAlpha);
+    auto colour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(baseAlpha);
     if (isMouseOver())
-        colour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(baseAlpha + 0.15f);
+        colour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(baseAlpha + 0.15f);
 
     g.setColour(colour);
     g.fillRoundedRectangle(bounds, 3.0f);
@@ -42,7 +42,7 @@ void ScaleBlockComponent::paint(juce::Graphics& g) {
     // Border when selected or hovered
     if (selected_ || isMouseOver()) {
         float borderAlpha = selected_ ? 0.7f : 0.5f;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(borderAlpha));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(borderAlpha));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
     }
 
@@ -213,7 +213,7 @@ void BrowseScaleRowComponent::paint(juce::Graphics& g) {
     float baseAlpha = 0.08f;
     if (isMouseOver())
         baseAlpha = 0.2f;
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(baseAlpha));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(baseAlpha));
     g.fillRoundedRectangle(bounds, 3.0f);
 
     g.setColour(DarkTheme::getTextColour().withAlpha(0.8f));
@@ -1681,9 +1681,11 @@ void ChordPanelContent::setupFooterControls() {
     ksTabBtn_->setRadioGroupId(1001);
     ksTabBtn_->setToggleState(true, juce::dontSendNotification);
     ksTabBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    ksTabBtn_->setActiveColor(juce::Colours::white);
-    ksTabBtn_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    ksTabBtn_->setActiveBackgroundColor(DarkTheme::getAccentColour());
+    // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
+    // every theme (see the AI console tab buttons).
+    ksTabBtn_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
+    ksTabBtn_->setNormalBackgroundColor(DarkTheme::SURFACE);
+    ksTabBtn_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
     ksTabBtn_->setTooltip("Krumhansl-Schmuckler profile suggestions");
     ksTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::KS); };
     addAndMakeVisible(ksTabBtn_.get());
@@ -1693,9 +1695,9 @@ void ChordPanelContent::setupFooterControls() {
     aiTabBtn_->setClickingTogglesState(true);
     aiTabBtn_->setRadioGroupId(1001);
     aiTabBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiTabBtn_->setActiveColor(juce::Colours::white);
-    aiTabBtn_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    aiTabBtn_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    aiTabBtn_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
+    aiTabBtn_->setNormalBackgroundColor(DarkTheme::SURFACE);
+    aiTabBtn_->setActiveBackgroundColor(DarkTheme::ACCENT_MODULATION);
     aiTabBtn_->setTooltip("AI chord progression suggestions");
     aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
     addAndMakeVisible(aiTabBtn_.get());
@@ -1733,7 +1735,7 @@ void ChordPanelContent::setupFooterControls() {
     aiSendBtn_ = std::make_unique<magda::SvgButton>("AISend", BinaryData::send_svg,
                                                     BinaryData::send_svgSize);
     aiSendBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiSendBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    aiSendBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     aiSendBtn_->onClick = [this]() { requestAISuggestions(); };
     aiSendBtn_->setVisible(false);
     addAndMakeVisible(aiSendBtn_.get());

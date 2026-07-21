@@ -99,7 +99,7 @@ void CompiledDimensionView::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.18f));
     g.drawLine(plot.getX() + 4.0f, centreY, plot.getRight() - 4.0f, centreY, 1.0f);
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
     g.setColour(accent.withAlpha(0.95f));
     g.fillEllipse(centreX - reach - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
     g.fillEllipse(centreX + reach - 4.0f, centreY - 4.0f, 8.0f, 8.0f);

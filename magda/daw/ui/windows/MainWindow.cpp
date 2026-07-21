@@ -16,6 +16,7 @@
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
+#include "../layout/LayoutConfig.hpp"
 #include "../panels/BottomPanel.hpp"
 #include "../panels/FooterBar.hpp"
 #include "../panels/LeftPanel.hpp"
@@ -25,6 +26,12 @@
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/MixerMetrics.hpp"
+#include "../themes/SmallButtonLookAndFeel.hpp"
+#include "../themes/SmallComboBoxLookAndFeel.hpp"
+#include "../themes/ThemeFileWatcher.hpp"
+#include "../themes/UserTheme.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
@@ -46,12 +53,12 @@
 #include "project/ProjectManager.hpp"
 
 #if JUCE_WINDOWS
-#include <dwmapi.h>
-#include <windows.h>
-#pragma comment(lib, "dwmapi.lib")
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
+    #include <dwmapi.h>
+    #include <windows.h>
+    #pragma comment(lib, "dwmapi.lib")
+    #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+        #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+    #endif
 #endif
 
 namespace magda {
@@ -275,22 +282,11 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     setVisible(true);
     juce::Logger::writeToLog("[MainWindow] Window is now visible");
 
-#if JUCE_WINDOWS
-    // The native title bar (setUsingNativeTitleBar(true) above) renders with
-    // Windows' light chrome by default, which shows up as a white strip above
-    // MAGDA's dark UI. Opting the HWND into immersive dark mode makes DWM draw
-    // the title bar/frame dark to match.
-    if (auto* peer = getPeer()) {
-        if (auto hwnd = static_cast<HWND>(peer->getNativeHandle())) {
-            BOOL useDarkMode = TRUE;
-            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode,
-                                  sizeof(useDarkMode));
-        }
-    }
-#endif
-
     // Listen for project changes to update window title
     ProjectManager::getInstance().addListener(this);
+    Config::getInstance().addListener(this);
+    applyThemeFromConfig();
+    applyDensityFromConfig();
     updateWindowTitle();
 
     // Start modulation engine at 60 FPS (updates LFO values in background)
@@ -309,6 +305,7 @@ MainWindow::~MainWindow() {
     }
 
     ProjectManager::getInstance().removeListener(this);
+    Config::getInstance().removeListener(this);
 
 #if JUCE_DEBUG
     // Print profiling report if enabled, then shutdown to clear JUCE objects
@@ -330,6 +327,137 @@ MainWindow::~MainWindow() {
 
     removeKeyListener(mainComponent->getCommandManager().getKeyMappings());
     DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
+}
+
+void MainWindow::configChanged() {
+    applyThemeFromConfig();
+    applyDensityFromConfig();
+    applyFontFromConfig();
+}
+
+namespace {
+// Force a recursive relayout: parent resized() repositions children, but a
+// child whose bounds don't change (as with spacing-only density edits) is not
+// re-laid-out by JUCE, so descend and resized() every component explicitly.
+void relayoutRecursively(juce::Component& c) {
+    c.resized();
+    for (auto* child : c.getChildren())
+        if (child != nullptr)
+            relayoutRecursively(*child);
+}
+}  // namespace
+
+void MainWindow::applyDensityFromConfig() {
+    const auto scale = static_cast<float>(Config::getInstance().getUIDensityScale());
+    if (scale == appliedDensityScale_)
+        return;
+    appliedDensityScale_ = scale;
+
+    LayoutConfig::getInstance().applyDensityScale(scale);
+    MixerMetrics::getInstance().applyDensityScale(scale);
+
+    // Density touches spacing tokens read throughout the tree; relayout and
+    // repaint every open window so the new spacing takes effect immediately.
+    for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
+        if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i)) {
+            relayoutRecursively(*window);
+            window->repaint();
+        }
+    }
+}
+
+void MainWindow::applyFontFromConfig() {
+    const auto& family = Config::getInstance().getUIFontFamily();
+    if (family == appliedFontFamily_)
+        return;
+    appliedFontFamily_ = family;
+
+    // FontManager resolves the family live; broadcast a look-and-feel change so
+    // every component re-fetches its fonts and repaints. Components that fetch
+    // fonts in paint()/lookAndFeelChanged update immediately; the few that cache
+    // a juce::Font at construction pick it up on their next rebuild.
+    refreshThemedLookAndFeels();
+}
+
+void MainWindow::applyThemeFromConfig() {
+    const auto& requestedTheme = Config::getInstance().getTheme();
+    if (requestedTheme == appliedTheme_)
+        return;
+
+    const auto result = applyThemeById(requestedTheme);
+    for (const auto& warning : result.warnings)
+        DBG("[Theme] " << requestedTheme << ": " << warning);
+    if (!result.ok)
+        DBG("[Theme] Unknown/invalid theme '" << requestedTheme << "'; using dark");
+
+    refreshThemedLookAndFeels();
+
+    // Hot-reload only makes sense for editable user files; built-ins never
+    // change on disk, so disarm the watcher when one is selected. After a
+    // failed load, keep watching the requested file (sourceFile is the
+    // candidate path) so fixing or creating it recovers without a restart.
+    if (result.sourceFile != juce::File()) {
+        activeThemeFile_ = result.sourceFile;
+        if (themeWatcher_ == nullptr)
+            themeWatcher_ =
+                std::make_unique<ThemeFileWatcher>([this]() { onActiveThemeFileChanged(); });
+        themeWatcher_->watch(activeThemeFile_);
+    } else if (themeWatcher_ != nullptr) {
+        themeWatcher_->stop();
+    }
+
+    // Record what is actually installed: the requested theme on success, the
+    // dark fallback otherwise. Recording the failed request would make the
+    // requested == applied early-return above swallow every later attempt to
+    // re-apply the same id after the user fixes the file.
+    appliedTheme_ = result.ok ? requestedTheme : ThemeManager::kDarkThemeId;
+}
+
+void MainWindow::onActiveThemeFileChanged() {
+    const auto warnings = reapplyUserThemeFile(activeThemeFile_);
+    if (!warnings)
+        return;  // a bad in-progress edit; keep the last good palette on screen
+
+    for (const auto& warning : *warnings)
+        DBG("[Theme] hot-reload " << activeThemeFile_.getFileName() << ": " << warning);
+
+    // The watched file always belongs to the currently-configured theme, so a
+    // successful (re)load means that theme is now installed. Keep the dedupe
+    // key in step: after a failed initial load it still says "dark".
+    appliedTheme_ = Config::getInstance().getTheme();
+
+    refreshThemedLookAndFeels();
+}
+
+void MainWindow::refreshThemedLookAndFeels() {
+    if (auto* lookAndFeel =
+            dynamic_cast<juce::LookAndFeel_V4*>(&juce::LookAndFeel::getDefaultLookAndFeel())) {
+        DarkTheme::applyToLookAndFeel(*lookAndFeel);
+    }
+    DarkTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
+    DarkTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
+    DarkTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
+    DarkTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
+
+#if JUCE_WINDOWS
+    // Keep native chrome in step with live theme changes. DWM expects FALSE
+    // for a light title bar and TRUE for Dark/High Contrast.
+    if (auto* peer = getPeer()) {
+        if (auto hwnd = static_cast<HWND>(peer->getNativeHandle())) {
+            BOOL useDarkMode = ThemeManager::isLightTheme() ? FALSE : TRUE;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode,
+                                  sizeof(useDarkMode));
+        }
+    }
+#endif
+
+    // Theme colours live in both JUCE colour IDs and custom paint code. A
+    // look-and-feel change reaches every child so controls that cache colours
+    // can refresh, while repaint covers direct DarkTheme lookups at paint time.
+    for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
+        if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
+            window->sendLookAndFeelChange();
+    }
 }
 
 void MainWindow::closeButtonPressed() {

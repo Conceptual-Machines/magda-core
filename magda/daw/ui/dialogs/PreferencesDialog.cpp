@@ -19,6 +19,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "../themes/UserTheme.hpp"
 #include "../windows/MainWindow.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
@@ -69,7 +70,7 @@ void setupToggle(juce::Component& owner, juce::ToggleButton& toggle, const juce:
     toggle.setColour(juce::ToggleButton::textColourId,
                      magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
     toggle.setColour(juce::ToggleButton::tickColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_BLUE));
+                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_PRIMARY));
     toggle.setColour(juce::ToggleButton::tickDisabledColourId,
                      magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DIM));
     owner.addAndMakeVisible(toggle);
@@ -82,6 +83,46 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     header.setFont(magda::FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(header);
+}
+
+void styleCombo(juce::ComboBox& combo) {
+    combo.setColour(juce::ComboBox::backgroundColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
+    combo.setColour(juce::ComboBox::textColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    combo.setColour(juce::ComboBox::outlineColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
+}
+
+void setupComboLabel(juce::Component& owner, juce::Label& label, const juce::String& text) {
+    label.setText(text, juce::dontSendNotification);
+    label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
+    label.setColour(juce::Label::textColourId,
+                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+    label.setJustificationType(juce::Justification::centredLeft);
+    owner.addAndMakeVisible(label);
+}
+
+void layoutTextSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
+                         magda::daw::ui::TextSlider& slider, int rowH, int sliderH) {
+    constexpr int sliderW = 96;
+    constexpr int gap = 12;
+    auto row = bounds.removeFromTop(rowH);
+    auto sliderArea = row.removeFromRight(sliderW);
+    row.removeFromRight(gap);
+    label.setBounds(row);
+    slider.setBounds(sliderArea.reduced(0, (rowH - sliderH) / 2));
+}
+
+void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label, juce::ComboBox& combo,
+                    int rowH) {
+    const int comboW = juce::jlimit(160, 240, bounds.getWidth() / 2);
+    constexpr int gap = 12;
+    auto row = bounds.removeFromTop(rowH);
+    auto comboArea = row.removeFromRight(comboW);
+    row.removeFromRight(gap);
+    label.setBounds(row);
+    combo.setBounds(comboArea.reduced(0, 4));
 }
 
 juce::String trOr(const juce::String& key, const juce::String& fallback) {
@@ -186,7 +227,7 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.auto_crossfade_default"));
 
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
-        setupComboLabel(languageLabel, tr("preferences.language.label"));
+        setupComboLabel(*this, languageLabel, tr("preferences.language.label"));
         styleCombo(languageCombo);
         addAndMakeVisible(languageCombo);
 
@@ -211,19 +252,9 @@ class GeneralPage : public juce::Component {
             }
         };
 
-        setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
-        setupComboLabel(scaleLabel, tr("preferences.scale.label"));
-        styleCombo(scaleCombo);
-        scaleCombo.addItem(tr("preferences.scale.auto"), 1);
-        scaleCombo.addItem("100%", 2);
-        scaleCombo.addItem("125%", 3);
-        scaleCombo.addItem("150%", 4);
-        scaleCombo.addItem("175%", 5);
-        scaleCombo.addItem("200%", 6);
-        addAndMakeVisible(scaleCombo);
-
-        setupTextSlider(*this, fontScaleSlider, fontScaleLabel, tr("preferences.font_scale.label"),
-                        80.0, 150.0, 5.0, magda::TechnicalTextToken::Percent);
+        // Localized Font Size lives with Language: its default is language-driven
+        // (see languageCombo.onChange). UI Scale, UI Font, and Font Size moved to
+        // the Appearance tab.
         setupTextSlider(*this, localizedFontScaleSlider, localizedFontScaleLabel,
                         trOr("preferences.localized_font_scale.label", "Localized Font Size"),
                         100.0, 300.0, 5.0, magda::TechnicalTextToken::Percent);
@@ -312,8 +343,6 @@ class GeneralPage : public juce::Component {
         languageCombo.setSelectedId(selectedId, juce::dontSendNotification);
         restartHint.setVisible(false);
 
-        scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
-        fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
         localizedFontScaleExplicit_ = config.hasExplicitLocalizedUIFontScale();
         localizedFontScaleSlider.setValue(config.getLocalizedUIFontScale() * 100.0,
                                           juce::dontSendNotification);
@@ -349,16 +378,6 @@ class GeneralPage : public juce::Component {
             }
         }
 
-        double newScale = scaleValueForId(scaleCombo.getSelectedId());
-        if (newScale > 0.0) {
-            applyUIScale(newScale);
-        } else {
-            applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
-            config.setUIScale(0.0);
-            config.save();
-        }
-
-        config.setUIFontScale(fontScaleSlider.getValue() / 100.0);
         config.setLocalizedUIFontScale(localizedFontScaleSlider.getValue() / 100.0);
     }
 
@@ -378,7 +397,7 @@ class GeneralPage : public juce::Component {
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + secGap + headerH + 4 + (rowH * 7) + 16 + secGap + headerH + 4 +
-               rowH + 18 + secGap + headerH + 4 + (rowH * 3) + 8 + padding;
+               rowH + 18 + 4 + rowH + padding;
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -387,11 +406,11 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + (rowH * 3) + 8    // Zoom
-               + secGap + headerH + 4 + rowH             // Timeline
-               + secGap + headerH + 4 + rowH + 4 + rowH  // Transport
-               + secGap + headerH + 4 + rowH + 4 + rowH  // Auto-Save
-               + secGap + headerH + 4 + rowH + 18        // Language
+        return padding + headerH + 4 + (rowH * 3) + 8         // Zoom
+               + secGap + headerH + 4 + rowH                  // Timeline
+               + secGap + headerH + 4 + rowH + 4 + rowH       // Transport
+               + secGap + headerH + 4 + rowH + 4 + rowH       // Auto-Save
+               + secGap + headerH + 4 + rowH + 18 + 4 + rowH  // Language + Localized Font Size
                + padding;
     }
 
@@ -401,9 +420,8 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH              // Layout
-               + secGap + headerH + 4 + (rowH * 7) + 20             // Behaviour
-               + secGap + headerH + 4 + rowH + 4 + rowH + 4 + rowH  // Display Scale
+        return padding + headerH + 4 + rowH + 4 + rowH   // Layout
+               + secGap + headerH + 4 + (rowH * 7) + 20  // Behaviour
                + padding;
     }
 
@@ -474,14 +492,6 @@ class GeneralPage : public juce::Component {
         bounds.removeFromTop(4);
         layoutComboRow(bounds, languageLabel, languageCombo, rowH);
         restartHint.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(secGap);
-
-        // UI scale
-        scaleHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, scaleLabel, scaleCombo, rowH);
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, fontScaleLabel, fontScaleSlider, rowH, sliderH);
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
                             sliderH);
@@ -533,6 +543,8 @@ class GeneralPage : public juce::Component {
         left.removeFromTop(4);
         layoutComboRow(left, languageLabel, languageCombo, rowH);
         restartHint.setBounds(left.removeFromTop(18));
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, localizedFontScaleLabel, localizedFontScaleSlider, rowH, sliderH);
 
         // Layout
         layoutHeader.setBounds(right.removeFromTop(headerH));
@@ -560,88 +572,6 @@ class GeneralPage : public juce::Component {
         chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
-        right.removeFromTop(secGap);
-
-        // Display Scale
-        scaleHeader.setBounds(right.removeFromTop(headerH));
-        right.removeFromTop(4);
-        layoutComboRow(right, scaleLabel, scaleCombo, rowH);
-        right.removeFromTop(4);
-        layoutTextSliderRow(right, fontScaleLabel, fontScaleSlider, rowH, sliderH);
-        right.removeFromTop(4);
-        layoutTextSliderRow(right, localizedFontScaleLabel, localizedFontScaleSlider, rowH,
-                            sliderH);
-    }
-
-    void setupComboLabel(juce::Label& label, const juce::String& text) {
-        label.setText(text, juce::dontSendNotification);
-        label.setFont(FontManager::getInstance().getUIFont(12.0f));
-        label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        label.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(label);
-    }
-
-    void styleCombo(juce::ComboBox& combo) {
-        combo.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
-        combo.setColour(juce::ComboBox::textColourId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
-    }
-
-    static void layoutTextSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                                    magda::daw::ui::TextSlider& slider, int rowH, int sliderH) {
-        constexpr int sliderW = 96;
-        constexpr int gap = 12;
-        auto row = bounds.removeFromTop(rowH);
-        auto sliderArea = row.removeFromRight(sliderW);
-        row.removeFromRight(gap);
-        label.setBounds(row);
-        slider.setBounds(sliderArea.reduced(0, (rowH - sliderH) / 2));
-    }
-
-    static void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                               juce::ComboBox& combo, int rowH) {
-        const int comboW = juce::jlimit(160, 240, bounds.getWidth() / 2);
-        constexpr int gap = 12;
-        auto row = bounds.removeFromTop(rowH);
-        auto comboArea = row.removeFromRight(comboW);
-        row.removeFromRight(gap);
-        label.setBounds(row);
-        combo.setBounds(comboArea.reduced(0, 4));
-    }
-
-    static int scaleIdForValue(double v) {
-        if (v <= 0.0)
-            return 1;
-        if (std::abs(v - 1.0) < 0.01)
-            return 2;
-        if (std::abs(v - 1.25) < 0.01)
-            return 3;
-        if (std::abs(v - 1.5) < 0.01)
-            return 4;
-        if (std::abs(v - 1.75) < 0.01)
-            return 5;
-        if (std::abs(v - 2.0) < 0.01)
-            return 6;
-        return 1;
-    }
-
-    static double scaleValueForId(int id) {
-        switch (id) {
-            case 2:
-                return 1.0;
-            case 3:
-                return 1.25;
-            case 4:
-                return 1.5;
-            case 5:
-                return 1.75;
-            case 6:
-                return 2.0;
-            default:
-                return 0.0;
-        }
     }
 
     juce::Label zoomHeader, timelineHeader, transportHeader, autoSaveHeader;
@@ -655,7 +585,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton autoSaveToggle;
     magda::daw::ui::TextSlider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;
-    juce::Label layoutHeader, behaviorHeader, languageHeader, scaleHeader;
+    juce::Label layoutHeader, behaviorHeader, languageHeader;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
@@ -669,22 +599,87 @@ class GeneralPage : public juce::Component {
     juce::Label restartHint;
     std::vector<juce::String> availableLanguages_;
     juce::String initialLanguage_;
-    juce::Label scaleLabel;
-    juce::ComboBox scaleCombo;
-    juce::Label fontScaleLabel;
-    magda::daw::ui::TextSlider fontScaleSlider;
     juce::Label localizedFontScaleLabel;
     magda::daw::ui::TextSlider localizedFontScaleSlider;
     bool localizedFontScaleExplicit_ = false;
 };
 
-// ---- Colours tab: Track colour palette ------------------------------------
+// ---- Appearance tab: Application theme and track colours ------------------
 
-class ColoursPage : public juce::Component {
+class AppearancePage : public juce::Component {
   public:
     static constexpr int MAX_PALETTE_SIZE = 16;
 
-    ColoursPage() {
+    AppearancePage() {
+        setupSectionHeader(*this, themeHeader, trOr("preferences.section.theme", "Theme"));
+
+        themeLabel.setText(trOr("preferences.theme.label", "Application theme"),
+                           juce::dontSendNotification);
+        themeLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
+        themeLabel.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        themeLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(themeLabel);
+
+        themeCombo.setColour(juce::ComboBox::backgroundColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+        themeCombo.setColour(juce::ComboBox::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        themeCombo.setColour(juce::ComboBox::outlineColourId,
+                             DarkTheme::getColour(DarkTheme::BORDER));
+        rebuildThemeCombo();
+        addAndMakeVisible(themeCombo);
+
+        // Get Template: export the current base palette as a complete, valid
+        // JSON file the user can edit. Load: pick an edited JSON and adopt it.
+        getTemplateButton.setButtonText(
+            trOr("preferences.button.get_template", "Download Theme Template"));
+        getTemplateButton.onClick = [this]() { saveThemeTemplate(); };
+        addAndMakeVisible(getTemplateButton);
+
+        loadThemeButton.setButtonText(trOr("preferences.button.load_theme", "Load Theme"));
+        loadThemeButton.onClick = [this]() { loadThemeFromFile(); };
+        addAndMakeVisible(loadThemeButton);
+
+        openThemesFolderButton.setButtonText(
+            trOr("preferences.button.open_themes_folder", "Open Themes Folder"));
+        openThemesFolderButton.onClick = [this]() {
+            auto dir = paths::themesDir();
+            dir.createDirectory();
+            dir.revealToUser();
+        };
+        addAndMakeVisible(openThemesFolderButton);
+
+        // Display Scale: UI scale (DPI), UI font family, and global font size.
+        setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
+        setupComboLabel(*this, scaleLabel, tr("preferences.scale.label"));
+        styleCombo(scaleCombo);
+        scaleCombo.addItem(tr("preferences.scale.auto"), 1);
+        scaleCombo.addItem("100%", 2);
+        scaleCombo.addItem("125%", 3);
+        scaleCombo.addItem("150%", 4);
+        scaleCombo.addItem("175%", 5);
+        scaleCombo.addItem("200%", 6);
+        addAndMakeVisible(scaleCombo);
+
+        setupComboLabel(*this, fontFamilyLabel, trOr("preferences.font_family.label", "UI Font"));
+        styleCombo(fontFamilyCombo);
+        fontFamilyCombo.addItem(trOr("preferences.font_family.default", "Inter (default)"), 1);
+        fontFamilies_ = juce::Font::findAllTypefaceNames();
+        fontFamilies_.sort(true);
+        for (int i = 0; i < fontFamilies_.size(); ++i)
+            fontFamilyCombo.addItem(fontFamilies_[i], kFontFamilyIdBase + i);
+        addAndMakeVisible(fontFamilyCombo);
+
+        setupTextSlider(*this, fontScaleSlider, fontScaleLabel, tr("preferences.font_scale.label"),
+                        80.0, 150.0, 5.0, magda::TechnicalTextToken::Percent);
+
+        // Layout density: spacing/padding multiplier applied on top of UI scale.
+        setupSectionHeader(*this, densityHeader, trOr("preferences.section.density", "Density"));
+        setupTextSlider(*this, densitySlider, densityLabel,
+                        trOr("preferences.density.label", "Spacing"), 60.0, 140.0, 5.0,
+                        magda::TechnicalTextToken::Percent);
+
         setupSectionHeader(*this, coloursHeader, tr("preferences.section.track_colour_palette"));
 
         colourHeaderLabel.setText(tr("preferences.colours.colour"), juce::dontSendNotification);
@@ -737,68 +732,95 @@ class ColoursPage : public juce::Component {
         addAndMakeVisible(clipColourModeCombo);
     }
 
-    int getPreferredHeight(int) const {
+    int getPreferredHeight(int width) const {
         constexpr int padding = 16;
-        constexpr int headerH = 28;
-        constexpr int colourRowH = 26;
+        if (shouldUseSingleColumnLayout(width))
+            return getSingleColumnPreferredHeight();
 
-        return padding + headerH + 4 + 18 + 4 + ((colourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 +
-               16 + headerH + 4 + 32 + padding;
+        // Theme spans full width on top; the two columns sit below it.
+        return padding + kThemeSectionHeight + kSectionGap +
+               juce::jmax(getLeftColumnContentHeight(), getRightColumnContentHeight()) + padding;
+    }
+
+    void lookAndFeelChanged() override {
+        const auto primary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+        const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto border = DarkTheme::getColour(DarkTheme::BORDER);
+
+        for (auto* label :
+             {&themeHeader, &scaleHeader, &densityHeader, &coloursHeader, &colourHeaderLabel,
+              &hexHeaderLabel, &nameHeaderLabel, &clipColourHeader})
+            label->setColour(juce::Label::textColourId, secondary);
+        for (auto* label : {&themeLabel, &scaleLabel, &fontFamilyLabel, &fontScaleLabel,
+                            &densityLabel, &clipColourModeLabel})
+            label->setColour(juce::Label::textColourId, primary);
+
+        for (auto* combo : {&themeCombo, &scaleCombo, &fontFamilyCombo, &clipColourModeCombo}) {
+            combo->setColour(juce::ComboBox::backgroundColourId, surface);
+            combo->setColour(juce::ComboBox::textColourId, primary);
+            combo->setColour(juce::ComboBox::outlineColourId, border);
+        }
+
+        for (auto& editor : hexEditors_) {
+            editor->setColour(juce::TextEditor::backgroundColourId, surface);
+            editor->setColour(juce::TextEditor::textColourId, primary);
+            editor->setColour(juce::TextEditor::outlineColourId, border);
+        }
+        for (auto& editor : nameEditors_) {
+            editor->setColour(juce::TextEditor::backgroundColourId, surface);
+            editor->setColour(juce::TextEditor::textColourId, primary);
+            editor->setColour(juce::TextEditor::outlineColourId, border);
+        }
+        repaint();
     }
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
-        const int headerH = 28;
 
-        coloursHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-
-        // Column headers
-        {
-            auto headerRow = bounds.removeFromTop(18);
-            colourHeaderLabel.setBounds(headerRow.removeFromLeft(28));
-            headerRow.removeFromLeft(8);
-            hexHeaderLabel.setBounds(headerRow.removeFromLeft(80));
-            headerRow.removeFromLeft(8);
-            nameHeaderLabel.setBounds(headerRow.removeFromLeft(140));
-        }
-        bounds.removeFromTop(4);
-
-        // Palette rows
-        const int colourRowH = 26;
-        for (size_t i = 0; i < colourSwatches_.size(); ++i) {
-            auto row = bounds.removeFromTop(colourRowH);
-            colourSwatches_[i]->setBounds(row.removeFromLeft(24).reduced(0, 2));
-            row.removeFromLeft(12);
-            hexEditors_[i]->setBounds(row.removeFromLeft(80).reduced(0, 2));
-            row.removeFromLeft(8);
-            nameEditors_[i]->setBounds(row.removeFromLeft(140).reduced(0, 2));
-            row.removeFromLeft(8);
-            deleteButtons_[i]->setBounds(row.removeFromLeft(20).reduced(0, 2));
-            bounds.removeFromTop(2);
+        if (shouldUseSingleColumnLayout(getWidth())) {
+            layoutThemeSection(bounds);
+            bounds.removeFromTop(kSectionGap);
+            layoutDisplayScaleSection(bounds);
+            bounds.removeFromTop(kSectionGap);
+            layoutDensitySection(bounds);
+            bounds.removeFromTop(kSectionGap);
+            layoutColoursSection(bounds);
+            bounds.removeFromTop(kSectionGap);
+            layoutClipColoursSection(bounds);
+            return;
         }
 
-        // Add button
-        if (static_cast<int>(colourSwatches_.size()) < MAX_PALETTE_SIZE) {
-            addColourButton.setVisible(true);
-            bounds.removeFromTop(4);
-            addColourButton.setBounds(bounds.removeFromTop(24).removeFromLeft(100));
-        } else {
-            addColourButton.setVisible(false);
-        }
+        // Theme (with its wide buttons) spans the full width; the shorter
+        // sizing controls and the tall colour block split into two columns.
+        layoutThemeSection(bounds);
+        bounds.removeFromTop(kSectionGap);
 
-        // Clip colour mode
-        bounds.removeFromTop(16);
-        clipColourHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        {
-            auto row = bounds.removeFromTop(32);
-            clipColourModeLabel.setBounds(row.removeFromLeft(140));
-            clipColourModeCombo.setBounds(row.reduced(0, 4));
-        }
+        constexpr int colGap = 28;
+        const int colW = (bounds.getWidth() - colGap) / 2;
+        auto left = bounds.removeFromLeft(colW);
+        bounds.removeFromLeft(colGap);
+        auto right = bounds;
+
+        layoutDisplayScaleSection(left);
+        left.removeFromTop(kSectionGap);
+        layoutDensitySection(left);
+
+        layoutColoursSection(right);
+        right.removeFromTop(kSectionGap);
+        layoutClipColoursSection(right);
     }
 
     void loadSettings(Config& config) {
+        rebuildThemeCombo();  // pick up any theme files added since construction
+        themeCombo.setSelectedId(themeIdForValue(config.getTheme()), juce::dontSendNotification);
+
+        scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
+        fontFamilyCombo.setSelectedId(fontFamilyIdForValue(config.getUIFontFamily()),
+                                      juce::dontSendNotification);
+        fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
+        densitySlider.setValue(config.getUIDensityScale() * 100.0, juce::dontSendNotification);
+
         clearColourRows();
         const auto& palette = config.getTrackColourPalette();
         for (const auto& entry : palette)
@@ -809,6 +831,20 @@ class ColoursPage : public juce::Component {
     }
 
     void applySettings(Config& config) {
+        config.setTheme(themeValueForId(themeCombo.getSelectedId()));
+        config.setUIDensityScale(densitySlider.getValue() / 100.0);
+
+        const double newScale = scaleValueForId(scaleCombo.getSelectedId());
+        if (newScale > 0.0) {
+            applyUIScale(newScale);
+        } else {
+            applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
+            config.setUIScale(0.0);
+            config.save();
+        }
+        config.setUIFontFamily(fontFamilyValueForId(fontFamilyCombo.getSelectedId()));
+        config.setUIFontScale(fontScaleSlider.getValue() / 100.0);
+
         std::vector<Config::TrackColourEntry> palette;
         for (size_t i = 0; i < hexEditors_.size(); ++i) {
             Config::TrackColourEntry entry;
@@ -825,6 +861,317 @@ class ColoursPage : public juce::Component {
     }
 
   private:
+    // Two-column layout metrics. Below kTwoColumnMinWidth the page stacks into a
+    // single column; at or above it, the tall colour block sits beside the
+    // shorter sizing controls. Matches GeneralPage's responsive threshold.
+    static constexpr int kTwoColumnMinWidth = 720;
+    static constexpr int kHeaderH = 28;
+    static constexpr int kRowH = 32;
+    static constexpr int kSliderH = 24;
+    static constexpr int kSectionGap = 16;
+    static constexpr int kColourRowH = 26;
+    // Theme section: header + label/combo row + button row.
+    static constexpr int kThemeSectionHeight = kHeaderH + 4 + kRowH + 28;
+
+    static bool shouldUseSingleColumnLayout(int width) {
+        return width < kTwoColumnMinWidth;
+    }
+
+    static int getLeftColumnContentHeight() {
+        return kHeaderH + 4 + kRowH + 4 + kRowH + 4 + kRowH  // Display Scale (scale, font, size)
+               + kSectionGap + kHeaderH + 4 + kRowH;         // Density
+    }
+
+    static int getRightColumnContentHeight() {
+        return kHeaderH + 4 + 18 + 4 + ((kColourRowH + 2) * MAX_PALETTE_SIZE) + 4 +
+               24                                     // Track colours (header, columns, rows, add)
+               + kSectionGap + kHeaderH + 4 + kRowH;  // Clip colours
+    }
+
+    static int getSingleColumnPreferredHeight() {
+        constexpr int padding = 16;
+        return padding + kThemeSectionHeight + kSectionGap + getLeftColumnContentHeight() +
+               kSectionGap + getRightColumnContentHeight() + padding;
+    }
+
+    void layoutThemeSection(juce::Rectangle<int>& b) {
+        themeHeader.setBounds(b.removeFromTop(kHeaderH));
+        b.removeFromTop(4);
+        {
+            auto row = b.removeFromTop(kRowH);
+            themeLabel.setBounds(row.removeFromLeft(140));
+            themeCombo.setBounds(row.reduced(0, 4));
+        }
+        {
+            // Buttons on their own row, under the combo.
+            auto row = b.removeFromTop(28);
+            row.removeFromLeft(140);
+            const int gap = 8;
+            const int buttonW = (row.getWidth() - 2 * gap) / 3;
+            getTemplateButton.setBounds(row.removeFromLeft(buttonW).reduced(0, 2));
+            row.removeFromLeft(gap);
+            loadThemeButton.setBounds(row.removeFromLeft(buttonW).reduced(0, 2));
+            row.removeFromLeft(gap);
+            openThemesFolderButton.setBounds(row.reduced(0, 2));
+        }
+    }
+
+    void layoutDisplayScaleSection(juce::Rectangle<int>& b) {
+        scaleHeader.setBounds(b.removeFromTop(kHeaderH));
+        b.removeFromTop(4);
+        layoutComboRow(b, scaleLabel, scaleCombo, kRowH);
+        b.removeFromTop(4);
+        layoutComboRow(b, fontFamilyLabel, fontFamilyCombo, kRowH);
+        b.removeFromTop(4);
+        layoutTextSliderRow(b, fontScaleLabel, fontScaleSlider, kRowH, kSliderH);
+    }
+
+    void layoutDensitySection(juce::Rectangle<int>& b) {
+        densityHeader.setBounds(b.removeFromTop(kHeaderH));
+        b.removeFromTop(4);
+        layoutTextSliderRow(b, densityLabel, densitySlider, kRowH, kSliderH);
+    }
+
+    void layoutColoursSection(juce::Rectangle<int>& b) {
+        coloursHeader.setBounds(b.removeFromTop(kHeaderH));
+        b.removeFromTop(4);
+
+        // Column headers
+        {
+            auto headerRow = b.removeFromTop(18);
+            colourHeaderLabel.setBounds(headerRow.removeFromLeft(28));
+            headerRow.removeFromLeft(8);
+            hexHeaderLabel.setBounds(headerRow.removeFromLeft(80));
+            headerRow.removeFromLeft(8);
+            nameHeaderLabel.setBounds(headerRow.removeFromLeft(140));
+        }
+        b.removeFromTop(4);
+
+        // Palette rows
+        for (size_t i = 0; i < colourSwatches_.size(); ++i) {
+            auto row = b.removeFromTop(kColourRowH);
+            colourSwatches_[i]->setBounds(row.removeFromLeft(24).reduced(0, 2));
+            row.removeFromLeft(12);
+            hexEditors_[i]->setBounds(row.removeFromLeft(80).reduced(0, 2));
+            row.removeFromLeft(8);
+            nameEditors_[i]->setBounds(row.removeFromLeft(140).reduced(0, 2));
+            row.removeFromLeft(8);
+            deleteButtons_[i]->setBounds(row.removeFromLeft(20).reduced(0, 2));
+            b.removeFromTop(2);
+        }
+
+        // Add button
+        if (static_cast<int>(colourSwatches_.size()) < MAX_PALETTE_SIZE) {
+            addColourButton.setVisible(true);
+            b.removeFromTop(4);
+            addColourButton.setBounds(b.removeFromTop(24).removeFromLeft(100));
+        } else {
+            addColourButton.setVisible(false);
+        }
+    }
+
+    void layoutClipColoursSection(juce::Rectangle<int>& b) {
+        clipColourHeader.setBounds(b.removeFromTop(kHeaderH));
+        b.removeFromTop(4);
+        {
+            auto row = b.removeFromTop(kRowH);
+            clipColourModeLabel.setBounds(row.removeFromLeft(140));
+            clipColourModeCombo.setBounds(row.reduced(0, 4));
+        }
+    }
+
+    struct BuiltInThemeOption {
+        int comboId;
+        const char* themeId;
+        const char* label;
+    };
+
+    inline static constexpr std::array<BuiltInThemeOption, 3> builtInThemeOptions_{{
+        {1, ThemeManager::kDarkThemeId, "Dark"},
+        {2, ThemeManager::kLightThemeId, "Light"},
+        {3, ThemeManager::kHighContrastThemeId, "High Contrast"},
+    }};
+
+    // Factory (embedded) theme ids start here, user theme ids above them;
+    // each range indexes into its list (id - base).
+    static constexpr int kFactoryThemeIdBase = 50;
+    static constexpr int kUserThemeIdBase = 100;
+
+    // Repopulates the combo: built-ins first, then the embedded factory
+    // themes, then discovered user themes. A user theme with a factory id
+    // shadows the factory entry (matching applyThemeById resolution).
+    // Called on construction, each time the dialog loads, and after New Theme.
+    void rebuildThemeCombo() {
+        themeCombo.clear(juce::dontSendNotification);
+        for (const auto& option : builtInThemeOptions_)
+            themeCombo.addItem(option.label, option.comboId);
+
+        userThemes_ = scanUserThemes();
+
+        factoryThemes_.clear();
+        for (const auto& factory : factoryThemes()) {
+            bool shadowed = false;
+            for (const auto& user : userThemes_)
+                shadowed = shadowed || user.id == factory.id;
+            if (!shadowed)
+                factoryThemes_.push_back(factory);
+        }
+        if (!factoryThemes_.empty()) {
+            themeCombo.addSeparator();
+            for (size_t i = 0; i < factoryThemes_.size(); ++i)
+                themeCombo.addItem(juce::String(factoryThemes_[i].name),
+                                   kFactoryThemeIdBase + static_cast<int>(i));
+        }
+
+        if (!userThemes_.empty()) {
+            themeCombo.addSeparator();
+            for (size_t i = 0; i < userThemes_.size(); ++i)
+                themeCombo.addItem(juce::String(userThemes_[i].name),
+                                   kUserThemeIdBase + static_cast<int>(i));
+        }
+    }
+
+    int themeIdForValue(const std::string& theme) const {
+        for (const auto& option : builtInThemeOptions_)
+            if (theme == option.themeId)
+                return option.comboId;
+        for (size_t i = 0; i < userThemes_.size(); ++i)
+            if (theme == userThemes_[i].id)
+                return kUserThemeIdBase + static_cast<int>(i);
+        for (size_t i = 0; i < factoryThemes_.size(); ++i)
+            if (theme == factoryThemes_[i].id)
+                return kFactoryThemeIdBase + static_cast<int>(i);
+        return 1;  // persisted theme no longer on disk -> fall back to Dark
+    }
+
+    std::string themeValueForId(int id) const {
+        if (id >= kUserThemeIdBase) {
+            const size_t index = static_cast<size_t>(id - kUserThemeIdBase);
+            if (index < userThemes_.size())
+                return userThemes_[index].id;
+        }
+        if (id >= kFactoryThemeIdBase) {
+            const size_t index = static_cast<size_t>(id - kFactoryThemeIdBase);
+            if (index < factoryThemes_.size())
+                return factoryThemes_[index].id;
+        }
+        for (const auto& option : builtInThemeOptions_)
+            if (id == option.comboId)
+                return option.themeId;
+        return ThemeManager::kDarkThemeId;
+    }
+
+    // Display Scale id schemes. Font family: id 1 is "Inter (default)"; ids from
+    // kFontFamilyIdBase index into fontFamilies_.
+    static constexpr int kFontFamilyIdBase = 100;
+
+    int fontFamilyIdForValue(const std::string& family) const {
+        if (family.empty())
+            return 1;
+        const int idx = fontFamilies_.indexOf(juce::String(family));
+        return idx >= 0 ? kFontFamilyIdBase + idx : 1;
+    }
+
+    std::string fontFamilyValueForId(int id) const {
+        const int idx = id - kFontFamilyIdBase;
+        if (idx >= 0 && idx < fontFamilies_.size())
+            return fontFamilies_[idx].toStdString();
+        return {};  // "Inter (default)"
+    }
+
+    static int scaleIdForValue(double v) {
+        if (v <= 0.0)
+            return 1;
+        if (std::abs(v - 1.0) < 0.01)
+            return 2;
+        if (std::abs(v - 1.25) < 0.01)
+            return 3;
+        if (std::abs(v - 1.5) < 0.01)
+            return 4;
+        if (std::abs(v - 1.75) < 0.01)
+            return 5;
+        if (std::abs(v - 2.0) < 0.01)
+            return 6;
+        return 1;
+    }
+
+    static double scaleValueForId(int id) {
+        switch (id) {
+            case 2:
+                return 1.0;
+            case 3:
+                return 1.25;
+            case 4:
+                return 1.5;
+            case 5:
+                return 1.75;
+            case 6:
+                return 2.0;
+            default:
+                return 0.0;
+        }
+    }
+
+    // Exports the current selection's base table (dark/light) as a complete,
+    // editable JSON template to a location the user picks.
+    void saveThemeTemplate() {
+        const std::string selectedId = themeValueForId(themeCombo.getSelectedId());
+        const std::string baseId = (selectedId == ThemeManager::kLightThemeId)
+                                       ? ThemeManager::kLightThemeId
+                                       : ThemeManager::kDarkThemeId;
+
+        auto dir = paths::themesDir();
+        dir.createDirectory();
+        const juce::String suggested =
+            (baseId == ThemeManager::kLightThemeId) ? "Light Theme.json" : "Dark Theme.json";
+
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            trOr("preferences.dialog.save_theme_template", "Save theme template"),
+            dir.getChildFile(suggested), "*.json");
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
+                juce::FileBrowserComponent::warnAboutOverwriting,
+            [this, baseId](const juce::FileChooser& fc) {
+                auto dest = fc.getResult();
+                if (dest == juce::File())
+                    return;
+                if (!dest.hasFileExtension("json"))
+                    dest = dest.withFileExtension("json");
+                writeThemeTemplate(dest, baseId, dest.getFileNameWithoutExtension().toStdString());
+            });
+    }
+
+    // Picks a theme JSON, copies it into the Themes folder (so it persists and
+    // hot-reloads via the id = filename-stem resolution), then selects it. It
+    // is applied when the dialog is accepted, like every other setting here.
+    void loadThemeFromFile() {
+        auto dir = paths::themesDir();
+        dir.createDirectory();
+
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            trOr("preferences.dialog.load_theme", "Load a theme"), dir, "*.json");
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this](const juce::FileChooser& fc) {
+                const auto file = fc.getResult();
+                if (!file.existsAsFile() || !loadThemeFile(file).has_value())
+                    return;  // not a usable theme file
+
+                auto themesDir = paths::themesDir();
+                themesDir.createDirectory();
+                juce::File dest = file;
+                if (file.getParentDirectory() != themesDir) {
+                    dest = themesDir.getChildFile(file.getFileName());
+                    file.copyFileTo(dest);
+                }
+
+                rebuildThemeCombo();
+                themeCombo.setSelectedId(
+                    themeIdForValue(dest.getFileNameWithoutExtension().toStdString()),
+                    juce::dontSendNotification);
+            });
+    }
+
     void addColourRow(uint32_t colour, const std::string& name) {
         if (static_cast<int>(colourSwatches_.size()) >= MAX_PALETTE_SIZE)
             return;
@@ -936,6 +1283,21 @@ class ColoursPage : public juce::Component {
         }
     }
 
+    juce::Label themeHeader;
+    juce::Label themeLabel;
+    juce::ComboBox themeCombo;
+    juce::TextButton getTemplateButton;
+    juce::TextButton loadThemeButton;
+    juce::TextButton openThemesFolderButton;
+
+    // Layout density (spacing/padding multiplier)
+    juce::Label densityHeader;
+    juce::Label densityLabel;
+    magda::daw::ui::TextSlider densitySlider;
+
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+    std::vector<ThemeFileEntry> userThemes_;
+    std::vector<FactoryThemeEntry> factoryThemes_;
     juce::Label coloursHeader;
     juce::Label colourHeaderLabel, hexHeaderLabel, nameHeaderLabel;
     std::vector<std::unique_ptr<juce::Component>> colourSwatches_;
@@ -944,6 +1306,16 @@ class ColoursPage : public juce::Component {
     std::vector<std::unique_ptr<juce::TextEditor>> nameEditors_;
     std::vector<std::unique_ptr<juce::TextButton>> deleteButtons_;
     juce::TextButton addColourButton;
+
+    // Display Scale controls (UI scale, UI font family, global font size).
+    juce::Label scaleHeader;
+    juce::Label scaleLabel;
+    juce::ComboBox scaleCombo;
+    juce::Label fontFamilyLabel;
+    juce::ComboBox fontFamilyCombo;
+    juce::StringArray fontFamilies_;  // system families, combo-order (id = base + index)
+    juce::Label fontScaleLabel;
+    magda::daw::ui::TextSlider fontScaleSlider;
 
     // Clip colour mode
     juce::Label clipColourHeader;
@@ -2367,7 +2739,7 @@ class ShortcutsPage : public juce::Component {
 
             row->invert.setButtonText({});
             row->invert.setColour(juce::ToggleButton::tickColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             row->invert.setColour(juce::ToggleButton::tickDisabledColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
 
@@ -2537,7 +2909,7 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     generalPage = std::make_unique<GeneralPage>();
-    coloursPage = std::make_unique<ColoursPage>();
+    appearancePage = std::make_unique<AppearancePage>();
     renderingPage = std::make_unique<RenderingPage>();
     pathsPage = std::make_unique<PathsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>(commandManager);
@@ -2549,13 +2921,14 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
         page.setViewportIgnoreDragFlag(true);
     };
     setupPageViewport(generalPageViewport, *generalPage);
-    setupPageViewport(coloursPageViewport, *coloursPage);
+    setupPageViewport(appearancePageViewport, *appearancePage);
     setupPageViewport(renderingPageViewport, *renderingPage);
     setupPageViewport(pathsPageViewport, *pathsPage);
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
-    tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, &coloursPageViewport, false);
+    tabbedComponent.addTab(trOr("preferences.tab.appearance", "Appearance"), tabBg,
+                           &appearancePageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, &renderingPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, &pathsPageViewport, false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
@@ -2592,6 +2965,19 @@ PreferencesDialog::~PreferencesDialog() {
 
 void PreferencesDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+}
+
+void PreferencesDialog::lookAndFeelChanged() {
+    const auto background = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    for (int i = 0; i < tabbedComponent.getNumTabs(); ++i)
+        tabbedComponent.setTabBackgroundColour(i, background);
+
+    if (auto* window = findParentComponentOfClass<juce::DialogWindow>()) {
+        window->setBackgroundColour(background);
+        window->repaint();
+    }
+
+    repaint();
 }
 
 void PreferencesDialog::resized() {
@@ -2633,10 +3019,10 @@ void PreferencesDialog::updatePageViewports() {
             updateContentSize(generalPageViewport, *generalPage,
                               generalPage->getPreferredHeight(viewW));
         }
-        if (coloursPage) {
-            const int viewW = juce::jmax(1, coloursPageViewport.getMaximumVisibleWidth());
-            updateContentSize(coloursPageViewport, *coloursPage,
-                              coloursPage->getPreferredHeight(viewW));
+        if (appearancePage) {
+            const int viewW = juce::jmax(1, appearancePageViewport.getMaximumVisibleWidth());
+            updateContentSize(appearancePageViewport, *appearancePage,
+                              appearancePage->getPreferredHeight(viewW));
         }
         if (renderingPage) {
             const int viewW = juce::jmax(1, renderingPageViewport.getMaximumVisibleWidth());
@@ -2656,7 +3042,7 @@ void PreferencesDialog::updatePageViewports() {
 void PreferencesDialog::loadCurrentSettings() {
     auto& config = Config::getInstance();
     generalPage->loadSettings(config);
-    coloursPage->loadSettings(config);
+    appearancePage->loadSettings(config);
     renderingPage->loadSettings(config);
     pathsPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
@@ -2744,7 +3130,7 @@ void PreferencesDialog::applySettings() {
 
     // Apply non-path pages and persist.
     generalPage->applySettings(config);
-    coloursPage->applySettings(config);
+    appearancePage->applySettings(config);
     renderingPage->applySettings(config);
     shortcutsPage->applySettings(config);
     pathsPage->applySettings(config);  // no-op for path values

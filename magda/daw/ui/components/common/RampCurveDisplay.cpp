@@ -43,7 +43,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         constexpr float TICK_H = 10.0f;
         float tickY0 = y0 + h - TICK_H;
         float tickY1 = y0 + h;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.35f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.35f));
         for (int i = 0; i < numTicks_; ++i) {
             double t = static_cast<double>(i) / static_cast<double>(numTicks_);
             double curved = daw::audio::StepClock::applyRampCurveWithCycles(t, depth_, skew_,
@@ -70,7 +70,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         // Fading trail (gradient from transparent to green)
         constexpr float TRAIL_W = 30.0f;
         float trailLeft = std::max(x0, sweepX - TRAIL_W);
-        auto trailColour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+        auto trailColour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
         g.setGradientFill(juce::ColourGradient(trailColour.withAlpha(0.0f), trailLeft, tickY0,
                                                trailColour.withAlpha(0.25f), sweepX, tickY0,
                                                false));
@@ -97,7 +97,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         else
             curvePath.lineTo(px, py);
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
     g.strokePath(curvePath, juce::PathStrokeType(1.5f));
 
     // Handle at the control point: (s, s+depth) in graph space.
@@ -111,11 +111,11 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
     if (hardAngle_) {
         g.fillRect(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
         g.drawRect(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f, 1.5f);
     } else {
         g.fillEllipse(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
         g.drawEllipse(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f, 1.5f);
     }
 }

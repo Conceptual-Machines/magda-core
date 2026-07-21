@@ -37,6 +37,7 @@ class MediaExplorerContent : public PanelContent,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     void onActivated() override;
     void onDeactivated() override;
@@ -115,6 +116,11 @@ class MediaExplorerContent : public PanelContent,
     bool treeView_ = false;
     void setupFileBrowser(const juce::File& initialRoot);
     void teardownFileBrowser();
+
+    // Re-appliable theme-derived widget colours (called from the constructor
+    // and lookAndFeelChanged so a live theme switch restyles the panel).
+    void applyThemeColours();
+    void applyFileBrowserThemeColours();
     void rebuildFileBrowser();
 
     // Recursive search (#1699 follow-up): while a search term is active in

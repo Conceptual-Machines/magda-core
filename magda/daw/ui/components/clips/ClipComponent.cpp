@@ -582,7 +582,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // Ghost clips paint a translucent body + dimmed waveform so link-group
     // members read as mirrors of shared content.
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
@@ -637,7 +637,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Ghost clips paint a translucent body + dimmed notes (see paintAudioClip).
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveTrackSwatch(clip.colour).darker(0.3f);
+    auto bgColour = deriveClipBody(clip.colour);
     if (ghosted)
         bgColour = bgColour.withAlpha(0.55f);
     fillClippedRoundedRect(g, bounds, visibleBounds, bgColour, CORNER_RADIUS);
@@ -809,7 +809,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         // The chord blocks (glassy card + spine) take the chord track's colour
         // live, so they stay correct after a track recolour (matches the
         // piano-roll grid notes for chord clips).
-        auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
         if (auto* chordTrack = magda::TrackManager::getInstance().getTrack(
                 magda::TrackManager::getInstance().getChordTrackId()))
             blockColour = chordTrack->colour;
@@ -902,18 +902,15 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     if (ghosted && headerArea.getWidth() > HEADER_HEIGHT + 4) {
         auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
         if (iconArea.intersects(g.getClipBounds())) {
-            static auto makeLinkIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::link_flat_svg,
-                                                                BinaryData::link_flat_svgSize);
-                if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
-                return icon;
-            };
-            static auto normalLink = makeLinkIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
-            static auto selectedLink = makeLinkIcon(juce::Colours::white);
-            const auto& icon = selected ? selectedLink : normalLink;
-            if (icon)
-                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+            static const auto linkIcon = juce::Drawable::createFromImageData(
+                BinaryData::link_flat_svg, BinaryData::link_flat_svgSize);
+            if (linkIcon) {
+                auto themedIcon = linkIcon->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
+                DarkTheme::applyToSvgIcon(*themedIcon);
+                themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
+                                       1.0f);
+            }
         }
     }
 
@@ -921,18 +918,15 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     if (isChordClip(clip) && headerArea.getWidth() > HEADER_HEIGHT + 4) {
         auto iconArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(3);
         if (iconArea.intersects(g.getClipBounds())) {
-            static auto makeChordIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::iconchordboldm_svg,
-                                                                BinaryData::iconchordboldm_svgSize);
-                if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
-                return icon;
-            };
-            static auto normalChord = makeChordIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
-            static auto selectedChord = makeChordIcon(juce::Colours::white);
-            const auto& icon = selected ? selectedChord : normalChord;
-            if (icon)
-                icon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+            static const auto chordIcon = juce::Drawable::createFromImageData(
+                BinaryData::iconchordboldm_svg, BinaryData::iconchordboldm_svgSize);
+            if (chordIcon) {
+                auto themedIcon = chordIcon->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
+                DarkTheme::applyToSvgIcon(*themedIcon);
+                themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
+                                       1.0f);
+            }
         }
     }
 
@@ -973,18 +967,15 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         // by 3) so the two header glyphs read at the same size.
         auto loopArea = headerArea.removeFromRight(HEADER_HEIGHT).reduced(3);
         if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
-            static auto makeIcon = [](juce::Colour fg) {
-                auto icon = juce::Drawable::createFromImageData(BinaryData::loop_icon_svg,
-                                                                BinaryData::loop_icon_svgSize);
-                if (icon)
-                    icon->replaceColour(juce::Colour(0xFFBCBCBC), fg);
-                return icon;
-            };
-            static auto normalIcon = makeIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
-            static auto selectedIcon = makeIcon(juce::Colours::white);
-            const auto& icon = selected ? selectedIcon : normalIcon;
-            if (icon)
-                icon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+            static const auto loopIcon = juce::Drawable::createFromImageData(
+                BinaryData::loop_icon_svg, BinaryData::loop_icon_svgSize);
+            if (loopIcon) {
+                auto themedIcon = loopIcon->createCopy();
+                themedIcon->replaceColour(juce::Colour(0xFFBCBCBC), headerForeground);
+                DarkTheme::applyToSvgIcon(*themedIcon);
+                themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
+                                       1.0f);
+            }
         }
     }
 }
@@ -1159,7 +1150,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     float half = hs * 0.5f;
     float waveTop = static_cast<float>(waveformArea.getY());
 
-    auto handleColour = juce::Colour(DarkTheme::ACCENT_ORANGE);
+    auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
     const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover
@@ -2293,13 +2284,15 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
         isCommitting_ = true;
         const double commitTempoBPM = parentPanel_ ? parentPanel_->getTempo() : 120.0;
 
+        // SafePointer guard: any commit below can trigger rebuildClipComponents()
+        // (overlap resolution, model listeners relayouting the arrangement),
+        // which destroys this component mid-switch. Checked after the switch
+        // before touching any member.
+        juce::Component::SafePointer<ClipComponent> safeThis(this);
+
         // Now apply snapping and commit to ClipManager
         switch (savedDragMode) {
             case DragMode::Move: {
-                // SafePointer guard: overlap resolution during move/duplicate can
-                // trigger rebuildClipComponents() which destroys this component.
-                juce::Component::SafePointer<ClipComponent> safeThis(this);
-
                 double finalStartTime = previewStartTime_;
                 if (snapTimeToGrid) {
                     finalStartTime = snapTimeToGrid(finalStartTime);
@@ -2714,6 +2707,10 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
             default:
                 break;
         }
+        // The commit may have destroyed this component (see SafePointer above);
+        // touch no members after this point if it did.
+        if (safeThis == nullptr)
+            return;
         isCommitting_ = false;
     } else {
         // No drag occurred — if this was a plain click on a multi-selected clip,

@@ -47,14 +47,14 @@ void PadChainRangeRowComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
     }
     g.fillRoundedRectangle(bounds.toFloat(), 2.0f);
 
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     }

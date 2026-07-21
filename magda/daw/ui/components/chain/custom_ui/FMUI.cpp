@@ -98,7 +98,7 @@ FMUI::FMUI() {
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setTooltip("Reset this operator's phase on note-on");
@@ -119,7 +119,7 @@ FMUI::FMUI() {
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setTooltip("Enable / disable this operator");
@@ -363,6 +363,30 @@ void FMUI::resized() {
     }
 }
 
+void FMUI::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    for (auto& c : controls_)
+        if (c.label)
+            c.label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+
+    auto refreshToggle = [](juce::TextButton* btn) {
+        if (!btn)
+            return;
+        btn->setColour(juce::TextButton::buttonColourId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+        btn->setColour(juce::TextButton::buttonOnColourId,
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    };
+    for (auto& btn : resetButtons_)
+        refreshToggle(btn.get());
+    for (auto& btn : enableButtons_)
+        refreshToggle(btn.get());
+
+    repaint();
+}
+
 void FMUI::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
@@ -381,7 +405,7 @@ void FMUI::paint(juce::Graphics& g) {
     a.removeFromTop(kSectionTitleH);
     auto headerRow = a.removeFromTop(kMatrixHeaderH);
     headerRow.removeFromLeft(kMatrixHeaderW);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
     const int cw = headerRow.getWidth() / kNumOps;
     for (int dst = 0; dst < kNumOps; ++dst)

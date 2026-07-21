@@ -228,7 +228,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Mod button (toggle mod panel) - bare sine icon
     modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::iconmodsboldm_svg,
                                                     BinaryData::iconmodsboldm_svgSize);
-    applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
@@ -242,7 +242,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Macro button (toggle macro panel) - knob icon
     macroButton_ =
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
-    applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
@@ -258,7 +258,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // updated in the resizedHeaderExtra path so it tracks device changes.
     aiButton_ =
         std::make_unique<magda::SvgButton>("AI", BinaryData::ai_svg, BinaryData::ai_svgSize);
-    applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     aiButton_->setToggleState(aiPanelVisible_, juce::dontSendNotification);
     aiButton_->setActive(aiPanelVisible_);
     aiButton_->onClick = [this]() {
@@ -285,10 +285,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     presetButton_ =
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
-    // Indigo sits between ACCENT_BLUE and ACCENT_PURPLE — distinct from both
+    // Indigo sits between ACCENT_PRIMARY and ACCENT_MODULATION — distinct from both
     // utility blue (ui/multiOut) and macro purple, signals "MAGDA presets".
-    constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
-    applyHeaderIconStyle(*presetButton_, juce::Colour(PRESET_INDIGO),
+    applyHeaderIconStyle(*presetButton_, DarkTheme::getColour(DarkTheme::PRESET_INDIGO),
                          /*toggling*/ false);
     // Permanent "active" treatment: indigo pill + white icon. Using setActive()
     // (not normalBackgroundColor) so hover/pressed don't wipe out the pill —
@@ -319,7 +318,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // When a sidechain is active, fill the button background orange (white glyph),
     // matching the old SC button.
     scButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).darker(0.3f));
+        DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).darker(0.3f));
     scButton_->setActiveColor(juce::Colours::white);
     scButton_->onClick = [this]() { showSidechainMenu(); };
     scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
@@ -329,7 +328,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Multi-output routing button (only visible for multi-out plugins)
     multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::multiout_svg,
                                                          BinaryData::multiout_svgSize);
-    applyHeaderIconStyle(*multiOutButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+    applyHeaderIconStyle(*multiOutButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
                          /*toggling*/ false);
     multiOutButton_->onClick = [this]() { showMultiOutMenu(); };
     multiOutButton_->setVisible(device_.multiOut.isMultiOut);
@@ -338,7 +337,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // UI button (toggle plugin window) - open in new icon
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
-    applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     uiButton_->onClick = [this]() {
         // Analysis devices have no native editor; pop their UI into a floating window.
         if (magda::isAnalysisDevice(device_.pluginId)) {
@@ -366,7 +365,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Learn button (parameter pick mode)
     learnButton_ = std::make_unique<magda::SvgButton>("Learn", BinaryData::learn_svg,
                                                       BinaryData::learn_svgSize);
-    applyHeaderIconStyle(*learnButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    applyHeaderIconStyle(*learnButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     learnButton_->setEnabled(false);
     learnButton_->onClick = [this]() {
         bool active = learnButton_->getToggleState();
@@ -379,13 +378,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*learnButton_);
 
     // Bypass/On button (power icon)
-    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
-                                                   BinaryData::power_on_svgSize);
+    onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
+                                                   BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
+    onButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
-    onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
+    onButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(!device.bypassed);
     onButton_->onClick = [this]() {
         bool active = onButton_->getToggleState();
@@ -410,7 +411,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     deltaButton_->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
     deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_CYAN).darker(0.3f));
+                            DarkTheme::getColour(DarkTheme::ACCENT_INFO).darker(0.3f));
     deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     deltaButton_->onClick = [this]() {
@@ -430,7 +431,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
         exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
                                                                BinaryData::copy_svgSize);
-        applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_GREEN),
+        applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE),
                              /*toggling*/ false);
         exportClipButton_->setTooltip("Click to copy pattern, drag to timeline");
         exportClipButton_->addMouseListener(this, false);
@@ -446,7 +447,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
         randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
                                                            BinaryData::random_svgSize);
-        applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+        applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
                              /*toggling*/ false);
         randomButton_->setTooltip("Randomize pattern");
         randomButton_->onClick = [this]() { randomizeSequencerPattern(traits_, customUI_); };
@@ -456,7 +457,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         stepRecordButton_ = std::make_unique<magda::SvgButton>(
             "StepRecord", BinaryData::record_circle_svg, BinaryData::record_circle_svgSize);
         stepRecordButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        stepRecordButton_->setNormalColor(juce::Colour(0xFFCC3333));
+        stepRecordButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STEP_RECORD));
         stepRecordButton_->setTooltip("Step record: play notes to fill steps");
         stepRecordButton_->setToggleable(true);
         stepRecordButton_->onClick = [this]() {
@@ -474,7 +475,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                                              BinaryData::compare_svgSize);
         midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         midiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
-        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
         midiThruButton_->setTooltip("MIDI thru: merge raw input with this device's MIDI output");
         midiThruButton_->setToggleable(true);
         midiThruButton_->setActive(device.midiInThru);
@@ -558,6 +559,57 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // Start timer for UI button state sync and meter updates (~30 FPS)
     startTimerHz(30);
+}
+
+void DeviceSlotComponent::lookAndFeelChanged() {
+    NodeComponent::lookAndFeelChanged();
+
+    if (modButton_)
+        applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    if (macroButton_)
+        applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    if (aiButton_)
+        applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    if (presetButton_)
+        applyHeaderIconStyle(*presetButton_, DarkTheme::getColour(DarkTheme::PRESET_INDIGO), false);
+    if (multiOutButton_)
+        applyHeaderIconStyle(*multiOutButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
+                             false);
+    if (uiButton_)
+        applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    if (learnButton_)
+        applyHeaderIconStyle(*learnButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    if (exportClipButton_)
+        applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE),
+                             false);
+    if (randomButton_)
+        applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
+                             false);
+
+    if (scButton_)
+        scButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).darker(0.3f));
+    if (onButton_) {
+        onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        onButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+    }
+    if (deltaButton_) {
+        deltaButton_->setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+        deltaButton_->setColour(juce::TextButton::buttonOnColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_INFO).darker(0.3f));
+        deltaButton_->setColour(juce::TextButton::textColourOffId,
+                                DarkTheme::getSecondaryTextColour());
+    }
+    if (stepRecordButton_)
+        stepRecordButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STEP_RECORD));
+    if (midiThruButton_) {
+        midiThruButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+    }
+
+    repaint();
 }
 
 DeviceSlotComponent::~DeviceSlotComponent() {
@@ -823,6 +875,8 @@ void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
         if (tracktionLogo_)
             tracktionLogo_->replaceColour(juce::Colours::black,
                                           DarkTheme::getSecondaryTextColour());
+        if (tracktionLogo_)
+            DarkTheme::applyToSvgIcon(*tracktionLogo_);
     } else if (!traits_.isTracktionDevice) {
         tracktionLogo_.reset();
     }
@@ -1038,7 +1092,7 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
     // Staging only trims, so applied is normally negative (amber); a cooler hue
     // covers the rare non-negative case.
     const auto colour = *applied < -0.05f ? DarkTheme::getColour(DarkTheme::STATUS_WARNING)
-                                          : DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
+                                          : DarkTheme::getColour(DarkTheme::ACCENT_INFO);
     auto r = meterArea.toFloat().expanded(1.0f);
     g.setColour(colour.withAlpha(0.16f));
     g.fillRoundedRectangle(r, 2.0f);

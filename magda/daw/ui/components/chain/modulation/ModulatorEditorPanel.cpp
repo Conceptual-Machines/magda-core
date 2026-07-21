@@ -70,14 +70,14 @@ void ModMatrixContent::paint(juce::Graphics& g) {
 
         // Enable toggle - 18px
         auto enabledBounds = remaining.removeFromRight(18);
-        g.setColour(link.enabled ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+        g.setColour(link.enabled ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
                                  : DarkTheme::getSecondaryTextColour());
         g.drawText(link.enabled ? "On" : "Off", enabledBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
         // Bipolar toggle - 16px
         auto bipolarBounds = remaining.removeFromRight(16);
-        g.setColour(link.enabled && link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+        g.setColour(link.enabled && link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
                                                  : DarkTheme::getSecondaryTextColour());
         g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
@@ -212,7 +212,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Curve editor (for curve mode - bezier editing with integrated phase indicator)
     curveEditor_.setName("miniLFO");
     curveEditor_.setVisible(false);
-    curveEditor_.setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    curveEditor_.setCurveColour(DarkTheme::ACCENT_ATTENTION);
     curveEditor_.onWaveformChanged = [this]() {
         DBG("[HardCorner] ModulatorEditorPanel embedded curve onWaveformChanged");
         // Curve points are stored directly in ModInfo by LFOCurveEditor
@@ -245,7 +245,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     curveEditorButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     curveEditorButton_->setHoverColor(DarkTheme::getTextColour());
     curveEditorButton_->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    curveEditorButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    curveEditorButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     curveEditorButton_->onClick = [this]() {
         if (!curveEditorWindow_) {
             auto* modInfo = const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_);
@@ -379,7 +379,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     syncToggle_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     syncToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     syncToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     syncToggle_.setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -1150,14 +1150,14 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
             auto r = sb.toFloat();
             juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
                                        dotSize);
-            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+            g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.85f));
             g.fillEllipse(dot);
         }
         if (!sb.isEmpty() && isRateInMidiLearnMode_) {
             float phase = std::fmod(
                 static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
             float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
-            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(alpha));
+            g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(alpha));
             g.drawRoundedRectangle(sb.toFloat().reduced(0.5f), 2.0f, 1.5f);
         }
     }
@@ -1171,8 +1171,8 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
         if (!sb.isEmpty()) {
             auto& lmm = magda::LinkModeManager::getInstance();
             bool macro = (lmm.getLinkModeType() == magda::LinkModeType::Macro);
-            auto colour = (macro ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
-                                 : DarkTheme::getColour(DarkTheme::ACCENT_ORANGE))
+            auto colour = (macro ? DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
+                                 : DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION))
                               .withAlpha(0.18f);
             g.setColour(colour);
             g.fillRoundedRectangle(sb.toFloat(), 2.0f);
@@ -1289,9 +1289,48 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
     // Macro bar at top (purple), mod bar at bottom (orange) — same convention
     // as ParamModulationPainter on every other parameter slider in MAGDA.
     drawBar(macroTotal, sb.getY() + 2,
-            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.6f));
+            DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.6f));
     drawBar(modTotal, sb.getBottom() - barHeight - 2,
-            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.6f));
+            DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.6f));
+}
+
+void ModulatorEditorPanel::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+
+    for (auto* combo :
+         {&waveformCombo_, &curvePresetCombo_, &triggerModeCombo_, &randomTypeCombo_}) {
+        combo->setColour(juce::ComboBox::backgroundColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    syncToggle_.setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+    syncToggle_.setColour(juce::TextButton::buttonOnColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    syncToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    syncToggle_.setColour(juce::TextButton::textColourOnId,
+                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+
+    if (curveEditorButton_) {
+        curveEditorButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        curveEditorButton_->setHoverColor(DarkTheme::getTextColour());
+        curveEditorButton_->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        curveEditorButton_->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    }
+    if (savePresetButton_) {
+        savePresetButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        savePresetButton_->setHoverColor(DarkTheme::getTextColour());
+    }
+    if (advancedButton_) {
+        advancedButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        advancedButton_->setHoverColor(DarkTheme::getTextColour());
+    }
+
+    repaint();
 }
 
 void ModulatorEditorPanel::paint(juce::Graphics& g) {
@@ -1709,8 +1748,8 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
             // of this panel. Doing label work first means we never touch a
             // freed `this` after the link write.
             bool macroSrc = (lmm.getLinkModeType() == magda::LinkModeType::Macro);
-            auto bg = (macroSrc ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
-                                : DarkTheme::getColour(DarkTheme::ACCENT_ORANGE))
+            auto bg = (macroSrc ? DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
+                                : DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION))
                           .withAlpha(0.95f);
             int percent = static_cast<int>(std::round(initialAmount * 100.0f));
             linkModeAmountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);

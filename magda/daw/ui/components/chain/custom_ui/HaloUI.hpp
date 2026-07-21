@@ -40,6 +40,7 @@ class HaloUI : public juce::Component {
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void lookAndFeelChanged() override;
 
   private:
     // Param indices — must match MutableRingsPlugin::ParamIndex.

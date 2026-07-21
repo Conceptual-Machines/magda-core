@@ -1281,7 +1281,7 @@ void TimelineComponent::drawPlayhead(juce::Graphics& g) {
         g.setColour(juce::Colours::black.withAlpha(0.6f));
         g.drawLine(playheadX + 1, 0, playheadX + 1, getHeight(), 5.0f);
         // Draw main playhead line
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         g.drawLine(playheadX, 0, playheadX, getHeight(), 4.0f);
     }
 }
@@ -1584,12 +1584,12 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
         return;
 
     // Faint tinted bar between the handles, matching the loop rail's ~38% tint.
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.38f));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.38f));
     g.fillRoundedRectangle(selectionArea.toFloat(), static_cast<float>(height) / 2.0f);
 
     // Brighter diamond (rhombus) handles at the range edges. These are the
     // endpoint markers and double as the drag handles (see hitTimeSelectionEdge).
-    const auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT);
+    const auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT);
     const float cy = static_cast<float>(rows.playheadTop + rows.playheadBottom) * 0.5f;
     const float dh = static_cast<float>(rows.playheadBottom - rows.playheadTop);
     constexpr float dw = 8.0f;

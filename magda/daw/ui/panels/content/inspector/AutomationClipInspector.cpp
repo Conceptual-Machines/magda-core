@@ -192,7 +192,7 @@ AutomationClipInspector::AutomationClipInspector() {
     loopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     loopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     loopToggle_->setActiveColor(juce::Colours::white);
-    loopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    loopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     loopToggle_->setClickingTogglesState(false);
     loopToggle_->onClick = [this]() {
         if (const auto* clip = getClip())

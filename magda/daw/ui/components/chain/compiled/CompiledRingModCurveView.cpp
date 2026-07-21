@@ -178,7 +178,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
 
     // Split: thin top strip (spectrum) + main waveform area below. Waveform
     // fills the full horizontal width.

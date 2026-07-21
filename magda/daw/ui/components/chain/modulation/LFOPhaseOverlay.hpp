@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "core/ModInfo.hpp"
+#include "ui/themes/DarkTheme.hpp"
 
 namespace magda {
 
@@ -27,7 +28,16 @@ class LFOPhaseOverlay : public juce::Component, private juce::Timer {
     }
 
     void setCurveColour(juce::Colour colour) {
+        curveColourRole_.reset();
         curveColour_ = colour;
+        repaint();
+    }
+    void setCurveColour(ColourRole role) {
+        curveColourRole_ = role;
+        repaint();
+    }
+    juce::Colour getCurveColour() const {
+        return curveColourRole_ ? DarkTheme::getColour(*curveColourRole_) : curveColour_;
     }
 
     void setShowCrosshair(bool show) {
@@ -51,7 +61,8 @@ class LFOPhaseOverlay : public juce::Component, private juce::Timer {
     double applyTension(double t, double tension) const;
 
     const ModInfo* modInfo_ = nullptr;
-    juce::Colour curveColour_{0xFF6688CC};
+    juce::Colour curveColour_{DarkTheme::getColour(DarkTheme::AUTOMATION_BEZIER)};
+    std::optional<ColourRole> curveColourRole_{DarkTheme::AUTOMATION_BEZIER};
     bool showCrosshair_ = false;
 };
 

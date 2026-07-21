@@ -359,7 +359,7 @@ WaveformEditorContent::WaveformEditorContent() {
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
     gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
     gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
-    gridNumeratorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridNumeratorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     gridNumeratorLabel_->setShowFillIndicator(false);
     gridNumeratorLabel_->setFontSize(12.0f);
     gridNumeratorLabel_->setDoubleClickResetsValue(true);
@@ -380,7 +380,7 @@ WaveformEditorContent::WaveformEditorContent() {
     gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                     juce::dontSendNotification);
-    gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     gridDenominatorLabel_->setShowFillIndicator(false);
     gridDenominatorLabel_->setFontSize(12.0f);
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
@@ -412,10 +412,10 @@ WaveformEditorContent::WaveformEditorContent() {
     snapButton_->setColour(juce::TextButton::buttonColourId,
                            DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
     snapButton_->setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
     snapButton_->setColour(juce::TextButton::textColourOffId,
                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    snapButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    snapButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     snapButton_->setWantsKeyboardFocus(false);
@@ -430,10 +430,10 @@ WaveformEditorContent::WaveformEditorContent() {
     gridButton_->setColour(juce::TextButton::buttonColourId,
                            DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
     gridButton_->setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+                           DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
     gridButton_->setColour(juce::TextButton::textColourOffId,
                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    gridButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    gridButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     gridButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     gridButton_->setWantsKeyboardFocus(false);

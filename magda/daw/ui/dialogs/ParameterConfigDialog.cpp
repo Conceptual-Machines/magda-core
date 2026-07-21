@@ -117,7 +117,7 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
     ToggleCell(ParameterConfigDialog& owner, int row, int column)
         : owner_(owner), row_(row), column_(column) {
         toggle_.setColour(juce::ToggleButton::tickColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
         toggle_.setColour(juce::ToggleButton::tickDisabledColourId,
                           DarkTheme::getColour(DarkTheme::TEXT_DIM));
         toggle_.onClick = [this]() {
@@ -396,7 +396,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     // Buttons
     okButton_.setButtonText("OK");
     okButton_.setColour(juce::TextButton::buttonColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     okButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     okButton_.onClick = [this]() {
         saveParameterConfiguration();
@@ -482,7 +482,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     // AI Detect button
     aiDetectButton_.setButtonText("AI Detect");
     aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                              DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     aiDetectButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     aiDetectButton_.onClick = [this]() {
         if (detecting_) {
@@ -582,7 +582,7 @@ int ParameterConfigDialog::getNumRows() {
 void ParameterConfigDialog::paintRowBackground(juce::Graphics& g, int rowNumber, int width,
                                                int height, bool rowIsSelected) {
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else if (rowNumber % 2 == 0) {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.3f));
     } else {
@@ -1197,7 +1197,7 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     } else {
         aiDetectButton_.setButtonText("AI Detect");
         aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+                                  DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
         cancelButton_.setEnabled(true);
         stopTimer();
     }

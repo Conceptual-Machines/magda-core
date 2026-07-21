@@ -2,16 +2,17 @@
 
 #include <cmath>
 
+#include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-const juce::Colour kBg{0xff0d0d0f};
-const juce::Colour kPanel{0xff141417};
-const juce::Colour kBorder{0xff242428};
-const juce::Colour kText{0xffe4e4e8};
-const juce::Colour kDim{0xff7a7a84};
+const ThemedColour kBg{DarkTheme::INSTRUMENT_BACKGROUND};
+const ThemedColour kPanel{DarkTheme::INSTRUMENT_PANEL};
+const ThemedColour kBorder{DarkTheme::INSTRUMENT_BORDER};
+const ThemedColour kText{DarkTheme::INSTRUMENT_TEXT};
+const ThemedColour kDim{DarkTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour cBow{0xffc9c9d0};
 const juce::Colour cBlow{0xffe0556f};
 const juce::Colour cStrike{0xff45c8d0};
@@ -98,6 +99,13 @@ MateriaUI::MateriaUI() {
 }
 
 MateriaUI::~MateriaUI() = default;
+
+void MateriaUI::lookAndFeelChanged() {
+    for (auto& control : controls_)
+        if (control.label)
+            control.label->setColour(juce::Label::textColourId, kDim);
+    repaint();
+}
 
 void MateriaUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     for (int i = 0; i < kNumParams; ++i) {

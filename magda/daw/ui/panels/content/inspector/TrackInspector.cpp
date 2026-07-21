@@ -56,13 +56,9 @@ TrackInspector::TrackInspector() {
     // Track name
     trackNameLabel_.setText(tr("inspector.name"), juce::dontSendNotification);
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(trackNameLabel_);
 
     trackNameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    trackNameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    trackNameValue_.setColour(juce::Label::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
         // The master track cannot be renamed; its name is fixed.
@@ -177,12 +173,8 @@ TrackInspector::TrackInspector() {
     muteButton_ = std::make_unique<SvgButton>(
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-    muteButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    muteButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_->setIconPadding(3.5f);
+    configureMasterSpeakerButton(*muteButton_);
     muteButton_->setInactiveIconOpacity(0.58f);
-    muteButton_->setClickingTogglesState(true);
     muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
@@ -212,11 +204,12 @@ TrackInspector::TrackInspector() {
 
     // Solo button (arrange track-header style)
     soloButton_ =
-        std::make_unique<SvgButton>("solo", BinaryData::solo_off_svg, BinaryData::solo_off_svgSize,
-                                    BinaryData::solo_on_svg, BinaryData::solo_on_svgSize);
+        std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                           DarkTheme::ICON_ON_ACCENT);
     soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
     soloButton_->setInactiveIconOpacity(0.58f);
     soloButton_->setClickingTogglesState(true);
@@ -230,12 +223,13 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*soloButton_);
 
     // Record button (arrange track-header style)
-    recordButton_ = std::make_unique<SvgButton>(
-        "record", BinaryData::track_record_off_svg, BinaryData::track_record_off_svgSize,
-        BinaryData::track_record_on_svg, BinaryData::track_record_on_svgSize);
+    recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
+                                                BinaryData::track_record_svgSize);
     recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
     recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                             DarkTheme::ICON_ON_ACCENT);
     recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
     recordButton_->setInactiveIconOpacity(0.58f);
     recordButton_->setClickingTogglesState(true);
@@ -255,8 +249,12 @@ TrackInspector::TrackInspector() {
     enableButton_ = std::make_unique<SvgButton>(
         "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
-    enableButton_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
-    enableButton_->setBorderColor(juce::Colour(0xff555555));
+    enableButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    enableButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                             DarkTheme::ICON_NEUTRAL);
+    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_ON_ACCENT,
+                                             DarkTheme::ICON_ON_ACCENT);
     enableButton_->setBorderThickness(1.0f);
     enableButton_->setIconPadding(2.0f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
@@ -292,7 +290,10 @@ TrackInspector::TrackInspector() {
                                                        BinaryData::automation_svgSize);
     automationIndicator_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     automationIndicator_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationIndicator_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    automationIndicator_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    automationIndicator_->setStateColourReplacement(
+        juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL, DarkTheme::TEXT_BRIGHT);
     automationIndicator_->setIconPadding(2.5f);
     automationIndicator_->onClick = [this]() {
         automatedSectionExpanded_ = !automatedSectionExpanded_;
@@ -420,23 +421,16 @@ TrackInspector::TrackInspector() {
     midiColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(midiColumnLabel_);
 
-    // I/O routing icons (non-interactive visual indicators)
+    // I/O routing icons (non-interactive visual indicators). The tint is baked
+    // into the drawables, so applyThemeColours rebuilds them on theme change.
     auto inputDrawable =
         std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg =
-            juce::Drawable::createFromImageData(BinaryData::Input_svg, BinaryData::Input_svgSize)) {
-        inputDrawable->setImages(svg.get());
-    }
     inputDrawable->setInterceptsMouseClicks(false, false);
     inputIcon_ = std::move(inputDrawable);
     addAndMakeVisible(*inputIcon_);
 
     auto outputDrawable =
         std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
-    if (auto svg = juce::Drawable::createFromImageData(BinaryData::Output_svg,
-                                                       BinaryData::Output_svgSize)) {
-        outputDrawable->setImages(svg.get());
-    }
     outputDrawable->setInterceptsMouseClicks(false, false);
     outputIcon_ = std::move(outputDrawable);
     addAndMakeVisible(*outputIcon_);
@@ -495,6 +489,76 @@ TrackInspector::TrackInspector() {
           &latencyLabel_, &latencyValue_}) {
         useLocalizedLabelPainter(*label);
     }
+
+    applyThemeColours();
+}
+
+void TrackInspector::applyThemeColours() {
+    const auto primary = DarkTheme::getTextColour();
+    const auto secondary = DarkTheme::getSecondaryTextColour();
+    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+    const auto border = DarkTheme::getBorderColour();
+
+    for (auto* label :
+         {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_, &midiColumnLabel_,
+          &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_, &clipsSectionLabel_,
+          &automatedSectionLabel_, &latencyLabel_})
+        label->setColour(juce::Label::textColourId, secondary);
+
+    for (auto* label : {&automatedParamsLabel_, &clipCountLabel_, &latencyValue_})
+        label->setColour(juce::Label::textColourId, primary);
+
+    trackNameValue_.setColour(juce::Label::textColourId, primary);
+    trackNameValue_.setColour(juce::Label::backgroundColourId, surface);
+    trackNameValue_.setColour(juce::Label::outlineColourId, border);
+    trackNameValue_.setColour(juce::Label::textWhenEditingColourId, primary);
+    trackNameValue_.setColour(juce::Label::backgroundWhenEditingColourId, surface);
+    trackNameValue_.setColour(juce::Label::outlineWhenEditingColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+
+    for (auto& label : sendDestLabels_)
+        label->setColour(juce::Label::textColourId, primary);
+    for (auto& button : sendDeleteButtons_) {
+        button->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        button->setColour(juce::TextButton::textColourOffId, secondary);
+    }
+
+    if (soloButton_) {
+        soloButton_->setBorderColor(border);
+        soloButton_->setNormalBackgroundColor(surface);
+    }
+    if (recordButton_) {
+        recordButton_->setBorderColor(border);
+        recordButton_->setNormalBackgroundColor(surface);
+    }
+    if (enableButton_) {
+        enableButton_->setBorderColor(border);
+        enableButton_->setNormalBackgroundColor(surface);
+    }
+    if (addSendButton_)
+        addSendButton_->setOriginalColor(secondary);
+
+    rebuildRoutingIcons();
+}
+
+void TrackInspector::rebuildRoutingIcons() {
+    const auto applyIcon = [](juce::Component* component, const char* svgData, int svgSize) {
+        auto* button = dynamic_cast<juce::DrawableButton*>(component);
+        if (button == nullptr)
+            return;
+        if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
+            DarkTheme::applyToSvgIcon(*svg);
+            button->setImages(svg.get());
+        }
+    };
+    applyIcon(inputIcon_.get(), BinaryData::Input_svg, BinaryData::Input_svgSize);
+    applyIcon(outputIcon_.get(), BinaryData::Output_svg, BinaryData::Output_svgSize);
+}
+
+void TrackInspector::lookAndFeelChanged() {
+    applyThemeColours();
+    repaint();
 }
 
 void TrackInspector::midiDeviceListChanged() {

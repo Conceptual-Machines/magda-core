@@ -188,16 +188,16 @@ void CompiledGateCurveView::mouseWheelMove(const juce::MouseEvent& e,
 }
 
 void CompiledGateCurveView::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colours::black);
+    g.fillAll(DarkTheme::getColour(DarkTheme::TEXT_DARK));
 
     plotArea_ = getLocalBounds().toFloat().reduced(kPlotPad);
     if (plotArea_.getWidth() < 16.0f || plotArea_.getHeight() < 16.0f)
         return;
 
-    const juce::Colour borderColour(0xFF444444);
-    const juce::Colour gridColour(0xFF333333);
-    const juce::Colour curveColour(0xFF00D4FF);   // cyan — gate curve
-    const juce::Colour threshColour(0xFFFF8C00);  // orange — threshold
+    const auto borderColour = DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT);
+    const auto gridColour = DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER);
+    const auto curveColour = DarkTheme::getColour(DarkTheme::GATE_CURVE);
+    const auto threshColour = DarkTheme::getColour(DarkTheme::GATE_THRESHOLD);
 
     g.setColour(borderColour);
     g.drawRect(plotArea_, 1.0f);
@@ -254,7 +254,7 @@ void CompiledGateCurveView::paint(juce::Graphics& g) {
     // Labels
     auto font = FontManager::getInstance().getUIFont(9.0f);
     g.setFont(font);
-    g.setColour(juce::Colour(0xFF888888));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
     g.drawFittedText("THR " + juce::String(thresholdDb_, 1) + " dB  R " + juce::String(ratio_, 1),
                      plotArea_.toNearestInt().reduced(5, 4), juce::Justification::topLeft, 1);
 }

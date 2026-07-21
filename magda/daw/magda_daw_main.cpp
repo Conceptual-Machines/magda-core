@@ -36,6 +36,7 @@
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/MainLookAndFeel.hpp"
+#include "ui/themes/UserTheme.hpp"
 #include "ui/windows/MainWindow.hpp"
 #include "version.hpp"
 
@@ -200,7 +201,12 @@ class MagdaDAWApplication : public JUCEApplication {
         // 3. Initialize fonts
         magda::FontManager::getInstance().initialize();
 
-        // 4. Set up dark theme
+        // 4. Set up the persisted theme before creating any UI. Dark remains
+        // the compatibility default if a config file names an unavailable
+        // future/custom theme.
+        // Handles built-ins and persisted user JSON themes alike; resets to
+        // dark internally if the id is unknown or the file is invalid.
+        magda::applyThemeById(magda::Config::getInstance().getTheme());
         lookAndFeel_ = std::make_unique<magda::MainLookAndFeel>();
         magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());

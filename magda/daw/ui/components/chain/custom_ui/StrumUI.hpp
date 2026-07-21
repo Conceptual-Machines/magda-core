@@ -28,6 +28,7 @@ class StrumUI : public juce::Component, private juce::ValueTree::Listener {
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 

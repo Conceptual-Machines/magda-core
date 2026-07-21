@@ -3,7 +3,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <string>
 
+#include "../../core/Config.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../components/common/Toast.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
@@ -21,6 +23,7 @@ namespace magda {
 
 class TracktionEngineWrapper;
 class TransportPanel;
+class ThemeFileWatcher;
 
 class LeftPanel;
 class RightPanel;
@@ -34,7 +37,9 @@ class QwertyMidiKeyboard;
 class PlaybackPositionTimer;
 class KeyMappingStore;
 
-class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
+class MainWindow : public juce::DocumentWindow,
+                   public ProjectManagerListener,
+                   private ConfigListener {
   public:
     MainWindow(AudioEngine* audioEngine = nullptr);
     ~MainWindow() override;
@@ -46,6 +51,9 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
     void projectSaved(const ProjectInfo& info) override;
     void projectClosed() override;
     void projectDirtyStateChanged(bool isDirty) override;
+
+    // ConfigListener
+    void configChanged() override;
 
     /** Open a .mgd project file (used by menu, command line, and OS file association). */
     void openProjectFile(const juce::File& file);
@@ -63,12 +71,36 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
 
   private:
     void updateWindowTitle();
+    void applyThemeFromConfig();
+    // Re-reads the UI density multiplier, rescales the spacing tokens on
+    // LayoutConfig / MixerMetrics, and relayouts every window. Spacing-only
+    // token changes don't resize parent panels, so a plain resized() won't
+    // cascade; this forces a recursive relayout.
+    void applyDensityFromConfig();
+    // Re-broadcasts a look-and-feel change when the UI font family changes, so
+    // components re-fetch fonts from FontManager and repaint.
+    void applyFontFromConfig();
+    // Re-applies the active palette to every shared LookAndFeel and broadcasts
+    // a look-and-feel change to all top-level windows. Shared by the config
+    // switch and hot-reload.
+    void refreshThemedLookAndFeels();
+    // Hot-reload callback: the active user theme file changed on disk.
+    void onActiveThemeFileChanged();
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
 
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
+    std::string appliedTheme_;
+    // Last-applied density multiplier; -1 forces the first apply to run.
+    float appliedDensityScale_ = -1.0f;
+    std::string appliedFontFamily_;
+
+    // Hot-reload for user JSON themes: armed while a user theme is active,
+    // idle for built-ins. activeThemeFile_ is the file currently watched.
+    std::unique_ptr<ThemeFileWatcher> themeWatcher_;
+    juce::File activeThemeFile_;
 
     void setupMenuBar();
     void setupMenuCallbacks();

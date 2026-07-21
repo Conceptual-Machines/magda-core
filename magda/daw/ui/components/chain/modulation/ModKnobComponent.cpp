@@ -92,10 +92,10 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     linkButton_ = std::make_unique<magda::SvgButton>("Link", BinaryData::link_flat_svg,
                                                      BinaryData::link_flat_svgSize);
     linkButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    linkButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    linkButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    linkButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    linkButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     linkButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.2f));
+        DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.2f));
     linkButton_->onClick = [this]() { onLinkButtonClicked(); };
     addAndMakeVisible(*linkButton_);
 
@@ -150,7 +150,7 @@ void ModKnobComponent::paint(juce::Graphics& g) {
 
     // Background - orange tint when in link mode, normal otherwise
     if (isInLinkMode) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
         g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.04f));
@@ -159,7 +159,7 @@ void ModKnobComponent::paint(juce::Graphics& g) {
 
     // Border - grey when selected, default otherwise
     if (selected_) {
-        g.setColour(juce::Colour(0xff888888));  // Grey for selection
+        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 2.0f);
     } else {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -172,7 +172,7 @@ void ModKnobComponent::paint(juce::Graphics& g) {
         float centerX = getLocalBounds().getCentreX();
         float dotY = bounds.getBottom() - LINK_BUTTON_HEIGHT - dotSize - 2.0f;
 
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
         g.fillEllipse(centerX - dotSize * 0.5f, dotY, dotSize, dotSize);
     }
 

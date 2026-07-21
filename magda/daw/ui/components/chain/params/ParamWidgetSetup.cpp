@@ -93,9 +93,9 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
 
 void configureBoolToggle(juce::ToggleButton& toggle, const magda::ParameterInfo& info,
                          std::function<void(double)> onValueChanged) {
-    toggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
+    toggle.setColour(juce::ToggleButton::textColourId, DarkTheme::getTextColour());
     toggle.setColour(juce::ToggleButton::tickColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     toggle.onClick = [&toggle, cb = std::move(onValueChanged)]() {
         if (cb) {
             cb(toggle.getToggleState() ? 1.0 : 0.0);
@@ -112,14 +112,14 @@ void configureMomentaryButton(MomentaryParamButton& button,
     button.setButtonText("PUSH");
     button.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     button.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    button.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
 }
 
 void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& info,
                             std::function<void(double)> onValueChanged) {
     combo.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     combo.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    combo.setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    combo.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
     combo.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     combo.setJustificationType(juce::Justification::centred);
 

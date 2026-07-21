@@ -39,6 +39,8 @@ FaustUI::FaustUI() {
                                                 BinaryData::fausttextlogo_svgSize);
     if (logo_)
         logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
+    if (logo_)
+        DarkTheme::applyToSvgIcon(*logo_);
 
     nameLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());

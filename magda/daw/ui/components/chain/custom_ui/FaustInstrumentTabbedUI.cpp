@@ -209,6 +209,31 @@ void FaustInstrumentTabbedUI::resized() {
         tabs_->setBoundsStable(area);
 }
 
+void FaustInstrumentTabbedUI::lookAndFeelChanged() {
+    // Tab backgrounds, row labels, and momentary buttons capture concrete
+    // palette colours in rebuildTabs; re-apply them in place so a live theme
+    // switch restyles the open device UI without resetting slider values.
+    const auto tabBg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
+    if (tabs_)
+        for (int i = 0; i < tabs_->getNumTabs(); ++i)
+            tabs_->setTabBackgroundColour(i, tabBg);
+
+    for (auto& page : pages_) {
+        for (auto& row : page->rows) {
+            if (row.label)
+                row.label->setColour(juce::Label::textColourId,
+                                     DarkTheme::getSecondaryTextColour());
+            if (row.momentaryButton) {
+                row.momentaryButton->setColour(juce::TextButton::buttonColourId,
+                                               DarkTheme::getColour(DarkTheme::SURFACE));
+                row.momentaryButton->setColour(juce::TextButton::textColourOffId,
+                                               DarkTheme::getTextColour());
+            }
+        }
+    }
+    repaint();
+}
+
 void FaustInstrumentTabbedUI::GroupPage::resized() {
     const int n = static_cast<int>(rows.size());
     if (n == 0)

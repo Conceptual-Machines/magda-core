@@ -2,16 +2,17 @@
 
 #include <cmath>
 
+#include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-const juce::Colour kBg{0xff0d0d0f};
-const juce::Colour kPanel{0xff141417};
-const juce::Colour kBorder{0xff242428};
-const juce::Colour kText{0xffe4e4e8};
-const juce::Colour kDim{0xff7a7a84};
+const ThemedColour kBg{DarkTheme::INSTRUMENT_BACKGROUND};
+const ThemedColour kPanel{DarkTheme::INSTRUMENT_PANEL};
+const ThemedColour kBorder{DarkTheme::INSTRUMENT_BORDER};
+const ThemedColour kText{DarkTheme::INSTRUMENT_TEXT};
+const ThemedColour kDim{DarkTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour kAccent{0xff4f8fd6};
 const juce::Colour kAccentFill{0xff2f6fb8};
 
@@ -94,6 +95,16 @@ HaloUI::HaloUI() {
 }
 
 HaloUI::~HaloUI() = default;
+
+void HaloUI::lookAndFeelChanged() {
+    for (auto& control : controls_) {
+        if (control.label)
+            control.label->setColour(juce::Label::textColourId, kDim);
+        if (control.slider)
+            control.slider->setTextColour(kText);
+    }
+    repaint();
+}
 
 void HaloUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
     for (int i = 0; i < kNumParams; ++i) {

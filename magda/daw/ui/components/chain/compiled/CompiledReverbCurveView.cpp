@@ -161,8 +161,8 @@ void CompiledReverbCurveView::paint(juce::Graphics& g) {
     lowFill.closeSubPath();
     highFill.closeSubPath();
 
-    const auto accentLow = DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.32f);
-    const auto accentHigh = DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.7f);
+    const auto accentLow = DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.32f);
+    const auto accentHigh = DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.7f);
 
     g.setColour(accentLow);
     g.fillPath(lowFill);

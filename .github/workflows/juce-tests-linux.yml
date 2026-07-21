@@ -60,13 +60,21 @@ jobs:
 
     # Compile cache: sccache backed by S3 (see infra/sccache), sharing the
     # linux key prefix with the main CI job so common translation units hit.
+    #
+    # Dependabot-triggered runs get no repo secrets and no OIDC id-token, so this
+    # step fails there. Treat it as non-fatal: without credentials the build just
+    # runs cold (see the sccache-gated launcher flags in Configure CMake below).
     - name: Configure AWS credentials (sccache S3, OIDC)
+      id: aws-creds
+      continue-on-error: true
       uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: ${{ secrets.AWS_SCCACHE_ROLE_ARN }}
         aws-region: eu-west-2
 
     - name: Setup sccache
+      id: sccache
+      if: steps.aws-creds.outcome == 'success'
       env:
         SCCACHE_BUCKET_SECRET: ${{ secrets.SCCACHE_BUCKET }}
       run: |
@@ -116,8 +124,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+          "-DCMAKE_C_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
           ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
           ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
@@ -141,4 +149,5 @@ jobs:
         done
 
     - name: Show sccache statistics
+      if: steps.sccache.outcome == 'success'
       run: sccache --show-stats

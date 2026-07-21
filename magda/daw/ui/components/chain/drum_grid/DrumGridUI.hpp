@@ -162,6 +162,7 @@ class DrumGridUI : public juce::Component,
 
     //==============================================================================
     // Component overrides
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;

@@ -38,6 +38,7 @@ class FMUI : public juce::Component {
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
+    void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
 

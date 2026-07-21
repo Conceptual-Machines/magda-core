@@ -43,6 +43,7 @@ class TrackInspector : public BaseInspector,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
 
     /**
      * @brief Set the currently selected track
@@ -143,6 +144,8 @@ class TrackInspector : public BaseInspector,
     std::vector<int> sectionSeparatorYs_;
 
     // Update methods
+    void applyThemeColours();
+    void rebuildRoutingIcons();
     void updateFromSelectedTrack();
     void updateFromMultiTrackSelection();
     void updateAutomatedParametersSummary();

@@ -69,6 +69,7 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
+    void lookAndFeelChanged() override;
 
     // Fires after expansion state changes so the parent strip can relayout.
     std::function<void()> onExpandChanged;

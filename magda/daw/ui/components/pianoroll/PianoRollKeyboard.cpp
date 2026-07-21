@@ -25,8 +25,15 @@ int PianoRollKeyboard::noteForRow(int row) const {
 void PianoRollKeyboard::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
+    // The keyboard follows the physical instrument convention in every app
+    // theme. These are deliberately fixed rather than theme/custom palette
+    // roles; only interaction and pitch highlights use the active theme.
+    constexpr juce::uint32 naturalKeyColour = 0xFFE8E8E8;
+    constexpr juce::uint32 accidentalKeyColour = 0xFF1A1A1A;
+    constexpr juce::uint32 keySeparatorColour = 0xFFCCCCCC;
+
     // Background
-    g.setColour(juce::Colour(0xFF1a1a1a));
+    g.setColour(juce::Colour(accidentalKeyColour));
     g.fillRect(bounds);
 
     const int rows = rowCount();
@@ -49,16 +56,17 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
 
         if (isPressed) {
             // Highlight color for pressed key
-            g.setColour(juce::Colour(0xFF4A9EFF));  // Blue highlight
+            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_KEY_HIGHLIGHT));
         } else if (isBlackKey(note)) {
-            g.setColour(juce::Colour(0xFF1a1a1a));  // True black keys
+            g.setColour(juce::Colour(accidentalKeyColour));
         } else {
-            g.setColour(juce::Colour(0xFFE8E8E8));  // True white keys
+            g.setColour(juce::Colour(naturalKeyColour));
         }
         g.fillRect(keyArea);
 
         if (highlightedNotes_.find(note) != highlightedNotes_.end()) {
-            g.setColour(juce::Colour(0x556688CC));
+            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+                            .withAlpha(0x55 / 255.0f));
             g.fillRect(keyArea);
         }
 
@@ -66,7 +74,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
 
         // Subtle separator line between white keys
         if (!isBlackKey(note)) {
-            g.setColour(juce::Colour(0xFFCCCCCC));
+            g.setColour(juce::Colour(keySeparatorColour));
             g.drawHorizontalLine(y + noteHeight_ - 1, static_cast<float>(bounds.getX()),
                                  static_cast<float>(bounds.getRight()));
         }

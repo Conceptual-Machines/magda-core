@@ -167,9 +167,9 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
     // depth scales the swing magnitude. Mirrors the DSP's lfoAt(...)
     // formula in magda_chorus.dsp.
     const juce::Colour voiceColours[3] = {
-        DarkTheme::getColour(DarkTheme::ACCENT_BLUE_LIGHT),
-        DarkTheme::getColour(DarkTheme::ACCENT_GREEN),
-        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE),
+        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT),
+        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE),
+        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION),
     };
 
     for (int v = 0; v < voices_; ++v) {

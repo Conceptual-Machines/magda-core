@@ -21,7 +21,7 @@ void AddModButton::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
 
     // + icon
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
     auto centerX = bounds.getCentreX();
     auto centerY = bounds.getCentreY();
     float size = 20.0f;

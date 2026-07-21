@@ -6,14 +6,14 @@ namespace magda {
 
 // Forward declarations for tab page components (defined in PreferencesDialog.cpp)
 class GeneralPage;
-class ColoursPage;
+class AppearancePage;
 class RenderingPage;
 class PathsPage;
 class ShortcutsPage;
 
 /**
  * Preferences dialog for editing application configuration.
- * Organised into tabs: General, Colours, Rendering, Paths, Shortcuts.
+ * Organised into tabs: General, Appearance, Rendering, Paths, Shortcuts.
  */
 class PreferencesDialog : public juce::Component {
   public:
@@ -22,6 +22,7 @@ class PreferencesDialog : public juce::Component {
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+    void lookAndFeelChanged() override;
 
     // Apply current settings to Config
     void applySettings();
@@ -32,12 +33,12 @@ class PreferencesDialog : public juce::Component {
   private:
     juce::TabbedComponent tabbedComponent{juce::TabbedButtonBar::TabsAtTop};
     juce::Viewport generalPageViewport;
-    juce::Viewport coloursPageViewport;
+    juce::Viewport appearancePageViewport;
     juce::Viewport renderingPageViewport;
     juce::Viewport pathsPageViewport;
 
     std::unique_ptr<GeneralPage> generalPage;
-    std::unique_ptr<ColoursPage> coloursPage;
+    std::unique_ptr<AppearancePage> appearancePage;
     std::unique_ptr<RenderingPage> renderingPage;
     std::unique_ptr<PathsPage> pathsPage;
     std::unique_ptr<ShortcutsPage> shortcutsPage;

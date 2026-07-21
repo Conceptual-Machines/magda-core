@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -9,6 +10,10 @@ struct llama_model;
 struct llama_context;
 
 namespace magda {
+
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+struct LlamaModelManagerTestAccess;
+#endif
 
 class LlamaModelManager {
   public:
@@ -22,7 +27,7 @@ class LlamaModelManager {
 
     bool loadModel(const Config& config);
     void unloadModel();
-    bool isLoaded() const;
+    bool isLoaded() const noexcept;
     bool isLoading() const noexcept;
     std::string getLoadedModelPath() const;
 
@@ -45,6 +50,10 @@ class LlamaModelManager {
     InferenceResult infer(const InferenceRequest& req, TokenCallback onToken = nullptr);
 
   private:
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+    friend struct LlamaModelManagerTestAccess;
+#endif
+
     LlamaModelManager() = default;
     ~LlamaModelManager();
 
@@ -55,9 +64,14 @@ class LlamaModelManager {
 
     mutable std::mutex mutex_;
     std::atomic<bool> loading_{false};
+    // Lock-free loaded-status snapshot for message-thread reads: non-null means a
+    // model is loaded, and the pointee is its path. Single source of truth so the
+    // flag and the path can never disagree. Accessed via the std::atomic_load/
+    // atomic_store free functions (deprecated in C++20) because Apple's libc++
+    // does not ship std::atomic<std::shared_ptr>.
+    std::shared_ptr<const std::string> loadedPathSnapshot_;
     llama_model* model_ = nullptr;
     llama_context* ctx_ = nullptr;
-    std::string loadedPath_;
     Config config_;
 };
 

@@ -31,7 +31,7 @@ void LayoutDebugPanel::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1), 8.0f, 2.0f);
 
     // Title
@@ -72,9 +72,9 @@ void LayoutDebugPanel::addSlider(const juce::String& name, int* valuePtr, int mi
     row.slider->setColour(juce::Slider::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     row.slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     row.slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_BLUE).brighter());
+                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).brighter());
 
     // Capture valuePtr and label by pointer for the lambda
     auto* labelPtr = row.label.get();

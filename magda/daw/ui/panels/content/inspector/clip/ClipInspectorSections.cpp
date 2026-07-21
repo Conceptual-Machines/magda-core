@@ -173,7 +173,7 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (!categories_ || row < 0 || row >= static_cast<int>(categories_->size()))
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
             g.setColour(rowIsSelected ? DarkTheme::getTextColour()
@@ -214,7 +214,7 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (row < 0 || row >= items_.size())
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
             g.setColour(DarkTheme::getTextColour());
@@ -412,15 +412,18 @@ void ClipInspector::initClipPropertiesSection() {
     addChildComponent(*clipGhostIcon_);
 
     // Clip enable/disable toggle (#1736). Classic switch glyph in dual-icon
-    // mode: knob left / outline = off, knob right / filled = on — state
-    // reads from the icon itself, no colour coding. Drives the same clip
-    // state as the clip-editor header power toggle.
+    // mode: knob left / outline = off, knob right / filled = on. Geometry
+    // remains in the assets while both state colours resolve from code.
     clipEnabledToggle_ = std::make_unique<magda::SvgButton>(
         "ClipEnabled", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
     // Chip-style bordered button, matching the view|type chip next to it.
-    clipEnabledToggle_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
-    clipEnabledToggle_->setBorderColor(juce::Colour(0xff555555));
+    clipEnabledToggle_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    clipEnabledToggle_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    clipEnabledToggle_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
+                                                  DarkTheme::ICON_NEUTRAL);
+    clipEnabledToggle_->setStateColourReplacement(
+        juce::Colour(0xFF1E1E1E), DarkTheme::ICON_ON_ACCENT, DarkTheme::ICON_ON_ACCENT);
     clipEnabledToggle_->setBorderThickness(1.0f);
     clipEnabledToggle_->setIconPadding(2.0f);
     clipEnabledToggle_->setClickingTogglesState(false);
@@ -692,7 +695,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipLoopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
     clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipLoopToggle_->setActiveColor(juce::Colours::white);
-    clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     clipLoopToggle_->setClickingTogglesState(false);
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipIds_.empty())

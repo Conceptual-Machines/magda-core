@@ -180,7 +180,7 @@ void ValueLabelControl::showEditor(const juce::String& initialText) {
     editor_->setColour(juce::TextEditor::textColourId,
                        customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)));
     editor_->setColour(juce::TextEditor::highlightColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
 
@@ -289,8 +289,8 @@ void ValueLabelControl::paint(juce::Graphics& g) {
 
     const bool hasTint = tintState_ != TintState::None;
     const juce::Colour tintColour = tintState_ == TintState::Overridden
-                                        ? juce::Colour(DarkTheme::TEXT_DISABLED)
-                                        : juce::Colour(DarkTheme::ACCENT_PURPLE);
+                                        ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
+                                        : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
 
     if (hasTint) {
         // Automation highlight: a self-contained overlay (fill + outline) drawn
@@ -302,7 +302,7 @@ void ValueLabelControl::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.5f);
     } else if (drawBorder_) {
         const juce::Colour borderColour = (dragging_ || coEditing_)
-                                              ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                              ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
                                               : DarkTheme::getColour(DarkTheme::BORDER);
         g.setColour(borderColour.withMultipliedAlpha(alpha));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);

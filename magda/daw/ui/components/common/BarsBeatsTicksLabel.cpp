@@ -360,7 +360,7 @@ void BarsBeatsTicksLabel::SegmentLabel::startEditing() {
     editor_->setColour(juce::TextEditor::textColourId,
                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     editor_->setColour(juce::TextEditor::highlightColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
 

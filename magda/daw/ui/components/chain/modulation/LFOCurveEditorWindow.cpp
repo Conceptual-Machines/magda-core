@@ -19,7 +19,7 @@ LFOCurveEditorContent::LFOCurveEditorContent(magda::ModInfo* modInfo,
     // Configure the curve editor
     curveEditor_.setName("popupLFO");
     curveEditor_.setModInfo(modInfo);
-    curveEditor_.setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    curveEditor_.setCurveColour(DarkTheme::ACCENT_ATTENTION);
     curveEditor_.onWaveformChanged = std::move(onWaveformChanged);
     curveEditor_.onDragPreview = std::move(onDragPreview);
     addAndMakeVisible(curveEditor_);
@@ -34,7 +34,7 @@ void LFOCurveEditorContent::setupControls() {
     syncToggle_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     syncToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     syncToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     syncToggle_.setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -103,7 +103,7 @@ void LFOCurveEditorContent::setupControls() {
     loopOneShotToggle_.setColour(juce::TextButton::buttonColourId,
                                  DarkTheme::getColour(DarkTheme::SURFACE));
     loopOneShotToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                                 DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     loopOneShotToggle_.setColour(juce::TextButton::textColourOffId,
                                  DarkTheme::getSecondaryTextColour());
     loopOneShotToggle_.setColour(juce::TextButton::textColourOnId,
@@ -127,7 +127,7 @@ void LFOCurveEditorContent::setupControls() {
     msegToggle_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
     msegToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     msegToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     msegToggle_.setColour(juce::TextButton::textColourOnId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -244,7 +244,7 @@ void LFOCurveEditorContent::setupControls() {
     snapXToggle_.setColour(juce::TextButton::buttonColourId,
                            DarkTheme::getColour(DarkTheme::SURFACE));
     snapXToggle_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                           DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     snapXToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     snapXToggle_.setColour(juce::TextButton::textColourOnId,
                            DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -258,7 +258,7 @@ void LFOCurveEditorContent::setupControls() {
     snapYToggle_.setColour(juce::TextButton::buttonColourId,
                            DarkTheme::getColour(DarkTheme::SURFACE));
     snapYToggle_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                           DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     snapYToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     snapYToggle_.setColour(juce::TextButton::textColourOnId,
                            DarkTheme::getColour(DarkTheme::BACKGROUND));
@@ -272,7 +272,7 @@ void LFOCurveEditorContent::setupControls() {
     loopSnapToggle_.setColour(juce::TextButton::buttonColourId,
                               DarkTheme::getColour(DarkTheme::SURFACE));
     loopSnapToggle_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+                              DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
     loopSnapToggle_.setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getSecondaryTextColour());
     loopSnapToggle_.setColour(juce::TextButton::textColourOnId,

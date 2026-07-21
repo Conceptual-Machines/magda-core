@@ -404,7 +404,7 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     fillPath.closeSubPath();
 
     const auto accent =
-        hasCurveColour_ ? curveColour_ : DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+        hasCurveColour_ ? curveColour_ : DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
     g.setColour(accent.withAlpha(0.13f + drive_ * 0.08f));
     g.fillPath(fillPath);
     g.setColour(accent.withAlpha(0.9f));

@@ -53,7 +53,8 @@ class LaneHeaderButton : public juce::Button {
 
         // Glyph: a soft accent tint when on (reads as active without a loud
         // fill), neutral grey when off.
-        juce::Colour glyph = on ? activeColour_.brighter(0.5f) : juce::Colour(0xFFB3B3B3);
+        juce::Colour glyph =
+            on ? activeColour_.brighter(0.5f) : DarkTheme::getColour(DarkTheme::ICON_NEUTRAL);
         paintGlyph(g, glyph);
     }
 
@@ -69,7 +70,7 @@ class LaneHeaderButton : public juce::Button {
 class SnapIconLaneButton : public LaneHeaderButton {
   public:
     SnapIconLaneButton(const juce::String& name, const void* svgData, int svgSize)
-        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {
+        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {
         setClickingTogglesState(true);
         drawable_ = juce::Drawable::createFromImageData(svgData, svgSize);
     }
@@ -79,6 +80,7 @@ class SnapIconLaneButton : public LaneHeaderButton {
             return;
         auto copy = drawable_->createCopy();
         copy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+        DarkTheme::applyToSvgIcon(*copy);
         copy->drawWithin(g, getLocalBounds().toFloat().reduced(1.0f),
                          juce::RectanglePlacement::centred, 1.0f);
     }
@@ -94,7 +96,7 @@ class DeleteLaneButton : public LaneHeaderButton {
   public:
     DeleteLaneButton()
         : LaneHeaderButton(
-              "Delete", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+              "Delete", DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
                             .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
                             .darker(0.2f)) {}
 
@@ -107,7 +109,7 @@ class DeleteLaneButton : public LaneHeaderButton {
         // destructive action without a loud fill.
         const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
         const auto accent =
-            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+            DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
                 .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f);
         juce::Colour bg = surface;
         if (isButtonDown)
@@ -136,7 +138,8 @@ class DeleteLaneButton : public LaneHeaderButton {
 // grey on SURFACE, On = white on cyan — same colour rules as snap toggles.
 class PowerGlyphButton : public LaneHeaderButton {
   public:
-    PowerGlyphButton() : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {
+    PowerGlyphButton()
+        : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {
         setClickingTogglesState(true);
     }
 
@@ -177,7 +180,8 @@ class PowerGlyphButton : public LaneHeaderButton {
 // (undoable ConvertAutomationLaneTypeCommand).
 class LaneModeButton : public LaneHeaderButton {
   public:
-    LaneModeButton() : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {}
+    LaneModeButton()
+        : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {}
 
     // Not an on/off toggle — both modes are first-class states with their
     // own hue: clips = blue (the arrangement-object language), free-drawn
@@ -187,8 +191,8 @@ class LaneModeButton : public LaneHeaderButton {
         auto bounds = getLocalBounds().toFloat().reduced(0.5f);
         constexpr float corner = 3.0f;
         const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-        const auto accent = getToggleState() ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
-                                             : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE);
+        const auto accent = getToggleState() ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+                                             : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
         juce::Colour bg = accent.interpolatedWith(surface, 0.62f);
         if (isButtonDown)
             bg = bg.darker(0.2f);
@@ -360,11 +364,11 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     auto headerArea = juce::Rectangle<int>(0, y, width, AutomationLaneComponent::HEADER_HEIGHT);
 
     // Header background
-    g.setColour(juce::Colour(0xFF252525));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_HEADER));
     g.fillRect(headerArea);
 
     // Header border
-    g.setColour(juce::Colour(0xFF333333));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
     g.drawHorizontalLine(headerArea.getBottom() - 1, static_cast<float>(headerArea.getX()),
                          static_cast<float>(headerArea.getRight()));
 
@@ -372,12 +376,12 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     // from the name/watermark with a vertical divider.
     auto nameArea = headerArea.reduced(4, 2);
     nameArea.removeFromRight(kModeSlotWidth);
-    g.setColour(juce::Colour(0xFF3A3A3A));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_GUIDE));
     g.drawVerticalLine(width - kModeSlotWidth, static_cast<float>(headerArea.getY() + 3),
                        static_cast<float>(headerArea.getBottom() - 3));
 
     // Parameter name
-    g.setColour(juce::Colour(0xFFCCCCCC));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_TEXT));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(lane.getDisplayName(), nameArea, juce::Justification::centredLeft);
 
@@ -386,7 +390,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     // param name. Faint so it sits behind the active content.
     if (const auto* track = TrackManager::getInstance().getTrack(lane.target.devicePath.trackId)) {
         if (track->name.isNotEmpty()) {
-            g.setColour(juce::Colour(0xFFCCCCCC).withAlpha(0.32f));
+            g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_TEXT).withAlpha(0.32f));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(track->name, nameArea, juce::Justification::centredRight);
         }
@@ -545,12 +549,12 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
             for (const auto& [norm, label] : gridValues) {
                 int tickY = contentTop + static_cast<int>((1.0 - norm) * contentHeight);
                 // Tick
-                g.setColour(juce::Colour(0x66FFFFFF));
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x66 / 255.0f));
                 g.drawHorizontalLine(tickY, rightEdge - tickLen, rightEdge);
                 // Label — clamp vertically so min/max labels flush against the
                 // lane edges instead of clipping against the header / resize
                 // handle.
-                g.setColour(juce::Colour(0xFF777777));
+                g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_LABEL));
                 int labelTop = juce::jlimit(contentTop, contentBottom - labelH, tickY - 5);
                 auto labelBounds = juce::Rectangle<int>(2, labelTop, width - 10, labelH);
                 g.drawText(label, labelBounds, juce::Justification::centredRight);
@@ -560,9 +564,9 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
 
     // Bottom border — matches the resize handle area on the content side
     int borderY = y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT;
-    g.setColour(juce::Colour(0xFF333333));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
     g.fillRect(0, borderY, width, AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);
-    g.setColour(juce::Colour(0xFF444444));
+    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT));
     g.drawHorizontalLine(borderY, 0.0f, static_cast<float>(width));
 }
 
