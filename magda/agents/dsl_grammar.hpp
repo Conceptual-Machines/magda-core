@@ -141,7 +141,7 @@ METHOD CHAINING:
 - .track.set(name="X", colour="#ff5a36", volume_db=-3, pan=0.5, mute=true, solo=true)
 - .track.group(name="Drums", tracks="1,2,3") - Group existing tracks by 1-based IDs from the state snapshot; context switches to the new group
 - .track.move(index=N) - Move the track (or group) to 1-based position N among its siblings (top-level tracks, or its parent group's children)
-- .fx.add(name="eq") - Add internal FX (eq, compressor, reverb, delay, chorus, phaser, filter, utility, pitch shift, ir reverb)
+- .fx.add(name="DEVICE_NAME") - Add a MAGDA internal device by exact display name or by a canonical alias from the registry-derived catalog appended below. Every listed catalog alias is accepted by the resolver.
 - .fx.add(name="<plugin_alias>") - Add third-party plugin using alias token (e.g. <serum_2>, <pro_q_3>, <surge_xt>)
 - .fx.add(name="Pro-Q 3") - Add plugin by exact display name (prefer alias tokens when available)
 - .fx.add(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
@@ -246,6 +246,10 @@ BUILT-IN FUNCTIONS:
 SELECTED-TRACK TARGETING (IMPORTANT):
 The DAW state JSON includes "selected_track_id" when a track is selected, and
 "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
+It also includes a bounded "selected_track.devices" array with each device's
+id, chain path, display name, plugin id, type, and declared capabilities. When
+a device is selected, "selected_device" adds up to 24 safe parameter summaries.
+Use this context to identify devices already present; do not invent device ids.
 
 When "selected_track_id" is present in the state, target that track BY DEFAULT
 for every content operation — clip.new, note.add, fx.add, track.set_*, etc. —

@@ -1222,8 +1222,8 @@ bool Interpreter::executeAddFx(const Params& params) {
         fxName = fxName.substring(1, fxName.length() - 1);
 
     // --- Internal plugin lookup ---
-    // Built-in plugins are listed in internal_plugins.hpp — single canonical
-    // alias per plugin, matching the autocomplete dropdown.
+    // Built-in plugins come from the audio registries through internal_plugins.hpp.
+    // Display names, IDs and registry compatibility aliases are all accepted.
     if (const auto* match = lookupInternalPluginByAlias(fxName)) {
         DeviceInfo device;
         device.name = match->displayName;
@@ -1799,7 +1799,130 @@ double Interpreter::barsToBeats(double bars) const {
 
 namespace {
 std::atomic<bool> g_contextEnabled{true};
+
+constexpr int kMaxSelectedDeviceParameters = 24;
+constexpr int kMaxSelectedTrackDevices = 64;
+
+juce::String deviceTypeName(DeviceType type) {
+    switch (type) {
+        case DeviceType::Instrument:
+            return "instrument";
+        case DeviceType::Effect:
+            return "effect";
+        case DeviceType::MIDI:
+            return "midi";
+        case DeviceType::Analysis:
+            return "analysis";
+    }
+    return "unknown";
 }
+
+juce::var capabilitySummary(const juce::String& pluginId) {
+    auto* object = new juce::DynamicObject();
+    const auto* catalogEntry = lookupInternalPluginById(pluginId);
+    const auto& capabilities = getInternalPluginCapabilities(pluginId);
+    object->setProperty("catalogued", catalogEntry != nullptr);
+    object->setProperty("addable", capabilities.addable);
+    object->setProperty("automatable", capabilities.automatable);
+    object->setProperty("drum_role_provider", capabilities.drumRoleProvider);
+    object->setProperty("sound_design_agent", capabilities.supportsSoundDesign());
+    object->setProperty("coder_agent", capabilities.supportsCoder());
+
+    juce::Array<juce::var> aliases;
+    for (const auto& alias : capabilities.parameterAliases)
+        aliases.add(alias);
+    object->setProperty("parameter_aliases", aliases);
+    return juce::var(object);
+}
+
+juce::var parameterSummary(const ParameterInfo& parameter) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("index", parameter.paramIndex);
+    object->setProperty("name", parameter.name.substring(0, 96));
+    if (parameter.unit.isNotEmpty())
+        object->setProperty("unit", parameter.unit.substring(0, 32));
+    if (std::isfinite(parameter.currentValue))
+        object->setProperty("value", parameter.currentValue);
+    if (std::isfinite(parameter.minValue))
+        object->setProperty("min", parameter.minValue);
+    if (std::isfinite(parameter.maxValue))
+        object->setProperty("max", parameter.maxValue);
+    object->setProperty("modulatable", parameter.modulatable);
+    return juce::var(object);
+}
+
+juce::var deviceSummary(const DeviceInfo& device, const ChainNodePath& path,
+                        bool includeParameters) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", device.id);
+    object->setProperty("path", path.toString());
+    object->setProperty("display_name", device.name.substring(0, 128));
+    object->setProperty("plugin_id", device.pluginId.substring(0, 256));
+    object->setProperty("type", deviceTypeName(device.deviceType));
+    object->setProperty("bypassed", device.bypassed);
+    object->setProperty("parameter_count", static_cast<int>(device.parameters.size()));
+    object->setProperty("capabilities", capabilitySummary(device.pluginId));
+
+    if (includeParameters) {
+        juce::Array<juce::var> parameters;
+        for (const auto& parameter : device.parameters) {
+            if (parameter.hidden)
+                continue;
+            parameters.add(parameterSummary(parameter));
+            if (parameters.size() >= kMaxSelectedDeviceParameters)
+                break;
+        }
+        object->setProperty("parameters", parameters);
+        object->setProperty("parameters_truncated", static_cast<int>(device.parameters.size()) >
+                                                        kMaxSelectedDeviceParameters);
+    }
+    return juce::var(object);
+}
+
+struct DeviceAtPath {
+    const DeviceInfo* device = nullptr;
+    ChainNodePath path;
+};
+
+void collectRackDevices(const RackInfo& rack, const ChainNodePath& rackPath,
+                        std::vector<DeviceAtPath>& devices) {
+    for (const auto& chain : rack.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                devices.push_back({&device, chainPath.withDevice(device.id)});
+            } else {
+                const auto& nestedRack = getRack(element);
+                const auto nestedPath = chainPath.withRack(nestedRack.id);
+                collectRackDevices(nestedRack, nestedPath, devices);
+            }
+        }
+    }
+}
+
+std::vector<DeviceAtPath> collectTrackDevices(const TrackInfo& track) {
+    std::vector<DeviceAtPath> devices;
+    for (const auto& element : track.chain.fxChainElements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            devices.push_back({&device, ChainNodePath::topLevelDevice(track.id, device.id)});
+        } else {
+            const auto& rack = getRack(element);
+            collectRackDevices(rack, ChainNodePath::rack(track.id, rack.id), devices);
+        }
+    }
+    for (const auto& element : track.chain.postFxChainElements) {
+        devices.push_back(
+            {&element.device, ChainNodePath::postFxDevice(track.id, element.device.id)});
+    }
+    for (const auto& element : track.chain.mixerAnalysisElements) {
+        devices.push_back(
+            {&element.device, ChainNodePath::mixerAnalysisDevice(track.id, element.device.id)});
+    }
+    return devices;
+}
+}  // namespace
 
 void Interpreter::setContextEnabled(bool enabled) {
     g_contextEnabled.store(enabled, std::memory_order_relaxed);
@@ -1870,6 +1993,9 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
 
     auto& sm = api.selection();
     auto selTrack = sm.getSelectedTrack();
+    const auto selectedChainNode = sm.getSelectedChainNode();
+    if (selTrack == INVALID_TRACK_ID && selectedChainNode.isValid())
+        selTrack = selectedChainNode.trackId;
     if (selTrack == MASTER_TRACK_ID) {
         // Master selected = operate on every track. Emit a scope marker so the
         // LLM emits implicit-target ops (MUTE/SET/FX with no ref) that the
@@ -1888,8 +2014,41 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
             }
             selIndex++;
         }
-        if (found)
+        if (found) {
             root->setProperty("selected_track_id", selIndex);
+            if (const auto* selectedTrack = tm.getTrack(selTrack)) {
+                auto* selectedTrackObj = new juce::DynamicObject();
+                selectedTrackObj->setProperty("id", selIndex);
+                selectedTrackObj->setProperty("model_id", selectedTrack->id);
+                selectedTrackObj->setProperty("name", selectedTrack->name.substring(0, 128));
+                selectedTrackObj->setProperty("type",
+                                              juce::String(getTrackTypeName(selectedTrack->type)));
+
+                const auto devices = collectTrackDevices(*selectedTrack);
+                juce::Array<juce::var> deviceArray;
+                for (const auto& item : devices) {
+                    deviceArray.add(deviceSummary(*item.device, item.path, false));
+                    if (deviceArray.size() >= kMaxSelectedTrackDevices)
+                        break;
+                }
+                selectedTrackObj->setProperty("devices", deviceArray);
+                selectedTrackObj->setProperty("devices_truncated",
+                                              static_cast<int>(devices.size()) >
+                                                  kMaxSelectedTrackDevices);
+                root->setProperty("selected_track", juce::var(selectedTrackObj));
+
+                if (selectedChainNode.getType() == ChainNodeType::Device ||
+                    selectedChainNode.getType() == ChainNodeType::TopLevelDevice) {
+                    for (const auto& item : devices) {
+                        if (item.path == selectedChainNode) {
+                            root->setProperty("selected_device",
+                                              deviceSummary(*item.device, item.path, true));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Selected clip context

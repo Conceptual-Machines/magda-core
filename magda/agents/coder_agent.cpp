@@ -128,8 +128,8 @@ class FaustCoderAgent : public CoderAgent {
 }  // namespace
 
 std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId) {
-    switch (internalPluginFromId(pluginId)) {
-        case InternalPlugin::Faust:
+    switch (getInternalPluginCapabilities(pluginId).coderAgent) {
+        case CoderAgentKind::Faust:
             return std::make_unique<FaustCoderAgent>();
         default:
             return nullptr;
@@ -137,7 +137,7 @@ std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId) {
 }
 
 bool isCoderSupported(const juce::String& pluginId) {
-    return createCoderAgentFor(pluginId) != nullptr;
+    return getInternalPluginCapabilities(pluginId).supportsCoder();
 }
 
 std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId) {
@@ -149,7 +149,7 @@ std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& plugin
 }
 
 bool isDeviceAISupported(const juce::String& pluginId) {
-    return isSoundDesignSupported(pluginId) || isCoderSupported(pluginId);
+    return getInternalPluginCapabilities(pluginId).supportsDeviceAI();
 }
 
 }  // namespace magda

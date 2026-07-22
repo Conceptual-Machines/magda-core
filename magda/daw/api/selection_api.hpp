@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
 
@@ -34,6 +35,7 @@ class SelectionApi {
     virtual TrackId getSelectedTrack() const = 0;
     virtual ClipId getSelectedClip() const = 0;
     virtual const std::unordered_set<ClipId>& getSelectedClips() const = 0;
+    virtual ChainNodePath getSelectedChainNode() const = 0;
 
     /**
      * @return The lane id of the currently selected automation lane, or

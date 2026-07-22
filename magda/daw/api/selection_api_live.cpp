@@ -18,6 +18,10 @@ const std::unordered_set<ClipId>& SelectionApiLive::getSelectedClips() const {
     return SelectionManager::getInstance().getSelectedClips();
 }
 
+ChainNodePath SelectionApiLive::getSelectedChainNode() const {
+    return SelectionManager::getInstance().getSelectedChainNode();
+}
+
 AutomationLaneId SelectionApiLive::getSelectedAutomationLaneId() const {
     auto& sel = SelectionManager::getInstance();
     if (!sel.hasAutomationLaneSelection())

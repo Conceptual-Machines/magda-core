@@ -10,6 +10,7 @@ class SelectionApiLive : public SelectionApi {
     TrackId getSelectedTrack() const override;
     ClipId getSelectedClip() const override;
     const std::unordered_set<ClipId>& getSelectedClips() const override;
+    ChainNodePath getSelectedChainNode() const override;
 
     AutomationLaneId getSelectedAutomationLaneId() const override;
     AutomationClipId getSelectedAutomationClipId() const override;

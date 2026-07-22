@@ -645,8 +645,8 @@ bool InstructionExecutor::executeFx(const FxOp& op) {
 }
 
 bool InstructionExecutor::addFxToTrack(int trackId, const juce::String& fxName) {
-    // Internal plugin lookup — shares internal_plugins.hpp with the DSL
-    // interpreter so a single canonical alias per plugin is accepted by both.
+    // Internal plugin lookup shares the registry-derived catalog with the DSL
+    // interpreter, including display names, IDs and compatibility aliases.
     if (const auto* match = lookupInternalPluginByAlias(fxName)) {
         DeviceInfo device;
         device.name = match->displayName;

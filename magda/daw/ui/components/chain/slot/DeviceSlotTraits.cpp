@@ -1,8 +1,6 @@
 #include "slot/DeviceSlotTraits.hpp"
 
-#include "../../../../../agents/coder_agent.hpp"
 #include "../../../../../agents/internal_plugins.hpp"
-#include "../../../../../agents/sound_design_agent.hpp"
 #include "core/InternalDeviceKind.hpp"
 
 namespace magda::daw::ui {
@@ -25,8 +23,9 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     traits.isAnalysis = magda::isAnalysisDevice(pluginId);
     traits.hasAnalyzerPopout = kind == magda::InternalDeviceKind::Oscilloscope ||
                                kind == magda::InternalDeviceKind::SpectrumAnalyzer;
-    traits.isAISupported = magda::isDeviceAISupported(pluginId);
-    traits.isSoundDesignSupported = magda::isSoundDesignSupported(pluginId);
+    const auto& agentCapabilities = magda::getInternalPluginCapabilities(pluginId);
+    traits.isAISupported = agentCapabilities.supportsDeviceAI();
+    traits.isSoundDesignSupported = agentCapabilities.supportsSoundDesign();
     traits.isTracktionDevice = magda::isTracktionEngineStockPlugin(pluginId);
     traits.compiledPresentation = findCompiledPresentation(pluginId);
     return traits;

@@ -149,6 +149,7 @@ class MockSelectionApi : public SelectionApi {
     TrackId selectedTrack = INVALID_TRACK_ID;
     ClipId selectedClip = INVALID_CLIP_ID;
     std::unordered_set<ClipId> selectedClips;
+    ChainNodePath selectedChainNode;
     bool noteSelectionPresent = false;
     ClipId noteSelectionClipId = INVALID_CLIP_ID;
     std::vector<size_t> noteSelectionIndices;
@@ -168,6 +169,9 @@ class MockSelectionApi : public SelectionApi {
     }
     const std::unordered_set<ClipId>& getSelectedClips() const override {
         return selectedClips;
+    }
+    ChainNodePath getSelectedChainNode() const override {
+        return selectedChainNode;
     }
     AutomationLaneId getSelectedAutomationLaneId() const override {
         return INVALID_AUTOMATION_LANE_ID;
