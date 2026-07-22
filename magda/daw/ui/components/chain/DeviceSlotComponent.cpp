@@ -1494,9 +1494,13 @@ void DeviceSlotComponent::goToNextPage() {
 // ============================================================================
 
 void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
+    // SelectionManager deliberately notifies listeners when the current node is selected again.
+    // NodeComponent uses that reselection to support header-click collapse/expand, but it must not
+    // be treated as a fresh selection by the "open macros on select" preference.
+    const bool wasAlreadySelected = isSelected();
     NodeComponent::chainNodeSelectionChanged(path);
 
-    if (!nodePath_.isValid() || path != nodePath_) {
+    if (wasAlreadySelected || !nodePath_.isValid() || path != nodePath_) {
         return;
     }
 
