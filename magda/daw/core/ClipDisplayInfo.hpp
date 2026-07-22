@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "ClipInfo.hpp"
 #include "TempoUtils.hpp"
@@ -32,9 +33,10 @@ struct ClipDisplayInfo {
     double startTime;   // clip start on timeline (seconds)
     double length;      // clip duration on timeline (seconds)
     double endTime;     // startTime + length
-    double offset;      // source file offset (seconds) — TE: Clip::offset
+    double offset;      // original source-file offset (seconds)
     double speedRatio;  // time stretch ratio — TE: Clip::speedRatio
                         // In autoTempo mode, speedRatio is always 1.0 (TE handles stretching).
+    bool reversed;
 
     // ------- Source file extent (the only "what to draw" answer) -------
     // Always describes the source audio on disk; never a loop subset.
@@ -62,6 +64,11 @@ struct ClipDisplayInfo {
     double offsetPositionSeconds;     // offset in timeline coords (from file start)
     double loopOffset;                // phase within the loop region (source-time)
     double loopPhasePositionSeconds;  // phase position in timeline coords
+
+    // Active editor span on the original source-file ruler. Reversal mirrors
+    // waveform content inside this range without moving the range itself.
+    double activeRegionStartPositionSeconds;
+    double activeRegionEndPositionSeconds;
 
     // ------- Source-time ↔ timeline-time conversion -------
     // One ratio drives every conversion. Computed once in the factory so
@@ -129,10 +136,42 @@ struct ClipDisplayInfo {
         return offsetPositionSeconds + sessionPlayheadSeconds;
     }
 
-    /// Convert a timeline position (timeline-seconds, anchored at file start = 0)
-    /// to absolute source-file time.
+    /// Convert an editor-ruler position to original-file time. Outside the
+    /// active span the source stays forward; inside a reversed span it mirrors.
     double displayPositionToSourceTime(double timelinePos) const {
-        return timelineToSource(timelinePos);
+        double sourceDisplayPosition = timelinePos;
+        if (reversed && timelinePos >= activeRegionStartPositionSeconds &&
+            timelinePos <= activeRegionEndPositionSeconds) {
+            sourceDisplayPosition =
+                activeRegionStartPositionSeconds + activeRegionEndPositionSeconds - timelinePos;
+        }
+        return sourceFileStart + timelineToSource(sourceDisplayPosition);
+    }
+
+    /// Convert an original-file source position to the editor ruler position.
+    /// Only positions inside the reversed active span are mirrored.
+    double sourceTimeToDisplayPosition(double sourceTime) const {
+        double displayPosition = sourceToTimeline(sourceTime - sourceFileStart);
+        if (reversed && displayPosition >= activeRegionStartPositionSeconds &&
+            displayPosition <= activeRegionEndPositionSeconds) {
+            displayPosition =
+                activeRegionStartPositionSeconds + activeRegionEndPositionSeconds - displayPosition;
+        }
+        return displayPosition;
+    }
+
+    /// Convert a ruler/display range to an ascending original-file range.
+    std::pair<double, double> displayRangeToSourceRange(double displayStart,
+                                                        double displayEnd) const {
+        const double sourceAtStart = displayPositionToSourceTime(displayStart);
+        const double sourceAtEnd = displayPositionToSourceTime(displayEnd);
+        return {std::min(sourceAtStart, sourceAtEnd), std::max(sourceAtStart, sourceAtEnd)};
+    }
+
+    /// A rightward editor drag moves backwards through the original file when reversed.
+    double displayDeltaToSourceDelta(double timelineDelta) const {
+        const double sourceDelta = timelineToSource(timelineDelta);
+        return reversed ? -sourceDelta : sourceDelta;
     }
 
     // ============================================================
@@ -160,6 +199,7 @@ struct ClipDisplayInfo {
         d.endTime = clipStart + clipLength;
         d.offset = clipOffset;
         d.speedRatio = clip.speedRatio;
+        d.reversed = clip.isReversed;
 
         d.autoTempo = clip.autoTempo;
         d.lengthBeats = clip.placement.lengthBeats;
@@ -232,12 +272,19 @@ struct ClipDisplayInfo {
                 ? wrapPhase(clipOffset - d.loopRegionStartSource, d.loopRegionLengthSource)
                 : 0.0;
 
-        // ---- Loop region in timeline-time ----
+        // ---- Editor regions in original-source timeline-time ----
         d.loopStartPositionSeconds = d.sourceToTimeline(d.loopRegionStartSource);
         d.loopLengthSeconds = d.sourceToTimeline(d.loopRegionLengthSource);
         d.loopEndPositionSeconds = d.loopStartPositionSeconds + d.loopLengthSeconds;
+
         d.offsetPositionSeconds = d.sourceToTimeline(clipOffset);
         d.loopPhasePositionSeconds = d.loopStartPositionSeconds + d.sourceToTimeline(d.loopOffset);
+
+        d.activeRegionStartPositionSeconds =
+            d.isLooped() ? d.loopStartPositionSeconds : d.offsetPositionSeconds;
+        d.activeRegionEndPositionSeconds =
+            d.isLooped() ? d.loopEndPositionSeconds
+                         : std::min(d.offsetPositionSeconds + clipLength, d.fileExtentTimeline());
 
         return d;
     }

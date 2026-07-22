@@ -375,6 +375,99 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
     }
 }
 
+TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source ruler",
+          "[clip][display][reverse][regression][issue-1794]") {
+    using namespace magda;
+
+    SECTION("trimmed range uses the matching original-file segment") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 2.0;
+        clip.offset = 2.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = false;
+        clip.isReversed = true;
+
+        syncPlacement(clip);
+        const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
+
+        const auto editorRange = di.displayRangeToSourceRange(2.0, 4.0);
+        REQUIRE(editorRange.first == Catch::Approx(2.0));
+        REQUIRE(editorRange.second == Catch::Approx(4.0));
+
+        REQUIRE(di.offsetPositionSeconds == Catch::Approx(2.0));
+        REQUIRE(di.activeRegionStartPositionSeconds == Catch::Approx(2.0));
+        REQUIRE(di.activeRegionEndPositionSeconds == Catch::Approx(4.0));
+        REQUIRE(di.sourceTimeToDisplayPosition(4.0) == Catch::Approx(2.0));
+        REQUIRE(di.sourceTimeToDisplayPosition(2.0) == Catch::Approx(4.0));
+        REQUIRE(di.displayPositionToSourceTime(2.0) == Catch::Approx(4.0));
+        REQUIRE(di.displayPositionToSourceTime(4.0) == Catch::Approx(2.0));
+        REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(2.0));
+    }
+
+    SECTION("a scrolled visible slice maps independently of the viewport") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 2.0;
+        clip.offset = 2.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = false;
+        clip.isReversed = true;
+
+        syncPlacement(clip);
+        const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
+        const auto visibleRange = di.displayRangeToSourceRange(2.5, 3.5);
+
+        REQUIRE(visibleRange.first == Catch::Approx(2.5));
+        REQUIRE(visibleRange.second == Catch::Approx(3.5));
+        REQUIRE(di.displayPositionToSourceTime(2.5) == Catch::Approx(3.5));
+        REQUIRE(di.displayPositionToSourceTime(3.5) == Catch::Approx(2.5));
+    }
+
+    SECTION("time stretching is applied before reverse source lookup") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 1.0;
+        clip.offset = 2.0;
+        clip.speedRatio = 2.0;
+        clip.loopEnabled = false;
+        clip.isReversed = true;
+
+        syncPlacement(clip);
+        const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
+        const auto visibleRange = di.displayRangeToSourceRange(1.0, 2.0);
+
+        REQUIRE(visibleRange.first == Catch::Approx(2.0));
+        REQUIRE(visibleRange.second == Catch::Approx(4.0));
+        REQUIRE(di.offsetPositionSeconds == Catch::Approx(1.0));
+        REQUIRE(di.sourceTimeToDisplayPosition(4.0) == Catch::Approx(1.0));
+        REQUIRE(di.displayDeltaToSourceDelta(0.5) == Catch::Approx(-1.0));
+    }
+
+    SECTION("forward clips preserve the existing source mapping") {
+        ClipInfo clip;
+        clip.setAudioContent();
+        clip.startTime = 0.0;
+        clip.length = 2.0;
+        clip.offset = 2.0;
+        clip.speedRatio = 1.0;
+        clip.loopEnabled = false;
+        clip.isReversed = false;
+
+        syncPlacement(clip);
+        const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
+        const auto visibleRange = di.displayRangeToSourceRange(2.0, 4.0);
+
+        REQUIRE(visibleRange.first == Catch::Approx(2.0));
+        REQUIRE(visibleRange.second == Catch::Approx(4.0));
+        REQUIRE(di.sourceTimeToDisplayPosition(3.0) == Catch::Approx(3.0));
+        REQUIRE(di.displayDeltaToSourceDelta(0.5) == Catch::Approx(0.5));
+    }
+}
+
 // ============================================================================
 // Partial tile source range calculation
 // ============================================================================

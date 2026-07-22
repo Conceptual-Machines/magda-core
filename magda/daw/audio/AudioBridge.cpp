@@ -1181,13 +1181,24 @@ void AudioBridge::timerCallback() {
                 for (auto* teClip : track->getClips()) {
                     if (teClip->itemID.toString().toStdString() == *engineId) {
                         if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
-                            auto proxyFile = audioClip->getPlaybackFile().getFile();
-                            if (proxyFile.existsAsFile()) {
+                            auto playbackFile = audioClip->getPlaybackFile();
+                            const bool renderInProgress =
+                                engine_.getRenderManager().isProxyBeingGenerated(playbackFile);
+                            if (playbackFile.isValid() && !renderInProgress) {
                                 DBG("REVERSE TIMER: proxy ready — reallocating ("
-                                    << proxyFile.getFullPathName() << ")");
+                                    << playbackFile.getFile().getFullPathName() << ")");
                                 clipSynchronizer_.clearPendingReverseClipId();
-                                if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-                                    ctx->reallocate();
+                                // AudioFile::isValid() can become true before ReverseRenderJob has
+                                // finished validating and releasing the file from Tracktion's audio
+                                // cache. Rebuilding during that window preserves the silent reader
+                                // created while the proxy did not exist. Once the render manager no
+                                // longer owns a job for this proxy, validation is complete and a
+                                // new graph can safely open it.
+                                if (auto* context = edit_.getCurrentPlaybackContext())
+                                    context->reallocate();
+                                else
+                                    edit_.restartPlayback();
+                                if (edit_.getCurrentPlaybackContext() != nullptr) {
                                     if (clipSynchronizer_.onGraphReallocated)
                                         clipSynchronizer_.onGraphReallocated();
                                 }
