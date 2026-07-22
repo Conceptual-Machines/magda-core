@@ -5,7 +5,6 @@
 #include <map>
 #include <optional>
 #include <unordered_set>
-#include <utility>
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/ClipOperations.hpp"
@@ -19,14 +18,6 @@
 namespace magda {
 
 namespace {
-
-void traceReverseDelayed(juce::String message) {
-    const auto line =
-        juce::Time::getCurrentTime().toISO8601(true) + " [ClipSynchronizer] " + std::move(message);
-    juce::Timer::callAfterDelay(1000, [line] {
-        juce::File("/tmp/magda-reverse-async.log").appendText(line + "\n", false, false, "\n");
-    });
-}
 
 // Project tempo sampled at the clip's start beat (curve-aware), for the
 // source<->time conversions TE's time-only APIs (clip offset, non-autoTempo
@@ -1933,18 +1924,6 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     // TE's reversed offset/loop with our canonical original-source values.
     // The playback graph rebuild is deferred until the proxy file is ready.
     if (clip->isReversed != audioClipPtr->getIsReversed()) {
-        traceReverseDelayed(
-            "toggle clip=" + juce::String(clipId) +
-            " created=" + juce::String(static_cast<int>(createdAudioClip)) +
-            " requested=" + juce::String(static_cast<int>(clip->isReversed)) +
-            " loop=" + juce::String(static_cast<int>(clip->loopEnabled)) +
-            " autoTempo=" + juce::String(static_cast<int>(clip->autoTempo)) +
-            " warp=" + juce::String(static_cast<int>(clip->warpEnabled)) + " speed=" +
-            juce::String(clip->speedRatio, 6) + " modelOffset=" + juce::String(clip->offset, 6) +
-            " modelLoopStart=" + juce::String(clip->loopStart, 6) +
-            " modelLoopLength=" + juce::String(clip->loopLength, 6) + " teOffsetBefore=" +
-            juce::String(audioClipPtr->getPosition().getOffset().inSeconds(), 6) +
-            " teLength=" + juce::String(audioClipPtr->getPosition().getLength().inSeconds(), 6));
         audioClipPtr->setIsReversed(clip->isReversed);
 
         // Tracktion mirrors its offset/loop values into reversed-proxy coordinates.
@@ -1954,15 +1933,6 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
         // Check if the reversed proxy file is ready
         auto playbackFile = audioClipPtr->getPlaybackFile();
-        traceReverseDelayed(
-            "transformed clip=" + juce::String(clipId) + " teOffsetAfter=" +
-            juce::String(audioClipPtr->getPosition().getOffset().inSeconds(), 6) +
-            " teLoopStart=" + juce::String(audioClipPtr->getLoopStart().inSeconds(), 6) +
-            " teLoopLength=" + juce::String(audioClipPtr->getLoopLength().inSeconds(), 6) +
-            " proxyExists=" +
-            juce::String(static_cast<int>(playbackFile.getFile().existsAsFile())) +
-            " proxyValid=" + juce::String(static_cast<int>(playbackFile.isValid())) +
-            " proxy=" + playbackFile.getFile().getFullPathName());
         if (playbackFile.isValid()) {
             // Source-file changes are picked up by Tracktion on its next message-cycle
             // restart. Reallocating synchronously inside this property callback can build
@@ -1977,15 +1947,6 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // the reverse proxy timer will reallocate again when the proxy becomes playable.
         return needsGraphReallocation;  // Don't let subsequent sync steps overwrite TE's reversed
                                         // state
-    }
-
-    if (clip->isReversed) {
-        const auto playbackFile = audioClipPtr->getPlaybackFile();
-        traceReverseDelayed(
-            "resync reversed clip=" + juce::String(clipId) +
-            " modelOffset=" + juce::String(clip->offset, 6) +
-            " teOffset=" + juce::String(audioClipPtr->getPosition().getOffset().inSeconds(), 6) +
-            " proxyValid=" + juce::String(static_cast<int>(playbackFile.isValid())));
     }
 
     // 4. UPDATE clip position/length

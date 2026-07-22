@@ -110,6 +110,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testBatchPropertyChangeUpdatesArrangementClipsSynchronously();
         testPropertyChangeCreatesMissingArrangementClipAndReallocatesOnce();
         testPropertyChangeCreatesMissingReversedArrangementClipSynchronously();
+        testAudioCacheRefreshesMetadataAfterRenderedProxyAppears();
         testTrimmedReverseKeepsSelectedSourceAudio();
         testBatchSessionSlotCreationReallocatesOnce();
         testDisabledSessionClipSyncsDisabled();
@@ -870,6 +871,58 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         auto result = f.renderToSeconds(1.0);
         if (hasRenderableBuffer(result, "trimmed reverse"))
             expectAudioInRange(result.buffer, result.sampleRate, 0.1, 0.8, "trimmed reverse");
+    }
+
+    void testAudioCacheRefreshesMetadataAfterRenderedProxyAppears() {
+        beginTest("Audio cache refreshes metadata after a rendered proxy appears");
+
+        auto* engine = magda::test::getSharedEngine().getEngine();
+        expect(engine != nullptr);
+        if (engine == nullptr)
+            return;
+
+        auto proxyFile =
+            testScratchDirectory().getNonexistentChildFile("clip_sync_delayed_proxy", ".wav");
+        te::AudioFile proxy(*engine, proxyFile);
+
+        // Reproduce the live reverse path: the graph asks for a reader before the
+        // asynchronously-rendered proxy exists, caching zero-valued file metadata.
+        auto missingReader = engine->getAudioFileManager().cache.createReader(proxy);
+        expect(missingReader != nullptr, "The cache should retain a reader handle for the proxy");
+        if (missingReader == nullptr)
+            return;
+        expectWithinAbsoluteError(missingReader->getSampleRate(), 0.0, 0.01);
+
+        constexpr double sampleRate = 44100.0;
+        juce::AudioBuffer<float> buffer(1, static_cast<int>(sampleRate));
+        buffer.clear();
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+            buffer.setSample(0, i, i % 2 == 0 ? 0.5f : -0.5f);
+
+        juce::WavAudioFormat wavFormat;
+        JUCE_BEGIN_IGNORE_WARNINGS_MSVC(4996)
+        JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
+        std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
+            new juce::FileOutputStream(proxyFile), sampleRate, 1, 16, {}, 0));
+        JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+        JUCE_END_IGNORE_WARNINGS_MSVC
+        expect(writer != nullptr, "The simulated reverse proxy should be writable");
+        if (writer == nullptr)
+            return;
+        writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
+        writer.reset();
+
+        engine->getAudioFileManager().validateFile(proxy, true);
+        auto renderedReader = engine->getAudioFileManager().cache.createReader(proxy);
+        expect(renderedReader != nullptr, "The completed proxy should still have a cache reader");
+        if (renderedReader != nullptr)
+            expectWithinAbsoluteError(renderedReader->getSampleRate(), sampleRate, 0.01,
+                                      "Validation must refresh metadata cached before rendering");
+
+        missingReader = nullptr;
+        renderedReader = nullptr;
+        engine->getAudioFileManager().releaseFile(proxy);
+        proxyFile.deleteFile();
     }
 
     void testBatchSessionSlotCreationReallocatesOnce() {
