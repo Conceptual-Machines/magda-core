@@ -187,12 +187,12 @@ class Config {
         scrollbarOnLeft = onLeft;
     }
 
-    // When true, the arrangement scrollbars hide on idle and fade in on hover.
+    // When true, the primary-view scrollbars hide on idle and fade in on hover.
     // When false, they are always visible (classic behaviour).
-    bool getArrangementScrollbarsAutoHide() const {
+    bool getMainViewScrollbarsAutoHide() const {
         return arrangementScrollbarsAutoHide;
     }
-    void setArrangementScrollbarsAutoHide(bool autoHide) {
+    void setMainViewScrollbarsAutoHide(bool autoHide) {
         arrangementScrollbarsAutoHide = autoHide;
     }
 

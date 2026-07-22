@@ -302,7 +302,7 @@ class GeneralPage : public juce::Component {
                                         juce::dontSendNotification);
         headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
                                             juce::dontSendNotification);
-        autoHideScrollbarsToggle.setToggleState(config.getArrangementScrollbarsAutoHide(),
+        autoHideScrollbarsToggle.setToggleState(config.getMainViewScrollbarsAutoHide(),
                                                 juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
                                                 juce::dontSendNotification);
@@ -359,7 +359,7 @@ class GeneralPage : public juce::Component {
         config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
-        config.setArrangementScrollbarsAutoHide(autoHideScrollbarsToggle.getToggleState());
+        config.setMainViewScrollbarsAutoHide(autoHideScrollbarsToggle.getToggleState());
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());

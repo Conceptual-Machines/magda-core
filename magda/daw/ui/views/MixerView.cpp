@@ -1847,10 +1847,16 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     channelContainer->setPaintingIsUnclipped(true);
 
     // Create viewport for scrollable channels
-    channelViewport = std::make_unique<juce::Viewport>();
+    channelViewport = std::make_unique<WheelForwardingViewport>();
     channelViewport->setViewedComponent(channelContainer.get(), false);
-    channelViewport->setScrollBarsShown(false, true);  // Horizontal scroll only
+    channelViewport->setScrollBarsShown(false, false, false, true);
     addAndMakeVisible(*channelViewport);
+
+    scrollContainer_ = std::make_unique<MainViewScrollContainer>(
+        ZoomScrollBar::InteractionMode::ScrollOnly, ZoomScrollBar::InteractionMode::ScrollOnly);
+    scrollContainer_->setAutoHideEnabled(Config::getInstance().getMainViewScrollbarsAutoHide());
+    scrollContainer_->bindViewport(*channelViewport, true, false);
+    addAndMakeVisible(*scrollContainer_);
 
     // Create aux container (fixed, between channels and master)
     auxContainer = std::make_unique<juce::Component>();
@@ -1933,6 +1939,7 @@ MixerView::~MixerView() {
     masterStrip.reset();
     debugPanel_.reset();
     auxContainer.reset();
+    scrollContainer_.reset();
     channelContainer.reset();
     channelViewport.reset();
     channelResizeHandles_.clear();
@@ -2399,6 +2406,8 @@ void MixerView::executeMixerLayoutCommands(const juce::String& description,
 
 void MixerView::resized() {
     auto bounds = getLocalBounds();
+    scrollContainer_->setBounds(getLocalBounds());
+    scrollContainer_->setAutoHideEnabled(Config::getInstance().getMainViewScrollbarsAutoHide());
 
     // Left-edge toggle rail (always visible)
     if (toggleRail_) {
@@ -2431,9 +2440,6 @@ void MixerView::resized() {
     // 1px left border padding (visible when side panel is collapsed)
     bounds.removeFromLeft(1);
 
-    // Channel viewport takes remaining space
-    channelViewport->setBounds(bounds);
-
     // If orderedStrips_ hasn't been populated yet, fall back to channelStrips
     if (orderedStrips_.empty() && !channelStrips.empty()) {
         for (auto& s : channelStrips)
@@ -2441,13 +2447,26 @@ void MixerView::resized() {
     }
 
     // Size the channel container — group strips may be wider than channelWidth
-    int containerHeight = bounds.getHeight();
     int containerWidth = 0;
     for (auto* strip : orderedStrips_) {
         auto* cs = dynamic_cast<ChannelStrip*>(strip);
         int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
         containerWidth += stripWidth;
     }
+
+    const bool needsHorizontalScrollBar = containerWidth > bounds.getWidth();
+    juce::Rectangle<int> scrollBarBounds;
+    if (needsHorizontalScrollBar) {
+        scrollBarBounds = bounds.removeFromBottom(ZoomScrollBar::DEFAULT_THICKNESS);
+    }
+    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Horizontal, scrollBarBounds,
+                                    needsHorizontalScrollBar);
+    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical, {}, false);
+
+    // Channel viewport takes the remaining space above the shared scrollbar.
+    channelViewport->setBounds(bounds);
+
+    int containerHeight = bounds.getHeight();
     channelContainer->setSize(containerWidth, containerHeight);
 
     // Position all strips with cumulative x (group strips span multiple columns)
@@ -2460,6 +2479,8 @@ void MixerView::resized() {
     }
 
     layoutChannelResizeHandles(containerHeight);
+    scrollContainer_->syncFromViewport();
+    scrollContainer_->toFront(false);
 }
 
 void MixerView::wireChannelResizeHandle(ChannelResizeHandle& handle) {

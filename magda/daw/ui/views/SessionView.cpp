@@ -20,6 +20,7 @@
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
+#include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../panels/state/PanelController.hpp"
 #include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -264,7 +265,7 @@ class SessionView::GridContent : public juce::Component {
 };
 
 // Custom viewport that draws track separators in the background area
-class SessionView::GridViewport : public juce::Viewport {
+class SessionView::GridViewport : public WheelForwardingViewport {
   public:
     GridViewport() {
         setInterceptsMouseClicks(true, true);
@@ -1567,10 +1568,20 @@ SessionView::SessionView() {
         });
     };
     gridViewport->setViewedComponent(gridContent.get(), false);
-    gridViewport->setScrollBarsShown(true, true);
-    gridViewport->getHorizontalScrollBar().addListener(this);
-    gridViewport->getVerticalScrollBar().addListener(this);
+    // The viewport remains the source of truth for both axes, but its native bars stay hidden.
+    // The shared MAGDA scrollbars below/beside the Session content mirror these ranges, while
+    // these flags preserve trackpad and wheel scrolling over the clip matrix.
+    gridViewport->setScrollBarsShown(false, false, true, true);
     addAndMakeVisible(*gridViewport);
+
+    scrollContainer_ = std::make_unique<MainViewScrollContainer>(
+        ZoomScrollBar::InteractionMode::ScrollOnly, ZoomScrollBar::InteractionMode::ScrollOnly);
+    scrollContainer_->setAutoHideEnabled(Config::getInstance().getMainViewScrollbarsAutoHide());
+    scrollContainer_->bindViewport(
+        *gridViewport, true, true, [this](MainViewScrollContainer::Axis axis, double rangeStart) {
+            viewportScrolled(axis == MainViewScrollContainer::Axis::Horizontal, rangeStart);
+        });
+    addAndMakeVisible(*scrollContainer_);
 
     // Create I/O routing container (between grid and faders, hidden by default)
     ioContainer_ = std::make_unique<IOContainer>();
@@ -1690,8 +1701,6 @@ SessionView::~SessionView() {
     ClipManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
-    gridViewport->getHorizontalScrollBar().removeListener(this);
-    gridViewport->getVerticalScrollBar().removeListener(this);
 }
 
 void SessionView::tracksChanged() {
@@ -2185,12 +2194,39 @@ void SessionView::paintControllerSceneWindowHighlight(juce::Graphics& g) {
 
 void SessionView::resized() {
     auto bounds = getLocalBounds();
+    scrollContainer_->setBounds(getLocalBounds());
+    scrollContainer_->setAutoHideEnabled(Config::getInstance().getMainViewScrollbarsAutoHide());
 
     int numTracks = static_cast<int>(trackHeaders.size());
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
     if (toggleRail_)
         toggleRail_->setBounds(bounds.removeFromLeft(SessionToggleRail::RAIL_WIDTH));
+
+    // Reserve the shared scrollbars only when their axis overflows. Resolve the two axes
+    // together because adding either 20px bar can make the other one necessary.
+    const int gridWidth = getTotalTracksWidth();
+    const int gridHeight = numScenes_ * sceneRowHeight;
+    const int scrollBarThickness = ZoomScrollBar::DEFAULT_THICKNESS;
+    const int fixedRowsHeight = TRACK_HEADER_HEIGHT + faderRowHeight_ + 4 +
+                                (ioRowVisible_ ? IO_ROW_HEIGHT : 0) +
+                                (sendRowVisible_ ? sendSectionHeight_ + 4 : 0);
+    const int gridHeightWithoutScrollBars = juce::jmax(0, bounds.getHeight() - fixedRowsHeight);
+    const int trackAreaWidth = juce::jmax(0, bounds.getWidth() - SCENE_BUTTON_WIDTH);
+    bool needsHorizontalScrollBar = false;
+    bool needsVerticalScrollBar = false;
+    for (int i = 0; i < 2; ++i) {
+        needsHorizontalScrollBar =
+            gridWidth >
+            juce::jmax(0, trackAreaWidth - (needsVerticalScrollBar ? scrollBarThickness : 0));
+        needsVerticalScrollBar =
+            gridHeight > juce::jmax(0, gridHeightWithoutScrollBars -
+                                           (needsHorizontalScrollBar ? scrollBarThickness : 0));
+    }
+
+    juce::Rectangle<int> scrollBarRow;
+    if (needsHorizontalScrollBar)
+        scrollBarRow = bounds.removeFromBottom(scrollBarThickness);
 
     // Fader row at the bottom (tracks area + master strip in scene column).
     // A thin band along the top of the row hosts the beat indicators above
@@ -2211,6 +2247,14 @@ void SessionView::resized() {
     faderContainer->setBounds(faderRow);
     faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                    trackHeaderScrollOffset);
+
+    // Match the actual mixer-channel container rather than duplicating its left/right
+    // arithmetic. This keeps the scrollbar aligned when the toggle rail or master strip
+    // layout changes.
+    scrollContainer_->setAxisLayout(
+        MainViewScrollContainer::Axis::Horizontal,
+        faderContainer->getBounds().withY(scrollBarRow.getY()).withHeight(scrollBarThickness),
+        needsHorizontalScrollBar);
 
     // Position mini channel strips within fader container (synced with grid horizontal scroll).
     // Use the container's actual height — faderRowHeight_ counts the toggles
@@ -2292,6 +2336,13 @@ void SessionView::resized() {
     auto sceneArea = bounds.removeFromRight(SCENE_BUTTON_WIDTH);
     sceneContainer->setBounds(sceneArea);
 
+    if (needsVerticalScrollBar) {
+        scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical,
+                                        bounds.removeFromRight(scrollBarThickness), true);
+    } else {
+        scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical, {}, false);
+    }
+
     // Position scene buttons within scene container (synced with grid scroll)
     for (int i = 0; i < static_cast<int>(sceneButtons.size()); ++i) {
         int y = i * sceneRowHeight - sceneButtonScrollOffset;
@@ -2303,10 +2354,11 @@ void SessionView::resized() {
     gridViewport->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH);
 
     // Size the grid content to fit the scenes
-    int gridWidth = getTotalTracksWidth();
-    int gridHeight = numScenes_ * sceneRowHeight;
     gridContent->setSize(gridWidth, gridHeight);
     gridContent->setTrackWidths(trackColumnWidths_);
+
+    scrollContainer_->syncFromViewport();
+    scrollContainer_->toFront(false);
 
     // Position clip slots within grid content
     for (int track = 0; track < numTracks; ++track) {
@@ -2320,11 +2372,11 @@ void SessionView::resized() {
     }
 }
 
-void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) {
+void SessionView::viewportScrolled(bool horizontal, double rangeStart) {
     int numTracks = static_cast<int>(trackHeaders.size());
 
-    if (scrollBar == &gridViewport->getHorizontalScrollBar()) {
-        trackHeaderScrollOffset = static_cast<int>(newRangeStart);
+    if (horizontal) {
+        trackHeaderScrollOffset = gridViewport->getViewPositionX();
         // Reposition headers and resize handles
         for (int i = 0; i < numTracks; ++i) {
             int x = getTrackX(i) - trackHeaderScrollOffset;
@@ -2346,6 +2398,10 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         }
         faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                        trackHeaderScrollOffset);
+        if (beatBandContainer_) {
+            beatBandContainer_->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
+                                               trackHeaderScrollOffset);
+        }
 
         // Reposition IO strips to sync with horizontal scroll
         if (ioRowVisible_) {
@@ -2375,8 +2431,8 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
 
         // Update viewport background separators
         gridViewport->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH);
-    } else if (scrollBar == &gridViewport->getVerticalScrollBar()) {
-        sceneButtonScrollOffset = static_cast<int>(newRangeStart);
+    } else {
+        sceneButtonScrollOffset = static_cast<int>(rangeStart);
         // Reposition scene buttons
         int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
         for (int i = 0; i < static_cast<int>(sceneButtons.size()); ++i) {
