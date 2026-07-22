@@ -788,15 +788,17 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         auto& cm = ClipManager::getInstance();
 
         auto clipId =
-            cm.createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(), ClipView::Arrangement, 60.0);
+            cm.createAudioClip(f.trackId, 0.0, 1.0, f.audioPath(), ClipView::Arrangement, 60.0);
         expect(clipId != INVALID_CLIP_ID);
-        f.clipSync->removeClipFromEngine(clipId);
 
         auto* clip = cm.getClip(clipId);
         expect(clip != nullptr);
         if (!clip)
             return;
 
+        clip->offset = 1.0;
+        clip->loopStart = 1.0;
+        f.clipSync->removeClipFromEngine(clipId);
         clip->isReversed = true;
         cm.forceNotifyMultipleClipPropertiesChanged({clipId, clipId});
 
@@ -807,6 +809,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         expect(teClip->getIsReversed(), "Reversed state should sync before returning");
+        expectWithinAbsoluteError(clip->offset, 1.0, 0.01,
+                                  "Recreation must preserve the canonical selected offset");
+        expectWithinAbsoluteError(
+            teClip->getPosition().getOffset().inSeconds(), 3.0, 0.01,
+            "Recreation must mirror the selected offset, not TE's default zero offset");
         if (f.clipSync->getPendingReverseClipId() != INVALID_CLIP_ID)
             expectEquals(f.clipSync->getPendingReverseClipId(), clipId,
                          "Proxy-not-ready reversed clips should be tracked for timer reallocation");

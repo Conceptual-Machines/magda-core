@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <unordered_set>
+#include <utility>
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ChainRoutingModel.hpp"
@@ -21,6 +22,14 @@
 namespace magda {
 
 namespace {
+
+void traceReverseDelayed(juce::String message) {
+    const auto line =
+        juce::Time::getCurrentTime().toISO8601(true) + " [AudioBridge] " + std::move(message);
+    juce::Timer::callAfterDelay(1000, [line] {
+        juce::File("/tmp/magda-reverse-async.log").appendText(line + "\n", false, false, "\n");
+    });
+}
 
 bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
     for (auto existingTargetID : input.getTargets()) {
@@ -1175,6 +1184,11 @@ void AudioBridge::timerCallback() {
     // Poll for reversed proxy file completion (delegated to ClipSynchronizer)
     ClipId pendingClipId = clipSynchronizer_.getPendingReverseClipId();
     if (pendingClipId != INVALID_CLIP_ID) {
+        static ClipId lastPendingTrace = INVALID_CLIP_ID;
+        if (lastPendingTrace != pendingClipId) {
+            lastPendingTrace = pendingClipId;
+            traceReverseDelayed("pending clip=" + juce::String(pendingClipId));
+        }
         auto engineId = clipSynchronizer_.getArrangementEngineId(pendingClipId);
         if (engineId) {
             for (auto* track : te::getAudioTracks(edit_)) {
@@ -1183,6 +1197,8 @@ void AudioBridge::timerCallback() {
                         if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
                             auto playbackFile = audioClip->getPlaybackFile();
                             if (playbackFile.isValid()) {
+                                const auto offsetBeforeRestart =
+                                    audioClip->getPosition().getOffset().inSeconds();
                                 DBG("REVERSE TIMER: proxy ready — reallocating ("
                                     << playbackFile.getFile().getFullPathName() << ")");
                                 clipSynchronizer_.clearPendingReverseClipId();
@@ -1190,7 +1206,14 @@ void AudioBridge::timerCallback() {
                                 // before its asynchronously-scanned metadata is usable, so only
                                 // restart after AudioFile::isValid() succeeds.
                                 edit_.restartPlayback();
-                                edit_.dispatchPendingUpdatesSynchronously();
+                                traceReverseDelayed(
+                                    "ready; deferred restart scheduled clip=" +
+                                    juce::String(pendingClipId) +
+                                    " teOffset=" + juce::String(offsetBeforeRestart, 6) +
+                                    " proxyValid=1 context=" +
+                                    juce::String(static_cast<int>(
+                                        edit_.getCurrentPlaybackContext() != nullptr)));
+                                lastPendingTrace = INVALID_CLIP_ID;
                                 if (edit_.getCurrentPlaybackContext() != nullptr) {
                                     if (clipSynchronizer_.onGraphReallocated)
                                         clipSynchronizer_.onGraphReallocated();
@@ -1202,6 +1225,8 @@ void AudioBridge::timerCallback() {
                 }
             }
         } else {
+            traceReverseDelayed("pending clip has no engine id clip=" +
+                                juce::String(pendingClipId));
             clipSynchronizer_.clearPendingReverseClipId();
         }
     }
