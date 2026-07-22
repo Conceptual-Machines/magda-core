@@ -1181,13 +1181,17 @@ void AudioBridge::timerCallback() {
                 for (auto* teClip : track->getClips()) {
                     if (teClip->itemID.toString().toStdString() == *engineId) {
                         if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
-                            auto proxyFile = audioClip->getPlaybackFile().getFile();
-                            if (proxyFile.existsAsFile()) {
+                            auto playbackFile = audioClip->getPlaybackFile();
+                            if (playbackFile.isValid()) {
                                 DBG("REVERSE TIMER: proxy ready — reallocating ("
-                                    << proxyFile.getFullPathName() << ")");
+                                    << playbackFile.getFile().getFullPathName() << ")");
                                 clipSynchronizer_.clearPendingReverseClipId();
-                                if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-                                    ctx->reallocate();
+                                // Match Tracktion's own proxy-completion path. The file can exist
+                                // before its asynchronously-scanned metadata is usable, so only
+                                // restart after AudioFile::isValid() succeeds.
+                                edit_.restartPlayback();
+                                edit_.dispatchPendingUpdatesSynchronously();
+                                if (edit_.getCurrentPlaybackContext() != nullptr) {
                                     if (clipSynchronizer_.onGraphReallocated)
                                         clipSynchronizer_.onGraphReallocated();
                                 }

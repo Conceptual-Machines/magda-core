@@ -1875,26 +1875,19 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     //   3. Calls reverseLoopPoints() to transform offset/loop range
     //   4. Calls changed() which updates thumbnails
     // We MUST return after this — the subsequent sync steps would overwrite
-    // TE's reversed offset/loop with our model's pre-reverse values.
+    // TE's reversed offset/loop with our canonical original-source values.
     // The playback graph rebuild is deferred until the proxy file is ready.
     if (clip->isReversed != audioClipPtr->getIsReversed()) {
         audioClipPtr->setIsReversed(clip->isReversed);
 
-        // Read back ALL of TE's transformed values into our model
-        if (auto* mutableClip = ClipManager::getInstance().getClip(clipId)) {
-            double teOffset = audioClipPtr->getPosition().getOffset().inSeconds();
-            mutableClip->offset = teOffset;
-            if (mutableClip->loopEnabled) {
-                mutableClip->loopStart = audioClipPtr->getLoopStart().inSeconds();
-                mutableClip->loopLength = audioClipPtr->getLoopLength().inSeconds();
-            } else {
-                mutableClip->loopStart = teOffset;
-            }
-        }
+        // Tracktion mirrors its offset/loop values into reversed-proxy coordinates.
+        // Those are engine implementation details: ClipInfo remains in the original
+        // source-file domain so editors, saves, undo, and later property changes keep
+        // referring to the user's selected range.
 
         // Check if the reversed proxy file is ready
         auto playbackFile = audioClipPtr->getPlaybackFile();
-        if (playbackFile.getFile().existsAsFile())
+        if (playbackFile.isValid())
             return true;
         else
             pendingReverseClipId_ = clipId;
@@ -1948,7 +1941,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         needsGraphReallocation = true;
     }
 
-    if (useSourceBeatProcessing) {
+    if (useSourceBeatProcessing && !clip->isReversed) {
         // ========================================================================
         // AUTO-TEMPO MODE (Beat-based length, maintains musical time)
         // Warp also uses this path — TE only passes warpMap to WaveNodeRealTime
@@ -1969,7 +1962,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             audioClipPtr->setSpeedRatio(1.0);
         }
 
-    } else {
+    } else if (!clip->isReversed) {
         // ========================================================================
         // TIME-BASED MODE (Fixed absolute time, current default behavior)
         // ========================================================================
@@ -2012,7 +2005,9 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 6. UPDATE loop properties (BEFORE offset — setLoopRangeBeats can reset offset)
     // Use beat-based loop range in auto-tempo/warp mode, time-based otherwise.
-    if (useSourceBeatProcessing) {
+    // Tracktion has already mirrored these values into its reverse-proxy domain;
+    // canonical source coordinates must not overwrite them on an unrelated sync.
+    if (!clip->isReversed && useSourceBeatProcessing) {
         // Auto-tempo mode: ALWAYS set beat-based loop range
         // The loop range defines the clip's musical extent (not just the loop region)
 
@@ -2038,7 +2033,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         } else if (audioClipPtr->isLooping()) {
             audioClipPtr->setLoopRangeBeats({});
         }
-    } else {
+    } else if (!clip->isReversed) {
         // Time-based mode: Use time-based loop range
         // Only use setLoopRange (time-based), NOT setLoopRangeBeats which forces
         // autoTempo=true and speedRatio=1.0, breaking time-stretch.
@@ -2054,7 +2049,7 @@ bool ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 7. UPDATE audio offset (trim point in file)
     // Must come AFTER loop range — setLoopRangeBeats resets offset internally
-    {
+    if (!clip->isReversed) {
         double projectBpm = projectBpmAtClip(edit_, *clip);
         double teOffset = juce::jmax(0.0, clip->getTeOffset(clip->loopEnabled, projectBpm));
         auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();

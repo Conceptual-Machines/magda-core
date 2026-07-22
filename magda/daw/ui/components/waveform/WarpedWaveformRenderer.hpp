@@ -63,11 +63,13 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
             const double segX0 = spec.warpToPixelX(markers[i].warpTime + warpShift);
             const double segX1 = spec.warpToPixelX(markers[i + 1].warpTime + warpShift);
             const double segW = segX1 - segX0;
-            if (segW <= 0.0)
+            if (std::abs(segW) <= 0.000001)
                 continue;
 
-            const double visX0 = std::max(segX0, leftX);
-            const double visX1 = std::min(segX1, rightX);
+            const double segmentLeft = std::min(segX0, segX1);
+            const double segmentRight = std::max(segX0, segX1);
+            const double visX0 = std::max(segmentLeft, leftX);
+            const double visX1 = std::min(segmentRight, rightX);
             if (visX1 <= visX0)
                 continue;
 
@@ -76,8 +78,10 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
             const double srcEnd = markers[i + 1].sourceTime;
             const double r0 = (visX0 - segX0) / segW;
             const double r1 = (visX1 - segX0) / segW;
-            double cs = srcStart + r0 * (srcEnd - srcStart);
-            double ce = srcStart + r1 * (srcEnd - srcStart);
+            const double sourceAtLeft = srcStart + r0 * (srcEnd - srcStart);
+            const double sourceAtRight = srcStart + r1 * (srcEnd - srcStart);
+            double cs = std::min(sourceAtLeft, sourceAtRight);
+            double ce = std::max(sourceAtLeft, sourceAtRight);
 
             cs = std::max(0.0, cs);
             if (spec.fileDuration > 0.0)
@@ -90,8 +94,17 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
             if (pw <= 0)
                 continue;
 
-            thumbs.drawWaveform(g, juce::Rectangle<int>(px, areaY, pw, areaH), file, cs, ce,
-                                spec.colour, spec.verticalScale, spec.useHighRes, spec.thick);
+            const juce::Rectangle<int> drawRect(px, areaY, pw, areaH);
+            const bool descending = sourceAtLeft > sourceAtRight;
+            if (descending) {
+                g.saveState();
+                g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, drawRect.getCentreX(),
+                                                            drawRect.getCentreY()));
+            }
+            thumbs.drawWaveform(g, drawRect, file, cs, ce, spec.colour, spec.verticalScale,
+                                spec.useHighRes, spec.thick);
+            if (descending)
+                g.restoreState();
         }
     };
 
