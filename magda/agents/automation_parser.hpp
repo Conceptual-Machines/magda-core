@@ -72,7 +72,25 @@ struct AutoClearOp {
     AutoTarget target;
 };
 
-using AutoPayload = std::variant<AutoShapeOp, AutoFreeformOp, AutoClearOp>;
+enum class AutoClipAction { Create, Delete, Move, Resize, Duplicate, Set, SetPoints };
+
+struct AutoClipOp {
+    AutoClipAction action = AutoClipAction::Create;
+    AutoTarget target;
+    AutomationClipId clipId = INVALID_AUTOMATION_CLIP_ID;
+    double startBeat = 0.0;
+    double lengthBeats = 4.0;
+    bool fromStart = false;
+    juce::String name;
+    juce::String colour;
+    bool hasLooping = false;
+    bool looping = false;
+    bool hasLoopLength = false;
+    double loopLengthBeats = 4.0;
+    std::vector<AutoFreeformPoint> points;
+};
+
+using AutoPayload = std::variant<AutoShapeOp, AutoFreeformOp, AutoClearOp, AutoClipOp>;
 
 struct AutoInstruction {
     AutoPayload payload;

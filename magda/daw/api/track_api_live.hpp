@@ -25,6 +25,22 @@ class TrackApiLive : public TrackApi {
     void setTrackSoloed(TrackId trackId, bool soloed) override;
 
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override;
+    RackId addRackToTrack(TrackId trackId, const juce::String& name) override;
+    void removeRackFromTrack(TrackId trackId, RackId rackId) override;
+    const RackInfo* getRack(TrackId trackId, RackId rackId) const override;
+    void setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) override;
+    void setRackVolume(TrackId trackId, RackId rackId, float volumeDb) override;
+    ChainId addChainToRack(TrackId trackId, RackId rackId, const juce::String& name) override;
+    void removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId) override;
+    const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const override;
+    void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex) override;
+    void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) override;
+    void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId, bool bypassed) override;
+    void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo) override;
+    void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volumeDb) override;
+    void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) override;
+    void setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                      const juce::String& name) override;
     const DeviceInfo* getPrimaryInstrument(TrackId trackId) const override;
 
     AudioEngine* getAudioEngine() const override;

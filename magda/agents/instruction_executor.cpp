@@ -80,7 +80,7 @@ double InstructionExecutor::barsToTime(double bar) const {
     auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
-    return (bar - 1.0) * 4.0 * 60.0 / bpm;
+    return (bar - 1.0) * barsToBeats(1.0) * 60.0 / bpm;
 }
 
 double InstructionExecutor::barsToLength(double bars) const {
@@ -88,7 +88,7 @@ double InstructionExecutor::barsToLength(double bars) const {
     auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
-    return bars * 4.0 * 60.0 / bpm;
+    return bars * barsToBeats(1.0) * 60.0 / bpm;
 }
 
 double InstructionExecutor::barsToBeats(double bars) const {
@@ -793,7 +793,7 @@ bool InstructionExecutor::executeSelect(const SelectOp& op) {
 
         if (op.field == "length" || op.field == "len") {
             // Compare clip length in bars
-            double clipLenBars = clip.length / barsToLength(1.0);
+            double clipLenBars = clip.placement.lengthBeats / barsToBeats(1.0);
             if (op.op == "<")
                 match = clipLenBars < numVal;
             else if (op.op == ">")
@@ -808,7 +808,7 @@ bool InstructionExecutor::executeSelect(const SelectOp& op) {
                 match = std::abs(clipLenBars - numVal) >= 0.01;
         } else if (op.field == "bar" || op.field == "start") {
             // Compare clip start position in bars (1-based)
-            double clipBar = clip.startTime / barsToLength(1.0) + 1.0;
+            double clipBar = clip.placement.startBeat / barsToBeats(1.0) + 1.0;
             if (op.op == "<")
                 match = clipBar < numVal;
             else if (op.op == ">")

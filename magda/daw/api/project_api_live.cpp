@@ -14,8 +14,18 @@ void ProjectApiLive::setTempo(double bpm) {
     ProjectManager::getInstance().setTempo(bpm);
 }
 
+void ProjectApiLive::setTimeSignature(int numerator, int denominator) {
+    if (engineTimeSignatureWriter_)
+        engineTimeSignatureWriter_(numerator, denominator);
+    ProjectManager::getInstance().setTimeSignature(numerator, denominator);
+}
+
 void ProjectApiLive::setEngineTempoWriter(std::function<void(double)> writer) {
     engineTempoWriter_ = std::move(writer);
+}
+
+void ProjectApiLive::setEngineTimeSignatureWriter(std::function<void(int, int)> writer) {
+    engineTimeSignatureWriter_ = std::move(writer);
 }
 
 }  // namespace magda

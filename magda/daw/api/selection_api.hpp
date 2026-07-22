@@ -42,6 +42,7 @@ class SelectionApi {
      *         nothing is selected).
      */
     virtual AutomationLaneId getSelectedAutomationLaneId() const = 0;
+    virtual AutomationClipId getSelectedAutomationClipId() const = 0;
 
     /// True iff there is a valid note selection (clip set, indices non-empty).
     virtual bool hasNoteSelection() const = 0;
@@ -57,6 +58,7 @@ class SelectionApi {
     virtual void selectTracks(const std::unordered_set<TrackId>& trackIds) = 0;
     virtual void selectClip(ClipId clipId) = 0;
     virtual void selectClips(const std::unordered_set<ClipId>& clipIds) = 0;
+    virtual void selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) = 0;
     virtual void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) = 0;
     virtual void clearNoteSelection() = 0;
 };

@@ -25,6 +25,13 @@ AutomationLaneId SelectionApiLive::getSelectedAutomationLaneId() const {
     return sel.getAutomationLaneSelection().laneId;
 }
 
+AutomationClipId SelectionApiLive::getSelectedAutomationClipId() const {
+    auto& sel = SelectionManager::getInstance();
+    if (!sel.hasAutomationClipSelection())
+        return INVALID_AUTOMATION_CLIP_ID;
+    return sel.getAutomationClipSelection().clipId;
+}
+
 bool SelectionApiLive::hasNoteSelection() const {
     return SelectionManager::getInstance().hasNoteSelection();
 }
@@ -53,6 +60,10 @@ void SelectionApiLive::selectClip(ClipId clipId) {
 
 void SelectionApiLive::selectClips(const std::unordered_set<ClipId>& clipIds) {
     SelectionManager::getInstance().selectClips(clipIds);
+}
+
+void SelectionApiLive::selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) {
+    SelectionManager::getInstance().selectAutomationClip(clipId, laneId);
 }
 
 void SelectionApiLive::selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) {

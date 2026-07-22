@@ -21,6 +21,7 @@ start: statement+
 statement: track_statement
          | filter_statement
          | groove_statement
+         | project_statement
 
 // Track statements
 track_statement: "track" "(" params? ")" chain?
@@ -32,12 +33,17 @@ filter_statement: "filter" "(" "tracks" ("," condition)? ")" chain?
 // Groove statements (swing/shuffle templates)
 groove_statement: "groove" "." groove_method
 
+// Project-wide timing settings.
+project_statement: "project" "." "set" "(" params ")"
+
 groove_method: "new" "(" params ")"
              | "extract" "(" params ")"
              | "set" "(" params ")"
              | "list" "(" ")"
 
-condition: "track" "." IDENTIFIER "==" value
+// The executor deliberately supports exact-name filtering only. Keep the CFG
+// this narrow so constrained models cannot emit predicates it cannot execute.
+condition: "track" "." "name" "==" STRING
 
 clip_condition: "clip" "." IDENTIFIER compare_op value
 
@@ -58,6 +64,12 @@ method_call: "clip" "." "new" "(" params? ")"
            | "track" "." "group" "(" params? ")"
            | "track" "." "move" "(" params? ")"
            | "fx" "." "add" "(" params? ")"
+           | "rack" "." "new" "(" params? ")"
+           | "rack" "." "delete" "(" params? ")"
+           | "rack" "." "set" "(" params? ")"
+           | "rack" "." "chain_new" "(" params? ")"
+           | "rack" "." "chain_delete" "(" params? ")"
+           | "rack" "." "chain_set" "(" params? ")"
            | "notes" "." "select" "(" note_condition ")"
            | "notes" "." "delete" "(" ")"
            | "notes" "." "transpose" "(" params? ")"
@@ -108,6 +120,13 @@ inline const char* getToolDescription() {
 Executes DAW operations using the MAGDA DSL. Generate functional script code.
 Each command goes on a separate line. Track operations execute FIRST, then musical content is added.
 
+PROJECT OPERATIONS:
+- project.set(bpm=128) - Set project tempo in BPM (tempo=128 is also accepted)
+- project.set(time_signature="7/8") - Set project time signature
+- project.set(bpm=128, time_signature="3/4") - Change both together
+
+The state JSON includes project.tempo_bpm, project.time_signature, and project.beats_per_bar.
+
 TRACK OPERATIONS:
 - track() - Create new track
 - track(name="Bass") - Create or reference track by name (creates if no track with that name exists, otherwise references the existing one)
@@ -126,6 +145,12 @@ METHOD CHAINING:
 - .fx.add(name="<plugin_alias>") - Add third-party plugin using alias token (e.g. <serum_2>, <pro_q_3>, <surge_xt>)
 - .fx.add(name="Pro-Q 3") - Add plugin by exact display name (prefer alias tokens when available)
 - .fx.add(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
+- .rack.new(name="Parallel") - Add a top-level rack with its default chain
+- .rack.delete(id=12) - Remove a top-level rack by its state-snapshot id
+- .rack.set(id=12, bypassed=true, volume_db=-3) - Control a rack
+- .rack.chain_new(name="Wet") - Add a chain to the preceding/new rack
+- .rack.chain_delete(rack_id=12, chain_id=34) - Remove a rack chain
+- .rack.chain_set(rack_id=12, chain_id=34, muted=true, solo=true, bypassed=false, volume_db=-6, pan=0.2, output=1) - Configure a chain
 - .delete() - Delete track
 - .clip.rename(index=0, name="Intro") - Rename clip at index on track
 - .clip.rename(name="Intro") - Rename all currently selected clips (omit index)
@@ -160,6 +185,8 @@ EXAMPLES:
 - "add reverb and delay to the Vocals track" ->
   track(name="Vocals").fx.add(name="reverb")
   track(name="Vocals").fx.add(name="delay")
+- "create a parallel rack with a wet chain on track 1" ->
+  track(id=1).rack.new(name="Parallel").rack.chain_new(name="Wet")
 - "rename the first clip on track 1 to Intro" -> track(id=1).clip.rename(index=0, name="Intro")
 - "move track 4 to the top" -> track(id=4).track.move(index=1)
 - "move the bass track down to position 3" -> track(name="Bass").track.move(index=3)

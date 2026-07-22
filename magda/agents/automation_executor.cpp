@@ -46,16 +46,63 @@ TrackId getSelectedTrack(MagdaApi& api, juce::String& err) {
 }
 
 /** Look up an existing lane for a target, creating it if needed. */
-AutomationLaneId ensureLaneForTarget(MagdaApi& api, const AutomationTarget& target) {
+AutomationLaneId ensureLaneForTarget(MagdaApi& api, const AutomationTarget& target,
+                                     AutomationLaneType type = AutomationLaneType::Absolute) {
     auto& mgr = api.automation();
     auto existing = mgr.getLaneForTarget(target);
     if (existing != INVALID_AUTOMATION_LANE_ID)
         return existing;
-    return mgr.createLane(target, AutomationLaneType::Absolute);
+    return mgr.createLane(target, type);
+}
+
+bool ensureClipBasedLane(AutomationApi& mgr, AutomationLaneId laneId, juce::String& err) {
+    auto* lane = mgr.getLane(laneId);
+    if (lane == nullptr) {
+        err = "Automation lane does not exist";
+        return false;
+    }
+    if (lane->isClipBased())
+        return true;
+    if (!mgr.retypeEmptyLane(laneId, AutomationLaneType::ClipBased)) {
+        err = "Automation lane contains an absolute curve. Select or create an empty clip-based "
+              "lane first.";
+        return false;
+    }
+    return true;
+}
+
+bool parseClipColour(const juce::String& text, juce::Colour& out) {
+    auto hex = text.trim();
+    if (hex.startsWithChar('#'))
+        hex = hex.substring(1);
+    if (hex.length() == 6)
+        hex = "ff" + hex;
+    if (hex.length() != 8)
+        return false;
+    if (!hex.containsOnly("0123456789abcdefABCDEF"))
+        return false;
+    out = juce::Colour(static_cast<juce::uint32>(hex.getHexValue64()));
+    return true;
+}
+
+AutomationClipId resolveClipId(MagdaApi& api, AutomationClipId requested, juce::String& err) {
+    const auto clipId = requested != INVALID_AUTOMATION_CLIP_ID
+                            ? requested
+                            : api.selection().getSelectedAutomationClipId();
+    if (clipId == INVALID_AUTOMATION_CLIP_ID) {
+        err = "No automation clip is selected. Select one or provide id=<clipId>.";
+        return INVALID_AUTOMATION_CLIP_ID;
+    }
+    if (api.automation().getClip(clipId) == nullptr) {
+        err = "Automation clip " + juce::String(clipId) + " does not exist";
+        return INVALID_AUTOMATION_CLIP_ID;
+    }
+    return clipId;
 }
 
 /** Resolve an AutoTarget into a concrete lane id, or INVALID. */
-AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::String& err) {
+AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::String& err,
+                               AutomationLaneType createType = AutomationLaneType::Absolute) {
     switch (target.kind) {
         case AutoTarget::Kind::LaneId: {
             auto* lane = api.automation().getLane(target.laneId);
@@ -83,7 +130,7 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             AutomationTarget t;
             t.kind = ControlTarget::Kind::TrackVolume;
             t.devicePath = ChainNodePath::trackLevel(trackId);
-            return ensureLaneForTarget(api, t);
+            return ensureLaneForTarget(api, t, createType);
         }
         case AutoTarget::Kind::TrackPan: {
             auto trackId = getSelectedTrack(api, err);
@@ -92,7 +139,7 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             AutomationTarget t;
             t.kind = ControlTarget::Kind::TrackPan;
             t.devicePath = ChainNodePath::trackLevel(trackId);
-            return ensureLaneForTarget(api, t);
+            return ensureLaneForTarget(api, t, createType);
         }
         case AutoTarget::Kind::Alias: {
             auto sigil = tryParse(target.aliasToken);
@@ -113,7 +160,7 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             t.kind = ControlTarget::Kind::PluginParam;
             t.devicePath = resolved.target.devicePath;
             t.paramIndex = resolved.target.paramIndex;
-            return ensureLaneForTarget(api, t);
+            return ensureLaneForTarget(api, t, createType);
         }
     }
     err = "Unknown target kind";
@@ -225,6 +272,15 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
     auto& mgr = api_.automation();
     int laneCount = 0;
     int pointCount = 0;
+    auto addResult = [this](const juce::String& message) {
+        if (results_.isNotEmpty())
+            results_ += "\n";
+        results_ += message;
+    };
+    auto fail = [this](const juce::String& message) {
+        error_ = message;
+        return false;
+    };
 
     // Coalesce listener callbacks across the whole batch. Without this, every
     // per-point addPoint fires automationPointsChanged synchronously, which
@@ -235,6 +291,90 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
 
     for (const auto& inst : instructions) {
         juce::String err;
+
+        if (std::holds_alternative<AutoClipOp>(inst.payload)) {
+            const auto& op = std::get<AutoClipOp>(inst.payload);
+            if (op.action == AutoClipAction::Create) {
+                auto laneId = resolveTarget(api_, op.target, err, AutomationLaneType::ClipBased);
+                if (laneId == INVALID_AUTOMATION_LANE_ID)
+                    return fail(err);
+                if (!ensureClipBasedLane(mgr, laneId, err))
+                    return fail(err);
+                const auto clipId = mgr.createClip(laneId, op.startBeat, op.lengthBeats);
+                if (clipId == INVALID_AUTOMATION_CLIP_ID)
+                    return fail("Failed to create automation clip");
+                api_.selection().selectAutomationClip(clipId, laneId);
+                addResult("Created automation clip " + juce::String(clipId));
+                continue;
+            }
+
+            auto clipId = resolveClipId(api_, op.clipId, err);
+            if (clipId == INVALID_AUTOMATION_CLIP_ID)
+                return fail(err);
+            auto* clip = mgr.getClip(clipId);
+            if (clip == nullptr)
+                return fail("Automation clip no longer exists");
+
+            switch (op.action) {
+                case AutoClipAction::Delete:
+                    mgr.deleteClip(clipId);
+                    addResult("Deleted automation clip " + juce::String(clipId));
+                    continue;
+                case AutoClipAction::Move:
+                    mgr.moveClip(clipId, op.startBeat);
+                    addResult("Moved automation clip " + juce::String(clipId));
+                    break;
+                case AutoClipAction::Resize:
+                    mgr.resizeClip(clipId, op.lengthBeats, op.fromStart);
+                    addResult("Resized automation clip " + juce::String(clipId));
+                    break;
+                case AutoClipAction::Duplicate: {
+                    const auto duplicateId = mgr.duplicateClip(clipId);
+                    if (duplicateId == INVALID_AUTOMATION_CLIP_ID)
+                        return fail("Failed to duplicate automation clip");
+                    clipId = duplicateId;
+                    clip = mgr.getClip(clipId);
+                    addResult("Duplicated automation clip as " + juce::String(clipId));
+                    break;
+                }
+                case AutoClipAction::Set: {
+                    if (op.name.isNotEmpty())
+                        mgr.setClipName(clipId, op.name);
+                    if (op.colour.isNotEmpty()) {
+                        juce::Colour colour;
+                        if (!parseClipColour(op.colour, colour))
+                            return fail("colour must be written as #RRGGBB or #AARRGGBB");
+                        mgr.setClipColour(clipId, colour);
+                    }
+                    if (op.hasLooping)
+                        mgr.setClipLooping(clipId, op.looping);
+                    if (op.hasLoopLength)
+                        mgr.setClipLoopLength(clipId, op.loopLengthBeats);
+                    addResult("Updated automation clip " + juce::String(clipId));
+                    break;
+                }
+                case AutoClipAction::SetPoints: {
+                    std::vector<AutomationPoint> points;
+                    points.reserve(op.points.size());
+                    for (const auto& p : op.points) {
+                        AutomationPoint point;
+                        point.beatPosition = p.beat;
+                        point.value = clampNorm(p.value);
+                        point.curveType = AutomationCurveType::Linear;
+                        points.push_back(point);
+                    }
+                    mgr.setClipPoints(clipId, std::move(points));
+                    addResult("Set points on automation clip " + juce::String(clipId));
+                    break;
+                }
+                case AutoClipAction::Create:
+                    break;
+            }
+
+            if (const auto* updated = mgr.getClip(clipId))
+                api_.selection().selectAutomationClip(clipId, updated->laneId);
+            continue;
+        }
 
         if (std::holds_alternative<AutoClearOp>(inst.payload)) {
             auto& op = std::get<AutoClearOp>(inst.payload);
@@ -283,8 +423,11 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
         }
     }
 
-    results_ =
-        "Wrote " + juce::String(pointCount) + " points to " + juce::String(laneCount) + " lane(s).";
+    if (laneCount > 0)
+        addResult("Wrote " + juce::String(pointCount) + " points to " + juce::String(laneCount) +
+                  " lane(s).");
+    if (results_.isEmpty())
+        results_ = "OK";
     return true;
 }
 
