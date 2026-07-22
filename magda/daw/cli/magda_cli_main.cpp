@@ -20,6 +20,8 @@
 #include "api/project_api.hpp"
 #include "api/track_api.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/plugin_manager/ExternalPluginStateUtil.hpp"
+#include "audio/plugin_manager/PluginManager.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/OfflineRenderHelper.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
@@ -223,6 +225,12 @@ class CommandDispatcher {
             {"add-track", "add-track <audio|group|aux|chord> [name]", &CommandDispatcher::addTrack},
             {"add-internal-instrument", "add-internal-instrument <track-id> <plugin-id> [name]",
              &CommandDispatcher::addInternalInstrument},
+            {"add-external-plugin", "add-external-plugin <track-id> <path.vst3> [name]",
+             &CommandDispatcher::addExternalPlugin},
+            {"set-plugin-state", "set-plugin-state <device-id> <state-file>",
+             &CommandDispatcher::setPluginState},
+            {"get-plugin-state", "get-plugin-state <device-id> <state-file>",
+             &CommandDispatcher::getPluginState},
             {"delete-track", "delete-track <track-id>", &CommandDispatcher::deleteTrack},
             {"set-track-input", "set-track-input <track-id> <audio|midi> <track:N|device|all|none>",
              &CommandDispatcher::setTrackInput},
@@ -439,6 +447,139 @@ class CommandDispatcher {
         if (deviceId == magda::INVALID_DEVICE_ID)
             return fail("Failed to add internal instrument");
         std::cout << "device " << deviceId << "\n";
+        return {};
+    }
+
+    // Resolve a device id to its live tracktion ExternalPlugin, or nullptr with
+    // `error` set. The raw pointer stays valid after the local Ptr drops: the
+    // plugin is owned by the edit's plugin list (same pattern as the state
+    // restore tests).
+    tracktion::engine::ExternalPlugin* liveExternalPlugin(int deviceId, juce::String& error) {
+        const auto path = magda::TrackManager::getInstance().findDevicePath(
+            static_cast<magda::DeviceId>(deviceId));
+        if (!path.isValid()) {
+            error = "Unknown device " + juce::String(deviceId);
+            return nullptr;
+        }
+        auto* bridge = engine_.getAudioBridge();
+        if (bridge == nullptr) {
+            error = "No audio bridge";
+            return nullptr;
+        }
+        auto plugin = bridge->getPluginManager().getPlugin(path);
+        auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get());
+        if (ext == nullptr)
+            error = "Device " + juce::String(deviceId) + " is not an external plugin";
+        return ext;
+    }
+
+    // VST3 instantiation is async in tracktion: pump the message loop until the
+    // juce instance is live, so state set/get and the on-save state capture see
+    // a real plugin rather than an initialising shell.
+    bool waitForLiveInstance(int deviceId, int timeoutMs) {
+        const auto deadline =
+            juce::Time::getMillisecondCounter() + static_cast<juce::uint32>(timeoutMs);
+        juce::String error;
+        while (juce::Time::getMillisecondCounter() < deadline) {
+            auto* ext = liveExternalPlugin(deviceId, error);
+            if (ext != nullptr && !ext->isInitialisingAsync() &&
+                ext->getAudioPluginInstance() != nullptr)
+                return true;
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(40);
+        }
+        return false;
+    }
+
+    CommandResult addExternalPlugin(const juce::StringArray& tokens, size_t& index) {
+        auto trackId = takeInt(tokens, index, "add-external-plugin requires <track-id>");
+        if (!trackId)
+            return fail(lastParseError_);
+        if (index >= static_cast<size_t>(tokens.size()))
+            return fail("add-external-plugin requires <path.vst3>");
+        const auto file = fileFromArg(tokens[static_cast<int>(index++)]);
+        if (!file.exists())
+            return fail("Plugin bundle not found: " + file.getFullPathName());
+
+        // Resolve the bundle to a real PluginDescription (correct uid and
+        // isInstrument) without requiring a persisted plugin scan, then register
+        // it so the plugin-manager sync resolves the same description.
+        juce::VST3PluginFormat vst3;
+        juce::OwnedArray<juce::PluginDescription> descs;
+        vst3.findAllTypesForFile(descs, file.getFullPathName());
+        if (descs.isEmpty())
+            return fail("No VST3 plugin found in " + file.getFullPathName());
+        const juce::PluginDescription desc = *descs[0];
+        engine_.getKnownPluginList().addType(desc);
+
+        auto name = desc.name;
+        if (index < static_cast<size_t>(tokens.size()) &&
+            !isCommand(tokens[static_cast<int>(index)]))
+            name = tokens[static_cast<int>(index++)];
+
+        magda::DeviceInfo device;
+        device.name = name;
+        device.manufacturer = desc.manufacturerName;
+        device.pluginId = desc.createIdentifierString();
+        device.uniqueId = desc.createIdentifierString();
+        device.fileOrIdentifier = desc.fileOrIdentifier;
+        device.isInstrument = desc.isInstrument;
+        device.deviceType =
+            desc.isInstrument ? magda::DeviceType::Instrument : magda::DeviceType::Effect;
+        device.format = magda::PluginFormat::VST3;
+
+        const auto deviceId = engine_.getMagdaApi().tracks().addDeviceToTrack(*trackId, device);
+        if (deviceId == magda::INVALID_DEVICE_ID)
+            return fail("Failed to add external plugin");
+        if (!waitForLiveInstance(static_cast<int>(deviceId), 15000))
+            return fail(name + " did not finish loading (async instantiation timeout)");
+        std::cout << "device " << deviceId << "\n";
+        return {};
+    }
+
+    CommandResult setPluginState(const juce::StringArray& tokens, size_t& index) {
+        auto deviceId = takeInt(tokens, index, "set-plugin-state requires <device-id>");
+        if (!deviceId)
+            return fail(lastParseError_);
+        if (index >= static_cast<size_t>(tokens.size()))
+            return fail("set-plugin-state requires <state-file>");
+        const auto file = fileFromArg(tokens[static_cast<int>(index++)]);
+        juce::MemoryBlock data;
+        if (!file.loadFileAsData(data) || data.isEmpty())
+            return fail("Cannot read state file: " + file.getFullPathName());
+
+        if (!waitForLiveInstance(*deviceId, 15000))
+            return fail("Device " + juce::String(*deviceId) + " has no live plugin instance");
+        juce::String error;
+        auto* ext = liveExternalPlugin(*deviceId, error);
+        if (ext == nullptr)
+            return fail(error);
+        // TE's IDs::state property holds the chunk in JUCE's MemoryBlock base64
+        // dialect ("size.data" with the custom alphabet), NOT RFC base64.
+        magda::applyExternalPluginChunk(ext, data.toBase64Encoding());
+        std::cout << "state " << *deviceId << " " << data.getSize() << " bytes\n";
+        return {};
+    }
+
+    CommandResult getPluginState(const juce::StringArray& tokens, size_t& index) {
+        auto deviceId = takeInt(tokens, index, "get-plugin-state requires <device-id>");
+        if (!deviceId)
+            return fail(lastParseError_);
+        if (index >= static_cast<size_t>(tokens.size()))
+            return fail("get-plugin-state requires <state-file>");
+        const auto file = fileFromArg(tokens[static_cast<int>(index++)]);
+
+        if (!waitForLiveInstance(*deviceId, 15000))
+            return fail("Device " + juce::String(*deviceId) + " has no live plugin instance");
+        juce::String error;
+        auto* ext = liveExternalPlugin(*deviceId, error);
+        if (ext == nullptr)
+            return fail(error);
+        juce::MemoryBlock chunk;
+        ext->getAudioPluginInstance()->getStateInformation(chunk);
+        if (!file.replaceWithData(chunk.getData(), chunk.getSize()))
+            return fail("Cannot write " + file.getFullPathName());
+        std::cout << "state " << *deviceId << " " << chunk.getSize() << " bytes -> "
+                  << file.getFullPathName() << "\n";
         return {};
     }
 
@@ -749,12 +890,43 @@ bool prepareOutputFile(const juce::File& file) {
     return true;
 }
 
+// External (VST3/AU) plugins instantiate asynchronously; a render fired straight
+// after project load would run against initialising shells and produce silence.
+// Pump the message loop until every external plugin has a live instance.
+bool waitForExternalPlugins(te::Edit& edit, int timeoutMs) {
+    const auto deadline =
+        juce::Time::getMillisecondCounter() + static_cast<juce::uint32>(timeoutMs);
+    for (;;) {
+        bool pending = false;
+        for (auto* p : te::getAllPlugins(edit, true))
+            if (auto* ext = dynamic_cast<te::ExternalPlugin*>(p))
+                if (ext->isInitialisingAsync() || ext->getAudioPluginInstance() == nullptr)
+                    pending = true;
+        if (!pending) {
+            // Grace period: some plugins (e.g. Kick 3) bake their voice on a
+            // message-thread timer after load; rendering immediately would be
+            // silent. Keep pumping briefly so deferred initialisation completes.
+            const auto settleUntil = juce::Time::getMillisecondCounter() + 3000u;
+            while (juce::Time::getMillisecondCounter() < settleUntil)
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(40);
+            return true;
+        }
+        if (juce::Time::getMillisecondCounter() >= deadline)
+            return false;
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(40);
+    }
+}
+
 bool renderWav(magda::TracktionEngineWrapper& engine, const RenderOptions& options) {
     auto* edit = engine.getEdit();
     if (edit == nullptr) {
         std::cerr << "No edit is loaded for rendering\n";
         return false;
     }
+
+    if (!waitForExternalPlugins(*edit, 15000))
+        std::cerr << "Warning: external plugin(s) still initialising after 15 s; "
+                     "render may be missing them\n";
 
     if (!prepareOutputFile(options.wavOutput))
         return false;
