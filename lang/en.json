@@ -381,7 +381,7 @@
     "toggle.stop_updates_playhead": "Stop updates playhead",
     "toggle.follow_playhead": "Follow playhead during playback",
     "toggle.headers_on_right": "Headers on the Right",
-    "toggle.autohide_arrangement_scrollbars": "Auto-Hide Arrangement Scrollbars",
+    "toggle.autohide_arrangement_scrollbars": "Auto-Hide Main View Scrollbars",
     "toggle.confirm_track_delete": "Confirm before deleting tracks",
     "toggle.auto_monitor": "Auto-monitor selected track",
     "toggle.open_macros_on_select": "Open macros when selecting devices or racks",

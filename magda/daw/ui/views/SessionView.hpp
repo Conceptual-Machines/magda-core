@@ -18,6 +18,7 @@ namespace magda {
 
 class TimelineController;
 class AudioEngine;
+class MainViewScrollContainer;
 
 /**
  * @brief Session view - Ableton-style clip launcher grid
@@ -32,7 +33,6 @@ class AudioEngine;
 class ClipSlotButton;
 
 class SessionView : public juce::Component,
-                    private juce::ScrollBar::Listener,
                     public juce::FileDragAndDropTarget,
                     public juce::DragAndDropTarget,
                     public juce::Timer,
@@ -105,9 +105,6 @@ class SessionView : public juce::Component,
     bool duplicateSelectedSessionClips();
 
   private:
-    // ScrollBar::Listener
-    void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
-
     // Scroll offsets (synced with grid scroll)
     int trackHeaderScrollOffset = 0;
     int sceneButtonScrollOffset = 0;
@@ -161,6 +158,8 @@ class SessionView : public juce::Component,
     class GridViewport;
     std::unique_ptr<GridViewport> gridViewport;
     std::unique_ptr<GridContent> gridContent;
+    std::unique_ptr<MainViewScrollContainer> scrollContainer_;
+    void viewportScrolled(bool horizontal, double rangeStart);
 
     // Clipping containers for headers and scene buttons
     class HeaderContainer;

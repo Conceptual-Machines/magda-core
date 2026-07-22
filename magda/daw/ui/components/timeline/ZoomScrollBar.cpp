@@ -5,7 +5,8 @@
 
 namespace magda {
 
-ZoomScrollBar::ZoomScrollBar(Orientation orientation) : orientation(orientation) {
+ZoomScrollBar::ZoomScrollBar(Orientation orientation, InteractionMode interactionMode)
+    : orientation(orientation), interactionMode(interactionMode) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
     setOpaque(false);
 }
@@ -69,6 +70,7 @@ void ZoomScrollBar::resized() {
 }
 
 void ZoomScrollBar::mouseDown(const juce::MouseEvent& event) {
+    reveal();
     int pos = getPrimaryCoord(event);
     dragMode = getDragModeForPosition(pos);
     dragStartPos = pos;
@@ -116,6 +118,7 @@ void ZoomScrollBar::mouseDown(const juce::MouseEvent& event) {
 }
 
 void ZoomScrollBar::mouseDrag(const juce::MouseEvent& event) {
+    reveal();
     auto trackBounds = getTrackBounds();
     double trackPrimarySize = static_cast<double>(getPrimarySize(trackBounds));
 
@@ -174,11 +177,27 @@ void ZoomScrollBar::mouseDrag(const juce::MouseEvent& event) {
 
 void ZoomScrollBar::mouseUp(const juce::MouseEvent&) {
     dragMode = DragMode::None;
+    reveal();
     repaint();
 }
 
+void ZoomScrollBar::mouseEnter(const juce::MouseEvent&) {
+    reveal();
+}
+
 void ZoomScrollBar::mouseMove(const juce::MouseEvent& event) {
+    reveal();
     updateCursor(getPrimaryCoord(event));
+}
+
+void ZoomScrollBar::mouseWheelMove(const juce::MouseEvent& event,
+                                   const juce::MouseWheelDetails& wheel) {
+    reveal();
+    if (onWheelMoved) {
+        onWheelMoved(event, wheel);
+        return;
+    }
+    juce::Component::mouseWheelMove(event, wheel);
 }
 
 void ZoomScrollBar::setVisibleRange(double start, double end) {
@@ -194,6 +213,45 @@ void ZoomScrollBar::setVisibleRange(double start, double end) {
     }
 
     repaint();
+}
+
+void ZoomScrollBar::setAutoHideEnabled(bool enabled) {
+    if (autoHideEnabled == enabled)
+        return;
+
+    autoHideEnabled = enabled;
+    revealHoldFrames = 0;
+    if (autoHideEnabled) {
+        setAlpha(0.0f);
+        startTimerHz(60);
+    } else {
+        stopTimer();
+        setAlpha(1.0f);
+    }
+}
+
+void ZoomScrollBar::reveal() {
+    if (!autoHideEnabled)
+        return;
+
+    revealHoldFrames = REVEAL_HOLD_FRAMES;
+    setAlpha(juce::jmax(getAlpha(), FADE_IN_STEP));
+}
+
+void ZoomScrollBar::timerCallback() {
+    if (!autoHideEnabled)
+        return;
+
+    if (isMouseOverOrDragging() || isDragging())
+        revealHoldFrames = REVEAL_HOLD_FRAMES;
+    else if (revealHoldFrames > 0)
+        --revealHoldFrames;
+
+    const float alpha = getAlpha();
+    const float nextAlpha = revealHoldFrames > 0 ? juce::jmin(1.0f, alpha + FADE_IN_STEP)
+                                                 : juce::jmax(0.0f, alpha - FADE_OUT_STEP);
+    if (nextAlpha != alpha)
+        setAlpha(nextAlpha);
 }
 
 juce::Rectangle<int> ZoomScrollBar::getTrackBounds() const {
@@ -250,14 +308,16 @@ ZoomScrollBar::DragMode ZoomScrollBar::getDragModeForPosition(int pos) const {
     int thumbStart = getPrimaryPos(thumbBounds);
     int thumbEnd = thumbStart + getPrimarySize(thumbBounds);
 
-    // Check if near start edge
-    if (pos < thumbStart + EDGE_HANDLE_SIZE) {
-        return DragMode::ResizeStart;
-    }
+    if (interactionMode == InteractionMode::ScrollAndZoom) {
+        // Check if near start edge
+        if (pos < thumbStart + EDGE_HANDLE_SIZE) {
+            return DragMode::ResizeStart;
+        }
 
-    // Check if near end edge
-    if (pos > thumbEnd - EDGE_HANDLE_SIZE) {
-        return DragMode::ResizeEnd;
+        // Check if near end edge
+        if (pos > thumbEnd - EDGE_HANDLE_SIZE) {
+            return DragMode::ResizeEnd;
+        }
     }
 
     return DragMode::Scroll;

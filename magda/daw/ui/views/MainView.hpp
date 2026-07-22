@@ -7,9 +7,9 @@
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridOverlayComponent.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../components/timeline/MarkerLaneComponent.hpp"
 #include "../components/timeline/TimelineComponent.hpp"
-#include "../components/timeline/ZoomScrollBar.hpp"
 #include "../components/tracks/TrackContentPanel.hpp"
 #include "../components/tracks/TrackHeadersPanel.hpp"
 #include "../layout/LayoutConfig.hpp"
@@ -164,9 +164,8 @@ class MainView : public juce::Component,
     class SelectionOverlayComponent;
     std::unique_ptr<SelectionOverlayComponent> selectionOverlay;
 
-    // Zoom scroll bars
-    std::unique_ptr<ZoomScrollBar> horizontalZoomScrollBar;
-    std::unique_ptr<ZoomScrollBar> verticalZoomScrollBar;
+    // Shared primary-view scrollbar host.
+    std::unique_ptr<MainViewScrollContainer> scrollContainer_;
 
     // Fixed master track row at bottom (matching track panel style)
     class MasterHeaderPanel;
@@ -235,7 +234,7 @@ class MainView : public juce::Component,
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
     bool markerLaneVisible_ = true;
     bool secondsRulerVisible_ = false;
-    static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = 20;
+    static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = ZoomScrollBar::DEFAULT_THICKNESS;
 
     void dispatchUserPlayheadPositionBeats(double positionBeats, bool bypassSnap);
 
@@ -251,8 +250,6 @@ class MainView : public juce::Component,
         juce::Rectangle<int> horizontalScrollBarArea;
         juce::Rectangle<int> verticalScrollBarArea;
         juce::Rectangle<int> horizontalScrollBarRowArea;
-        juce::Rectangle<int> horizontalScrollBarHitArea;
-        juce::Rectangle<int> verticalScrollBarHitArea;
         juce::Rectangle<int> masterHeaderArea;
         juce::Rectangle<int> masterContentArea;
         juce::Rectangle<int> masterAutomationHeaderArea;
@@ -261,47 +258,6 @@ class MainView : public juce::Component,
         juce::Rectangle<int> auxContentArea;
     };
     ArrangementLayout computeArrangementLayout() const;
-
-    float horizontalScrollbarRevealProgress = 0.0f;
-    float verticalScrollbarRevealProgress = 0.0f;
-    int horizontalScrollbarRevealFrames = 0;
-    int verticalScrollbarRevealFrames = 0;
-    int horizontalHoverDwellFrames = 0;
-    int verticalHoverDwellFrames = 0;
-    bool isHorizontalScrollbarHovered = false;
-    bool isVerticalScrollbarHovered = false;
-    bool isUpdatingArrangementScrollbarLayout = false;
-    juce::Rectangle<int> horizontalScrollbarHitArea;
-    juce::Rectangle<int> verticalScrollbarHitArea;
-    // While the window is being resized the content's visible fraction changes,
-    // which fires the scrollbars' onRangeChanged and would pop them open. Track
-    // the last laid-out size so resized() can detect a genuine size change and
-    // arm a short window during which reveals are ignored.
-    int previousArrangementWidth = 0;
-    int previousArrangementHeight = 0;
-    int arrangementScrollbarResizeSuppressFrames = 0;
-    // Fade timings target 60Hz timer (~16ms/frame). Steps chosen so:
-    //   fade-in   ~12 frames (~200ms), fade-out ~30 frames (~500ms).
-    static constexpr float ARRANGEMENT_SCROLLBAR_FADE_IN_STEP = 0.08f;
-    static constexpr float HORIZONTAL_SCROLLBAR_FADE_OUT_STEP = 0.028f;
-    static constexpr float VERTICAL_SCROLLBAR_FADE_OUT_STEP = 0.04f;
-    // Hold frames keep the scrollbar fully visible briefly after the trigger
-    // ends (mouse exit, last scroll/zoom event) so small mouse movements or
-    // pauses between scrolls don't restart the fade cycle. ~300ms at 60Hz.
-    static constexpr int ARRANGEMENT_SCROLLBAR_REVEAL_HOLD_FRAMES = 18;
-    // Reveal hit strip is intentionally narrower than the scrollbar's visible
-    // width — the cursor has to be pushed right against the panel edge to
-    // reveal it. Avoids accidental triggers when editing clips near bar 1.
-    // (.reduced(1, 0) below trims to ~6px effective.)
-    static constexpr int ARRANGEMENT_SCROLLBAR_HIT_EDGE = 8;
-    // Dwell time before edge-hover triggers a reveal — filters out quick
-    // grazes through the hit strip in transit. ~80ms at 60Hz. Bypassed
-    // while the bar is already visible so the user can still re-grab it.
-    static constexpr int ARRANGEMENT_SCROLLBAR_HOVER_DWELL_FRAMES = 5;
-    // Reveals are ignored for this many frames after a window resize so the
-    // bars don't flash while dragging the window edge. Re-armed on every resize
-    // event, so it stays suppressed for the whole drag and ~150ms after. 60Hz.
-    static constexpr int ARRANGEMENT_SCROLLBAR_RESIZE_SUPPRESS_FRAMES = 10;
 
     // Resize handle state (horizontal - track header width)
     bool isResizingHeaders = false;
@@ -356,8 +312,6 @@ class MainView : public juce::Component,
     void updateVerticalZoomScrollBar();
     void revealHorizontalArrangementScrollbar();
     void revealVerticalArrangementScrollbar();
-    void updateArrangementScrollbarVisibility();
-    void updateArrangementScrollbarHover(const juce::MouseEvent& event);
 
     // Grid division display (shown on horizontal zoom scroll bar)
     void updateGridDivisionDisplay();

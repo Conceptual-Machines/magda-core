@@ -12,11 +12,15 @@ namespace magda {
  * - Drag the start/end edges to zoom (shrink = zoom in, expand = zoom out)
  * - Supports both horizontal (timeline) and vertical (tracks) orientations
  */
-class ZoomScrollBar : public juce::Component {
+class ZoomScrollBar : public juce::Component, private juce::Timer {
   public:
     enum class Orientation { Horizontal, Vertical };
+    enum class InteractionMode { ScrollAndZoom, ScrollOnly };
 
-    explicit ZoomScrollBar(Orientation orientation = Orientation::Horizontal);
+    static constexpr int DEFAULT_THICKNESS = 20;
+
+    explicit ZoomScrollBar(Orientation orientation = Orientation::Horizontal,
+                           InteractionMode interactionMode = InteractionMode::ScrollAndZoom);
     ~ZoomScrollBar() override = default;
 
     void paint(juce::Graphics& g) override;
@@ -26,10 +30,15 @@ class ZoomScrollBar : public juce::Component {
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseEnter(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event,
+                        const juce::MouseWheelDetails& wheel) override;
 
     // Set the visible range (0.0 to 1.0 representing portion of content)
     void setVisibleRange(double start, double end);
+    void setAutoHideEnabled(bool enabled);
+    void reveal();
 
     bool isDragging() const {
         return dragMode != DragMode::None;
@@ -56,9 +65,11 @@ class ZoomScrollBar : public juce::Component {
 
     // Callbacks
     std::function<void(double start, double end)> onRangeChanged;
+    std::function<void(const juce::MouseEvent&, const juce::MouseWheelDetails&)> onWheelMoved;
 
   private:
     Orientation orientation;
+    InteractionMode interactionMode;
 
     // Optional label text
     juce::String label;
@@ -78,11 +89,18 @@ class ZoomScrollBar : public juce::Component {
     static constexpr int EDGE_HANDLE_SIZE = 8;
     static constexpr int MIN_THUMB_SIZE = 20;
 
+    bool autoHideEnabled = false;
+    int revealHoldFrames = 0;
+    static constexpr int REVEAL_HOLD_FRAMES = 18;
+    static constexpr float FADE_IN_STEP = 0.08f;
+    static constexpr float FADE_OUT_STEP = 0.028f;
+
     // Helper methods
     juce::Rectangle<int> getThumbBounds() const;
     juce::Rectangle<int> getTrackBounds() const;
     DragMode getDragModeForPosition(int pos) const;
     void updateCursor(int pos);
+    void timerCallback() override;
 
     // Orientation-aware coordinate helpers
     int getPrimaryCoord(const juce::MouseEvent& event) const;
