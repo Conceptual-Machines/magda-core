@@ -47,10 +47,11 @@ def main():
     ap.add_argument("--wbits", type=int, default=4)
     ap.add_argument("--abits", type=int, default=4)
     ap.add_argument("--unk-aug", type=float, default=0.3, help="prob of UNK-ing NAME tokens")
+    ap.add_argument("--seed", type=int, default=7, help="RNG seed (torch + unk-aug sampling)")
     ap.add_argument("--out", default=os.path.join(HERE, "artifacts"))
     args = ap.parse_args()
 
-    torch.manual_seed(7)
+    torch.manual_seed(args.seed)
     rows_train = load_rows(os.path.abspath(args.train))
     rows_val = load_rows(os.path.abspath(args.val))
 
@@ -62,7 +63,7 @@ def main():
     print(f"vocab={len(vocab)} intents={len(intents)} tags={len(tags)} "
           f"train={len(rows_train)} val={len(rows_val)}")
 
-    ds_tr = CmdDataset(rows_train, vocab, intents, tags, unk_aug=args.unk_aug, seed=7)
+    ds_tr = CmdDataset(rows_train, vocab, intents, tags, unk_aug=args.unk_aug, seed=args.seed)
     ds_va = CmdDataset(rows_val, vocab, intents, tags, unk_aug=0.0)
     dl = DataLoader(ds_tr, batch_size=args.batch, shuffle=True)
 
