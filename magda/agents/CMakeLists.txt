@@ -67,6 +67,8 @@ dsl_grammar.hpp
     device_ai_agent.hpp
     sound_design_agent.hpp
     sound_design_agent.cpp
+    generic_sound_design_agent.hpp
+    generic_sound_design_agent.cpp
     coder_agent.hpp
     coder_agent.cpp
     mcp/MCPClient.hpp

@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -790,6 +791,15 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
 
     const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
 
+    // Devices with a registered sound-design agent can have their AI Sound
+    // Designer icon/panel exposed or hidden per-device (opt-out, defaults on).
+    if (magda::isSoundDesignSupported(plugin.uniqueId)) {
+        menu.addItem(
+            12, "AI Sound Designer", true,
+            magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier));
+        menu.addSeparator();
+    }
+
     // Instrument-form plugins can be manually routed as MIDI FX when their
     // runtime metadata is too synth-like to classify automatically.
     if (plugin.category == "Instrument") {
@@ -910,6 +920,13 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                             p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
                     }
                     rebuildTree();
+                    break;
+                }
+                case 12: {
+                    auto& prefs = magda::PluginPreferences::getInstance();
+                    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
+                    prefs.setAiSoundDesignerEnabled(
+                        pluginIdentifier, !prefs.aiSoundDesignerEnabled(pluginIdentifier));
                     break;
                 }
                 case 98:

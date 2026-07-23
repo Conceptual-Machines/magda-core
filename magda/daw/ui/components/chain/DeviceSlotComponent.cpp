@@ -152,6 +152,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Register for gain-staging state so the slot can draw its staging overlay.
     magda::GainStagingManager::getInstance().addListener(this);
 
+    // Register for AI Sound Designer exposure toggles from the plugin browser.
+    magda::PluginPreferences::getInstance().addListener(this);
+
     // Note: BindingRegistry / ControllerRegistry listening is done by
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
@@ -616,8 +619,17 @@ DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::GainStagingManager::getInstance().removeListener(this);
+    magda::PluginPreferences::getInstance().removeListener(this);
     stopTimer();
     detachInlineUiFromLivePlugin();
+}
+
+void DeviceSlotComponent::aiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier) {
+    // Only re-lay-out if the toggle was for this slot's device.
+    if (pluginIdentifier != magda::PluginPreferences::identifierForDevice(device_))
+        return;
+    resized();
+    repaint();
 }
 
 void DeviceSlotComponent::timerCallback() {

@@ -7,6 +7,7 @@
 #include "../daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "../daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../daw/core/DeviceInfo.hpp"
+#include "../daw/core/InternalDeviceKind.hpp"
 #include "../daw/core/PluginAlias.hpp"
 #include "../daw/core/aliases/InternalPluginAliases.hpp"
 
@@ -35,6 +36,10 @@ enum class SoundDesignAgentKind {
     FourOsc,
     StepSequencer,
     PolyStepSequencer,
+    // Generic parameter-introspection agent — any sound-generator instrument
+    // whose controls are automatable parameters (compiled Faust synths, native
+    // Mutable ports). See detail::isGenericSoundGeneratorId.
+    Generic,
 };
 
 enum class CoderAgentKind {
@@ -137,6 +142,25 @@ inline InternalPlugin deviceAiIdFor(const juce::String& pluginId) {
     return InternalPlugin::None;
 }
 
+// True iff `pluginId` is a sound-generator instrument the generic
+// parameter-introspection agent can drive: the compiled-Faust synths (Poly
+// Synth, FM, percussion) and the native Mutable ports (Elements, Rings).
+// Excludes Sampler / Drum Grid / Clouds (AI adds little / not a note source)
+// and 4OSC, which keeps its bespoke agent until its controls are automatable.
+inline bool isGenericSoundGeneratorId(const juce::String& pluginId) {
+    if (pluginId.isEmpty())
+        return false;
+    if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(pluginId))
+        return spec->isInstrument;
+    switch (classifyInternalDevice(pluginId)) {
+        case InternalDeviceKind::MutableElements:
+        case InternalDeviceKind::MutableRings:
+            return true;
+        default:
+            return false;
+    }
+}
+
 inline InternalPluginCapabilities capabilitiesFor(const juce::String& pluginId) {
     InternalPluginCapabilities capabilities;
     capabilities.addable = true;
@@ -151,6 +175,8 @@ inline InternalPluginCapabilities capabilitiesFor(const juce::String& pluginId) 
         capabilities.soundDesignAgent = SoundDesignAgentKind::PolyStepSequencer;
     else if (pluginId.equalsIgnoreCase("faust"))
         capabilities.coderAgent = CoderAgentKind::Faust;
+    else if (isGenericSoundGeneratorId(pluginId))
+        capabilities.soundDesignAgent = SoundDesignAgentKind::Generic;
 
     return capabilities;
 }
