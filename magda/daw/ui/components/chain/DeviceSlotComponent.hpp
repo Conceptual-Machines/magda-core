@@ -317,7 +317,7 @@ class DeviceSlotComponent : public NodeComponent,
     void updateScButtonState();  // Update SC button appearance based on sidechain config
     void showMultiOutMenu();     // Show popup menu for multi-output routing
     void showContextMenu();      // Show right-click context menu
-    void refreshDeviceTraits(const juce::String& pluginId);
+    void refreshDeviceTraits(const magda::DeviceInfo& device);
 
     // Helper to check if this is an internal device
     bool isInternalDevice() const {

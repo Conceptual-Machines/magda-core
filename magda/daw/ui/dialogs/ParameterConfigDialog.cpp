@@ -22,12 +22,114 @@ struct CachedPluginParams {
 };
 static std::map<juce::String, CachedPluginParams> parameterCache_;
 
+class AIPromptEditorComponent : public juce::Component {
+  public:
+    AIPromptEditorComponent(const juce::String& initialPrompt,
+                            std::function<void(juce::String)> onSave)
+        : onSave_(std::move(onSave)) {
+        description_.setText(
+            "These instructions are added to every sound-design request for this plug-in.",
+            juce::dontSendNotification);
+        description_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        description_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        addAndMakeVisible(description_);
+
+        editor_.setMultiLine(true, true);
+        editor_.setReturnKeyStartsNewLine(true);
+        editor_.setInputRestrictions(4000);
+        editor_.setText(initialPrompt, juce::dontSendNotification);
+        editor_.setTextToShowWhenEmpty(
+            "Example: Prefer classic analogue signal paths, keep output levels conservative, "
+            "and use oscillator 2 only for subtle detuning.",
+            DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        editor_.setColour(juce::TextEditor::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+        editor_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+        editor_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+        addAndMakeVisible(editor_);
+
+        clearButton_.setButtonText("Clear");
+        clearButton_.setColour(juce::TextButton::buttonColourId,
+                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        clearButton_.onClick = [this]() { editor_.clear(); };
+        addAndMakeVisible(clearButton_);
+
+        cancelButton_.setButtonText("Cancel");
+        cancelButton_.setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        cancelButton_.onClick = [this]() { close(0); };
+        addAndMakeVisible(cancelButton_);
+
+        saveButton_.setButtonText("Done");
+        saveButton_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        saveButton_.onClick = [this]() {
+            if (onSave_)
+                onSave_(editor_.getText().trim());
+            close(1);
+        };
+        addAndMakeVisible(saveButton_);
+
+        setSize(520, 250);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        description_.setBounds(bounds.removeFromTop(24));
+        bounds.removeFromTop(8);
+        auto buttons = bounds.removeFromBottom(30);
+        bounds.removeFromBottom(10);
+        editor_.setBounds(bounds);
+
+        saveButton_.setBounds(buttons.removeFromRight(80));
+        buttons.removeFromRight(8);
+        cancelButton_.setBounds(buttons.removeFromRight(80));
+        clearButton_.setBounds(buttons.removeFromLeft(80));
+    }
+
+  private:
+    void close(int result) {
+        if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+            window->exitModalState(result);
+    }
+
+    std::function<void(juce::String)> onSave_;
+    juce::Label description_;
+    juce::TextEditor editor_;
+    juce::TextButton clearButton_;
+    juce::TextButton cancelButton_;
+    juce::TextButton saveButton_;
+};
+
 static bool applyConfigToMatchingDevice(const juce::String& uniqueId, magda::DeviceInfo& device) {
     const auto deviceConfigId = device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
     if (deviceConfigId != uniqueId)
         return false;
 
     return ParameterConfigDialog::applyConfigToDevice(uniqueId, device);
+}
+
+void ParameterConfigDialog::showAiPromptEditor() {
+    auto safeThis = juce::Component::SafePointer<ParameterConfigDialog>(this);
+    auto* editor = new AIPromptEditorComponent(aiCustomPrompt_, [safeThis](juce::String prompt) {
+        if (safeThis == nullptr)
+            return;
+        safeThis->aiCustomPrompt_ = prompt.trim();
+        safeThis->updateAiPromptButtonText();
+    });
+
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "AI Prompt - " + pluginName_;
+    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.content.setOwned(editor);
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+    options.launchAsync();
+}
+
+void ParameterConfigDialog::updateAiPromptButtonText() {
+    aiPromptButton_.setButtonText(aiCustomPrompt_.isEmpty() ? "AI Prompt..." : "AI Prompt \u2713");
 }
 
 static bool refreshElementParameterConfig(const juce::String& uniqueId,
@@ -131,6 +233,10 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
                     owner_.parameters_[static_cast<size_t>(paramIndex)].inMiniMixer =
                         toggle_.getToggleState();
                     owner_.updateTitle();
+                } else if (column_ == ColumnIds::AI) {
+                    owner_.parameters_[static_cast<size_t>(paramIndex)].inAiSoundDesigner =
+                        toggle_.getToggleState();
+                    owner_.updateTitle();
                 }
             }
         };
@@ -149,6 +255,10 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
                 toggle_.setVisible(true);
             } else if (column_ == ColumnIds::Mini) {
                 toggle_.setToggleState(param.inMiniMixer, juce::dontSendNotification);
+                toggle_.setEnabled(true);
+                toggle_.setVisible(true);
+            } else if (column_ == ColumnIds::AI) {
+                toggle_.setToggleState(param.inAiSoundDesigner, juce::dontSendNotification);
                 toggle_.setEnabled(true);
                 toggle_.setVisible(true);
             }
@@ -384,6 +494,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     header.addColumn("Parameter", ParamName, 150, 100, 300);
     header.addColumn("Visible", Visible, 60, 60, 60);
     header.addColumn("Mini FX", Mini, 64, 64, 72);
+    header.addColumn("AI Agent", AI, 70, 70, 78);
     header.addColumn("Unit", Unit, 90, 70, 120);
     header.addColumn("Range", Range, 180, 120, 300);
 
@@ -427,7 +538,24 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     };
     addAndMakeVisible(applyButton_);
 
-    // Select/Deselect all buttons
+    // Bulk column selector + Select/Deselect all buttons. External plugins can
+    // independently bulk-edit each checkbox column; internal plugins narrow
+    // this selector to Mini FX in showForPlugin().
+    bulkColumnLabel_.setText("Column:", juce::dontSendNotification);
+    bulkColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    bulkColumnLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    addAndMakeVisible(bulkColumnLabel_);
+
+    bulkColumnSelector_.addItem("Visible", ColumnIds::Visible);
+    bulkColumnSelector_.addItem("Mini FX", ColumnIds::Mini);
+    bulkColumnSelector_.addItem("AI Agent", ColumnIds::AI);
+    bulkColumnSelector_.setSelectedId(ColumnIds::Visible, juce::dontSendNotification);
+    bulkColumnSelector_.setColour(juce::ComboBox::backgroundColourId,
+                                  DarkTheme::getColour(DarkTheme::SURFACE));
+    bulkColumnSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    bulkColumnSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+    addAndMakeVisible(bulkColumnSelector_);
+
     selectAllButton_.setButtonText("Select All");
     selectAllButton_.setColour(juce::TextButton::buttonColourId,
                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
@@ -461,7 +589,9 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     resetButton_.onClick = [this]() {
         auto* alert = new juce::AlertWindow(
             "Reset parameter configuration?",
-            "Discard all inferred units, ranges, and AI-detected values for \"" + pluginName_ +
+            "Discard all inferred units, ranges, AI parameter selections, and custom "
+            "instructions for \"" +
+                pluginName_ +
                 "\" and show every parameter as a plain 0–100 % slider.\n\n"
                 "This cannot be undone.",
             juce::AlertWindow::QuestionIcon);
@@ -515,15 +645,37 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     searchBox_.onTextChange = [this]() { filterParameters(searchBox_.getText()); };
     addAndMakeVisible(searchBox_);
 
+    aiPromptButton_.setButtonText("AI Prompt...");
+    aiPromptButton_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    aiPromptButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    aiPromptButton_.setTooltip(
+        "Edit persistent instructions added to every AI sound-design request for this plug-in.");
+    aiPromptButton_.onClick = [this]() { showAiPromptEditor(); };
+    addAndMakeVisible(aiPromptButton_);
+
     // Build mock data
     buildMockParameters();
     rebuildFilteredList();
 
-    setSize(660, 500);
+    setSize(730, 500);
 }
 
 void ParameterConfigDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+
+    if (detecting_ && !aiSpinnerBounds_.isEmpty()) {
+        const auto spinner = aiSpinnerBounds_.toFloat();
+        const auto centre = spinner.getCentre();
+        const float radius = juce::jmin(spinner.getWidth(), spinner.getHeight()) * 0.38f;
+
+        juce::Path arc;
+        arc.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, aiSpinnerPhase_,
+                          aiSpinnerPhase_ + juce::MathConstants<float>::pi * 1.45f, true);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        g.strokePath(arc, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    }
 }
 
 void ParameterConfigDialog::resized() {
@@ -541,11 +693,14 @@ void ParameterConfigDialog::resized() {
     searchBox_.setBounds(searchRow);
     bounds.removeFromTop(8);
 
-    // Select/Deselect all buttons
+    // Column-aware bulk selection and detection controls.
     auto selectionButtonRow = bounds.removeFromTop(28);
     bounds.removeFromTop(8);
-    const int selButtonWidth = 90;
+    const int selButtonWidth = 82;
     const int selButtonSpacing = 8;
+    bulkColumnLabel_.setBounds(selectionButtonRow.removeFromLeft(48));
+    bulkColumnSelector_.setBounds(selectionButtonRow.removeFromLeft(92));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
     selectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     deselectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
@@ -555,7 +710,9 @@ void ParameterConfigDialog::resized() {
     aiDetectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     resetButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
-    selectionButtonRow.removeFromLeft(selButtonSpacing);
+    selectionButtonRow.removeFromLeft(4);
+    aiSpinnerBounds_ = selectionButtonRow.removeFromLeft(18).reduced(1);
+    selectionButtonRow.removeFromLeft(4);
     aiStatusLabel_.setBounds(selectionButtonRow);
 
     // Buttons at bottom
@@ -570,6 +727,8 @@ void ParameterConfigDialog::resized() {
     applyButton_.setBounds(buttonRow.removeFromRight(buttonWidth));
     buttonRow.removeFromRight(buttonSpacing);
     cancelButton_.setBounds(buttonRow.removeFromRight(buttonWidth));
+    if (aiPromptButton_.isVisible())
+        aiPromptButton_.setBounds(buttonRow.removeFromLeft(110));
 
     // Table takes remaining space
     table_.setBounds(bounds);
@@ -621,7 +780,7 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
     if (columnId == ParamName)
         return nullptr;
 
-    if (columnId == Visible || columnId == Mini) {
+    if (columnId == Visible || columnId == Mini || columnId == AI) {
         auto* toggle = dynamic_cast<ToggleCell*>(existingComponent);
         if (toggle == nullptr) {
             toggle = new ToggleCell(*this, rowNumber, columnId);
@@ -653,9 +812,13 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
 
 void ParameterConfigDialog::updateTitle() {
     int miniCount = 0;
-    for (const auto& p : parameters_)
+    int aiCount = 0;
+    for (const auto& p : parameters_) {
         if (p.inMiniMixer)
             miniCount++;
+        if (p.inAiSoundDesigner)
+            aiCount++;
+    }
 
     // Internal devices expose only the Mini FX choice (no Visible column).
     if (isInternalPlugin_) {
@@ -671,7 +834,7 @@ void ParameterConfigDialog::updateTitle() {
             visibleCount++;
     titleLabel_.setText(pluginName_ + " - " + juce::String(visibleCount) + " / " +
                             juce::String(parameters_.size()) + " params visible, " +
-                            juce::String(miniCount) + " mini FX",
+                            juce::String(miniCount) + " mini FX, " + juce::String(aiCount) + " AI",
                         juce::dontSendNotification);
 }
 
@@ -747,11 +910,17 @@ void ParameterConfigDialog::showForPlugin(const juce::String& uniqueId,
     // Load parameters from the plugin
     dialog->loadParameters(uniqueId);
 
-    // MAGDA internal devices have full native UIs, so the generic "Visible"
-    // param-grid selection is meaningless for them. Drop that column and expose
-    // only the Mini FX choice (which params surface in the mixer mini-chain row).
-    if (dialog->isInternalPlugin_)
+    // MAGDA internal devices have full native UIs and their generic sound
+    // designers introspect all parameters. Drop the external-only Visible and
+    // AI columns, exposing only the Mini FX choice.
+    if (dialog->isInternalPlugin_) {
         dialog->table_.getHeader().removeColumn(ColumnIds::Visible);
+        dialog->table_.getHeader().removeColumn(ColumnIds::AI);
+        dialog->bulkColumnSelector_.clear(juce::dontSendNotification);
+        dialog->bulkColumnSelector_.addItem("Mini FX", ColumnIds::Mini);
+        dialog->bulkColumnSelector_.setSelectedId(ColumnIds::Mini, juce::dontSendNotification);
+        dialog->aiPromptButton_.setVisible(false);
+    }
 
     // Rebuild filtered list to include all loaded parameters
     dialog->rebuildFilteredList();
@@ -1078,12 +1247,14 @@ bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId)
 }
 
 void ParameterConfigDialog::selectAllParameters() {
-    // Internal devices only expose the Mini FX choice; Select All targets that.
+    const int column = bulkColumnSelector_.getSelectedId();
     for (auto& param : parameters_) {
-        if (isInternalPlugin_)
-            param.inMiniMixer = true;
-        else
+        if (column == ColumnIds::Visible && !isInternalPlugin_)
             param.isVisible = true;
+        else if (column == ColumnIds::Mini)
+            param.inMiniMixer = true;
+        else if (column == ColumnIds::AI && !isInternalPlugin_)
+            param.inAiSoundDesigner = true;
     }
     table_.updateContent();
     updateTitle();
@@ -1119,7 +1290,10 @@ void ParameterConfigDialog::resetParameterConfiguration() {
         param.rangeCenter = 0.5f;
         param.choices.clear();
         param.inMiniMixer = false;
+        param.inAiSoundDesigner = false;
     }
+    aiCustomPrompt_.clear();
+    updateAiPromptButtonText();
 
     rebuildFilteredList();
     table_.updateContent();
@@ -1135,12 +1309,12 @@ void ParameterConfigDialog::runHeuristicDetection() {
 
     std::vector<magda::ParameterScanInput> visibleInputs;
     for (size_t i = 0; i < scanInputs_.size() && i < parameters_.size(); ++i) {
-        if (parameters_[i].isVisible)
+        if (parameters_[i].isVisible || parameters_[i].inAiSoundDesigner)
             visibleInputs.push_back(scanInputs_[i]);
     }
 
     if (visibleInputs.empty()) {
-        aiStatusLabel_.setText("No visible params to detect", juce::dontSendNotification);
+        aiStatusLabel_.setText("No visible or AI params to detect", juce::dontSendNotification);
         return;
     }
 
@@ -1164,11 +1338,14 @@ void ParameterConfigDialog::runHeuristicDetection() {
 }
 
 void ParameterConfigDialog::deselectAllParameters() {
+    const int column = bulkColumnSelector_.getSelectedId();
     for (auto& param : parameters_) {
-        if (isInternalPlugin_)
-            param.inMiniMixer = false;
-        else
+        if (column == ColumnIds::Visible && !isInternalPlugin_)
             param.isVisible = false;
+        else if (column == ColumnIds::Mini)
+            param.inMiniMixer = false;
+        else if (column == ColumnIds::AI && !isInternalPlugin_)
+            param.inAiSoundDesigner = false;
     }
     table_.updateContent();
     updateTitle();
@@ -1185,6 +1362,7 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     detectButton_.setEnabled(!detecting);
     resetButton_.setEnabled(!detecting);
     searchBox_.setEnabled(!detecting);
+    aiPromptButton_.setEnabled(!detecting);
     table_.setEnabled(!detecting);
 
     if (detecting) {
@@ -1192,8 +1370,11 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
         aiDetectButton_.setColour(juce::TextButton::buttonColourId,
                                   DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
         cancelButton_.setEnabled(false);
-        dotCount_ = 0;
-        startTimerHz(3);
+        aiSpinnerPhase_ = 0.0f;
+        aiStatusLabel_.setText(juce::String(aiResolved_) + " / " + juce::String(aiTotal_) +
+                                   " resolved",
+                               juce::dontSendNotification);
+        startTimerHz(30);
     } else {
         aiDetectButton_.setButtonText("AI Detect");
         aiDetectButton_.setColour(juce::TextButton::buttonColourId,
@@ -1201,15 +1382,17 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
         cancelButton_.setEnabled(true);
         stopTimer();
     }
+    repaint(aiSpinnerBounds_);
 }
 
 void ParameterConfigDialog::timerCallback() {
-    dotCount_ = (dotCount_ + 1) % 4;
-    juce::String dots;
-    for (int i = 0; i < dotCount_; ++i)
-        dots += ".";
-    juce::String status = juce::String(aiResolved_) + " / " + juce::String(aiTotal_) + " resolved";
-    aiStatusLabel_.setText(status + dots, juce::dontSendNotification);
+    aiSpinnerPhase_ += juce::MathConstants<float>::twoPi / 36.0f;
+    if (aiSpinnerPhase_ >= juce::MathConstants<float>::twoPi)
+        aiSpinnerPhase_ -= juce::MathConstants<float>::twoPi;
+    repaint(aiSpinnerBounds_);
+
+    aiStatusLabel_.setText(juce::String(aiResolved_) + " / " + juce::String(aiTotal_) + " resolved",
+                           juce::dontSendNotification);
 }
 
 void ParameterConfigDialog::runDetection() {
@@ -1221,12 +1404,12 @@ void ParameterConfigDialog::runDetection() {
     // Filter to only visible parameters
     std::vector<magda::ParameterScanInput> visibleInputs;
     for (size_t i = 0; i < scanInputs_.size() && i < parameters_.size(); ++i) {
-        if (parameters_[i].isVisible)
+        if (parameters_[i].isVisible || parameters_[i].inAiSoundDesigner)
             visibleInputs.push_back(scanInputs_[i]);
     }
 
     if (visibleInputs.empty()) {
-        aiStatusLabel_.setText("No visible params to detect", juce::dontSendNotification);
+        aiStatusLabel_.setText("No visible or AI params to detect", juce::dontSendNotification);
         return;
     }
 
@@ -1368,6 +1551,7 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         // so never persist visibility for them regardless of the default state.
         paramElem->setAttribute("visible", !isInternalPlugin_ && p.isVisible);
         paramElem->setAttribute("mini", p.inMiniMixer);
+        paramElem->setAttribute("ai", !isInternalPlugin_ && p.inAiSoundDesigner);
         paramElem->setAttribute("unit", p.unit);
         paramElem->setAttribute("scale", scaleToXmlString(p.scale));
         paramElem->setAttribute("min", static_cast<double>(p.rangeMin));
@@ -1394,6 +1578,9 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         if (p.isVisible)
             visibleCount++;
     }
+
+    if (aiCustomPrompt_.isNotEmpty())
+        root.createNewChildElement("AISoundDesignerPrompt")->addTextElement(aiCustomPrompt_);
 
     if (root.writeTo(configFile)) {
         DBG("Saved parameter config for " << pluginUniqueId_ << " - " << visibleCount
@@ -1425,6 +1612,11 @@ void ParameterConfigDialog::loadParameterConfiguration() {
         return;
     }
 
+    aiCustomPrompt_.clear();
+    if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
+        aiCustomPrompt_ = promptElem->getAllSubText().trim();
+    updateAiPromptButtonText();
+
     // First, mark all as invisible
     for (auto& param : parameters_) {
         param.isVisible = false;
@@ -1440,6 +1632,7 @@ void ParameterConfigDialog::loadParameterConfiguration() {
                 auto& p = parameters_[static_cast<size_t>(index)];
                 p.isVisible = paramElem->getBoolAttribute("visible", false);
                 p.inMiniMixer = paramElem->getBoolAttribute("mini", false);
+                p.inAiSoundDesigner = paramElem->getBoolAttribute("ai", false);
                 if (paramElem->hasAttribute("unit"))
                     p.unit = paramElem->getStringAttribute("unit");
                 if (paramElem->hasAttribute("scale"))
@@ -1510,6 +1703,11 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
     // Load parameters from new format or legacy format
     device.visibleParameters.clear();
     device.miniMixerParameters.clear();
+    device.aiSoundDesignerParameters.clear();
+    device.aiSoundDesignerPrompt.clear();
+
+    if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
+        device.aiSoundDesignerPrompt = promptElem->getAllSubText().trim();
 
     // device.parameters now holds only the plugin's own params — TE's slot
     // dry/wet live in device.wrapperParameters — so the XML's stored index
@@ -1525,12 +1723,16 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
             auto xmlName = paramElem->getStringAttribute("name");
             bool visible = paramElem->getBoolAttribute("visible", false);
             bool mini = paramElem->getBoolAttribute("mini", false);
+            bool ai = paramElem->getBoolAttribute("ai", false);
 
             if (visible && deviceIndex < static_cast<int>(device.parameters.size())) {
                 device.visibleParameters.push_back(deviceIndex);
             }
             if (mini && deviceIndex < static_cast<int>(device.parameters.size())) {
                 device.miniMixerParameters.push_back(deviceIndex);
+            }
+            if (ai && deviceIndex < static_cast<int>(device.parameters.size())) {
+                device.aiSoundDesignerParameters.push_back(deviceIndex);
             }
 
             // Apply detection data to device parameters
@@ -1571,6 +1773,28 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
     }
 
     return true;
+}
+
+bool ParameterConfigDialog::hasAiSoundDesignerParameters(const juce::String& uniqueId) {
+    if (uniqueId.isEmpty())
+        return false;
+
+    auto configFile = magda::paths::pluginConfigsDir().getChildFile(
+        uniqueId.replaceCharacters(":/\\,; ", "______") + ".xml");
+    if (!configFile.existsAsFile())
+        return false;
+
+    auto xml = juce::parseXML(configFile);
+    if (!xml)
+        return false;
+
+    if (auto* paramsElem = xml->getChildByName("Parameters")) {
+        for (auto* paramElem : paramsElem->getChildIterator()) {
+            if (paramElem->getBoolAttribute("ai", false))
+                return true;
+        }
+    }
+    return false;
 }
 
 #ifdef MAGDA_ENABLE_TEST_HOOKS

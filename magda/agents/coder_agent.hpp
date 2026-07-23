@@ -6,6 +6,8 @@
 
 namespace magda {
 
+struct DeviceInfo;
+
 /**
  * @brief Per-device "write me code" agent interface.
  *
@@ -40,9 +42,11 @@ bool isCoderSupported(const juce::String& pluginId);
  * UI (the AI side panel) that doesn't care which kind of agent runs.
  */
 std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId);
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device);
 
 /// True iff any kind of DeviceAIAgent (sound design OR coder) exists
 /// for `pluginId`.
 bool isDeviceAISupported(const juce::String& pluginId);
+bool isDeviceAISupported(const DeviceInfo& device);
 
 }  // namespace magda

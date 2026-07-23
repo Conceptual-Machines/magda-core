@@ -404,4 +404,24 @@ bool isSoundDesignSupported(const juce::String& pluginId) {
     return getInternalPluginCapabilities(pluginId).supportsSoundDesign();
 }
 
+std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const DeviceInfo& device) {
+    if (auto internal = createSoundDesignAgentFor(device.pluginId))
+        return internal;
+
+    if (device.format == PluginFormat::Internal || device.aiSoundDesignerParameters.empty())
+        return nullptr;
+
+    juce::String description;
+    if (device.manufacturer.isNotEmpty())
+        description = "Made by " + device.manufacturer + ".";
+    return std::make_unique<GenericSoundDesignAgent>(
+        device.pluginId, device.name.isNotEmpty() ? device.name : device.pluginId, description,
+        device.aiSoundDesignerParameters, device.aiSoundDesignerPrompt);
+}
+
+bool isSoundDesignSupported(const DeviceInfo& device) {
+    return isSoundDesignSupported(device.pluginId) ||
+           (device.format != PluginFormat::Internal && !device.aiSoundDesignerParameters.empty());
+}
+
 }  // namespace magda

@@ -241,9 +241,12 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
         return;
     pluginId_ = pluginId;
     const auto& capabilities = getInternalPluginCapabilities(pluginId_);
-    const bool soundSupported = capabilities.supportsSoundDesign();
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(path_);
+    const bool soundSupported =
+        device != nullptr ? isSoundDesignSupported(*device) : capabilities.supportsSoundDesign();
     const bool coderSupported = capabilities.supportsCoder();
-    const bool supported = capabilities.supportsDeviceAI();
+    const bool supported =
+        device != nullptr ? isDeviceAISupported(*device) : capabilities.supportsDeviceAI();
     input_.setEnabled(supported);
     if (coderSupported) {
         input_.setTextToShowWhenEmpty(
@@ -291,6 +294,12 @@ void AIPanelComponent::resized() {
     auto inputArea = bounds.removeFromBottom(22);
     bounds.removeFromBottom(4);
     output_.setBounds(bounds);
+    if (busy_) {
+        busyIndicatorBounds_ = inputArea.removeFromRight(82);
+        inputArea.removeFromRight(4);
+    } else {
+        busyIndicatorBounds_ = {};
+    }
     input_.setBounds(inputArea);
 
     refreshModelLabel();
@@ -316,6 +325,25 @@ void AIPanelComponent::paint(juce::Graphics& g) {
                                             : juce::Colours::limegreen.withAlpha(0.7f));
         g.setColour(dot);
         g.fillEllipse(cx - r * 0.5f, cy - r * 0.5f, r, r);
+    }
+
+    if (busy_ && !busyIndicatorBounds_.isEmpty()) {
+        const auto indicator = busyIndicatorBounds_.toFloat();
+        const float radius = juce::jmin(indicator.getHeight(), 16.0f) * 0.32f;
+        const float cx = indicator.getX() + radius + 2.0f;
+        const float cy = indicator.getCentreY();
+
+        juce::Path arc;
+        arc.addCentredArc(cx, cy, radius, radius, 0.0f, busySpinnerPhase_,
+                          busySpinnerPhase_ + juce::MathConstants<float>::pi * 1.45f, true);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.strokePath(arc, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        g.drawText("designing...", busyIndicatorBounds_.withTrimmedLeft(16),
+                   juce::Justification::centredLeft, false);
     }
 }
 
@@ -346,7 +374,10 @@ void AIPanelComponent::submitPrompt() {
     auto prompt = input_.getText().trim();
     if (prompt.isEmpty())
         return;
-    if (!getInternalPluginCapabilities(pluginId_).supportsDeviceAI()) {
+    auto* device = TrackManager::getInstance().getDeviceInChainByPath(path_);
+    const bool supported =
+        device != nullptr ? isDeviceAISupported(*device) : isDeviceAISupported(pluginId_);
+    if (!supported) {
         appendOutput("unsupported device");
         return;
     }
@@ -362,7 +393,8 @@ void AIPanelComponent::submitPrompt() {
     appendOutput(juce::String::charToString(0x25CF) + " " + prompt);
     input_.clear();
 
-    auto agent = createDeviceAIAgentFor(pluginId_);
+    auto agent =
+        device != nullptr ? createDeviceAIAgentFor(*device) : createDeviceAIAgentFor(pluginId_);
     if (!agent) {
         appendOutput("no agent for " + pluginId_);
         return;
@@ -505,7 +537,23 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
 }
 
 void AIPanelComponent::setBusy(bool busy) {
+    busy_ = busy;
     input_.setEnabled(!busy);
+    if (busy) {
+        busySpinnerPhase_ = 0.0f;
+        startTimerHz(30);
+    } else {
+        stopTimer();
+    }
+    resized();
+    repaint();
+}
+
+void AIPanelComponent::timerCallback() {
+    busySpinnerPhase_ += juce::MathConstants<float>::twoPi / 36.0f;
+    if (busySpinnerPhase_ >= juce::MathConstants<float>::twoPi)
+        busySpinnerPhase_ -= juce::MathConstants<float>::twoPi;
+    repaint(busyIndicatorBounds_);
 }
 
 void AIPanelComponent::appendOutput(const juce::String& line) {

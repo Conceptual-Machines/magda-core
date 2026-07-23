@@ -786,14 +786,17 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     }
 
     menu.addItem(3, "Configure Parameters...");
+    if (plugin.isExternal)
+        menu.addItem(13, "Configure AI Sound Designer...");
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
 
     const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
 
-    // Devices with a registered sound-design agent can have their AI Sound
-    // Designer icon/panel exposed or hidden per-device (opt-out, defaults on).
-    if (magda::isSoundDesignSupported(plugin.uniqueId)) {
+    // Internal devices with a registered agent and external plugins with an
+    // explicit AI parameter selection can expose/hide the Sound Designer.
+    if (magda::isSoundDesignSupported(plugin.uniqueId) ||
+        ParameterConfigDialog::hasAiSoundDesignerParameters(plugin.uniqueId)) {
         menu.addItem(
             12, "AI Sound Designer", true,
             magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier));
@@ -883,6 +886,11 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     break;
                 }
                 case 3:
+                    showParameterConfigDialog(plugin);
+                    break;
+                case 13:
+                    // External sound design uses the same parameter metadata
+                    // panel, with its dedicated "AI Agent" selection column.
                     showParameterConfigDialog(plugin);
                     break;
                 case 5:

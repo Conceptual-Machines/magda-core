@@ -89,6 +89,16 @@ bool applyDeviceSlotSavedParameterConfig(magda::DeviceInfo& device,
             nodePath, tempDevice.miniMixerParameters);
     device.miniMixerParameters = tempDevice.miniMixerParameters;
 
+    if (nodePath.isValid())
+        magda::TrackManager::getInstance().setDeviceAiSoundDesignerParameters(
+            nodePath, tempDevice.aiSoundDesignerParameters);
+    device.aiSoundDesignerParameters = tempDevice.aiSoundDesignerParameters;
+
+    if (nodePath.isValid())
+        magda::TrackManager::getInstance().setDeviceAiSoundDesignerPrompt(
+            nodePath, tempDevice.aiSoundDesignerPrompt);
+    device.aiSoundDesignerPrompt = tempDevice.aiSoundDesignerPrompt;
+
     device.parameters = tempDevice.parameters;
     return true;
 }

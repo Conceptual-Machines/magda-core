@@ -159,7 +159,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
 
-    refreshDeviceTraits(device.pluginId);
+    refreshDeviceTraits(device);
 
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
@@ -764,6 +764,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         updateParameterPagination();
         updateParameterSlots();
     }
+    refreshDeviceTraits(device_);
 
     // Hide power / preset / delete for post-FX analysis devices (the getters
     // return nullptr too, so the header layout skips placing them).
@@ -878,8 +879,8 @@ void DeviceSlotComponent::showSavePluginPresetDialog() {
     });
 }
 
-void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
-    traits_ = makeDeviceSlotTraits(pluginId);
+void DeviceSlotComponent::refreshDeviceTraits(const magda::DeviceInfo& device) {
+    traits_ = makeDeviceSlotTraits(device);
 
     if (traits_.isTracktionDevice && tracktionLogo_ == nullptr) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
@@ -909,7 +910,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
-    refreshDeviceTraits(device.pluginId);
+    refreshDeviceTraits(device);
     syncModMacroControlsAvailability();
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
