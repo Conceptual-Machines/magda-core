@@ -81,6 +81,31 @@ void PluginPreferences::setTreatsAsMidiFx(const juce::String& pluginIdentifier,
         pluginIdentifier, treatAsMidiFx ? juce::String(kMidiFxCategoryOverride) : juce::String());
 }
 
+bool PluginPreferences::aiSoundDesignerEnabled(const juce::String& pluginIdentifier) const {
+    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
+        return true;
+    std::lock_guard<std::mutex> lock(mutex_);
+    return aiSoundDesignerHidden_.find(pluginIdentifier) == aiSoundDesignerHidden_.end();
+}
+
+void PluginPreferences::setAiSoundDesignerEnabled(const juce::String& pluginIdentifier,
+                                                  bool enabled) {
+    if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
+        return;
+
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        changed = enabled ? aiSoundDesignerHidden_.erase(pluginIdentifier) > 0
+                          : aiSoundDesignerHidden_.insert(pluginIdentifier).second;
+        if (changed)
+            saveUnlocked();
+    }
+
+    if (changed)
+        notifyAiSoundDesignerPreferenceChanged(pluginIdentifier);
+}
+
 juce::String PluginPreferences::browserCategoryOverride(
     const juce::String& pluginIdentifier) const {
     if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
@@ -199,6 +224,13 @@ void PluginPreferences::notifyExternalPluginFormatPreferenceChanged(PluginFormat
     });
 }
 
+void PluginPreferences::notifyAiSoundDesignerPreferenceChanged(
+    const juce::String& pluginIdentifier) {
+    listeners_.call([&pluginIdentifier](Listener& listener) {
+        listener.aiSoundDesignerPreferenceChanged(pluginIdentifier);
+    });
+}
+
 std::vector<magda::KitRow> PluginPreferences::defaultKitRows(
     const juce::String& pluginIdentifier) const {
     if (pluginIdentifier.isEmpty() || !hasGlobalKitDefault(pluginIdentifier))
@@ -224,6 +256,7 @@ void PluginPreferences::setDefaultKitRows(const juce::String& pluginIdentifier,
 
 void PluginPreferences::loadUnlocked() {
     drumGridPlugins_.clear();
+    aiSoundDesignerHidden_.clear();
     categoryOverrides_.clear();
     defaultKits_.clear();
     externalFormatPreference_ = PluginFormat::VST3;
@@ -249,6 +282,15 @@ void PluginPreferences::loadUnlocked() {
             auto id = entry.toString();
             if (id.isNotEmpty() && id != kInstrumentRackWrapperId)
                 drumGridPlugins_.insert(id);
+        }
+    }
+
+    auto aiHiddenVar = payload->getProperty("aiSoundDesignerHidden");
+    if (aiHiddenVar.isArray()) {
+        for (const auto& entry : *aiHiddenVar.getArray()) {
+            auto id = entry.toString();
+            if (id.isNotEmpty() && id != kInstrumentRackWrapperId)
+                aiSoundDesignerHidden_.insert(id);
         }
     }
 
@@ -308,6 +350,10 @@ void PluginPreferences::saveUnlocked() const {
     for (const auto& id : drumGridPlugins_)
         prefersList.add(juce::var(id));
 
+    juce::Array<juce::var> aiHiddenList;
+    for (const auto& id : aiSoundDesignerHidden_)
+        aiHiddenList.add(juce::var(id));
+
     juce::Array<juce::var> categoryOverrideList;
     for (const auto& [pluginId, category] : categoryOverrides_) {
         auto* categoryObj = new juce::DynamicObject();
@@ -338,6 +384,7 @@ void PluginPreferences::saveUnlocked() const {
 
     auto* payload = new juce::DynamicObject();
     payload->setProperty("prefersDrumGrid", prefersList);
+    payload->setProperty("aiSoundDesignerHidden", aiHiddenList);
     payload->setProperty("categoryOverrides", categoryOverrideList);
     payload->setProperty("defaultKits", kitsList);
     payload->setProperty("externalPluginFormatPreference",

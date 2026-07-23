@@ -7,6 +7,7 @@
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/GainStagingManager.hpp"
+#include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
@@ -50,7 +51,8 @@ class DeviceSlotComponent : public NodeComponent,
                             public juce::Timer,
                             public magda::TrackManagerListener,
                             public magda::AutomationManagerListener,
-                            public magda::GainStagingListener {
+                            public magda::GainStagingListener,
+                            public magda::PluginPreferences::Listener {
   public:
     static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
@@ -215,6 +217,10 @@ class DeviceSlotComponent : public NodeComponent,
     // device's staging state changes.
     void deviceGainStageChanged(const magda::ChainNodePath& devicePath,
                                 const magda::DeviceGainStageInfo& info) override;
+
+    // PluginPreferences::Listener — re-layout the header when the user toggles
+    // this device's AI Sound Designer exposure from the plugin browser.
+    void aiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier) override;
 
   private:
     magda::DeviceInfo device_;

@@ -6,10 +6,13 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "four_osc_agent.hpp"
 #include "four_osc_apply.hpp"
+#include "generic_sound_design_agent.hpp"
 #include "internal_plugins.hpp"
 #include "poly_step_sequencer_agent.hpp"
 #include "poly_step_sequencer_apply.hpp"
@@ -363,15 +366,39 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
 
 std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId) {
     switch (internalPluginFromId(pluginId)) {
+        // 4OSC keeps its bespoke agent for now — its wave/filter/voice/FX
+        // controls are ValueTree properties, not automatable parameters, so it
+        // can't yet go through the generic path. TODO: make those controls
+        // automatable and retire FourOscSoundDesignAgent / FourOscAgent.
         case InternalPlugin::FourOsc:
             return std::make_unique<FourOscSoundDesignAgent>();
+        // The sequencers are MIDI generators with pattern-shaped output, not
+        // parameter presets — they stay on their own bespoke agents.
         case InternalPlugin::PolyStepSequencer:
             return std::make_unique<PolyStepSequencerSoundDesignAgent>();
         case InternalPlugin::StepSequencer:
             return std::make_unique<StepSequencerSoundDesignAgent>();
         default:
-            return nullptr;
+            break;
     }
+
+    // Every other MAGDA sound generator (compiled Faust synths + native Mutable
+    // ports) is driven by the generic parameter-introspection agent. Its only
+    // per-device inputs are the display name + description used to prime the LLM.
+    if (isGenericSoundGeneratorDevice(pluginId)) {
+        juce::String displayName = pluginId;
+        juce::String description;
+        if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(pluginId)) {
+            displayName = spec->displayName;
+            description = spec->description;
+        } else if (const auto* meta = getInternalDeviceMetadataForPluginId(pluginId)) {
+            displayName = meta->displayName;
+            description = meta->description;
+        }
+        return std::make_unique<GenericSoundDesignAgent>(pluginId, displayName, description);
+    }
+
+    return nullptr;
 }
 
 bool isSoundDesignSupported(const juce::String& pluginId) {

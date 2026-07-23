@@ -29,6 +29,9 @@ class PluginPreferences {
         virtual void externalPluginFormatPreferenceChanged(PluginFormat preference) {
             juce::ignoreUnused(preference);
         }
+        virtual void aiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier) {
+            juce::ignoreUnused(pluginIdentifier);
+        }
     };
 
     static PluginPreferences& getInstance();
@@ -69,6 +72,15 @@ class PluginPreferences {
     /** Compatibility helper for the legacy MIDI FX category override. */
     void setTreatsAsMidiFx(const juce::String& pluginIdentifier, bool treatAsMidiFx);
 
+    /** True iff the AI Sound Designer icon/panel should be exposed for this
+     *  plugin. Defaults to true (opt-out): a plugin that has a registered
+     *  sound-design agent shows the panel unless the user has hidden it. */
+    bool aiSoundDesignerEnabled(const juce::String& pluginIdentifier) const;
+
+    /** Show/hide the AI Sound Designer panel for this plugin. Writes
+     *  immediately to disk and notifies listeners. */
+    void setAiSoundDesignerEnabled(const juce::String& pluginIdentifier, bool enabled);
+
     /** Canonical key for user-global plugin preferences from the MAGDA model.
      *  External plugins prefer DeviceInfo::uniqueId (JUCE scan identity).
      *  Internal MAGDA devices fall back to DeviceInfo::pluginId ("4osc",
@@ -95,9 +107,13 @@ class PluginPreferences {
     void saveUnlocked() const;
     void notifyDrumGridPreferenceChanged(const juce::String& pluginIdentifier);
     void notifyExternalPluginFormatPreferenceChanged(PluginFormat preference);
+    void notifyAiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier);
 
     mutable std::mutex mutex_;
     std::unordered_set<juce::String> drumGridPlugins_;
+    // Plugins for which the user has hidden the AI Sound Designer panel. Stored
+    // as an opt-out set so the default (absent from the set) is "shown".
+    std::unordered_set<juce::String> aiSoundDesignerHidden_;
     std::unordered_map<juce::String, juce::String> categoryOverrides_;
     std::unordered_map<juce::String, std::vector<magda::KitRow>> defaultKits_;
     PluginFormat externalFormatPreference_ = PluginFormat::VST3;
