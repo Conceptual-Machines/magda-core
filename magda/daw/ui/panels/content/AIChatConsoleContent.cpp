@@ -20,6 +20,7 @@
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/midi_context.hpp"
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
@@ -318,6 +319,217 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
 };
 
 // ============================================================================
+// MidiContextPopup
+// ============================================================================
+
+class AIChatConsoleContent::MidiContextPopup : public juce::Component, private juce::ListBoxModel {
+  public:
+    explicit MidiContextPopup(AIChatConsoleContent& owner) : owner_(&owner) {
+        useSelectionButton_.setButtonText("Use selection");
+        clearButton_.setButtonText("Clear");
+        for (auto* button : {&useSelectionButton_, &clearButton_}) {
+            button->setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+            button->setColour(juce::TextButton::buttonOnColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+            button->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+            addAndMakeVisible(*button);
+        }
+
+        useSelectionButton_.setTooltip(
+            "Use the selected MIDI clip(s), or every MIDI clip on the selected track(s)");
+        useSelectionButton_.onClick = [safeOwner = owner_]() {
+            if (safeOwner != nullptr)
+                safeOwner->useCurrentSelectionAsMidiContext();
+        };
+        clearButton_.onClick = [safeOwner = owner_]() {
+            if (safeOwner != nullptr)
+                safeOwner->clearMidiContext();
+        };
+
+        listBox_.setModel(this);
+        listBox_.setRowHeight(kRowHeight);
+        listBox_.setOutlineThickness(0);
+        listBox_.setColour(juce::ListBox::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+        listBox_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+        addAndMakeVisible(listBox_);
+
+        buildRows();
+        const int listHeight =
+            juce::jlimit(kRowHeight, 320, static_cast<int>(rows_.size()) * kRowHeight);
+        setSize(310, kToolbarHeight + listHeight + 16);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(DarkTheme::getBorderColour());
+        g.drawRect(getLocalBounds(), 1);
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(6);
+        auto toolbar = area.removeFromTop(kToolbarHeight);
+        useSelectionButton_.setBounds(toolbar.removeFromLeft(112));
+        toolbar.removeFromLeft(6);
+        clearButton_.setBounds(toolbar.removeFromLeft(58));
+        area.removeFromTop(4);
+        listBox_.setBounds(area);
+    }
+
+  private:
+    struct Row {
+        enum class Kind { Track, Clip, Empty };
+        Kind kind = Kind::Empty;
+        magda::TrackId trackId = magda::INVALID_TRACK_ID;
+        magda::ClipId clipId = magda::INVALID_CLIP_ID;
+        std::vector<magda::ClipId> trackClipIds;
+        juce::String label;
+        juce::String detail;
+    };
+
+    static constexpr int kRowHeight = 24;
+    static constexpr int kToolbarHeight = 24;
+
+    int getNumRows() override {
+        return static_cast<int>(rows_.size());
+    }
+
+    void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
+                          bool rowIsSelected) override {
+        if (rowNumber < 0 || rowNumber >= static_cast<int>(rows_.size()))
+            return;
+        const auto& row = rows_[static_cast<std::size_t>(rowNumber)];
+
+        if (rowIsSelected)
+            g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+
+        if (row.kind == Row::Kind::Empty) {
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+            g.drawText(row.label, 8, 0, width - 16, height, juce::Justification::centredLeft);
+            return;
+        }
+
+        bool checked = false;
+        bool partial = false;
+        if (owner_ != nullptr) {
+            if (row.kind == Row::Kind::Clip) {
+                checked = owner_->isMidiContextClipSelected(row.clipId);
+            } else {
+                int selected = 0;
+                for (auto clipId : row.trackClipIds)
+                    selected += owner_->isMidiContextClipSelected(clipId) ? 1 : 0;
+                checked = selected == static_cast<int>(row.trackClipIds.size()) && selected > 0;
+                partial = selected > 0 && !checked;
+            }
+        }
+
+        const int indent = row.kind == Row::Kind::Clip ? 24 : 8;
+        auto tick = juce::Rectangle<float>(static_cast<float>(indent),
+                                           static_cast<float>((height - 13) / 2), 13.0f, 13.0f);
+        g.setColour(DarkTheme::getBorderColour());
+        g.drawRoundedRectangle(tick, 2.0f, 1.0f);
+        if (checked || partial) {
+            g.setColour(DarkTheme::getAccentColour());
+            if (partial) {
+                g.fillRect(tick.reduced(3.0f).withHeight(2.0f).withCentre(tick.getCentre()));
+            } else {
+                juce::Path check;
+                check.startNewSubPath(tick.getX() + 2.5f, tick.getCentreY());
+                check.lineTo(tick.getX() + 5.5f, tick.getBottom() - 3.0f);
+                check.lineTo(tick.getRight() - 2.0f, tick.getY() + 3.0f);
+                g.strokePath(check, juce::PathStrokeType(1.7f));
+            }
+        }
+
+        const int textX = indent + 20;
+        const int textRightPadding = row.detail.isNotEmpty() ? 92 : 8;
+        g.setColour(row.kind == Row::Kind::Track ? DarkTheme::getTextColour()
+                                                 : DarkTheme::getSecondaryTextColour());
+        g.setFont(row.kind == Row::Kind::Track
+                      ? FontManager::getInstance().getMonoFont(11.0f).boldened()
+                      : FontManager::getInstance().getMonoFont(11.0f));
+        g.drawText(row.label, textX, 0, width - textX - textRightPadding, height,
+                   juce::Justification::centredLeft, true);
+
+        if (row.detail.isNotEmpty()) {
+            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.65f));
+            g.setFont(FontManager::getInstance().getMonoFont(9.5f));
+            const int detailWidth = 82;
+            g.drawText(row.detail, width - detailWidth - 8, 0, detailWidth, height,
+                       juce::Justification::centredRight);
+        }
+    }
+
+    void listBoxItemClicked(int rowNumber, const juce::MouseEvent&) override {
+        if (owner_ == nullptr || rowNumber < 0 || rowNumber >= static_cast<int>(rows_.size()))
+            return;
+        const auto& row = rows_[static_cast<std::size_t>(rowNumber)];
+        if (row.kind == Row::Kind::Track)
+            owner_->toggleMidiContextTrack(row.trackId);
+        else if (row.kind == Row::Kind::Clip)
+            owner_->toggleMidiContextClip(row.clipId);
+        listBox_.deselectAllRows();
+        listBox_.repaint();
+    }
+
+    void buildRows() {
+        rows_.clear();
+        auto& tracks = magda::TrackManager::getInstance();
+        auto& clips = magda::ClipManager::getInstance();
+
+        for (const auto& track : tracks.getTracks()) {
+            std::vector<magda::ClipId> midiClipIds;
+            for (auto clipId : clips.getClipsOnTrack(track.id)) {
+                const auto* clip = clips.getClip(clipId);
+                if (clip != nullptr && clip->isMidi())
+                    midiClipIds.push_back(clipId);
+            }
+            if (midiClipIds.empty())
+                continue;
+
+            Row trackRow;
+            trackRow.kind = Row::Kind::Track;
+            trackRow.trackId = track.id;
+            trackRow.trackClipIds = midiClipIds;
+            trackRow.label = track.name;
+            trackRow.detail = juce::String(static_cast<int>(midiClipIds.size())) + " MIDI";
+            rows_.push_back(std::move(trackRow));
+
+            for (auto clipId : midiClipIds) {
+                const auto* clip = clips.getClip(clipId);
+                if (clip == nullptr)
+                    continue;
+                Row clipRow;
+                clipRow.kind = Row::Kind::Clip;
+                clipRow.trackId = track.id;
+                clipRow.clipId = clipId;
+                clipRow.label = clip->name.isNotEmpty() ? clip->name : "Untitled MIDI clip";
+                clipRow.detail = juce::String(static_cast<int>(clip->midiNotes.size())) + " notes";
+                if (clip->view == magda::ClipView::Session)
+                    clipRow.detail += " · live";
+                rows_.push_back(std::move(clipRow));
+            }
+        }
+
+        if (rows_.empty()) {
+            Row empty;
+            empty.kind = Row::Kind::Empty;
+            empty.label = "No MIDI clips in this project";
+            rows_.push_back(std::move(empty));
+        }
+        listBox_.updateContent();
+    }
+
+    juce::Component::SafePointer<AIChatConsoleContent> owner_;
+    juce::TextButton useSelectionButton_;
+    juce::TextButton clearButton_;
+    juce::ListBox listBox_;
+    std::vector<Row> rows_;
+};
+
+// ============================================================================
 // RequestThread
 // ============================================================================
 
@@ -334,11 +546,15 @@ magda::ConversationStore::Channel AIChatConsoleContent::conversationChannel(magd
     return magda::ConversationStore::Channel::Arrangement;
 }
 
-AIChatConsoleContent::RequestThread::RequestThread(AIChatConsoleContent& owner)
-    : juce::Thread("AI Chat Request"), owner_(owner) {}
+AIChatConsoleContent::RequestThread::RequestThread(AIChatConsoleContent& owner,
+                                                   juce::String message, juce::String midiContext)
+    : juce::Thread("AI Chat Request"),
+      owner_(owner),
+      message_(std::move(message)),
+      midiContext_(std::move(midiContext)) {}
 
 void AIChatConsoleContent::RequestThread::run() {
-    auto message = owner_.pendingMessage_.toStdString();
+    auto message = message_.toStdString();
     auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
 
     auto totalStart = std::chrono::steady_clock::now();
@@ -470,6 +686,11 @@ void AIChatConsoleContent::RequestThread::run() {
     const std::string priorContext = owner_.conversation_.render(convoChannel);
     const std::string contextualMessage =
         priorContext.empty() ? message : priorContext + "\nUser request: " + message;
+    std::string agentMessage = contextualMessage;
+    if (midiContext_.isNotEmpty()) {
+        agentMessage = midiContext_.toStdString() + "\n\nConversation and current request:\n" +
+                       contextualMessage;
+    }
 
     // Step 2: Dispatch to agents based on classification
     std::string dslCode;                                   // DSL from command agent
@@ -550,16 +771,14 @@ void AIChatConsoleContent::RequestThread::run() {
         std::future<magda::MusicAgent::GenerateResult> musicFuture;
 
         if (owner_.commandAgent_) {
-            commandFuture =
-                std::async(std::launch::async, [this, &contextualMessage, cmdOnToken]() {
-                    return owner_.commandAgent_->generateStreaming(contextualMessage, cmdOnToken);
-                });
+            commandFuture = std::async(std::launch::async, [this, &agentMessage, cmdOnToken]() {
+                return owner_.commandAgent_->generateStreaming(agentMessage, cmdOnToken);
+            });
         }
         if (owner_.musicAgent_) {
-            musicFuture =
-                std::async(std::launch::async, [this, &contextualMessage, musicOnToken]() {
-                    return owner_.musicAgent_->generateStreaming(contextualMessage, musicOnToken);
-                });
+            musicFuture = std::async(std::launch::async, [this, &agentMessage, musicOnToken]() {
+                return owner_.musicAgent_->generateStreaming(agentMessage, musicOnToken);
+            });
         }
 
         if (commandFuture.valid()) {
@@ -586,7 +805,7 @@ void AIChatConsoleContent::RequestThread::run() {
             return;
     } else if (intent == magda::ConsoleIntent::Command) {
         if (owner_.commandAgent_) {
-            auto result = owner_.commandAgent_->generateStreaming(contextualMessage, onToken);
+            auto result = owner_.commandAgent_->generateStreaming(agentMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError)
@@ -596,7 +815,7 @@ void AIChatConsoleContent::RequestThread::run() {
         }
     } else if (intent == magda::ConsoleIntent::Music) {
         if (owner_.musicAgent_) {
-            auto result = owner_.musicAgent_->generateStreaming(contextualMessage, onToken);
+            auto result = owner_.musicAgent_->generateStreaming(agentMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError) {
@@ -608,7 +827,7 @@ void AIChatConsoleContent::RequestThread::run() {
         }
     } else if (intent == magda::ConsoleIntent::Automation) {
         if (owner_.automationAgent_) {
-            auto result = owner_.automationAgent_->generateStreaming(contextualMessage, onToken);
+            auto result = owner_.automationAgent_->generateStreaming(agentMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError)
@@ -627,11 +846,11 @@ void AIChatConsoleContent::RequestThread::run() {
         // of generating from scratch. Output still lands in a new clip (the
         // executor never inherits the selected clip).
         if (owner_.drummerAgent_) {
-            std::string drummerMessage = contextualMessage;
+            std::string drummerMessage = agentMessage;
             if (owner_.selectedClipContextAvailable_ && owner_.selectedClipContextEnabled_) {
                 auto contextPreamble = formatSelectedClipsAsDrummerContext();
                 if (contextPreamble.isNotEmpty()) {
-                    drummerMessage = contextPreamble.toStdString() + "\n" + contextualMessage;
+                    drummerMessage = contextPreamble.toStdString() + "\n" + drummerMessage;
                 }
             }
             auto result = owner_.drummerAgent_->generateStreaming(drummerMessage, onToken);
@@ -947,6 +1166,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     contextLabel_.setBorderSize(juce::BorderSize<int>(0, 2, 0, 4));
     contextLabel_.setInterceptsMouseClicks(true, false);
     contextLabel_.addMouseListener(this, false);
+    contextLabel_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    contextLabel_.setTooltip("Choose MIDI clips to include as agent context");
     addAndMakeVisible(contextLabel_);
 
     selectedClipContextLookAndFeel_ = std::make_unique<BreadcrumbToggleLookAndFeel>();
@@ -1344,12 +1565,18 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     if (drummerAgent_)
         drummerAgent_->resetCancel();
 
-    pendingMessage_ = resolvedText;
+    pruneMidiContextSelection();
+    juce::String midiContext;
+    if (contextEnabled_) {
+        std::vector<magda::ClipId> midiContextClipIds;
+        midiContextClipIds.assign(midiContextClipIds_.begin(), midiContextClipIds_.end());
+        midiContext = magda::buildMidiContext(*magdaApi_, midiContextClipIds);
+    }
 
     dotCount_ = 0;
     startTimer(400);  // Animate dots every 400ms
 
-    requestThread_ = std::make_unique<RequestThread>(*this);
+    requestThread_ = std::make_unique<RequestThread>(*this, resolvedText, std::move(midiContext));
     requestThread_->startThread();
 }
 
@@ -1760,6 +1987,7 @@ void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
 
     // A different project means a fresh conversation; drop all view memory.
     conversation_.clearAll();
+    clearMidiContext();
 
     // Cancel any in-flight request
     cancelRequest();
@@ -1996,6 +2224,15 @@ void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
     updateContextBar();
 }
 
+void AIChatConsoleContent::multiTrackSelectionChanged(
+    const std::unordered_set<magda::TrackId>& trackIds) {
+    selectedClipContextAvailable_ = false;
+    drummerModeActive_ = false;
+    contextText_ = juce::String(static_cast<int>(trackIds.size())) + " Tracks";
+    contextIcon_ = ContextIcon::Track;
+    updateContextBar();
+}
+
 void AIChatConsoleContent::clipSelectionChanged(magda::ClipId clipId) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId);
     magda::TrackId trackId = magda::INVALID_TRACK_ID;
@@ -2065,8 +2302,162 @@ void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath&
     updateContextBar();
 }
 
+void AIChatConsoleContent::showMidiContextPicker() {
+    pruneMidiContextSelection();
+    auto popup = std::make_unique<MidiContextPopup>(*this);
+    juce::CallOutBox::launchAsynchronously(std::move(popup), contextLabel_.getScreenBounds(),
+                                           nullptr);
+}
+
+bool AIChatConsoleContent::isMidiContextClipSelected(magda::ClipId clipId) const {
+    return midiContextClipIds_.contains(clipId);
+}
+
+void AIChatConsoleContent::toggleMidiContextClip(magda::ClipId clipId) {
+    const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr || !clip->isMidi())
+        return;
+    if (midiContextClipIds_.contains(clipId))
+        midiContextClipIds_.erase(clipId);
+    else
+        midiContextClipIds_.insert(clipId);
+    contextEnabled_ = true;
+    magda::dsl::Interpreter::setContextEnabled(true);
+    updateContextBar();
+}
+
+void AIChatConsoleContent::toggleMidiContextTrack(magda::TrackId trackId) {
+    auto& clips = magda::ClipManager::getInstance();
+    std::vector<magda::ClipId> midiClipIds;
+    for (auto clipId : clips.getClipsOnTrack(trackId)) {
+        const auto* clip = clips.getClip(clipId);
+        if (clip != nullptr && clip->isMidi())
+            midiClipIds.push_back(clipId);
+    }
+    if (midiClipIds.empty())
+        return;
+
+    const bool allSelected =
+        std::all_of(midiClipIds.begin(), midiClipIds.end(),
+                    [this](auto clipId) { return midiContextClipIds_.contains(clipId); });
+    for (auto clipId : midiClipIds) {
+        if (allSelected)
+            midiContextClipIds_.erase(clipId);
+        else
+            midiContextClipIds_.insert(clipId);
+    }
+    contextEnabled_ = true;
+    magda::dsl::Interpreter::setContextEnabled(true);
+    updateContextBar();
+}
+
+void AIChatConsoleContent::useCurrentSelectionAsMidiContext() {
+    std::unordered_set<magda::ClipId> selectedMidi;
+    auto& selection = magda::SelectionManager::getInstance();
+    auto& clips = magda::ClipManager::getInstance();
+
+    const auto& noteSelection = selection.getNoteSelection();
+    if (noteSelection.isValid()) {
+        const auto* clip = clips.getClip(noteSelection.clipId);
+        if (clip != nullptr && clip->isMidi())
+            selectedMidi.insert(noteSelection.clipId);
+    }
+
+    for (auto clipId : selection.getSelectedClips()) {
+        const auto* clip = clips.getClip(clipId);
+        if (clip != nullptr && clip->isMidi())
+            selectedMidi.insert(clipId);
+    }
+
+    if (selectedMidi.empty()) {
+        auto addTrackClips = [&selectedMidi, &clips](magda::TrackId trackId) {
+            for (auto clipId : clips.getClipsOnTrack(trackId)) {
+                const auto* clip = clips.getClip(clipId);
+                if (clip != nullptr && clip->isMidi())
+                    selectedMidi.insert(clipId);
+            }
+        };
+
+        const auto& selectedTracks = selection.getSelectedTracks();
+        if (!selectedTracks.empty()) {
+            for (auto trackId : selectedTracks)
+                addTrackClips(trackId);
+        } else if (selection.getSelectedTrack() != magda::INVALID_TRACK_ID) {
+            addTrackClips(selection.getSelectedTrack());
+        }
+    }
+
+    midiContextClipIds_ = std::move(selectedMidi);
+    if (!midiContextClipIds_.empty()) {
+        contextEnabled_ = true;
+        magda::dsl::Interpreter::setContextEnabled(true);
+    }
+    updateContextBar();
+}
+
+void AIChatConsoleContent::clearMidiContext() {
+    midiContextClipIds_.clear();
+    updateContextBar();
+}
+
+void AIChatConsoleContent::pruneMidiContextSelection() {
+    auto& clips = magda::ClipManager::getInstance();
+    std::erase_if(midiContextClipIds_, [&clips](auto clipId) {
+        const auto* clip = clips.getClip(clipId);
+        return clip == nullptr || !clip->isMidi();
+    });
+}
+
+juce::String AIChatConsoleContent::getMidiContextSummary() const {
+    if (midiContextClipIds_.empty())
+        return {};
+
+    auto& tracks = magda::TrackManager::getInstance();
+    auto& clips = magda::ClipManager::getInstance();
+    std::unordered_set<magda::TrackId> trackIds;
+    const magda::ClipInfo* onlyClip = nullptr;
+    for (auto clipId : midiContextClipIds_) {
+        if (const auto* clip = clips.getClip(clipId); clip != nullptr && clip->isMidi()) {
+            trackIds.insert(clip->trackId);
+            onlyClip = clip;
+        }
+    }
+    if (trackIds.empty())
+        return {};
+
+    if (midiContextClipIds_.size() == 1 && onlyClip != nullptr) {
+        const auto* track = tracks.getTrack(onlyClip->trackId);
+        const auto trackName = track != nullptr ? track->name : "Track";
+        return trackName + " > " +
+               (onlyClip->name.isNotEmpty() ? onlyClip->name : juce::String("MIDI clip"));
+    }
+
+    if (trackIds.size() == 1) {
+        const auto trackId = *trackIds.begin();
+        const auto* track = tracks.getTrack(trackId);
+        const auto trackName = track != nullptr ? track->name : "Track";
+        int midiClipsOnTrack = 0;
+        for (auto clipId : clips.getClipsOnTrack(trackId)) {
+            const auto* clip = clips.getClip(clipId);
+            midiClipsOnTrack += clip != nullptr && clip->isMidi() ? 1 : 0;
+        }
+        if (midiClipsOnTrack == static_cast<int>(midiContextClipIds_.size()))
+            return trackName + " · all MIDI";
+        return trackName + " · " + juce::String(static_cast<int>(midiContextClipIds_.size())) +
+               " MIDI";
+    }
+
+    return juce::String(static_cast<int>(midiContextClipIds_.size())) + " MIDI · " +
+           juce::String(static_cast<int>(trackIds.size())) + " tracks";
+}
+
 void AIChatConsoleContent::updateContextBar() {
-    contextLabel_.setText(contextText_, juce::dontSendNotification);
+    pruneMidiContextSelection();
+    auto displayText = getMidiContextSummary();
+    if (displayText.isEmpty())
+        displayText = contextText_.isNotEmpty() ? contextText_ : "Add MIDI context";
+    displayText += "  " + juce::String::charToString(0x25BE);
+    contextLabel_.setText(displayText, juce::dontSendNotification);
     contextLabel_.setColour(juce::Label::textColourId,
                             contextEnabled_ ? DarkTheme::getAccentColour()
                                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
@@ -2155,8 +2546,11 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
         magda::AISettingsDialog::showDialog(this);
         return;
     }
-    if (event.originalComponent == &contextLabel_ ||
-        (event.originalComponent == this && contextIconBounds_.contains(event.getPosition()))) {
+    if (event.originalComponent == &contextLabel_) {
+        showMidiContextPicker();
+        return;
+    }
+    if (event.originalComponent == this && contextIconBounds_.contains(event.getPosition())) {
         contextEnabled_ = !contextEnabled_;
         magda::dsl::Interpreter::setContextEnabled(contextEnabled_);
         updateContextBar();

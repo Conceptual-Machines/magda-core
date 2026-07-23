@@ -98,6 +98,7 @@ class AIChatConsoleContent : public PanelContent,
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
+    void multiTrackSelectionChanged(const std::unordered_set<magda::TrackId>& trackIds) override;
     void clipSelectionChanged(magda::ClipId clipId) override;
     void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
@@ -106,11 +107,13 @@ class AIChatConsoleContent : public PanelContent,
     // Background thread for AI requests
     class RequestThread : public juce::Thread {
       public:
-        RequestThread(AIChatConsoleContent& owner);
+        RequestThread(AIChatConsoleContent& owner, juce::String message, juce::String midiContext);
         void run() override;
 
       private:
         AIChatConsoleContent& owner_;
+        juce::String message_;
+        juce::String midiContext_;
     };
 
     void sendMessage(const juce::String& text);
@@ -120,6 +123,14 @@ class AIChatConsoleContent : public PanelContent,
                              std::size_t svgDataSize);
     void appendToChat(const juce::String& text);
     void updateContextBar();
+    void showMidiContextPicker();
+    void useCurrentSelectionAsMidiContext();
+    void clearMidiContext();
+    void toggleMidiContextClip(magda::ClipId clipId);
+    void toggleMidiContextTrack(magda::TrackId trackId);
+    void pruneMidiContextSelection();
+    juce::String getMidiContextSummary() const;
+    bool isMidiContextClipSelected(magda::ClipId clipId) const;
 
     // Timer callback for "Thinking..." animation
     void timerCallback() override;
@@ -141,6 +152,7 @@ class AIChatConsoleContent : public PanelContent,
     void onInputChanged();  // shared body for both insert / delete callbacks
 
     // Bottom bar: context icon + label + send button
+    class MidiContextPopup;
     enum class ContextIcon { None, Track, Clip, Device, Drummer };
     ContextIcon contextIcon_ = ContextIcon::None;
     std::unique_ptr<juce::Drawable> trackIconDrawable_;
@@ -168,6 +180,10 @@ class AIChatConsoleContent : public PanelContent,
     bool contextEnabled_ = true;
     bool selectedClipContextAvailable_ = false;
     bool selectedClipContextEnabled_ = true;
+    // Explicit clip context chosen from the footer picker. This is deliberately
+    // independent of the editor selection so users can move around the project
+    // without silently changing what the next request will see.
+    std::unordered_set<magda::ClipId> midiContextClipIds_;
 
     // Mix analysis is gathered by the mixer's Analyze button and held by
     // MixAnalysisService (#886). The console only surfaces a small "mix analysis
@@ -276,7 +292,6 @@ class AIChatConsoleContent : public PanelContent,
     void clearInput();
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> processing_{false};
-    juce::String pendingMessage_;
     int dotCount_{0};
 
     // Config status bar
