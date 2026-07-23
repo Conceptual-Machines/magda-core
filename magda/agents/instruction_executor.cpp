@@ -239,11 +239,17 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
             currentClipId_ = seedClipId_;
             if (clipInfo->trackId != INVALID_TRACK_ID)
                 currentTrackId_ = clipInfo->trackId;
+        } else if (replaceSeedClipContents_) {
+            error_ = "The previous AI result is no longer available";
+            return false;
         } else {
             DBG("InstructionExecutor: ignoring stale seedClipId=" + juce::String(seedClipId_) +
                 " (clip no longer exists)");
             seedClipId_ = -1;
         }
+    } else if (replaceSeedClipContents_) {
+        error_ = "No previous AI result is available to revise";
+        return false;
     }
 
     // Multi-clip selection → populate selectedClips_ so SET/DEL apply to all
@@ -272,6 +278,23 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
     // One undo step for the whole turn. Property/track commands enqueued below
     // are collected by the UndoManager and wrapped into a single CompoundCommand.
     CompoundScope compound(api_.undo(), "AI Assistant");
+
+    if (replaceSeedClipContents_ && currentClipId_ >= 0) {
+        auto* clip = api_.clips().getClip(currentClipId_);
+        if (clip == nullptr || !clip->isMidi()) {
+            error_ = "The previous AI result is no longer a MIDI clip";
+            return false;
+        }
+
+        std::vector<size_t> noteIndices;
+        noteIndices.reserve(clip->midiNotes.size());
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            noteIndices.push_back(i);
+        if (!noteIndices.empty()) {
+            api_.undo().executeCommand(
+                std::make_unique<DeleteMultipleMidiNotesCommand>(currentClipId_, noteIndices));
+        }
+    }
 
     for (const auto& inst : instructions) {
         bool ok = false;

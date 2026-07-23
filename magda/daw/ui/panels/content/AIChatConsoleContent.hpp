@@ -104,16 +104,21 @@ class AIChatConsoleContent : public PanelContent,
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
 
   private:
+    enum class MidiOutputMode { NewClip, ReviseLast };
+
     // Background thread for AI requests
     class RequestThread : public juce::Thread {
       public:
-        RequestThread(AIChatConsoleContent& owner, juce::String message, juce::String midiContext);
+        RequestThread(AIChatConsoleContent& owner, juce::String message, juce::String midiContext,
+                      juce::String drummerContext, magda::ClipId reviseTargetClipId);
         void run() override;
 
       private:
         AIChatConsoleContent& owner_;
         juce::String message_;
         juce::String midiContext_;
+        juce::String drummerContext_;
+        magda::ClipId reviseTargetClipId_ = magda::INVALID_CLIP_ID;
     };
 
     void sendMessage(const juce::String& text);
@@ -131,6 +136,9 @@ class AIChatConsoleContent : public PanelContent,
     void pruneMidiContextSelection();
     juce::String getMidiContextSummary() const;
     bool isMidiContextClipSelected(magda::ClipId clipId) const;
+    void updateOutputModeButton();
+    bool isLastGeneratedMidiClipValid() const;
+    void rememberGeneratedMidiClip(magda::ClipId clipId);
 
     // Timer callback for "Thinking..." animation
     void timerCallback() override;
@@ -169,8 +177,7 @@ class AIChatConsoleContent : public PanelContent,
     // RequestThread::run and the drum context icon below the chat.
     bool drummerModeActive_ = false;
     juce::Label contextLabel_;
-    std::unique_ptr<juce::LookAndFeel_V4> selectedClipContextLookAndFeel_;
-    juce::ToggleButton selectedClipContextToggle_{"Use context"};
+    juce::TextButton outputModeButton_{"New clip"};
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
     juce::DrawableButton copyButton_{"copy", juce::DrawableButton::ImageFitted};
@@ -178,8 +185,8 @@ class AIChatConsoleContent : public PanelContent,
     juce::Rectangle<int> contextIconBounds_;
     juce::String contextText_;
     bool contextEnabled_ = true;
-    bool selectedClipContextAvailable_ = false;
-    bool selectedClipContextEnabled_ = true;
+    MidiOutputMode midiOutputMode_ = MidiOutputMode::NewClip;
+    magda::ClipId lastGeneratedMidiClipId_ = magda::INVALID_CLIP_ID;
     // Explicit clip context chosen from the footer picker. This is deliberately
     // independent of the editor selection so users can move around the project
     // without silently changing what the next request will see.
