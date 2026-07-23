@@ -61,15 +61,19 @@ wave(2) = nentry("Op3 Wave [idx:30]", 0, 0, 4, 1);
 wave(3) = nentry("Op4 Wave [idx:31]", 0, 0, 4, 1);
 
 // Portamento glide (ms -> seconds): smooth the played pitch toward the target.
-// The host forces this to 0 on the poly voices, so only the Mono/Legato voice
-// glides; poly patches are unaffected.
+// Keep a 0.5 ms floor even when Glide is off. In Mono mode the same oscillator
+// keeps sounding across note-ons, and an instantaneous frequency step excites
+// the FM feedback loop as a sharp attack transient. The sub-millisecond floor
+// is perceptually immediate but removes that discontinuity. The host forces
+// Glide to 0 on poly voices, so they receive only this anti-click floor.
 glide = hslider("Glide [unit:ms] [idx:32]", 0, 0, 2000, 1) / 1000.0;
-freqG = freq : si.smooth(ba.tau2pole(glide));
+freqG = freq : si.smooth(ba.tau2pole(max(0.0005, glide)));
 
 // Velocity -> amplitude depth. 0 = ignore velocity (every note full level); 1 =
 // full velocity range. The per-voice `gain` zone carries the note velocity.
 velAmt  = hslider("Vel Amount [idx:33]", 1.0, 0.0, 1.0, 0.001);
-velGain = (1.0 - velAmt) + velAmt * gain;
+gainG = gain : si.smooth(ba.tau2pole(0.0005));
+velGain = (1.0 - velAmt) + velAmt * gainG;
 
 // Per-operator phase reset: restart that operator's phasor at 0 on note-on (a
 // punchy, repeatable attack) when enabled. Fires for one sample on the gate's
@@ -79,6 +83,19 @@ reset(0) = nentry("Op1 Reset [idx:34] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1)
 reset(1) = nentry("Op2 Reset [idx:35] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
 reset(2) = nentry("Op3 Reset [idx:36] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
 reset(3) = nentry("Op4 Reset [idx:37] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+
+// en.adsre (exponential segments), not en.adsr: the linear adsr's attack
+// counter hard-resets on the gate's rising edge, so a Mono retrigger (the
+// host's one-sample gate dip) collapses the envelope from sustain to zero in
+// one sample - an audible click on every mono note. adsre is a one-pole slew
+// toward the segment target, so it resumes from the current level instead.
+env = en.adsre(ampA, ampD, ampS, ampR, gate);
+
+// Restarting a phasor while a reused mono voice is already audible necessarily
+// jumps to an unrelated waveform value. Honour Phase Reset when the voice is
+// silent (including every fresh poly voice), but retain phase on overlapping
+// mono retriggers. At this level a reset discontinuity is inaudible.
+phaseResetRise = gateRise * (env' < 0.001);
 
 // Per-operator enable (idx 38..41): an On/Off toggle that mutes the operator
 // entirely - it stops sounding AND stops modulating (its output is gated before
@@ -108,7 +125,7 @@ with {
     pm(i) = sm(m(0, i)) * y0 + sm(m(1, i)) * y1 + sm(m(2, i)) * y2 + sm(m(3, i)) * y3;
     // Resettable phasor (os.hs_phasor) so Phase Reset restarts the op at 0 on
     // note-on; glide-smoothed pitch (freqG) carries portamento.
-    mphase(i) = os.hs_phasor(1.0, freqG * sm(ratio(i)), (reset(i) > 0) * gateRise) +
+    mphase(i) = os.hs_phasor(1.0, freqG * sm(ratio(i)), (reset(i) > 0) * phaseResetRise) +
                 pm(i) / (2.0 * ma.PI);
     p(i) = mphase(i) - floor(mphase(i));  // wrap to [0,1)
     sine(x) = sin(2.0 * ma.PI * x);
@@ -122,13 +139,6 @@ with {
 // dB -> linear gain (floored to silence at -60 dB), smoothed to avoid steps.
 lvl(i) = sm(outLvl(i) > -59.5) * ba.db2linear(sm(outLvl(i)));
 mix(y0, y1, y2, y3) = y0 * lvl(0) + y1 * lvl(1) + y2 * lvl(2) + y3 * lvl(3);
-
-// en.adsre (exponential segments), not en.adsr: the linear adsr's attack
-// counter hard-resets on the gate's rising edge, so a Mono retrigger (the
-// host's one-sample gate dip) collapses the envelope from sustain to zero in
-// one sample - an audible click on every mono note. adsre is a one-pole slew
-// toward the segment target, so it resumes from the current level instead.
-env = en.adsre(ampA, ampD, ampS, ampR, gate);
 
 voice = (operators ~ si.bus(4)) : mix : *(env) : *(velGain);
 
