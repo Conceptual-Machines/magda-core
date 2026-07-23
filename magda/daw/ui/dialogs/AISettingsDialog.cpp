@@ -1005,10 +1005,12 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                                      DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(advancedHintLabel_);
 
-        static constexpr std::array<std::pair<const char*, const char*>, 5> kRoles = {{
+        static constexpr std::array<std::pair<const char*, const char*>, 7> kRoles = {{
             {magda::role::ROUTER, "Router"},
             {magda::role::COMMAND, "Command"},
             {magda::role::MUSIC, "Music"},
+            {magda::role::FAUST, "Faust"},
+            {magda::role::CHORD, "Chord"},
             {magda::role::CONTROLLER, "Controller"},
             {magda::role::THEME, "Theme"},
         }};
@@ -1548,10 +1550,13 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 out[magda::role::COMMAND] = cmdLocal;
             }
         }
-        // Theme is not part of the built-in presets - default it to the music
-        // tier (creative, structured-JSON generation, same as themes).
+        // Any role omitted by a hand-authored/simple preset inherits the music
+        // tier. Local-server presets intentionally keep one shared model.
         if (auto it = out.find(magda::role::MUSIC); it != out.end())
-            out[magda::role::THEME] = it->second;
+            for (const auto* inheritedRole :
+                 {magda::role::FAUST, magda::role::CHORD, magda::role::THEME})
+                if (out.find(inheritedRole) == out.end())
+                    out[inheritedRole] = it->second;
         return out;
     }
 
@@ -1668,7 +1673,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     // Advanced per-agent grid (AgentRow defined near the top of the class).
     juce::Label advancedHintLabel_;
-    std::array<AgentRow, 5> agentRows_;
+    std::array<AgentRow, 7> agentRows_;
 
     // MCP Tools
     juce::Label mcpSectionLabel_;

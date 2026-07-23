@@ -86,6 +86,8 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut,
                        FaustCustomViewKind viewKind = FaustCustomViewKind::None) override;
 
+    void stageSourceForEditing(const juce::String& name, const juce::String& source) override;
+
     // Read access for the processor / parameter-info bridge.
     const FaustParamPool& getPool() const override {
         return pool_;

@@ -42,6 +42,10 @@ class IFaustEditorModel {
     virtual bool loadDspSource(const juce::String& name, const juce::String& source,
                                juce::String& err, FaustCustomViewKind viewKind) = 0;
 
+    /// Put source into the editor/persisted state without compiling or
+    /// swapping the active DSP. Used for deliberately unverified generation.
+    virtual void stageSourceForEditing(const juce::String& name, const juce::String& source) = 0;
+
     /// Display name of the currently loaded DSP.
     virtual juce::String getDspName() const = 0;
 
