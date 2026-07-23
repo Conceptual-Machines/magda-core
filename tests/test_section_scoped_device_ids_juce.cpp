@@ -272,23 +272,30 @@ class SectionScopedDeviceIdsTest final : public juce::UnitTest {
 
         trackManager.setDeviceVisibleParameters(postFxPath, {4, 5});
         trackManager.setDeviceMiniMixerParameters(postFxPath, {6});
+        trackManager.setDeviceAiSoundDesignerParameters(postFxPath, {10, 11});
         trackManager.setDeviceVisibleParameters(analysisPath, {7});
         trackManager.setDeviceMiniMixerParameters(analysisPath, {8, 9});
+        trackManager.setDeviceAiSoundDesignerParameters(analysisPath, {12});
 
         auto* fx = trackManager.getDeviceInChainByPath(fxPath);
         auto* postFx = trackManager.getDeviceInChainByPath(postFxPath);
         auto* analysis = trackManager.getDeviceInChainByPath(analysisPath);
 
-        expect(fx != nullptr && fx->visibleParameters.empty() && fx->miniMixerParameters.empty(),
+        expect(fx != nullptr && fx->visibleParameters.empty() && fx->miniMixerParameters.empty() &&
+                   fx->aiSoundDesignerParameters.empty(),
                "Path-scoped writes must not alter the same-id FX device");
         expect(postFx != nullptr && postFx->visibleParameters == std::vector<int>{4, 5},
                "Post-FX visible parameters should be written to the post-FX device");
         expect(postFx != nullptr && postFx->miniMixerParameters == std::vector<int>{6},
                "Post-FX mini-mixer parameters should be written to the post-FX device");
+        expect(postFx != nullptr && postFx->aiSoundDesignerParameters == std::vector<int>{10, 11},
+               "Post-FX AI parameters should be written to the post-FX device");
         expect(analysis != nullptr && analysis->visibleParameters == std::vector<int>{7},
                "Mixer-analysis visible parameters should be written to the analysis device");
         expect(analysis != nullptr && analysis->miniMixerParameters == std::vector<int>{8, 9},
                "Mixer-analysis mini-mixer parameters should be written to the analysis device");
+        expect(analysis != nullptr && analysis->aiSoundDesignerParameters == std::vector<int>{12},
+               "Mixer-analysis AI parameters should be written to the analysis device");
 
         trackManager.clearAllTracks();
     }

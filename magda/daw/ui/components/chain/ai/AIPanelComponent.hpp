@@ -34,7 +34,7 @@ namespace magda::daw::ui {
  * | model name   [X] |  <- footer: model id + clear-chat button
  * +------------------+
  */
-class AIPanelComponent : public juce::Component {
+class AIPanelComponent : public juce::Component, private juce::Timer {
   public:
     AIPanelComponent();
     ~AIPanelComponent() override;
@@ -56,6 +56,7 @@ class AIPanelComponent : public juce::Component {
     void appendStreamingToken(const juce::String& token);
     void onGenerationFinished(juce::String status, juce::String conversationJson);
     void setBusy(bool busy);
+    void timerCallback() override;
     // Mirror output_'s text onto the bound DeviceInfo so slot rebuilds restore it.
     void persistOutput();
     // Re-insert persisted text in coloured sections so the disclaimer keeps
@@ -67,6 +68,9 @@ class AIPanelComponent : public juce::Component {
 
     juce::TextEditor output_;  // multiline read-only
     juce::TextEditor input_;   // single-line, Enter = submit
+    juce::Rectangle<int> busyIndicatorBounds_;
+    bool busy_ = false;
+    float busySpinnerPhase_ = 0.0f;
 
     // Footer: model id (left) + clear-chat button (right).
     juce::Label modelLabel_;

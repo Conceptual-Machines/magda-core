@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "../daw/core/DeviceInfo.hpp"
 #include "device_ai_agent.hpp"
 
 namespace magda {
@@ -39,9 +40,16 @@ class SoundDesignAgent : public DeviceAIAgent {
 std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId);
 
 /**
+ * Device-aware factory. External plugins get the generic introspection agent
+ * only when the user has explicitly selected parameters for it.
+ */
+std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const DeviceInfo& device);
+
+/**
  * Quick check used by non-UI callers. UI surfaces read the shared capability
  * catalog directly; this returns the same declarative state.
  */
 bool isSoundDesignSupported(const juce::String& pluginId);
+bool isSoundDesignSupported(const DeviceInfo& device);
 
 }  // namespace magda

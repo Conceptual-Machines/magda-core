@@ -148,8 +148,20 @@ std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& plugin
     return nullptr;
 }
 
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device) {
+    if (auto sd = createSoundDesignAgentFor(device))
+        return sd;
+    if (auto cd = createCoderAgentFor(device.pluginId))
+        return cd;
+    return nullptr;
+}
+
 bool isDeviceAISupported(const juce::String& pluginId) {
     return getInternalPluginCapabilities(pluginId).supportsDeviceAI();
+}
+
+bool isDeviceAISupported(const DeviceInfo& device) {
+    return isSoundDesignSupported(device) || isCoderSupported(device.pluginId);
 }
 
 }  // namespace magda

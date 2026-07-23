@@ -545,6 +545,10 @@ class TrackManager {
                                     const std::vector<int>& visibleParams);
     void setDeviceMiniMixerParameters(const ChainNodePath& devicePath,
                                       const std::vector<int>& miniParams);
+    void setDeviceAiSoundDesignerParameters(const ChainNodePath& devicePath,
+                                            const std::vector<int>& aiParams);
+    void setDeviceAiSoundDesignerPrompt(const ChainNodePath& devicePath,
+                                        const juce::String& prompt);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);
     void setDeviceMiniMixerParameters(DeviceId deviceId, const std::vector<int>& miniParams);
 

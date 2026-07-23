@@ -31,4 +31,13 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     return traits;
 }
 
+DeviceSlotTraits makeDeviceSlotTraits(const magda::DeviceInfo& device) {
+    auto traits = makeDeviceSlotTraits(device.pluginId);
+    const bool externalSoundDesign =
+        device.format != magda::PluginFormat::Internal && !device.aiSoundDesignerParameters.empty();
+    traits.isAISupported = traits.isAISupported || externalSoundDesign;
+    traits.isSoundDesignSupported = traits.isSoundDesignSupported || externalSoundDesign;
+    return traits;
+}
+
 }  // namespace magda::daw::ui

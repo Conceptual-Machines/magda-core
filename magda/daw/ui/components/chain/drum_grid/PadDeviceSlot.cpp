@@ -306,7 +306,7 @@ bool PadDeviceSlot::setupForSharedDeviceUi(te::Plugin* plugin, const magda::Devi
         device.format != magda::PluginFormat::Internal)
         return false;
 
-    traits_ = makeDeviceSlotTraits(device.pluginId);
+    traits_ = makeDeviceSlotTraits(device);
     customUI_ = std::make_unique<DeviceCustomUIManager>();
 
     if (samplerUI_)

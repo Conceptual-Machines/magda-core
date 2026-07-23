@@ -157,6 +157,21 @@ TEST_CASE("Agent device capabilities declare UI and dedicated-agent routing",
     CHECK_FALSE(unsupported.drumRoleProvider);
     CHECK_FALSE(unsupported.supportsDeviceAI());
     CHECK(createDeviceAIAgentFor("third.party.unknown") == nullptr);
+
+    DeviceInfo external;
+    external.name = "Third Party Synth";
+    external.pluginId = "third.party.synth";
+    external.uniqueId = "VST3-third-party-synth";
+    external.format = PluginFormat::VST3;
+    CHECK_FALSE(isSoundDesignSupported(external));
+    CHECK(createSoundDesignAgentFor(external) == nullptr);
+
+    external.aiSoundDesignerParameters = {1, 4, 7};
+    external.aiSoundDesignerPrompt = "Use oscillator 2 only for subtle detuning.";
+    CHECK(isSoundDesignSupported(external));
+    CHECK(isDeviceAISupported(external));
+    CHECK(createSoundDesignAgentFor(external) != nullptr);
+    CHECK(createDeviceAIAgentFor(external) != nullptr);
 }
 
 TEST_CASE("Command state exposes bounded selected-track and selected-device context",

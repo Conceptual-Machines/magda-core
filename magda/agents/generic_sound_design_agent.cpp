@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <map>
+#include <unordered_set>
 #include <vector>
 
 #include "../daw/core/Config.hpp"
@@ -97,9 +98,10 @@ juce::String describeParam(const ParamSnapshot& p) {
 
 juce::String buildSystemPrompt(const juce::String& displayName, const juce::String& description,
                                const juce::String& categoryOverride,
+                               const juce::String& customPrompt,
                                const std::vector<ParamSnapshot>& params) {
     juce::String prompt;
-    prompt << "You are a sound designer for the MAGDA \"" << displayName << "\" instrument.";
+    prompt << "You are a sound designer for the \"" << displayName << "\" audio plugin.";
     if (description.isNotEmpty())
         prompt << " " << description;
     prompt << "\n\nGiven a short user description, design a single preset by choosing values "
@@ -126,6 +128,9 @@ juce::String buildSystemPrompt(const juce::String& displayName, const juce::Stri
 
     if (categoryOverride.isNotEmpty())
         prompt << "Bias the design toward this character: " << categoryOverride << "\n\n";
+
+    if (customPrompt.isNotEmpty())
+        prompt << "PLUGIN-SPECIFIC INSTRUCTIONS:\n" << customPrompt << "\n\n";
 
     prompt << "PARAMETERS:\n";
     for (const auto& p : params)
@@ -182,10 +187,14 @@ float discreteRealValue(const ParamSnapshot& p, const juce::var& value) {
 // ===========================================================================
 
 GenericSoundDesignAgent::GenericSoundDesignAgent(juce::String pluginId, juce::String displayName,
-                                                 juce::String description)
+                                                 juce::String description,
+                                                 std::vector<int> includedParameterIndices,
+                                                 juce::String customPrompt)
     : pluginId_(std::move(pluginId)),
       displayName_(std::move(displayName)),
-      description_(std::move(description)) {}
+      description_(std::move(description)),
+      includedParameterIndices_(std::move(includedParameterIndices)),
+      customPrompt_(std::move(customPrompt)) {}
 
 juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& prompt,
                                                        const ChainNodePath& path,
@@ -207,11 +216,15 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
         deviceFound = true;
         if (device->name.isNotEmpty())
             deviceName = device->name;
-        params.reserve(device->parameters.size());
+        const std::unordered_set<int> included(includedParameterIndices_.begin(),
+                                               includedParameterIndices_.end());
+        params.reserve(included.empty() ? device->parameters.size() : included.size());
         for (size_t i = 0; i < device->parameters.size(); ++i) {
+            if (!included.empty() && included.find(static_cast<int>(i)) == included.end())
+                continue;
             const auto& info = device->parameters[i];
             ParamSnapshot snap;
-            snap.index = static_cast<int>(i);
+            snap.index = info.paramIndex >= 0 ? info.paramIndex : static_cast<int>(i);
             snap.name = info.name;
             snap.normalized = normalizeParamName(info.name);
             snap.unit = info.unit;
@@ -222,6 +235,19 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
             snap.choices = info.choices;
             if (snap.normalized.isNotEmpty())
                 params.push_back(std::move(snap));
+        }
+
+        // Third-party plugins occasionally expose the same display name for
+        // several automatable parameters. Give only those collisions a stable
+        // index suffix so every JSON key still resolves to exactly one target.
+        std::map<juce::String, int> nameCounts;
+        for (const auto& param : params)
+            ++nameCounts[param.normalized];
+        for (auto& param : params) {
+            if (nameCounts[param.normalized] <= 1)
+                continue;
+            param.name += " [#" + juce::String(param.index) + "]";
+            param.normalized = normalizeParamName(param.name);
         }
     });
 
@@ -243,7 +269,8 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
     auto client = createLLMClient(agentConfig, "sound_design");
 
     llm::Request request;
-    request.systemPrompt = buildSystemPrompt(deviceName, description_, categoryOverride_, params);
+    request.systemPrompt =
+        buildSystemPrompt(deviceName, description_, categoryOverride_, customPrompt_, params);
     request.userMessage = prompt;
     // Low temperature — sound design rewards consistency over wandering.
     request.temperature = 0.2f;

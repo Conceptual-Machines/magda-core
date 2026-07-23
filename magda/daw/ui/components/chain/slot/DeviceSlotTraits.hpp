@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include "../compiled/CompiledPluginPresentation.hpp"
+#include "core/DeviceInfo.hpp"
 
 namespace magda::daw::ui {
 
@@ -24,5 +25,6 @@ struct DeviceSlotTraits {
 };
 
 DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId);
+DeviceSlotTraits makeDeviceSlotTraits(const magda::DeviceInfo& device);
 
 }  // namespace magda::daw::ui

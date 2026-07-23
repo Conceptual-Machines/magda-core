@@ -31,6 +31,7 @@ struct MockParameterInfo {
     std::vector<juce::String> choices;     // For discrete params
     std::vector<juce::String> valueTable;  // Full getText() lookup table
     bool inMiniMixer = false;              // Surfaced in the mixer mini-chain row
+    bool inAiSoundDesigner = false;        // Included in the generic AI agent prompt
 };
 
 /**
@@ -40,6 +41,7 @@ struct MockParameterInfo {
  * - Parameter name
  * - Visible toggle
  * - Mini toggle (surface this param in the mixer mini-chain row)
+ * - AI Agent toggle (include this param in third-party sound design)
  * - Custom unit
  * - Custom range (min/max/center)
  */
@@ -72,6 +74,10 @@ class ParameterConfigDialog : public juce::Component,
     // Load saved parameter configuration and apply to DeviceInfo
     static bool applyConfigToDevice(const juce::String& uniqueId, magda::DeviceInfo& device);
 
+    // True when an external plugin has at least one parameter explicitly
+    // selected for the generic AI sound designer.
+    static bool hasAiSoundDesignerParameters(const juce::String& uniqueId);
+
 #ifdef MAGDA_ENABLE_TEST_HOOKS
     static void refreshLiveDevicesForParameterConfigForTest(const juce::String& uniqueId);
 #endif
@@ -92,12 +98,17 @@ class ParameterConfigDialog : public juce::Component,
     juce::TextButton applyButton_;
     juce::TextButton selectAllButton_;
     juce::TextButton deselectAllButton_;
+    juce::Label bulkColumnLabel_;
+    juce::ComboBox bulkColumnSelector_;
     juce::TextButton detectButton_;
     juce::TextButton aiDetectButton_;
     juce::TextButton resetButton_;
     juce::Label aiStatusLabel_;
+    juce::Rectangle<int> aiSpinnerBounds_;
+    juce::TextButton aiPromptButton_;
+    juce::String aiCustomPrompt_;
     bool detecting_ = false;
-    int dotCount_ = 0;
+    float aiSpinnerPhase_ = 0.0f;
     int aiTotal_ = 0;
     int aiResolved_ = 0;
     std::shared_ptr<std::atomic<bool>> cancelFlag_;
@@ -106,13 +117,15 @@ class ParameterConfigDialog : public juce::Component,
     juce::Label searchLabel_;
 
     // Column IDs
-    enum ColumnIds { ParamName = 1, Visible, Mini, Unit, Range };
+    enum ColumnIds { ParamName = 1, Visible, Mini, AI, Unit, Range };
 
     // Scan inputs cached from loadParameters for detection
     std::vector<magda::ParameterScanInput> scanInputs_;
 
     void timerCallback() override;
     void setDetecting(bool detecting);
+    void showAiPromptEditor();
+    void updateAiPromptButtonText();
     void updateTitle();
     void buildMockParameters();
     void loadParameters(const juce::String& uniqueId);
