@@ -1,0 +1,6 @@
+.venv/
+data/raw/
+data/*.jsonl
+runs/
+__pycache__/
+*.pyc
