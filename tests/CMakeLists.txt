@@ -77,6 +77,8 @@ set(TEST_SOURCES
     test_dsl_add_arpeggio.cpp
     test_dsl_track_workflow.cpp
     test_agent_device_catalog.cpp
+    test_chord_agent.cpp
+    test_faust_agent.cpp
     test_dsl_project_commands.cpp
     test_dsl_rack_commands.cpp
     test_scale_detection.cpp

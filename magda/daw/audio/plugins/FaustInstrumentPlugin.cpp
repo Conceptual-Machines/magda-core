@@ -579,6 +579,16 @@ bool FaustInstrumentPlugin::loadDspSource(const juce::String& name, const juce::
     return true;
 }
 
+void FaustInstrumentPlugin::stageSourceForEditing(const juce::String& name,
+                                                  const juce::String& source) {
+    // Match the effect's staging semantics: edit/persist the proposed source
+    // without replacing the audible polyphonic DSP or its parameter pool.
+    dspName_ = name;
+    dspSource_ = source;
+    state.setProperty("dspName", dspName_, getUndoManager());
+    state.setProperty("dspSource", dspSource_, getUndoManager());
+}
+
 void FaustInstrumentPlugin::initialise(const te::PluginInitialisationInfo& info) {
     currentSampleRate_ = static_cast<int>(info.sampleRate);
 

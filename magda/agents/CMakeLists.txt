@@ -26,6 +26,8 @@ dsl_grammar.hpp
     command_agent.cpp
     music_agent.hpp
     music_agent.cpp
+    chord_agent.hpp
+    chord_agent.cpp
     midi_context.hpp
     midi_context.cpp
     drummer_agent.hpp

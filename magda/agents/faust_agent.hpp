@@ -15,6 +15,8 @@ namespace magda {
 
 class FaustAgent {
   public:
+    enum class Target { Effect, Instrument };
+
     struct Result {
         std::string name;         // short DSP name, e.g. "Tape Saturator"
         std::string description;  // one-line musical description
@@ -22,7 +24,14 @@ class FaustAgent {
         std::string rawOutput;    // raw LLM text, kept for diagnostics
         std::string error;
         bool hasError = false;
+        // True only after compile_faust returned a successful MCP tool result.
+        bool mcpVerified = false;
     };
+
+    explicit FaustAgent(Target target = Target::Effect) : target_(target) {}
+
+    /// Validate target-specific control conventions before MCP compilation.
+    static bool validateSource(Target target, const std::string& source, std::string& errorOut);
 
     // `conversation` carries the running multi-turn history (prior generated
     // DSP, fix attempts) so refinements edit the existing code rather than
@@ -39,13 +48,14 @@ class FaustAgent {
     }
 
   private:
-    static const char* getSystemPrompt();
+    static const char* getSystemPrompt(Target target);
     Result parseJson(const juce::String& text);
 
-    // Compile the source through the faust-mcp compile_faust tool. Returns true
-    // if it compiles (or if no MCP server is configured, so generation isn't
-    // blocked); on failure fills errorOut with the compiler message.
-    bool compileCheck(const std::string& name, const std::string& source, std::string& errorOut);
+    // Compile through faust-mcp. A disabled server intentionally stages code
+    // for manual editing; an enabled server that cannot start or verify fails
+    // closed and never reaches the live apply path.
+    bool compileCheck(const std::string& name, const std::string& source, std::string& errorOut,
+                      bool& verified);
 
     // Shared body for generate / generateStreaming. Runs the conversational
     // generate-and-auto-fix loop: on a compile failure the broken reply is
@@ -55,6 +65,7 @@ class FaustAgent {
                              TokenCallback onToken);
 
     std::atomic<bool> shouldStop_{false};
+    Target target_;
 };
 
 }  // namespace magda

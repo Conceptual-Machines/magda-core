@@ -144,6 +144,10 @@ TEST_CASE("Agent device capabilities declare UI and dedicated-agent routing",
     CHECK(faust.coderAgent == CoderAgentKind::Faust);
     CHECK(createCoderAgentFor("faust") != nullptr);
 
+    const auto& faustInstrument = getInternalPluginCapabilities("faustinstrument");
+    CHECK(faustInstrument.coderAgent == CoderAgentKind::Faust);
+    CHECK(createCoderAgentFor("faustinstrument") != nullptr);
+
     const auto& drumGrid = getInternalPluginCapabilities("drumgrid");
     CHECK(drumGrid.drumRoleProvider);
     CHECK_FALSE(drumGrid.supportsDeviceAI());
