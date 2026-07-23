@@ -6,10 +6,10 @@
 namespace magda {
 
 /**
- * AI Settings dialog with configuration tabs plus a consolidated model-download tab:
+ * AI Settings dialog with configuration tabs plus a consolidated models tab:
  *  - Cloud: manage cloud provider API keys
- *  - Model Downloads: embedded, sample-analysis, and stem-separation models
  *  - Config: preset or per-agent provider mapping (references configured providers)
+ *  - Models: embedded, sample-analysis, and stem-separation models
  */
 class AISettingsDialog : public juce::Component {
   public:

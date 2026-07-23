@@ -2245,12 +2245,12 @@ AISettingsDialog::AISettingsDialog() {
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
-    tabbedComponent_.addTab("Model Downloads", tabBg, modelDownloadsPage_.get(), false);
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
+    tabbedComponent_.addTab("Models", tabBg, modelDownloadsPage_.get(), false);
 
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {
-        if (tabIndex == 2)
+        if (tabbedComponent_.getTabNames()[tabIndex] == "Config")
             configPage_->refreshOnShow();
     };
 
@@ -2331,7 +2331,7 @@ void AISettingsDialog::showDialog(juce::Component* parent, const juce::String& i
         if (idx >= 0) {
             dialog->tabbedComponent_.setCurrentTabIndex(idx);
         } else if (dialog->modelDownloadsPage_->selectLegacyCategory(initialTabName)) {
-            dialog->tabbedComponent_.setCurrentTabIndex(names.indexOf("Model Downloads"));
+            dialog->tabbedComponent_.setCurrentTabIndex(names.indexOf("Models"));
         }
     }
 
