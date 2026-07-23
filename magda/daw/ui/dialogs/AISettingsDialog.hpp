@@ -6,10 +6,10 @@
 namespace magda {
 
 /**
- * AI Settings dialog with three tabs:
+ * AI Settings dialog with configuration tabs plus a consolidated models tab:
  *  - Cloud: manage cloud provider API keys
- *  - Local: embedded model configuration
  *  - Config: preset or per-agent provider mapping (references configured providers)
+ *  - Models: embedded, sample-analysis, and stem-separation models
  */
 class AISettingsDialog : public juce::Component {
   public:
@@ -29,6 +29,7 @@ class AISettingsDialog : public juce::Component {
     class ConfigPage;
     class SampleTaggerPage;
     class StemSeparationPage;
+    class ModelDownloadsPage;
 
     class TabComponent : public juce::TabbedComponent {
       public:
@@ -46,6 +47,7 @@ class AISettingsDialog : public juce::Component {
     std::unique_ptr<ConfigPage> configPage_;
     std::unique_ptr<SampleTaggerPage> samplePage_;
     std::unique_ptr<StemSeparationPage> stemsPage_;
+    std::unique_ptr<ModelDownloadsPage> modelDownloadsPage_;
 
     juce::TextButton okBtn_{"OK"};
     juce::TextButton cancelBtn_{"Cancel"};
