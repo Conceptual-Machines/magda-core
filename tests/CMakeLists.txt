@@ -95,6 +95,7 @@ set(TEST_SOURCES
     test_mix_analysis_audio.cpp
     test_console_routing.cpp
     test_conversation_store.cpp
+    test_midi_context.cpp
     test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp
