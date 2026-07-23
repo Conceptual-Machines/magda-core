@@ -7,20 +7,6 @@
 namespace magda {
 
 /**
- * @brief True iff `pluginId` is a MAGDA sound-generator instrument the generic
- *        sound-design agent can drive.
- *
- * Covers the compiled-Faust synths (Poly Synth, FM, the percussion voices) and
- * the native Mutable ports (Elements, Rings) — everything whose front-panel
- * controls are exposed as automatable parameters with readable names/ranges.
- *
- * Excludes Sampler and Drum Grid (AI adds little there) and 4OSC, which keeps
- * its bespoke `FourOscAgent` until its wave/filter/voice/FX controls are made
- * automatable and it can join this path.
- */
-bool isGenericSoundGeneratorDevice(const juce::String& pluginId);
-
-/**
  * @brief Device-agnostic "design me a preset" agent driven by parameter
  *        introspection.
  *

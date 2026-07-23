@@ -6,10 +6,8 @@
 #include <map>
 #include <vector>
 
-#include "../daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../daw/core/Config.hpp"
 #include "core/DeviceInfo.hpp"
-#include "core/InternalDeviceKind.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/PresetManager.hpp"
 #include "core/TrackManager.hpp"
@@ -20,24 +18,6 @@
 namespace magda {
 
 namespace {
-
-// ---------------------------------------------------------------------------
-// Device classification
-// ---------------------------------------------------------------------------
-
-// Native (non-compiled) MAGDA instruments the generic agent should drive.
-// Sampler and Drum Grid are instruments too but deliberately excluded — the AI
-// preset flow adds little for a sample player / drum machine. Clouds is a
-// granular texture/FX, not a note source, so it's out as well.
-bool isNativeSoundGenerator(const juce::String& pluginId) {
-    switch (classifyInternalDevice(pluginId)) {
-        case InternalDeviceKind::MutableElements:
-        case InternalDeviceKind::MutableRings:
-            return true;
-        default:
-            return false;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Parameter snapshot (message-thread read → worker-thread prompt build)
@@ -200,14 +180,6 @@ float discreteRealValue(const ParamSnapshot& p, const juce::var& value) {
 }  // namespace
 
 // ===========================================================================
-
-bool isGenericSoundGeneratorDevice(const juce::String& pluginId) {
-    if (pluginId.isEmpty())
-        return false;
-    if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(pluginId))
-        return spec->isInstrument;
-    return isNativeSoundGenerator(pluginId);
-}
 
 GenericSoundDesignAgent::GenericSoundDesignAgent(juce::String pluginId, juce::String displayName,
                                                  juce::String description)
