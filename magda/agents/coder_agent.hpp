@@ -16,8 +16,8 @@ namespace magda {
  *
  * Sibling of `SoundDesignAgent`: same call shape so `AIPanelComponent`
  * can host either, but distinct type so the two flavours don't get
- * conflated. New code-hosting devices add support by writing their
- * own subclass and extending `createCoderAgentFor`.
+ * conflated. New code-hosting devices add a subclass and declare its
+ * handler in the shared internal-device capability catalog.
  */
 class CoderAgent : public DeviceAIAgent {};
 
@@ -30,8 +30,8 @@ class CoderAgent : public DeviceAIAgent {};
  */
 std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId);
 
-/// Quick check used by UI surfaces — true iff `createCoderAgentFor`
-/// would return non-null.
+/// Quick check for non-UI callers. UI surfaces read the shared capability
+/// catalog directly; this returns the same declarative state.
 bool isCoderSupported(const juce::String& pluginId);
 
 /**

@@ -22,7 +22,7 @@ namespace {
 
 // 4OSC-specific implementation. Wraps the existing FourOscAgent + the
 // shared applyFourOscPresetToPath helper. New devices add their own
-// SoundDesignAgent subclass and a branch in createSoundDesignAgentFor.
+// SoundDesignAgent subclass and declare its handler in the capability catalog.
 class FourOscSoundDesignAgent : public SoundDesignAgent {
   public:
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
@@ -362,12 +362,12 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
 }  // namespace
 
 std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId) {
-    switch (internalPluginFromId(pluginId)) {
-        case InternalPlugin::FourOsc:
+    switch (getInternalPluginCapabilities(pluginId).soundDesignAgent) {
+        case SoundDesignAgentKind::FourOsc:
             return std::make_unique<FourOscSoundDesignAgent>();
-        case InternalPlugin::PolyStepSequencer:
+        case SoundDesignAgentKind::PolyStepSequencer:
             return std::make_unique<PolyStepSequencerSoundDesignAgent>();
-        case InternalPlugin::StepSequencer:
+        case SoundDesignAgentKind::StepSequencer:
             return std::make_unique<StepSequencerSoundDesignAgent>();
         default:
             return nullptr;
@@ -375,7 +375,7 @@ std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& 
 }
 
 bool isSoundDesignSupported(const juce::String& pluginId) {
-    return createSoundDesignAgentFor(pluginId) != nullptr;
+    return getInternalPluginCapabilities(pluginId).supportsSoundDesign();
 }
 
 }  // namespace magda

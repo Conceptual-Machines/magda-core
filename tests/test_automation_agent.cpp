@@ -396,6 +396,77 @@ TEST_CASE("AutomationExecutor: clear empties the lane", "[automation][executor][
     REQUIRE(lane->absolutePoints.empty());
 }
 
+TEST_CASE("AutomationParser: automation clip actions", "[automation][parser][clips]") {
+    AutomationParser parser;
+    auto ir = parseOrFail(parser, "AUTO clip.new start=4 length=8 target=volume\n"
+                                  "AUTO clip.set id=3 name=FilterFade colour=#44c7ff looping=true "
+                                  "loop_length=4\n"
+                                  "AUTO clip.points id=3 points=(0,0)(4,1)");
+
+    REQUIRE(ir.size() == 3);
+    REQUIRE(std::holds_alternative<AutoClipOp>(ir[0].payload));
+    const auto& create = std::get<AutoClipOp>(ir[0].payload);
+    CHECK(create.action == AutoClipAction::Create);
+    CHECK(create.startBeat == Approx(4.0));
+    CHECK(create.lengthBeats == Approx(8.0));
+    CHECK(create.target.kind == AutoTarget::Kind::TrackVolume);
+
+    const auto& set = std::get<AutoClipOp>(ir[1].payload);
+    CHECK(set.action == AutoClipAction::Set);
+    CHECK(set.clipId == 3);
+    CHECK(set.looping);
+    CHECK(set.hasLoopLength);
+
+    const auto& points = std::get<AutoClipOp>(ir[2].payload);
+    CHECK(points.action == AutoClipAction::SetPoints);
+    CHECK(points.points.size() == 2);
+}
+
+TEST_CASE("AutomationExecutor: creates and edits a clip-based automation lane",
+          "[automation][executor][clips]") {
+    resetState();
+    const auto trackId = makeTrack("Bass");
+    SelectionManager::getInstance().selectTrack(trackId);
+
+    AutomationParser parser;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "AUTO clip.new start=4 length=8 target=volume")));
+
+    auto& manager = AutomationManager::getInstance();
+    const auto lanes = manager.getLanesForTrack(trackId);
+    REQUIRE(lanes.size() == 1);
+    const auto* lane = manager.getLane(lanes.front());
+    REQUIRE(lane != nullptr);
+    CHECK(lane->isClipBased());
+    REQUIRE(lane->clipIds.size() == 1);
+    const auto clipId = lane->clipIds.front();
+
+    REQUIRE(exec.execute(
+        parseOrFail(parser, "AUTO clip.set id=" + juce::String(clipId) +
+                                " name=FadeIn colour=#44c7ff looping=true loop_length=4\n"
+                                "AUTO clip.points id=" +
+                                juce::String(clipId) +
+                                " points=(0,0)(4,1)\n"
+                                "AUTO clip.move id=" +
+                                juce::String(clipId) +
+                                " start=12\n"
+                                "AUTO clip.resize id=" +
+                                juce::String(clipId) + " length=6")));
+
+    const auto* clip = manager.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    CHECK(clip->name == "FadeIn");
+    CHECK(clip->colour == juce::Colour(0xff44c7ff));
+    CHECK(clip->looping);
+    CHECK(clip->loopLengthBeats == Approx(4.0));
+    CHECK(clip->startBeats == Approx(12.0));
+    CHECK(clip->lengthBeats == Approx(6.0));
+    REQUIRE(clip->points.size() == 2);
+
+    resetState();
+}
+
 TEST_CASE("AutomationExecutor: values are clamped into [0, 1]", "[automation][executor][shape]") {
     resetState();
     auto trackId = makeTrack("T");

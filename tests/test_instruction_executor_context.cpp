@@ -321,3 +321,22 @@ TEST_CASE("InstructionExecutor: explicit arranger clip creation does not overlap
     REQUIRE(created.startBeats == Catch::Approx(8.0));
     REQUIRE(created.lengthBeats == Catch::Approx(8.0));
 }
+
+TEST_CASE("InstructionExecutor: bar-based clip creation honours the project time signature",
+          "[compact][clip][time_signature]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+    api.project_.info.timeSignatureNumerator = 3;
+    api.project_.info.timeSignatureDenominator = 4;
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "CLIP 2 4")));
+
+    REQUIRE(api.clips_.midiCreations.size() == 1);
+    const auto& created = api.clips_.midiCreations.front();
+    CHECK(created.startBeats == Catch::Approx(3.0));
+    CHECK(created.lengthBeats == Catch::Approx(12.0));
+}

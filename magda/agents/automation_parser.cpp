@@ -71,6 +71,38 @@ AutoShape parseShape(const juce::String& s, bool& ok) {
     return AutoShape::Sin;
 }
 
+bool parseBool(const juce::String& value, bool& out) {
+    if (value.equalsIgnoreCase("true") || value == "1") {
+        out = true;
+        return true;
+    }
+    if (value.equalsIgnoreCase("false") || value == "0") {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
+bool parseClipAction(const juce::String& value, AutoClipAction& out) {
+    if (value.equalsIgnoreCase("clip.new"))
+        out = AutoClipAction::Create;
+    else if (value.equalsIgnoreCase("clip.delete"))
+        out = AutoClipAction::Delete;
+    else if (value.equalsIgnoreCase("clip.move"))
+        out = AutoClipAction::Move;
+    else if (value.equalsIgnoreCase("clip.resize"))
+        out = AutoClipAction::Resize;
+    else if (value.equalsIgnoreCase("clip.duplicate"))
+        out = AutoClipAction::Duplicate;
+    else if (value.equalsIgnoreCase("clip.set"))
+        out = AutoClipAction::Set;
+    else if (value.equalsIgnoreCase("clip.points"))
+        out = AutoClipAction::SetPoints;
+    else
+        return false;
+    return true;
+}
+
 /** Split a line by whitespace, respecting that `points=(...)(...)` should stay
     glued. Simplest approach: tokenise, then re-join tokens that belong to a
     points= list (opened at '(' and closed at matching ')'). */
@@ -164,6 +196,69 @@ std::vector<AutoInstruction> AutomationParser::parse(const juce::String& text) {
         }
 
         auto shapeStr = tokens[1];
+
+        AutoClipAction clipAction;
+        if (parseClipAction(shapeStr, clipAction)) {
+            AutoClipOp op;
+            op.action = clipAction;
+            for (int t = 2; t < tokens.size(); ++t) {
+                juce::String k, v;
+                if (!splitKV(tokens[t], k, v))
+                    continue;
+                if (k.equalsIgnoreCase("target")) {
+                    juce::String err;
+                    if (!parseTarget(v, op.target, err)) {
+                        lastError_ = err;
+                        return {};
+                    }
+                } else if (k.equalsIgnoreCase("id")) {
+                    op.clipId = v.getIntValue();
+                } else if (k.equalsIgnoreCase("start")) {
+                    op.startBeat = v.getDoubleValue();
+                } else if (k.equalsIgnoreCase("length")) {
+                    op.lengthBeats = v.getDoubleValue();
+                } else if (k.equalsIgnoreCase("from_start")) {
+                    if (!parseBool(v, op.fromStart)) {
+                        lastError_ = "from_start must be true or false";
+                        return {};
+                    }
+                } else if (k.equalsIgnoreCase("name")) {
+                    op.name = v;
+                } else if (k.equalsIgnoreCase("colour") || k.equalsIgnoreCase("color")) {
+                    op.colour = v;
+                } else if (k.equalsIgnoreCase("looping")) {
+                    if (!parseBool(v, op.looping)) {
+                        lastError_ = "looping must be true or false";
+                        return {};
+                    }
+                    op.hasLooping = true;
+                } else if (k.equalsIgnoreCase("loop_length")) {
+                    op.loopLengthBeats = v.getDoubleValue();
+                    op.hasLoopLength = true;
+                } else if (k.equalsIgnoreCase("points")) {
+                    juce::String err;
+                    if (!parseFreeformPoints(v, op.points, err)) {
+                        lastError_ = err;
+                        return {};
+                    }
+                }
+            }
+
+            if (op.action == AutoClipAction::Create && op.lengthBeats <= 0.0) {
+                lastError_ = "automation clip length must be positive";
+                return {};
+            }
+            if (op.action == AutoClipAction::Resize && op.lengthBeats <= 0.0) {
+                lastError_ = "automation clip length must be positive";
+                return {};
+            }
+            if (op.action == AutoClipAction::SetPoints && op.points.empty()) {
+                lastError_ = "clip.points requires points=(beat,value)...";
+                return {};
+            }
+            out.push_back({std::move(op)});
+            continue;
+        }
 
         // Clear op
         if (shapeStr.equalsIgnoreCase("clear")) {
