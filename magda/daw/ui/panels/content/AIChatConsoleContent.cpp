@@ -1796,7 +1796,9 @@ void AIChatConsoleContent::resized() {
         }
         if (outputModeButton_.isVisible()) {
             bottomBar.removeFromRight(6);
-            outputModeButton_.setBounds(bottomBar.removeFromRight(82));
+            // Keep the button clear of the unified panel's separator and
+            // rounded bottom border, which are painted behind child controls.
+            outputModeButton_.setBounds(bottomBar.removeFromRight(82).reduced(0, 3));
         }
         contextIconBounds_ = bottomBar.removeFromLeft(22);
         contextLabel_.setBounds(bottomBar);
