@@ -2174,8 +2174,7 @@ void AIChatConsoleContent::buildAliasList() {
     // shared with the DSL interpreter and InstructionExecutor so the autocomplete
     // dropdown lists exactly the aliases the agent layer accepts.
     for (const auto& entry : magda::getInternalPlugins()) {
-        allAliases_.push_back(
-            {PluginBrowserInfo::generateAlias(entry.displayName), entry.displayName});
+        allAliases_.push_back({entry.primaryAlias, entry.displayName});
     }
 
     // External plugins from KnownPluginList

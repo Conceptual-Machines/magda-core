@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 #include <juce_llm/juce_llm.h>
 
+#include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/mcp/MCPServerManager.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -239,9 +240,10 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
     if (pluginId == pluginId_)
         return;
     pluginId_ = pluginId;
-    const bool soundSupported = isSoundDesignSupported(pluginId_);
-    const bool coderSupported = isCoderSupported(pluginId_);
-    const bool supported = soundSupported || coderSupported;
+    const auto& capabilities = getInternalPluginCapabilities(pluginId_);
+    const bool soundSupported = capabilities.supportsSoundDesign();
+    const bool coderSupported = capabilities.supportsCoder();
+    const bool supported = capabilities.supportsDeviceAI();
     input_.setEnabled(supported);
     if (coderSupported) {
         input_.setTextToShowWhenEmpty(
@@ -344,7 +346,7 @@ void AIPanelComponent::submitPrompt() {
     auto prompt = input_.getText().trim();
     if (prompt.isEmpty())
         return;
-    if (!isDeviceAISupported(pluginId_)) {
+    if (!getInternalPluginCapabilities(pluginId_).supportsDeviceAI()) {
         appendOutput("unsupported device");
         return;
     }
@@ -448,7 +450,7 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
     // For coder (Faust) devices, a successful result means the DSP passed the
     // MCP compile_faust check before it was applied. Surface that as a green
     // verification line; the "applied" line below confirms the live load.
-    if (succeeded && isCoderSupported(pluginId_)) {
+    if (succeeded && getInternalPluginCapabilities(pluginId_).supportsCoder()) {
         output_.moveCaretToEnd();
         if (auto t = output_.getText(); t.isNotEmpty() && !t.endsWithChar('\n')) {
             output_.setColour(juce::TextEditor::textColourId,

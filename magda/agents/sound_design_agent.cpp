@@ -6,10 +6,13 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "core/InternalDeviceKind.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "four_osc_agent.hpp"
 #include "four_osc_apply.hpp"
+#include "generic_sound_design_agent.hpp"
 #include "internal_plugins.hpp"
 #include "poly_step_sequencer_agent.hpp"
 #include "poly_step_sequencer_apply.hpp"
@@ -22,7 +25,7 @@ namespace {
 
 // 4OSC-specific implementation. Wraps the existing FourOscAgent + the
 // shared applyFourOscPresetToPath helper. New devices add their own
-// SoundDesignAgent subclass and a branch in createSoundDesignAgentFor.
+// SoundDesignAgent subclass and declare its handler in the capability catalog.
 class FourOscSoundDesignAgent : public SoundDesignAgent {
   public:
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
@@ -362,20 +365,43 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
 }  // namespace
 
 std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId) {
-    switch (internalPluginFromId(pluginId)) {
-        case InternalPlugin::FourOsc:
+    switch (getInternalPluginCapabilities(pluginId).soundDesignAgent) {
+        // 4OSC keeps its bespoke agent for now — its wave/filter/voice/FX
+        // controls are ValueTree properties, not automatable parameters, so it
+        // can't yet go through the generic path. TODO: make those controls
+        // automatable and retire FourOscSoundDesignAgent / FourOscAgent.
+        case SoundDesignAgentKind::FourOsc:
             return std::make_unique<FourOscSoundDesignAgent>();
-        case InternalPlugin::PolyStepSequencer:
+        // The sequencers are MIDI generators with pattern-shaped output, not
+        // parameter presets — they stay on their own bespoke agents.
+        case SoundDesignAgentKind::PolyStepSequencer:
             return std::make_unique<PolyStepSequencerSoundDesignAgent>();
-        case InternalPlugin::StepSequencer:
+        case SoundDesignAgentKind::StepSequencer:
             return std::make_unique<StepSequencerSoundDesignAgent>();
-        default:
-            return nullptr;
+        // Every other MAGDA sound generator (compiled Faust synths + native
+        // Mutable ports). The only per-device inputs are the display name +
+        // description used to prime the LLM.
+        case SoundDesignAgentKind::Generic: {
+            juce::String displayName = pluginId;
+            juce::String description;
+            if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(pluginId)) {
+                displayName = spec->displayName;
+                description = spec->description;
+            } else if (const auto* meta = getInternalDeviceMetadataForPluginId(pluginId)) {
+                displayName = meta->displayName;
+                description = meta->description;
+            }
+            return std::make_unique<GenericSoundDesignAgent>(pluginId, displayName, description);
+        }
+        case SoundDesignAgentKind::None:
+            break;
     }
+
+    return nullptr;
 }
 
 bool isSoundDesignSupported(const juce::String& pluginId) {
-    return createSoundDesignAgentFor(pluginId) != nullptr;
+    return getInternalPluginCapabilities(pluginId).supportsSoundDesign();
 }
 
 }  // namespace magda

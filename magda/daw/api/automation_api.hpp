@@ -27,6 +27,24 @@ class AutomationApi {
                                        AutomationCurveType curveType) = 0;
     virtual void clearLanePoints(AutomationLaneId laneId) = 0;
 
+    // Clip-based automation lanes. Retyping is intentionally restricted to
+    // empty lanes so an agent cannot silently discard an existing curve.
+    virtual bool retypeEmptyLane(AutomationLaneId laneId, AutomationLaneType type) = 0;
+    virtual AutomationClipId createClip(AutomationLaneId laneId, double startBeats,
+                                        double lengthBeats) = 0;
+    virtual AutomationClipInfo* getClip(AutomationClipId clipId) = 0;
+    virtual const AutomationClipInfo* getClip(AutomationClipId clipId) const = 0;
+    virtual void deleteClip(AutomationClipId clipId) = 0;
+    virtual void moveClip(AutomationClipId clipId, double startBeats) = 0;
+    virtual void resizeClip(AutomationClipId clipId, double lengthBeats,
+                            bool fromStart = false) = 0;
+    virtual AutomationClipId duplicateClip(AutomationClipId clipId) = 0;
+    virtual void setClipName(AutomationClipId clipId, const juce::String& name) = 0;
+    virtual void setClipColour(AutomationClipId clipId, juce::Colour colour) = 0;
+    virtual void setClipLooping(AutomationClipId clipId, bool looping) = 0;
+    virtual void setClipLoopLength(AutomationClipId clipId, double lengthBeats) = 0;
+    virtual void setClipPoints(AutomationClipId clipId, std::vector<AutomationPoint> points) = 0;
+
     virtual void beginNotificationBatch() = 0;
     virtual void endNotificationBatch() = 0;
 
