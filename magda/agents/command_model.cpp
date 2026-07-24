@@ -173,6 +173,31 @@ std::vector<std::string> tokenize(const std::string& text) {
     return toks;
 }
 
+// The app expands "@mention" plugin refs into the DSL alias token "<mention>"
+// before the model sees them (for the LLM path). Restore the "@" sigil form the
+// model was trained on, so "<fm_0>" is tagged as a plugin, not a track name.
+// No-op on plain text (e.g. the parity fixture), so byte-parity is preserved.
+std::string expandAliasBrackets(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    size_t i = 0, n = text.size();
+    while (i < n) {
+        if (text[i] == '<') {
+            size_t j = i + 1;
+            while (j < n && isCore(text[j]))
+                ++j;
+            if (j > i + 1 && j < n && text[j] == '>') {
+                out += '@';
+                out += text.substr(i + 1, j - (i + 1));
+                i = j + 1;
+                continue;
+            }
+        }
+        out += text[i++];
+    }
+    return out;
+}
+
 // data.canon: collapse @-references to the opaque alias token; else lowercase.
 std::string canonToken(const std::string& token) {
     if (!token.empty() && token[0] == '@')
@@ -496,7 +521,7 @@ CommandModel::CommandModel() {
 
 CommandModel::Prediction CommandModel::predict(const std::string& text) const {
     Prediction out;
-    auto toks = tokenize(text);
+    auto toks = tokenize(expandAliasBrackets(text));
     if (static_cast<int>(toks.size()) > d::kMaxLen)
         toks.resize(d::kMaxLen);
     const int L = static_cast<int>(toks.size());
