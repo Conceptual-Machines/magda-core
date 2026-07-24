@@ -97,6 +97,55 @@ def render_action(a: dict) -> list[str]:
     if t == "select_clips_starting_before":
         return [f'{_track_ref(a)}.clips.select(clip.start_bar <= {a["bar"]:g})']
 
+    # --- clip ops ---------------------------------------------------------
+    if t == "clip_new":
+        return [f'{_track_ref(a)}.clip.new(length_bars={a["length_bars"]:g})']
+
+    if t == "clip_rename":
+        return [f'{_track_ref(a)}.clip.rename(name={q(a["clip_name"])})']
+
+    if t == "clip_delete":
+        return [f'{_track_ref(a)}.clip.delete(index={a["index"]:g})']
+
+    # --- track move -------------------------------------------------------
+    if t == "track_move":
+        return [f'{_track_ref(a)}.track.move(index={a["index"]:g})']
+
+    # --- MIDI note ops (operate on the track's selected notes) ------------
+    if t == "notes_delete":
+        return [f'{_track_ref(a)}.notes.delete()']
+
+    if t == "notes_transpose":
+        return [f'{_track_ref(a)}.notes.transpose(semitones={a["semitones"]:g})']
+
+    if t == "notes_set_velocity":
+        return [f'{_track_ref(a)}.notes.set_velocity(value={a["value"]:g})']
+
+    if t == "notes_resize":
+        return [f'{_track_ref(a)}.notes.resize(length={a["length"]:g})']
+
+    if t == "notes_quantize":
+        return [f'{_track_ref(a)}.notes.quantize(grid={a["grid"]:g})']
+
+    if t == "notes_set_pitch":
+        return [f'{_track_ref(a)}.notes.set_pitch(pitch={a["pitch"]})']
+
+    if t == "notes_select_pitch":
+        return [f'{_track_ref(a)}.notes.select(note.pitch == {a["pitch"]})']
+
+    if t == "notes_select_velocity_above":
+        return [f'{_track_ref(a)}.notes.select(note.velocity > {a["value"]:g})']
+
+    if t == "notes_select_velocity_below":
+        return [f'{_track_ref(a)}.notes.select(note.velocity < {a["value"]:g})']
+
+    # --- groove (timing/swing) -------------------------------------------
+    if t == "groove_set":
+        return [f'groove.set(template={q(a["template"])}, strength={a["strength"]:g})']
+
+    if t == "groove_list":
+        return ["groove.list()"]
+
     raise ValueError(f"unknown action type: {t!r}")
 
 

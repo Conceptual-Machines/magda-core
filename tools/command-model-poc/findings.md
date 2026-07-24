@@ -51,7 +51,8 @@ Pipeline (all local, M1):
 - `magda_dsl/` - grammar (mirrored from dsl_grammar.hpp), canonical renderer,
   vocab (plugins/colours), lark validator. All gold DSL parses under the real CFG.
 - `dataset/generate.py` - template synthetic data, leakage-guarded train/val
-  split (train 12000 / val 1500 / test 72, zero overlap).
+  split (train ~21000 / val ~2900 / test 102, zero overlap), plus optional
+  LLM-teacher paraphrase augmentation (`--teacher`, DeepSeek, cached).
 - `dataset/tagging.py` - (input, actions) -> (intent, BIO tags); round-trip
   reconstruct -> render == gold = **95.5%** (the ~4.5% is cosmetic name casing,
   e.g. "FX" vs "Fx").
@@ -59,19 +60,45 @@ Pipeline (all local, M1):
   (but it's hand-fit regex; doesn't generalize - that's the point of the model).
 - `model/` - Brevitas QAT intent+slots model + training + eval parser.
 
-### Model result (first untuned run)
+### Instruction set (expanded, 2026-07-24)
+
+33 intents. Beyond the original track/clip-selection ops: clip ops (new/rename/
+delete), track move, MIDI note ops (delete, transpose, set-velocity, resize,
+quantize, set-pitch, select-by-pitch, select-by-velocity), and groove (set/list).
+
+### Plugin references: opaque placeholders, resolved off-model
+
+The model NEVER learns plugin identities. A host preprocess step (`model.data.
+canon`) rewrites every plugin @mention -> one opaque `<alias>` token, and any
+plugin-param reference -> a single opaque `<alias.param>` token, BEFORE the model
+sees it. The model only tags the placeholder's position/role; the reconstructor
+substitutes the real alias/param back by position (1st @mention -> its alias,
+1st PARAM span -> param1, ...). Consequences: an unseen alias generalises for
+free (it's indistinguishable from a known one), and the model vocab never grows
+with the plugin registry. Data files keep the readable `@serum` surface so the
+tagger/reconstructor can still recover the true identity.
+
+### Model result (expanded instruction set, LLM-teacher data)
 
 | metric | value |
 |---|---|
-| params | **43,782** |
-| size @ 4-bit weights | **~21.4 KB** |
-| val end-to-end exact | 96.7% |
-| **held-out test exact** | **100.0%** (syntax 100%, command 100%) |
-| latency | 2.09 ms (CPU/M1 PyTorch; FPGA will be ~us, deterministic) |
+| params | **~124,500** |
+| size @ 4-bit weights | **~60.8 KB** |
+| val end-to-end exact | 94.4% |
+| **held-out test exact** | **99.0%** (syntax 100%, command 100%, n=102) |
+| latency | ~1.9 ms (CPU/M1 PyTorch; FPGA will be ~us, deterministic) |
 
-21.4 KB is trivially on-chip on the KV260 (MB of BRAM/URAM) - streaming from DRAM
-never enters the picture. This validates the FPGA thesis in software before the
-board ships.
+The param/size jump vs the first run (43,782 / 21.4 KB) is the embedding table:
+LLM-teacher paraphrases push the vocab to ~1780 tokens (free-form English), vs
+the ~100-token target of the original all-English design. This is a real
+teacher-diversity <-> on-chip-embedding trade to revisit before FINN export (move
+the embedding to a host lookup / on-chip ROM, or prune the teacher vocab). Still
+trivially on-chip on the KV260.
+
+The one held-out miss is `rename track Bass to Reese Bass` — the old name is a
+substring of the new one, a shape `gen_rename_track` deliberately EXCLUDES to
+keep span tagging unambiguous, so the model never trains on it. Valid DSL, wrong
+old-name span. Open call: allow substring-name pairs in training, or leave it.
 
 Architecture (`model/net.py`): embedding -> 3 dilated 1D-conv blocks (QuantConv1d
 + QuantReLU, RF ~15 tokens) -> intent head (masked mean-pool) + slot head

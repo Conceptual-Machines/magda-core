@@ -16,8 +16,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from magda_dsl import dsl, i18n, vocab  # noqa: E402
 
-T = vocab.resolve_plugin  # text -> token
+T = vocab.resolve_plugin  # text -> token (legacy; plugins now use @alias below)
 C = vocab.COLORS
+
+
+def A(alias: str) -> str:
+    """Plugin @alias surface -> DSL token: 'serum' -> '<serum>'. The model tags
+    the @mention and passes it through; it never learns plugin identities."""
+    return "<" + alias + ">"
 
 # Each entry: (natural language, actions). Covers every supported command type
 # plus phrasing variety (verbs, with/without "track", multi-plugin, bulk).
@@ -32,27 +38,29 @@ CASES = [
     ("make a keys track", [{"type": "create_track", "name": "Keys"}]),
     ("add a new perc track", [{"type": "create_track", "name": "Perc"}]),
 
-    # --- create_track with plugins ---
-    ("create a bass track with serum and ott",
-     [{"type": "create_track", "name": "Bass", "plugins": [T("serum"), T("ott")]}]),
-    ("make a lead track with serum",
-     [{"type": "create_track", "name": "Lead", "plugins": [T("serum")]}]),
-    ("new pads track with vital and reverb",
-     [{"type": "create_track", "name": "Pads", "plugins": [T("vital"), T("reverb")]}]),
-    ("create a vocals track with pro-q 3",
-     [{"type": "create_track", "name": "Vocals", "plugins": [T("pro-q 3")]}]),
-    ("create a drums track with surge xt and ott",
-     [{"type": "create_track", "name": "Drums", "plugins": [T("surge xt"), T("ott")]}]),
+    # --- create_track with plugins (@alias references) ---
+    ("create a bass track with @serum and @ott",
+     [{"type": "create_track", "name": "Bass", "plugins": [A("serum"), A("ott")]}]),
+    ("make a lead track with @vital",
+     [{"type": "create_track", "name": "Lead", "plugins": [A("vital")]}]),
+    ("new pads track with @surge_xt and @reverb",
+     [{"type": "create_track", "name": "Pads", "plugins": [A("surge_xt"), A("reverb")]}]),
+    ("spin up a vocals track loaded with @pro_q_3",
+     [{"type": "create_track", "name": "Vocals", "plugins": [A("pro_q_3")]}]),
+    ("create a drums track with @massive and @ott",
+     [{"type": "create_track", "name": "Drums", "plugins": [A("massive"), A("ott")]}]),
 
-    # --- add_plugin ---
-    ("add serum to the bass track", [{"type": "add_plugin", "name": "Bass", "plugin": T("serum")}]),
-    ("put ott on Drums", [{"type": "add_plugin", "name": "Drums", "plugin": T("ott")}]),
-    ("add pro-q 3 to vocals", [{"type": "add_plugin", "name": "Vocals", "plugin": T("pro-q 3")}]),
-    ("load vital on the lead track", [{"type": "add_plugin", "name": "Lead", "plugin": T("vital")}]),
-    ("add an eq to the bass track", [{"type": "add_plugin", "name": "Bass", "plugin": "eq"}]),
-    ("add reverb to Pads", [{"type": "add_plugin", "name": "Pads", "plugin": "reverb"}]),
-    ("add a compressor to the drums track", [{"type": "add_plugin", "name": "Drums", "plugin": "compressor"}]),
-    ("put 1176 on the vocals track", [{"type": "add_plugin", "name": "Vocals", "plugin": T("1176")}]),
+    # --- add_plugin (@alias; last case uses an alias absent from training to
+    #     test the "generalize to ANY alias" claim) ---
+    ("add @serum to the bass track", [{"type": "add_plugin", "name": "Bass", "plugin": A("serum")}]),
+    ("put @ott on Drums", [{"type": "add_plugin", "name": "Drums", "plugin": A("ott")}]),
+    ("insert @pro_q_3 on vocals", [{"type": "add_plugin", "name": "Vocals", "plugin": A("pro_q_3")}]),
+    ("load @vital on the lead track", [{"type": "add_plugin", "name": "Lead", "plugin": A("vital")}]),
+    ("throw @eq on the bass track", [{"type": "add_plugin", "name": "Bass", "plugin": A("eq")}]),
+    ("add @reverb to Pads", [{"type": "add_plugin", "name": "Pads", "plugin": A("reverb")}]),
+    ("put @1176 on the vocals track", [{"type": "add_plugin", "name": "Vocals", "plugin": A("1176")}]),
+    ("add @granulator_x to the pads track",
+     [{"type": "add_plugin", "name": "Pads", "plugin": A("granulator_x")}]),
 
     # --- rename_track ---
     ("rename track Bass to Reese Bass", [{"type": "rename_track", "name": "Bass", "new_name": "Reese Bass"}]),
@@ -142,6 +150,59 @@ CASES = [
      [{"type": "select_clips_starting_before", "name": "Vocals", "bar": 16}]),
     ("highlight regions up to bar 8 on Pads",
      [{"type": "select_clips_starting_before", "name": "Pads", "bar": 8}]),
+
+    # --- create_track with a type descriptor + distinct custom name (the
+    #     descriptor is decorative; the name after called/named wins) ---
+    ("set up a drum track and label it Punchy", [{"type": "create_track", "name": "Punchy"}]),
+    ("make a synth lane called Rumble", [{"type": "create_track", "name": "Rumble"}]),
+
+    # --- clip ops ---
+    ("add a 4 bar clip to Bass", [{"type": "clip_new", "name": "Bass", "length_bars": 4}]),
+    ("create a 2 bar clip on the drums track", [{"type": "clip_new", "name": "Drums", "length_bars": 2}]),
+    ("rename the clip on Bass to Intro", [{"type": "clip_rename", "name": "Bass", "clip_name": "Intro"}]),
+    ("rename the selected clips on the lead track to Chorus",
+     [{"type": "clip_rename", "name": "Lead", "clip_name": "Chorus"}]),
+    ("delete clip 2 on Bass", [{"type": "clip_delete", "name": "Bass", "index": 2}]),
+    ("remove clip 0 on Drums", [{"type": "clip_delete", "name": "Drums", "index": 0}]),
+
+    # --- track move ---
+    ("move Bass to position 3", [{"type": "track_move", "name": "Bass", "index": 3}]),
+    ("move the vocals track to slot 2", [{"type": "track_move", "name": "Vocals", "index": 2}]),
+
+    # --- MIDI note ops ---
+    ("delete all the notes on the bass track", [{"type": "notes_delete", "name": "Bass"}]),
+    ("clear the notes on the drums track", [{"type": "notes_delete", "name": "Drums"}]),
+    ("transpose the notes on Bass up 12 semitones",
+     [{"type": "notes_transpose", "name": "Bass", "semitones": 12}]),
+    ("shift the lead notes down 5 semitones",
+     [{"type": "notes_transpose", "name": "Lead", "semitones": -5}]),
+    ("set the note velocity on Bass to 100",
+     [{"type": "notes_set_velocity", "name": "Bass", "value": 100}]),
+    ("set the drums note velocity to 80",
+     [{"type": "notes_set_velocity", "name": "Drums", "value": 80}]),
+    ("set the note length on Bass to 0.5 beats",
+     [{"type": "notes_resize", "name": "Bass", "length": 0.5}]),
+    ("set the lead note length to 2 beats", [{"type": "notes_resize", "name": "Lead", "length": 2}]),
+    ("quantize the notes on Bass to 16th notes",
+     [{"type": "notes_quantize", "name": "Bass", "grid": 0.25}]),
+    ("snap the drums notes to 8th notes", [{"type": "notes_quantize", "name": "Drums", "grid": 0.5}]),
+    ("set the note pitch on Bass to C2", [{"type": "notes_set_pitch", "name": "Bass", "pitch": "C2"}]),
+    ("set the lead notes to G3", [{"type": "notes_set_pitch", "name": "Lead", "pitch": "G3"}]),
+    ("select all C4 notes on Bass", [{"type": "notes_select_pitch", "name": "Bass", "pitch": "C4"}]),
+    ("select the E4 notes on the lead track",
+     [{"type": "notes_select_pitch", "name": "Lead", "pitch": "E4"}]),
+    ("select notes on Bass with velocity above 100",
+     [{"type": "notes_select_velocity_above", "name": "Bass", "value": 100}]),
+    ("select the drums notes quieter than 60",
+     [{"type": "notes_select_velocity_below", "name": "Drums", "value": 60}]),
+
+    # --- groove (timing/swing) ---
+    ("use the MPC Swing groove at strength 0.5",
+     [{"type": "groove_set", "template": "MPC Swing", "strength": 0.5}]),
+    ("apply the Shuffle groove at strength 0.7",
+     [{"type": "groove_set", "template": "Shuffle", "strength": 0.7}]),
+    ("which grooves are available", [{"type": "groove_list"}]),
+    ("show me the groove list", [{"type": "groove_list"}]),
 ]
 
 

@@ -28,10 +28,29 @@ from magda_dsl import dsl, vocab  # noqa: E402
 # Slot inventory (role-typed: rename needs TRACK_NAME + NEW_NAME distinctly).
 SLOTS = [
     "TRACK_NAME", "NEW_NAME", "PLUGIN", "COLOR", "TRACK_ID", "GROUP_NAME",
-    "VALUE", "CLIP_NAME", "CLIP_TYPE",
+    "VALUE", "CLIP_NAME", "CLIP_TYPE", "PITCH", "GROOVE_NAME",
 ]
 
-_TOK = re.compile(r"#?[A-Za-z0-9'\-]+")
+# Note-duration grids: surface phrase -> grid value (16th=0.25, 8th=0.5, ...).
+GRID_PHRASES = {
+    0.125: ["32nd", "32nds"], 0.25: ["16th", "16ths"],
+    0.5: ["8th", "8ths", "eighth", "eighths"], 1.0: ["quarter", "quarters"],
+}
+
+# Tokens keep a leading @ (plugin alias sigil), internal _ (alias tokens like
+# @pro_q_3), and a trailing decimal (0.5, 1.0) so a whole alias/number stays
+# one token.
+_TOK = re.compile(r"[@#]?[A-Za-z0-9_'\-]+(?:\.[0-9]+)?")
+
+
+def _alias_surface(token: str) -> str:
+    """DSL alias token '<serum>' -> the '@serum' surface the user types."""
+    return "@" + token.strip("<>")
+
+
+def _alias_token(surface: str) -> str:
+    """'@serum' surface -> DSL alias token '<serum>'."""
+    return "<" + surface.lstrip("@").strip("<>") + ">"
 
 TRACK_NAME_HINTS = [
     "reese bass", "sub bass", "top loop", "bass", "drums", "lead", "pads",
@@ -102,15 +121,11 @@ def tag(input_text: str, actions: list[dict]):
     elif intent == "create_track":
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
         for tok in a.get("plugins", []):
-            for name in _surface_candidates(tok):
-                if _tag_span(tags, lower, name, "PLUGIN"):
-                    break
+            _tag_span(tags, lower, _alias_surface(tok), "PLUGIN")
 
     elif intent == "add_plugin":
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
-        for name in _surface_candidates(a["plugin"]):
-            if _tag_span(tags, lower, name, "PLUGIN"):
-                break
+        _tag_span(tags, lower, _alias_surface(a["plugin"]), "PLUGIN")
 
     elif intent == "rename_track":
         _tag_span(tags, lower, a["new_name"], "NEW_NAME")  # tag NEW first (often distinct)
@@ -137,6 +152,54 @@ def tag(input_text: str, actions: list[dict]):
                 tags[i] = "B-TRACK_ID"
         _tag_span(tags, lower, a["name"], "GROUP_NAME")
 
+    elif intent == "clip_new":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_value(tags, lower, a["length_bars"])
+
+    elif intent == "clip_rename":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_span(tags, lower, a["clip_name"], "CLIP_NAME")
+
+    elif intent == "clip_delete":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_value(tags, lower, a["index"])
+
+    elif intent == "track_move":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_value(tags, lower, a["index"])
+
+    elif intent == "notes_delete":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+
+    elif intent == "notes_transpose":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_value(tags, lower, abs(a["semitones"]))  # sign carried by up/down word
+
+    elif intent in ("notes_set_velocity", "notes_select_velocity_above",
+                    "notes_select_velocity_below"):
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_value(tags, lower, a["value"])
+
+    elif intent == "notes_resize":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_value(tags, lower, a["length"])
+
+    elif intent == "notes_quantize":
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        if not _tag_grid_phrase(tags, lower, a["grid"]):
+            _tag_value(tags, lower, a["grid"])
+
+    elif intent in ("notes_set_pitch", "notes_select_pitch"):
+        _tag_span(tags, lower, a["name"], "TRACK_NAME")
+        _tag_span(tags, lower, a["pitch"], "PITCH")
+
+    elif intent == "groove_set":
+        _tag_span(tags, lower, a["template"], "GROOVE_NAME")
+        _tag_value(tags, lower, a["strength"])
+
+    elif intent == "groove_list":
+        pass
+
     return intent, tokens, tags
 
 
@@ -158,6 +221,14 @@ def _tag_value(tags, lower, value):
         candidates.append("+" + f"{float(value):g}")
     for c in dict.fromkeys(candidates):
         if _tag_span(tags, lower, c, "VALUE"):
+            return True
+    return False
+
+
+def _tag_grid_phrase(tags, lower, grid):
+    """Tag a note-duration phrase ('16th', '8th', ...) as the VALUE span."""
+    for phrase in GRID_PHRASES.get(float(grid), []):
+        if _tag_span(tags, lower, phrase, "VALUE"):
             return True
     return False
 
@@ -214,15 +285,14 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
 
     if intent == "create_track":
         act = {"type": "create_track", "name": name}
-        plugs = [vocab.resolve_plugin(p) for p in s.get("PLUGIN", [])]
-        plugs = [p for p in plugs if p]
+        plugs = [_alias_token(p) for p in s.get("PLUGIN", [])]
         if not plugs:
             plugs = _plugins_from_tokens(tokens)
         if plugs:
             act["plugins"] = plugs
         return [act]
     if intent == "add_plugin":
-        plug = vocab.resolve_plugin(s.get("PLUGIN", [""])[0]) if s.get("PLUGIN") else None
+        plug = _alias_token(s["PLUGIN"][0]) if s.get("PLUGIN") else None
         if not plug:
             plugs = _plugins_from_tokens(tokens)
             plug = plugs[0] if plugs else None
@@ -267,7 +337,65 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
         ids = [int(x) for x in s.get("TRACK_ID", [])]
         return [{"type": "group_tracks", "ids": ids,
                  "name": _canon_name(s.get("GROUP_NAME", [""])[0])}]
+    if intent == "clip_new":
+        return [{"type": "clip_new", "name": name,
+                 "length_bars": _value_or_first_number(s, tokens)}]
+    if intent == "clip_rename":
+        return [{"type": "clip_rename", "name": name,
+                 "clip_name": _canon_name(s.get("CLIP_NAME", [""])[0])}]
+    if intent == "clip_delete":
+        return [{"type": "clip_delete", "name": name,
+                 "index": _value_or_first_number(s, tokens)}]
+    if intent == "track_move":
+        return [{"type": "track_move", "name": name,
+                 "index": _value_or_first_number(s, tokens)}]
+    if intent == "notes_delete":
+        return [{"type": "notes_delete", "name": name}]
+    if intent == "notes_transpose":
+        n = abs(_value_or_first_number(s, tokens))
+        low = [t.lower() for t in tokens]
+        if any(w in low for w in ("down", "lower")):
+            n = -n
+        return [{"type": "notes_transpose", "name": name, "semitones": n}]
+    if intent == "notes_set_velocity":
+        return [{"type": "notes_set_velocity", "name": name,
+                 "value": _value_or_first_number(s, tokens)}]
+    if intent in ("notes_select_velocity_above", "notes_select_velocity_below"):
+        return [{"type": intent, "name": name,
+                 "value": _value_or_first_number(s, tokens)}]
+    if intent == "notes_resize":
+        return [{"type": "notes_resize", "name": name,
+                 "length": _value_or_first_number(s, tokens)}]
+    if intent == "notes_quantize":
+        grid = _parse_grid(s["VALUE"][0]) if s.get("VALUE") else 0.25
+        return [{"type": "notes_quantize", "name": name, "grid": grid}]
+    if intent in ("notes_set_pitch", "notes_select_pitch"):
+        return [{"type": intent, "name": name,
+                 "pitch": _canon_pitch(s.get("PITCH", ["C4"])[0])}]
+    if intent == "groove_set":
+        return [{"type": "groove_set",
+                 "template": _canon_name(s.get("GROOVE_NAME", [""])[0]),
+                 "strength": _value_or_first_number(s, tokens)}]
+    if intent == "groove_list":
+        return [{"type": "groove_list"}]
     raise ValueError(intent)
+
+
+def _parse_grid(text: str) -> float:
+    for grid, phrases in GRID_PHRASES.items():
+        if text.lower().strip() in phrases:
+            return grid
+    return _parse_number(text) or 0.25
+
+
+def _canon_pitch(text: str) -> str:
+    t = text.strip()
+    if re.fullmatch(r"\d+", t):          # MIDI number
+        return t
+    m = re.fullmatch(r"([a-gA-G])([b]?)(\d)", t)
+    if not m:
+        return t.upper()
+    return m.group(1).upper() + m.group(2).lower() + m.group(3)
 
 
 def _parse_number(text: str) -> float:
@@ -332,32 +460,15 @@ def _parse_pan(text: str) -> float:
 
 
 def _plugins_from_tokens(tokens) -> list[str]:
-    """Fallback plugin lookup over the whole utterance when slot tags miss."""
-    text = " ".join(tokens).lower()
-    candidates = []
-    for spec in vocab.THIRD_PARTY.values():
-        for name in spec["names"]:
-            candidates.append((name, spec["token"]))
-    for token, names in vocab.INTERNAL_FX.items():
-        for name in names:
-            candidates.append((name, token))
-    candidates.sort(key=lambda c: len(c[0]), reverse=True)
-
-    found = []
-    used = []
-    for needle, token in candidates:
-        for match in re.finditer(r"\b" + re.escape(needle) + r"\b", text):
-            span = match.span()
-            if any(not (span[1] <= s or span[0] >= e) for s, e in used):
-                continue
-            used.append(span)
-            found.append((span[0], token))
-    found.sort()
-
+    """Fallback when slot tags miss: any @alias token is a plugin reference.
+    Generic by design — the model needn't know plugin names; the alias system
+    injects them and resolves them at runtime."""
     out = []
-    for _, token in found:
-        if token not in out:
-            out.append(token)
+    for t in tokens:
+        if t.startswith("@"):
+            tok = _alias_token(t)
+            if tok not in out:
+                out.append(tok)
     return out
 
 

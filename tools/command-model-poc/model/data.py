@@ -25,10 +25,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataset.tagging import tag, tokenize  # noqa: E402
 
-PAD, UNK = "<PAD>", "<UNK>"
+PAD, UNK, ALIAS = "<PAD>", "<UNK>", "<alias>"
 MAX_LEN = 24
 IGNORE = -100
 NAME_SLOTS = {"TRACK_NAME", "NEW_NAME", "GROUP_NAME"}  # copy-through -> safe to UNK
+
+
+def canon(token: str) -> str:
+    """Preprocess-ahead: collapse every plugin reference to one opaque token so
+    the model never learns plugin identities. A host step rewrites '@serum',
+    '@vital', '@anything' -> '<alias>', and any plugin-param reference
+    ('@serum.cutoff') -> the single opaque '<alias.param>' token. The model only
+    tags the placeholder's position/role; it never sees which plugin or which
+    param. The reconstructor substitutes the real identities back by position
+    (1st @-mention -> its alias, 1st PARAM span -> param1, ...). This is why an
+    unseen alias generalises for free and the vocab never grows with the plugin
+    registry. Data files keep the readable '@serum' surface so the tagger/
+    reconstructor can still recover the true identity."""
+    if token.startswith("@"):
+        return "<alias.param>" if "." in token else ALIAS
+    return token.lower()
 
 
 def load_rows(path):
@@ -36,12 +52,12 @@ def load_rows(path):
 
 
 def build_maps(rows):
-    vocab = {PAD: 0, UNK: 1}
+    vocab = {PAD: 0, UNK: 1, ALIAS: 2}  # ALIAS reserved: all @-refs collapse here
     intents, tags = {}, {"O": 0}
     for r in rows:
         intent, toks, tg = tag(r["input"], r["actions"])
         for t in toks:
-            tl = t.lower()
+            tl = canon(t)
             if tl not in vocab:
                 vocab[tl] = len(vocab)
         intents.setdefault(intent, len(intents))
@@ -76,7 +92,7 @@ class CmdDataset(Dataset):
     def _encode_tokens(self, toks, tg):
         ids = []
         for t, x in zip(toks[:MAX_LEN], tg[:MAX_LEN]):
-            wid = self.vocab.get(t.lower(), self.vocab[UNK])
+            wid = self.vocab.get(canon(t), self.vocab[UNK])
             if self.unk_aug and x[2:] in NAME_SLOTS and self.rng.random() < self.unk_aug:
                 wid = self.vocab[UNK]
             ids.append(wid)
@@ -97,7 +113,7 @@ class CmdDataset(Dataset):
 def encode_text(text, vocab):
     """Inference-side: surface tokens + padded id tensor + length."""
     toks = tokenize(text)[:MAX_LEN]
-    ids = [vocab.get(t.lower(), vocab[UNK]) for t in toks]
+    ids = [vocab.get(canon(t), vocab[UNK]) for t in toks]
     L = len(ids)
     ids += [0] * (MAX_LEN - L)
     return toks, torch.tensor(ids).unsqueeze(0), L

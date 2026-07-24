@@ -6,19 +6,19 @@
 {"lang": "en", "input": "create a vocals track", "output": "track(name=\"Vocals\", new=true)", "actions": [{"type": "create_track", "name": "Vocals"}]}
 {"lang": "en", "input": "make a keys track", "output": "track(name=\"Keys\", new=true)", "actions": [{"type": "create_track", "name": "Keys"}]}
 {"lang": "en", "input": "add a new perc track", "output": "track(name=\"Perc\", new=true)", "actions": [{"type": "create_track", "name": "Perc"}]}
-{"lang": "en", "input": "create a bass track with serum and ott", "output": "track(name=\"Bass\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "Bass", "plugins": ["<serum>", "<ott>"]}]}
-{"lang": "en", "input": "make a lead track with serum", "output": "track(name=\"Lead\", new=true).fx.add(name=\"<serum>\")", "actions": [{"type": "create_track", "name": "Lead", "plugins": ["<serum>"]}]}
-{"lang": "en", "input": "new pads track with vital and reverb", "output": "track(name=\"Pads\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"Pads\").fx.add(name=\"reverb\")", "actions": [{"type": "create_track", "name": "Pads", "plugins": ["<vital>", "reverb"]}]}
-{"lang": "en", "input": "create a vocals track with pro-q 3", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<pro_q_3>"]}]}
-{"lang": "en", "input": "create a drums track with surge xt and ott", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<surge_xt>", "<ott>"]}]}
-{"lang": "en", "input": "add serum to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}]}
-{"lang": "en", "input": "put ott on Drums", "output": "track(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<ott>"}]}
-{"lang": "en", "input": "add pro-q 3 to vocals", "output": "track(name=\"Vocals\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<pro_q_3>"}]}
-{"lang": "en", "input": "load vital on the lead track", "output": "track(name=\"Lead\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "<vital>"}]}
-{"lang": "en", "input": "add an eq to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"eq\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "eq"}]}
-{"lang": "en", "input": "add reverb to Pads", "output": "track(name=\"Pads\").fx.add(name=\"reverb\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "reverb"}]}
-{"lang": "en", "input": "add a compressor to the drums track", "output": "track(name=\"Drums\").fx.add(name=\"compressor\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "compressor"}]}
-{"lang": "en", "input": "put 1176 on the vocals track", "output": "track(name=\"Vocals\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<1176>"}]}
+{"lang": "en", "input": "create a bass track with @serum and @ott", "output": "track(name=\"Bass\", new=true).fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "Bass", "plugins": ["<serum>", "<ott>"]}]}
+{"lang": "en", "input": "make a lead track with @vital", "output": "track(name=\"Lead\", new=true).fx.add(name=\"<vital>\")", "actions": [{"type": "create_track", "name": "Lead", "plugins": ["<vital>"]}]}
+{"lang": "en", "input": "new pads track with @surge_xt and @reverb", "output": "track(name=\"Pads\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Pads\").fx.add(name=\"<reverb>\")", "actions": [{"type": "create_track", "name": "Pads", "plugins": ["<surge_xt>", "<reverb>"]}]}
+{"lang": "en", "input": "spin up a vocals track loaded with @pro_q_3", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<pro_q_3>"]}]}
+{"lang": "en", "input": "create a drums track with @massive and @ott", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<massive>\")\ntrack(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<massive>", "<ott>"]}]}
+{"lang": "en", "input": "add @serum to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}]}
+{"lang": "en", "input": "put @ott on Drums", "output": "track(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<ott>"}]}
+{"lang": "en", "input": "insert @pro_q_3 on vocals", "output": "track(name=\"Vocals\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<pro_q_3>"}]}
+{"lang": "en", "input": "load @vital on the lead track", "output": "track(name=\"Lead\").fx.add(name=\"<vital>\")", "actions": [{"type": "add_plugin", "name": "Lead", "plugin": "<vital>"}]}
+{"lang": "en", "input": "throw @eq on the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<eq>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<eq>"}]}
+{"lang": "en", "input": "add @reverb to Pads", "output": "track(name=\"Pads\").fx.add(name=\"<reverb>\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "<reverb>"}]}
+{"lang": "en", "input": "put @1176 on the vocals track", "output": "track(name=\"Vocals\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<1176>"}]}
+{"lang": "en", "input": "add @granulator_x to the pads track", "output": "track(name=\"Pads\").fx.add(name=\"<granulator_x>\")", "actions": [{"type": "add_plugin", "name": "Pads", "plugin": "<granulator_x>"}]}
 {"lang": "en", "input": "rename track Bass to Reese Bass", "output": "track(name=\"Bass\").track.set(name=\"Reese Bass\")", "actions": [{"type": "rename_track", "name": "Bass", "new_name": "Reese Bass"}]}
 {"lang": "en", "input": "rename the drums track to Acoustic Kit", "output": "track(name=\"Drums\").track.set(name=\"Acoustic Kit\")", "actions": [{"type": "rename_track", "name": "Drums", "new_name": "Acoustic Kit"}]}
 {"lang": "en", "input": "change Lead to Topline", "output": "track(name=\"Lead\").track.set(name=\"Topline\")", "actions": [{"type": "rename_track", "name": "Lead", "new_name": "Topline"}]}
@@ -70,3 +70,33 @@
 {"lang": "en", "input": "select clips starting after bar 4 in the drums track", "output": "track(name=\"Drums\").clips.select(clip.start_bar >= 4)", "actions": [{"type": "select_clips_starting_after", "name": "Drums", "bar": 4}]}
 {"lang": "en", "input": "select clips before bar 16 on Vocals", "output": "track(name=\"Vocals\").clips.select(clip.start_bar <= 16)", "actions": [{"type": "select_clips_starting_before", "name": "Vocals", "bar": 16}]}
 {"lang": "en", "input": "highlight regions up to bar 8 on Pads", "output": "track(name=\"Pads\").clips.select(clip.start_bar <= 8)", "actions": [{"type": "select_clips_starting_before", "name": "Pads", "bar": 8}]}
+{"lang": "en", "input": "set up a drum track and label it Punchy", "output": "track(name=\"Punchy\", new=true)", "actions": [{"type": "create_track", "name": "Punchy"}]}
+{"lang": "en", "input": "make a synth lane called Rumble", "output": "track(name=\"Rumble\", new=true)", "actions": [{"type": "create_track", "name": "Rumble"}]}
+{"lang": "en", "input": "add a 4 bar clip to Bass", "output": "track(name=\"Bass\").clip.new(length_bars=4)", "actions": [{"type": "clip_new", "name": "Bass", "length_bars": 4}]}
+{"lang": "en", "input": "create a 2 bar clip on the drums track", "output": "track(name=\"Drums\").clip.new(length_bars=2)", "actions": [{"type": "clip_new", "name": "Drums", "length_bars": 2}]}
+{"lang": "en", "input": "rename the clip on Bass to Intro", "output": "track(name=\"Bass\").clip.rename(name=\"Intro\")", "actions": [{"type": "clip_rename", "name": "Bass", "clip_name": "Intro"}]}
+{"lang": "en", "input": "rename the selected clips on the lead track to Chorus", "output": "track(name=\"Lead\").clip.rename(name=\"Chorus\")", "actions": [{"type": "clip_rename", "name": "Lead", "clip_name": "Chorus"}]}
+{"lang": "en", "input": "delete clip 2 on Bass", "output": "track(name=\"Bass\").clip.delete(index=2)", "actions": [{"type": "clip_delete", "name": "Bass", "index": 2}]}
+{"lang": "en", "input": "remove clip 0 on Drums", "output": "track(name=\"Drums\").clip.delete(index=0)", "actions": [{"type": "clip_delete", "name": "Drums", "index": 0}]}
+{"lang": "en", "input": "move Bass to position 3", "output": "track(name=\"Bass\").track.move(index=3)", "actions": [{"type": "track_move", "name": "Bass", "index": 3}]}
+{"lang": "en", "input": "move the vocals track to slot 2", "output": "track(name=\"Vocals\").track.move(index=2)", "actions": [{"type": "track_move", "name": "Vocals", "index": 2}]}
+{"lang": "en", "input": "delete all the notes on the bass track", "output": "track(name=\"Bass\").notes.delete()", "actions": [{"type": "notes_delete", "name": "Bass"}]}
+{"lang": "en", "input": "clear the notes on the drums track", "output": "track(name=\"Drums\").notes.delete()", "actions": [{"type": "notes_delete", "name": "Drums"}]}
+{"lang": "en", "input": "transpose the notes on Bass up 12 semitones", "output": "track(name=\"Bass\").notes.transpose(semitones=12)", "actions": [{"type": "notes_transpose", "name": "Bass", "semitones": 12}]}
+{"lang": "en", "input": "shift the lead notes down 5 semitones", "output": "track(name=\"Lead\").notes.transpose(semitones=-5)", "actions": [{"type": "notes_transpose", "name": "Lead", "semitones": -5}]}
+{"lang": "en", "input": "set the note velocity on Bass to 100", "output": "track(name=\"Bass\").notes.set_velocity(value=100)", "actions": [{"type": "notes_set_velocity", "name": "Bass", "value": 100}]}
+{"lang": "en", "input": "set the drums note velocity to 80", "output": "track(name=\"Drums\").notes.set_velocity(value=80)", "actions": [{"type": "notes_set_velocity", "name": "Drums", "value": 80}]}
+{"lang": "en", "input": "set the note length on Bass to 0.5 beats", "output": "track(name=\"Bass\").notes.resize(length=0.5)", "actions": [{"type": "notes_resize", "name": "Bass", "length": 0.5}]}
+{"lang": "en", "input": "set the lead note length to 2 beats", "output": "track(name=\"Lead\").notes.resize(length=2)", "actions": [{"type": "notes_resize", "name": "Lead", "length": 2}]}
+{"lang": "en", "input": "quantize the notes on Bass to 16th notes", "output": "track(name=\"Bass\").notes.quantize(grid=0.25)", "actions": [{"type": "notes_quantize", "name": "Bass", "grid": 0.25}]}
+{"lang": "en", "input": "snap the drums notes to 8th notes", "output": "track(name=\"Drums\").notes.quantize(grid=0.5)", "actions": [{"type": "notes_quantize", "name": "Drums", "grid": 0.5}]}
+{"lang": "en", "input": "set the note pitch on Bass to C2", "output": "track(name=\"Bass\").notes.set_pitch(pitch=C2)", "actions": [{"type": "notes_set_pitch", "name": "Bass", "pitch": "C2"}]}
+{"lang": "en", "input": "set the lead notes to G3", "output": "track(name=\"Lead\").notes.set_pitch(pitch=G3)", "actions": [{"type": "notes_set_pitch", "name": "Lead", "pitch": "G3"}]}
+{"lang": "en", "input": "select all C4 notes on Bass", "output": "track(name=\"Bass\").notes.select(note.pitch == C4)", "actions": [{"type": "notes_select_pitch", "name": "Bass", "pitch": "C4"}]}
+{"lang": "en", "input": "select the E4 notes on the lead track", "output": "track(name=\"Lead\").notes.select(note.pitch == E4)", "actions": [{"type": "notes_select_pitch", "name": "Lead", "pitch": "E4"}]}
+{"lang": "en", "input": "select notes on Bass with velocity above 100", "output": "track(name=\"Bass\").notes.select(note.velocity > 100)", "actions": [{"type": "notes_select_velocity_above", "name": "Bass", "value": 100}]}
+{"lang": "en", "input": "select the drums notes quieter than 60", "output": "track(name=\"Drums\").notes.select(note.velocity < 60)", "actions": [{"type": "notes_select_velocity_below", "name": "Drums", "value": 60}]}
+{"lang": "en", "input": "use the MPC Swing groove at strength 0.5", "output": "groove.set(template=\"MPC Swing\", strength=0.5)", "actions": [{"type": "groove_set", "template": "MPC Swing", "strength": 0.5}]}
+{"lang": "en", "input": "apply the Shuffle groove at strength 0.7", "output": "groove.set(template=\"Shuffle\", strength=0.7)", "actions": [{"type": "groove_set", "template": "Shuffle", "strength": 0.7}]}
+{"lang": "en", "input": "which grooves are available", "output": "groove.list()", "actions": [{"type": "groove_list"}]}
+{"lang": "en", "input": "show me the groove list", "output": "groove.list()", "actions": [{"type": "groove_list"}]}
