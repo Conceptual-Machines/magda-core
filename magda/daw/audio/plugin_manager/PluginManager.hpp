@@ -69,7 +69,8 @@ struct PluginLoadResult {
  * - PluginWindowBridge& (for closing plugin windows)
  * - TransportStateManager& (for tone generator bypass state)
  */
-class PluginManager : public daw::audio::DrumGridPlugin::Listener {
+class PluginManager : public daw::audio::DrumGridPlugin::Listener,
+                      public daw::audio::DeviceRealtimeContext {
   public:
     /**
      * @brief Construct PluginManager with required dependencies
@@ -399,7 +400,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param mono unrectified mono downmix of the source audio (length numSamples)
      */
     void pushFollowerSourceBuffer(TrackId sourceTrackId, const float* mono, int numSamples,
-                                  double sampleRate);
+                                  double sampleRate) override;
+
+    void triggerSidechain(TrackId sourceTrackId, daw::audio::DeviceTriggerSource source) override;
+    void gateSidechain(TrackId sourceTrackId) override;
 
     /**
      * @brief Rebuild the sidechain LFO cache for all tracks

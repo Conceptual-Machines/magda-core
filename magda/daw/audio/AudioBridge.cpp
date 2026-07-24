@@ -132,6 +132,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     daw::audio::DeviceServices deviceServices;
     deviceServices.deviceIdAllocator = &TrackManager::getInstance();
     deviceServices.trackContext = &TrackManager::getInstance();
+    deviceServices.realtimeContext = &pluginManager_;
+    deviceServices.sessionContext = &sessionAudioMonitor_;
     deviceServices.meteringContext = &deviceMetering_;
     deviceServices.defaults.oscilloscope.timebaseMs = oscilloscopeDefaults.timebaseMs;
     deviceServices.defaults.spectrum.fftOrder = spectrumDefaults.fftOrder;
@@ -1577,7 +1579,7 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     for (int i = 0; i < masterList.size(); ++i) {
         if (auto* existing = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
             sessionMonitorPlugin_ = existing;
-            sessionMonitorPlugin_->setAudioMonitor(&sessionAudioMonitor_);
+            sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);
             return;
         }
     }
@@ -1591,7 +1593,7 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     for (int i = 0; i < masterList.size(); ++i) {
         if (auto* mon = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
             sessionMonitorPlugin_ = mon;
-            sessionMonitorPlugin_->setAudioMonitor(&sessionAudioMonitor_);
+            sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);
             return;
         }
     }

@@ -117,6 +117,15 @@ class DeviceServicesInjectionTest final : public juce::UnitTest {
             expect(dynamic_cast<audio::MidiChordEnginePlugin*>(chordPlugin.get()) != nullptr);
             juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
             expect(testServices.chordMuteReads > 0);
+
+#if defined(MAGDA_PRO_DEVICES_ENABLED) && MAGDA_PRO_DEVICES_ENABLED
+            auto proPlugin = createCustomPlugin(*edit, "magda-pro-stub");
+            expect(proPlugin != nullptr);
+            if (proPlugin != nullptr) {
+                expectEquals(proPlugin->getName(), juce::String("Pro Pack Stub"));
+                expectEquals(proPlugin->getPluginType(), juce::String("magda-pro-stub"));
+            }
+#endif
         }
 
         audio::unregisterDeviceServices(*edit);

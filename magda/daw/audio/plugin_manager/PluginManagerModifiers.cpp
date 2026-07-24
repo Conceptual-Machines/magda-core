@@ -352,6 +352,17 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 }
 
 // =============================================================================
+void PluginManager::triggerSidechain(TrackId sourceTrackId,
+                                     daw::audio::DeviceTriggerSource source) {
+    triggerSidechainNoteOn(sourceTrackId, source == daw::audio::DeviceTriggerSource::Midi
+                                              ? LFOTriggerMode::MIDI
+                                              : LFOTriggerMode::Audio);
+}
+
+void PluginManager::gateSidechain(TrackId sourceTrackId) {
+    gateSidechainLFOs(sourceTrackId);
+}
+
 void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
                                            std::optional<LFOTriggerMode> modeFilter) {
     if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)

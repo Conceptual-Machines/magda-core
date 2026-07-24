@@ -53,6 +53,13 @@ te::Plugin::Ptr createCustomPlugin(const te::PluginCreationInfo& info) {
     return new PluginType(info);
 }
 
+template <typename PluginType>
+te::Plugin::Ptr createRealtimePlugin(const te::PluginCreationInfo& info) {
+    auto* plugin = new PluginType(info);
+    plugin->setRealtimeContext(getDeviceServices(info.edit).realtimeContext);
+    return plugin;
+}
+
 te::Plugin::Ptr createDrumGridPlugin(const te::PluginCreationInfo& info) {
     auto services = getDeviceServices(info.edit);
     jassert(services.deviceIdAllocator != nullptr);
@@ -82,6 +89,12 @@ te::Plugin::Ptr createMidiReceivePlugin(const te::PluginCreationInfo& info) {
 te::Plugin::Ptr createInstrumentMeterTapPlugin(const te::PluginCreationInfo& info) {
     auto services = getDeviceServices(info.edit);
     return new InstrumentMeterTapPlugin(info, services.meteringContext);
+}
+
+te::Plugin::Ptr createSessionMonitorPlugin(const te::PluginCreationInfo& info) {
+    auto* plugin = new ::magda::SessionMonitorPlugin(info);
+    plugin->setSessionContext(getDeviceServices(info.edit).sessionContext);
+    return plugin;
 }
 
 te::Plugin::Ptr createFreshValueTreePlugin(te::Edit& edit, const char* xmlTypeName) {
@@ -614,16 +627,17 @@ void registerInfrastructureDevices(InternalPluginRegistry& registry) {
                    .canCreateDetached = false,
                    .canCreateOnTrack = false,
                    .matchesPlugin = matches<::magda::SidechainMonitorPlugin>,
-                   .createCustomPlugin = createCustomPlugin<::magda::SidechainMonitorPlugin>});
-    add(registry, {.pluginId = ::magda::AudioSidechainMonitorPlugin::xmlTypeName,
-                   .displayName = "Audio Sidechain Monitor",
-                   .browserCategory = "Utility",
-                   .description = "Internal audio monitor used by sidechain-aware devices.",
-                   .createMode = InternalPluginCreateMode::Unsupported,
-                   .canCreateDetached = false,
-                   .canCreateOnTrack = false,
-                   .matchesPlugin = matches<::magda::AudioSidechainMonitorPlugin>,
-                   .createCustomPlugin = createCustomPlugin<::magda::AudioSidechainMonitorPlugin>});
+                   .createCustomPlugin = createRealtimePlugin<::magda::SidechainMonitorPlugin>});
+    add(registry,
+        {.pluginId = ::magda::AudioSidechainMonitorPlugin::xmlTypeName,
+         .displayName = "Audio Sidechain Monitor",
+         .browserCategory = "Utility",
+         .description = "Internal audio monitor used by sidechain-aware devices.",
+         .createMode = InternalPluginCreateMode::Unsupported,
+         .canCreateDetached = false,
+         .canCreateOnTrack = false,
+         .matchesPlugin = matches<::magda::AudioSidechainMonitorPlugin>,
+         .createCustomPlugin = createRealtimePlugin<::magda::AudioSidechainMonitorPlugin>});
     add(registry, {.pluginId = InstrumentMeterTapPlugin::xmlTypeName,
                    .displayName = "Instrument Meter Tap",
                    .browserCategory = "Meter",
@@ -652,7 +666,7 @@ void registerInfrastructureDevices(InternalPluginRegistry& registry) {
                    .canCreateDetached = false,
                    .canCreateOnTrack = false,
                    .matchesPlugin = matches<::magda::SessionMonitorPlugin>,
-                   .createCustomPlugin = createCustomPlugin<::magda::SessionMonitorPlugin>});
+                   .createCustomPlugin = createSessionMonitorPlugin});
     add(registry, {.pluginId = FollowerSourceTapPlugin::xmlTypeName,
                    .displayName = "Follower Source Tap",
                    .browserCategory = "Utility",
@@ -661,7 +675,7 @@ void registerInfrastructureDevices(InternalPluginRegistry& registry) {
                    .canCreateDetached = false,
                    .canCreateOnTrack = false,
                    .matchesPlugin = matches<FollowerSourceTapPlugin>,
-                   .createCustomPlugin = createCustomPlugin<FollowerSourceTapPlugin>});
+                   .createCustomPlugin = createRealtimePlugin<FollowerSourceTapPlugin>});
     add(registry, {.pluginId = InsertCapturePlugin::xmlTypeName,
                    .displayName = "Insert Capture",
                    .browserCategory = "Utility",
@@ -696,6 +710,10 @@ void registerBaseDevices(InternalPluginRegistry& registry) {
     registerNativeDevices(registry);
     registerInfrastructureDevices(registry);
     registerCompiledParameterAliases(registry);
+}
+
+namespace {
+[[maybe_unused]] const bool baseDevicePackRegistered = registerDevicePack(registerBaseDevices);
 }
 
 }  // namespace magda::daw::audio

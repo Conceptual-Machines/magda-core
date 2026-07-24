@@ -24,6 +24,17 @@ TEST_CASE("Linked device packs populate the process registry", "[internal-plugin
     REQUIRE(juce::String(spec->displayName) == "Test External Pack Device");
 }
 
+#if defined(MAGDA_PRO_DEVICES_ENABLED) && MAGDA_PRO_DEVICES_ENABLED
+TEST_CASE("Optional pro pack registers its browser device through the SDK hook",
+          "[internal-plugin-registry][pro-devices]") {
+    const auto* spec = audio::findInternalPluginSpec("magda-pro-stub");
+    REQUIRE(spec != nullptr);
+    REQUIRE(juce::String(spec->displayName) == "Pro Pack Stub");
+    REQUIRE(spec->showInBrowser);
+    REQUIRE(spec->createCustomPlugin != nullptr);
+}
+#endif
+
 TEST_CASE("Device packs can register plugins without changing the core catalog",
           "[internal-plugin-registry]") {
     audio::InternalPluginRegistry registry;

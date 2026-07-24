@@ -4,6 +4,7 @@
 #include <atomic>
 #include <unordered_map>
 
+#include "plugins/DeviceServices.hpp"
 #include "session/SessionClipCommandQueue.hpp"
 #include "session/SessionClipStateQueue.hpp"
 
@@ -23,7 +24,7 @@ namespace magda {
  * - stateQueue() is written by audio thread, read by message thread
  * - playhead slots: written by audio thread, read by message thread
  */
-class SessionClipAudioMonitor {
+class SessionClipAudioMonitor : public daw::audio::DeviceSessionContext {
   public:
     static constexpr int kMaxMonitoredClips = 64;
 
@@ -35,6 +36,9 @@ class SessionClipAudioMonitor {
      * @param transportPositionSeconds Current transport position in seconds
      */
     void process(double transportPositionSeconds);
+    void processSessionBlock(double transportPositionSeconds) override {
+        process(transportPositionSeconds);
+    }
 
     /** Message-thread accessor: push Monitor/Unmonitor commands. */
     SessionClipCommandQueue& commandQueue() {

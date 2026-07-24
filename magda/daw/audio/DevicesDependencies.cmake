@@ -113,6 +113,56 @@ function(magda_stage_faust_libraries TARGET_NAME)
     )
 endfunction()
 
+# Fail configuration when a device pack reaches into host-owned DAW layers.
+# Callers pass the pack's complete source list, making this check usable by
+# in-tree, submodule, and private packs alike.
+function(magda_validate_device_pack_sources PACK_NAME)
+    foreach(_magda_pack_source IN LISTS ARGN)
+        if(NOT IS_ABSOLUTE "${_magda_pack_source}")
+            set(_magda_pack_source "${CMAKE_CURRENT_SOURCE_DIR}/${_magda_pack_source}")
+        endif()
+        if(NOT EXISTS "${_magda_pack_source}"
+           OR NOT _magda_pack_source MATCHES "\\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$")
+            continue()
+        endif()
+
+        file(READ "${_magda_pack_source}" _magda_pack_source_text)
+        if(_magda_pack_source_text MATCHES "(TrackManager|Config)::getInstance[ \t]*\\(")
+            message(FATAL_ERROR
+                "${PACK_NAME} calls a DAW singleton instead of DeviceServices: "
+                "${_magda_pack_source}")
+        endif()
+
+        string(REGEX MATCHALL
+            "#[ \t]*include[ \t]*[<\"][^>\"]+[>\"]"
+            _magda_pack_includes "${_magda_pack_source_text}")
+        foreach(_magda_pack_include IN LISTS _magda_pack_includes)
+            if(_magda_pack_include MATCHES
+               "[<\"]([^>\"]*/)?(engine|project|ui|plugin_manager|racks|modifiers)/[^>\"]+[>\"]")
+                message(FATAL_ERROR
+                    "${PACK_NAME} crosses the device SDK include boundary: "
+                    "${_magda_pack_source}\n${_magda_pack_include}")
+            endif()
+            if(_magda_pack_include MATCHES
+               "[<\"]([^>\"]*/)?session/SessionClipAudioMonitor\\.hpp[>\"]")
+                message(FATAL_ERROR
+                    "${PACK_NAME} includes the host session monitor instead of DeviceServices: "
+                    "${_magda_pack_source}\n${_magda_pack_include}")
+            endif()
+
+            if(_magda_pack_include MATCHES "[<\"]([^>\"]*/)?core/([^>\"]+)[>\"]")
+                set(_magda_pack_core_header "${CMAKE_MATCH_2}")
+                if(NOT _magda_pack_core_header MATCHES
+                   "^(TypeIds|TechnicalText|ChainNodePath|ControlTarget|ParameterInfo|ParameterUtils|DeviceInfo|KitRow|MacroInfo|ModInfo|TempoUtils)\\.hpp$")
+                    message(FATAL_ERROR
+                        "${PACK_NAME} includes a non-SDK core header: "
+                        "${_magda_pack_source}\n${_magda_pack_include}")
+                endif()
+            endif()
+        endforeach()
+    endforeach()
+endfunction()
+
 # Mutable Instruments DSP (Elements / Rings / Clouds) native ports.
 set(MAGDA_MUTABLE_PREBUILT_DIR "" CACHE PATH
     "Directory containing a prebuilt magda_mutable artifact (lib/libmagda_mutable); builds from source when empty/missing")

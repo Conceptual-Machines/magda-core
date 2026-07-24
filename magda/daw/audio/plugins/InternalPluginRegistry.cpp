@@ -4,7 +4,6 @@
 #include <mutex>
 #include <vector>
 
-#include "plugins/BaseDevicePack.hpp"
 #include "processors/base/DeviceProcessor.hpp"
 
 namespace magda::daw::audio {
@@ -112,7 +111,6 @@ InternalPluginRegistry& getInternalPluginRegistry() {
     static const bool initialized = [] {
         auto& state = registryState();
         const std::lock_guard lock(state.mutex);
-        registerBaseDevices(registry);
         for (const auto hook : state.packRegistrations)
             hook(registry);
         state.initialized = true;
