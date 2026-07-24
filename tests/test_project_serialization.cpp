@@ -1911,7 +1911,7 @@ TEST_CASE("Section-scoped device ids survive project roundtrip",
     REQUIRE(trackManager.addDeviceToMixerAnalysis(trackId, analysis) == 2);
 }
 
-TEST_CASE("Post-FX visible and mini mixer parameters survive project roundtrip",
+TEST_CASE("Post-FX parameter selections survive project roundtrip",
           "[project][serialization][devices]") {
     ProjectTestFixture fixture;
 
@@ -1934,8 +1934,12 @@ TEST_CASE("Post-FX visible and mini mixer parameters survive project roundtrip",
     const auto postPath = ChainNodePath::postFxDevice(trackId, postId);
     trackManager.setDeviceVisibleParameters(fxPath, {1, 2});
     trackManager.setDeviceMiniMixerParameters(fxPath, {3});
+    trackManager.setDeviceAiSoundDesignerParameters(fxPath, {8, 9});
+    trackManager.setDeviceAiSoundDesignerPrompt(fxPath, "Keep the low end mono.");
     trackManager.setDeviceVisibleParameters(postPath, {4, 5});
     trackManager.setDeviceMiniMixerParameters(postPath, {6, 7});
+    trackManager.setDeviceAiSoundDesignerParameters(postPath, {10, 11});
+    trackManager.setDeviceAiSoundDesignerPrompt(postPath, "Prefer subtle modulation.");
 
     ProjectInfo info;
     auto json = ProjectSerializer::serializeProject(info);
@@ -1949,8 +1953,12 @@ TEST_CASE("Post-FX visible and mini mixer parameters survive project roundtrip",
     REQUIRE(loadedPost != nullptr);
     REQUIRE(loadedFx->visibleParameters == std::vector<int>{1, 2});
     REQUIRE(loadedFx->miniMixerParameters == std::vector<int>{3});
+    REQUIRE(loadedFx->aiSoundDesignerParameters == std::vector<int>{8, 9});
+    REQUIRE(loadedFx->aiSoundDesignerPrompt == "Keep the low end mono.");
     REQUIRE(loadedPost->visibleParameters == std::vector<int>{4, 5});
     REQUIRE(loadedPost->miniMixerParameters == std::vector<int>{6, 7});
+    REQUIRE(loadedPost->aiSoundDesignerParameters == std::vector<int>{10, 11});
+    REQUIRE(loadedPost->aiSoundDesignerPrompt == "Prefer subtle modulation.");
 }
 
 TEST_CASE("Mixer analysis plugin state survives project roundtrip",

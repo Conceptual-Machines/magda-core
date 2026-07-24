@@ -45,6 +45,28 @@ class TrackApi {
 
     virtual DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) = 0;
 
+    // Focused top-level rack and chain management surface for command agents.
+    // IDs are stable model IDs, surfaced in the command-state snapshot.
+    virtual RackId addRackToTrack(TrackId trackId, const juce::String& name) = 0;
+    virtual void removeRackFromTrack(TrackId trackId, RackId rackId) = 0;
+    virtual const RackInfo* getRack(TrackId trackId, RackId rackId) const = 0;
+    virtual void setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) = 0;
+    virtual void setRackVolume(TrackId trackId, RackId rackId, float volumeDb) = 0;
+    virtual ChainId addChainToRack(TrackId trackId, RackId rackId, const juce::String& name) = 0;
+    virtual void removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId) = 0;
+    virtual const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const = 0;
+    virtual void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId,
+                                int outputIndex) = 0;
+    virtual void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) = 0;
+    virtual void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
+                                  bool bypassed) = 0;
+    virtual void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo) = 0;
+    virtual void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId,
+                                float volumeDb) = 0;
+    virtual void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) = 0;
+    virtual void setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                              const juce::String& name) = 0;
+
     // First instrument plugin on the track, walking into racks. Returns nullptr
     // if the track has none. Used by the drummer executor to resolve role
     // tokens to the per-instance kit.

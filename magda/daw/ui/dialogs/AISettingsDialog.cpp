@@ -1005,10 +1005,12 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                                      DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(advancedHintLabel_);
 
-        static constexpr std::array<std::pair<const char*, const char*>, 5> kRoles = {{
+        static constexpr std::array<std::pair<const char*, const char*>, 7> kRoles = {{
             {magda::role::ROUTER, "Router"},
             {magda::role::COMMAND, "Command"},
             {magda::role::MUSIC, "Music"},
+            {magda::role::FAUST, "Faust"},
+            {magda::role::CHORD, "Chord"},
             {magda::role::CONTROLLER, "Controller"},
             {magda::role::THEME, "Theme"},
         }};
@@ -1548,10 +1550,13 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 out[magda::role::COMMAND] = cmdLocal;
             }
         }
-        // Theme is not part of the built-in presets - default it to the music
-        // tier (creative, structured-JSON generation, same as themes).
+        // Any role omitted by a hand-authored/simple preset inherits the music
+        // tier. Local-server presets intentionally keep one shared model.
         if (auto it = out.find(magda::role::MUSIC); it != out.end())
-            out[magda::role::THEME] = it->second;
+            for (const auto* inheritedRole :
+                 {magda::role::FAUST, magda::role::CHORD, magda::role::THEME})
+                if (out.find(inheritedRole) == out.end())
+                    out[inheritedRole] = it->second;
         return out;
     }
 
@@ -1668,7 +1673,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     // Advanced per-agent grid (AgentRow defined near the top of the class).
     juce::Label advancedHintLabel_;
-    std::array<AgentRow, 5> agentRows_;
+    std::array<AgentRow, 7> agentRows_;
 
     // MCP Tools
     juce::Label mcpSectionLabel_;
@@ -2131,6 +2136,91 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
 };
 
 // ============================================================================
+// ModelDownloadsPage — one place for every optional downloadable model.
+//
+// The category selector keeps the individual model workflows compact while
+// avoiding separate top-level tabs as new model families are added.
+// ============================================================================
+
+class AISettingsDialog::ModelDownloadsPage : public juce::Component {
+  public:
+    ModelDownloadsPage(LocalPage& localPage, SampleTaggerPage* samplePage,
+                       StemSeparationPage* stemsPage)
+        : localPage_(localPage), samplePage_(samplePage), stemsPage_(stemsPage) {
+        categoryLabel_.setText("Category", juce::dontSendNotification);
+        styleLabel(categoryLabel_);
+        addAndMakeVisible(categoryLabel_);
+
+        categoryCombo_.addItem("Local LLM", kLocal);
+        if (samplePage_ != nullptr)
+            categoryCombo_.addItem("Sample analysis", kSampleAnalyzer);
+        if (stemsPage_ != nullptr)
+            categoryCombo_.addItem("Stem separation", kStems);
+        categoryCombo_.setSelectedId(kLocal, juce::dontSendNotification);
+        categoryCombo_.onChange = [this]() { updateVisiblePage(); };
+        styleCombo(categoryCombo_);
+        addAndMakeVisible(categoryCombo_);
+
+        addAndMakeVisible(localPage_);
+        if (samplePage_ != nullptr)
+            addAndMakeVisible(*samplePage_);
+        if (stemsPage_ != nullptr)
+            addAndMakeVisible(*stemsPage_);
+        updateVisiblePage();
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        auto categoryRow = bounds.removeFromTop(28);
+        categoryLabel_.setBounds(categoryRow.removeFromLeft(80));
+        categoryCombo_.setBounds(categoryRow.removeFromLeft(190).reduced(0, 1));
+        bounds.removeFromTop(4);
+
+        localPage_.setBounds(bounds);
+        if (samplePage_ != nullptr)
+            samplePage_->setBounds(bounds);
+        if (stemsPage_ != nullptr)
+            stemsPage_->setBounds(bounds);
+    }
+
+    // Preserve existing callers that deep-link to the former download tabs.
+    bool selectLegacyCategory(const juce::String& tabName) {
+        if (tabName == "Local") {
+            categoryCombo_.setSelectedId(kLocal, juce::sendNotification);
+            return true;
+        }
+        if (tabName == "Sample Analyzer" && samplePage_ != nullptr) {
+            categoryCombo_.setSelectedId(kSampleAnalyzer, juce::sendNotification);
+            return true;
+        }
+        if (tabName == "Stems" && stemsPage_ != nullptr) {
+            categoryCombo_.setSelectedId(kStems, juce::sendNotification);
+            return true;
+        }
+        return false;
+    }
+
+  private:
+    enum Category { kLocal = 1, kSampleAnalyzer, kStems };
+
+    void updateVisiblePage() {
+        const int category = categoryCombo_.getSelectedId();
+        localPage_.setVisible(category == kLocal);
+        if (samplePage_ != nullptr)
+            samplePage_->setVisible(category == kSampleAnalyzer);
+        if (stemsPage_ != nullptr)
+            stemsPage_->setVisible(category == kStems);
+        resized();
+    }
+
+    LocalPage& localPage_;
+    SampleTaggerPage* samplePage_;
+    StemSeparationPage* stemsPage_;
+    juce::Label categoryLabel_;
+    juce::ComboBox categoryCombo_;
+};
+
+// ============================================================================
 // AISettingsDialog
 // ============================================================================
 
@@ -2146,6 +2236,8 @@ AISettingsDialog::AISettingsDialog() {
     if constexpr (magda::stems::DemucsSeparator::backendAvailable()) {
         stemsPage_ = std::make_unique<StemSeparationPage>();
     }
+    modelDownloadsPage_ =
+        std::make_unique<ModelDownloadsPage>(*localPage_, samplePage_.get(), stemsPage_.get());
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
@@ -2153,18 +2245,12 @@ AISettingsDialog::AISettingsDialog() {
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
-    tabbedComponent_.addTab("Local", tabBg, localPage_.get(), false);
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
-    if (samplePage_) {
-        tabbedComponent_.addTab("Sample Analyzer", tabBg, samplePage_.get(), false);
-    }
-    if (stemsPage_) {
-        tabbedComponent_.addTab("Stems", tabBg, stemsPage_.get(), false);
-    }
+    tabbedComponent_.addTab("Models", tabBg, modelDownloadsPage_.get(), false);
 
     // Refresh config combos when switching to Config tab
     tabbedComponent_.onTabChanged = [this](int tabIndex) {
-        if (tabIndex == 2)
+        if (tabbedComponent_.getTabNames()[tabIndex] == "Config")
             configPage_->refreshOnShow();
     };
 
@@ -2242,8 +2328,11 @@ void AISettingsDialog::showDialog(juce::Component* parent, const juce::String& i
     if (initialTabName.isNotEmpty()) {
         const auto names = dialog->tabbedComponent_.getTabNames();
         const int idx = names.indexOf(initialTabName);
-        if (idx >= 0)
+        if (idx >= 0) {
             dialog->tabbedComponent_.setCurrentTabIndex(idx);
+        } else if (dialog->modelDownloadsPage_->selectLegacyCategory(initialTabName)) {
+            dialog->tabbedComponent_.setCurrentTabIndex(names.indexOf("Models"));
+        }
     }
 
     juce::DialogWindow::LaunchOptions options;

@@ -69,6 +69,11 @@ class MagdaApiLive : public MagdaApi {
         project_.setEngineTempoWriter(std::move(writer));
     }
 
+    /** Wire time-signature writes through the owning engine before ProjectInfo is updated. */
+    void setProjectTimeSignatureWriter(std::function<void(int, int)> writer) {
+        project_.setEngineTimeSignatureWriter(std::move(writer));
+    }
+
     /** Wire the current-Edit accessor into the live TransportApi. */
     void setEditAccessor(TransportApiLive::EditGetter g) {
         transport_.setEditGetter(std::move(g));

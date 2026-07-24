@@ -92,7 +92,7 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // generated code in front of the user to review and compile manually.
     // Used when AI-generated code can't be auto-verified (faust-mcp off).
     // Message thread only.
-    void stageSourceForEditing(const juce::String& name, const juce::String& source);
+    void stageSourceForEditing(const juce::String& name, const juce::String& source) override;
 
     // Read access for the UI / parameter-info bridge (Phase 4b). The
     // pool's slot table is mutated only by `loadDspSource` on the

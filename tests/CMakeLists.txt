@@ -76,6 +76,11 @@ set(TEST_SOURCES
     test_dsl_add_chord.cpp
     test_dsl_add_arpeggio.cpp
     test_dsl_track_workflow.cpp
+    test_agent_device_catalog.cpp
+    test_chord_agent.cpp
+    test_faust_agent.cpp
+    test_dsl_project_commands.cpp
+    test_dsl_rack_commands.cpp
     test_scale_detection.cpp
     test_step_clock.cpp
     test_string_table.cpp
@@ -92,6 +97,7 @@ set(TEST_SOURCES
     test_mix_analysis_audio.cpp
     test_console_routing.cpp
     test_conversation_store.cpp
+    test_midi_context.cpp
     test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp

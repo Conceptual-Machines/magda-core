@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "../daw/core/DeviceInfo.hpp"
 #include "device_ai_agent.hpp"
 
 namespace magda {
@@ -13,8 +14,9 @@ namespace magda {
  * through this. A device type (e.g. 4OSC) ships an implementation that
  * knows how to talk to its LLM, parse the result into the device's
  * preset shape, and write it onto a specific ChainNodePath. New
- * devices add support by writing their own subclass and extending
- * `createSoundDesignAgentFor` — no changes needed to the calling UI.
+ * devices add support by writing their own subclass and declaring its handler
+ * in the shared internal-device capability catalog — no changes are needed to
+ * the calling UI.
  *
  * For devices that host code rather than parameter presets (e.g.
  * Faust), use `CoderAgent` instead — different shape, same panel.
@@ -38,10 +40,16 @@ class SoundDesignAgent : public DeviceAIAgent {
 std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId);
 
 /**
- * Quick check used by UI surfaces (slot button visibility, panel
- * gating) — returns true iff `createSoundDesignAgentFor(pluginId)`
- * would return a non-null agent.
+ * Device-aware factory. External plugins get the generic introspection agent
+ * only when the user has explicitly selected parameters for it.
+ */
+std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const DeviceInfo& device);
+
+/**
+ * Quick check used by non-UI callers. UI surfaces read the shared capability
+ * catalog directly; this returns the same declarative state.
  */
 bool isSoundDesignSupported(const juce::String& pluginId);
+bool isSoundDesignSupported(const DeviceInfo& device);
 
 }  // namespace magda

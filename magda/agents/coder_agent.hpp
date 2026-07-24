@@ -6,6 +6,8 @@
 
 namespace magda {
 
+struct DeviceInfo;
+
 /**
  * @brief Per-device "write me code" agent interface.
  *
@@ -16,8 +18,8 @@ namespace magda {
  *
  * Sibling of `SoundDesignAgent`: same call shape so `AIPanelComponent`
  * can host either, but distinct type so the two flavours don't get
- * conflated. New code-hosting devices add support by writing their
- * own subclass and extending `createCoderAgentFor`.
+ * conflated. New code-hosting devices add a subclass and declare its
+ * handler in the shared internal-device capability catalog.
  */
 class CoderAgent : public DeviceAIAgent {};
 
@@ -30,8 +32,8 @@ class CoderAgent : public DeviceAIAgent {};
  */
 std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId);
 
-/// Quick check used by UI surfaces — true iff `createCoderAgentFor`
-/// would return non-null.
+/// Quick check for non-UI callers. UI surfaces read the shared capability
+/// catalog directly; this returns the same declarative state.
 bool isCoderSupported(const juce::String& pluginId);
 
 /**
@@ -40,9 +42,11 @@ bool isCoderSupported(const juce::String& pluginId);
  * UI (the AI side panel) that doesn't care which kind of agent runs.
  */
 std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId);
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device);
 
 /// True iff any kind of DeviceAIAgent (sound design OR coder) exists
 /// for `pluginId`.
 bool isDeviceAISupported(const juce::String& pluginId);
+bool isDeviceAISupported(const DeviceInfo& device);
 
 }  // namespace magda

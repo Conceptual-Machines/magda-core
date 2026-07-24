@@ -8,6 +8,7 @@
 
 #include "../daw/core/ClipTypes.hpp"
 #include "../daw/core/TrackTypes.hpp"
+#include "../daw/core/TypeIds.hpp"
 
 namespace magda {
 class MagdaApi;
@@ -121,6 +122,8 @@ class Params {
 struct InterpreterContext {
     int currentTrackId = -1;
     int currentClipId = -1;
+    int currentRackId = INVALID_RACK_ID;
+    int currentChainId = INVALID_CHAIN_ID;
 
     // For filter operations
     std::vector<int> filteredTrackIds;
@@ -195,6 +198,7 @@ class Interpreter {
     bool parseStatement(Tokenizer& tok);
     bool parseTrackStatement(Tokenizer& tok);
     bool parseFilterStatement(Tokenizer& tok);
+    bool parseProjectStatement(Tokenizer& tok);
 
     // Chain method parsing
     bool parseMethodChain(Tokenizer& tok);
@@ -219,6 +223,13 @@ class Interpreter {
     bool executeSetVelocity(const Params& params);
     bool executeQuantize(const Params& params);
     bool executeResizeNotes(const Params& params);
+    bool executeProjectSet(const Params& params);
+    bool executeNewRack(const Params& params);
+    bool executeDeleteRack(const Params& params);
+    bool executeSetRack(const Params& params);
+    bool executeNewRackChain(const Params& params);
+    bool executeDeleteRackChain(const Params& params);
+    bool executeSetRackChain(const Params& params);
     bool resolveChordNotes(const Params& params, std::vector<int>& outNotes);
     static int parseNoteName(const std::string& name);
     ClipId getSelectedClipId() const;

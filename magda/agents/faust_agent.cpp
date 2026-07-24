@@ -11,7 +11,42 @@
 
 namespace magda {
 
-const char* FaustAgent::getSystemPrompt() {
+const char* FaustAgent::getSystemPrompt(Target target) {
+    if (target == Target::Instrument) {
+        return R"PROMPT(You are a Faust polyphonic instrument author. Given a user description,
+output a single JSON object describing a complete Faust instrument program. Output ONLY the JSON
+object — no prose and no markdown fences.
+
+OUTPUT SCHEMA:
+{
+  "name": "<2-4 word name, Title Case>",
+  "description": "<one short sentence describing the instrument>",
+  "source": "<a complete, valid Faust program>"
+}
+
+POLYPHONIC INSTRUMENT RULES — REQUIRED:
+- This is one MIDI voice driven by MAGDA's Faust voice allocator. Declare exactly these reserved
+  controls, with these lowercase labels and NO [idx:N] metadata:
+      freq = hslider("freq", 440, 20, 20000, 0.01);
+      gain = hslider("gain", 0.5, 0, 1, 0.01);
+      gate = button("gate");
+- `freq`, `gain`, and `gate` are host-owned voice controls. Never expose them as user parameters,
+  rename them, add metadata to them, or use them for another purpose.
+- Shape amplitude with a MIDI-driven envelope that uses gate, for example en.adsr(..., gate), and
+  multiply the voice by both that envelope and gain.
+- Generate a valid mono or stereo instrument output. A mono voice may be fanned to stereo with
+  `process = voice <: _, _;`.
+- Every user-facing hslider, vslider, nentry, or checkbox needs a unique [idx:N] in 0..63. Do not
+  add [idx:N] to freq, gain, or gate. Use 4–8 musical user controls where possible.
+- Do not use soundfile() or external imports other than stdfaust.lib. Keep the full program valid
+  in the bundled libfaust interpreter backend.
+
+GUIDELINES:
+- Use tasteful, playable defaults and sensible ranges.
+- Use stdfaust.lib oscillators, filters, envelopes and effects only.
+- Keep source short and readable with named helpers. The default must make sound after MIDI note-on.
+)PROMPT";
+    }
     return R"PROMPT(You are a Faust DSP author. Given a user description of an audio effect or
 instrument, output a single JSON object describing a Faust program. Output
 ONLY the JSON object — no prose, no markdown fences.
@@ -80,22 +115,67 @@ namespace {
 // so a missing / duplicate / out-of-range idx (or >64 controls) compiles fine
 // yet breaks parameter links on the next regeneration. Catch it here and feed
 // failures into the same retry loop the compiler errors use.
-bool validateMetadata(const std::string& source, std::string& errorOut) {
+bool validateSourceImpl(FaustAgent::Target target, const std::string& source,
+                        std::string& errorOut) {
     static const std::regex controlDecl(
-        R"RX((hslider|vslider|nentry|checkbox)\s*\(\s*"([^"]*)")RX");
+        R"RX((hslider|vslider|nentry|checkbox|button)\s*\(\s*"([^"]*)")RX");
 
     juce::StringArray problems;
     std::array<bool, 64> used{};
-    int controlCount = 0;
+    int userControlCount = 0;
+    bool sawFreq = false;
+    bool sawGain = false;
+    bool sawGate = false;
 
     for (auto it = std::sregex_iterator(source.begin(), source.end(), controlDecl);
          it != std::sregex_iterator(); ++it) {
-        ++controlCount;
+        const juce::String kind((*it)[1].str());
         const juce::String rawLabel((*it)[2].str());
         const auto parsed = magda::daw::audio::parseFaustLabel(rawLabel);
         const int idx = parsed.metadata.slotIndex;
         const juce::String name =
             parsed.cleanLabel.trim().isNotEmpty() ? parsed.cleanLabel.trim() : rawLabel;
+        const auto normalized = name.toLowerCase();
+        const bool reserved =
+            target == FaustAgent::Target::Instrument &&
+            (normalized == "freq" || normalized == "gain" || normalized == "gate");
+
+        if (reserved) {
+            if (idx != -1)
+                problems.add("reserved voice control \"" + name + "\" must not have [idx:N]");
+            if (normalized == "freq") {
+                if (sawFreq)
+                    problems.add("instrument declares reserved freq more than once");
+                sawFreq = true;
+                if (kind == "button" || kind == "checkbox")
+                    problems.add("reserved freq must be a continuous slider control");
+            } else if (normalized == "gain") {
+                if (sawGain)
+                    problems.add("instrument declares reserved gain more than once");
+                sawGain = true;
+                if (kind == "button" || kind == "checkbox")
+                    problems.add("reserved gain must be a continuous slider control");
+            } else {
+                if (sawGate)
+                    problems.add("instrument declares reserved gate more than once");
+                sawGate = true;
+                if (kind != "button")
+                    problems.add("reserved gate must be declared as button(\"gate\")");
+            }
+            continue;
+        }
+
+        // Preserve the effect validator's existing contract: it validates the
+        // indexed controls it manages, while the effect prompt discourages
+        // buttons. Buttons matter structurally only for instrument gate.
+        if (target == FaustAgent::Target::Effect && kind == "button")
+            continue;
+
+        ++userControlCount;
+        if (kind == "button") {
+            problems.add("user control \"" + name + "\" must not be a momentary button");
+            continue;
+        }
         if (idx == -1)
             problems.add("control \"" + name + "\" is missing [idx:N]");
         else if (idx < 0 || idx >= 64)
@@ -107,8 +187,18 @@ bool validateMetadata(const std::string& source, std::string& errorOut) {
             used[static_cast<size_t>(idx)] = true;
     }
 
-    if (controlCount > 64)
-        problems.add("too many controls (" + juce::String(controlCount) + "); the limit is 64");
+    if (userControlCount > 64)
+        problems.add("too many user controls (" + juce::String(userControlCount) +
+                     "); the limit is 64");
+
+    if (target == FaustAgent::Target::Instrument) {
+        if (!sawFreq)
+            problems.add("instrument is missing reserved freq control");
+        if (!sawGain)
+            problems.add("instrument is missing reserved gain control");
+        if (!sawGate)
+            problems.add("instrument is missing reserved gate control");
+    }
 
     if (problems.isEmpty())
         return true;
@@ -131,6 +221,10 @@ void logFaustAgentResult(const FaustAgent::Result& r) {
 }
 
 }  // namespace
+
+bool FaustAgent::validateSource(Target target, const std::string& source, std::string& errorOut) {
+    return validateSourceImpl(target, source, errorOut);
+}
 
 FaustAgent::Result FaustAgent::parseJson(const juce::String& text) {
     Result result;
@@ -179,18 +273,27 @@ FaustAgent::Result FaustAgent::generateStreaming(const std::string& message,
 }
 
 bool FaustAgent::compileCheck(const std::string& name, const std::string& source,
-                              std::string& errorOut) {
-    auto* mcp = MCPServerManager::getInstance().getServer("faust-mcp");
-    if (mcp == nullptr)
-        return true;  // no validator configured — don't block generation
+                              std::string& errorOut, bool& verified) {
+    verified = false;
+    auto& manager = MCPServerManager::getInstance();
+    if (!manager.isServerEnabled("faust-mcp"))
+        return true;  // explicitly disabled: stage for manual review, never live-apply
+
+    auto* mcp = manager.getServer("faust-mcp");
+    if (mcp == nullptr) {
+        errorOut = "Faust MCP is enabled but unavailable; code was not verified.";
+        return false;
+    }
 
     auto* args = new juce::DynamicObject();
     args->setProperty("code", juce::String(source));
     args->setProperty("name", juce::String(name));
 
     auto mcpResult = mcp->callTool("compile_faust", juce::var(args));
-    if (mcpResult.success)
+    if (mcpResult.success) {
+        verified = true;
         return true;
+    }
 
     DBG("MCPClient compile_faust error: " + mcpResult.error);
     errorOut = mcpResult.error.toStdString();
@@ -207,7 +310,13 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::MUSIC);
+    const auto profile = Config::getInstance().getAgentInferenceConfig(role::FAUST);
+    if (!profile.usesLLM()) {
+        result.error = "Faust agent's configured inference backend is not supported yet.";
+        result.hasError = true;
+        return result;
+    }
+    const auto& agentConfig = profile.llm;
     auto providerConfig = toLLMProviderConfig(agentConfig, "faust");
     logFaustAgentConfig(agentConfig, providerConfig);
 
@@ -247,7 +356,7 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         working.lastResponseId = basePrevId;
 
         llm::Request request;
-        request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
+        request.systemPrompt = juce::String::fromUTF8(getSystemPrompt(target_));
         request.userMessage = userTurn;
         request.temperature = 0.3f;
 
@@ -284,25 +393,26 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         // The Faust compiler can't see these problems (the tags are opaque to
         // it), so we check them ourselves and retry on failure.
         std::string metaErr;
-        if (!validateMetadata(result.source, metaErr)) {
+        if (!validateSource(target_, result.source, metaErr)) {
             lastError = metaErr;
             if (onToken)
                 onToken(juce::String::fromUTF8("\n[metadata invalid, fixing...]\n"));
-            userTurn =
-                originalPrompt + "\n\n(Your previous attempt had invalid control metadata:\n" +
-                metaErr +
-                "\nEvery control needs a unique [idx:N] in the range 0..63, and there can be "
-                "at most 64 controls. Fix it and output the corrected JSON object.)";
+            userTurn = originalPrompt +
+                       "\n\n(Your previous attempt had invalid control metadata:\n" + metaErr +
+                       "\nFix every target-specific control requirement and output the corrected "
+                       "JSON object.)";
             continue;
         }
 
         std::string compileErr;
-        if (compileCheck(result.name, result.source, compileErr)) {
+        bool verified = false;
+        if (compileCheck(result.name, result.source, compileErr, verified)) {
             // Success — commit the clean turns (original prompt + working reply)
             // to the persistent conversation and chain off the good response.
             conversation.messages.push_back({"user", originalPrompt});
             conversation.messages.push_back({"assistant", response.text.trim()});
             conversation.lastResponseId = working.lastResponseId;
+            result.mcpVerified = verified;
             logFaustAgentResult(result);
             return result;
         }

@@ -3,6 +3,7 @@
 #include "../daw/core/Config.hpp"
 #include "dsl_grammar.hpp"
 #include "dsl_interpreter.hpp"
+#include "internal_plugins.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_presets.hpp"
 
@@ -48,6 +49,7 @@ static std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLL
 static llm::Request buildRequest(MagdaApi& api, const std::string& message, bool cfg) {
     auto stateJson = dsl::Interpreter::buildStateSnapshot(api);
     auto systemPrompt = juce::String::fromUTF8(CommandAgent::getSystemPrompt());
+    systemPrompt += "\n\n" + getInternalPluginCatalogDescription();
     if (stateJson.isNotEmpty())
         systemPrompt += "\n\nCurrent DAW state:\n" + stateJson;
 

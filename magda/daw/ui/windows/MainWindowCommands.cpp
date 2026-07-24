@@ -105,7 +105,6 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Track
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
-        audioLevelTest,
         // View
         zoom, toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
         togglePianoRollFullscreen,
@@ -419,13 +418,6 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case toggleSoloSelectedTracks:
             result.setInfo("Toggle Solo", "Toggle solo on the selected track(s)", "Track", 0);
             result.addDefaultKeypress('s', juce::ModifierKeys::shiftModifier);
-            break;
-
-        case audioLevelTest:
-            result.setInfo("Audio Level Test", "Create two -12dB tone tracks for level testing",
-                           "Track", 0);
-            result.addDefaultKeypress('a', juce::ModifierKeys::commandModifier |
-                                               juce::ModifierKeys::shiftModifier);
             break;
 
         // View
@@ -1849,44 +1841,6 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         std::make_unique<SetTrackSoloCommand>(track.id, !track.soloed));
                 }
             }
-            return true;
-        }
-
-        case audioLevelTest: {
-            auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
-            if (teWrapper == nullptr)
-                return false;
-
-            auto* bridge = teWrapper->getAudioBridge();
-            if (bridge == nullptr)
-                return false;
-
-            auto& tm = TrackManager::getInstance();
-            constexpr float minus12dB = 0.251189f;
-
-            for (int i = 0; i < 2; ++i) {
-                TrackId trackId = tm.createTrack("Tone " + std::to_string(i + 1), TrackType::Audio);
-
-                auto plugin = bridge->loadBuiltInPlugin(trackId, "tone");
-                if (plugin) {
-                    auto params = plugin->getAutomatableParameters();
-                    for (auto* param : params) {
-                        if (param->getParameterName().containsIgnoreCase("freq")) {
-                            const float freq = (i == 0) ? 0.4f : 0.45f;
-                            param->setParameter(freq, juce::dontSendNotification);
-                        } else if (param->getParameterName().containsIgnoreCase("level")) {
-                            param->setParameter(1.0f, juce::dontSendNotification);
-                        }
-                    }
-                }
-
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<SetTrackVolumeCommand>(trackId, minus12dB));
-                DBG("Track " << trackId << ": tone @ 0dB, fader @ -12dB");
-            }
-
-            teWrapper->play();
-            DBG("Audio test: 2 tracks @ -12dB each, expect -6dB on master");
             return true;
         }
 

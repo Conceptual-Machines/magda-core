@@ -162,6 +162,16 @@ struct DeviceInfo {
     // non-hidden parameters in device order.
     std::vector<int> miniMixerParameters;
 
+    // User-selected parameters exposed to the generic AI sound designer
+    // (indices into the plugin parameter list). External plugins require an
+    // explicit non-empty selection; internal generic sound generators ignore
+    // this filter and expose their full automatable parameter set.
+    std::vector<int> aiSoundDesignerParameters;
+
+    // Optional user-authored, plugin-specific instructions appended to the
+    // generic AI sound designer's system prompt for external plugins.
+    juce::String aiSoundDesignerPrompt;
+
     // Device volume (gain knob on each device slot)
     float gainValue = 1.0f;  // Current gain value (linear)
     float gainDb = 0.0f;     // Current gain in dB for UI

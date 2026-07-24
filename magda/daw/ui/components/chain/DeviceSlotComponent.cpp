@@ -152,11 +152,14 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Register for gain-staging state so the slot can draw its staging overlay.
     magda::GainStagingManager::getInstance().addListener(this);
 
+    // Register for AI Sound Designer exposure toggles from the plugin browser.
+    magda::PluginPreferences::getInstance().addListener(this);
+
     // Note: BindingRegistry / ControllerRegistry listening is done by
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
 
-    refreshDeviceTraits(device.pluginId);
+    refreshDeviceTraits(device);
 
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
@@ -616,8 +619,17 @@ DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::GainStagingManager::getInstance().removeListener(this);
+    magda::PluginPreferences::getInstance().removeListener(this);
     stopTimer();
     detachInlineUiFromLivePlugin();
+}
+
+void DeviceSlotComponent::aiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier) {
+    // Only re-lay-out if the toggle was for this slot's device.
+    if (pluginIdentifier != magda::PluginPreferences::identifierForDevice(device_))
+        return;
+    resized();
+    repaint();
 }
 
 void DeviceSlotComponent::timerCallback() {
@@ -752,6 +764,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         updateParameterPagination();
         updateParameterSlots();
     }
+    refreshDeviceTraits(device_);
 
     // Hide power / preset / delete for post-FX analysis devices (the getters
     // return nullptr too, so the header layout skips placing them).
@@ -866,8 +879,8 @@ void DeviceSlotComponent::showSavePluginPresetDialog() {
     });
 }
 
-void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
-    traits_ = makeDeviceSlotTraits(pluginId);
+void DeviceSlotComponent::refreshDeviceTraits(const magda::DeviceInfo& device) {
+    traits_ = makeDeviceSlotTraits(device);
 
     if (traits_.isTracktionDevice && tracktionLogo_ == nullptr) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
@@ -897,7 +910,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
-    refreshDeviceTraits(device.pluginId);
+    refreshDeviceTraits(device);
     syncModMacroControlsAvailability();
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);

@@ -26,6 +26,10 @@ dsl_grammar.hpp
     command_agent.cpp
     music_agent.hpp
     music_agent.cpp
+    chord_agent.hpp
+    chord_agent.cpp
+    midi_context.hpp
+    midi_context.cpp
     drummer_agent.hpp
     drummer_agent.cpp
     gain_staging_agent.hpp
@@ -67,6 +71,8 @@ dsl_grammar.hpp
     device_ai_agent.hpp
     sound_design_agent.hpp
     sound_design_agent.cpp
+    generic_sound_design_agent.hpp
+    generic_sound_design_agent.cpp
     coder_agent.hpp
     coder_agent.cpp
     mcp/MCPClient.hpp

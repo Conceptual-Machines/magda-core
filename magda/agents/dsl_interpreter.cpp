@@ -402,13 +402,14 @@ bool Interpreter::execute(const char* dslCode) {
             failed++;
 
             // Advance past the failed statement to the next one.
-            // Statements start with 'track' or 'filter' at the beginning of a line.
+            // Statements start with a top-level DSL keyword at the beginning of a line.
             // Skip tokens until we find a statement-starting keyword or EOF.
             tok.restorePosition(savedPos);
             tok.next();  // skip past the keyword that started this failed statement
             while (tok.hasMore()) {
                 auto next = tok.peek();
-                if (next.is("track") || next.is("filter") || next.type == TokenType::END_OF_INPUT)
+                if (next.is("track") || next.is("filter") || next.is("groove") ||
+                    next.is("project") || next.type == TokenType::END_OF_INPUT)
                     break;
                 tok.next();
             }
@@ -440,6 +441,8 @@ bool Interpreter::parseStatement(Tokenizer& tok) {
         return parseFilterStatement(tok);
     else if (t.is("groove"))
         return parseGrooveStatement(tok);
+    else if (t.is("project"))
+        return parseProjectStatement(tok);
     else if (t.type == TokenType::END_OF_INPUT) {
         return true;
     } else {
@@ -447,6 +450,27 @@ bool Interpreter::parseStatement(Tokenizer& tok) {
                       juce::String(t.line));
         return false;
     }
+}
+
+bool Interpreter::parseProjectStatement(Tokenizer& tok) {
+    tok.next();  // consume 'project'
+    if (!tok.expect(TokenType::DOT) || !tok.expect("set")) {
+        ctx_.setError("Expected '.set' after 'project'");
+        return false;
+    }
+    if (!tok.expect(TokenType::LPAREN)) {
+        ctx_.setError("Expected '(' after 'project.set'");
+        return false;
+    }
+
+    Params params;
+    if (!parseParams(tok, params))
+        return false;
+    if (!tok.expect(TokenType::RPAREN)) {
+        ctx_.setError("Expected ')' after project.set parameters");
+        return false;
+    }
+    return executeProjectSet(params);
 }
 
 bool Interpreter::parseTrackStatement(Tokenizer& tok) {
@@ -664,6 +688,18 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeRenameClip(params);
         else if (methodKey == "fx.add")
             success = executeAddFx(params);
+        else if (methodKey == "rack.new")
+            success = executeNewRack(params);
+        else if (methodKey == "rack.delete")
+            success = executeDeleteRack(params);
+        else if (methodKey == "rack.set")
+            success = executeSetRack(params);
+        else if (methodKey == "rack.chain_new")
+            success = executeNewRackChain(params);
+        else if (methodKey == "rack.chain_delete")
+            success = executeDeleteRackChain(params);
+        else if (methodKey == "rack.chain_set")
+            success = executeSetRackChain(params);
         else if (methodKey == "select")
             success = executeSelect();
         else if (methodKey == "notes.add")
@@ -842,19 +878,16 @@ bool Interpreter::executeNewClip(const Params& params) {
     } else {
         // No position specified — place after the last clip on this track
         bar = 1.0;
-        double bpm = 120.0;
-        auto* engine = api_.tracks().getAudioEngine();
-        if (engine)
-            bpm = engine->getTempo();
-        double secondsPerBar = 4.0 * 60.0 / bpm;
+        const double beatsPerBar = barsToBeats(1.0);
 
         auto& cm = api_.clips();
         for (auto cid : cm.getClipsOnTrack(ctx_.currentTrackId)) {
             auto* clip = cm.getClip(cid);
             if (!clip)
                 continue;
-            // Convert clip end time to 1-based bar, round up to next full bar
-            double clipEndBar = (clip->startTime + clip->length) / secondsPerBar + 1.0;
+            // Placement is beat-authoritative, so use it directly rather than
+            // assuming a four-beat bar through the legacy seconds cache.
+            double clipEndBar = clip->placement.endBeat() / beatsPerBar + 1.0;
             double nextBar = std::ceil(clipEndBar - 0.001);  // tolerance for floating point
             if (nextBar > bar)
                 bar = nextBar;
@@ -887,6 +920,48 @@ bool Interpreter::executeNewClip(const Params& params) {
     api_.selection().selectClip(clipId);
     ctx_.addResult("Created MIDI clip at bar " + juce::String(bar, 2) + ", length " +
                    juce::String(lengthBars, 2) + " bars");
+    return true;
+}
+
+bool Interpreter::executeProjectSet(const Params& params) {
+    bool changed = false;
+
+    if (params.has("tempo") || params.has("bpm")) {
+        const double bpm = params.has("bpm") ? params.getFloat("bpm") : params.getFloat("tempo");
+        if (bpm <= 0.0) {
+            ctx_.setError("project.set tempo/bpm must be positive");
+            return false;
+        }
+        api_.project().setTempo(bpm);
+        ctx_.addResult("Set tempo to " +
+                       juce::String(api_.project().getCurrentProjectInfo().tempo, 2) + " BPM");
+        changed = true;
+    }
+
+    if (params.has("time_signature")) {
+        const auto sig = juce::String(params.get("time_signature")).trim();
+        const int slash = sig.indexOfChar('/');
+        if (slash <= 0 || slash >= sig.length() - 1) {
+            ctx_.setError("time_signature must be written as numerator/denominator, e.g. \"7/8\"");
+            return false;
+        }
+        const int numerator = sig.substring(0, slash).getIntValue();
+        const int denominator = sig.substring(slash + 1).getIntValue();
+        if (numerator <= 0 || denominator <= 0) {
+            ctx_.setError("time_signature values must be positive integers");
+            return false;
+        }
+        api_.project().setTimeSignature(numerator, denominator);
+        const auto& project = api_.project().getCurrentProjectInfo();
+        ctx_.addResult("Set time signature to " + juce::String(project.timeSignatureNumerator) +
+                       "/" + juce::String(project.timeSignatureDenominator));
+        changed = true;
+    }
+
+    if (!changed) {
+        ctx_.setError("project.set requires tempo, bpm, or time_signature");
+        return false;
+    }
     return true;
 }
 
@@ -1147,8 +1222,8 @@ bool Interpreter::executeAddFx(const Params& params) {
         fxName = fxName.substring(1, fxName.length() - 1);
 
     // --- Internal plugin lookup ---
-    // Built-in plugins are listed in internal_plugins.hpp — single canonical
-    // alias per plugin, matching the autocomplete dropdown.
+    // Built-in plugins come from the audio registries through internal_plugins.hpp.
+    // Display names, IDs and registry compatibility aliases are all accepted.
     if (const auto* match = lookupInternalPluginByAlias(fxName)) {
         DeviceInfo device;
         device.name = match->displayName;
@@ -1248,6 +1323,176 @@ bool Interpreter::executeAddFx(const Params& params) {
 
     ctx_.addResult("Added " + matchedFormat + " FX '" + matchedName + "' by " +
                    matchedManufacturer);
+    return true;
+}
+
+bool Interpreter::executeNewRack(const Params& params) {
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for rack.new");
+        return false;
+    }
+    const auto rackId =
+        api_.tracks().addRackToTrack(ctx_.currentTrackId, juce::String(params.get("name", "Rack")));
+    if (rackId == INVALID_RACK_ID) {
+        ctx_.setError("Failed to create rack");
+        return false;
+    }
+    ctx_.currentRackId = rackId;
+    ctx_.currentChainId = INVALID_CHAIN_ID;
+    if (const auto* rack = api_.tracks().getRack(ctx_.currentTrackId, rackId);
+        rack != nullptr && !rack->chains.empty())
+        ctx_.currentChainId = rack->chains.front().id;
+    ctx_.addResult("Created rack '" + juce::String(params.get("name", "Rack")) +
+                   "' (id=" + juce::String(rackId) + ")");
+    return true;
+}
+
+bool Interpreter::executeDeleteRack(const Params& params) {
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for rack.delete");
+        return false;
+    }
+    const RackId rackId = params.getInt("id", ctx_.currentRackId);
+    if (rackId == INVALID_RACK_ID ||
+        api_.tracks().getRack(ctx_.currentTrackId, rackId) == nullptr) {
+        ctx_.setError("rack.delete requires a valid id or preceding rack.new");
+        return false;
+    }
+    api_.tracks().removeRackFromTrack(ctx_.currentTrackId, rackId);
+    if (ctx_.currentRackId == rackId) {
+        ctx_.currentRackId = INVALID_RACK_ID;
+        ctx_.currentChainId = INVALID_CHAIN_ID;
+    }
+    ctx_.addResult("Deleted rack " + juce::String(rackId));
+    return true;
+}
+
+bool Interpreter::executeSetRack(const Params& params) {
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for rack.set");
+        return false;
+    }
+    const RackId rackId = params.getInt("id", ctx_.currentRackId);
+    if (rackId == INVALID_RACK_ID ||
+        api_.tracks().getRack(ctx_.currentTrackId, rackId) == nullptr) {
+        ctx_.setError("rack.set requires a valid id or preceding rack.new");
+        return false;
+    }
+    bool changed = false;
+    if (params.has("bypassed")) {
+        api_.tracks().setRackBypassed(ctx_.currentTrackId, rackId, params.getBool("bypassed"));
+        changed = true;
+    }
+    if (params.has("volume_db")) {
+        api_.tracks().setRackVolume(ctx_.currentTrackId, rackId,
+                                    static_cast<float>(params.getFloat("volume_db")));
+        changed = true;
+    }
+    if (!changed) {
+        ctx_.setError("rack.set supports bypassed and volume_db");
+        return false;
+    }
+    ctx_.currentRackId = rackId;
+    ctx_.addResult("Updated rack " + juce::String(rackId));
+    return true;
+}
+
+bool Interpreter::executeNewRackChain(const Params& params) {
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for rack.chain_new");
+        return false;
+    }
+    const RackId rackId = params.getInt("rack_id", ctx_.currentRackId);
+    if (rackId == INVALID_RACK_ID ||
+        api_.tracks().getRack(ctx_.currentTrackId, rackId) == nullptr) {
+        ctx_.setError("rack.chain_new requires rack_id or preceding rack.new");
+        return false;
+    }
+    const auto chainId = api_.tracks().addChainToRack(ctx_.currentTrackId, rackId,
+                                                      juce::String(params.get("name", "Chain")));
+    if (chainId == INVALID_CHAIN_ID) {
+        ctx_.setError("Failed to create rack chain");
+        return false;
+    }
+    ctx_.currentRackId = rackId;
+    ctx_.currentChainId = chainId;
+    ctx_.addResult("Created rack chain '" + juce::String(params.get("name", "Chain")) +
+                   "' (id=" + juce::String(chainId) + ")");
+    return true;
+}
+
+bool Interpreter::executeDeleteRackChain(const Params& params) {
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for rack.chain_delete");
+        return false;
+    }
+    const RackId rackId = params.getInt("rack_id", ctx_.currentRackId);
+    const ChainId chainId = params.getInt("chain_id", ctx_.currentChainId);
+    if (rackId == INVALID_RACK_ID || chainId == INVALID_CHAIN_ID ||
+        api_.tracks().getChain(ctx_.currentTrackId, rackId, chainId) == nullptr) {
+        ctx_.setError("rack.chain_delete requires valid rack_id and chain_id");
+        return false;
+    }
+    api_.tracks().removeChainFromRack(ctx_.currentTrackId, rackId, chainId);
+    if (ctx_.currentChainId == chainId)
+        ctx_.currentChainId = INVALID_CHAIN_ID;
+    ctx_.addResult("Deleted rack chain " + juce::String(chainId));
+    return true;
+}
+
+bool Interpreter::executeSetRackChain(const Params& params) {
+    if (ctx_.currentTrackId < 0) {
+        ctx_.setError("No track context for rack.chain_set");
+        return false;
+    }
+    const RackId rackId = params.getInt("rack_id", ctx_.currentRackId);
+    const ChainId chainId = params.getInt("chain_id", ctx_.currentChainId);
+    if (rackId == INVALID_RACK_ID || chainId == INVALID_CHAIN_ID ||
+        api_.tracks().getChain(ctx_.currentTrackId, rackId, chainId) == nullptr) {
+        ctx_.setError("rack.chain_set requires valid rack_id and chain_id");
+        return false;
+    }
+
+    bool changed = false;
+    if (params.has("name")) {
+        api_.tracks().setChainName(ctx_.currentTrackId, rackId, chainId,
+                                   juce::String(params.get("name")));
+        changed = true;
+    }
+    if (params.has("muted")) {
+        api_.tracks().setChainMuted(ctx_.currentTrackId, rackId, chainId, params.getBool("muted"));
+        changed = true;
+    }
+    if (params.has("bypassed")) {
+        api_.tracks().setChainBypassed(ctx_.currentTrackId, rackId, chainId,
+                                       params.getBool("bypassed"));
+        changed = true;
+    }
+    if (params.has("solo")) {
+        api_.tracks().setChainSolo(ctx_.currentTrackId, rackId, chainId, params.getBool("solo"));
+        changed = true;
+    }
+    if (params.has("volume_db")) {
+        api_.tracks().setChainVolume(ctx_.currentTrackId, rackId, chainId,
+                                     static_cast<float>(params.getFloat("volume_db")));
+        changed = true;
+    }
+    if (params.has("pan")) {
+        api_.tracks().setChainPan(ctx_.currentTrackId, rackId, chainId,
+                                  static_cast<float>(params.getFloat("pan")));
+        changed = true;
+    }
+    if (params.has("output")) {
+        api_.tracks().setChainOutput(ctx_.currentTrackId, rackId, chainId, params.getInt("output"));
+        changed = true;
+    }
+    if (!changed) {
+        ctx_.setError("rack.chain_set requires one or more supported properties");
+        return false;
+    }
+    ctx_.currentRackId = rackId;
+    ctx_.currentChainId = chainId;
+    ctx_.addResult("Updated rack chain " + juce::String(chainId));
     return true;
 }
 
@@ -1380,12 +1625,7 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
     // Determine if this is a string or numeric field
     bool isStringField = (field.value == "name" || field.value == "type");
 
-    // Get tempo for bar/time conversions
-    double bpm = 120.0;
-    auto* engine = api_.tracks().getAudioEngine();
-    if (engine)
-        bpm = engine->getTempo();
-    double secondsPerBar = 4.0 * 60.0 / bpm;
+    const double beatsPerBar = barsToBeats(1.0);
 
     double numValue = isStringField ? 0.0 : std::atof(valueStr.c_str());
 
@@ -1431,9 +1671,9 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         // Numeric fields
         double val = 0.0;
         if (field.value == "length_bars")
-            val = clip->length / secondsPerBar;
+            val = clip->placement.lengthBeats / beatsPerBar;
         else if (field.value == "start_bar")
-            val = (clip->startTime / secondsPerBar) + 1.0;
+            val = clip->placement.startBeat / beatsPerBar + 1.0;
         else if (field.value == "length")
             val = clip->length;
         else if (field.value == "start")
@@ -1540,7 +1780,7 @@ double Interpreter::barsToTime(double bar) const {
     if (engine)
         bpm = engine->getTempo();
 
-    constexpr double beatsPerBar = 4.0;
+    const double beatsPerBar = barsToBeats(1.0);
     return (bar - 1.0) * beatsPerBar * 60.0 / bpm;
 }
 
@@ -1559,7 +1799,130 @@ double Interpreter::barsToBeats(double bars) const {
 
 namespace {
 std::atomic<bool> g_contextEnabled{true};
+
+constexpr int kMaxSelectedDeviceParameters = 24;
+constexpr int kMaxSelectedTrackDevices = 64;
+
+juce::String deviceTypeName(DeviceType type) {
+    switch (type) {
+        case DeviceType::Instrument:
+            return "instrument";
+        case DeviceType::Effect:
+            return "effect";
+        case DeviceType::MIDI:
+            return "midi";
+        case DeviceType::Analysis:
+            return "analysis";
+    }
+    return "unknown";
 }
+
+juce::var capabilitySummary(const juce::String& pluginId) {
+    auto* object = new juce::DynamicObject();
+    const auto* catalogEntry = lookupInternalPluginById(pluginId);
+    const auto& capabilities = getInternalPluginCapabilities(pluginId);
+    object->setProperty("catalogued", catalogEntry != nullptr);
+    object->setProperty("addable", capabilities.addable);
+    object->setProperty("automatable", capabilities.automatable);
+    object->setProperty("drum_role_provider", capabilities.drumRoleProvider);
+    object->setProperty("sound_design_agent", capabilities.supportsSoundDesign());
+    object->setProperty("coder_agent", capabilities.supportsCoder());
+
+    juce::Array<juce::var> aliases;
+    for (const auto& alias : capabilities.parameterAliases)
+        aliases.add(alias);
+    object->setProperty("parameter_aliases", aliases);
+    return juce::var(object);
+}
+
+juce::var parameterSummary(const ParameterInfo& parameter) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("index", parameter.paramIndex);
+    object->setProperty("name", parameter.name.substring(0, 96));
+    if (parameter.unit.isNotEmpty())
+        object->setProperty("unit", parameter.unit.substring(0, 32));
+    if (std::isfinite(parameter.currentValue))
+        object->setProperty("value", parameter.currentValue);
+    if (std::isfinite(parameter.minValue))
+        object->setProperty("min", parameter.minValue);
+    if (std::isfinite(parameter.maxValue))
+        object->setProperty("max", parameter.maxValue);
+    object->setProperty("modulatable", parameter.modulatable);
+    return juce::var(object);
+}
+
+juce::var deviceSummary(const DeviceInfo& device, const ChainNodePath& path,
+                        bool includeParameters) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", device.id);
+    object->setProperty("path", path.toString());
+    object->setProperty("display_name", device.name.substring(0, 128));
+    object->setProperty("plugin_id", device.pluginId.substring(0, 256));
+    object->setProperty("type", deviceTypeName(device.deviceType));
+    object->setProperty("bypassed", device.bypassed);
+    object->setProperty("parameter_count", static_cast<int>(device.parameters.size()));
+    object->setProperty("capabilities", capabilitySummary(device.pluginId));
+
+    if (includeParameters) {
+        juce::Array<juce::var> parameters;
+        for (const auto& parameter : device.parameters) {
+            if (parameter.hidden)
+                continue;
+            parameters.add(parameterSummary(parameter));
+            if (parameters.size() >= kMaxSelectedDeviceParameters)
+                break;
+        }
+        object->setProperty("parameters", parameters);
+        object->setProperty("parameters_truncated", static_cast<int>(device.parameters.size()) >
+                                                        kMaxSelectedDeviceParameters);
+    }
+    return juce::var(object);
+}
+
+struct DeviceAtPath {
+    const DeviceInfo* device = nullptr;
+    ChainNodePath path;
+};
+
+void collectRackDevices(const RackInfo& rack, const ChainNodePath& rackPath,
+                        std::vector<DeviceAtPath>& devices) {
+    for (const auto& chain : rack.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                const auto& device = getDevice(element);
+                devices.push_back({&device, chainPath.withDevice(device.id)});
+            } else {
+                const auto& nestedRack = getRack(element);
+                const auto nestedPath = chainPath.withRack(nestedRack.id);
+                collectRackDevices(nestedRack, nestedPath, devices);
+            }
+        }
+    }
+}
+
+std::vector<DeviceAtPath> collectTrackDevices(const TrackInfo& track) {
+    std::vector<DeviceAtPath> devices;
+    for (const auto& element : track.chain.fxChainElements) {
+        if (isDevice(element)) {
+            const auto& device = getDevice(element);
+            devices.push_back({&device, ChainNodePath::topLevelDevice(track.id, device.id)});
+        } else {
+            const auto& rack = getRack(element);
+            collectRackDevices(rack, ChainNodePath::rack(track.id, rack.id), devices);
+        }
+    }
+    for (const auto& element : track.chain.postFxChainElements) {
+        devices.push_back(
+            {&element.device, ChainNodePath::postFxDevice(track.id, element.device.id)});
+    }
+    for (const auto& element : track.chain.mixerAnalysisElements) {
+        devices.push_back(
+            {&element.device, ChainNodePath::mixerAnalysisDevice(track.id, element.device.id)});
+    }
+    return devices;
+}
+}  // namespace
 
 void Interpreter::setContextEnabled(bool enabled) {
     g_contextEnabled.store(enabled, std::memory_order_relaxed);
@@ -1574,6 +1937,14 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
 
     auto* root = new juce::DynamicObject();
 
+    const auto& project = api.project().getCurrentProjectInfo();
+    auto* projectObj = new juce::DynamicObject();
+    projectObj->setProperty("tempo_bpm", project.tempo);
+    projectObj->setProperty("time_signature", juce::String(project.timeSignatureNumerator) + "/" +
+                                                  juce::String(project.timeSignatureDenominator));
+    projectObj->setProperty("beats_per_bar", project.timeSignatureNumerator);
+    root->setProperty("project", juce::var(projectObj));
+
     // Tracks — lightweight: just id, name, type
     juce::Array<juce::var> tracksArray;
     int index = 1;
@@ -1582,6 +1953,32 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
         trackObj->setProperty("id", index);
         trackObj->setProperty("name", track.name);
         trackObj->setProperty("type", juce::String(getTrackTypeName(track.type)));
+
+        juce::Array<juce::var> racksArray;
+        for (const auto& element : track.chain.fxChainElements) {
+            if (!isRack(element))
+                continue;
+            const auto& rack = getRack(element);
+            auto* rackObj = new juce::DynamicObject();
+            rackObj->setProperty("id", rack.id);
+            rackObj->setProperty("name", rack.name);
+            rackObj->setProperty("bypassed", rack.bypassed);
+            rackObj->setProperty("volume_db", rack.volume);
+            juce::Array<juce::var> chainsArray;
+            for (const auto& chain : rack.chains) {
+                auto* chainObj = new juce::DynamicObject();
+                chainObj->setProperty("id", chain.id);
+                chainObj->setProperty("name", chain.name);
+                chainObj->setProperty("muted", chain.muted);
+                chainObj->setProperty("solo", chain.solo);
+                chainObj->setProperty("bypassed", chain.bypassed);
+                chainObj->setProperty("output", chain.outputIndex);
+                chainsArray.add(juce::var(chainObj));
+            }
+            rackObj->setProperty("chains", chainsArray);
+            racksArray.add(juce::var(rackObj));
+        }
+        trackObj->setProperty("racks", racksArray);
         tracksArray.add(juce::var(trackObj));
         index++;
     }
@@ -1596,6 +1993,9 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
 
     auto& sm = api.selection();
     auto selTrack = sm.getSelectedTrack();
+    const auto selectedChainNode = sm.getSelectedChainNode();
+    if (selTrack == INVALID_TRACK_ID && selectedChainNode.isValid())
+        selTrack = selectedChainNode.trackId;
     if (selTrack == MASTER_TRACK_ID) {
         // Master selected = operate on every track. Emit a scope marker so the
         // LLM emits implicit-target ops (MUTE/SET/FX with no ref) that the
@@ -1614,8 +2014,41 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
             }
             selIndex++;
         }
-        if (found)
+        if (found) {
             root->setProperty("selected_track_id", selIndex);
+            if (const auto* selectedTrack = tm.getTrack(selTrack)) {
+                auto* selectedTrackObj = new juce::DynamicObject();
+                selectedTrackObj->setProperty("id", selIndex);
+                selectedTrackObj->setProperty("model_id", selectedTrack->id);
+                selectedTrackObj->setProperty("name", selectedTrack->name.substring(0, 128));
+                selectedTrackObj->setProperty("type",
+                                              juce::String(getTrackTypeName(selectedTrack->type)));
+
+                const auto devices = collectTrackDevices(*selectedTrack);
+                juce::Array<juce::var> deviceArray;
+                for (const auto& item : devices) {
+                    deviceArray.add(deviceSummary(*item.device, item.path, false));
+                    if (deviceArray.size() >= kMaxSelectedTrackDevices)
+                        break;
+                }
+                selectedTrackObj->setProperty("devices", deviceArray);
+                selectedTrackObj->setProperty("devices_truncated",
+                                              static_cast<int>(devices.size()) >
+                                                  kMaxSelectedTrackDevices);
+                root->setProperty("selected_track", juce::var(selectedTrackObj));
+
+                if (selectedChainNode.getType() == ChainNodeType::Device ||
+                    selectedChainNode.getType() == ChainNodeType::TopLevelDevice) {
+                    for (const auto& item : devices) {
+                        if (item.path == selectedChainNode) {
+                            root->setProperty("selected_device",
+                                              deviceSummary(*item.device, item.path, true));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Selected clip context
@@ -2436,7 +2869,9 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
 
     // Determine repeating pattern length (try to find the smallest cycle)
     // Default: use all steps, but try 1 bar (notesPerBeat * beatsPerBar)
-    int beatsPerBar = 4;  // Assume 4/4
+    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
+    if (beatsPerBar <= 0)
+        beatsPerBar = 4;
     int stepsPerBar = notesPerBeat * beatsPerBar;
     int patternLength = (numSteps >= stepsPerBar) ? stepsPerBar : numSteps;
 

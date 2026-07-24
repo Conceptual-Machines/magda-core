@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -785,10 +786,22 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     }
 
     menu.addItem(3, "Configure Parameters...");
+    if (plugin.isExternal)
+        menu.addItem(13, "Configure AI Sound Designer...");
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
 
     const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
+
+    // Internal devices with a registered agent and external plugins with an
+    // explicit AI parameter selection can expose/hide the Sound Designer.
+    if (magda::isSoundDesignSupported(plugin.uniqueId) ||
+        ParameterConfigDialog::hasAiSoundDesignerParameters(plugin.uniqueId)) {
+        menu.addItem(
+            12, "AI Sound Designer", true,
+            magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier));
+        menu.addSeparator();
+    }
 
     // Instrument-form plugins can be manually routed as MIDI FX when their
     // runtime metadata is too synth-like to classify automatically.
@@ -875,6 +888,11 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 case 3:
                     showParameterConfigDialog(plugin);
                     break;
+                case 13:
+                    // External sound design uses the same parameter metadata
+                    // panel, with its dedicated "AI Agent" selection column.
+                    showParameterConfigDialog(plugin);
+                    break;
                 case 5:
                     toggleFavorite(plugin);
                     break;
@@ -910,6 +928,13 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                             p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
                     }
                     rebuildTree();
+                    break;
+                }
+                case 12: {
+                    auto& prefs = magda::PluginPreferences::getInstance();
+                    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
+                    prefs.setAiSoundDesignerEnabled(
+                        pluginIdentifier, !prefs.aiSoundDesignerEnabled(pluginIdentifier));
                     break;
                 }
                 case 98:

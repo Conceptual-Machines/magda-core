@@ -4,121 +4,341 @@
 
 #include <vector>
 
+#include "../daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "../daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../daw/core/DeviceInfo.hpp"
+#include "../daw/core/InternalDeviceKind.hpp"
 #include "../daw/core/PluginAlias.hpp"
+#include "../daw/core/aliases/InternalPluginAliases.hpp"
 
 namespace magda {
 
 /**
- * @brief Single source of truth for MAGDA's built-in (non-scanned) plugins
- *        addressable from agent code and the autocomplete dropdown.
- *
- * The canonical alias for each entry is `pluginNameToAlias(displayName)`,
- * matching what the plugin browser / autocomplete UI suggests for external
- * plugins. Don't add variants — when the user types an alias, autocomplete
- * already steers them to the canonical form.
+ * @brief Device-specific AI handlers that predate the registry-derived agent
+ * catalog. Only the values used to route those handlers are retained here;
+ * every addable device is represented by InternalPluginInfo below.
  */
-/// Strongly-typed identifier for MAGDA's built-in plugins. Use this in
-/// switch statements / dispatch tables instead of comparing pluginId
-/// strings — the enum makes "did I cover all internal devices?" a
-/// compiler-checked question and removes the string-typo risk.
 enum class InternalPlugin {
-    None,  // not an internal plugin (external VST/AU, or unknown id)
-    Equaliser,
-    Compressor,
-    Reverb,
-    Delay,
-    Chorus,
-    Phaser,
-    Filter,
-    Utility,
-    PitchShift,
-    ImpulseResponse,
-    TestTone,
+    None,
     FourOsc,
-    MagdaSampler,
-    DrumGrid,
-    Arpeggiator,
-    MidiChordEngine,
+    Faust,
     StepSequencer,
     PolyStepSequencer,
-    Faust,
-    Mod,
-    Flanger,
-    RingMod,
-    FreqShift,
-    Limiter,
-    Clipper,
 };
 
-/// Vendor of an internal plugin. TracktionEngine = stock TE plugin (gets TE
-/// branding in the UI). Magda = MAGDA-native plugin we wrote ourselves.
 enum class InternalPluginVendor {
     TracktionEngine,
     Magda,
 };
 
+enum class SoundDesignAgentKind {
+    None,
+    FourOsc,
+    StepSequencer,
+    PolyStepSequencer,
+    // Generic parameter-introspection agent — any sound-generator instrument
+    // whose controls are automatable parameters (compiled Faust synths, native
+    // Mutable ports). See detail::isGenericSoundGeneratorId.
+    Generic,
+};
+
+enum class CoderAgentKind {
+    None,
+    Faust,
+};
+
+/**
+ * Declarative agent-facing capabilities for an internal device.
+ *
+ * UI visibility, specialised-agent routing, and command context all read this
+ * same structure. An absent catalog entry therefore has an unambiguous empty
+ * capability state instead of falling through a collection of feature-specific
+ * plugin-id switches.
+ */
+struct InternalPluginCapabilities {
+    bool addable = false;
+    bool automatable = false;
+    bool drumRoleProvider = false;
+    SoundDesignAgentKind soundDesignAgent = SoundDesignAgentKind::None;
+    CoderAgentKind coderAgent = CoderAgentKind::None;
+    std::vector<juce::String> parameterAliases;
+
+    bool supportsSoundDesign() const {
+        return soundDesignAgent != SoundDesignAgentKind::None;
+    }
+    bool supportsCoder() const {
+        return coderAgent != CoderAgentKind::None;
+    }
+    bool supportsDeviceAI() const {
+        return supportsSoundDesign() || supportsCoder();
+    }
+};
+
+/**
+ * @brief Agent-facing view of one internal device.
+ *
+ * This is deliberately derived from the audio registries rather than being a
+ * second hand-maintained plugin list.  `aliases` contains compatibility names
+ * accepted by the command resolver; `primaryAlias` is the one shown in agent
+ * autocomplete.
+ */
 struct InternalPluginInfo {
     juce::String displayName;
     juce::String pluginId;
-    DeviceType deviceType;
+    DeviceType deviceType = DeviceType::Effect;
     InternalPlugin id = InternalPlugin::None;
-    InternalPluginVendor vendor = InternalPluginVendor::TracktionEngine;
+    InternalPluginVendor vendor = InternalPluginVendor::Magda;
+    juce::String primaryAlias;
+    std::vector<juce::String> aliases;
+    bool browserVisible = false;
+    InternalPluginCapabilities capabilities;
 };
 
-/// Built-in MAGDA + Tracktion plugins exposed to the agent layer + autocomplete.
+namespace detail {
+
+inline void addAlias(InternalPluginInfo& entry, const juce::String& alias) {
+    const auto trimmed = alias.trim();
+    if (trimmed.isEmpty())
+        return;
+
+    for (const auto& existing : entry.aliases) {
+        if (existing.equalsIgnoreCase(trimmed))
+            return;
+    }
+    entry.aliases.push_back(trimmed);
+}
+
+inline InternalPluginVendor vendorFor(InternalDeviceKind kind) {
+    switch (kind) {
+        case InternalDeviceKind::TeEq:
+        case InternalDeviceKind::TeCompressor:
+        case InternalDeviceKind::TeReverb:
+        case InternalDeviceKind::TeDelay:
+        case InternalDeviceKind::TeChorus:
+        case InternalDeviceKind::TePhaser:
+        case InternalDeviceKind::TeLowpass:
+        case InternalDeviceKind::TePitchShift:
+        case InternalDeviceKind::TeImpulseResponse:
+        case InternalDeviceKind::TeVolumeAndPan:
+        case InternalDeviceKind::TeFourOsc:
+        case InternalDeviceKind::TeToneGenerator:
+        case InternalDeviceKind::TeLevelMeter:
+        case InternalDeviceKind::ExternalInsert:
+            return InternalPluginVendor::TracktionEngine;
+        default:
+            return InternalPluginVendor::Magda;
+    }
+}
+
+inline InternalPlugin deviceAiIdFor(const juce::String& pluginId) {
+    if (pluginId.equalsIgnoreCase("4osc"))
+        return InternalPlugin::FourOsc;
+    if (pluginId.equalsIgnoreCase("faust"))
+        return InternalPlugin::Faust;
+    if (pluginId.equalsIgnoreCase("stepsequencer"))
+        return InternalPlugin::StepSequencer;
+    if (pluginId.equalsIgnoreCase("polystepsequencer"))
+        return InternalPlugin::PolyStepSequencer;
+    return InternalPlugin::None;
+}
+
+// True iff `pluginId` is a sound-generator instrument the generic
+// parameter-introspection agent can drive: the compiled-Faust synths (Poly
+// Synth, FM, percussion) and the native Mutable ports (Elements, Rings).
+// Excludes Sampler / Drum Grid / Clouds (AI adds little / not a note source)
+// and 4OSC, which keeps its bespoke agent until its controls are automatable.
+inline bool isGenericSoundGeneratorId(const juce::String& pluginId) {
+    if (pluginId.isEmpty())
+        return false;
+    if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(pluginId))
+        return spec->isInstrument;
+    switch (classifyInternalDevice(pluginId)) {
+        case InternalDeviceKind::MutableElements:
+        case InternalDeviceKind::MutableRings:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline InternalPluginCapabilities capabilitiesFor(const juce::String& pluginId) {
+    InternalPluginCapabilities capabilities;
+    capabilities.addable = true;
+    capabilities.automatable = !pluginId.equalsIgnoreCase("insert");
+    capabilities.drumRoleProvider = pluginId.equalsIgnoreCase("drumgrid");
+
+    if (pluginId.equalsIgnoreCase("4osc"))
+        capabilities.soundDesignAgent = SoundDesignAgentKind::FourOsc;
+    else if (pluginId.equalsIgnoreCase("stepsequencer"))
+        capabilities.soundDesignAgent = SoundDesignAgentKind::StepSequencer;
+    else if (pluginId.equalsIgnoreCase("polystepsequencer"))
+        capabilities.soundDesignAgent = SoundDesignAgentKind::PolyStepSequencer;
+    else if (pluginId.equalsIgnoreCase("faust") || pluginId.equalsIgnoreCase("faustinstrument"))
+        capabilities.coderAgent = CoderAgentKind::Faust;
+    else if (isGenericSoundGeneratorId(pluginId))
+        capabilities.soundDesignAgent = SoundDesignAgentKind::Generic;
+
+    return capabilities;
+}
+
+inline void addParameterAlias(InternalPluginInfo& entry, const juce::String& alias) {
+    const auto trimmed = alias.trim();
+    if (trimmed.isEmpty())
+        return;
+    for (const auto& existing : entry.capabilities.parameterAliases) {
+        if (existing.equalsIgnoreCase(trimmed))
+            return;
+    }
+    entry.capabilities.parameterAliases.push_back(trimmed);
+}
+
+inline InternalPluginInfo makeEntry(const juce::String& displayName, const juce::String& pluginId,
+                                    DeviceType deviceType, InternalPluginVendor vendor,
+                                    bool browserVisible) {
+    InternalPluginInfo entry;
+    entry.displayName = displayName;
+    entry.pluginId = pluginId;
+    entry.deviceType = deviceType;
+    entry.id = deviceAiIdFor(pluginId);
+    entry.vendor = vendor;
+    entry.primaryAlias = pluginNameToAlias(displayName);
+    entry.browserVisible = browserVisible;
+    entry.capabilities = capabilitiesFor(pluginId);
+
+    addAlias(entry, entry.primaryAlias);
+    addAlias(entry, displayName);
+    addAlias(entry, pluginId);
+    return entry;
+}
+
+inline void addExternalInsertVariants(std::vector<InternalPluginInfo>& entries) {
+    const auto* spec = daw::audio::findInternalPluginSpec(InternalDeviceKind::ExternalInsert);
+    if (spec == nullptr || spec->pluginId == nullptr)
+        return;
+
+    auto fx = makeEntry("External FX", spec->pluginId, DeviceType::Effect,
+                        InternalPluginVendor::TracktionEngine, true);
+    addAlias(fx, "external insert");
+    entries.push_back(std::move(fx));
+
+    auto instrument = makeEntry("External Instrument", spec->pluginId, DeviceType::Instrument,
+                                InternalPluginVendor::TracktionEngine, true);
+    entries.push_back(std::move(instrument));
+}
+
+inline void makePrimaryAliasesUnique(std::vector<InternalPluginInfo>& entries) {
+    for (size_t i = 0; i < entries.size(); ++i) {
+        auto& entry = entries[i];
+        const auto isTaken = [&](const juce::String& alias) {
+            for (size_t previous = 0; previous < i; ++previous) {
+                if (entries[previous].primaryAlias.equalsIgnoreCase(alias))
+                    return true;
+            }
+            return false;
+        };
+
+        if (!isTaken(entry.primaryAlias))
+            continue;
+
+        const auto prefix = entry.vendor == InternalPluginVendor::TracktionEngine
+                                ? juce::String("tracktion_")
+                                : juce::String("magda_");
+        const auto base = prefix + entry.primaryAlias;
+        auto uniqueAlias = base;
+        for (int suffix = 2; isTaken(uniqueAlias); ++suffix)
+            uniqueAlias = base + "_" + juce::String(suffix);
+
+        entry.primaryAlias = uniqueAlias;
+        addAlias(entry, uniqueAlias);
+    }
+}
+
+}  // namespace detail
+
+/**
+ * @brief All internal devices that the agent may add to a track.
+ *
+ * Native specs with Unsupported creation are deliberately excluded: they are
+ * transport, metering, or session helper devices and cannot be user-created.
+ * Browser-visible External Insert is represented by separate FX and instrument
+ * entries to retain the browser's placement semantics.
+ */
 inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
-    using V = InternalPluginVendor;
-    static const std::vector<InternalPluginInfo> kPlugins = {
-        // Effects (TE stock)
-        {"Equaliser", "eq", DeviceType::Effect, InternalPlugin::Equaliser, V::TracktionEngine},
-        {"Compressor", "magda_compressor", DeviceType::Effect, InternalPlugin::Compressor,
-         V::Magda},
-        {"Reverb", "reverb", DeviceType::Effect, InternalPlugin::Reverb, V::TracktionEngine},
-        {"Delay", "delay", DeviceType::Effect, InternalPlugin::Delay, V::TracktionEngine},
-        {"Chorus", "magda_chorus", DeviceType::Effect, InternalPlugin::Chorus, V::Magda},
-        {"Filter", "lowpass", DeviceType::Effect, InternalPlugin::Filter, V::TracktionEngine},
-        {"Utility", "utility", DeviceType::Effect, InternalPlugin::Utility, V::TracktionEngine},
-        {"Pitch Shift", "pitchshift", DeviceType::Effect, InternalPlugin::PitchShift,
-         V::TracktionEngine},
-        {"IR Reverb", "impulseresponse", DeviceType::Effect, InternalPlugin::ImpulseResponse,
-         V::TracktionEngine},
-        {"Test Tone", "tone", DeviceType::Effect, InternalPlugin::TestTone, V::TracktionEngine},
-        // Effects (MAGDA-native)
-        {"Phaser", "magda_phaser", DeviceType::Effect, InternalPlugin::Phaser, V::Magda},
-        {"Mod", "magda_mod", DeviceType::Effect, InternalPlugin::Mod, V::Magda},
-        {"Flanger", "magda_flanger", DeviceType::Effect, InternalPlugin::Flanger, V::Magda},
-        {"Ring Mod", "magda_ring_mod", DeviceType::Effect, InternalPlugin::RingMod, V::Magda},
-        {"Freq Shift", "magda_freq_shift", DeviceType::Effect, InternalPlugin::FreqShift, V::Magda},
-        {"Limiter", "magda_limiter", DeviceType::Effect, InternalPlugin::Limiter, V::Magda},
-        {"Clipper", "magda_clipper", DeviceType::Effect, InternalPlugin::Clipper, V::Magda},
-        {"Faust", "faust", DeviceType::Effect, InternalPlugin::Faust, V::Magda},
-        // Instruments (TE stock)
-        {"4OSC Synth", "4osc", DeviceType::Instrument, InternalPlugin::FourOsc, V::TracktionEngine},
-        // Instruments (MAGDA-native)
-        {"MAGDA Sampler", "magdasampler", DeviceType::Instrument, InternalPlugin::MagdaSampler,
-         V::Magda},
-        {"Drum Grid", "drumgrid", DeviceType::Instrument, InternalPlugin::DrumGrid, V::Magda},
-        // MIDI processors (MAGDA-native)
-        {"Arpeggiator", "arpeggiator", DeviceType::Effect, InternalPlugin::Arpeggiator, V::Magda},
-        {"Chord Engine", "midichordengine", DeviceType::Effect, InternalPlugin::MidiChordEngine,
-         V::Magda},
-        {"Step Sequencer", "stepsequencer", DeviceType::Effect, InternalPlugin::StepSequencer,
-         V::Magda},
-        {"Poly Sequencer", "polystepsequencer", DeviceType::Effect,
-         InternalPlugin::PolyStepSequencer, V::Magda},
-    };
+    static const std::vector<InternalPluginInfo> kPlugins = [] {
+        std::vector<InternalPluginInfo> entries;
+
+        // The browser-visible compiled devices are preferred for duplicate
+        // display names (EQ, Reverb, Delay, ...). Legacy TE variants remain
+        // addressable below through generated tracktion_* canonical aliases.
+        for (const auto* spec : daw::audio::compiled::getAllCompiledPluginSpecs()) {
+            if (spec == nullptr || spec->pluginId == nullptr || spec->displayName == nullptr)
+                continue;
+
+            auto entry =
+                detail::makeEntry(spec->displayName, spec->pluginId,
+                                  spec->isInstrument ? DeviceType::Instrument : DeviceType::Effect,
+                                  InternalPluginVendor::Magda, true);
+            if (spec->aliasKey != nullptr)
+                detail::addAlias(entry, spec->aliasKey);
+            const auto parameterAliasKey = spec->aliasKey != nullptr ? juce::String(spec->aliasKey)
+                                                                     : juce::String(spec->pluginId);
+            for (int i = 0; i < spec->aliasCount; ++i) {
+                if (spec->aliases != nullptr && spec->aliases[i].alias != nullptr)
+                    detail::addParameterAlias(entry,
+                                              parameterAliasKey + "." + spec->aliases[i].alias);
+            }
+            entries.push_back(std::move(entry));
+        }
+
+        for (const auto* spec : daw::audio::getAllInternalPluginSpecs()) {
+            if (spec == nullptr || spec->pluginId == nullptr || spec->displayName == nullptr ||
+                spec->createMode == daw::audio::InternalPluginCreateMode::Unsupported ||
+                !spec->canCreateOnTrack || spec->kind == InternalDeviceKind::ExternalInsert)
+                continue;
+
+            auto entry =
+                detail::makeEntry(spec->displayName, spec->pluginId,
+                                  spec->isInstrument ? DeviceType::Instrument : DeviceType::Effect,
+                                  detail::vendorFor(spec->kind), spec->showInBrowser);
+            for (int i = 0; i < spec->loadAliasCount; ++i) {
+                if (spec->loadAliases[i] != nullptr)
+                    detail::addAlias(entry, spec->loadAliases[i]);
+            }
+            entries.push_back(std::move(entry));
+        }
+
+        detail::addExternalInsertVariants(entries);
+
+        // The code-driven curated layer is the source of truth for legacy
+        // Tracktion-device parameter aliases. Attach its canonical names to
+        // matching catalog entries so agents can discover the same vocabulary
+        // accepted by automation commands.
+        for (const auto& [canonicalName, alias] : collectInternalPluginCuratedAliases()) {
+            for (auto& entry : entries) {
+                bool matches =
+                    entry.primaryAlias.equalsIgnoreCase(alias.pluginTypeKey) ||
+                    entry.pluginId.equalsIgnoreCase(alias.pluginTypeKey) ||
+                    pluginNameToAlias(entry.displayName).equalsIgnoreCase(alias.pluginTypeKey);
+                if (!matches) {
+                    for (const auto& deviceAlias : entry.aliases) {
+                        if (deviceAlias.equalsIgnoreCase(alias.pluginTypeKey)) {
+                            matches = true;
+                            break;
+                        }
+                    }
+                }
+                if (matches)
+                    detail::addParameterAlias(entry, canonicalName);
+            }
+        }
+        detail::makePrimaryAliasesUnique(entries);
+        return entries;
+    }();
     return kPlugins;
 }
 
-/// True iff `pluginId` matches a stock Tracktion Engine plugin (the kind that
-/// should display the TE brand mark). Returns false for MAGDA-native built-ins
-/// (DrumGrid, MAGDA Sampler, Faust, …) and for external VST/AU plugins.
+/// True iff `pluginId` is a stock Tracktion Engine plugin.
 inline bool isTracktionEngineStockPlugin(const juce::String& pluginId) {
-    if (pluginId.isEmpty())
-        return false;
-    if (pluginId.equalsIgnoreCase("compressor"))
-        return true;  // legacy TE compressor projects
     for (const auto& entry : getInternalPlugins()) {
         if (entry.pluginId.equalsIgnoreCase(pluginId))
             return entry.vendor == InternalPluginVendor::TracktionEngine;
@@ -126,36 +346,85 @@ inline bool isTracktionEngineStockPlugin(const juce::String& pluginId) {
     return false;
 }
 
-/**
- * @brief Resolve a pluginId string to the strongly-typed InternalPlugin enum.
- *
- * Match is case-insensitive against the pluginId column above. Returns
- * InternalPlugin::None for external plugins, unknown ids, or empty input.
- * Use this at dispatch points instead of `equalsIgnoreCase("4osc")`.
- */
+/** Resolve a plugin id for device-specific AI routing. */
 inline InternalPlugin internalPluginFromId(const juce::String& pluginId) {
-    if (pluginId.isEmpty())
-        return InternalPlugin::None;
-    for (const auto& entry : getInternalPlugins()) {
-        if (entry.pluginId.equalsIgnoreCase(pluginId))
-            return entry.id;
-    }
-    return InternalPlugin::None;
+    return detail::deviceAiIdFor(pluginId);
 }
 
-/**
- * @brief Look an internal plugin up by its canonical alias.
- *
- * The match is case-insensitive against `pluginNameToAlias(displayName)`
- * for each registered plugin. Returns nullptr when no plugin matches —
- * caller should fall through to the external KnownPluginList lookup.
- */
-inline const InternalPluginInfo* lookupInternalPluginByAlias(const juce::String& alias) {
+inline const InternalPluginInfo* lookupInternalPluginById(const juce::String& pluginId) {
     for (const auto& entry : getInternalPlugins()) {
-        if (pluginNameToAlias(entry.displayName).equalsIgnoreCase(alias))
+        if (entry.pluginId.equalsIgnoreCase(pluginId))
             return &entry;
     }
     return nullptr;
+}
+
+inline const InternalPluginCapabilities& getInternalPluginCapabilities(
+    const juce::String& pluginId) {
+    if (const auto* entry = lookupInternalPluginById(pluginId))
+        return entry->capabilities;
+    static const InternalPluginCapabilities kUnsupported;
+    return kUnsupported;
+}
+
+/**
+ * @brief Resolve an agent-facing name to an internal device.
+ *
+ * Exact display names, canonical aliases, registry load aliases and internal
+ * ids are all accepted. The normalized comparison makes natural forms such as
+ * "pitch shift" resolve to the same entry as their autocomplete alias.
+ */
+inline const InternalPluginInfo* lookupInternalPluginByAlias(const juce::String& alias) {
+    const auto raw = alias.trim();
+    if (raw.isEmpty())
+        return nullptr;
+    const auto normalized = pluginNameToAlias(raw);
+
+    for (const auto& entry : getInternalPlugins()) {
+        if (entry.displayName.equalsIgnoreCase(raw) || entry.pluginId.equalsIgnoreCase(raw))
+            return &entry;
+
+        for (const auto& candidate : entry.aliases) {
+            if (candidate.equalsIgnoreCase(raw) || candidate.equalsIgnoreCase(normalized) ||
+                pluginNameToAlias(candidate).equalsIgnoreCase(normalized))
+                return &entry;
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * Build device documentation from the same catalog used by execution.
+ *
+ * Each listed canonical alias is accepted by lookupInternalPluginByAlias(), so
+ * the command prompt never advertises an internal-device token it cannot run.
+ */
+inline juce::String getInternalPluginCatalogDescription() {
+    juce::StringArray effects;
+    juce::StringArray instruments;
+    juce::StringArray listedDisplayNames;
+    for (const auto& entry : getInternalPlugins()) {
+        if (!entry.browserVisible)
+            continue;
+
+        // A display name may have a hidden legacy counterpart. The catalog is
+        // ordered so the browser-visible compiled version supplies the alias
+        // shown to the command agent.
+        if (listedDisplayNames.contains(entry.displayName, true))
+            continue;
+        listedDisplayNames.add(entry.displayName);
+
+        auto& names = entry.deviceType == DeviceType::Instrument ? instruments : effects;
+        names.add(entry.displayName + " [" + entry.primaryAlias + "]");
+    }
+    effects.sort(true);
+    instruments.sort(true);
+
+    juce::String out("INTERNAL DEVICE CATALOG (use an exact display name or a canonical alias "
+                     "in brackets with fx.add; every listed alias is accepted):\n");
+    out << "Effects: " << effects.joinIntoString(", ") << "\n";
+    out << "Instruments: " << instruments.joinIntoString(", ");
+    return out;
 }
 
 }  // namespace magda

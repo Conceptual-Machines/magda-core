@@ -8,14 +8,14 @@ namespace magda {
 const char* RouterAgent::getSystemPrompt() {
     return R"PROMPT(You are a router for a DAW AI assistant. Classify the user's request into one or more agents.
 
-COMMAND — Modifying or creating project elements: create/delete/rename tracks, add/move/duplicate/delete clips, add FX (reverb, EQ, compressor), set volume/pan/mute/solo, quantize/transpose notes, set tempo.
+COMMAND — Modifying or creating project elements: create/delete/rename tracks, add/delete clips, add FX (reverb, EQ, compressor), create/configure racks and parallel chains, set volume/pan/mute/solo, quantize/transpose notes, set tempo or time signature.
 Examples: "create a bass track", "delete track 2", "add reverb to vocals", "mute the drums", "quantize to 1/16", "add a 4 bar clip on track 1", "set volume to -6 dB"
 
 MUSIC — Generating musical content: suggest/generate chord progressions, suggest chords, harmonize melodies, generate chord loops.
 Examples: "suggest chords in D minor", "give me a jazz ii-V-I", "generate a blues progression", "harmonize this melody"
 
-AUTOMATION — Drawing automation curves on the currently selected automation lane. Shapes: sine/triangle/saw/square LFOs, exp/log/linear sweeps, custom freeform curves.
-Examples: "automate filter cutoff with a sine wave 4 cycles over 2 bars", "sweep up exponentially over 8 bars", "tremolo on the volume", "draw a saw lfo", "clear the automation", "freeform: start at 0, jump to 1 at beat 2, back to 0 at beat 4"
+AUTOMATION — Drawing automation curves or managing automation clips. Shapes: sine/triangle/saw/square LFOs, exp/log/linear sweeps, custom freeform curves. Automation clips can be created, moved, resized, duplicated, looped, renamed, recoloured, and have their points replaced.
+Examples: "automate filter cutoff with a sine wave 4 cycles over 2 bars", "create an 8 bar volume automation clip", "move the selected automation clip to bar 9", "tremolo on the volume", "draw a saw lfo", "clear the automation", "freeform: start at 0, jump to 1 at beat 2, back to 0 at beat 4"
 
 BOTH — The request requires musical content generation AND project modification. The music agent generates the content, then the command agent executes it.
 Examples: "create a piano track with a jazzy chord progression", "add a blues bass line to track 2", "make a new track and write a neo-soul progression on it"

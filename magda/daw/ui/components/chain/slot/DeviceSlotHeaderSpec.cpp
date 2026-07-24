@@ -1,10 +1,28 @@
 #include "slot/DeviceSlotHeaderSpec.hpp"
 
 #include "core/PluginCapabilities.hpp"
+#include "core/PluginPreferences.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 
 namespace magda::daw::ui {
 namespace {
+
+// The AI Sound Designer icon/panel is exposed per-device: a plugin with a
+// registered agent shows it unless the user has hidden it from the plugin
+// browser (PluginPreferences, opt-out).
+bool aiSoundDesignerEnabledForDevice(const magda::DeviceInfo& device) {
+    return magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(
+        magda::PluginPreferences::identifierForDevice(device));
+}
+
+// Single source of truth for the AI Sound Designer control: shown whenever the
+// device has a registered AI agent (sound-design or coder) and the user hasn't
+// hidden it per-device. Both the collapsed and expanded headers read this via
+// HeaderControlVisibility::ai.
+bool aiSoundDesignerControlVisible(const DeviceSlotTraits& traits,
+                                   const magda::DeviceInfo& device) {
+    return traits.isAISupported && aiSoundDesignerEnabledForDevice(device);
+}
 
 bool getExpandedVisibility(HeaderControlId id, const HeaderControlVisibility& visibility) {
     switch (id) {
@@ -48,7 +66,7 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
         case HeaderControlId::Mod:
             return visibility.mod;
         case HeaderControlId::AI:
-            return traits.isSoundDesignSupported;
+            return visibility.ai;
         case HeaderControlId::Random:
             return visibility.random;
         case HeaderControlId::StepRecord:
@@ -88,8 +106,7 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     visibility.mod = drum_grid_slot::shouldShowModButton(traits.isDrumGrid, device.deviceType);
     visibility.macro = visibility.mod || traits.isArpeggiator || traits.isStrum ||
                        traits.isStepSequencer || traits.isPolyStepSequencer;
-    visibility.ai = traits.isAISupported && (visibility.mod || traits.isArpeggiator ||
-                                             traits.isStepSequencer || traits.isPolyStepSequencer);
+    visibility.ai = aiSoundDesignerControlVisible(traits, device);
     visibility.random = traits.isStepSequencer || traits.isPolyStepSequencer;
     visibility.stepRecord = visibility.random;
     visibility.midiThru = supportsMidiSourceToggle(device);
