@@ -1,0 +1,5 @@
+.venv/
+runs/
+__pycache__/
+*.pyc
+.teacher_cache.json

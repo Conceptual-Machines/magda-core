@@ -107,9 +107,9 @@ for req in ["create a bass track with serum and ott", "mute Drums", "把贝斯�
 # %% [markdown]
 # ## 7. Export GGUF for llama.cpp -> Drive (auto-syncs to Mac)
 # Then back home:
-#   mkdir -p tools/command-model-poc/model/artifacts
-#   cp "/path/to/Google Drive/My Drive/magda-command-model/command-model.gguf" tools/command-model-poc/model/artifacts/command-model.gguf
-#   cd tools/command-model-poc
+#   mkdir -p prototypes/command-model-poc/model/artifacts
+#   cp "/path/to/Google Drive/My Drive/magda-command-model/command-model.gguf" prototypes/command-model-poc/model/artifacts/command-model.gguf
+#   cd prototypes/command-model-poc
 #   python3 -m eval.run --model model/artifacts/command-model.gguf
 # %%
 import glob, os, shutil

@@ -1,7 +1,7 @@
 # Spike: MAGDA chord model (harmonic idiom, local)
 
 Status: Phase 0 scaffold. This doc records decisions so the next session
-doesn't re-litigate them. Sibling spike to `tools/command-model-poc/`.
+doesn't re-litigate them. Sibling spike to `prototypes/command-model-poc/`.
 
 ## Goal
 

@@ -2,7 +2,7 @@
 
 A tiny, local, learned model of **harmonic idiom** — trained on real chord
 progressions — that plugs into MAGDA's existing chord engine. Sibling to
-`tools/command-model-poc/` but a different beast: this one is *generative*
+`prototypes/command-model-poc/` but a different beast: this one is *generative*
 (sequential), so the architecture differs. See `findings.md` for the full
 design rationale and decisions.
 

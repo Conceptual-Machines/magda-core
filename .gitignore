@@ -138,9 +138,9 @@ mix-analysis-*.txt
 # Local fine-tuned model weights (multi-GB, never commit)
 *.gguf
 
-# Local exploratory scratch dirs (not tracked)
-eval/
-tools/
+# Local exploratory scratch dir at repo root (not tracked). Anchored to root so
+# it never clobbers a nested eval/ inside a tracked prototype.
+/eval/
 
 # Local app export artifact
 MAGDA.zip

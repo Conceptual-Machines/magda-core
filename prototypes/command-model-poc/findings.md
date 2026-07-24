@@ -156,7 +156,7 @@ teacher / accuracy ceiling:
 ## How to reproduce the current state
 
 ```bash
-cd tools/command-model-poc
+cd prototypes/command-model-poc
 pip install -r requirements.txt          # lark; + torch, brevitas for the model
 python3 -m eval.make_testset             # fixed test set (72, en)
 python3 -m dataset.generate --n 12000 --val 1500 # frozen splits
