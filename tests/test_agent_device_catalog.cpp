@@ -51,7 +51,7 @@ TEST_CASE("Agent device catalog covers addable registry devices", "[agents][devi
     for (const auto* spec : daw::audio::getAllInternalPluginSpecs()) {
         if (spec == nullptr || !spec->canCreateOnTrack ||
             spec->createMode == daw::audio::InternalPluginCreateMode::Unsupported ||
-            spec->kind == InternalDeviceKind::ExternalInsert)
+            daw::audio::internalPluginHasTag(*spec, "external-insert"))
             continue;
 
         INFO("addable native device: " << spec->displayName);

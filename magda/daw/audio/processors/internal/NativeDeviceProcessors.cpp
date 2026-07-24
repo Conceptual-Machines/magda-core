@@ -7,6 +7,7 @@
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/FaustParamPool.hpp"
 #include "plugins/FaustPlugin.hpp"
+#include "processors/ParameterDisplayTextProvider.hpp"
 
 namespace magda {
 
@@ -87,11 +88,7 @@ void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) co
     // see in the plugin's native UI.
     if (info.scale != ParameterScale::Boolean && info.scale != ParameterScale::Discrete &&
         info.valueTable.empty()) {
-        auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
-        provider->deviceId = getDeviceId();
-        provider->paramIndex = index;
-        provider->formatter = formatParameterDisplayTextFromDevice;
-        info.displayText = std::move(provider);
+        info.displayText = makeDeviceParameterDisplayTextProvider({}, getDeviceId(), index);
     }
 }
 

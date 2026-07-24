@@ -73,20 +73,14 @@ juce::String joinSearchKeywords(juce::StringArray keywords) {
     return keywords.joinIntoString(" ");
 }
 
-void addOriginalMutableNameKeywords(juce::StringArray& keywords, InternalDeviceKind kind) {
-    switch (kind) {
-        case InternalDeviceKind::MutableElements:
-            keywords.addIfNotAlreadyThere("Elements");
-            break;
-        case InternalDeviceKind::MutableRings:
-            keywords.addIfNotAlreadyThere("Rings");
-            break;
-        case InternalDeviceKind::MutableClouds:
-            keywords.addIfNotAlreadyThere("Clouds");
-            break;
-        default:
-            break;
-    }
+void addOriginalMutableNameKeywords(juce::StringArray& keywords,
+                                    const audio::InternalPluginSpec& spec) {
+    if (audio::internalPluginHasTag(spec, "mutable-elements"))
+        keywords.addIfNotAlreadyThere("Elements");
+    else if (audio::internalPluginHasTag(spec, "mutable-rings"))
+        keywords.addIfNotAlreadyThere("Rings");
+    else if (audio::internalPluginHasTag(spec, "mutable-clouds"))
+        keywords.addIfNotAlreadyThere("Clouds");
 }
 
 juce::String searchKeywordsForInternalSpec(const audio::InternalPluginSpec& spec) {
@@ -94,7 +88,7 @@ juce::String searchKeywordsForInternalSpec(const audio::InternalPluginSpec& spec
     addSearchKeyword(keywords, spec.pluginId);
     for (int i = 0; i < spec.loadAliasCount; ++i)
         addSearchKeyword(keywords, spec.loadAliases[i]);
-    addOriginalMutableNameKeywords(keywords, spec.kind);
+    addOriginalMutableNameKeywords(keywords, spec);
     return joinSearchKeywords(keywords);
 }
 
@@ -545,8 +539,7 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     // Instrument (MIDI send + audio return). The split is carried by isInstrument
     // on the created DeviceInfo; the send/return picker lives in the device slot.
     // (The registry spec keeps showInBrowser=false so it isn't also auto-listed.)
-    if (const auto* insertSpec =
-            audio::findInternalPluginSpec(magda::InternalDeviceKind::ExternalInsert)) {
+    if (const auto* insertSpec = audio::findInternalPluginSpecWithTag("external-insert")) {
         list.push_back(PluginBrowserInfo::createInternal("External FX", insertSpec->pluginId,
                                                          /*isInstrument*/ false, "External"));
         list.push_back(PluginBrowserInfo::createInternal(

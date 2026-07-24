@@ -335,6 +335,8 @@ target_sources(magda_daw PRIVATE
     plugins/compiled/CompiledFaustHost.hpp
     plugins/compiled/CompiledFaustInterface.hpp
     AudioBridge.cpp
+    ClipCommands.cpp
+    TrackMeasurementManager.cpp
     AudioBridgeMixer.cpp
     AudioBridgeMixer.hpp
     CompService.cpp
@@ -352,6 +354,8 @@ target_sources(magda_daw PRIVATE
     processors/base/AutomatablePluginProcessor.hpp
     processors/ParameterInfoBuilder.cpp
     processors/ParameterInfoBuilder.hpp
+    processors/ParameterDisplayTextProvider.cpp
+    processors/ParameterDisplayTextProvider.hpp
     processors/external/ExternalPluginProcessor.cpp
     processors/external/ExternalPluginProcessor.hpp
     processors/internal/MidiDeviceProcessors.cpp
@@ -378,6 +382,8 @@ target_sources(magda_daw PRIVATE
     session/SessionClipAudioMonitor.cpp
     session/SessionMonitorPlugin.cpp
     session/SessionRecorder.cpp
+    plugins/BaseDevicePack.cpp
+    plugins/BaseDevicePack.hpp
     plugins/InternalPluginRegistry.cpp
     plugins/InternalPluginRegistry.hpp
     # Phase 1: Pure data managers

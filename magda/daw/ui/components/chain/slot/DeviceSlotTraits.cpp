@@ -1,28 +1,25 @@
 #include "slot/DeviceSlotTraits.hpp"
 
 #include "../../../../../agents/internal_plugins.hpp"
-#include "core/InternalDeviceKind.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 
 namespace magda::daw::ui {
 
 DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
-    const auto kind = magda::classifyInternalDevice(pluginId);
-
     DeviceSlotTraits traits;
-    traits.isDrumGrid = kind == magda::InternalDeviceKind::DrumGrid;
-    traits.isChordEngine = kind == magda::InternalDeviceKind::MidiChordEngine;
-    traits.isArpeggiator = kind == magda::InternalDeviceKind::Arpeggiator;
-    traits.isStrum = kind == magda::InternalDeviceKind::Strum;
-    traits.isStepSequencer = kind == magda::InternalDeviceKind::StepSequencer;
-    traits.isPolyStepSequencer = kind == magda::InternalDeviceKind::PolyStepSequencer;
+    traits.isDrumGrid = audio::internalPluginHasTag(pluginId, "drum-grid");
+    traits.isChordEngine = audio::internalPluginHasTag(pluginId, "chord-engine");
+    traits.isArpeggiator = audio::internalPluginHasTag(pluginId, "arpeggiator");
+    traits.isStrum = audio::internalPluginHasTag(pluginId, "strum");
+    traits.isStepSequencer = audio::internalPluginHasTag(pluginId, "step-sequencer");
+    traits.isPolyStepSequencer = audio::internalPluginHasTag(pluginId, "poly-step-sequencer");
     // The interpreter Faust EFFECT uses the header+grid body layout (isFaust).
     // The Faust INSTRUMENT has its own tabbed custom UI (isFaustInstrument) but
     // shares the Faust chrome-suppression (no standard content header / presets).
-    traits.isFaust = kind == magda::InternalDeviceKind::Faust;
-    traits.isFaustInstrument = kind == magda::InternalDeviceKind::FaustInstrument;
-    traits.isAnalysis = magda::isAnalysisDevice(pluginId);
-    traits.hasAnalyzerPopout = kind == magda::InternalDeviceKind::Oscilloscope ||
-                               kind == magda::InternalDeviceKind::SpectrumAnalyzer;
+    traits.isFaust = audio::internalPluginHasTag(pluginId, "faust");
+    traits.isFaustInstrument = audio::internalPluginHasTag(pluginId, "faust-instrument");
+    traits.isAnalysis = audio::isInternalAnalysisPlugin(pluginId);
+    traits.hasAnalyzerPopout = audio::internalPluginHasTag(pluginId, "analyzer-popout");
     const auto& agentCapabilities = magda::getInternalPluginCapabilities(pluginId);
     traits.isAISupported = agentCapabilities.supportsDeviceAI();
     traits.isSoundDesignSupported = agentCapabilities.supportsSoundDesign();

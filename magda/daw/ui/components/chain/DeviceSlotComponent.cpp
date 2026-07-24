@@ -8,9 +8,9 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
-#include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/PluginCapabilities.hpp"
@@ -343,7 +343,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     uiButton_->onClick = [this]() {
         // Analysis devices have no native editor; pop their UI into a floating window.
-        if (magda::isAnalysisDevice(device_.pluginId)) {
+        if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
             toggleAnalyzerWindow();
             return;
         }
@@ -647,7 +647,7 @@ void DeviceSlotComponent::timerCallback() {
     // Update UI button state to match the actual window state.
     if (uiButton_) {
         // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
-        const bool isOpen = magda::isAnalysisDevice(device_.pluginId)
+        const bool isOpen = audio::isInternalAnalysisPlugin(device_.pluginId)
                                 ? (analyzerWindow_ != nullptr && analyzerWindow_->isVisible())
                                 : bridge->isPluginWindowOpen(nodePath_);
         bool currentState = uiButton_->getToggleState();
@@ -728,7 +728,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
 bool DeviceSlotComponent::stripsAnalysisChrome() const {
     // Post-FX analysis devices are managed by the TrackChain header toggle, and
     // bypass/presets don't apply to a transparent tap, so drop that chrome.
-    return magda::isAnalysisDevice(device_.pluginId) && nodePath_.isPostFx();
+    return audio::isInternalAnalysisPlugin(device_.pluginId) && nodePath_.isPostFx();
 }
 
 bool DeviceSlotComponent::exposesDeviceModulation() const {
@@ -1274,7 +1274,7 @@ const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
     if (!exposesDeviceModulation())
         return nullptr;
     if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
-        if (magda::isAnalysisDevice(dev->pluginId))
+        if (audio::isInternalAnalysisPlugin(dev->pluginId))
             return nullptr;  // analysis devices expose no macros
         return &dev->macros;
     }
@@ -1570,7 +1570,7 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
     // Check for double-click
     if (e.getNumberOfClicks() == 2) {
         // Toggle the editor / analyzer window on double-click.
-        if (magda::isAnalysisDevice(device_.pluginId)) {
+        if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
             toggleAnalyzerWindow();
         } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {

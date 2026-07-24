@@ -28,9 +28,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.cpp
     LinkModeManager.cpp
     GainStagingManager.cpp
-    TrackMeasurementManager.cpp
     UndoManager.cpp
-    ClipCommands.cpp
     ClipPropertyCommands.cpp
     WarpMarkerCommands.cpp
     TrackCommands.cpp
@@ -38,7 +36,7 @@ target_sources(magda_daw PRIVATE
     AutomationCommands.cpp
     ClipLaneFlattener.cpp
     MidiNoteCommands.cpp
-    ParameterInfo.cpp  # DisplayTextProvider glue (TrackManager/DeviceProcessor); stays in magda_daw
+    ParameterInfo.cpp  # device-layer display provider registration seam
     StringTable.cpp
     ParameterDetector.cpp
     PresetManager.cpp
@@ -46,7 +44,6 @@ target_sources(magda_daw PRIVATE
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp
-    InternalDeviceKind.cpp
     # Parameter alias system (issue #1062)
     aliases/Target.cpp
     aliases/ParamNameNormalize.cpp

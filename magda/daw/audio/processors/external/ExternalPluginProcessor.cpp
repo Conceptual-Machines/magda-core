@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "core/TrackManager.hpp"
+#include "processors/ParameterDisplayTextProvider.hpp"
 #include "processors/ParameterInfoBuilder.hpp"
 
 namespace magda {
@@ -85,11 +86,7 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
     // through a safe TrackManager -> AudioBridge -> Processor lookup. No
     // dangling pointers, no stale sampled tables, exact values.
     if (info.valueTable.empty()) {
-        auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
-        provider->deviceId = getDeviceId();
-        provider->paramIndex = index;
-        provider->formatter = formatParameterDisplayTextFromDevice;
-        info.displayText = std::move(provider);
+        info.displayText = makeDeviceParameterDisplayTextProvider({}, getDeviceId(), index);
     }
 
     return info;

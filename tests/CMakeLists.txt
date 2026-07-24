@@ -31,6 +31,7 @@ set(TEST_SOURCES
     test_update_checker.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp
+    test_internal_plugin_registry.cpp
     test_external_insert_registry.cpp
     test_external_insert_enablement.cpp
     test_insert_capture.cpp
