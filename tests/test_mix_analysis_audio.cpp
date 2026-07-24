@@ -129,8 +129,8 @@ std::string providerForModel(const juce::String& model) {
 
 // Load reference masters once, from MIX_ANALYSIS_REFERENCES (a directory of wavs
 // or a comma-separated list of files). Each is fingerprinted as a genre target.
-std::vector<MixAnalysisAgent::TrackMix> loadReferences(juce::AudioFormatManager& fm) {
-    std::vector<MixAnalysisAgent::TrackMix> refs;
+std::vector<MixAnalysisData::Track> loadReferences(juce::AudioFormatManager& fm) {
+    std::vector<MixAnalysisData::Track> refs;
     const char* env = std::getenv("MIX_ANALYSIS_REFERENCES");
     if (env == nullptr)
         return refs;
@@ -161,7 +161,7 @@ std::vector<MixAnalysisAgent::TrackMix> loadReferences(juce::AudioFormatManager&
 // Run the whole pipeline on one song folder: load stems, build the agent input
 // via the shared module, then run each model and print.
 void analyzeSong(const juce::File& dir, const juce::StringArray& models,
-                 const std::vector<MixAnalysisAgent::TrackMix>& references) {
+                 const std::vector<MixAnalysisData::Track>& references) {
     juce::Array<juce::File> wavs;
     dir.findChildFiles(wavs, juce::File::findFiles, false, "*.wav");
     if (wavs.isEmpty()) {
@@ -261,7 +261,7 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
     if (const char* env = std::getenv("MIX_ANALYSIS_SEGMENTS"))
         numSegments = juce::jlimit(2, 64, juce::String(env).getIntValue());
 
-    // Build the agent input via the shared production pipeline.
+    // Build the measured data via the shared production pipeline.
     std::vector<audio::MixAnalysisInput::Source> sources;
     sources.reserve(tracks.size());
     for (const auto& t : tracks)
@@ -269,24 +269,28 @@ void analyzeSong(const juce::File& dir, const juce::StringArray& models,
 
     audio::MixAnalysisInput::Options opts;
     opts.numSegments = numSegments;
-    auto input = audio::MixAnalysisInput::build(
+    auto measurements = audio::MixAnalysisInput::build(
         sr, sources, master.getNumSamples() > 0 ? &master : nullptr, {}, opts);
-    if (input.master)
-        input.master->name = masterName.toStdString();
-    input.references = references;
+    if (measurements.master)
+        measurements.master->name = masterName.toStdString();
+    measurements.references = references;
 
-    std::cout << "[audio] " << input.tracks.size() << " stems @ " << sr << " Hz, "
-              << input.masking.size() << " masking, " << input.timeline.size() << " segments\n";
+    std::cout << "[audio] " << measurements.tracks.size() << " stems @ " << sr << " Hz, "
+              << measurements.masking.size() << " masking, " << measurements.timeline.size()
+              << " segments\n";
 
     // Song context (BPM, genre) is project/transport-supplied in the app, not
     // detected. This harness only sets them from env; otherwise omitted.
     if (const char* b = std::getenv("MIX_ANALYSIS_BPM"))
-        input.bpm = juce::String(b).getFloatValue();
+        measurements.bpm = juce::String(b).getFloatValue();
     if (const char* g = std::getenv("MIX_ANALYSIS_GENRE"))
-        input.genre = g;
-    std::cout << "[audio] context: genre=" << (input.genre.empty() ? "(none)" : input.genre)
-              << " bpm=" << input.bpm << "\n";
+        measurements.genre = g;
+    std::cout << "[audio] context: genre="
+              << (measurements.genre.empty() ? "(none)" : measurements.genre)
+              << " bpm=" << measurements.bpm << "\n";
 
+    MixAnalysisAgent::Input input;
+    input.measurements = std::move(measurements);
     input.question = "Assess this multitrack: balance, dynamics, stereo image, frequency "
                      "clashes, and how the arrangement evolves. What would you address first?";
 

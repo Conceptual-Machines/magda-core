@@ -7,7 +7,7 @@
 #include <optional>
 #include <set>
 
-#include "../../agents/mixing_agent.hpp"  // MixAnalysisAgent::Input (measured data)
+#include "MixAnalysisData.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
@@ -16,7 +16,7 @@ namespace magda {
  * @brief Owns mix-analysis *measurement* gathering, decoupled from the agent.
  *
  * Splits the old console flow in two: this service produces the measured
- * MixAnalysisAgent::Input (per-track levels + masking + tonal/timeline) and
+ * MixAnalysisData (per-track levels + masking + tonal/timeline) and
  * caches it; the LLM step stays in the console and is opt-in. Both the mixer
  * toggle-rail Analyze button (which shows a modal of the measured findings) and
  * the console (which attaches the latest measurement as agent context) read this
@@ -84,9 +84,9 @@ class MixAnalysisService {
     }
 
     /// The cached measured data for a mode (nullopt if never run / cleared).
-    std::optional<MixAnalysisAgent::Input> cached(Mode mode) const;
+    std::optional<MixAnalysisData> cached(Mode mode) const;
     /// The most recently produced measurement of any mode.
-    std::optional<MixAnalysisAgent::Input> latest() const;
+    std::optional<MixAnalysisData> latest() const;
 
     void addListener(Listener* l) {
         listeners_.add(l);
@@ -98,10 +98,10 @@ class MixAnalysisService {
   private:
     MixAnalysisService() = default;
 
-    void store(Mode mode, MixAnalysisAgent::Input input);
+    void store(Mode mode, MixAnalysisData input);
     void setBusy(bool busy, Mode mode);
     void restoreCaptureState();  // undo what startLiveCapture armed
-    MixAnalysisAgent::Input buildLiveInput() const;
+    MixAnalysisData buildLiveInput() const;
 
     bool busy_ = false;
     Mode busyMode_ = Mode::Offline;
@@ -121,7 +121,7 @@ class MixAnalysisService {
     bool captureAddedGlobal_ = false;
     bool captureAddedMasking_ = false;
 
-    std::optional<MixAnalysisAgent::Input> cacheLive_, cacheOffline_;
+    std::optional<MixAnalysisData> cacheLive_, cacheOffline_;
     Mode latestMode_ = Mode::Offline;
     bool haveLatest_ = false;
 

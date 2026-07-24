@@ -81,6 +81,7 @@ target_sources(magda_daw PRIVATE
     ViewModeEvents.hpp
     ViewModeController.hpp
     LLMClientProvider.hpp
+    MixAnalysisData.hpp
     SessionViewState.hpp
     TrackInfo.hpp
     TrackManager.hpp
