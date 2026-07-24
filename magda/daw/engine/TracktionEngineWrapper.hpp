@@ -447,13 +447,20 @@ class TracktionEngineWrapper : public AudioEngine,
      * @brief Remove entries from the given known-plugin list whose plugins
      * are no longer installed. Delegates per-entry to
      * AudioPluginFormatManager::doesPluginStillExist so each format decides
-     * correctly — VST/VST3 stat the file path, AU queries AudioComponentFindNext
+     * correctly — VST3 checks the bundle path, AU queries AudioComponentFindNext
      * on the identifier (a plain File::exists() skips every AU entry because
      * their fileOrIdentifier is "AudioUnit:..." and not an absolute path).
+     * Missing file-based plugins on an unavailable external volume are retained:
+     * the missing path does not prove that the plugin was uninstalled.
+     *
+     * @param volumeIsMounted Optional test seam. Receives the external-volume
+     * root inferred from a plugin path and returns whether that root is mounted.
+     * Production callers omit it and use the native mount table.
      * Returns the number of entries removed.
      */
     static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
-                                   juce::AudioPluginFormatManager& formatManager);
+                                   juce::AudioPluginFormatManager& formatManager,
+                                   std::function<bool(const juce::String&)> volumeIsMounted = {});
 
     /**
      * @brief Remove entries that share (path, format) with a freshly-scanned
