@@ -79,6 +79,11 @@ te::Plugin::Ptr createMidiReceivePlugin(const te::PluginCreationInfo& info) {
     return new ::magda::MidiReceivePlugin(info, services.defaults.midiReceive);
 }
 
+te::Plugin::Ptr createInstrumentMeterTapPlugin(const te::PluginCreationInfo& info) {
+    auto services = getDeviceServices(info.edit);
+    return new InstrumentMeterTapPlugin(info, services.meteringContext);
+}
+
 te::Plugin::Ptr createFreshValueTreePlugin(te::Edit& edit, const char* xmlTypeName) {
     juce::ValueTree pluginState(te::IDs::PLUGIN);
     pluginState.setProperty(te::IDs::type, xmlTypeName, nullptr);
@@ -627,7 +632,7 @@ void registerInfrastructureDevices(InternalPluginRegistry& registry) {
                    .canCreateDetached = false,
                    .canCreateOnTrack = false,
                    .matchesPlugin = matches<InstrumentMeterTapPlugin>,
-                   .createCustomPlugin = createCustomPlugin<InstrumentMeterTapPlugin>});
+                   .createCustomPlugin = createInstrumentMeterTapPlugin});
     add(registry,
         {.pluginId = TrackMeasurementPlugin::xmlTypeName,
          .displayName = "Track Measurement",

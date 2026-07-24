@@ -12,12 +12,12 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "DeviceParameterDisplayTextProvider.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
 #include "plugins/DeviceServices.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MidiInThruSync.hpp"
-#include "processors/ParameterDisplayTextProvider.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -132,6 +132,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     daw::audio::DeviceServices deviceServices;
     deviceServices.deviceIdAllocator = &TrackManager::getInstance();
     deviceServices.trackContext = &TrackManager::getInstance();
+    deviceServices.meteringContext = &deviceMetering_;
     deviceServices.defaults.oscilloscope.timebaseMs = oscilloscopeDefaults.timebaseMs;
     deviceServices.defaults.spectrum.fftOrder = spectrumDefaults.fftOrder;
     deviceServices.defaults.spectrum.slopeDbPerOct = spectrumDefaults.slopeDbPerOct;

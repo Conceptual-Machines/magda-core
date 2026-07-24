@@ -1,7 +1,5 @@
 #include "plugins/InstrumentMeterTapPlugin.hpp"
 
-#include "DeviceMeteringManager.hpp"
-
 namespace magda::daw::audio {
 
 const char* InstrumentMeterTapPlugin::xmlTypeName = "instrumentmetertap";
@@ -20,8 +18,9 @@ void storeMax(std::atomic<float>* target, float value) {
 }
 }  // namespace
 
-InstrumentMeterTapPlugin::InstrumentMeterTapPlugin(const te::PluginCreationInfo& info)
-    : te::Plugin(info) {
+InstrumentMeterTapPlugin::InstrumentMeterTapPlugin(const te::PluginCreationInfo& info,
+                                                   DeviceMeteringContext* meteringContext)
+    : te::Plugin(info), meteringContext_(meteringContext) {
     deviceId_.store(
         static_cast<DeviceId>(int(state.getProperty(deviceIdProperty, INVALID_DEVICE_ID))),
         std::memory_order_relaxed);
@@ -65,9 +64,9 @@ void InstrumentMeterTapPlugin::bindRealtimeTap() {
     if (deviceId == INVALID_DEVICE_ID)
         return;
 
-    if (auto* manager = DeviceMeteringManager::getInstanceForEdit(edit)) {
-        auto tap = devicePath_.isValid() ? manager->getRealtimeTap(devicePath_)
-                                         : manager->getRealtimeTap(deviceId);
+    if (meteringContext_ != nullptr) {
+        auto tap = devicePath_.isValid() ? meteringContext_->getRealtimeTap(devicePath_)
+                                         : meteringContext_->getRealtimeTap(deviceId);
         if (tap.isValid()) {
             tapStorage_ = tap.storage;
             peakL_.store(tap.peakL, std::memory_order_release);

@@ -1,6 +1,7 @@
-#include "processors/ParameterDisplayTextProvider.hpp"
+#include "DeviceParameterDisplayTextProvider.hpp"
 
 #include "audio/AudioBridge.hpp"
+#include "core/ParameterInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "processors/base/DeviceProcessor.hpp"
@@ -30,8 +31,6 @@ juce::String formatParameterDisplayTextFromDevice(
     return processor->formatParameterValue(provider.paramIndex, normalizedValue);
 }
 
-}  // namespace
-
 std::shared_ptr<ParameterInfo::DisplayTextProvider> makeDeviceParameterDisplayTextProvider(
     const ChainNodePath& devicePath, int deviceId, int paramIndex) {
     auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
@@ -41,6 +40,8 @@ std::shared_ptr<ParameterInfo::DisplayTextProvider> makeDeviceParameterDisplayTe
     provider->formatter = formatParameterDisplayTextFromDevice;
     return provider;
 }
+
+}  // namespace
 
 void installDeviceParameterDisplayTextProviderFactory() {
     const bool registered =
