@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace magda {
@@ -33,6 +35,8 @@ struct MixAnalysisData {
         float spectralRolloffHz = 0.0f;   // frequency below which 85% of energy sits
         // Macro-band energy in dB, ordered sub / low / low-mid / mid /
         // high-mid / high. Empty when the spectral layer wasn't run.
+        inline static constexpr std::array<std::string_view, 6> tonalBandLabels = {
+            "sub", "low", "low-mid", "mid", "high-mid", "high"};
         std::vector<float> tonalDb;
         // Effect inserts on this track, in order. Empty means no processing.
         std::vector<std::string> chain;

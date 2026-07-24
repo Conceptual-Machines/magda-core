@@ -7,12 +7,6 @@
 
 namespace magda {
 
-const std::vector<std::string>& MixAnalysisAgent::tonalBandLabels() {
-    static const std::vector<std::string> labels = {"sub", "low",      "low-mid",
-                                                    "mid", "high-mid", "high"};
-    return labels;
-}
-
 const char* MixAnalysisAgent::getSystemPrompt() {
     return "You are a senior mixing engineer assessing a song. You cannot hear the audio; "
            "instead you are given objective measurements for every track and for the master bus.\n"
@@ -79,9 +73,10 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
           << " | " << juce::String(t.correlation, 2) << " | " << juce::String(t.width, 2);
         if (!t.tonalDb.empty()) {
             r << "\n    tonal:";
-            const auto& labels = tonalBandLabels();
+            const auto& labels = MixAnalysisData::Track::tonalBandLabels;
             for (size_t i = 0; i < t.tonalDb.size(); ++i)
-                r << " " << (i < labels.size() ? juce::String(labels[i]) : juce::String((int)i))
+                r << " "
+                  << (i < labels.size() ? juce::String(labels[i].data()) : juce::String((int)i))
                   << "=" << juce::String(t.tonalDb[i], 1);
             r << " | centroid=" << juce::String(juce::roundToInt(t.spectralCentroidHz)) << "Hz"
               << " flat=" << juce::String(t.spectralFlatness, 2)

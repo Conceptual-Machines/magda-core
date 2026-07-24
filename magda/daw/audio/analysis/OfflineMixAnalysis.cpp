@@ -253,13 +253,13 @@ class AnalysisJob : public juce::Thread {
             return err;
         }
 
-        MixAnalysisData input;
+        MixAnalysisData measurements;
 
         if (request_.depth == OfflineMixAnalysis::Depth::Shallow) {
             postProgress("Measuring mix...");
             auto mix = MixAnalysisInput::fingerprint(masterBuf, masterSr, "Mix", "master");
-            input.master = mix;
-            input.tracks.push_back(std::move(mix));
+            measurements.master = mix;
+            measurements.tracks.push_back(std::move(mix));
         } else {
             const auto allTracks = tk::getAllTracks(edit_);
 
@@ -335,17 +335,17 @@ class AnalysisJob : public juce::Thread {
             postProgress("Analysing tracks...");
             MixAnalysisInput::Options opts;
             opts.numSegments = request_.numSegments;
-            input = MixAnalysisInput::build(masterSr, sources, &masterBuf, {}, opts);
+            measurements = MixAnalysisInput::build(masterSr, sources, &masterBuf, {}, opts);
 
             // Annotate each track with its type (audio/MIDI) + effect chain. build()
-            // preserves source order, so input.tracks[i] matches sourceTrackIds[i].
+            // preserves source order, so measurements.tracks[i] matches sourceTrackIds[i].
             auto& tmgr = magda::TrackManager::getInstance();
-            for (size_t i = 0; i < input.tracks.size() && i < sourceTrackIds.size(); ++i) {
+            for (size_t i = 0; i < measurements.tracks.size() && i < sourceTrackIds.size(); ++i) {
                 const auto tid = sourceTrackIds[i];
                 if (tid == magda::INVALID_TRACK_ID)
                     continue;
-                input.tracks[i].role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
-                input.tracks[i].chain = tmgr.getChainSummary(tid);
+                measurements.tracks[i].role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
+                measurements.tracks[i].chain = tmgr.getChainSummary(tid);
             }
 
             if (skipped > 0)
@@ -354,15 +354,16 @@ class AnalysisJob : public juce::Thread {
 
         // Song-level context.
         if (request_.bpm > 0.0f)
-            input.bpm = request_.bpm;
-        input.genre = request_.genre;
+            measurements.bpm = request_.bpm;
+        measurements.genre = request_.genre;
 
         // Agent interpretation is an upper-layer concern. This DAW service only
         // renders and measures, then delivers the neutral data model.
         if (onMeasured_) {
             auto cb = onMeasured_;
-            juce::MessageManager::callAsync(
-                [cb, input = std::move(input)]() mutable { cb(std::move(input)); });
+            juce::MessageManager::callAsync([cb, measurements = std::move(measurements)]() mutable {
+                cb(std::move(measurements));
+            });
         }
         return {};
     }

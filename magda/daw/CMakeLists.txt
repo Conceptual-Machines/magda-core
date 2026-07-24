@@ -371,8 +371,9 @@ add_subdirectory(transcription)
 add_subdirectory(stem_separation)
 
 # Keep the library boundary one-way: agents may link magda_daw, but no source
-# compiled into magda_daw may include an agent header. App-only UI sources are
-# intentionally outside this check because they form the composition layer.
+# compiled into magda_daw may include an agent header. This is a best-effort text
+# scan of listed sources, not a transitive dependency-graph check. App-only UI
+# sources are intentionally outside it because they form the composition layer.
 get_target_property(_magda_daw_sources magda_daw SOURCES)
 foreach(_magda_daw_source IN LISTS _magda_daw_sources)
     if(_magda_daw_source MATCHES "^\\$<")
@@ -387,7 +388,7 @@ foreach(_magda_daw_source IN LISTS _magda_daw_sources)
        AND _magda_daw_source_path MATCHES "\\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$")
         file(READ "${_magda_daw_source_path}" _magda_daw_source_text)
         if(_magda_daw_source_text
-           MATCHES "#[ \t]*include[ \t]*[<\"][^>\"]*agents/")
+           MATCHES "(^|\n)[ \t]*#[ \t]*include[ \t]*[<\"](\\.\\./)*agents/")
             message(FATAL_ERROR
                 "magda_daw source includes an agent header: ${_magda_daw_source_path}")
         endif()

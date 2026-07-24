@@ -218,7 +218,7 @@ MixAnalysisData MixAnalysisInput::build(double sr, const std::vector<Source>& tr
                                         const juce::AudioBuffer<float>* masterIn,
                                         const std::vector<Source>& references,
                                         const Options& opts) {
-    MixAnalysisData input;
+    MixAnalysisData measurements;
     std::vector<TrackBandEnergies> bandSet;
     int maxLen = 0;
 
@@ -229,7 +229,7 @@ MixAnalysisData MixAnalysisInput::build(double sr, const std::vector<Source>& tr
         maxLen = juce::jmax(maxLen, s.audio->getNumSamples());
 
         BandArray bands{};
-        input.tracks.push_back(
+        measurements.tracks.push_back(
             measureToMix(*s.audio, sr, s.name, s.role, /*truePeak*/ false, bands));
 
         TrackBandEnergies be;
@@ -259,11 +259,11 @@ MixAnalysisData MixAnalysisInput::build(double sr, const std::vector<Source>& tr
         master = &summed;
     }
     if (master != nullptr && master->getNumSamples() > 0)
-        input.master = fingerprint(*master, sr, "Master", "master");
+        measurements.master = fingerprint(*master, sr, "Master", "master");
 
     // Inter-track masking from the measured spectra.
     for (const auto& f : detectMasking(bandSet))
-        input.masking.push_back(
+        measurements.masking.push_back(
             {f.nameA.toStdString(), f.nameB.toStdString(), f.loHz, f.hiHz, f.severity});
 
     // Timeline: slice the master over time.
@@ -288,16 +288,16 @@ MixAnalysisData MixAnalysisInput::build(double sr, const std::vector<Source>& tr
             float segCorr = 1.0f;
             stereoCorrWidth(win, segCorr, seg.width);
             seg.tonalDb = collapseTo3(segBands);
-            input.timeline.push_back(std::move(seg));
+            measurements.timeline.push_back(std::move(seg));
         }
     }
 
     // References (genre targets).
     for (const auto& r : references)
         if (r.audio != nullptr && r.audio->getNumSamples() > 0)
-            input.references.push_back(fingerprint(*r.audio, sr, r.name, r.role));
+            measurements.references.push_back(fingerprint(*r.audio, sr, r.name, r.role));
 
-    return input;
+    return measurements;
 }
 
 }  // namespace magda::daw::audio

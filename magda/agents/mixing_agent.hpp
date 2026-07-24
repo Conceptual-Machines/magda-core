@@ -33,9 +33,6 @@ class MixAnalysisAgent {
         std::string priorContext;
     };
 
-    // Labels for the macro bands in MixAnalysisData::Track::tonalDb, in order.
-    static const std::vector<std::string>& tonalBandLabels();
-
     struct Result {
         std::string analysis;  // the model's prose analysis
         bool hasError = false;
