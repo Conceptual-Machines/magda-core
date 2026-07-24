@@ -677,6 +677,15 @@ void AIChatConsoleContent::RequestThread::run() {
             agentMessage;
     }
 
+    // The on-device command model is a fixed intent+slot tagger trained on a
+    // single bare command — it cannot use conversation history (prepending it
+    // corrupts the intent/slots). Feed the fast-inference command backend the
+    // raw user request; every other backend gets the full contextual message.
+    const bool commandIsFastInference =
+        magda::Config::getInstance().getAgentLLMConfig(magda::role::COMMAND).provider ==
+        magda::provider::FAST_INFERENCE;
+    const std::string commandMessage = commandIsFastInference ? message : agentMessage;
+
     // Step 2: Dispatch to agents based on classification
     std::string dslCode;                                   // DSL from command agent
     std::vector<magda::Instruction> musicInstructions;     // IR from music agent
@@ -756,8 +765,8 @@ void AIChatConsoleContent::RequestThread::run() {
         std::future<magda::MusicAgent::GenerateResult> musicFuture;
 
         if (owner_.commandAgent_) {
-            commandFuture = std::async(std::launch::async, [this, &agentMessage, cmdOnToken]() {
-                return owner_.commandAgent_->generateStreaming(agentMessage, cmdOnToken);
+            commandFuture = std::async(std::launch::async, [this, &commandMessage, cmdOnToken]() {
+                return owner_.commandAgent_->generateStreaming(commandMessage, cmdOnToken);
             });
         }
         if (owner_.musicAgent_) {
@@ -790,7 +799,7 @@ void AIChatConsoleContent::RequestThread::run() {
             return;
     } else if (intent == magda::ConsoleIntent::Command) {
         if (owner_.commandAgent_) {
-            auto result = owner_.commandAgent_->generateStreaming(agentMessage, onToken);
+            auto result = owner_.commandAgent_->generateStreaming(commandMessage, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError)
