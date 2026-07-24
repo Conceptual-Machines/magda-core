@@ -867,7 +867,8 @@ void AIChatConsoleContent::RequestThread::run() {
         if (!cached.has_value() || cached->tracks.empty()) {
             error = "No mix analysis yet. Run one from the mixer's Analyze button first.";
         } else {
-            magda::MixAnalysisAgent::Input input = std::move(*cached);
+            magda::MixAnalysisAgent::Input input;
+            input.measurements = std::move(*cached);
             input.question = message;           // empty => a general assessment
             input.priorContext = priorContext;  // continuity across analyses (#886)
 

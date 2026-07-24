@@ -31,7 +31,7 @@ MixAnalysisService& MixAnalysisService::getInstance() {
     return instance;
 }
 
-std::optional<MixAnalysisAgent::Input> MixAnalysisService::cached(Mode mode) const {
+std::optional<MixAnalysisData> MixAnalysisService::cached(Mode mode) const {
     switch (mode) {
         case Mode::Live:
             return cacheLive_;
@@ -41,13 +41,13 @@ std::optional<MixAnalysisAgent::Input> MixAnalysisService::cached(Mode mode) con
     return std::nullopt;
 }
 
-std::optional<MixAnalysisAgent::Input> MixAnalysisService::latest() const {
+std::optional<MixAnalysisData> MixAnalysisService::latest() const {
     if (!haveLatest_)
         return std::nullopt;
     return cached(latestMode_);
 }
 
-void MixAnalysisService::store(Mode mode, MixAnalysisAgent::Input input) {
+void MixAnalysisService::store(Mode mode, MixAnalysisData input) {
     switch (mode) {
         case Mode::Live:
             cacheLive_ = std::move(input);
@@ -103,8 +103,6 @@ void MixAnalysisService::runOffline() {
     const double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo > 0.0)
         req.bpm = static_cast<float>(tempo);
-    req.skipAgent = true;  // measure only -- the LLM lives in the console
-
     offlineCancel_ = mix::OfflineMixAnalysis::start(
         *engine, std::move(req),
         [this, runId](const juce::String& msg) {
@@ -113,7 +111,7 @@ void MixAnalysisService::runOffline() {
             progressText_ = msg;
             listeners_.call(&Listener::mixAnalysisChanged);
         },
-        [this, runId](MixAnalysisAgent::Result result) {
+        [this, runId](mix::OfflineMixAnalysis::Result result) {
             if (runId != runId_)
                 return;  // cancelled / superseded
             if (result.hasError)
@@ -122,7 +120,7 @@ void MixAnalysisService::runOffline() {
             offlineCancel_.reset();
             setBusy(false, busyMode_);
         },
-        [this, runId](MixAnalysisAgent::Input input) {
+        [this, runId](MixAnalysisData input) {
             if (runId != runId_)
                 return;
             store(Mode::Offline, std::move(input));  // ready; setBusy(false) in onComplete
@@ -177,7 +175,7 @@ void MixAnalysisService::restoreCaptureState() {
     captureAddedGlobal_ = false;
 }
 
-MixAnalysisAgent::Input MixAnalysisService::buildLiveInput() const {
+MixAnalysisData MixAnalysisService::buildLiveInput() const {
     auto& tmm = TrackMeasurementManager::getInstance();
     auto& tmgr = TrackManager::getInstance();
     auto trackName = [&tmgr](TrackId id) -> juce::String {
@@ -187,9 +185,9 @@ MixAnalysisAgent::Input MixAnalysisService::buildLiveInput() const {
 
     // Live capture has no tonal/spectral detail (only the offline pipeline
     // computes it); unset fields read as "not measured" downstream.
-    MixAnalysisAgent::Input input;
+    MixAnalysisData input;
     for (const auto& [id, snap] : tmm.getAllSnapshots()) {
-        MixAnalysisAgent::TrackMix tm;
+        MixAnalysisData::Track tm;
         tm.name = trackName(id).toStdString();
         tm.role = tmgr.getPrimaryInstrument(id) ? "MIDI" : "audio";
         tm.chain = tmgr.getChainSummary(id);
@@ -205,7 +203,7 @@ MixAnalysisAgent::Input MixAnalysisService::buildLiveInput() const {
         input.tracks.push_back(std::move(tm));
     }
     for (const auto& f : tmm.getMaskingFindings()) {
-        MixAnalysisAgent::MaskingPair mp;
+        MixAnalysisData::MaskingPair mp;
         mp.a = f.nameA.toStdString();
         mp.b = f.nameB.toStdString();
         mp.loHz = f.loHz;

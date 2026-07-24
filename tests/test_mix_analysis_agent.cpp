@@ -24,10 +24,11 @@ namespace {
 // is roughly the heaviest payload we expect to send in one shot.
 MixAnalysisAgent::Input buildHeavyMix() {
     MixAnalysisAgent::Input in;
+    auto& mix = in.measurements;
 
-    auto add = [&in](const char* name, const char* role, float lufs, float peak, float plr,
-                     float psr, float corr, float width) {
-        MixAnalysisAgent::TrackMix t;
+    auto add = [&mix](const char* name, const char* role, float lufs, float peak, float plr,
+                      float psr, float corr, float width) {
+        MixAnalysisData::Track t;
         t.name = name;
         t.role = role;
         t.integratedLufs = lufs;
@@ -39,7 +40,7 @@ MixAnalysisAgent::Input buildHeavyMix() {
         t.psr = psr;
         t.correlation = corr;
         t.width = width;
-        in.tracks.push_back(t);
+        mix.tracks.push_back(t);
     };
 
     // name, role, LUFS-I, peak dB, PLR, PSR, corr, width
@@ -84,7 +85,7 @@ MixAnalysisAgent::Input buildHeavyMix() {
     add("Vocal Bus", "bus", -8.0f, -3.0f, 11.0f, 8.0f, 0.90f, 0.20f);
 
     // The final mix bus -- "possibly also the final mix".
-    MixAnalysisAgent::TrackMix master;
+    MixAnalysisData::Track master;
     master.name = "Master";
     master.role = "master";
     master.integratedLufs = -8.0f;
@@ -96,12 +97,12 @@ MixAnalysisAgent::Input buildHeavyMix() {
     master.psr = 5.5f;
     master.correlation = 0.65f;
     master.width = 0.35f;
-    in.master = master;
+    mix.master = master;
 
-    in.masking.push_back({"Kick In", "Bass DI", 40.0f, 90.0f, 0.72f});
-    in.masking.push_back({"Bass DI", "Synth Bass", 60.0f, 160.0f, 0.81f});
-    in.masking.push_back({"Lead Vox", "Lead Gtr", 1500.0f, 3500.0f, 0.58f});
-    in.masking.push_back({"Rhythm Gtr L", "Piano", 400.0f, 1200.0f, 0.49f});
+    mix.masking.push_back({"Kick In", "Bass DI", 40.0f, 90.0f, 0.72f});
+    mix.masking.push_back({"Bass DI", "Synth Bass", 60.0f, 160.0f, 0.81f});
+    mix.masking.push_back({"Lead Vox", "Lead Gtr", 1500.0f, 3500.0f, 0.58f});
+    mix.masking.push_back({"Rhythm Gtr L", "Piano", 400.0f, 1200.0f, 0.49f});
 
     return in;
 }
@@ -119,8 +120,8 @@ TEST_CASE("MixAnalysisAgent: heavy payload builds and is reasonably compact", "[
 
     const int chars = payload.length();
     const int approxTokens = chars / 4;  // rough heuristic, good enough to track trend
-    std::cout << "\n[mix_analysis] heaviest payload: " << mix.tracks.size() << " tracks, " << chars
-              << " chars (~" << approxTokens << " tokens)\n";
+    std::cout << "\n[mix_analysis] heaviest payload: " << mix.measurements.tracks.size()
+              << " tracks, " << chars << " chars (~" << approxTokens << " tokens)\n";
 
     // Guardrail: if a formatting change blows the payload up, fail loudly so we
     // notice. ~32 tracks of tabular data should sit comfortably under this.

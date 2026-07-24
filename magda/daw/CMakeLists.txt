@@ -370,6 +370,35 @@ add_subdirectory(media_db)
 add_subdirectory(transcription)
 add_subdirectory(stem_separation)
 
+# Keep the library boundary one-way: agents may link magda_daw, but no source
+# compiled into magda_daw may include an agent header. This is a best-effort text
+# scan of listed sources, not a transitive dependency-graph check. App-only UI
+# sources are intentionally outside it because they form the composition layer.
+get_target_property(_magda_daw_sources magda_daw SOURCES)
+foreach(_magda_daw_source IN LISTS _magda_daw_sources)
+    if(_magda_daw_source MATCHES "^\\$<")
+        continue()
+    endif()
+    if(IS_ABSOLUTE "${_magda_daw_source}")
+        set(_magda_daw_source_path "${_magda_daw_source}")
+    else()
+        set(_magda_daw_source_path "${CMAKE_CURRENT_SOURCE_DIR}/${_magda_daw_source}")
+    endif()
+    if(EXISTS "${_magda_daw_source_path}"
+       AND _magda_daw_source_path MATCHES "\\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$")
+        file(READ "${_magda_daw_source_path}" _magda_daw_source_text)
+        if(_magda_daw_source_text
+           MATCHES "(^|\n)[ \t]*#[ \t]*include[ \t]*[<\"](\\.\\./)*agents/")
+            message(FATAL_ERROR
+                "magda_daw source includes an agent header: ${_magda_daw_source_path}")
+        endif()
+    endif()
+endforeach()
+unset(_magda_daw_source_text)
+unset(_magda_daw_source_path)
+unset(_magda_daw_source)
+unset(_magda_daw_sources)
+
 # =============================================================================
 # Linking, compile defs, includes
 # =============================================================================

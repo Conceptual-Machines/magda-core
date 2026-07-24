@@ -73,7 +73,7 @@ bool renderPass(const tk::Renderer::Parameters& base, const juce::File& outFile,
 }
 
 // Background driver: owns itself, deletes on completion. Setup runs in the ctor
-// (message thread); the render passes + LLM call run in run() (background).
+// (message thread); the render passes + measurement run in run() (background).
 class AnalysisJob : public juce::Thread {
   public:
     AnalysisJob(TracktionEngineWrapper& engine, OfflineMixAnalysis::Request request,
@@ -146,8 +146,8 @@ class AnalysisJob : public juce::Thread {
         });
     }
 
-    MixAnalysisAgent::Result doWork() {
-        MixAnalysisAgent::Result err;
+    OfflineMixAnalysis::Result doWork() {
+        OfflineMixAnalysis::Result err;
 
         // Render at a reduced sample rate to speed up the N-pass deep render.
         // Mix measurements (loudness, dynamics, stereo, tonal balance) don't need
@@ -253,13 +253,13 @@ class AnalysisJob : public juce::Thread {
             return err;
         }
 
-        MixAnalysisAgent::Input input;
+        MixAnalysisData measurements;
 
         if (request_.depth == OfflineMixAnalysis::Depth::Shallow) {
             postProgress("Measuring mix...");
             auto mix = MixAnalysisInput::fingerprint(masterBuf, masterSr, "Mix", "master");
-            input.master = mix;
-            input.tracks.push_back(std::move(mix));  // agent requires a non-empty track set
+            measurements.master = mix;
+            measurements.tracks.push_back(std::move(mix));
         } else {
             const auto allTracks = tk::getAllTracks(edit_);
 
@@ -335,17 +335,17 @@ class AnalysisJob : public juce::Thread {
             postProgress("Analysing tracks...");
             MixAnalysisInput::Options opts;
             opts.numSegments = request_.numSegments;
-            input = MixAnalysisInput::build(masterSr, sources, &masterBuf, {}, opts);
+            measurements = MixAnalysisInput::build(masterSr, sources, &masterBuf, {}, opts);
 
             // Annotate each track with its type (audio/MIDI) + effect chain. build()
-            // preserves source order, so input.tracks[i] matches sourceTrackIds[i].
+            // preserves source order, so measurements.tracks[i] matches sourceTrackIds[i].
             auto& tmgr = magda::TrackManager::getInstance();
-            for (size_t i = 0; i < input.tracks.size() && i < sourceTrackIds.size(); ++i) {
+            for (size_t i = 0; i < measurements.tracks.size() && i < sourceTrackIds.size(); ++i) {
                 const auto tid = sourceTrackIds[i];
                 if (tid == magda::INVALID_TRACK_ID)
                     continue;
-                input.tracks[i].role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
-                input.tracks[i].chain = tmgr.getChainSummary(tid);
+                measurements.tracks[i].role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
+                measurements.tracks[i].chain = tmgr.getChainSummary(tid);
             }
 
             if (skipped > 0)
@@ -354,24 +354,18 @@ class AnalysisJob : public juce::Thread {
 
         // Song-level context.
         if (request_.bpm > 0.0f)
-            input.bpm = request_.bpm;
-        input.genre = request_.genre;
-        input.question = request_.question;
+            measurements.bpm = request_.bpm;
+        measurements.genre = request_.genre;
 
-        // Deliver the measured data before the agent step. Measure-only callers
-        // (the mix-analysis modal) stop here; the LLM is opt-in.
+        // Agent interpretation is an upper-layer concern. This DAW service only
+        // renders and measures, then delivers the neutral data model.
         if (onMeasured_) {
             auto cb = onMeasured_;
-            auto snapshot = input;  // copy: input is still needed for the agent below
-            juce::MessageManager::callAsync(
-                [cb, snapshot = std::move(snapshot)]() mutable { cb(std::move(snapshot)); });
+            juce::MessageManager::callAsync([cb, measurements = std::move(measurements)]() mutable {
+                cb(std::move(measurements));
+            });
         }
-        if (request_.skipAgent)
-            return {};  // clean, no-error Result; the measured Input went via onMeasured_
-
-        postProgress("Asking the mix analyst...");
-        MixAnalysisAgent agent;
-        return agent.generate(input);
+        return {};
     }
 
     TracktionEngineWrapper& engine_;
@@ -391,7 +385,7 @@ OfflineMixAnalysis::CancelToken OfflineMixAnalysis::start(TracktionEngineWrapper
                                                           CompletionFn onComplete,
                                                           MeasuredFn onMeasured) {
     if (engine.getEdit() == nullptr) {
-        MixAnalysisAgent::Result r;
+        Result r;
         r.hasError = true;
         r.error = "No active edit to analyse.";
         if (onComplete)
