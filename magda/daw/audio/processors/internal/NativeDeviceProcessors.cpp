@@ -90,6 +90,7 @@ void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) co
         auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
         provider->deviceId = getDeviceId();
         provider->paramIndex = index;
+        provider->formatter = formatParameterDisplayTextFromDevice;
         info.displayText = std::move(provider);
     }
 }

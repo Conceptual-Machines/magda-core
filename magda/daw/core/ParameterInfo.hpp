@@ -124,10 +124,16 @@ struct ParameterInfo {
     // gone). Preferred over valueTable when set — exact values, no quantization.
     // Shared so ParameterInfo copies remain cheap.
     struct DisplayTextProvider {
+        using Formatter = juce::String (*)(const DisplayTextProvider&, float);
+
         ChainNodePath devicePath;
         int deviceId = -1;
         int paramIndex = -1;
-        juce::String format(float normalizedValue) const;
+        Formatter formatter = nullptr;
+
+        juce::String format(float normalizedValue) const {
+            return formatter != nullptr ? formatter(*this, normalizedValue) : juce::String{};
+        }
     };
     std::shared_ptr<DisplayTextProvider> displayText;
 
@@ -185,6 +191,12 @@ struct ParameterInfo {
         return minValue < 0.0f && maxValue > 0.0f;
     }
 };
+
+// DAW-side formatter injected into DisplayTextProvider instances that need a
+// live plugin lookup. Keeping the provider's dispatch inline prevents the
+// magda_types leaf archive from acquiring a link-time dependency on magda_daw.
+juce::String formatParameterDisplayTextFromDevice(
+    const ParameterInfo::DisplayTextProvider& provider, float normalizedValue);
 
 struct ParameterNormalizedValue {
     float value = 0.0f;

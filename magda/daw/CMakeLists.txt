@@ -263,6 +263,35 @@ juce_add_binary_data(MagdaAssets
 # Targets
 # =============================================================================
 
+# magda_types: leaf library of JUCE-only value types shared by the DAW today and
+# the device library later (epic #1836 / #1831). It borrows juce_core's headers
+# and defines but does NOT link the module: the juce_core unity source is
+# compiled once in magda_daw, so magda_types' undefined juce symbols resolve at
+# the final link instead of duplicating the object. The value-type headers stay
+# physically in core/ for now; relocating them into their own directory (and the
+# include-boundary guard) lands with the device-library carve (#1834).
+add_library(magda_types STATIC
+    core/ParameterUtils.cpp
+    # value-type headers (listed to document the leaf's surface)
+    core/TypeIds.hpp
+    core/TechnicalText.hpp
+    core/ChainNodePath.hpp
+    core/ControlTarget.hpp
+    core/ParameterInfo.hpp
+    core/ParameterUtils.hpp
+    core/DeviceInfo.hpp
+    core/KitRow.hpp
+    core/MacroInfo.hpp
+    core/ModInfo.hpp
+    core/TempoUtils.hpp
+)
+target_compile_features(magda_types PUBLIC cxx_std_20)
+target_include_directories(magda_types
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}  # dependents resolve "core/<type>.hpp"
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(magda_types
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>)
+
 # Core library — populated by per-subdir CMakeLists.txt below.
 add_library(magda_daw STATIC
     command.cpp
@@ -450,6 +479,7 @@ set(MAGDA_JUCE_STACK
 )
 target_link_libraries(magda_daw
     PUBLIC
+    magda_types  # leaf value-type library (#1831); its types appear in magda_daw's public headers
     MagdaAssets
     magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
     PRIVATE
