@@ -25,6 +25,8 @@ class TrackApiLive : public TrackApi {
     void setTrackSoloed(TrackId trackId, bool soloed) override;
 
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override;
+    DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
+                              const DeviceInfo& device) override;
     RackId addRackToTrack(TrackId trackId, const juce::String& name) override;
     void removeRackFromTrack(TrackId trackId, RackId rackId) override;
     const RackInfo* getRack(TrackId trackId, RackId rackId) const override;

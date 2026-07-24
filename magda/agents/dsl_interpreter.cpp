@@ -483,6 +483,12 @@ bool Interpreter::parseProjectStatement(Tokenizer& tok) {
 bool Interpreter::parseTrackStatement(Tokenizer& tok) {
     tok.next();  // consume 'track'
 
+    // A new track() head starts fresh device scope: clear any rack/chain
+    // context left by a prior statement so a bare fx.add targets the track,
+    // not a stale rack chain. rack.new re-establishes chain scope in-chain.
+    ctx_.currentRackId = INVALID_RACK_ID;
+    ctx_.currentChainId = INVALID_CHAIN_ID;
+
     if (!tok.expect(TokenType::LPAREN)) {
         ctx_.setError("Expected '(' after 'track'");
         return false;
@@ -1231,6 +1237,16 @@ bool Interpreter::executeAddFx(const Params& params) {
         return false;
     }
 
+    // Place the device into the active rack chain when one is in scope (set by a
+    // preceding rack.new/chain_new), else onto the track's top-level chain. This
+    // is what lets "create a rack with @serum" put the device inside the rack.
+    auto placeDevice = [this](const DeviceInfo& dev) {
+        if (ctx_.currentChainId != INVALID_CHAIN_ID && ctx_.currentRackId != INVALID_RACK_ID)
+            return api_.tracks().addDeviceToChain(ctx_.currentTrackId, ctx_.currentRackId,
+                                                  ctx_.currentChainId, dev);
+        return api_.tracks().addDeviceToTrack(ctx_.currentTrackId, dev);
+    };
+
     juce::String fxName(params.get("name"));
     juce::String formatHint(params.get("format"));
 
@@ -1254,7 +1270,7 @@ bool Interpreter::executeAddFx(const Params& params) {
         DBG("MAGDA DSL fx.add: resolved internal '" + match->displayName + "' (pluginId=" +
             match->pluginId + ", instrument=" + (device.isInstrument ? "yes" : "no") + ")");
 
-        auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
+        auto deviceId = placeDevice(device);
         if (deviceId == INVALID_DEVICE_ID) {
             juce::String why = "Failed to add internal device '" + match->displayName +
                                "' to track " + juce::String(ctx_.currentTrackId);
@@ -1338,7 +1354,7 @@ bool Interpreter::executeAddFx(const Params& params) {
 
     bestMatch = nullptr;  // no longer safe to dereference
 
-    auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
+    auto deviceId = placeDevice(device);
     if (deviceId == INVALID_DEVICE_ID) {
         ctx_.setError("Failed to add FX '" + fxName + "' to track");
         return false;

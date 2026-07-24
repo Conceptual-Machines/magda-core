@@ -44,6 +44,8 @@ class TrackApi {
     virtual void setTrackSoloed(TrackId trackId, bool soloed) = 0;
 
     virtual DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) = 0;
+    virtual DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                      const DeviceInfo& device) = 0;
 
     // Focused top-level rack and chain management surface for command agents.
     // IDs are stable model IDs, surfaced in the command-state snapshot.

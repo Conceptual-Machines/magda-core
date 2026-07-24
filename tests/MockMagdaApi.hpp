@@ -326,6 +326,9 @@ class MockTrackApi : public TrackApi {
     DeviceId addDeviceToTrack(TrackId, const DeviceInfo&) override {
         return INVALID_DEVICE_ID;
     }
+    DeviceId addDeviceToChain(TrackId, RackId, ChainId, const DeviceInfo&) override {
+        return INVALID_DEVICE_ID;
+    }
     RackId addRackToTrack(TrackId, const juce::String&) override {
         return INVALID_RACK_ID;
     }
