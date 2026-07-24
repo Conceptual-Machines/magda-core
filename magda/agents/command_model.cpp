@@ -703,6 +703,18 @@ std::string CommandModel::generate(const std::string& text) const {
     } else if (intent == "select_clips_shorter_than") {
         lines.push_back(trackRef() + ".clips.select(clip.length_bars < " +
                         fmtG(valueOrFirstNumber(s, tokens)) + ")");
+    } else if (intent == "select_clips_length_at_least") {
+        lines.push_back(trackRef() + ".clips.select(clip.length_bars >= " +
+                        fmtG(valueOrFirstNumber(s, tokens)) + ")");
+    } else if (intent == "select_clips_length_at_most") {
+        lines.push_back(trackRef() + ".clips.select(clip.length_bars <= " +
+                        fmtG(valueOrFirstNumber(s, tokens)) + ")");
+    } else if (intent == "select_clips_length_exactly") {
+        lines.push_back(trackRef() + ".clips.select(clip.length_bars == " +
+                        fmtG(valueOrFirstNumber(s, tokens)) + ")");
+    } else if (intent == "select_clips_not_named") {
+        lines.push_back(trackRef() +
+                        ".clips.select(clip.name != " + q(canonName(s.first("CLIP_NAME"))) + ")");
     } else if (intent == "select_clips_starting_after") {
         lines.push_back(trackRef() + ".clips.select(clip.start_bar >= " +
                         fmtG(valueOrFirstNumber(s, tokens)) + ")");

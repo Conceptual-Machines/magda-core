@@ -105,3 +105,7 @@
 {"lang": "en", "input": "add a rack to the bass track", "output": "track(name=\"Bass\").rack.new()", "actions": [{"type": "create_rack", "name": "Bass"}]}
 {"lang": "en", "input": "create a rack with @serum and @fm_0", "output": "track(name=\"\").rack.new().fx.add(name=\"<serum>\").fx.add(name=\"<fm_0>\")", "actions": [{"type": "create_rack", "name": "", "plugins": ["<serum>", "<fm_0>"]}]}
 {"lang": "en", "input": "create a rack with @serum on drums", "output": "track(name=\"Drums\").rack.new().fx.add(name=\"<serum>\")", "actions": [{"type": "create_rack", "name": "Drums", "plugins": ["<serum>"]}]}
+{"lang": "en", "input": "select clips up to 4 bars in the bass track", "output": "track(name=\"Bass\").clips.select(clip.length_bars <= 4)", "actions": [{"type": "select_clips_length_at_most", "name": "Bass", "bars": 4}]}
+{"lang": "en", "input": "select clips at least 2 bars in the drums track", "output": "track(name=\"Drums\").clips.select(clip.length_bars >= 2)", "actions": [{"type": "select_clips_length_at_least", "name": "Drums", "bars": 2}]}
+{"lang": "en", "input": "select clips exactly 4 bars in the bass track", "output": "track(name=\"Bass\").clips.select(clip.length_bars == 4)", "actions": [{"type": "select_clips_length_exactly", "name": "Bass", "bars": 4}]}
+{"lang": "en", "input": "select clips not named Intro on Pads", "output": "track(name=\"Pads\").clips.select(clip.name != \"Intro\")", "actions": [{"type": "select_clips_not_named", "name": "Pads", "clip_name": "Intro"}]}

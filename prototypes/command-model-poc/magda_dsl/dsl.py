@@ -100,6 +100,18 @@ def render_action(a: dict) -> list[str]:
     if t == "select_clips_shorter_than":
         return [f'{_track_ref(a)}.clips.select(clip.length_bars < {a["bars"]:g})']
 
+    if t == "select_clips_length_at_least":
+        return [f'{_track_ref(a)}.clips.select(clip.length_bars >= {a["bars"]:g})']
+
+    if t == "select_clips_length_at_most":
+        return [f'{_track_ref(a)}.clips.select(clip.length_bars <= {a["bars"]:g})']
+
+    if t == "select_clips_length_exactly":
+        return [f'{_track_ref(a)}.clips.select(clip.length_bars == {a["bars"]:g})']
+
+    if t == "select_clips_not_named":
+        return [f'{_track_ref(a)}.clips.select(clip.name != {q(a["clip_name"])})']
+
     if t == "select_clips_starting_after":
         return [f'{_track_ref(a)}.clips.select(clip.start_bar >= {a["bar"]:g})']
 

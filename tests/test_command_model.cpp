@@ -27,5 +27,5 @@ TEST_CASE("Command model reproduces the Python DSL byte-for-byte", "[agents][com
         CHECK(got == std::string(c.expected));
     }
     CHECK(mismatches == 0);
-    CHECK(kNumParityCases == 107);
+    CHECK(kNumParityCases == 111);
 }

@@ -102,7 +102,7 @@ def tag(input_text: str, actions: list[dict]):
         _tag_span(tags, lower, a["new_name"], "NEW_NAME")
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
 
-    elif intent == "select_clips_named":
+    elif intent in ("select_clips_named", "select_clips_not_named"):
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
         _tag_span(tags, lower, a["clip_name"], "CLIP_NAME")
 
@@ -110,7 +110,9 @@ def tag(input_text: str, actions: list[dict]):
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
         _tag_span(tags, lower, a["clip_type"], "CLIP_TYPE")
 
-    elif intent in ("select_clips_longer_than", "select_clips_shorter_than"):
+    elif intent in ("select_clips_longer_than", "select_clips_shorter_than",
+                    "select_clips_length_at_least", "select_clips_length_at_most",
+                    "select_clips_length_exactly"):
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
         _tag_value(tags, lower, a["bars"])
 
@@ -313,13 +315,15 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
             new_name = _rename_target_from_tokens(tokens)
         return [{"type": "select_all_clips_rename", "name": name,
                  "new_name": new_name}]
-    if intent == "select_clips_named":
-        return [{"type": "select_clips_named", "name": name,
+    if intent in ("select_clips_named", "select_clips_not_named"):
+        return [{"type": intent, "name": name,
                  "clip_name": _canon_name(s.get("CLIP_NAME", [""])[0])}]
     if intent == "select_clips_type":
         return [{"type": "select_clips_type", "name": name,
                  "clip_type": s.get("CLIP_TYPE", [""])[0].lower()}]
-    if intent in ("select_clips_longer_than", "select_clips_shorter_than"):
+    if intent in ("select_clips_longer_than", "select_clips_shorter_than",
+                  "select_clips_length_at_least", "select_clips_length_at_most",
+                  "select_clips_length_exactly"):
         return [{"type": intent, "name": name,
                  "bars": _value_or_first_number(s, tokens)}]
     if intent in ("select_clips_starting_after", "select_clips_starting_before"):

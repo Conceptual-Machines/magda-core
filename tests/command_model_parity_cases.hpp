@@ -152,8 +152,16 @@ inline const ParityCase kParityCases[] = {
      "track(name=\"\").rack.new().fx.add(name=\"<serum>\").fx.add(name=\"<fm_0>\")"},
     {"create a rack with @serum on drums",
      "track(name=\"Drums\").rack.new().fx.add(name=\"<serum>\")"},
+    {"select clips up to 4 bars in the bass track",
+     "track(name=\"Bass\").clips.select(clip.length_bars <= 4)"},
+    {"select clips at least 2 bars in the drums track",
+     "track(name=\"Drums\").clips.select(clip.length_bars >= 2)"},
+    {"select clips exactly 4 bars in the bass track",
+     "track(name=\"Bass\").clips.select(clip.length_bars == 4)"},
+    {"select clips not named Intro on Pads",
+     "track(name=\"Pads\").clips.select(clip.name != \"Intro\")"},
 };
 
-inline constexpr int kNumParityCases = 107;
+inline constexpr int kNumParityCases = 111;
 
 }  // namespace magda::cmdmodel::test

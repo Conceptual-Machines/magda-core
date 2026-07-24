@@ -602,6 +602,58 @@ def gen_groove_list(r: random.Random):
     return text, [{"type": "groove_list"}]
 
 
+def gen_select_clips_length_at_least(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    bars = r.choice(CLIP_BAR_VALUES)
+    bw = "bar" if bars == 1 else "bars"
+    templates = [
+        f"select clips at least {bars} {bw} in {name}",
+        f"select clips {bars} {bw} or longer on {name}",
+        f"select clips {bars} {bw} and up in the {name.lower()} track",
+        f"select all clips no shorter than {bars} {bw} on {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_length_at_least", "name": name, "bars": bars}]
+
+
+def gen_select_clips_length_at_most(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    bars = r.choice(CLIP_BAR_VALUES)
+    bw = "bar" if bars == 1 else "bars"
+    templates = [
+        f"select clips at most {bars} {bw} in {name}",
+        f"select clips {bars} {bw} or shorter on {name}",
+        f"select clips up to {bars} {bw} in the {name.lower()} track",
+        f"select clips with length at most {bars} {bw} on {name}",
+        f"select all clips no longer than {bars} {bw} on {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_length_at_most", "name": name, "bars": bars}]
+
+
+def gen_select_clips_length_exactly(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    bars = r.choice(CLIP_BAR_VALUES)
+    bw = "bar" if bars == 1 else "bars"
+    templates = [
+        f"select clips exactly {bars} {bw} in {name}",
+        f"select clips that are {bars} {bw} long on {name}",
+        f"select clips with length {bars} {bw} in the {name.lower()} track",
+        f"select all clips of exactly {bars} {bw} on {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_length_exactly", "name": name, "bars": bars}]
+
+
+def gen_select_clips_not_named(r: random.Random):
+    name = r.choice(TRACK_NAMES)
+    clip = r.choice(CLIP_NAMES)
+    templates = [
+        f"select clips not named {clip} on {name}",
+        f"select clips except {clip} in the {name.lower()} track",
+        f"select all clips that aren't called {clip} on {name}",
+        f"select clips other than {clip} in {name}",
+    ]
+    return r.choice(templates), [{"type": "select_clips_not_named", "name": name, "clip_name": clip}]
+
+
 GENERATORS = [
     (gen_create_track, 0.08),
     (gen_create_named, 0.05),
@@ -624,6 +676,10 @@ GENERATORS = [
     (gen_select_clips_shorter_than, 0.02),
     (gen_select_clips_starting_after, 0.02),
     (gen_select_clips_starting_before, 0.02),
+    (gen_select_clips_length_at_least, 0.02),
+    (gen_select_clips_length_at_most, 0.02),
+    (gen_select_clips_length_exactly, 0.02),
+    (gen_select_clips_not_named, 0.02),
     # new command coverage
     (gen_clip_new, 0.03),
     (gen_clip_rename, 0.02),

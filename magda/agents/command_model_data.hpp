@@ -4,10 +4,10 @@
 
 namespace magda::cmdmodel::data {
 
-inline constexpr int kVocabSize = 281;
+inline constexpr int kVocabSize = 291;
 inline constexpr int kEmbed = 48;
 inline constexpr int kHidden = 64;
-inline constexpr int kNumIntents = 34;
+inline constexpr int kNumIntents = 38;
 inline constexpr int kNumTags = 18;
 inline constexpr int kMaxLen = 24;
 inline constexpr int kKernel = 3;
