@@ -512,17 +512,27 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         juce::String name(params.get("name"));
         bool forceNew = params.getBool("new", false);
 
-        int existingId = forceNew ? -1 : findTrackByName(name);
-
-        if (existingId >= 0) {
-            ctx_.currentTrackId = existingId;
-            DBG("MAGDA DSL: Found existing track '" + name + "'");
+        // An empty name that isn't explicitly `new` targets the current
+        // selection rather than creating a blank track. This is how the
+        // on-device command model expresses "add X to the current track" — it
+        // emits no track name, so `track(name="").fx.add(...)`. currentTrackId
+        // was seeded from the UI selection at the top of execute().
+        if (name.isEmpty() && !forceNew && ctx_.currentTrackId >= 0) {
+            DBG("MAGDA DSL: empty name -> targeting selected track " +
+                juce::String(ctx_.currentTrackId));
         } else {
-            auto trackType = parseTrackType(params);
-            auto trackId = tm.createTrack(name, trackType);
-            ctx_.currentTrackId = trackId;
-            api_.selection().selectTrack(trackId);
-            ctx_.addResult("Created track '" + name + "'");
+            int existingId = forceNew ? -1 : findTrackByName(name);
+
+            if (existingId >= 0) {
+                ctx_.currentTrackId = existingId;
+                DBG("MAGDA DSL: Found existing track '" + name + "'");
+            } else {
+                auto trackType = parseTrackType(params);
+                auto trackId = tm.createTrack(name, trackType);
+                ctx_.currentTrackId = trackId;
+                api_.selection().selectTrack(trackId);
+                ctx_.addResult("Created track '" + name + "'");
+            }
         }
     } else {
         // track() with no params — create unnamed track
