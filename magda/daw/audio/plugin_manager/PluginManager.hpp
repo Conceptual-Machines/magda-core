@@ -14,6 +14,7 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TypeIds.hpp"
 #include "modifiers/CurveSnapshot.hpp"
+#include "plugins/DeviceServices.hpp"
 #include "plugins/DrumGridPlugin.hpp"
 #include "processors/base/DeviceProcessor.hpp"
 #include "racks/InstrumentRackManager.hpp"
@@ -79,7 +80,8 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param transportState Reference to TransportStateManager for transport state
      */
     PluginManager(te::Engine& engine, te::Edit& edit, TrackController& trackController,
-                  PluginWindowBridge& pluginWindowBridge, TransportStateManager& transportState);
+                  PluginWindowBridge& pluginWindowBridge, TransportStateManager& transportState,
+                  daw::audio::DeviceTrackContext& deviceTrackContext);
 
     // =========================================================================
     // Plugin/Device Lookup
@@ -607,6 +609,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     TrackController& trackController_;
     PluginWindowBridge& pluginWindowBridge_;
     TransportStateManager& transportState_;
+    daw::audio::DeviceTrackContext& deviceTrackContext_;
 
     // Instrument rack wrapping (synth + audio passthrough)
     InstrumentRackManager instrumentRackManager_;

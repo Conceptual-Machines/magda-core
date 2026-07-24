@@ -2,14 +2,14 @@
 
 #include <utility>
 
-#include "core/TrackManager.hpp"
 #include "processors/ParameterDisplayTextProvider.hpp"
 #include "processors/ParameterInfoBuilder.hpp"
 
 namespace magda {
 
-ExternalPluginProcessor::ExternalPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, std::move(plugin)) {}
+ExternalPluginProcessor::ExternalPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin,
+                                                 daw::audio::DeviceTrackContext* trackContext)
+    : DeviceProcessor(deviceId, std::move(plugin)), trackContext_(trackContext) {}
 
 ExternalPluginProcessor::~ExternalPluginProcessor() {
     stopParameterListening();
@@ -260,31 +260,14 @@ void ExternalPluginProcessor::propagateParameterChange(te::AutomatableParameter&
 
     const auto deviceId = deviceId_;
     const float valueToStore = param.getCurrentValue();
+    auto* const trackContext = trackContext_;
 
     // Parameter notifications can originate on the audio thread. The processor
     // may be removed before this reaches the message thread, so capture only
     // the value data needed to update the model.
-    juce::MessageManager::callAsync([deviceId, parameterIndex, valueToStore]() {
-        auto& tm = TrackManager::getInstance();
-
-        for (const auto& track : tm.getTracks()) {
-            for (const auto& element : track.chain.fxChainElements) {
-                if (std::holds_alternative<DeviceInfo>(element)) {
-                    const auto& device = std::get<DeviceInfo>(element);
-                    if (device.id == deviceId) {
-                        ChainNodePath path;
-                        path.trackId = track.id;
-                        path.topLevelDeviceId = deviceId;
-
-                        tm.setDeviceParameterValueFromPlugin(path, parameterIndex, valueToStore);
-                        return;
-                    }
-                }
-            }
-
-            // Also search in racks/chains (nested devices)
-            // TODO: Implement nested device search if needed
-        }
+    juce::MessageManager::callAsync([trackContext, deviceId, parameterIndex, valueToStore]() {
+        if (trackContext != nullptr)
+            trackContext->setDeviceParameterValueFromPlugin(deviceId, parameterIndex, valueToStore);
     });
 }
 

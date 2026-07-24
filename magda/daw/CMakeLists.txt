@@ -496,6 +496,7 @@ set(MAGDA_JUCE_STACK
 target_link_libraries(magda_daw
     PUBLIC
     magda_types  # leaf value-type library (#1831); its types appear in magda_daw's public headers
+    magda_music  # leaf music-theory library (#1833)
     MagdaAssets
     magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
     PRIVATE

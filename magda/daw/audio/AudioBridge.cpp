@@ -14,6 +14,7 @@
 #include "AudioThumbnailManager.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
+#include "plugins/DeviceServices.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MidiInThruSync.hpp"
 #include "processors/ParameterDisplayTextProvider.hpp"
@@ -115,7 +116,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     : engine_(engine),
       edit_(edit),
       trackController_(engine, edit),
-      pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_),
+      pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_,
+                     TrackManager::getInstance()),
       mixer_(edit, trackController_),
       midiInputRouter_(engine, edit, trackController_),
       controlTargetResolver_(trackController_, pluginManager_),
@@ -125,6 +127,17 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
       automationPlayback_(*this, edit),
       automationRecording_(edit) {
+    const auto oscilloscopeDefaults = Config::getInstance().getOscilloscopeDefaults();
+    const auto spectrumDefaults = Config::getInstance().getSpectrumDefaults();
+    daw::audio::DeviceServices deviceServices;
+    deviceServices.deviceIdAllocator = &TrackManager::getInstance();
+    deviceServices.trackContext = &TrackManager::getInstance();
+    deviceServices.defaults.oscilloscope.timebaseMs = oscilloscopeDefaults.timebaseMs;
+    deviceServices.defaults.spectrum.fftOrder = spectrumDefaults.fftOrder;
+    deviceServices.defaults.spectrum.slopeDbPerOct = spectrumDefaults.slopeDbPerOct;
+    deviceServices.defaults.spectrum.smoothing = spectrumDefaults.smoothing;
+    daw::audio::registerDeviceServices(edit_, deviceServices);
+
     installDeviceParameterDisplayTextProviderFactory();
 
     // Wire up async plugin load completion callback to notify UI
@@ -164,6 +177,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
 
 AudioBridge::~AudioBridge() {
     DBG("AudioBridge::~AudioBridge - starting cleanup");
+    daw::audio::unregisterDeviceServices(edit_);
 
     // CRITICAL: Acquire lock BEFORE stopping timer to ensure proper synchronization.
     // This prevents race condition where timerCallback() could be running while

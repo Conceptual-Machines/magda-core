@@ -3,7 +3,6 @@
 #include <memory>
 #include <vector>
 
-#include "core/TrackManager.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
@@ -61,7 +60,9 @@ const juce::Identifier DrumGridPlugin::multiOutEnabledId("multiOutEnabled");
 const juce::Identifier DrumGridPlugin::pluginDeviceIdProp("magdaDeviceId");
 
 //==============================================================================
-DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info) {
+DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info,
+                               DeviceIdAllocator& deviceIdAllocator)
+    : Plugin(info), deviceIdAllocator_(deviceIdAllocator) {
     mixerExpanded_.referTo(state, mixerExpandedId, getUndoManager(), false);
     multiOutEnabled_.referTo(state, multiOutEnabledId, getUndoManager(), false);
 
@@ -597,8 +598,7 @@ void DrumGridPlugin::installSinglePadPlugin(Chain& chain, te::Plugin::Ptr plugin
         return;
 
     // Assign a stable DeviceId for macro/mod linking.
-    plugin->state.setProperty(pluginDeviceIdProp,
-                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
+    plugin->state.setProperty(pluginDeviceIdProp, deviceIdAllocator_.allocateDeviceId(), nullptr);
 
     // Initialise BEFORE the plugin can become visible to the audio thread.
     initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
@@ -764,8 +764,7 @@ void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescript
     initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
 
     // Assign a stable DeviceId for macro/mod linking
-    plugin->state.setProperty(pluginDeviceIdProp,
-                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
+    plugin->state.setProperty(pluginDeviceIdProp, deviceIdAllocator_.allocateDeviceId(), nullptr);
 
     auto chainTree = findChainTree(chainIndex);
     if (chainTree.isValid()) {
@@ -813,8 +812,7 @@ void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String
     initialisePluginIfNeeded(*plugin, sampleRate_, blockSize_);
 
     // Assign a stable DeviceId for macro/mod linking
-    plugin->state.setProperty(pluginDeviceIdProp,
-                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
+    plugin->state.setProperty(pluginDeviceIdProp, deviceIdAllocator_.allocateDeviceId(), nullptr);
 
     auto chainTree = findChainTree(chainIndex);
     if (chainTree.isValid()) {
@@ -1180,11 +1178,10 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
                 // Ensure a stable DeviceId exists for macro/mod linking
                 if (!pluginState.hasProperty(pluginDeviceIdProp)) {
                     pluginState.setProperty(pluginDeviceIdProp,
-                                            magda::TrackManager::getInstance().allocateDeviceId(),
-                                            nullptr);
+                                            deviceIdAllocator_.allocateDeviceId(), nullptr);
                 } else {
                     int restoredId = pluginState.getProperty(pluginDeviceIdProp);
-                    magda::TrackManager::getInstance().ensureDeviceIdAbove(restoredId);
+                    deviceIdAllocator_.ensureDeviceIdAbove(restoredId);
                 }
 
                 chain->plugins.push_back(plugin);

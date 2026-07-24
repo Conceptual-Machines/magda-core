@@ -1604,6 +1604,19 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
     }
 }
 
+void TrackManager::setDeviceParameterValueFromPlugin(DeviceId deviceId, int paramIndex,
+                                                     float value) {
+    const auto path = findDevicePath(deviceId);
+    if (path.isValid())
+        setDeviceParameterValueFromPlugin(path, paramIndex, value);
+}
+
+bool TrackManager::isChordTrackMuted() const {
+    const auto chordTrackId = getChordTrackId();
+    const auto* chordTrack = chordTrackId != INVALID_TRACK_ID ? getTrack(chordTrackId) : nullptr;
+    return chordTrack != nullptr && chordTrack->muted;
+}
+
 double TrackManager::getDeviceLatencySeconds(const ChainNodePath& devicePath) {
     auto* device = getDeviceInChainByPath(devicePath);
     if (!device || !audioEngine_)
