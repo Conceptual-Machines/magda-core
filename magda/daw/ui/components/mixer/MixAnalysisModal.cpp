@@ -8,16 +8,16 @@ namespace magda {
 
 namespace {
 
-// Render the measured Input as a compact monospace summary: a per-track levels
+// Render the measured data as a compact monospace summary: a per-track levels
 // table + the detected frequency collisions. This is the pre-agent data.
-juce::String formatFindings(const MixAnalysisAgent::Input& in) {
+juce::String formatFindings(const MixAnalysisData& in) {
     auto col = [](juce::String s, int w) { return s.paddedRight(' ', w); };
 
     juce::String out;
     out << "LEVELS (" << static_cast<int>(in.tracks.size()) << " tracks)\n";
     out << col("NAME", 16) << col("LUFS", 7) << col("PEAK", 7) << col("PLR", 6) << col("COR", 6)
         << "WID\n";
-    auto line = [&](const juce::String& name, const MixAnalysisAgent::TrackMix& t) {
+    auto line = [&](const juce::String& name, const MixAnalysisData::Track& t) {
         out << col(name.substring(0, 15), 16) << col(juce::String(t.integratedLufs, 1), 7)
             << col(juce::String(t.samplePeakDb, 1), 7) << col(juce::String(t.plr, 1), 6)
             << col(juce::String(t.correlation, 2), 6) << juce::String(t.width, 2) << "\n";

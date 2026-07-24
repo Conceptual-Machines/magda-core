@@ -73,7 +73,7 @@ bool renderPass(const tk::Renderer::Parameters& base, const juce::File& outFile,
 }
 
 // Background driver: owns itself, deletes on completion. Setup runs in the ctor
-// (message thread); the render passes + LLM call run in run() (background).
+// (message thread); the render passes + measurement run in run() (background).
 class AnalysisJob : public juce::Thread {
   public:
     AnalysisJob(TracktionEngineWrapper& engine, OfflineMixAnalysis::Request request,
@@ -146,8 +146,8 @@ class AnalysisJob : public juce::Thread {
         });
     }
 
-    MixAnalysisAgent::Result doWork() {
-        MixAnalysisAgent::Result err;
+    OfflineMixAnalysis::Result doWork() {
+        OfflineMixAnalysis::Result err;
 
         // Render at a reduced sample rate to speed up the N-pass deep render.
         // Mix measurements (loudness, dynamics, stereo, tonal balance) don't need
@@ -253,13 +253,13 @@ class AnalysisJob : public juce::Thread {
             return err;
         }
 
-        MixAnalysisAgent::Input input;
+        MixAnalysisData input;
 
         if (request_.depth == OfflineMixAnalysis::Depth::Shallow) {
             postProgress("Measuring mix...");
             auto mix = MixAnalysisInput::fingerprint(masterBuf, masterSr, "Mix", "master");
             input.master = mix;
-            input.tracks.push_back(std::move(mix));  // agent requires a non-empty track set
+            input.tracks.push_back(std::move(mix));
         } else {
             const auto allTracks = tk::getAllTracks(edit_);
 
@@ -356,22 +356,15 @@ class AnalysisJob : public juce::Thread {
         if (request_.bpm > 0.0f)
             input.bpm = request_.bpm;
         input.genre = request_.genre;
-        input.question = request_.question;
 
-        // Deliver the measured data before the agent step. Measure-only callers
-        // (the mix-analysis modal) stop here; the LLM is opt-in.
+        // Agent interpretation is an upper-layer concern. This DAW service only
+        // renders and measures, then delivers the neutral data model.
         if (onMeasured_) {
             auto cb = onMeasured_;
-            auto snapshot = input;  // copy: input is still needed for the agent below
             juce::MessageManager::callAsync(
-                [cb, snapshot = std::move(snapshot)]() mutable { cb(std::move(snapshot)); });
+                [cb, input = std::move(input)]() mutable { cb(std::move(input)); });
         }
-        if (request_.skipAgent)
-            return {};  // clean, no-error Result; the measured Input went via onMeasured_
-
-        postProgress("Asking the mix analyst...");
-        MixAnalysisAgent agent;
-        return agent.generate(input);
+        return {};
     }
 
     TracktionEngineWrapper& engine_;
@@ -391,7 +384,7 @@ OfflineMixAnalysis::CancelToken OfflineMixAnalysis::start(TracktionEngineWrapper
                                                           CompletionFn onComplete,
                                                           MeasuredFn onMeasured) {
     if (engine.getEdit() == nullptr) {
-        MixAnalysisAgent::Result r;
+        Result r;
         r.hasError = true;
         r.error = "No active edit to analyse.";
         if (onComplete)
