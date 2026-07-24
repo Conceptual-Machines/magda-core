@@ -181,6 +181,7 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
                 provider->devicePath = target.devicePath;
                 provider->deviceId = target.devicePath.getDeviceId();
                 provider->paramIndex = target.paramIndex;
+                provider->formatter = formatParameterDisplayTextFromDevice;
                 stored->displayText = std::move(provider);
             }
             return *stored;

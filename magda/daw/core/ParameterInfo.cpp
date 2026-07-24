@@ -7,7 +7,8 @@
 
 namespace magda {
 
-juce::String ParameterInfo::DisplayTextProvider::format(float normalizedValue) const {
+juce::String formatParameterDisplayTextFromDevice(
+    const ParameterInfo::DisplayTextProvider& provider, float normalizedValue) {
     auto* engine = TrackManager::getInstance().getAudioEngine();
     if (!engine)
         return {};
@@ -15,16 +16,16 @@ juce::String ParameterInfo::DisplayTextProvider::format(float normalizedValue) c
     if (!bridge)
         return {};
 
-    auto path = devicePath;
-    if (!path.isValid() && deviceId != INVALID_DEVICE_ID)
-        path = TrackManager::getInstance().findDevicePath(deviceId);
+    auto path = provider.devicePath;
+    if (!path.isValid() && provider.deviceId != INVALID_DEVICE_ID)
+        path = TrackManager::getInstance().findDevicePath(provider.deviceId);
     if (!path.isValid())
         return {};
 
     auto* processor = bridge->getDeviceProcessor(path);
     if (!processor)
         return {};
-    return processor->formatParameterValue(paramIndex, normalizedValue);
+    return processor->formatParameterValue(provider.paramIndex, normalizedValue);
 }
 
 }  // namespace magda
