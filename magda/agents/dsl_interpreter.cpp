@@ -390,12 +390,15 @@ bool Interpreter::execute(const char* dslCode) {
 
     int succeeded = 0;
     int failed = 0;
+    juce::StringArray failureReasons;
 
     while (tok.hasMore()) {
         auto savedPos = tok.savePosition();
 
         if (!parseStatement(tok)) {
             // Log the error as a warning and skip to the next statement
+            DBG("MAGDA DSL: statement failed: " + ctx_.error);
+            failureReasons.add(ctx_.error);
             ctx_.addResult("[!] " + ctx_.error);
             ctx_.error.clear();
             ctx_.hasError = false;
@@ -425,7 +428,11 @@ bool Interpreter::execute(const char* dslCode) {
     DBG("MAGDA DSL: Execution complete");
 
     if (succeeded == 0 && failed > 0) {
-        ctx_.setError("All " + juce::String(failed) + " statement(s) failed");
+        // Surface the underlying reasons, not just the count, so failures like
+        // an unresolved plugin alias are diagnosable from the error alone.
+        auto reasons = failureReasons.joinIntoString("; ");
+        ctx_.setError("All " + juce::String(failed) + " statement(s) failed" +
+                      (reasons.isEmpty() ? juce::String() : ": " + reasons));
         return false;
     }
 

@@ -1189,7 +1189,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     void fillRowModel(AgentRow& row, const juce::String& desiredModel) {
         auto pid = rowProviderId(row);
         row.modelCombo.clear(juce::dontSendNotification);
-        if (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER) {
+        if (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER ||
+            pid == magda::provider::FAST_INFERENCE) {
             if (pid == magda::provider::LOCAL_SERVER) {
                 auto shared = Config::getInstance().getLocalServerModel();
                 if (!shared.empty()) {
@@ -1240,6 +1241,12 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             for (const auto& [pid, disp] : opts) {
                 row.providerCombo.addItem(disp, itemId++);
                 row.providerIds.push_back(pid);
+            }
+            // The on-device command model only handles structural command
+            // intents, so offer it as a provider for the Command row alone.
+            if (row.role == magda::role::COMMAND) {
+                row.providerCombo.addItem("Fast Inference (On-Device)", itemId++);
+                row.providerIds.push_back(magda::provider::FAST_INFERENCE);
             }
             selectRowProviderById(row, prevProvider);
             fillRowModel(row, prevModel);
@@ -1492,7 +1499,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             // Local providers carry no per-agent model - it resolves from the
             // loaded GGUF / shared local-server config at request time.
             const bool isLocal =
-                (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER);
+                (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER ||
+                 pid == magda::provider::FAST_INFERENCE);
             cfg.model = isLocal ? std::string{} : model.toStdString();
             // apiKey left empty - resolved from Cloud-tab credentials at request
             // time (per-agent key first, then per-provider credential).

@@ -1,6 +1,8 @@
 #include "command_agent.hpp"
 
 #include "../daw/core/Config.hpp"
+#include "../daw/core/LLMClientProvider.hpp"
+#include "command_model.hpp"
 #include "dsl_grammar.hpp"
 #include "dsl_interpreter.hpp"
 #include "internal_plugins.hpp"
@@ -9,8 +11,34 @@
 
 namespace magda {
 
+CommandAgent::CommandAgent(MagdaApi& api) : api_(api) {}
+CommandAgent::~CommandAgent() = default;
+
 const char* CommandAgent::getSystemPrompt() {
     return dsl::getToolDescription();
+}
+
+/** Offline path: the tiny on-device intent+slots model emits DSL directly —
+    no network, no LLM, sub-millisecond. Same DSL grammar as the LLM path, so
+    the caller feeds it straight into the interpreter → InstructionExecutor. */
+CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& message) {
+    GenerateResult result;
+    if (shouldStop_.load()) {
+        result.error = "Cancelled";
+        result.hasError = true;
+        return result;
+    }
+    if (!localModel_)
+        localModel_ = std::make_unique<CommandModel>();
+
+    result.dslOutput = localModel_->generate(message);
+    if (result.dslOutput.empty()) {
+        result.error = "Command model produced no output for this request.";
+        result.hasError = true;
+        return result;
+    }
+    DBG("MAGDA CommandAgent (fast_inference): " + juce::String(result.dslOutput));
+    return result;
 }
 
 /** Strip markdown code fences and surrounding prose from LLM output.
@@ -78,6 +106,9 @@ CommandAgent::GenerateResult CommandAgent::generate(const std::string& message) 
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig(role::COMMAND);
 
+    if (agentConfig.provider == provider::FAST_INFERENCE)
+        return generateLocal(message);
+
     if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
         if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
@@ -120,6 +151,14 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig(role::COMMAND);
+
+    // Offline model is instant and non-streaming — emit the whole DSL at once.
+    if (agentConfig.provider == provider::FAST_INFERENCE) {
+        auto local = generateLocal(message);
+        if (!local.hasError && onToken && !shouldStop_.load())
+            onToken(juce::String::fromUTF8(local.dslOutput.c_str()));
+        return local;
+    }
 
     if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);

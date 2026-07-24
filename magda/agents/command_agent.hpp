@@ -3,11 +3,13 @@
 #include <juce_core/juce_core.h>
 
 #include <atomic>
+#include <memory>
 #include <string>
 
 namespace magda {
 
 class MagdaApi;
+class CommandModel;
 
 /**
  * @brief Command agent — handles DAW operations via DSL generation.
@@ -18,7 +20,8 @@ class MagdaApi;
  */
 class CommandAgent {
   public:
-    explicit CommandAgent(MagdaApi& api) : api_(api) {}
+    explicit CommandAgent(MagdaApi& api);
+    ~CommandAgent();  // out-of-line: localModel_ holds an incomplete type here
 
     struct GenerateResult {
         std::string dslOutput;  // raw DSL text from the LLM
@@ -44,8 +47,12 @@ class CommandAgent {
     static const char* getSystemPrompt();
 
   private:
+    /** Run the offline on-device command model (provider::FAST_INFERENCE). */
+    GenerateResult generateLocal(const std::string& message);
+
     MagdaApi& api_;
     std::atomic<bool> shouldStop_{false};
+    std::unique_ptr<CommandModel> localModel_;
 };
 
 }  // namespace magda

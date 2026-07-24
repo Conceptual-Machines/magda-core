@@ -24,6 +24,10 @@ dsl_grammar.hpp
     llm_presets.cpp
     command_agent.hpp
     command_agent.cpp
+    command_model.hpp
+    command_model.cpp
+    command_model_data.hpp
+    command_model_data.cpp
     music_agent.hpp
     music_agent.cpp
     chord_agent.hpp

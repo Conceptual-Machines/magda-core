@@ -19,6 +19,9 @@ inline constexpr const char* DEEPSEEK = "deepseek";
 inline constexpr const char* OPENROUTER = "openrouter";
 inline constexpr const char* LLAMA_LOCAL = "llama_local";
 inline constexpr const char* LOCAL_SERVER = "local_server";
+// On-device tiny command model (magda/agents/command_model.*). Offline, instant,
+// free — no LLM call. Only meaningful for the COMMAND role.
+inline constexpr const char* FAST_INFERENCE = "fast_inference";
 }  // namespace provider
 
 inline constexpr const char* DEFAULT_LOCAL_SERVER_URL = "http://localhost:11434/v1";
