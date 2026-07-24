@@ -34,7 +34,6 @@
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
-#include "core/InternalDeviceKind.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -259,7 +258,7 @@ RoleAnalysisResult classifyDrumRole(const juce::File& file, double startSeconds,
 }
 
 bool isLegacyTeCompressorPluginId(const juce::String& pluginId) {
-    return magda::classifyInternalDevice(pluginId) == magda::InternalDeviceKind::TeCompressor;
+    return magda::daw::audio::internalPluginHasTag(pluginId, "legacy-te-compressor");
 }
 
 bool isDrumGridPluginId(const juce::String& pluginId) {
@@ -2030,7 +2029,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // handled by helper
     } else if (createImpulseResponseUI(device, *parent, uiCallbacks)) {
         // handled by helper
-    } else if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert) {
+    } else if (daw::audio::internalPluginHasTag(device.pluginId, "external-insert")) {
         createExternalInsertUI(device, *parent);
     } else if (!createMidiUtilityUI(device, *parent)) {
         createAnalyzerUI(device, *parent);

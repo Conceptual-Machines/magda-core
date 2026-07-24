@@ -7,7 +7,6 @@
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
-#include "core/InternalDeviceKind.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "four_osc_agent.hpp"
@@ -387,9 +386,9 @@ std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& 
             if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(pluginId)) {
                 displayName = spec->displayName;
                 description = spec->description;
-            } else if (const auto* meta = getInternalDeviceMetadataForPluginId(pluginId)) {
-                displayName = meta->displayName;
-                description = meta->description;
+            } else if (const auto* spec = daw::audio::findInternalPluginSpec(pluginId)) {
+                displayName = spec->displayName;
+                description = spec->description;
             }
             return std::make_unique<GenericSoundDesignAgent>(pluginId, displayName, description);
         }

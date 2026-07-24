@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "../../core/ChainRoutingModel.hpp"
-#include "../../core/InternalDeviceKind.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
@@ -1957,7 +1956,7 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
 
             // DrumGrid stores its inner chain state in pluginState as XML;
             // rehydrate it for detached/rack creation so pad assignments survive.
-            if (plugin && internalSpec->kind == InternalDeviceKind::DrumGrid &&
+            if (plugin && daw::audio::internalPluginHasTag(*internalSpec, "drum-grid") &&
                 device.pluginState.isNotEmpty()) {
                 if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
                     auto savedState = juce::ValueTree::fromXml(*xml);
@@ -2137,7 +2136,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                     track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
             }
 
-            if (plugin && internalSpec->kind == InternalDeviceKind::DrumGrid) {
+            if (plugin && daw::audio::internalPluginHasTag(*internalSpec, "drum-grid")) {
                 // DrumGrid: don't restore state here — defer until after rack
                 // wrapping. Restoring adds PLUGIN children (samplers) to the
                 // DrumGrid state, which confuses TE's rack graph builder.
@@ -2338,7 +2337,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
         // InsertPlugin::applyToBuffer's jassertfalse (dead stub), with no audio
         // routed. So never wrap it, even though it presents as an instrument.
         const bool isExternalInsert =
-            classifyInternalDevice(device.pluginId) == InternalDeviceKind::ExternalInsert;
+            daw::audio::internalPluginHasTag(device.pluginId, "external-insert");
         if (device.isInstrument && !isExternalInsert) {
             // Detect multi-output capability
             int numOutputChannels = 2;
@@ -2501,6 +2500,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
 te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeName,
                                                     const juce::String& savedPluginState) {
+    if (const auto* spec = daw::audio::findInternalPluginSpecForLoadType(xmlTypeName))
+        return daw::audio::createInternalPluginFromSpec(*spec, edit_, savedPluginState);
+
     if (savedPluginState.isNotEmpty()) {
         if (auto xml = juce::parseXML(savedPluginState)) {
             auto savedState = juce::ValueTree::fromXml(*xml);
@@ -2524,36 +2526,8 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
         return edit_.getPluginCache().createNewPlugin(pluginState);
     };
 
-    auto shouldUseTracktionStringFactory = [&]() {
-        if (daw::audio::compiled::findCompiledPluginSpec(xmlTypeName) != nullptr)
-            return false;
-
-        const auto* spec = daw::audio::findInternalPluginSpecForLoadType(xmlTypeName);
-        if (spec == nullptr)
-            return true;
-
-        switch (spec->kind) {
-            case InternalDeviceKind::TeEq:
-            case InternalDeviceKind::TeCompressor:
-            case InternalDeviceKind::TeReverb:
-            case InternalDeviceKind::TeDelay:
-            case InternalDeviceKind::TeChorus:
-            case InternalDeviceKind::TePhaser:
-            case InternalDeviceKind::TeLowpass:
-            case InternalDeviceKind::TePitchShift:
-            case InternalDeviceKind::TeImpulseResponse:
-            case InternalDeviceKind::TeVolumeAndPan:
-            case InternalDeviceKind::TeFourOsc:
-            case InternalDeviceKind::TeToneGenerator:
-            case InternalDeviceKind::TeLevelMeter:
-                return true;
-            default:
-                return false;
-        }
-    };
-
     te::Plugin::Ptr plugin;
-    if (shouldUseTracktionStringFactory())
+    if (daw::audio::compiled::findCompiledPluginSpec(xmlTypeName) == nullptr)
         plugin = edit_.getPluginCache().createNewPlugin(xmlTypeName, {});
 
     // For custom MAGDA plugins (analyzers, MIDI tools, etc.) the string overload
@@ -2561,23 +2535,6 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
     // through createCustomPlugin.
     if (!plugin)
         plugin = createFromValueTree();
-
-    // Override TE's default band freqs on a fresh EQ — the stock values cluster
-    // the four bands close together, so the curve looks like one bump instead
-    // of a useful low/low-mid/high-mid/high spread. Log-spaced defaults match
-    // the colour layout in EqualiserUI (Low / Mid 1 / Mid 2 / High).
-    // Values are raw Hz; route through setParameterFromHost like every other
-    // host-side write so the path is uniform across the codebase.
-    if (plugin && xmlTypeName == te::EqualiserPlugin::xmlTypeName) {
-        auto params = plugin->getAutomatableParameters();
-        const float defaultFreqs[4] = {100.0f, 500.0f, 3000.0f, 10000.0f};
-        for (int band = 0; band < 4; ++band) {
-            int freqIndex = band * 3;  // each band lays out as freq/gain/Q
-            if (freqIndex < params.size() && params[freqIndex])
-                params[freqIndex]->setParameterFromHost(defaultFreqs[band],
-                                                        juce::sendNotificationSync);
-        }
-    }
 
     return plugin;
 }

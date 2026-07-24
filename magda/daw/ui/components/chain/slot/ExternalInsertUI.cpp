@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "audio/AudioBridge.hpp"
-#include "core/InternalDeviceKind.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "themes/DarkTheme.hpp"
@@ -121,8 +121,8 @@ juce::String findPortConflict(const magda::ChainNodePath& myPath, te::InsertPlug
             if (!magda::isDevice(element))
                 continue;
             const auto& device = magda::getDevice(element);
-            if (device.bypassed || magda::classifyInternalDevice(device.pluginId) !=
-                                       magda::InternalDeviceKind::ExternalInsert)
+            if (device.bypassed ||
+                !magda::daw::audio::internalPluginHasTag(device.pluginId, "external-insert"))
                 continue;
             auto path = magda::ChainNodePath::topLevelDevice(track.id, device.id);
             if (path == myPath)

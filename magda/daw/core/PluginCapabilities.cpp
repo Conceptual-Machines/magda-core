@@ -1,7 +1,7 @@
 #include "PluginCapabilities.hpp"
 
 #include "AppPaths.hpp"
-#include "InternalDeviceKind.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -259,7 +259,7 @@ bool supportsExternalMidiInputRouting(const DeviceInfo& device) {
 }
 
 bool supportsMidiSidechainSource(const DeviceInfo& device) {
-    if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::Sidechain)
+    if (daw::audio::internalPluginHasTag(device.pluginId, "sidechain"))
         return true;
     return supportsMidiInputRouting(device);
 }

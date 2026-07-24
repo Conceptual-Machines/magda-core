@@ -421,8 +421,24 @@ foreach(_magda_daw_source IN LISTS _magda_daw_sources)
             message(FATAL_ERROR
                 "magda_daw source includes an agent header: ${_magda_daw_source_path}")
         endif()
+
+        # Core may query the opaque string-keyed registry seam, but it must
+        # never depend on a concrete device implementation. Device packs own
+        # those includes and contribute their specs through registerDevices().
+        if(_magda_daw_source_path MATCHES "/core/")
+            string(REGEX MATCHALL
+                "#[ \t]*include[ \t]*[<\"][^>\"]*audio/plugins/[^>\"]*Plugin\\.hpp"
+                _core_plugin_includes "${_magda_daw_source_text}")
+            if(_core_plugin_includes)
+                message(FATAL_ERROR
+                    "core source includes a concrete device header: "
+                    "${_magda_daw_source_path}\n${_core_plugin_includes}")
+            endif()
+        endif()
     endif()
 endforeach()
+unset(_core_plugin_include)
+unset(_core_plugin_includes)
 unset(_magda_daw_source_text)
 unset(_magda_daw_source_path)
 unset(_magda_daw_source)

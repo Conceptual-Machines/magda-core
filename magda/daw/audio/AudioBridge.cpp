@@ -7,7 +7,6 @@
 #include "../core/ChainRoutingModel.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/Config.hpp"
-#include "../core/InternalDeviceKind.hpp"
 #include "../core/ModulatorEngine.hpp"
 #include "../core/RackInfo.hpp"
 #include "../engine/PluginWindowManager.hpp"
@@ -15,7 +14,9 @@
 #include "AudioThumbnailManager.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
+#include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MidiInThruSync.hpp"
+#include "processors/ParameterDisplayTextProvider.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -124,6 +125,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
       automationPlayback_(*this, edit),
       automationRecording_(edit) {
+    installDeviceParameterDisplayTextProviderFactory();
+
     // Wire up async plugin load completion callback to notify UI
     pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
         TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
@@ -614,7 +617,7 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // External-insert routing changed (#1623): auto-enable any hardware port
     // the insert now references, and re-apply the MIDI feedback guard so the
     // send target's own input port is dropped from this track's routing.
-    if (classifyInternalDevice(device->pluginId) == InternalDeviceKind::ExternalInsert) {
+    if (daw::audio::internalPluginHasTag(device->pluginId, "external-insert")) {
         refreshInsertDeviceEnablement();
         midiInputRouter_.reapplyExternalInstrumentSendbackGuard(devicePath.trackId);
     }

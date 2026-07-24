@@ -7,7 +7,6 @@
 #include "../daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "../daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../daw/core/DeviceInfo.hpp"
-#include "../daw/core/InternalDeviceKind.hpp"
 #include "../daw/core/PluginAlias.hpp"
 #include "../daw/core/aliases/InternalPluginAliases.hpp"
 
@@ -108,26 +107,10 @@ inline void addAlias(InternalPluginInfo& entry, const juce::String& alias) {
     entry.aliases.push_back(trimmed);
 }
 
-inline InternalPluginVendor vendorFor(InternalDeviceKind kind) {
-    switch (kind) {
-        case InternalDeviceKind::TeEq:
-        case InternalDeviceKind::TeCompressor:
-        case InternalDeviceKind::TeReverb:
-        case InternalDeviceKind::TeDelay:
-        case InternalDeviceKind::TeChorus:
-        case InternalDeviceKind::TePhaser:
-        case InternalDeviceKind::TeLowpass:
-        case InternalDeviceKind::TePitchShift:
-        case InternalDeviceKind::TeImpulseResponse:
-        case InternalDeviceKind::TeVolumeAndPan:
-        case InternalDeviceKind::TeFourOsc:
-        case InternalDeviceKind::TeToneGenerator:
-        case InternalDeviceKind::TeLevelMeter:
-        case InternalDeviceKind::ExternalInsert:
-            return InternalPluginVendor::TracktionEngine;
-        default:
-            return InternalPluginVendor::Magda;
-    }
+inline InternalPluginVendor vendorFor(const daw::audio::InternalPluginSpec& spec) {
+    return daw::audio::internalPluginHasTag(spec, "tracktion-engine")
+               ? InternalPluginVendor::TracktionEngine
+               : InternalPluginVendor::Magda;
 }
 
 inline InternalPlugin deviceAiIdFor(const juce::String& pluginId) {
@@ -152,13 +135,7 @@ inline bool isGenericSoundGeneratorId(const juce::String& pluginId) {
         return false;
     if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(pluginId))
         return spec->isInstrument;
-    switch (classifyInternalDevice(pluginId)) {
-        case InternalDeviceKind::MutableElements:
-        case InternalDeviceKind::MutableRings:
-            return true;
-        default:
-            return false;
-    }
+    return daw::audio::internalPluginHasTag(pluginId, "mutable-instrument");
 }
 
 inline InternalPluginCapabilities capabilitiesFor(const juce::String& pluginId) {
@@ -212,7 +189,7 @@ inline InternalPluginInfo makeEntry(const juce::String& displayName, const juce:
 }
 
 inline void addExternalInsertVariants(std::vector<InternalPluginInfo>& entries) {
-    const auto* spec = daw::audio::findInternalPluginSpec(InternalDeviceKind::ExternalInsert);
+    const auto* spec = daw::audio::findInternalPluginSpecWithTag("external-insert");
     if (spec == nullptr || spec->pluginId == nullptr)
         return;
 
@@ -293,13 +270,14 @@ inline const std::vector<InternalPluginInfo>& getInternalPlugins() {
         for (const auto* spec : daw::audio::getAllInternalPluginSpecs()) {
             if (spec == nullptr || spec->pluginId == nullptr || spec->displayName == nullptr ||
                 spec->createMode == daw::audio::InternalPluginCreateMode::Unsupported ||
-                !spec->canCreateOnTrack || spec->kind == InternalDeviceKind::ExternalInsert)
+                !spec->canCreateOnTrack ||
+                daw::audio::internalPluginHasTag(*spec, "external-insert"))
                 continue;
 
             auto entry =
                 detail::makeEntry(spec->displayName, spec->pluginId,
                                   spec->isInstrument ? DeviceType::Instrument : DeviceType::Effect,
-                                  detail::vendorFor(spec->kind), spec->showInBrowser);
+                                  detail::vendorFor(*spec), spec->showInBrowser);
             for (int i = 0; i < spec->loadAliasCount; ++i) {
                 if (spec->loadAliases[i] != nullptr)
                     detail::addAlias(entry, spec->loadAliases[i]);

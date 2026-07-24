@@ -119,9 +119,9 @@ struct ParameterInfo {
     // Used by the UI formatter instead of computing from scale/range.
     std::vector<juce::String> valueTable;
 
-    // Live display text provider — queries the plugin through TrackManager
-    // at call time so the lookup is always safe (returns empty if device is
-    // gone). Preferred over valueTable when set — exact values, no quantization.
+    // Live display text provider. The owning device layer supplies the
+    // formatter, keeping this value type independent of the DAW/audio runtime.
+    // Preferred over valueTable when set — exact values, no quantization.
     // Shared so ParameterInfo copies remain cheap.
     struct DisplayTextProvider {
         using Formatter = juce::String (*)(const DisplayTextProvider&, float);
@@ -192,11 +192,12 @@ struct ParameterInfo {
     }
 };
 
-// DAW-side formatter injected into DisplayTextProvider instances that need a
-// live plugin lookup. Keeping the provider's dispatch inline prevents the
-// magda_types leaf archive from acquiring a link-time dependency on magda_daw.
-juce::String formatParameterDisplayTextFromDevice(
-    const ParameterInfo::DisplayTextProvider& provider, float normalizedValue);
+using ParameterDisplayTextProviderFactory =
+    std::shared_ptr<ParameterInfo::DisplayTextProvider> (*)(const ChainNodePath&, int, int);
+
+bool registerParameterDisplayTextProviderFactory(ParameterDisplayTextProviderFactory factory);
+std::shared_ptr<ParameterInfo::DisplayTextProvider> makeParameterDisplayTextProvider(
+    const ChainNodePath& devicePath, int deviceId, int paramIndex);
 
 struct ParameterNormalizedValue {
     float value = 0.0f;

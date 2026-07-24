@@ -1,7 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "audio/plugins/InternalPluginRegistry.hpp"
-#include "core/InternalDeviceKind.hpp"
 
 // Phase 1 of the External FX / External Instrument feature: the hardware insert
 // is registered as a single internal device kind (ExternalInsert) backed by
@@ -10,15 +9,14 @@
 
 using namespace magda;
 
-TEST_CASE("ExternalInsert classifies from the InsertPlugin xmlTypeName",
-          "[external-insert][device-kind]") {
-    REQUIRE(classifyInternalDevice("insert") == InternalDeviceKind::ExternalInsert);
-    // Case-insensitive, matching the rest of the classifier.
-    REQUIRE(classifyInternalDevice("Insert") == InternalDeviceKind::ExternalInsert);
+TEST_CASE("ExternalInsert resolves from its string id", "[external-insert][registry]") {
+    namespace audio = magda::daw::audio;
+    REQUIRE(audio::internalPluginHasTag("insert", "external-insert"));
+    REQUIRE(audio::internalPluginHasTag("Insert", "external-insert"));
 
-    const auto* meta = getInternalDeviceMetadata(InternalDeviceKind::ExternalInsert);
-    REQUIRE(meta != nullptr);
-    REQUIRE(juce::String(meta->displayName) == "External Insert");
+    const auto* spec = audio::findInternalPluginSpec("insert");
+    REQUIRE(spec != nullptr);
+    REQUIRE(juce::String(spec->displayName) == "External Insert");
 }
 
 TEST_CASE("ExternalInsert has a registry spec wired to te::InsertPlugin",
@@ -26,7 +24,7 @@ TEST_CASE("ExternalInsert has a registry spec wired to te::InsertPlugin",
     namespace audio = magda::daw::audio;
     namespace te = tracktion::engine;
 
-    const auto* byKind = audio::findInternalPluginSpec(InternalDeviceKind::ExternalInsert);
+    const auto* byKind = audio::findInternalPluginSpecWithTag("external-insert");
     REQUIRE(byKind != nullptr);
 
     SECTION("identity points at the TE insert plugin") {

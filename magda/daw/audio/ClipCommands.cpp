@@ -1,4 +1,4 @@
-#include "ClipCommands.hpp"
+#include "core/ClipCommands.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -6,19 +6,19 @@
 #include <array>
 #include <limits>
 
-#include "../audio/AudioBridge.hpp"
-#include "../audio/insert_capture/InsertRenderCaptureService.hpp"
-#include "../audio/plugins/DrumGridPlugin.hpp"
-#include "../audio/plugins/InsertCapturePlugin.hpp"
-#include "../audio/plugins/MagdaSamplerPlugin.hpp"
-#include "../audio/racks/InstrumentRackManager.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
-#include "ClipOperations.hpp"
-#include "Config.hpp"
-#include "ControlTarget.hpp"
-#include "TrackManager.hpp"
+#include "audio/AudioBridge.hpp"
+#include "audio/insert_capture/InsertRenderCaptureService.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/InsertCapturePlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/racks/InstrumentRackManager.hpp"
+#include "core/ClipOperations.hpp"
+#include "core/Config.hpp"
+#include "core/ControlTarget.hpp"
+#include "core/TrackManager.hpp"
 
 namespace magda {
 

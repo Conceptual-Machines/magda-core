@@ -177,12 +177,8 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
             // Utility gain rendering nonsense like "+80dB").
             if (!stored->displayText && device->format != PluginFormat::Internal &&
                 target.devicePath.getDeviceId() != INVALID_DEVICE_ID) {
-                auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
-                provider->devicePath = target.devicePath;
-                provider->deviceId = target.devicePath.getDeviceId();
-                provider->paramIndex = target.paramIndex;
-                provider->formatter = formatParameterDisplayTextFromDevice;
-                stored->displayText = std::move(provider);
+                stored->displayText = makeParameterDisplayTextProvider(
+                    target.devicePath, target.devicePath.getDeviceId(), target.paramIndex);
             }
             return *stored;
         }
