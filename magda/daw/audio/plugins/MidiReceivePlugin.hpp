@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "../../core/TypeIds.hpp"
+#include "plugins/DeviceServices.hpp"
 
 namespace magda {
 
@@ -29,7 +30,8 @@ namespace te = tracktion;
  */
 class MidiReceivePlugin : public te::Plugin {
   public:
-    MidiReceivePlugin(const te::PluginCreationInfo& info);
+    MidiReceivePlugin(const te::PluginCreationInfo& info,
+                      const daw::audio::DevicePluginDefaults::MidiReceive& defaults);
     ~MidiReceivePlugin() override;
 
     static const char* getPluginName() {

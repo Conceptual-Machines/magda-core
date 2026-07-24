@@ -8,6 +8,7 @@
 #include "../../music/ChordSuggestionEngine.hpp"
 #include "../../music/KeyModeHistogram.hpp"
 #include "../../music/ScaleDetector.hpp"
+#include "plugins/DeviceServices.hpp"
 
 namespace magda::daw::audio {
 
@@ -27,7 +28,7 @@ namespace te = tracktion::engine;
  */
 class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
   public:
-    MidiChordEnginePlugin(const te::PluginCreationInfo& info);
+    MidiChordEnginePlugin(const te::PluginCreationInfo& info, DeviceTrackContext* trackContext);
     ~MidiChordEnginePlugin() override;
 
     static const char* getPluginName() {
@@ -158,6 +159,8 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     }
 
   private:
+    DeviceTrackContext* trackContext_ = nullptr;
+
     // --- Audio-thread state (lock-free) ---
 
     // SPSC ring buffer for note events from audio thread → message thread

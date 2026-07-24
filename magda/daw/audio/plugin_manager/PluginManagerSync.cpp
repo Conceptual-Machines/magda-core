@@ -1334,7 +1334,8 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
             }
 
             // Create processor now that the plugin instance is ready
-            auto processor = createDeviceProcessorForPlugin(deviceId, plugin, {});
+            auto processor =
+                createDeviceProcessorForPlugin(deviceId, plugin, {}, &self.deviceTrackContext_);
 
             // Populate parameters on the DeviceInfo
             if (processor) {
@@ -2068,7 +2069,8 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
     if (!plugin)
         return;
 
-    auto processor = createDeviceProcessorForPlugin(deviceId, plugin, device.pluginId);
+    auto processor =
+        createDeviceProcessorForPlugin(deviceId, plugin, device.pluginId, &deviceTrackContext_);
 
     if (processor) {
         // Saved params (baseline) then native chunk (authoritative overlay) then
@@ -2289,7 +2291,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
     }
 
     if (plugin && !processor)
-        processor = createDeviceProcessorForPlugin(device.id, plugin, device.pluginId);
+        processor = createDeviceProcessorForPlugin(device.id, plugin, device.pluginId,
+                                                   &deviceTrackContext_);
 
     if (plugin) {
         // Update capability flags on the DeviceInfo in TrackManager

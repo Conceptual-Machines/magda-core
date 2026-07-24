@@ -8,13 +8,14 @@
 namespace magda {
 
 std::unique_ptr<DeviceProcessor> createDeviceProcessorForPlugin(
-    DeviceId deviceId, tracktion::engine::Plugin::Ptr plugin, const juce::String& pluginId) {
+    DeviceId deviceId, tracktion::engine::Plugin::Ptr plugin, const juce::String& pluginId,
+    daw::audio::DeviceTrackContext* trackContext) {
     if (!plugin)
         return nullptr;
 
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
         juce::ignoreUnused(ext);
-        auto processor = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
+        auto processor = std::make_unique<ExternalPluginProcessor>(deviceId, plugin, trackContext);
         processor->startParameterListening();
         return processor;
     }

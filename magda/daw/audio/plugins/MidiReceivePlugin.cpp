@@ -6,10 +6,14 @@ namespace magda {
 
 const char* MidiReceivePlugin::xmlTypeName = "midireceive";
 
-MidiReceivePlugin::MidiReceivePlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
+MidiReceivePlugin::MidiReceivePlugin(const te::PluginCreationInfo& info,
+                                     const daw::audio::DevicePluginDefaults::MidiReceive& defaults)
+    : te::Plugin(info) {
     auto um = getUndoManager();
-    sourceTrackIdValue.referTo(state, juce::Identifier("sourceTrackId"), um, INVALID_TRACK_ID);
-    replaceExistingMidiValue.referTo(state, juce::Identifier("replaceExistingMidi"), um, false);
+    sourceTrackIdValue.referTo(state, juce::Identifier("sourceTrackId"), um,
+                               defaults.sourceTrackId);
+    replaceExistingMidiValue.referTo(state, juce::Identifier("replaceExistingMidi"), um,
+                                     defaults.replaceExistingMidi);
     sourceTrackId_ = sourceTrackIdValue.get();
     replaceExistingMidi_ = replaceExistingMidiValue.get();
 }

@@ -264,6 +264,7 @@ target_sources(magda_juce_tests PRIVATE
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_drum_grid_serialization_juce.cpp
+    test_device_services_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp

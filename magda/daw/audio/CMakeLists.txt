@@ -384,6 +384,8 @@ target_sources(magda_daw PRIVATE
     session/SessionRecorder.cpp
     plugins/BaseDevicePack.cpp
     plugins/BaseDevicePack.hpp
+    plugins/DeviceServices.cpp
+    plugins/DeviceServices.hpp
     plugins/InternalPluginRegistry.cpp
     plugins/InternalPluginRegistry.hpp
     # Phase 1: Pure data managers
@@ -502,6 +504,23 @@ target_sources(magda_daw PRIVATE
     plugins/StepSequencerPlugin.hpp
     plugins/PolyStepSequencerPlugin.hpp
 )
+
+# Device implementations must receive project state through DeviceServices,
+# never reach upward into the DAW's singleton managers.
+file(GLOB_RECURSE _magda_device_sources CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/external/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/external/*.hpp"
+)
+foreach(_magda_daw_audio_source_path IN LISTS _magda_device_sources)
+    file(READ "${_magda_daw_audio_source_path}" _magda_daw_audio_source_text)
+    if(_magda_daw_audio_source_text MATCHES "(TrackManager|Config)::getInstance[ \t]*\\(")
+        message(FATAL_ERROR
+            "Device source calls a DAW singleton instead of DeviceServices: "
+            "${_magda_daw_audio_source_path}")
+    endif()
+endforeach()
 
 target_sources(magda_daw_app PRIVATE
     AudioEngineOptimizer.cpp

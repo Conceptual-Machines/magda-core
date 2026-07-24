@@ -6,6 +6,7 @@
 #include "TracktionHelpers.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
+#include "plugins/DeviceServices.hpp"
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustInstrumentPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
@@ -50,6 +51,32 @@ std::unique_ptr<DeviceProcessor> makeProcessor(DeviceId deviceId, te::Plugin::Pt
 template <typename PluginType>
 te::Plugin::Ptr createCustomPlugin(const te::PluginCreationInfo& info) {
     return new PluginType(info);
+}
+
+te::Plugin::Ptr createDrumGridPlugin(const te::PluginCreationInfo& info) {
+    auto services = getDeviceServices(info.edit);
+    jassert(services.deviceIdAllocator != nullptr);
+    return new DrumGridPlugin(info, *services.deviceIdAllocator);
+}
+
+te::Plugin::Ptr createMidiChordEnginePlugin(const te::PluginCreationInfo& info) {
+    auto services = getDeviceServices(info.edit);
+    return new MidiChordEnginePlugin(info, services.trackContext);
+}
+
+te::Plugin::Ptr createOscilloscopePlugin(const te::PluginCreationInfo& info) {
+    auto services = getDeviceServices(info.edit);
+    return new OscilloscopePlugin(info, services.defaults.oscilloscope);
+}
+
+te::Plugin::Ptr createSpectrumAnalyzerPlugin(const te::PluginCreationInfo& info) {
+    auto services = getDeviceServices(info.edit);
+    return new SpectrumAnalyzerPlugin(info, services.defaults.spectrum);
+}
+
+te::Plugin::Ptr createMidiReceivePlugin(const te::PluginCreationInfo& info) {
+    auto services = getDeviceServices(info.edit);
+    return new ::magda::MidiReceivePlugin(info, services.defaults.midiReceive);
 }
 
 te::Plugin::Ptr createFreshValueTreePlugin(te::Edit& edit, const char* xmlTypeName) {
@@ -370,7 +397,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .tags = kDrumGridTags,
          .tagCount = static_cast<int>(std::size(kDrumGridTags)),
          .createInEdit = createFreshValueTreePlugin,
-         .createCustomPlugin = createCustomPlugin<DrumGridPlugin>});
+         .createCustomPlugin = createDrumGridPlugin});
     add(registry,
         {.pluginId = MidiChordEnginePlugin::xmlTypeName,
          .displayName = "Chord Engine",
@@ -382,7 +409,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .tags = kChordEngineTags,
          .tagCount = static_cast<int>(std::size(kChordEngineTags)),
          .createInEdit = createValueTreePlugin,
-         .createCustomPlugin = createCustomPlugin<MidiChordEnginePlugin>});
+         .createCustomPlugin = createMidiChordEnginePlugin});
     add(registry,
         {.pluginId = ArpeggiatorPlugin::xmlTypeName,
          .displayName = "Arpeggiator",
@@ -490,7 +517,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .tags = kOscilloscopeTags,
          .tagCount = static_cast<int>(std::size(kOscilloscopeTags)),
          .createInEdit = createValueTreePlugin,
-         .createCustomPlugin = createCustomPlugin<OscilloscopePlugin>});
+         .createCustomPlugin = createOscilloscopePlugin});
     add(registry,
         {.pluginId = SpectrumAnalyzerPlugin::xmlTypeName,
          .displayName = "Spectrum Analyzer",
@@ -504,7 +531,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .tags = kSpectrumTags,
          .tagCount = static_cast<int>(std::size(kSpectrumTags)),
          .createInEdit = createValueTreePlugin,
-         .createCustomPlugin = createCustomPlugin<SpectrumAnalyzerPlugin>});
+         .createCustomPlugin = createSpectrumAnalyzerPlugin});
     add(registry,
         {.pluginId = LevelsPlugin::xmlTypeName,
          .displayName = "Levels",
@@ -573,7 +600,7 @@ void registerInfrastructureDevices(InternalPluginRegistry& registry) {
          .canCreateDetached = false,
          .canCreateOnTrack = false,
          .matchesPlugin = matches<::magda::MidiReceivePlugin>,
-         .createCustomPlugin = createCustomPlugin<::magda::MidiReceivePlugin>});
+         .createCustomPlugin = createMidiReceivePlugin});
     add(registry, {.pluginId = ::magda::SidechainMonitorPlugin::xmlTypeName,
                    .displayName = "Sidechain Monitor",
                    .browserCategory = "Utility",
