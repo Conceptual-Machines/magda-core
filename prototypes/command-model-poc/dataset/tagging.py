@@ -125,7 +125,8 @@ def tag(input_text: str, actions: list[dict]):
 
     elif intent == "add_plugin":
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
-        _tag_span(tags, lower, _alias_surface(a["plugin"]), "PLUGIN")
+        for act in actions:  # add_plugin may fan out over several plugins
+            _tag_span(tags, lower, _alias_surface(act["plugin"]), "PLUGIN")
 
     elif intent == "rename_track":
         _tag_span(tags, lower, a["new_name"], "NEW_NAME")  # tag NEW first (often distinct)
@@ -292,11 +293,13 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
             act["plugins"] = plugs
         return [act]
     if intent == "add_plugin":
-        plug = _alias_token(s["PLUGIN"][0]) if s.get("PLUGIN") else None
-        if not plug:
+        plugs = [_alias_token(p) for p in s.get("PLUGIN", [])]
+        if not plugs:
             plugs = _plugins_from_tokens(tokens)
-            plug = plugs[0] if plugs else None
-        return [{"type": "add_plugin", "name": name, "plugin": plug}]
+        if not plugs:
+            return [{"type": "add_plugin", "name": name, "plugin": None}]
+        # Fan out: one add_plugin action per plugin, like create_track.
+        return [{"type": "add_plugin", "name": name, "plugin": p} for p in plugs]
     if intent == "rename_track":
         return [{"type": "rename_track", "name": name,
                  "new_name": _canon_name(s.get("NEW_NAME", [""])[0])}]

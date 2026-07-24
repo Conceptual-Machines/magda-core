@@ -100,3 +100,4 @@
 {"lang": "en", "input": "apply the Shuffle groove at strength 0.7", "output": "groove.set(template=\"Shuffle\", strength=0.7)", "actions": [{"type": "groove_set", "template": "Shuffle", "strength": 0.7}]}
 {"lang": "en", "input": "which grooves are available", "output": "groove.list()", "actions": [{"type": "groove_list"}]}
 {"lang": "en", "input": "show me the groove list", "output": "groove.list()", "actions": [{"type": "groove_list"}]}
+{"lang": "en", "input": "add @serum and @ott to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}, {"type": "add_plugin", "name": "Bass", "plugin": "<ott>"}]}

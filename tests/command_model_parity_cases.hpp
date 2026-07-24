@@ -144,8 +144,10 @@ inline const ParityCase kParityCases[] = {
     {"apply the Shuffle groove at strength 0.7", "groove.set(template=\"Shuffle\", strength=0.7)"},
     {"which grooves are available", "groove.list()"},
     {"show me the groove list", "groove.list()"},
+    {"add @serum and @ott to the bass track",
+     "track(name=\"Bass\").fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")"},
 };
 
-inline constexpr int kNumParityCases = 102;
+inline constexpr int kNumParityCases = 103;
 
 }  // namespace magda::cmdmodel::test

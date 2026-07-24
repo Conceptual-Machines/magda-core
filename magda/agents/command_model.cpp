@@ -652,13 +652,18 @@ std::string CommandModel::generate(const std::string& text) const {
                 lines.push_back("track(name=" + q(name) + ").fx.add(name=" + q(plugs[i]) + ")");
         }
     } else if (intent == "add_plugin") {
-        std::string plug = s.has("PLUGIN") ? aliasToken(s.first("PLUGIN")) : "";
-        if (plug.empty()) {
-            auto plugs = pluginsFromTokens(tokens);
-            if (!plugs.empty())
-                plug = plugs[0];
+        std::vector<std::string> plugs;
+        for (const auto& pl : s.list("PLUGIN"))
+            plugs.push_back(aliasToken(pl));
+        if (plugs.empty())
+            plugs = pluginsFromTokens(tokens);
+        if (plugs.empty()) {
+            // Match Python q(None) -> "None" when nothing resolves.
+            lines.push_back(trackRef() + ".fx.add(name=" + q("None") + ")");
+        } else {
+            for (const auto& p : plugs)  // fan out, one fx.add per plugin
+                lines.push_back(trackRef() + ".fx.add(name=" + q(p) + ")");
         }
-        lines.push_back(trackRef() + ".fx.add(name=" + q(plug) + ")");
     } else if (intent == "rename_track") {
         lines.push_back(trackRef() + ".track.set(name=" + q(canonName(s.first("NEW_NAME"))) + ")");
     } else if (intent == "delete_track") {
