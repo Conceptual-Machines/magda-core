@@ -1,5 +1,7 @@
 #include "command_model.hpp"
 
+#include <juce_core/juce_core.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -587,6 +589,15 @@ CommandModel::Prediction CommandModel::predict(const std::string& text) const {
 
 std::string CommandModel::generate(const std::string& text) const {
     Prediction p = predict(text);
+
+    // Perception log: shows exactly how each word was tagged, so a surprising
+    // DSL (e.g. a plugin read as a track name) is diagnosable at a glance.
+    juce::String tagged;
+    for (size_t i = 0; i < p.tokens.size(); ++i)
+        tagged += (i ? " " : "") + juce::String(p.tokens[i]) + "/" + juce::String(p.tags[i]);
+    DBG("MAGDA CommandModel: in=\"" + juce::String(text) + "\" intent=" + juce::String(p.intent) +
+        " [" + tagged + "]");
+
     if (p.tokens.empty())
         return "";
 
