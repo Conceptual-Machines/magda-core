@@ -38,8 +38,7 @@ target_sources(magda_daw PRIVATE
     AutomationCommands.cpp
     ClipLaneFlattener.cpp
     MidiNoteCommands.cpp
-    ParameterInfo.cpp
-    ParameterUtils.cpp
+    ParameterInfo.cpp  # DisplayTextProvider glue (TrackManager/DeviceProcessor); stays in magda_daw
     StringTable.cpp
     ParameterDetector.cpp
     PresetManager.cpp
@@ -75,7 +74,6 @@ target_sources(magda_daw PRIVATE
     GridDivision.hpp
     AppPaths.hpp
     UIScale.hpp
-    DeviceInfo.hpp
     DeviceUiContext.hpp
     ViewModeState.hpp
     ViewModeEvents.hpp
@@ -110,19 +108,12 @@ target_sources(magda_daw PRIVATE
     MidiNoteCommands.hpp
     ChordAnnotationCommands.hpp
     ChordProgressionConverter.hpp
-    MacroInfo.hpp
-    ModInfo.hpp
-    ParameterInfo.hpp
     ParameterDetector.hpp
-    ParameterUtils.hpp
-    TempoUtils.hpp
-    TechnicalText.hpp
     AutomationTypes.hpp
     AutomationInfo.hpp
     AutomationManager.hpp
     PresetManager.hpp
     DrumkitManager.hpp
-    KitRow.hpp
     PluginPreferences.hpp
     PluginCapabilities.hpp
     PluginPresetScanner.hpp
