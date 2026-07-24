@@ -123,6 +123,12 @@ def gen_create_named(r: random.Random):
         f"new {desc} track called {name}",
         f"spin up a {desc} track named {name}",
         f"add a new {desc} track called {name}",
+        f"set up a {desc} track and label it {name}",
+        f"set up a {desc} track and call it {name}",
+        f"add a {desc} track and name it {name}",
+        f"create a {desc} track and label it {name}",
+        f"make a {desc} track and call it {name}",
+        f"new {desc} track, label it {name}",
     ]
     return r.choice(templates), [{"type": "create_track", "name": name}]
 
@@ -144,8 +150,74 @@ def gen_create_with_plugins(r: random.Random):
     return r.choice(templates), [{"type": "create_track", "name": name, "plugins": list(tokens)}]
 
 
+def gen_create_rack(r: random.Random):
+    """Create a rack, optionally on a named track and optionally pre-filled with
+    devices. Empty name -> the selected track (interpreter targets selection).
+    Devices chain onto rack.new so they land inside the rack."""
+    on_track = r.random() < 0.5
+    name = r.choice(TRACK_NAMES) if on_track else ""
+    action = {"type": "create_rack", "name": name}
+
+    if r.random() < 0.6:
+        aliases = [r.choice(PLUGIN_ALIASES)]
+        if r.random() < 0.4:
+            aliases.append(r.choice([a for a in PLUGIN_ALIASES if a != aliases[0]]))
+        surfaces, tokens = zip(*(_alias_pair(a) for a in aliases))
+        action["plugins"] = list(tokens)
+        joined = " and ".join(surfaces)
+        if on_track:
+            templates = [
+                f"create a rack with {joined} on the {name.lower()} track",
+                f"add a rack with {joined} to {name}",
+                f"make a parallel rack with {joined} on {name}",
+                f"new rack on {name} with {joined}",
+            ]
+        else:
+            templates = [
+                f"create a rack with {joined}",
+                f"add a rack with {joined}",
+                f"make a parallel rack with {joined}",
+                f"new rack with {joined}",
+            ]
+    else:
+        if on_track:
+            templates = [
+                f"add a rack to the {name.lower()} track",
+                f"create a rack on {name}",
+                f"put a rack on the {name.lower()} track",
+                f"new rack on the {name.lower()} track",
+            ]
+        else:
+            templates = [
+                "create a rack",
+                "add a rack",
+                "make a new rack",
+                "add a parallel rack",
+                "create a new rack",
+            ]
+    return r.choice(templates), [action]
+
+
 def gen_add_plugin(r: random.Random):
     name = r.choice(TRACK_NAMES)
+    # ~30% of the time add two plugins at once. This is deliberately kept
+    # WITHOUT the word "rack" so the model separates "add @a and @b to X"
+    # (add_plugin, one fx.add per plugin) from "add a rack with @a and @b to X"
+    # (create_rack). The disambiguating signal is the word "rack".
+    if r.random() < 0.3:
+        aliases = [r.choice(PLUGIN_ALIASES)]
+        aliases.append(r.choice([a for a in PLUGIN_ALIASES if a != aliases[0]]))
+        surfaces, tokens = zip(*(_alias_pair(a) for a in aliases))
+        joined = " and ".join(surfaces)
+        templates = [
+            f"add {joined} to the {name.lower()} track",
+            f"put {joined} on {name}",
+            f"load {joined} on the {name.lower()} track",
+            f"insert {joined} on {name}",
+        ]
+        actions = [{"type": "add_plugin", "name": name, "plugin": t} for t in tokens]
+        return r.choice(templates), actions
+
     at, token = _alias_pair(r.choice(PLUGIN_ALIASES))
     templates = [
         f"add {at} to the {name.lower()} track",
@@ -232,6 +304,10 @@ def gen_set_color(r: random.Random):
         f"color the {name.lower()} track {cw}",
         f"set {name} colour to {cw}",
         f"color code {name.lower()} {cw}",
+        f"make the {name.lower()} track {cw}",
+        f"turn the {name.lower()} track {cw}",
+        f"set the {name.lower()} track to {cw}",
+        f"paint {name} {cw}",
     ]
     return r.choice(templates), [{"type": "set_track_color", "name": name, "colour": hexv}]
 
@@ -315,10 +391,13 @@ def gen_select_clips_longer_than(r: random.Random):
 def gen_select_clips_shorter_than(r: random.Random):
     name = r.choice(TRACK_NAMES)
     bars = r.choice(CLIP_BAR_VALUES)
+    bw = "bar" if bars == 1 else "bars"
     templates = [
-        f"select clips shorter than {bars} bars on {name}",
-        f"select all clips under {bars} bars in the {name.lower()} track",
-        f"highlight regions shorter than {bars} bars on {name}",
+        f"select clips shorter than {bars} {bw} on {name}",
+        f"select all clips under {bars} {bw} in the {name.lower()} track",
+        f"highlight regions shorter than {bars} {bw} on {name}",
+        f"select clips under {bars} {bw} on {name}",
+        f"select clips less than {bars} {bw} long in {name}",
     ]
     return r.choice(templates), [{"type": "select_clips_shorter_than", "name": name, "bars": bars}]
 
@@ -423,6 +502,8 @@ def gen_notes_set_velocity(r: random.Random):
         f"set the note velocity on {name} to {v}",
         f"set velocity of the {name.lower()} notes to {v}",
         f"make the {name.lower()} notes velocity {v}",
+        f"set the {name.lower()} note velocity to {v}",
+        f"change the {name.lower()} note velocity to {v}",
     ]
     return r.choice(templates), [{"type": "notes_set_velocity", "name": name, "value": v}]
 
@@ -433,6 +514,9 @@ def gen_notes_resize(r: random.Random):
     templates = [
         f"set the note length on {name} to {ln} beats",
         f"resize the {name.lower()} notes to {ln} beats",
+        f"set the {name.lower()} note length to {ln} beats",
+        f"make the {name.lower()} notes {ln} beats long",
+        f"change the {name.lower()} note length to {ln} beats",
     ]
     return r.choice(templates), [{"type": "notes_resize", "name": name, "length": ln}]
 
@@ -454,6 +538,7 @@ def gen_notes_set_pitch(r: random.Random):
     templates = [
         f"set the note pitch on {name} to {pitch}",
         f"set the {name.lower()} notes to {pitch}",
+        f"set the {name.lower()} note pitch to {pitch}",
     ]
     return r.choice(templates), [{"type": "notes_set_pitch", "name": name, "pitch": pitch}]
 
@@ -495,19 +580,33 @@ def gen_groove_set(r: random.Random):
     templates = [
         f"set the groove to {template} with strength {strength}",
         f"apply the {template} groove at strength {strength}",
+        f"use the {template} groove at strength {strength}",
+        f"use the {template} groove with strength {strength}",
+        f"set groove {template} strength {strength}",
+        f"apply {template} at {strength} strength",
     ]
     return r.choice(templates), [{"type": "groove_set", "template": template, "strength": strength}]
 
 
 def gen_groove_list(r: random.Random):
-    return r.choice(["list the available grooves", "what grooves are available",
-                     "show me the groove templates"]), [{"type": "groove_list"}]
+    # Combinatorial phrasings so dedup keeps plenty of uniques and this rare
+    # (parameter-less) intent actually trains. Kept general so it generalises
+    # to the hand-authored testset phrasings without memorising them.
+    verb = r.choice(["list", "show", "show me", "display", "what are",
+                     "which", "give me"])
+    obj = r.choice(["grooves", "the grooves", "groove templates",
+                    "the groove templates", "available grooves",
+                    "groove presets", "the groove list", "all grooves"])
+    tail = r.choice(["", "", " available", " do we have", " are there"])
+    text = f"{verb} {obj}{tail}".strip()
+    return text, [{"type": "groove_list"}]
 
 
 GENERATORS = [
     (gen_create_track, 0.08),
     (gen_create_named, 0.05),
     (gen_create_with_plugins, 0.08),
+    (gen_create_rack, 0.06),
     (gen_add_plugin, 0.09),
     (gen_rename_track, 0.05),
     (gen_delete_track, 0.04),
@@ -540,7 +639,7 @@ GENERATORS = [
     (gen_notes_select_velocity_above, 0.015),
     (gen_notes_select_velocity_below, 0.015),
     (gen_groove_set, 0.02),
-    (gen_groove_list, 0.01),
+    (gen_groove_list, 0.02),
 ]
 
 

@@ -146,8 +146,14 @@ inline const ParityCase kParityCases[] = {
     {"show me the groove list", "groove.list()"},
     {"add @serum and @ott to the bass track",
      "track(name=\"Bass\").fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")"},
+    {"create a rack", "track(name=\"\").rack.new()"},
+    {"add a rack to the bass track", "track(name=\"Bass\").rack.new()"},
+    {"create a rack with @serum and @fm_0",
+     "track(name=\"\").rack.new().fx.add(name=\"<serum>\").fx.add(name=\"<fm_0>\")"},
+    {"create a rack with @serum on drums",
+     "track(name=\"Drums\").rack.new().fx.add(name=\"<serum>\")"},
 };
 
-inline constexpr int kNumParityCases = 103;
+inline constexpr int kNumParityCases = 107;
 
 }  // namespace magda::cmdmodel::test

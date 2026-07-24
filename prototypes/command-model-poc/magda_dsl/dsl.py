@@ -42,6 +42,15 @@ def render_action(a: dict) -> list[str]:
         lines += [f'track(name={q(a["name"])}).fx.add(name={q(p)})' for p in plugins[1:]]
         return lines
 
+    if t == "create_rack":
+        # A rack goes on a track; devices chain onto rack.new so they land
+        # inside the rack chain (interpreter routes fx.add into the active
+        # chain). All devices stay on ONE line for that reason.
+        line = f'{_track_ref(a)}.rack.new()'
+        for p in a.get("plugins", []):
+            line += f'.fx.add(name={q(p)})'
+        return [line]
+
     if t == "add_plugin":
         return [f'{_track_ref(a)}.fx.add(name={q(a["plugin"])})']
 

@@ -651,6 +651,18 @@ std::string CommandModel::generate(const std::string& text) const {
             for (size_t i = 1; i < plugs.size(); ++i)
                 lines.push_back("track(name=" + q(name) + ").fx.add(name=" + q(plugs[i]) + ")");
         }
+    } else if (intent == "create_rack") {
+        // rack.new on the track (empty name -> selection); devices chain onto
+        // rack.new so the interpreter routes them inside the rack chain.
+        std::string line = trackRef() + ".rack.new()";
+        std::vector<std::string> plugs;
+        for (const auto& pl : s.list("PLUGIN"))
+            plugs.push_back(aliasToken(pl));
+        if (plugs.empty())
+            plugs = pluginsFromTokens(tokens);
+        for (const auto& p : plugs)
+            line += ".fx.add(name=" + q(p) + ")";
+        lines.push_back(line);
     } else if (intent == "add_plugin") {
         std::vector<std::string> plugs;
         for (const auto& pl : s.list("PLUGIN"))

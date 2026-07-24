@@ -118,7 +118,7 @@ def tag(input_text: str, actions: list[dict]):
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
         _tag_value(tags, lower, a["bar"])
 
-    elif intent == "create_track":
+    elif intent in ("create_track", "create_rack"):
         _tag_span(tags, lower, a["name"], "TRACK_NAME")
         for tok in a.get("plugins", []):
             _tag_span(tags, lower, _alias_surface(tok), "PLUGIN")
@@ -284,8 +284,8 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
     if not name:
         name = _track_name_from_tokens(tokens)
 
-    if intent == "create_track":
-        act = {"type": "create_track", "name": name}
+    if intent in ("create_track", "create_rack"):
+        act = {"type": intent, "name": name}
         plugs = [_alias_token(p) for p in s.get("PLUGIN", [])]
         if not plugs:
             plugs = _plugins_from_tokens(tokens)
