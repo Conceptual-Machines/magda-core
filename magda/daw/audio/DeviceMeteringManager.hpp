@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "../core/ChainNodePath.hpp"
+#include "audio/plugins/DeviceServices.hpp"
 
 namespace magda {
 
@@ -28,7 +29,7 @@ class PluginManager;
  * - getLatestLevels(): called from message thread (UI)
  * - Static editMap_: protected by editMapLock_
  */
-class DeviceMeteringManager {
+class DeviceMeteringManager : public daw::audio::DeviceMeteringContext {
   public:
     DeviceMeteringManager() = default;
     ~DeviceMeteringManager() = default;
@@ -125,23 +126,8 @@ class DeviceMeteringManager {
     void ensureEntry(const ChainNodePath& devicePath);
     void ensureEntry(DeviceId deviceId);
 
-    struct RealtimeTapStorage {
-        std::atomic<float> peakL{0.f};
-        std::atomic<float> peakR{0.f};
-        std::atomic<float> gainLinear{1.0f};
-    };
-
-    struct RealtimeTap {
-        std::shared_ptr<RealtimeTapStorage> storage;
-        std::atomic<float>* peakL = nullptr;
-        std::atomic<float>* peakR = nullptr;
-        std::atomic<float>* gainLinear = nullptr;
-
-        bool isValid() const {
-            return storage != nullptr && peakL != nullptr && peakR != nullptr &&
-                   gainLinear != nullptr;
-        }
-    };
+    using RealtimeTapStorage = daw::audio::DeviceMeteringTapStorage;
+    using RealtimeTap = daw::audio::DeviceMeteringTap;
 
     /**
      * @brief Get stable atomic endpoints for audio-thread owned metering.
@@ -150,8 +136,8 @@ class DeviceMeteringManager {
      * removeMeasurer() and clear() can drop manager entries without invalidating
      * an already-wired audio-thread tap.
      */
-    RealtimeTap getRealtimeTap(const ChainNodePath& devicePath);
-    RealtimeTap getRealtimeTap(DeviceId deviceId);
+    RealtimeTap getRealtimeTap(const ChainNodePath& devicePath) override;
+    RealtimeTap getRealtimeTap(DeviceId deviceId) override;
 
     /**
      * @brief Directly set peak levels for a rack (bypasses LevelMeasurer)
@@ -173,9 +159,10 @@ class DeviceMeteringManager {
      */
     void clear();
 
-    // Static per-Edit accessor (for TE graph builder to find us without MAGDA headers)
+    // Tracktion graph-builder composition seam. Device plugins receive the
+    // narrower DeviceMeteringContext through DeviceServices instead.
     static DeviceMeteringManager* getInstanceForEdit(te::Edit& edit);
-    static void registerForEdit(te::Edit& edit, DeviceMeteringManager* mgr);
+    static void registerForEdit(te::Edit& edit, DeviceMeteringManager* manager);
     static void unregisterForEdit(te::Edit& edit);
 
   private:

@@ -4,7 +4,6 @@
 
 namespace magda {
 
-// Static members
 std::map<te::Edit*, DeviceMeteringManager*> DeviceMeteringManager::editMap_;
 juce::CriticalSection DeviceMeteringManager::editMapLock_;
 
@@ -211,18 +210,18 @@ void DeviceMeteringManager::clear() {
 }
 
 DeviceMeteringManager* DeviceMeteringManager::getInstanceForEdit(te::Edit& edit) {
-    juce::ScopedLock sl(editMapLock_);
-    auto it = editMap_.find(&edit);
+    juce::ScopedLock lock(editMapLock_);
+    const auto it = editMap_.find(&edit);
     return it != editMap_.end() ? it->second : nullptr;
 }
 
-void DeviceMeteringManager::registerForEdit(te::Edit& edit, DeviceMeteringManager* mgr) {
-    juce::ScopedLock sl(editMapLock_);
-    editMap_[&edit] = mgr;
+void DeviceMeteringManager::registerForEdit(te::Edit& edit, DeviceMeteringManager* manager) {
+    juce::ScopedLock lock(editMapLock_);
+    editMap_[&edit] = manager;
 }
 
 void DeviceMeteringManager::unregisterForEdit(te::Edit& edit) {
-    juce::ScopedLock sl(editMapLock_);
+    juce::ScopedLock lock(editMapLock_);
     editMap_.erase(&edit);
 }
 

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <atomic>
+#include <memory>
+
+#include "core/ChainNodePath.hpp"
 #include "core/TypeIds.hpp"
 
 namespace tracktion {
@@ -27,6 +31,31 @@ class DeviceTrackContext {
                                                    float value) = 0;
 };
 
+struct DeviceMeteringTapStorage {
+    std::atomic<float> peakL{0.0f};
+    std::atomic<float> peakR{0.0f};
+    std::atomic<float> gainLinear{1.0f};
+};
+
+struct DeviceMeteringTap {
+    std::shared_ptr<DeviceMeteringTapStorage> storage;
+    std::atomic<float>* peakL = nullptr;
+    std::atomic<float>* peakR = nullptr;
+    std::atomic<float>* gainLinear = nullptr;
+
+    bool isValid() const {
+        return storage != nullptr && peakL != nullptr && peakR != nullptr && gainLinear != nullptr;
+    }
+};
+
+class DeviceMeteringContext {
+  public:
+    virtual ~DeviceMeteringContext() = default;
+
+    virtual DeviceMeteringTap getRealtimeTap(const ChainNodePath& devicePath) = 0;
+    virtual DeviceMeteringTap getRealtimeTap(DeviceId deviceId) = 0;
+};
+
 struct DevicePluginDefaults {
     struct Oscilloscope {
         float timebaseMs = 10.0f;
@@ -47,6 +76,7 @@ struct DevicePluginDefaults {
 struct DeviceServices {
     DeviceIdAllocator* deviceIdAllocator = nullptr;
     DeviceTrackContext* trackContext = nullptr;
+    DeviceMeteringContext* meteringContext = nullptr;
     DevicePluginDefaults defaults;
 };
 

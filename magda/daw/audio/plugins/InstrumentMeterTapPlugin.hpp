@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "../../core/ChainNodePath.hpp"
-#include "../DeviceMeteringManager.hpp"
+#include "plugins/DeviceServices.hpp"
 
 namespace magda::daw::audio {
 
@@ -23,7 +23,8 @@ namespace te = tracktion::engine;
  */
 class InstrumentMeterTapPlugin : public te::Plugin {
   public:
-    explicit InstrumentMeterTapPlugin(const te::PluginCreationInfo& info);
+    InstrumentMeterTapPlugin(const te::PluginCreationInfo& info,
+                             DeviceMeteringContext* meteringContext);
     ~InstrumentMeterTapPlugin() override;
 
     static const char* getPluginName() {
@@ -80,8 +81,9 @@ class InstrumentMeterTapPlugin : public te::Plugin {
     std::atomic<std::atomic<float>*> peakL_{nullptr};
     std::atomic<std::atomic<float>*> peakR_{nullptr};
     std::atomic<std::atomic<float>*> gainLinear_{nullptr};
-    std::shared_ptr<DeviceMeteringManager::RealtimeTapStorage> tapStorage_;
-    std::vector<std::shared_ptr<DeviceMeteringManager::RealtimeTapStorage>> retiredTapStorage_;
+    DeviceMeteringContext* meteringContext_ = nullptr;
+    std::shared_ptr<DeviceMeteringTapStorage> tapStorage_;
+    std::vector<std::shared_ptr<DeviceMeteringTapStorage>> retiredTapStorage_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InstrumentMeterTapPlugin)
 };
