@@ -1228,6 +1228,8 @@ bool Interpreter::executeAddFx(const Params& params) {
     if (fxName.startsWith("<") && fxName.endsWith(">"))
         fxName = fxName.substring(1, fxName.length() - 1);
 
+    DBG("MAGDA DSL fx.add: name=\"" + fxName + "\" track=" + juce::String(ctx_.currentTrackId));
+
     // --- Internal plugin lookup ---
     // Built-in plugins come from the audio registries through internal_plugins.hpp.
     // Display names, IDs and registry compatibility aliases are all accepted.
@@ -1239,14 +1241,25 @@ bool Interpreter::executeAddFx(const Params& params) {
         device.deviceType = match->deviceType;
         device.isInstrument = (match->deviceType == DeviceType::Instrument);
 
+        DBG("MAGDA DSL fx.add: resolved internal '" + match->displayName + "' (pluginId=" +
+            match->pluginId + ", instrument=" + (device.isInstrument ? "yes" : "no") + ")");
+
         auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
         if (deviceId == INVALID_DEVICE_ID) {
-            ctx_.setError("Failed to add internal FX '" + fxName + "' to track");
+            juce::String why = "Failed to add internal device '" + match->displayName +
+                               "' to track " + juce::String(ctx_.currentTrackId);
+            if (device.isInstrument)
+                why += " (track cannot host an instrument)";
+            DBG("MAGDA DSL fx.add: " + why);
+            ctx_.setError(why);
             return false;
         }
-        ctx_.addResult("Added internal FX '" + match->displayName + "'");
+        ctx_.addResult("Added internal device '" + match->displayName + "'");
         return true;
     }
+
+    DBG("MAGDA DSL fx.add: '" + fxName +
+        "' not found in internal registry; trying scanned plugins");
 
     // --- External plugin lookup via KnownPluginList ---
     auto* engine = api_.tracks().getAudioEngine();

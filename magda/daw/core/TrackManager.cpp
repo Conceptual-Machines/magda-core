@@ -1993,7 +1993,9 @@ void TrackManager::seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePat
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
         if (!track->canHostInstrument() && device.isInstrument) {
-            DBG("Cannot add instrument plugin to non-instrument track");
+            DBG("Cannot add instrument '" << device.name << "' to track " << trackId
+                                          << " (type=" << static_cast<int>(track->type)
+                                          << " cannot host an instrument)");
             return INVALID_DEVICE_ID;
         }
         if (track->type == TrackType::Master &&
@@ -2017,7 +2019,9 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
         if (!track->canHostInstrument() && device.isInstrument) {
-            DBG("Cannot add instrument plugin to non-instrument track");
+            DBG("Cannot add instrument '" << device.name << "' to track " << trackId
+                                          << " (type=" << static_cast<int>(track->type)
+                                          << " cannot host an instrument)");
             return INVALID_DEVICE_ID;
         }
         if (track->type == TrackType::Master &&
