@@ -152,14 +152,17 @@ TEST_CASE("pruneMissingPlugins preserves entries on an unavailable external volu
     list.addType(makeDesc("ExternalVST3", external.pluginPath));
     list.addType(makeDesc("UninstalledLocalVST3", makeAbsentAbsolutePath("Uninstalled.vst3")));
 
-    juce::String probedRoot;
+    bool probedExternalRoot = false;
     const int removed = TracktionEngineWrapper::pruneMissingPlugins(
-        list, formatManager, [&probedRoot](const juce::String& root) {
-            probedRoot = root;
-            return false;
+        list, formatManager, [&external, &probedExternalRoot](const juce::String& root) {
+            if (root == external.volumeRoot) {
+                probedExternalRoot = true;
+                return false;
+            }
+            return true;
         });
 
-    CHECK(probedRoot == external.volumeRoot);
+    CHECK(probedExternalRoot);
     CHECK(removed == 1);
     CHECK(listContainsName(list, "ExternalVST3"));
     CHECK_FALSE(listContainsName(list, "UninstalledLocalVST3"));
