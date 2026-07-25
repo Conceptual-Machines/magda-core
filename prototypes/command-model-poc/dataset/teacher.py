@@ -47,7 +47,9 @@ def _load_cache(path):
 from dataset.tagging import _spans, roundtrip_ok, tag
 
 API_URL = "https://api.deepseek.com/chat/completions"
-DEFAULT_MODEL = "deepseek-chat"
+# "deepseek-chat" was retired — the API now serves deepseek-v4-pro /
+# deepseek-v4-flash and 400s on the old name. Flash is plenty for paraphrasing.
+DEFAULT_MODEL = "deepseek-v4-flash"
 
 _SYSTEM = (
     "You rewrite short digital-audio-workstation (DAW) commands the way a real "
@@ -103,6 +105,24 @@ def _prompt(nl: str, actions: list[dict], n: int, typo: bool = False) -> str:
     )
 
 
+_reported = set()
+_report_lock = threading.Lock()
+
+
+def _report_once(msg: str):
+    """Print each distinct API failure once.
+
+    Everything below used to be swallowed by the blanket except, so a retired
+    model name or a bad key looked exactly like "the teacher had nothing to
+    say" — a whole run would burn its calls and quietly yield zero rows.
+    """
+    with _report_lock:
+        if msg in _reported:
+            return
+        _reported.add(msg)
+    print(f"  ! teacher API error — {msg}")
+
+
 def _call(prompt: str, key: str, model: str, temperature: float, retries: int = 3) -> list[str]:
     body = json.dumps({
         "model": model,
@@ -128,11 +148,22 @@ def _call(prompt: str, key: str, model: str, temperature: float, retries: int = 
             else:
                 out = []
             return [s for s in out if isinstance(s, str)]
+        # HTTPError subclasses OSError, so it must be caught first or the
+        # blanket clause below hides it. A 4xx is a bug (retired model name,
+        # bad key), not weather: retrying only burns time and buries the cause.
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:
+                _report_once(f"HTTP {e.code}: {e.read()[:200].decode('utf-8', 'replace')}")
+                return []
+            if attempt == retries - 1:
+                return []
+            time.sleep(2.0 * (attempt + 1))
         # OSError: URLError/ConnectionReset/timeout; ValueError: JSON decode;
         # Key/Attr/TypeError: unexpected response shape. One bad call must never
         # kill a run — return nothing for it and move on.
-        except (OSError, KeyError, ValueError, AttributeError, TypeError):
+        except (OSError, KeyError, ValueError, AttributeError, TypeError) as e:
             if attempt == retries - 1:
+                _report_once(f"{type(e).__name__}: {e}")
                 return []
             time.sleep(2.0 * (attempt + 1))
     return []
