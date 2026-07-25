@@ -87,14 +87,23 @@ def export_onnx(model, tokenizer, out_path, opset):
 
 
 def quantize(fp32_path, int8_path):
-    """Dynamic int8 quantization of the weights (activations stay float).
+    """int8 the EMBEDDING ONLY, and deliberately not the rest.
 
-    ~4x smaller with no calibration set needed. It is NOT free accuracy-wise —
-    the conv-net port found float32 beat its quantized build (102/102 vs
-    101/102, #1827) — so the caller re-scores rather than assuming.
+    Measured on the 231 committed cases:
+
+        fp32                       736 MB   96.5%
+        int8 Gather (embedding)    442 MB   96.1%   <- this
+        int8 MatMul (attn + FFN)   538 MB    0.9%   <- destroys the model
+
+    DeBERTa-v3's disentangled attention is quantization-hostile, so the usual
+    "quantize_dynamic everything" recipe silently produces a model that emits
+    garbage while still loading and running fine. The embedding is over half
+    the weights (128k x 768) and is a pure lookup, so quantizing just that is
+    both the safe half and the big half.
     """
     from onnxruntime.quantization import QuantType, quantize_dynamic
-    quantize_dynamic(fp32_path, int8_path, weight_type=QuantType.QInt8)
+    quantize_dynamic(fp32_path, int8_path, weight_type=QuantType.QInt8,
+                     op_types_to_quantize=["Gather"])
 
 
 def onnx_predict(session, text, tokenizer, id2intent, id2tag):
@@ -177,10 +186,17 @@ def main():
 
     shutil.copy(os.path.join(artifacts, "maps.json"), os.path.join(out, "maps.json"))
 
-    int8_path = os.path.join(out, "command_model.int8.onnx")
+    # The shipping bundle: same three filenames the C++ expects, but with the
+    # embedding-quantized graph. Kept in its own dir so `out` stays the fp32
+    # reference the parity fixture is generated from.
+    dist = os.path.join(out, "dist")
+    int8_path = os.path.join(dist, "command_model.onnx")
     if not args.no_quantize:
+        os.makedirs(dist, exist_ok=True)
         quantize(onnx_path, int8_path)
-        print(f"int8: {int8_path} ({os.path.getsize(int8_path) / 1e6:.0f} MB)")
+        shutil.copy(tok_path, os.path.join(dist, "tokenizer.json"))
+        shutil.copy(os.path.join(artifacts, "maps.json"), os.path.join(dist, "maps.json"))
+        print(f"dist: {dist} ({os.path.getsize(int8_path) / 1e6:.0f} MB, embedding int8)")
 
     # ---- verify ORT == PyTorch on every committed case --------------------
     import onnxruntime as ort
@@ -215,7 +231,7 @@ def main():
     print(f"\nONNX vs PyTorch: {len(rows) - mismatches}/{len(rows)} identical")
     print(f"fp32 vs gold:    {correct}/{len(rows)} exact ({correct / n:.1%})")
     if sess_i8 is not None:
-        print(f"int8 vs gold:    {correct_i8}/{len(rows)} exact ({correct_i8 / n:.1%})"
+        print(f"dist vs gold:    {correct_i8}/{len(rows)} exact ({correct_i8 / n:.1%})"
               f"   [{drift_i8} outputs differ from fp32]")
     print(f"wrote {len(cases)} parity cases -> {out}/parity_cases.json")
     if mismatches:

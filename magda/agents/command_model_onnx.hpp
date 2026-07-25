@@ -58,6 +58,11 @@ class CommandModelOnnx {
     /** True when assetDir holds every file the constructor needs. */
     [[nodiscard]] static bool isInstalled(const std::filesystem::path& assetDir);
 
+    /** Where the app looks for the bundle: <dataDir>/CommandModel/.
+     *  MAGDA_COMMAND_MODEL_DIR overrides it, which is how you point a dev
+     *  build at an export without copying 442 MB around. */
+    [[nodiscard]] static std::filesystem::path defaultAssetDir();
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -3,6 +3,7 @@
 #include "../daw/core/Config.hpp"
 #include "../daw/core/LLMClientProvider.hpp"
 #include "command_model.hpp"
+#include "command_model_onnx.hpp"
 #include "dsl_grammar.hpp"
 #include "dsl_interpreter.hpp"
 #include "internal_plugins.hpp"
@@ -18,9 +19,13 @@ const char* CommandAgent::getSystemPrompt() {
     return dsl::getToolDescription();
 }
 
-/** Offline path: the tiny on-device intent+slots model emits DSL directly —
-    no network, no LLM, sub-millisecond. Same DSL grammar as the LLM path, so
-    the caller feeds it straight into the interpreter → InstructionExecutor. */
+/** Offline path: the on-device intent+slots model emits DSL directly — no
+    network, no LLM. Same DSL grammar as the LLM path, so the caller feeds it
+    straight into the interpreter → InstructionExecutor.
+
+    Two backends, same deterministic renderer. The pretrained encoder (#1847)
+    is used whenever its bundle is installed; the 51k conv net is the fallback
+    when it is not, since the encoder is a separate ~442 MB download. */
 CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& message) {
     GenerateResult result;
     if (shouldStop_.load()) {
@@ -28,6 +33,39 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
         result.hasError = true;
         return result;
     }
+
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
+    // Probe once: a missing bundle is the normal case, not an error, and
+    // re-stat'ing three files on every command would be silly.
+    if (!encoderChecked_) {
+        encoderChecked_ = true;
+        const auto dir = CommandModelOnnx::defaultAssetDir();
+        if (CommandModelOnnx::isInstalled(dir)) {
+            try {
+                encoderModel_ = std::make_unique<CommandModelOnnx>(dir);
+                DBG("MAGDA CommandAgent: encoder command model loaded from " +
+                    juce::String(dir.string()));
+            } catch (const std::exception& e) {
+                // Fall back rather than fail the command outright.
+                DBG("MAGDA CommandAgent: encoder model unavailable (" + juce::String(e.what()) +
+                    "), using the conv net");
+            }
+        }
+    }
+    if (encoderModel_) {
+        result.dslOutput = encoderModel_->generate(message);
+        if (!result.dslOutput.empty()) {
+            DBG("MAGDA CommandAgent (fast_inference, encoder): " + juce::String(result.dslOutput));
+            return result;
+        }
+        // Empty means the renderer rejected the perception — the conv net will
+        // not do better on the same input, so report rather than silently retry.
+        result.error = "Command model produced no output for this request.";
+        result.hasError = true;
+        return result;
+    }
+#endif
+
     if (!localModel_)
         localModel_ = std::make_unique<CommandModel>();
 

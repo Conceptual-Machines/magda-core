@@ -10,6 +10,7 @@ namespace magda {
 
 class MagdaApi;
 class CommandModel;
+class CommandModelOnnx;
 
 /**
  * @brief Command agent — handles DAW operations via DSL generation.
@@ -53,6 +54,11 @@ class CommandAgent {
     MagdaApi& api_;
     std::atomic<bool> shouldStop_{false};
     std::unique_ptr<CommandModel> localModel_;
+    // Preferred when its assets are installed: 91.5% on held-out phrasing vs
+    // the conv net's 46.5% (#1847). Absent by default — the bundle is a
+    // separate download — so localModel_ stays the fallback.
+    std::unique_ptr<CommandModelOnnx> encoderModel_;
+    bool encoderChecked_ = false;
 };
 
 }  // namespace magda

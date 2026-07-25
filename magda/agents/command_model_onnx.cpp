@@ -7,10 +7,12 @@
 
     #include <algorithm>
     #include <cctype>
+    #include <cstdlib>
     #include <string>
     #include <unordered_map>
     #include <vector>
 
+    #include "../daw/core/AppPaths.hpp"
     #include "unigram_tokenizer.hpp"
 
 // Port of prototypes/command-model-poc/model/encoder_parser.py:predict_dsl.
@@ -214,6 +216,13 @@ CommandModelOnnx::CommandModelOnnx(const std::filesystem::path& assetDir) {
 CommandModelOnnx::~CommandModelOnnx() = default;
 CommandModelOnnx::CommandModelOnnx(CommandModelOnnx&&) noexcept = default;
 CommandModelOnnx& CommandModelOnnx::operator=(CommandModelOnnx&&) noexcept = default;
+
+std::filesystem::path CommandModelOnnx::defaultAssetDir() {
+    if (const char* env = std::getenv("MAGDA_COMMAND_MODEL_DIR"))
+        return {env};
+    return std::filesystem::path(
+        magda::paths::dataDir().getChildFile("CommandModel").getFullPathName().toStdString());
+}
 
 bool CommandModelOnnx::isInstalled(const std::filesystem::path& dir) {
     return std::filesystem::exists(dir / "command_model.onnx") &&
