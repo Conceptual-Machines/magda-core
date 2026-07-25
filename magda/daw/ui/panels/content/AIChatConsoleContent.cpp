@@ -2803,7 +2803,7 @@ void AIChatConsoleContent::insertParamAlias(const juce::String& pluginAlias,
             false);
     }
 
-    suppressAutocompleteOnce_ = true;
+    suppressAutocompleteForContent_ = inputDocument_.getAllContent();
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
@@ -2836,7 +2836,7 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
             juce::CodeDocument::Position(inputDocument_, atPos + 1 + (int)alias.length()), false);
     }
 
-    suppressAutocompleteOnce_ = true;
+    suppressAutocompleteForContent_ = inputDocument_.getAllContent();
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
@@ -2963,14 +2963,23 @@ void AIChatConsoleContent::codeDocumentTextDeleted(int /*startIndex*/, int /*end
 void AIChatConsoleContent::onInputChanged() {
     if (!inputBox_)
         return;
-    // Consume the one-shot set by an explicit accept, so the completion we
-    // just inserted does not immediately re-open its own popup.
-    if (suppressAutocompleteOnce_) {
-        suppressAutocompleteOnce_ = false;
-        hideAutocomplete();
-        return;
-    }
     auto text = inputDocument_.getAllContent();
+
+    // Suppress by CONTENT, not by a one-shot flag. replaceAllContent() fires
+    // BOTH document listeners — a delete of the old text and an insert of the
+    // new — so accepting a completion queues two deferred onInputChanged()
+    // calls. A one-shot is consumed by the first and the second re-opens the
+    // popup we just closed, which is what left it stuck on screen with Tab
+    // unable to dismiss it. Keyed on the text we inserted, any number of
+    // callbacks are absorbed, and the moment the user types anything the
+    // content differs and completion resumes.
+    if (suppressAutocompleteForContent_.isNotEmpty()) {
+        if (text == suppressAutocompleteForContent_) {
+            hideAutocomplete();
+            return;
+        }
+        suppressAutocompleteForContent_.clear();
+    }
     int caretPos = inputBox_->getCaretPos().getPosition();
 
     // Slash commands at start of input
@@ -3190,7 +3199,7 @@ void AIChatConsoleContent::insertSlashCommand(const juce::String& command) {
     inputDocument_.replaceAllContent(newText);
     inputBox_->moveCaretTo(juce::CodeDocument::Position(inputDocument_, newText.length()), false);
 
-    suppressAutocompleteOnce_ = true;
+    suppressAutocompleteForContent_ = inputDocument_.getAllContent();
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
