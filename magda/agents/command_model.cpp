@@ -669,6 +669,10 @@ std::string CommandModel::generate(const std::string& text) const {
     DBG("MAGDA CommandModel: in=\"" + juce::String(text) + "\" intent=" + juce::String(p.intent) +
         " [" + tagged + "]");
 
+    return renderPrediction(p);
+}
+
+std::string CommandModel::renderPrediction(const Prediction& p) {
     if (p.tokens.empty())
         return "";
 
@@ -812,7 +816,10 @@ std::string CommandModel::generate(const std::string& text) const {
         bool down = false;  // Python checks exact token membership, not substring
         for (const auto& tk : tokens) {
             std::string lt = toLower(tk);
-            if (lt == "down" || lt == "lower")
+            // Mirrors dataset/tagging.py:reconstruct. "drop"/"below" joined the
+            // set for #1847 — the templates only ever said "down"/"lower", so
+            // "drop the bass notes 12 semitones" transposed UP.
+            if (lt == "down" || lt == "lower" || lt == "drop" || lt == "dropped" || lt == "below")
                 down = true;
         }
         if (down)

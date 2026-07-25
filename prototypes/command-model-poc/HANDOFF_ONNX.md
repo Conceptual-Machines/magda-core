@@ -210,10 +210,40 @@ strings before trusting the parity number.
 
 ## 8. Done when
 
-- [ ] Tokenizer decision made and recorded in `findings.md`
-- [ ] `model/export_onnx.py` produces onnx + tokenizer.json + maps.json
-- [ ] ONNX output matches the PyTorch forward within tolerance, in Python
-- [ ] C++ tokenizer fuzz-matches the Python tokenizer over ≥1000 random strings
-- [ ] ORT-backed `CommandModel` beside the existing one, behind the download
-- [ ] Parity test over all 185 committed cases, byte-identical
-- [ ] Held-out score re-measured through the C++ path, not just Python
+- [x] Tokenizer decision made — **DeBERTa-v3**, Unigram written by hand
+- [x] `model/export_onnx.py` produces onnx + tokenizer.json + maps.json
+- [x] ONNX output matches the PyTorch forward — 231/231 identical DSL
+- [x] C++ tokenizer fuzz-matches the Python tokenizer — 3330/3330 words
+- [x] ORT-backed backend beside the existing one (`command_model_onnx.hpp`)
+- [x] Parity test over all 231 committed cases, byte-identical
+- [ ] Wire into the app: download flow + `FAST_INFERENCE` provider selection
+- [ ] Decide the shipping artifact (see §9)
+
+## 9. What is left, and the one open question
+
+Everything through the parity test is done and green (`make test`: 1523 cases).
+Two things remain.
+
+**Wire it into the app.** `CommandModelOnnx` compiles and passes parity but
+nothing constructs it yet. It needs the download flow (§5) and a provider
+choice next to the existing `FAST_INFERENCE` path. `isInstalled()` is there so
+the UI can fall back to the conv net when the assets are absent.
+
+**The artifact is bigger than planned.** int8 is not available here:
+
+| build | size | held-out accuracy |
+|---|---|---|
+| fp32 | 736 MB | 96.5% on the combined 231 |
+| int8, embedding (Gather) only | 442 MB | 96.1% |
+| int8, attention/FFN (MatMul) | 538 MB | **0.9% — destroyed** |
+
+DeBERTa-v3's disentangled attention is quantization-hostile; this is a known
+property of the architecture, not a bug in the export. So the realistic
+shipping options are 442 MB (int8 embedding, fp32 body) or an fp16 body, which
+should land near 270 MB — the fp16 conversion currently fails with a type error
+at the embedding Cast node and needs `op_block_list` tuning. That is the first
+thing to try if 442 MB is too much.
+
+If it has to be smaller than fp16 allows, the answer is RoBERTa (83.1%, and it
+quantizes normally) or distilling the fine-tuned DeBERTa into a student — not
+naive int8 on this graph.

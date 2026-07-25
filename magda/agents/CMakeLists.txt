@@ -28,6 +28,10 @@ dsl_grammar.hpp
     command_model.cpp
     command_model_data.hpp
     command_model_data.cpp
+    unigram_tokenizer.hpp
+    unigram_tokenizer.cpp
+    command_model_onnx.hpp
+    command_model_onnx.cpp
     router_model.hpp
     router_model.cpp
     router_model_data.hpp

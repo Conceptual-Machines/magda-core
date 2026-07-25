@@ -35,6 +35,16 @@ class CommandModel {
 
     Prediction predict(const std::string& text) const;
 
+    /** Deterministic half: perception → DSL, with no model involved.
+     *
+     * Split out so every perception backend shares one renderer — the conv net
+     * here and the ONNX encoder in command_model_onnx.hpp both funnel through
+     * this, which is what makes malformed DSL structurally impossible
+     * regardless of which model produced the tags. Mirrors
+     * dataset/tagging.py:reconstruct + magda_dsl/dsl.py:render.
+     */
+    static std::string renderPrediction(const Prediction& p);
+
   private:
     std::unordered_map<std::string, int> vocab_;
     int unkId_ = 1;

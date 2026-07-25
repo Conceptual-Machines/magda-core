@@ -8,3 +8,7 @@ __pycache__/
 # model/artifacts/ is 248K and stays tracked; these are reproduced by
 # `python -m model.train_encoder --preset <name>`.
 model/artifacts_encoder*/
+
+# ONNX export output: the fp32 graph is ~736 MB and tokenizer.json ~9 MB.
+# Reproduce with `python -m model.export_onnx`.
+model/artifacts_onnx/
