@@ -277,6 +277,7 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_lane_sync_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
+    test_device_gain_slider.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
