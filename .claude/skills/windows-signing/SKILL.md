@@ -61,11 +61,10 @@ the cert. One OTP login covers many signs for the session.
 
 ## Releasing (the CI path)
 
-`release.yml` has a `sign-windows` job (tag pushes only) on the self-hosted
-runner `[self-hosted, Windows, magda-luca]`. It downloads the unsigned build
-artifact, provisions NSIS, unpacks the MuseHub source bundle, and runs
-`sign-release.ps1 -WaitMinutes 30`, then publishes the signed installer via
-`create-release`.
+`release.yml` has a `build-windows` job (tag pushes only) on the self-hosted
+runner `[self-hosted, Windows, magda-luca]`. It builds MAGDA, stages the
+installer inputs, provisions NSIS, and runs `sign-release.ps1 -WaitMinutes 30`,
+then publishes the signed installer via `create-release`.
 
 Per-release steps:
 
@@ -82,9 +81,8 @@ Per-release steps:
 ## Signing manually (no CI)
 
 On a machine logged into SimplySign Desktop, point the script at a staging dir
-that holds `MAGDA.exe`, `magda_plugin_scanner.exe` and `magda-installer.nsi`
-(an extracted `MAGDA-<version>-MuseHub-Source.zip`, or a local build's installer
-staging dir):
+that holds `MAGDA.exe`, `magda_plugin_scanner.exe`, `magda-installer.nsi`,
+`vc_redist.x64.exe`, and the app's runtime DLLs/resources:
 
 ```powershell
 packaging\windows\sign-release.ps1 -StageDir <dir> -Version <x.y.z> -Makensis <path-to-makensis.exe>
@@ -101,8 +99,8 @@ signtool sign /sha1 715B3557D43AF8FC23297999C0541C07E1B61319 /fd sha256 /tr http
 signtool verify /pa /v <file>
 ```
 
-The ONNX Runtime and libxml2 DLLs are vendor-signed already — only sign the two
-MAGDA exes and the installer.
+The ONNX Runtime and libxml2 DLLs plus `vc_redist.x64.exe` are vendor-signed
+already — only sign the two MAGDA exes and the installer.
 
 ## Troubleshooting
 

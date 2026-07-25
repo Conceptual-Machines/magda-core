@@ -968,9 +968,9 @@ if(MAGDA_HAVE_CLAP)
             BUILD_RPATH "@executable_path/../Frameworks")
     elseif(WIN32)
         # Windows only searches the exe's directory, the cwd, and PATH — none of
-        # which include the FetchContent lib dir — so without this copy the first
-        # ORT call (Sample Tagger load) faults when the delay-loaded DLL fails to
-        # resolve.
+        # which include the FetchContent lib dir. onnxruntime.dll is a regular
+        # load-time import of MAGDA.exe, so omitting it prevents the application
+        # from reaching main().
         add_custom_command(TARGET magda_daw_app POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
