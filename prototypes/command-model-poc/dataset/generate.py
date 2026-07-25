@@ -134,19 +134,40 @@ def gen_create_named(r: random.Random):
 
 
 def gen_create_with_plugins(r: random.Random):
-    name = r.choice(TRACK_NAMES)
+    """New track carrying devices, named or not.
+
+    The unnamed branch matters more than it looks. Without it every
+    create_track-with-plugins example carries a track name, so the only
+    unnamed "new X with @alias" shape anywhere in the data is gen_create_rack's
+    "new rack with @serum" — and "new track with @polysynth" lands on it,
+    yielding track(name="").rack.new() (a rack on the *selected* track) instead
+    of a new track. Empty name renders as new=true, which the interpreter
+    creates rather than resolving against the selection.
+    """
+    named = r.random() < 0.7
+    name = r.choice(TRACK_NAMES) if named else ""
     aliases = [r.choice(PLUGIN_ALIASES)]
     if r.random() < 0.5:
         other = r.choice([a for a in PLUGIN_ALIASES if a != aliases[0]])
         aliases.append(other)
     surfaces, tokens = zip(*(_alias_pair(a) for a in aliases))
     joined = " and ".join(surfaces)
-    templates = [
-        f"create a {name.lower()} track with {joined}",
-        f"make a {name.lower()} track and add {joined}",
-        f"new {name.lower()} track with {joined}",
-        f"spin up a {name.lower()} track loaded with {joined}",
-    ]
+    if named:
+        templates = [
+            f"create a {name.lower()} track with {joined}",
+            f"make a {name.lower()} track and add {joined}",
+            f"new {name.lower()} track with {joined}",
+            f"spin up a {name.lower()} track loaded with {joined}",
+        ]
+    else:
+        templates = [
+            f"new track with {joined}",
+            f"create a track with {joined}",
+            f"add a track with {joined}",
+            f"make a track with {joined}",
+            f"new track loaded with {joined}",
+            f"create a new track with {joined}",
+        ]
     return r.choice(templates), [{"type": "create_track", "name": name, "plugins": list(tokens)}]
 
 

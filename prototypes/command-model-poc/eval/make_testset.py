@@ -49,6 +49,17 @@ CASES = [
      [{"type": "create_track", "name": "Vocals", "plugins": [A("pro_q_3")]}]),
     ("create a drums track with @massive and @ott",
      [{"type": "create_track", "name": "Drums", "plugins": [A("massive"), A("ott")]}]),
+    # Unnamed track carrying a device. These used to land on create_rack — the
+    # only unnamed "new X with @alias" shape in the training data was
+    # "new rack with @serum" — producing a rack on the *selected* track instead
+    # of a new track. Empty name renders as new=true, which the interpreter
+    # creates rather than resolving against the selection.
+    ("new track with @polysynth",
+     [{"type": "create_track", "name": "", "plugins": [A("polysynth")]}]),
+    ("create a track with @serum",
+     [{"type": "create_track", "name": "", "plugins": [A("serum")]}]),
+    ("add a track with @vital and @ott",
+     [{"type": "create_track", "name": "", "plugins": [A("vital"), A("ott")]}]),
 
     # --- add_plugin (@alias; last case uses an alias absent from training to
     #     test the "generalize to ANY alias" claim) ---
@@ -203,6 +214,29 @@ CASES = [
      [{"type": "groove_set", "template": "Shuffle", "strength": 0.7}]),
     ("which grooves are available", [{"type": "groove_list"}]),
     ("show me the groove list", [{"type": "groove_list"}]),
+
+    # --- create_rack (#1837) ---
+    ("create a rack", [{"type": "create_rack", "name": ""}]),
+    ("add a rack to the bass track", [{"type": "create_rack", "name": "Bass"}]),
+    ("create a rack with @serum and @fm_0",
+     [{"type": "create_rack", "name": "", "plugins": [A("serum"), A("fm_0")]}]),
+    ("create a rack with @serum on drums",
+     [{"type": "create_rack", "name": "Drums", "plugins": [A("serum")]}]),
+
+    # --- multi-plugin add_plugin (one fx.add per plugin, no "rack" keyword) ---
+    ("add @serum and @ott to the bass track",
+     [{"type": "add_plugin", "name": "Bass", "plugin": A("serum")},
+      {"type": "add_plugin", "name": "Bass", "plugin": A("ott")}]),
+
+    # --- clip-select comparison operators (#1837 Part B) ---
+    ("select clips up to 4 bars in the bass track",
+     [{"type": "select_clips_length_at_most", "name": "Bass", "bars": 4}]),
+    ("select clips at least 2 bars in the drums track",
+     [{"type": "select_clips_length_at_least", "name": "Drums", "bars": 2}]),
+    ("select clips exactly 4 bars in the bass track",
+     [{"type": "select_clips_length_exactly", "name": "Bass", "bars": 4}]),
+    ("select clips not named Intro on Pads",
+     [{"type": "select_clips_not_named", "name": "Pads", "clip_name": "Intro"}]),
 ]
 
 

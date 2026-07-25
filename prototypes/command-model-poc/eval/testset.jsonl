@@ -11,6 +11,9 @@
 {"lang": "en", "input": "new pads track with @surge_xt and @reverb", "output": "track(name=\"Pads\", new=true).fx.add(name=\"<surge_xt>\")\ntrack(name=\"Pads\").fx.add(name=\"<reverb>\")", "actions": [{"type": "create_track", "name": "Pads", "plugins": ["<surge_xt>", "<reverb>"]}]}
 {"lang": "en", "input": "spin up a vocals track loaded with @pro_q_3", "output": "track(name=\"Vocals\", new=true).fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "create_track", "name": "Vocals", "plugins": ["<pro_q_3>"]}]}
 {"lang": "en", "input": "create a drums track with @massive and @ott", "output": "track(name=\"Drums\", new=true).fx.add(name=\"<massive>\")\ntrack(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "Drums", "plugins": ["<massive>", "<ott>"]}]}
+{"lang": "en", "input": "new track with @polysynth", "output": "track(name=\"\", new=true).fx.add(name=\"<polysynth>\")", "actions": [{"type": "create_track", "name": "", "plugins": ["<polysynth>"]}]}
+{"lang": "en", "input": "create a track with @serum", "output": "track(name=\"\", new=true).fx.add(name=\"<serum>\")", "actions": [{"type": "create_track", "name": "", "plugins": ["<serum>"]}]}
+{"lang": "en", "input": "add a track with @vital and @ott", "output": "track(name=\"\", new=true).fx.add(name=\"<vital>\")\ntrack(name=\"\").fx.add(name=\"<ott>\")", "actions": [{"type": "create_track", "name": "", "plugins": ["<vital>", "<ott>"]}]}
 {"lang": "en", "input": "add @serum to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}]}
 {"lang": "en", "input": "put @ott on Drums", "output": "track(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<ott>"}]}
 {"lang": "en", "input": "insert @pro_q_3 on vocals", "output": "track(name=\"Vocals\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<pro_q_3>"}]}
@@ -100,11 +103,11 @@
 {"lang": "en", "input": "apply the Shuffle groove at strength 0.7", "output": "groove.set(template=\"Shuffle\", strength=0.7)", "actions": [{"type": "groove_set", "template": "Shuffle", "strength": 0.7}]}
 {"lang": "en", "input": "which grooves are available", "output": "groove.list()", "actions": [{"type": "groove_list"}]}
 {"lang": "en", "input": "show me the groove list", "output": "groove.list()", "actions": [{"type": "groove_list"}]}
-{"lang": "en", "input": "add @serum and @ott to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}, {"type": "add_plugin", "name": "Bass", "plugin": "<ott>"}]}
 {"lang": "en", "input": "create a rack", "output": "track(name=\"\").rack.new()", "actions": [{"type": "create_rack", "name": ""}]}
 {"lang": "en", "input": "add a rack to the bass track", "output": "track(name=\"Bass\").rack.new()", "actions": [{"type": "create_rack", "name": "Bass"}]}
 {"lang": "en", "input": "create a rack with @serum and @fm_0", "output": "track(name=\"\").rack.new().fx.add(name=\"<serum>\").fx.add(name=\"<fm_0>\")", "actions": [{"type": "create_rack", "name": "", "plugins": ["<serum>", "<fm_0>"]}]}
 {"lang": "en", "input": "create a rack with @serum on drums", "output": "track(name=\"Drums\").rack.new().fx.add(name=\"<serum>\")", "actions": [{"type": "create_rack", "name": "Drums", "plugins": ["<serum>"]}]}
+{"lang": "en", "input": "add @serum and @ott to the bass track", "output": "track(name=\"Bass\").fx.add(name=\"<serum>\")\ntrack(name=\"Bass\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<serum>"}, {"type": "add_plugin", "name": "Bass", "plugin": "<ott>"}]}
 {"lang": "en", "input": "select clips up to 4 bars in the bass track", "output": "track(name=\"Bass\").clips.select(clip.length_bars <= 4)", "actions": [{"type": "select_clips_length_at_most", "name": "Bass", "bars": 4}]}
 {"lang": "en", "input": "select clips at least 2 bars in the drums track", "output": "track(name=\"Drums\").clips.select(clip.length_bars >= 2)", "actions": [{"type": "select_clips_length_at_least", "name": "Drums", "bars": 2}]}
 {"lang": "en", "input": "select clips exactly 4 bars in the bass track", "output": "track(name=\"Bass\").clips.select(clip.length_bars == 4)", "actions": [{"type": "select_clips_length_exactly", "name": "Bass", "bars": 4}]}

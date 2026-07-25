@@ -116,7 +116,7 @@ The full loop. Training runs on Colab; everything else is local.
 
 ```bash
 # 1. freeze data (local) -- train + held-out val, leakage-guarded vs test
-python3 -m dataset.generate --n 12000 --val 1500
+python3 -m dataset.generate --n 24000 --val 2000 --langs en,ja,ru,zh
 
 # 2. lock the prompt contract (local) -- chat records w/ the system prompt
 #    that BOTH training and C++ inference use (model/format.py: SYSTEM_PROMPT)
