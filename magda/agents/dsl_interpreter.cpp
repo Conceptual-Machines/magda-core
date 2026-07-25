@@ -526,6 +526,15 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         if (name.isEmpty() && !forceNew && ctx_.currentTrackId >= 0) {
             DBG("MAGDA DSL: empty name -> targeting selected track " +
                 juce::String(ctx_.currentTrackId));
+        } else if (name.isEmpty() && !forceNew) {
+            // Empty name means "the selected track" — with nothing selected
+            // there is no target. Falling through would create a blank unnamed
+            // track, which is both wrong and destructive-looking: "add @filter"
+            // on an unselected project silently spawned a new track instead of
+            // saying it had nowhere to put it.
+            ctx_.setError("No track selected — select a track first, or name one "
+                          "(e.g. \"add @filter to Bass\")");
+            return false;
         } else {
             int existingId = forceNew ? -1 : findTrackByName(name);
 
