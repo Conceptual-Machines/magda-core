@@ -39,6 +39,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--train", default=os.path.join(POC, "data", "train.jsonl.gz"))
     ap.add_argument("--val", default=os.path.join(POC, "data", "val.jsonl.gz"))
+    ap.add_argument("--teacher", default=os.path.join(POC, "data", "teacher.jsonl.gz"),
+                    help="LLM paraphrases, merged if present (see router/teacher.py)")
+    ap.add_argument("--teacher-repeat", type=int, default=3,
+                    help="times to repeat teacher rows; they are the only source "
+                         "of phrasings a template author did not write, and are "
+                         "heavily outnumbered by template rows")
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--lr", type=float, default=2e-3)
@@ -55,6 +61,11 @@ def main():
     torch.manual_seed(args.seed)
     rows_train = load_rows(args.train)
     rows_val = load_rows(args.val)
+
+    if args.teacher and os.path.exists(args.teacher):
+        taught = load_rows(args.teacher)
+        rows_train += taught * max(args.teacher_repeat, 1)
+        print(f"teacher: +{len(taught)} paraphrases x{args.teacher_repeat}")
 
     vocab = build_vocab(rows_train, args.min_count)
     os.makedirs(args.out, exist_ok=True)

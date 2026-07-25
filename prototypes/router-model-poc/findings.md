@@ -10,15 +10,20 @@ tagged `fuzzy` and scored separately (see below).
 |---|---|---|
 | v0 templates only | 100.0% | 59.3% |
 | v1 + synonym banks | 100.0% | 72.8% |
-| v2 + shared section vocab | 100.0% | **81.5%** |
+| v2 + shared section vocab | 100.0% | 81.5% |
+| v3 + LLM teacher paraphrases | 100.0% | **88.9%** |
 
-v2: 64,331 params, ~251 KB of float32, 0.25 ms/request in torch (~1.3 ms in the
-unoptimised debug C++ build; release not benchmarked). Per language:
-en 82.1%, ja 78.6%, ru 78.6%, zh 85.7%.
+v3: 116,491 params, ~455 KB of float32, 0.27 ms/request in torch. Per language:
+en 92.3%, ja 78.6%, ru 78.6%, zh 100.0%.
 
-(v2 is measured. The v0/v1 core figures are *derived* from those runs' recorded
-misroute lists — 3 and 4 of the 8 fuzzy cases failed respectively — because the
-core/fuzzy split postdates them and their checkpoints were overwritten.)
+The model roughly doubled (64k -> 116k params) purely because the vocabulary
+went 1,419 -> 3,049: the teacher introduced words no template author wrote,
+which is the entire point. The conv trunk did not change.
+
+(v2 and v3 are measured. The v0/v1 core figures are *derived* from those runs'
+recorded misroute lists — 3 and 4 of the 8 fuzzy cases failed respectively —
+because the core/fuzzy split postdates them and their checkpoints were
+overwritten.)
 
 Fuzzy cases score 3/8, and that is fine — they are the LLM path's job by
 construction, not a router defect to engineer against.
@@ -156,21 +161,27 @@ reconstructor.
 
 ## What is left
 
-The 15 remaining core failures are vocabulary gaps — requests whose content
-words the closed vocab has never seen ("boom bap kit", "commercial reference",
-"half time feel"). Note these are *core*: the intent is concrete, only the
-wording is unfamiliar. That is a coverage problem worth fixing, unlike the fuzzy
-cases, which are not.
+**Verify the paraphrases or do not use them.** The teacher pass (v3) added 7,542
+rewrites and took core accuracy 81.5% -> 88.9%, but the headline number hides
+the important detail: **8% of proposed rewrites drifted intent** and were thrown
+away by the second pass. A paraphraser asked to reword "suggest jazz chords"
+happily returns "add some jazz chords to a new track" — still a sensible
+request, now the wrong label. At the 3x repeat weight teacher rows carry, those
+~670 mislabeled rows would have done real damage. The two-pass design (rewrite,
+then independently re-label at temperature 0 and keep only agreements) is not
+optional polish; it is what makes the pass safe.
 
-**The LLM teacher pass is the obvious lever and has not been run.** The command
-POC's `dataset/teacher.py` exists precisely for this (its README calls
-paraphrase diversity "an optional v2 lever"), and the router is a much easier
-case than the command model: there is no slot round-trip to validate, so a
-paraphrase only has to keep its label. It needs `DEEPSEEK_API_KEY` and spends
-real credit, so it is a deliberate decision rather than part of the default
-pipeline.
+Cost was 2,800 API calls on `deepseek-v4-flash`. Note `deepseek-chat` is no
+longer a valid model name — the command POC's `dataset/teacher.py` still
+defaults to it and will 400.
 
-Two smaller levers if the teacher is not wanted:
+Where v3 still loses: ja and ru sit at 78.6% while en is 92.3% and zh is 100%.
+The teacher produced an even ~1,880 rows per language, so this is not a volume
+gap. Worth looking at whether the ja/ru held-out cases lean harder on idiom than
+the en/zh ones do — with 14 cases per language, it is also within noise, which
+is itself a reason to grow the test set before tuning against it.
+
+Two smaller levers, still untried:
 
 - **Subword fallback.** OOV tokens currently all collapse to one `<UNK>`, so
   three unknown words are indistinguishable. Hashing character trigrams into a

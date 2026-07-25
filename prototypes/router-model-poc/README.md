@@ -71,6 +71,7 @@ router/labels.py      # the 7 ConsoleIntent labels, order mirrored by C++
 router/text.py        # tokenizer + case folding — the C++ parity contract
 router/seeds_{en,ja,ru,zh}.py   # per-language template banks (POOLS + TEMPLATES)
 router/synonyms.py    # per-language synonym banks for phrasing diversity
+router/teacher.py     # DeepSeek paraphrase pass, verified back by the teacher
 router/generate.py    # templates x pools x synonyms -> data/{train,val}.jsonl.gz
 router/data.py        # vocab/maps + dataset (word dropout)
 router/net.py         # IntentNet (Brevitas QAT)
@@ -88,7 +89,8 @@ python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 # (or reuse ../command-model-poc/.venv — same torch + brevitas)
 
 ./.venv/bin/python -m eval.make_testset      # eval/testset.jsonl (committed)
-./.venv/bin/python -m router.generate --n 2000
+./.venv/bin/python -m router.generate --n 3000
+./.venv/bin/python -m router.teacher --per-class 50 --n 6   # optional; needs a key
 ./.venv/bin/python -m router.train --epochs 25
 ./.venv/bin/python -m router.evaluate --show-fails
 ./.venv/bin/python -m router.export_cpp      # C++ weights + parity fixture
@@ -130,9 +132,9 @@ fast inference surface) or **fuzzy** (needs an aesthetic judgement, so it is the
 LLM path's job by design). Core accuracy is the metric; fuzzy is reported
 separately and never mixed in.
 
-Current: **81.5% core** (en 82.1 / ja 78.6 / ru 78.6 / zh 85.7), **zero**
-MUSIC -> COMMAND confusions, 64k params / ~251 KB of float32. Latency is 0.25 ms
-per request in torch and ~1.3 ms in the *debug* C++ build (unoptimised, measured
-via the test binary; release is not benchmarked yet). The val split reads 100%
-and is meaningless on its own — it is drawn from the same templates. See
-findings.md for how the number moved from 59.3% and what is left.
+Current: **88.9% core** (en 92.3 / ja 78.6 / ru 78.6 / zh 100.0), **zero**
+MUSIC -> COMMAND confusions, 116k params / ~455 KB of float32. Latency is
+0.27 ms per request in torch and ~1.3 ms in the *debug* C++ build (unoptimised,
+measured via the test binary; release is not benchmarked yet). The val split
+reads 100% and is meaningless on its own — it is drawn from the same templates.
+See findings.md for how the number moved from 59.3% and what is left.

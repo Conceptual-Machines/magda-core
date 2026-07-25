@@ -4,7 +4,7 @@
 
 namespace magda::routermodel::data {
 
-inline constexpr int kVocabSize = 1419;
+inline constexpr int kVocabSize = 3049;
 inline constexpr int kEmbed = 32;
 inline constexpr int kHidden = 48;
 inline constexpr int kNumLabels = 7;
