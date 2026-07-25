@@ -217,19 +217,6 @@ CommandModelOnnx::~CommandModelOnnx() = default;
 CommandModelOnnx::CommandModelOnnx(CommandModelOnnx&&) noexcept = default;
 CommandModelOnnx& CommandModelOnnx::operator=(CommandModelOnnx&&) noexcept = default;
 
-std::filesystem::path CommandModelOnnx::defaultAssetDir() {
-    if (const char* env = std::getenv("MAGDA_COMMAND_MODEL_DIR"))
-        return {env};
-    // <dataDir>/CommandModel/models — same shape as MediaDB/models and
-    // StemSeparation/models, so every downloaded model bundle sits in the same
-    // place relative to its feature.
-    return std::filesystem::path(magda::paths::dataDir()
-                                     .getChildFile("CommandModel")
-                                     .getChildFile("models")
-                                     .getFullPathName()
-                                     .toStdString());
-}
-
 bool CommandModelOnnx::isInstalled(const std::filesystem::path& dir) {
     return std::filesystem::exists(dir / "command_model.onnx") &&
            std::filesystem::exists(dir / "tokenizer.json") &&
@@ -312,3 +299,25 @@ std::string CommandModelOnnx::generate(const std::string& text) const {
 }  // namespace magda
 
 #endif  // MAGDA_HAVE_CLAP
+
+// Path resolution needs no ONNX Runtime, so it lives outside the CLAP guard:
+// the downloader and the settings UI still need to know where the bundle goes
+// on builds where the backend itself is compiled out.
+#include "../daw/core/AppPaths.hpp"
+
+namespace magda {
+
+std::filesystem::path CommandModelOnnx::defaultAssetDir() {
+    if (const char* env = std::getenv("MAGDA_COMMAND_MODEL_DIR"))
+        return {env};
+    // <dataDir>/CommandModel/models — same shape as MediaDB/models and
+    // StemSeparation/models, so every downloaded bundle sits in the same place
+    // relative to its feature.
+    return std::filesystem::path(magda::paths::dataDir()
+                                     .getChildFile("CommandModel")
+                                     .getChildFile("models")
+                                     .getFullPathName()
+                                     .toStdString());
+}
+
+}  // namespace magda

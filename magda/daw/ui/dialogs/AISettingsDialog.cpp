@@ -18,6 +18,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "magda/agents/command_model_downloader.hpp"
 
 namespace magda {
 
@@ -2153,6 +2154,158 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
 };
 
 // ============================================================================
+// CommandModelPage — the encoder command model (#1847)
+//
+// Not bundled with the app: ~450 MB, and the built-in 51k conv net is always
+// available as the fallback. Downloading this replaces it for the "Fast
+// Inference (Command)" provider, taking held-out accuracy from 46.5% to 91.5%.
+// ============================================================================
+
+class AISettingsDialog::CommandModelPage : public juce::Component {
+  public:
+    CommandModelPage() {
+        blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        blurbLabel_.setJustificationType(juce::Justification::topLeft);
+        blurbLabel_.setText(
+            "The Command agent's \"Fast Inference (Command)\" provider turns typed requests into "
+            "DAW commands offline. A small model is built in; this optional download is a much "
+            "more accurate one that understands ordinary phrasing rather than fixed templates.",
+            juce::dontSendNotification);
+        addAndMakeVisible(blurbLabel_);
+
+        locationCaption_.setText("Models location", juce::dontSendNotification);
+        styleLabel(locationCaption_);
+        addAndMakeVisible(locationCaption_);
+
+        locationField_.setReadOnly(true);
+        styleEditor(locationField_, "");
+        locationField_.setText(magda::CommandModelDownloader::modelsDir().getFullPathName(),
+                               juce::dontSendNotification);
+        addAndMakeVisible(locationField_);
+
+        nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        addAndMakeVisible(nameLabel_);
+
+        const juce::String url = magda::CommandModelDownloader::sourceUrl();
+        sourceLink_ =
+            std::make_unique<juce::HyperlinkButton>(url.replace("https://", ""), juce::URL(url));
+        sourceLink_->setFont(FontManager::getInstance().getUIFont(11.0f), false,
+                             juce::Justification::centredLeft);
+        sourceLink_->setColour(juce::HyperlinkButton::textColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        addAndMakeVisible(*sourceLink_);
+
+        progressBar_.setColour(juce::ProgressBar::backgroundColourId,
+                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        progressBar_.setColour(juce::ProgressBar::foregroundColourId,
+                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        progressBar_.setPercentageDisplay(false);
+        progressBar_.setVisible(false);
+        addAndMakeVisible(progressBar_);
+
+        actionButton_.onClick = [this]() { handleActionClick(); };
+        addAndMakeVisible(actionButton_);
+
+        refreshStatus();
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(12);
+        const int rowH = 24;
+        const int labelW = 110;
+
+        blurbLabel_.setBounds(bounds.removeFromTop(56));
+        bounds.removeFromTop(8);
+
+        auto locRow = bounds.removeFromTop(rowH);
+        locationCaption_.setBounds(locRow.removeFromLeft(labelW));
+        locationField_.setBounds(locRow.reduced(0, 1));
+        bounds.removeFromTop(12);
+
+        nameLabel_.setBounds(bounds.removeFromTop(30));
+        sourceLink_->setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+        progressBar_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(6);
+        actionButton_.setBounds(bounds.removeFromTop(26).removeFromLeft(240));
+    }
+
+    void load(const magda::Config&) {
+        refreshStatus();
+    }
+    // Download / remove act immediately; nothing batches up for OK.
+    void apply(magda::Config&) const {}
+
+  private:
+    void refreshStatus() {
+        const auto sizeMb =
+            juce::String(magda::CommandModelDownloader::expectedTotalBytes() / (1024 * 1024));
+        const bool installed = magda::CommandModelDownloader::isInstalled();
+        const juce::String name = magda::CommandModelDownloader::displayName();
+
+        nameLabel_.setText(name + (installed ? " - Installed. Used automatically by Fast "
+                                               "Inference (Command)."
+                                             : " - Not installed. The built-in model is in use."),
+                           juce::dontSendNotification);
+        actionButton_.setButtonText(installed ? "Remove" : "Download (" + sizeMb + " MB)");
+    }
+
+    void handleActionClick() {
+        if (downloader_.isRunning()) {
+            downloader_.cancel();
+            return;
+        }
+        if (magda::CommandModelDownloader::isInstalled()) {
+            magda::CommandModelDownloader::remove();
+            refreshStatus();
+            return;
+        }
+
+        progressValue_ = 0.0;
+        progressBar_.setVisible(true);
+        actionButton_.setButtonText("Cancel");
+
+        // SafePointer: the download outlives dialog dismissal and the callback
+        // hops through callAsync.
+        juce::Component::SafePointer<CommandModelPage> safe(this);
+        downloader_.start([safe](const magda::CommandModelDownloader::Progress& p) {
+            auto* self = safe.getComponent();
+            if (self == nullptr)
+                return;
+
+            using Phase = magda::CommandModelDownloader::Phase;
+            if (p.phase == Phase::Downloading && p.bytesTotal > 0) {
+                self->progressValue_ =
+                    static_cast<double>(p.bytesDone) / static_cast<double>(p.bytesTotal);
+            } else if (p.phase == Phase::Verifying) {
+                self->progressValue_ = 1.0;
+            } else if (p.phase == Phase::Done || p.phase == Phase::Failed ||
+                       p.phase == Phase::Cancelled) {
+                self->progressBar_.setVisible(false);
+                self->refreshStatus();
+                if (p.phase == Phase::Failed) {
+                    self->nameLabel_.setText("Download failed: " + p.errorMessage,
+                                             juce::dontSendNotification);
+                }
+            }
+        });
+    }
+
+    juce::Label blurbLabel_;
+    juce::Label locationCaption_;
+    juce::TextEditor locationField_;
+    juce::Label nameLabel_;
+    std::unique_ptr<juce::HyperlinkButton> sourceLink_;
+    // ProgressBar holds a reference to the value; declare the value first.
+    double progressValue_ = 0.0;
+    juce::ProgressBar progressBar_{progressValue_};
+    juce::TextButton actionButton_;
+    magda::CommandModelDownloader downloader_;
+};
+
+// ============================================================================
 // ModelDownloadsPage — one place for every optional downloadable model.
 //
 // The category selector keeps the individual model workflows compact while
@@ -2162,8 +2315,11 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
 class AISettingsDialog::ModelDownloadsPage : public juce::Component {
   public:
     ModelDownloadsPage(LocalPage& localPage, SampleTaggerPage* samplePage,
-                       StemSeparationPage* stemsPage)
-        : localPage_(localPage), samplePage_(samplePage), stemsPage_(stemsPage) {
+                       StemSeparationPage* stemsPage, CommandModelPage* commandPage)
+        : localPage_(localPage),
+          samplePage_(samplePage),
+          stemsPage_(stemsPage),
+          commandPage_(commandPage) {
         categoryLabel_.setText("Category", juce::dontSendNotification);
         styleLabel(categoryLabel_);
         addAndMakeVisible(categoryLabel_);
@@ -2173,6 +2329,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
             categoryCombo_.addItem("Sample analysis", kSampleAnalyzer);
         if (stemsPage_ != nullptr)
             categoryCombo_.addItem("Stem separation", kStems);
+        if (commandPage_ != nullptr)
+            categoryCombo_.addItem("Command model", kCommandModel);
         categoryCombo_.setSelectedId(kLocal, juce::dontSendNotification);
         categoryCombo_.onChange = [this]() { updateVisiblePage(); };
         styleCombo(categoryCombo_);
@@ -2183,6 +2341,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
             addAndMakeVisible(*samplePage_);
         if (stemsPage_ != nullptr)
             addAndMakeVisible(*stemsPage_);
+        if (commandPage_ != nullptr)
+            addAndMakeVisible(*commandPage_);
         updateVisiblePage();
     }
 
@@ -2198,6 +2358,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
             samplePage_->setBounds(bounds);
         if (stemsPage_ != nullptr)
             stemsPage_->setBounds(bounds);
+        if (commandPage_ != nullptr)
+            commandPage_->setBounds(bounds);
     }
 
     // Preserve existing callers that deep-link to the former download tabs.
@@ -2218,7 +2380,7 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
     }
 
   private:
-    enum Category { kLocal = 1, kSampleAnalyzer, kStems };
+    enum Category { kLocal = 1, kSampleAnalyzer, kStems, kCommandModel };
 
     void updateVisiblePage() {
         const int category = categoryCombo_.getSelectedId();
@@ -2227,12 +2389,15 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
             samplePage_->setVisible(category == kSampleAnalyzer);
         if (stemsPage_ != nullptr)
             stemsPage_->setVisible(category == kStems);
+        if (commandPage_ != nullptr)
+            commandPage_->setVisible(category == kCommandModel);
         resized();
     }
 
     LocalPage& localPage_;
     SampleTaggerPage* samplePage_;
     StemSeparationPage* stemsPage_;
+    CommandModelPage* commandPage_;
     juce::Label categoryLabel_;
     juce::ComboBox categoryCombo_;
 };
@@ -2253,8 +2418,13 @@ AISettingsDialog::AISettingsDialog() {
     if constexpr (magda::stems::DemucsSeparator::backendAvailable()) {
         stemsPage_ = std::make_unique<StemSeparationPage>();
     }
-    modelDownloadsPage_ =
-        std::make_unique<ModelDownloadsPage>(*localPage_, samplePage_.get(), stemsPage_.get());
+    // The encoder command model runs on ONNX Runtime, same availability gate
+    // as the CLAP-backed pages: no runtime, no download worth offering.
+    if constexpr (magda::media::clapBackendAvailable()) {
+        commandModelPage_ = std::make_unique<CommandModelPage>();
+    }
+    modelDownloadsPage_ = std::make_unique<ModelDownloadsPage>(
+        *localPage_, samplePage_.get(), stemsPage_.get(), commandModelPage_.get());
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
@@ -2322,6 +2492,9 @@ void AISettingsDialog::loadSettings() {
     if (stemsPage_) {
         stemsPage_->load(config);
     }
+    if (commandModelPage_) {
+        commandModelPage_->load(config);
+    }
 }
 
 void AISettingsDialog::applySettings() {
@@ -2334,6 +2507,9 @@ void AISettingsDialog::applySettings() {
     }
     if (stemsPage_) {
         stemsPage_->apply(config);
+    }
+    if (commandModelPage_) {
+        commandModelPage_->apply(config);
     }
     config.save();
 }

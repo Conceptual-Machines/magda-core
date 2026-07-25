@@ -32,6 +32,8 @@ dsl_grammar.hpp
     unigram_tokenizer.cpp
     command_model_onnx.hpp
     command_model_onnx.cpp
+    command_model_downloader.hpp
+    command_model_downloader.cpp
     router_model.hpp
     router_model.cpp
     router_model_data.hpp
