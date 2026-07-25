@@ -12,6 +12,7 @@ set(TEST_SOURCES
     test_audio_to_midi.cpp
     test_command.cpp
     test_command_model.cpp
+    test_router_model.cpp
     test_interfaces.cpp
     test_midi_clip_sync.cpp
     test_midi_clip_split.cpp

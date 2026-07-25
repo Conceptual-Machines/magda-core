@@ -28,6 +28,10 @@ dsl_grammar.hpp
     command_model.cpp
     command_model_data.hpp
     command_model_data.cpp
+    router_model.hpp
+    router_model.cpp
+    router_model_data.hpp
+    router_model_data.cpp
     music_agent.hpp
     music_agent.cpp
     chord_agent.hpp

@@ -1,7 +1,10 @@
 #include "router_agent.hpp"
 
+#include <chrono>
+
 #include "../daw/core/Config.hpp"
 #include "llm_client_factory.hpp"
+#include "router_model.hpp"
 
 namespace magda {
 
@@ -23,6 +26,28 @@ Examples: "create a piano track with a jazzy chord progression", "add a blues ba
 Respond with ONLY: COMMAND, MUSIC, AUTOMATION, or BOTH.)PROMPT";
 }
 
+RouterAgent::ClassifyResult RouterAgent::classifyLocal(const std::string& message) {
+    // Weights are static data and classify() is const + allocation-local, so one
+    // shared instance is enough; the function-local static also means the vocab
+    // map is only built if this provider is actually selected.
+    static const RouterModel model;
+
+    ClassifyResult result;
+    const auto start = std::chrono::steady_clock::now();
+    result.intent = model.classify(message);
+    result.wallSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+
+    // No confidence gate and no LLM fallback by design (#1843): fast inference
+    // is deterministic classification over a fixed label set, and an empty
+    // result only means the message had no tokens at all — the console then
+    // falls back to the view's default intent.
+    DBG("MAGDA Router (on-device): " + juce::String::fromUTF8(message.c_str()) + " -> " +
+        juce::String::fromUTF8(result.intent.c_str()) + " (" +
+        juce::String(result.wallSeconds * 1000.0, 2) + "ms)");
+    return result;
+}
+
 RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     ClassifyResult result;
 
@@ -33,6 +58,9 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig(role::ROUTER);
+
+    if (agentConfig.provider == provider::FAST_INFERENCE)
+        return classifyLocal(message);
 
     if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);

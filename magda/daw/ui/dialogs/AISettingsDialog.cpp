@@ -1242,9 +1242,10 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 row.providerCombo.addItem(disp, itemId++);
                 row.providerIds.push_back(pid);
             }
-            // The on-device command model only handles structural command
-            // intents, so offer it as a provider for the Command row alone.
-            if (row.role == magda::role::COMMAND) {
+            // Two roles have an on-device model behind them: the command model
+            // (#1827) and the console router (#1843). Every other role still
+            // needs a real LLM, so the option is offered only on those rows.
+            if (row.role == magda::role::COMMAND || row.role == magda::role::ROUTER) {
                 row.providerCombo.addItem("Fast Inference (On-Device)", itemId++);
                 row.providerIds.push_back(magda::provider::FAST_INFERENCE);
             }
