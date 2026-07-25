@@ -713,6 +713,7 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
                                      });
 
     updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, newValue);
+    paramGrid_->refreshEnabledStates(device_, paramGrid_->getCurrentPage());
 }
 
 void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {

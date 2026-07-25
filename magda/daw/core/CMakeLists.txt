@@ -41,6 +41,7 @@ target_sources(magda_daw PRIVATE
     ParameterDetector.cpp
     PresetManager.cpp
     DrumkitManager.cpp
+    DeviceCatalogMetadata.cpp
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp
@@ -111,6 +112,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.hpp
     PresetManager.hpp
     DrumkitManager.hpp
+    DeviceCatalogMetadata.hpp
     PluginPreferences.hpp
     PluginCapabilities.hpp
     PluginPresetScanner.hpp
