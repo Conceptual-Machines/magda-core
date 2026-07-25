@@ -220,8 +220,14 @@ CommandModelOnnx& CommandModelOnnx::operator=(CommandModelOnnx&&) noexcept = def
 std::filesystem::path CommandModelOnnx::defaultAssetDir() {
     if (const char* env = std::getenv("MAGDA_COMMAND_MODEL_DIR"))
         return {env};
-    return std::filesystem::path(
-        magda::paths::dataDir().getChildFile("CommandModel").getFullPathName().toStdString());
+    // <dataDir>/CommandModel/models — same shape as MediaDB/models and
+    // StemSeparation/models, so every downloaded model bundle sits in the same
+    // place relative to its feature.
+    return std::filesystem::path(magda::paths::dataDir()
+                                     .getChildFile("CommandModel")
+                                     .getChildFile("models")
+                                     .getFullPathName()
+                                     .toStdString());
 }
 
 bool CommandModelOnnx::isInstalled(const std::filesystem::path& dir) {

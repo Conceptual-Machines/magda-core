@@ -1,7 +1,7 @@
 # In-app test prompts — encoder command model (#1847)
 
-Set the command agent's provider to **Fast Inference** and type these into the
-console. The debug log says which backend answered:
+In AI Settings -> Advanced, set the **Command** row's provider to
+**Fast Inference (Command)**, then type these into the console. The debug log says which backend answered:
 
     MAGDA CommandAgent (fast_inference, encoder): ...   <- the new model
     MAGDA CommandAgent (fast_inference): ...            <- fell back to the conv net
@@ -93,7 +93,7 @@ interpreter error, and see findings.md.
 ## If it falls back to the conv net
 
 `CommandAgent` uses the encoder only when all three files are present in
-`<dataDir>/CommandModel/`:
+`<dataDir>/CommandModel/models/`:
 
 ```
 command_model.onnx   442 MB
@@ -101,7 +101,9 @@ tokenizer.json         8 MB
 maps.json              1 KB
 ```
 
-On macOS that is `~/Library/Application Support/MAGDA/CommandModel/`. Point
+On macOS that is `~/Library/MAGDA/CommandModel/models/` — JUCE's
+`userApplicationDataDirectory` is `~/Library`, not `~/Library/Application
+Support`. It sits beside `MediaDB/models` and `StemSeparation/models`. Point
 `MAGDA_COMMAND_MODEL_DIR` elsewhere to override. Regenerate the bundle with:
 
 ```bash

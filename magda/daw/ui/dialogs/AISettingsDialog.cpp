@@ -1246,7 +1246,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             // (#1827) and the console router (#1843). Every other role still
             // needs a real LLM, so the option is offered only on those rows.
             if (row.role == magda::role::COMMAND || row.role == magda::role::ROUTER) {
-                row.providerCombo.addItem("Fast Inference (On-Device)", itemId++);
+                row.providerCombo.addItem("Fast Inference (Command)", itemId++);
                 row.providerIds.push_back(magda::provider::FAST_INFERENCE);
             }
             selectRowProviderById(row, prevProvider);
