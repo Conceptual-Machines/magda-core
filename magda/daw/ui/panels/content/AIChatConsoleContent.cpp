@@ -1105,7 +1105,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
     chatHistory_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId,
                            juce::Colours::transparentBlack);
-    chatHistory_.setColour(juce::TextEditor::highlightColourId, juce::Colours::transparentBlack);
+    // Selection colours must be set explicitly: JUCE defaults
+    // highlightedTextColourId to BLACK, which is invisible on a dark
+    // background, so dragging over the transcript made the text vanish.
+    chatHistory_.setColour(juce::TextEditor::highlightColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
     addAndMakeVisible(chatHistory_);
 
@@ -1265,6 +1270,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setColour(juce::TextEditor::textColourId, juce::Colour(0xff88ff88));
     dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    dslOutput_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
 
     // DSL code editor
@@ -1657,6 +1665,12 @@ void AIChatConsoleContent::lookAndFeelChanged() {
     // palette after a live theme change. updateConfigStatus() re-applies
     // configStatusLabel_'s state colour.
     chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    chatHistory_.setColour(juce::TextEditor::highlightColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+    dslOutput_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     if (inputBox_ != nullptr) {
         inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
@@ -2789,6 +2803,7 @@ void AIChatConsoleContent::insertParamAlias(const juce::String& pluginAlias,
             false);
     }
 
+    suppressAutocompleteOnce_ = true;
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
@@ -2821,6 +2836,7 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
             juce::CodeDocument::Position(inputDocument_, atPos + 1 + (int)alias.length()), false);
     }
 
+    suppressAutocompleteOnce_ = true;
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
@@ -2947,6 +2963,13 @@ void AIChatConsoleContent::codeDocumentTextDeleted(int /*startIndex*/, int /*end
 void AIChatConsoleContent::onInputChanged() {
     if (!inputBox_)
         return;
+    // Consume the one-shot set by an explicit accept, so the completion we
+    // just inserted does not immediately re-open its own popup.
+    if (suppressAutocompleteOnce_) {
+        suppressAutocompleteOnce_ = false;
+        hideAutocomplete();
+        return;
+    }
     auto text = inputDocument_.getAllContent();
     int caretPos = inputBox_->getCaretPos().getPosition();
 
@@ -3167,6 +3190,7 @@ void AIChatConsoleContent::insertSlashCommand(const juce::String& command) {
     inputDocument_.replaceAllContent(newText);
     inputBox_->moveCaretTo(juce::CodeDocument::Position(inputDocument_, newText.length()), false);
 
+    suppressAutocompleteOnce_ = true;
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }

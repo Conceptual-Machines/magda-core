@@ -326,6 +326,11 @@ class AIChatConsoleContent : public PanelContent,
 
     class AutocompletePopup;
     std::unique_ptr<AutocompletePopup> autocompletePopup_;
+    // Accepting a completion rewrites the document, which fires the document
+    // listener, which re-runs onInputChanged() with the caret sitting just
+    // after the freshly-inserted @alias — matching it again and re-opening the
+    // popup we just closed. One-shot suppression consumed by that trigger.
+    bool suppressAutocompleteOnce_ = false;
     std::vector<AliasEntry> allAliases_;
 
     void buildAliasList();
