@@ -12,6 +12,8 @@ target_sources(magda_daw PRIVATE
     midi_api_live.cpp
     transport_api_live.cpp
     focused_api_live.cpp
+    remote_api.cpp
+    remote_api_projection.cpp
     # Headers (listed for IDE visibility)
     magda_api.hpp
     magda_api_live.hpp
@@ -36,4 +38,5 @@ target_sources(magda_daw PRIVATE
     transport_api_live.hpp
     focused_api.hpp
     focused_api_live.hpp
+    remote_api.hpp
 )
