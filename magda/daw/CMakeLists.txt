@@ -300,12 +300,18 @@ add_library(magda_daw STATIC
     magda.hpp
 )
 
-# Device SDK/runtime library — populated by audio/CMakeLists.txt.
+# Frozen device SDK usage requirements and runtime — populated below and by
+# audio/CMakeLists.txt. Device packs compile against magda::device_sdk; hosts
+# link magda::devices.
+add_library(magda_device_sdk INTERFACE)
+add_library(magda::device_sdk ALIAS magda_device_sdk)
 add_library(magda_devices STATIC)
 add_library(magda::devices ALIAS magda_devices)
+add_library(magda_base_devices STATIC)
+add_library(magda::base_devices ALIAS magda_base_devices)
 set_target_properties(magda_devices PROPERTIES
     PUBLIC_HEADER
-    "audio/plugins/BaseDevicePack.hpp;audio/processors/DeviceProcessorFactory.hpp;audio/plugins/InternalPluginRegistry.hpp"
+    "audio/plugins/DeviceServices.hpp;audio/plugins/FaustCustomViewKind.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/processors/base/DeviceProcessor.hpp;audio/processors/DeviceProcessorFactory.hpp"
 )
 
 # JUCE GUI app — sources contributed below via add_subdirectory().
@@ -514,7 +520,8 @@ target_link_libraries(magda_daw
     PUBLIC
     magda_types  # leaf value-type library (#1831); its types appear in magda_daw's public headers
     magda_music  # leaf music-theory library (#1833)
-    magda_devices  # reusable device SDK/runtime library (#1834)
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_devices>"  # SDK runtime
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # self-registering external-style pack
     MagdaAssets
     PRIVATE
     ${MAGDA_JUCE_STACK}
@@ -529,26 +536,22 @@ target_link_libraries(magda_daw
     $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>>
 )
 
-# magda_devices owns the device implementations and their DSP dependencies.
-# JUCE modules use INTERFACE_SOURCES, so borrowing their compile usage keeps
-# those unity sources compiled exactly once by magda_daw while exposing the
-# module link requirements to standalone device-library consumers.
-target_compile_features(magda_devices PUBLIC cxx_std_20)
-target_include_directories(magda_devices
-    PUBLIC
+# The frozen SDK target carries only compile usage and link requirements. It
+# deliberately does not own concrete device sources, so in-tree and private
+# packs build under the same contract.
+target_compile_features(magda_device_sdk INTERFACE cxx_std_20)
+target_include_directories(magda_device_sdk
+    INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/audio
-    PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
 )
 foreach(_magda_device_module IN LISTS MAGDA_DEVICE_JUCE_STACK)
-    target_include_directories(magda_devices PUBLIC
+    target_include_directories(magda_device_sdk INTERFACE
         $<TARGET_PROPERTY:${_magda_device_module},INTERFACE_INCLUDE_DIRECTORIES>)
-    target_compile_definitions(magda_devices PUBLIC
+    target_compile_definitions(magda_device_sdk INTERFACE
         $<TARGET_PROPERTY:${_magda_device_module},INTERFACE_COMPILE_DEFINITIONS>)
 endforeach()
-target_compile_definitions(magda_devices PUBLIC
+target_compile_definitions(magda_device_sdk INTERFACE
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_MODAL_LOOPS_PERMITTED=1
@@ -556,17 +559,62 @@ target_compile_definitions(magda_devices PUBLIC
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
-target_link_libraries(magda_devices
-    PUBLIC
+target_link_libraries(magda_device_sdk
+    INTERFACE
     magda_types
     magda_music
+    $<LINK_ONLY:${MAGDA_DEVICE_JUCE_STACK}>
+)
+
+# magda_devices owns the SDK runtime. The base pack is a separate static
+# library compiled against magda::device_sdk, exactly like an out-of-tree pack.
+# WHOLE_ARCHIVE above retains its public-hook registration anchor.
+target_compile_features(magda_devices PUBLIC cxx_std_20)
+target_include_directories(magda_devices PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
+)
+target_link_libraries(magda_devices
+    PUBLIC
+    magda_device_sdk
     PRIVATE
     MagdaAssets
     magda::mutable
     faust::libfaust
-    INTERFACE
-    $<LINK_ONLY:${MAGDA_DEVICE_JUCE_STACK}>
 )
+target_compile_features(magda_base_devices PRIVATE cxx_std_20)
+target_include_directories(magda_base_devices PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
+)
+target_link_libraries(magda_base_devices
+    PRIVATE
+    magda_device_sdk
+    MagdaAssets
+    magda::mutable
+    faust::libfaust
+)
+
+if(MAGDA_PRO_DEVICES)
+    if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "MAGDA_PRO_DEVICES=ON but no device pack was found at "
+            "${MAGDA_PRO_DEVICES_DIR}")
+    endif()
+
+    add_subdirectory(
+        "${MAGDA_PRO_DEVICES_DIR}"
+        "${CMAKE_BINARY_DIR}/magda_pro_devices"
+    )
+    if(NOT TARGET magda_pro_devices)
+        message(FATAL_ERROR
+            "The pro-device pack must define a magda_pro_devices target")
+    endif()
+
+    target_link_libraries(magda_daw
+        PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_pro_devices>")
+    target_compile_definitions(magda_daw PUBLIC MAGDA_PRO_DEVICES_ENABLED=1)
+endif()
 
 # Signalsmith's FFT-heavy processing cannot reliably meet real-time audio
 # deadlines at -O0. Keep the rest of Debug builds fully debuggable, but compile

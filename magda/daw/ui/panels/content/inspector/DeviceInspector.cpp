@@ -2,7 +2,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
-#include "audio/plugins/InternalPluginRegistry.hpp"
+#include "core/DeviceCatalogMetadata.hpp"
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -161,7 +161,7 @@ void DeviceInspector::updateFromSelectedChainNode() {
     juce::String nameStr;
     double latency = 0.0;
     bool showLatency = false;
-    const magda::daw::audio::InternalPluginSpec* metadata = nullptr;
+    magda::daw::DeviceCatalogMetadata metadata;
 
     // Check for display overrides (e.g., pad chain plugin info)
     auto& sm = magda::SelectionManager::getInstance();
@@ -183,7 +183,7 @@ void DeviceInspector::updateFromSelectedChainNode() {
                     nameStr = device->name;
                     latency = tm.getDeviceLatencySeconds(selectedChainNode_);
                     showLatency = true;
-                    metadata = magda::daw::audio::findInternalPluginSpec(device->pluginId);
+                    metadata = magda::daw::findDeviceCatalogMetadata(device->pluginId);
                 }
                 break;
             }
@@ -208,12 +208,12 @@ void DeviceInspector::updateFromSelectedChainNode() {
     chainNodeTypeLabel_.setText(typeStr, juce::dontSendNotification);
     chainNodeNameValue_.setText(nameStr, juce::dontSendNotification);
 
-    if (metadata != nullptr) {
+    if (metadata) {
         // Spec literals are UTF-8 (em-dash, ring operator, ...). juce::String's
         // default const char* ctor asserts on non-7-bit bytes, so go via
         // fromUTF8 here. Same pattern for category and codename for safety.
-        const juce::String category = juce::String::fromUTF8(metadata->browserCategory);
-        const juce::String description = juce::String::fromUTF8(metadata->description);
+        const juce::String category = juce::String::fromUTF8(metadata.browserCategory);
+        const juce::String description = juce::String::fromUTF8(metadata.description);
         categoryValue_.setText(category, juce::dontSendNotification);
         descriptionValue_.setStyledText(description);
         descriptionValue_.setTooltip(stripStyleTags(description));

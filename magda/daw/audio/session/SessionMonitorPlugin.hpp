@@ -2,15 +2,15 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "plugins/DeviceServices.hpp"
+
 namespace magda {
 
 namespace te = tracktion;
 
-class SessionClipAudioMonitor;
-
 /**
- * @brief Minimal te::Plugin that runs SessionClipAudioMonitor::process()
- * on the audio thread.
+ * @brief Minimal te::Plugin that advances the injected session context on the
+ * audio thread.
  *
  * Inserted once per Edit (on the master track or a utility track).
  * Passes audio and MIDI through unchanged — exists solely to provide
@@ -65,12 +65,12 @@ class SessionMonitorPlugin : public te::Plugin {
 
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
-    void setAudioMonitor(SessionClipAudioMonitor* monitor) {
-        audioMonitor_ = monitor;
+    void setSessionContext(daw::audio::DeviceSessionContext* context) {
+        sessionContext_ = context;
     }
 
   private:
-    SessionClipAudioMonitor* audioMonitor_ = nullptr;
+    daw::audio::DeviceSessionContext* sessionContext_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionMonitorPlugin)
 };

@@ -15,7 +15,8 @@ std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotT
         return std::make_unique<CompiledFaustDeviceLayout>(
             traits.compiledPresentation->layoutCellCount,
             traits.compiledPresentation->layoutCellsPerRow,
-            traits.compiledPresentation->columnMajorGrid);
+            traits.compiledPresentation->columnMajorGrid,
+            traits.compiledPresentation->isParameterEnabled);
     }
 
     return std::make_unique<StandardDeviceLayout>();

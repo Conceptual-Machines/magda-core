@@ -31,6 +31,36 @@ class DeviceTrackContext {
                                                    float value) = 0;
 };
 
+enum class DeviceTriggerSource {
+    Midi,
+    Audio,
+};
+
+/**
+ * Real-time-safe callbacks supplied by the host for device-side routing.
+ *
+ * Device packs depend on this interface rather than the DAW's PluginManager.
+ * Implementations must remain allocation-free and safe to call from the audio
+ * thread.
+ */
+class DeviceRealtimeContext {
+  public:
+    virtual ~DeviceRealtimeContext() = default;
+
+    virtual void triggerSidechain(TrackId sourceTrackId, DeviceTriggerSource source) = 0;
+    virtual void gateSidechain(TrackId sourceTrackId) = 0;
+    virtual void pushFollowerSourceBuffer(TrackId sourceTrackId, const float* mono, int numSamples,
+                                          double sampleRate) = 0;
+};
+
+class DeviceSessionContext {
+  public:
+    virtual ~DeviceSessionContext() = default;
+
+    /// Advances host-owned session state from a device's audio callback.
+    virtual void processSessionBlock(double transportPositionSeconds) = 0;
+};
+
 struct DeviceMeteringTapStorage {
     std::atomic<float> peakL{0.0f};
     std::atomic<float> peakR{0.0f};
@@ -76,6 +106,8 @@ struct DevicePluginDefaults {
 struct DeviceServices {
     DeviceIdAllocator* deviceIdAllocator = nullptr;
     DeviceTrackContext* trackContext = nullptr;
+    DeviceRealtimeContext* realtimeContext = nullptr;
+    DeviceSessionContext* sessionContext = nullptr;
     DeviceMeteringContext* meteringContext = nullptr;
     DevicePluginDefaults defaults;
 };

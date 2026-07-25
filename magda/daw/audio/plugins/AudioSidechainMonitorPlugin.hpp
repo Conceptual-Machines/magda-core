@@ -3,12 +3,11 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "../../core/TypeIds.hpp"
+#include "plugins/DeviceServices.hpp"
 
 namespace magda {
 
 namespace te = tracktion;
-
-class PluginManager;
 
 /**
  * @brief Audio-thread plugin that detects audio peaks on a source track and
@@ -19,8 +18,7 @@ class PluginManager;
  * Transparent passthrough.
  *
  * Performs envelope-following and threshold detection in applyToBuffer(), then
- * calls PluginManager::triggerSidechainNoteOn() / gateSidechainLFOs() on the
- * audio thread via the lock-free double-buffered cache.
+ * calls the injected DeviceRealtimeContext on the audio thread.
  *
  * Registered via MagdaEngineBehaviour::createCustomPlugin().
  */
@@ -76,15 +74,15 @@ class AudioSidechainMonitorPlugin : public te::Plugin {
         return sourceTrackId_;
     }
 
-    void setPluginManager(PluginManager* pm) {
-        pluginManager_ = pm;
+    void setRealtimeContext(daw::audio::DeviceRealtimeContext* context) {
+        realtimeContext_ = context;
     }
 
     juce::CachedValue<int> sourceTrackIdValue;
 
   private:
     TrackId sourceTrackId_ = INVALID_TRACK_ID;
-    PluginManager* pluginManager_ = nullptr;
+    daw::audio::DeviceRealtimeContext* realtimeContext_ = nullptr;
 
     // Envelope follower state (audio thread only)
     float envLevel_ = 0.0f;
@@ -96,9 +94,6 @@ class AudioSidechainMonitorPlugin : public te::Plugin {
     static constexpr float kReleaseMs = 50.0f;  // Moderate release
     float attackCoeff_ = 1.0f;                  // Recomputed on initialise
     float releaseCoeff_ = 1.0f;
-
-    int heartbeatCount_ = 0;
-    bool lastBlockHadCandidate_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSidechainMonitorPlugin)
 };

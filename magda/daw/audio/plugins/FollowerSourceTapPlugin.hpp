@@ -3,12 +3,11 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "../../core/TypeIds.hpp"
+#include "plugins/DeviceServices.hpp"
 
 namespace magda {
 
 namespace te = tracktion;
-
-class PluginManager;
 
 /**
  * @brief Audio-thread plugin that taps a track's post-FX output and feeds it to
@@ -19,10 +18,8 @@ class PluginManager;
  * sidechain-capable plugin keys off. Distinct from AudioSidechainMonitorPlugin,
  * which sits pre-FX and only drives note/gate triggers for LFO/ADSR modifiers.
  *
- * Each block it downmixes to mono and hands the raw (unrectified) samples to
- * PluginManager::pushFollowerSourceBuffer(), which applies each follower's own
- * pre-detection HP/LP band-limit filters and pushes the band-limited level via
- * EnvelopeFollowerModifier::setExternalInput(). Transparent passthrough.
+ * Each block it downmixes to mono and hands the raw (unrectified) samples to the
+ * injected DeviceRealtimeContext. Transparent passthrough.
  *
  * Registered via MagdaEngineBehaviour::createCustomPlugin().
  */
@@ -77,15 +74,15 @@ class FollowerSourceTapPlugin : public te::Plugin {
         return sourceTrackId_;
     }
 
-    void setPluginManager(PluginManager* pm) {
-        pluginManager_ = pm;
+    void setRealtimeContext(daw::audio::DeviceRealtimeContext* context) {
+        realtimeContext_ = context;
     }
 
     juce::CachedValue<int> sourceTrackIdValue;
 
   private:
     TrackId sourceTrackId_ = INVALID_TRACK_ID;
-    PluginManager* pluginManager_ = nullptr;
+    daw::audio::DeviceRealtimeContext* realtimeContext_ = nullptr;
 
     double sampleRate_ = 44100.0;
     std::vector<float> monoScratch_;  // audio thread only; sized on initialise

@@ -214,7 +214,7 @@ magda_compile_faust_dsp(
     MAGDA_BITCRUSHER_GENERATED_CPP
 )
 # A phony target that just depends on every generated DSP .cpp; making
-# magda_devices depend on it forces the custom commands to fire before any
+# magda_base_devices depend on it forces the custom commands to fire before any
 # wrapper TU is compiled.
 add_custom_target(magda_compiled_dsps
     DEPENDS
@@ -260,26 +260,55 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_PITCH_HARMONIZER_GENERATED_CPP}"
         "${MAGDA_BITCRUSHER_GENERATED_CPP}"
 )
-add_dependencies(magda_devices magda_compiled_dsps)
-target_include_directories(magda_devices PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
+add_dependencies(magda_base_devices magda_compiled_dsps)
+target_include_directories(magda_base_devices PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
 
-file(GLOB_RECURSE _magda_device_sources CONFIGURE_DEPENDS
+file(GLOB_RECURSE _magda_device_pack_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/processors/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/processors/*.hpp"
+)
+set(_magda_device_sdk_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustCustomViewKind.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/IFaustEditorModel.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/base/DeviceProcessor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/base/DeviceProcessor.hpp"
+)
+list(REMOVE_ITEM _magda_device_pack_sources ${_magda_device_sdk_sources})
+
+set(_magda_base_device_support_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TracktionHelpers.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/MaskingDetector.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/TrackMeasurer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/insert_capture/CaptureWindowMath.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/midi/MidiBroadcastBus.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transport/StepClock.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transport/StepClock.hpp"
 )
 file(GLOB _magda_device_dsp_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/*.dsp")
 set_source_files_properties(${_magda_device_dsp_sources} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 target_sources(magda_devices PRIVATE
-    ${_magda_device_sources}
+    ${_magda_device_sdk_sources}
+)
+
+target_sources(magda_base_devices PRIVATE
+    ${_magda_device_pack_sources}
     ${_magda_device_dsp_sources}
-    FaustResources.cpp
-    FaustResources.hpp
-    analysis/BandSpectrum.cpp
-    analysis/BandSpectrum.hpp
+    ${_magda_base_device_support_sources}
 )
 
 target_sources(magda_daw PRIVATE
@@ -308,7 +337,6 @@ target_sources(magda_daw PRIVATE
     midi/QwertyMidiKeyboard.cpp
     session/SessionClipScheduler.cpp
     session/SessionClipAudioMonitor.cpp
-    session/SessionMonitorPlugin.cpp
     session/SessionRecorder.cpp
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
@@ -341,7 +369,6 @@ target_sources(magda_daw PRIVATE
     session/ClipWarpSynchronizer.cpp
     insert_capture/InsertRenderCaptureService.cpp
     ExternalInsertDeviceEnablement.cpp
-    transport/StepClock.cpp
     # Controller routing (issue #1050 -- Phase C)
     controllers/ControllerParamWriter.cpp
     controllers/ControllerRouter.cpp
@@ -351,7 +378,6 @@ target_sources(magda_daw PRIVATE
     session/SessionClipAudioMonitor.hpp
     session/SessionClipCommandQueue.hpp
     session/SessionClipStateQueue.hpp
-    session/SessionMonitorPlugin.hpp
     MeteringBuffer.hpp
     params/ParameterQueue.hpp
     transport/TransportStateManager.hpp
@@ -371,53 +397,18 @@ target_sources(magda_daw PRIVATE
     session/ClipWarpSynchronizer.hpp
     midi/MidiBroadcastBus.hpp
     analysis/AudioTapBuffer.hpp
-    transport/StepClock.hpp
 )
 
-# Device implementations must receive project state through DeviceServices and
-# depend only on the value-type leaf, never upward DAW/application layers.
+# The base pack is compiled separately against magda::device_sdk. Keep its
+# sources movable by rejecting includes into host-owned DAW/application layers.
 set(_magda_device_boundary_sources
-    ${_magda_device_sources}
-    "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.hpp"
+    ${_magda_device_pack_sources}
+    ${_magda_base_device_support_sources}
 )
-foreach(_magda_device_source_path IN LISTS _magda_device_boundary_sources)
-    file(READ "${_magda_device_source_path}" _magda_device_source_text)
-    if(_magda_device_source_text MATCHES "(TrackManager|Config)::getInstance[ \t]*\\(")
-        message(FATAL_ERROR
-            "Device source calls a DAW singleton instead of DeviceServices: "
-            "${_magda_device_source_path}")
-    endif()
-
-    string(REGEX MATCHALL
-        "#[ \t]*include[ \t]*[<\"][^>\"]+[>\"]"
-        _magda_device_includes "${_magda_device_source_text}")
-    foreach(_magda_device_include IN LISTS _magda_device_includes)
-        if(_magda_device_include MATCHES
-           "[<\"]([^>\"]*/)?(engine|project|ui)/[^>\"]+[>\"]")
-            message(FATAL_ERROR
-                "magda_devices source crosses the DAW include boundary: "
-                "${_magda_device_source_path}\n${_magda_device_include}")
-        endif()
-
-        if(_magda_device_include MATCHES "[<\"]([^>\"]*/)?core/([^>\"]+)[>\"]")
-            set(_magda_device_core_header "${CMAKE_MATCH_2}")
-            if(NOT _magda_device_core_header MATCHES
-               "^(TypeIds|TechnicalText|ChainNodePath|ControlTarget|ParameterInfo|ParameterUtils|DeviceInfo|KitRow|MacroInfo|ModInfo|TempoUtils)\\.hpp$")
-                message(FATAL_ERROR
-                    "magda_devices source includes a non-value core header: "
-                    "${_magda_device_source_path}\n${_magda_device_include}")
-            endif()
-        endif()
-    endforeach()
-endforeach()
-unset(_magda_device_core_header)
-unset(_magda_device_include)
-unset(_magda_device_includes)
-unset(_magda_device_source_text)
-unset(_magda_device_source_path)
+magda_validate_device_pack_sources(
+    "MAGDA base device pack"
+    ${_magda_device_boundary_sources}
+)
 unset(_magda_device_boundary_sources)
 
 target_sources(magda_daw_app PRIVATE

@@ -74,6 +74,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # JUCE options
 option(JUCE_BUILD_EXTRAS "Build JUCE Examples" OFF)
 option(JUCE_BUILD_EXAMPLES "Build JUCE Extras" OFF)
+option(MAGDA_PRO_DEVICES "Build a private static device pack" OFF)
+set(MAGDA_PRO_DEVICES_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/magda/daw/device_packs/pro_stub"
+    CACHE PATH
+    "Directory containing the optional pro-device pack CMake project")
 
 # Build type
 if(NOT CMAKE_BUILD_TYPE)

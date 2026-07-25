@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "magda/daw/core/DeviceCatalogMetadata.hpp"
 
 namespace audio = magda::daw::audio;
 
@@ -23,6 +24,32 @@ TEST_CASE("Linked device packs populate the process registry", "[internal-plugin
     REQUIRE(spec != nullptr);
     REQUIRE(juce::String(spec->displayName) == "Test External Pack Device");
 }
+
+TEST_CASE("Device catalog metadata resolves compiled and registered devices",
+          "[internal-plugin-registry][metadata]") {
+    const auto grit = magda::daw::findDeviceCatalogMetadata("magda_grit");
+    REQUIRE(grit);
+    CHECK(juce::String(grit.displayName) == "Grit");
+    CHECK(juce::String(grit.browserCategory) == "Distortion");
+    CHECK(juce::String(grit.description).contains("no effect in Sine mode"));
+
+    const auto registered = magda::daw::findDeviceCatalogMetadata("test-external-pack-device");
+    REQUIRE(registered);
+    CHECK(juce::String(registered.displayName) == "Test External Pack Device");
+
+    CHECK_FALSE(magda::daw::findDeviceCatalogMetadata("unknown-device"));
+}
+
+#if defined(MAGDA_PRO_DEVICES_ENABLED) && MAGDA_PRO_DEVICES_ENABLED
+TEST_CASE("Optional pro pack registers its browser device through the SDK hook",
+          "[internal-plugin-registry][pro-devices]") {
+    const auto* spec = audio::findInternalPluginSpec("magda-pro-stub");
+    REQUIRE(spec != nullptr);
+    REQUIRE(juce::String(spec->displayName) == "Pro Pack Stub");
+    REQUIRE(spec->showInBrowser);
+    REQUIRE(spec->createCustomPlugin != nullptr);
+}
+#endif
 
 TEST_CASE("Device packs can register plugins without changing the core catalog",
           "[internal-plugin-registry]") {
