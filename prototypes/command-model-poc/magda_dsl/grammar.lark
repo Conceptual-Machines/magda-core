@@ -3,12 +3,21 @@
 // Keep in sync: this is the CFG the C++ CommandAgent uses to constrain LLM
 // output. The POC validates "valid command" by parsing against this grammar,
 // so a model that passes here produces output the shipping interpreter accepts.
+//
+// Re-synced 2026-07-25 (#1847). The previous copy predated the rack.* methods,
+// so every create_rack gold scored as a syntax error. Re-syncing also exposes
+// the reverse drift: the shipping CFG requires a condition in clips.select(),
+// and so does the interpreter (dsl_interpreter.cpp executeSelectClips), but
+// command_model.cpp emits a bare .clips.select() for select_all_clips. Those
+// rows now correctly count as invalid syntax here. Tracked, not fixed in this
+// spike.
 
 start: statement+
 
 statement: track_statement
          | filter_statement
          | groove_statement
+         | project_statement
 
 // Track statements
 track_statement: "track" "(" params? ")" chain?
@@ -20,12 +29,17 @@ filter_statement: "filter" "(" "tracks" ("," condition)? ")" chain?
 // Groove statements (swing/shuffle templates)
 groove_statement: "groove" "." groove_method
 
+// Project-wide timing settings.
+project_statement: "project" "." "set" "(" params ")"
+
 groove_method: "new" "(" params ")"
              | "extract" "(" params ")"
              | "set" "(" params ")"
              | "list" "(" ")"
 
-condition: "track" "." IDENTIFIER "==" value
+// The executor deliberately supports exact-name filtering only. Keep the CFG
+// this narrow so constrained models cannot emit predicates it cannot execute.
+condition: "track" "." "name" "==" STRING
 
 clip_condition: "clip" "." IDENTIFIER compare_op value
 
@@ -41,11 +55,17 @@ method: "." method_call
 method_call: "clip" "." "new" "(" params? ")"
            | "clip" "." "rename" "(" params? ")"
            | "clip" "." "delete" "(" params? ")"
-           | "clips" "." "select" "(" clip_condition? ")"
+           | "clips" "." "select" "(" clip_condition ")"
            | "track" "." "set" "(" params? ")"
            | "track" "." "group" "(" params? ")"
            | "track" "." "move" "(" params? ")"
            | "fx" "." "add" "(" params? ")"
+           | "rack" "." "new" "(" params? ")"
+           | "rack" "." "delete" "(" params? ")"
+           | "rack" "." "set" "(" params? ")"
+           | "rack" "." "chain_new" "(" params? ")"
+           | "rack" "." "chain_delete" "(" params? ")"
+           | "rack" "." "chain_set" "(" params? ")"
            | "notes" "." "select" "(" note_condition ")"
            | "notes" "." "delete" "(" ")"
            | "notes" "." "transpose" "(" params? ")"

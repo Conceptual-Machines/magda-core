@@ -6,14 +6,12 @@ generation, not mixing, not parameter tweaking - structural commands only.
 
 ## What the final output is
 
-One shippable artifact: a **tiny quantized model (GGUF)** that runs locally on
-the `third_party/llama.cpp` already in this repo (via `LlamaLocalClient`) and
-converts a request into the DSL the **existing** `CommandAgent` pipeline already
-executes:
+A local model that turns a request into the DSL the **existing** `CommandAgent`
+pipeline already executes:
 
 ```
 "create a bass track with serum and ott"
-   -> tiny local model (<500ms, offline, free)
+   -> local model (offline, free)
 track(name="Bass", new=true).fx.add(name="<serum>")
 track(name="Bass").fx.add(name="<ott>")
    -> CompactParser/dsl_interpreter -> InstructionExecutor -> UndoManager (one undoable transaction)
@@ -24,27 +22,50 @@ This POC only produces the model and the data/eval rig that makes it. The model
 emits the **shipping DSL** (`magda/agents/dsl_grammar.hpp`), so anything it
 produces is already executable.
 
+**The model never writes DSL.** It does perception only — classify the intent,
+tag each word with its slot role — and a deterministic reconstructor + renderer
+build the DSL from those labels. Malformed DSL is therefore structurally
+impossible, which is the property a generative model would give up.
+
+Three model shapes exist in this folder, in the order they happened:
+
+| | what it is | status |
+|---|---|---|
+| `model/net.py` | 51k-param conv net, trained from scratch, no language prior | shipped via #1827; **46.5%** on held-out phrasing |
+| `model/net_encoder.py` | pretrained transformer encoder + the same two heads | #1847 recommendation; **91.5%** on the same set (DeBERTa-v3 base) |
+| `model/train_colab.py` | generative Qwen2.5-0.5B -> GGUF | parked; kept as a distillation teacher / accuracy ceiling, not the artifact |
+
 ## Why emit the existing DSL (not new JSON)
 
 The output grammar is frozen, CFG-constrained in production, and wired to apply
 + undo. The model's only job is `text -> DSL`; the renderer + grammar guarantee
 correctness on the output side.
 
-## Multilingual: one model, not per-language
+## English only
 
-Locale set mirrors MAGDA's Crowdin translations: **en, ja, ru, zh**.
+The POC is English-only, deliberately, as of 2026-07-25. The multilingual
+plumbing (`i18n.py` seed banks, `--langs`, `INCLUDE_NON_EN`) has been removed
+rather than parked, and the 45 non-English training rows deleted.
 
-The DSL **output is language-invariant** - `track(name="Bass")...` is identical
-regardless of input language; only the request varies. A tiny model spends most
-of its capacity learning to emit valid DSL, and that half is shared across
-languages. Splitting by language re-learns the same grammar N times and adds a
-runtime language router. So: **one multilingual model**, report **per-language
-accuracy**, and only consider a split (or an EN-core + language packs) if the
-eval proves a single tiny model can't hold all locales. Decision is data-driven.
+They were never doing anything. `dataset/tagging.py:_TOK` is ASCII-only, so
+Cyrillic and CJK tokenized to an **empty** sequence — those rows trained the
+model on nothing, and both the conv net and a multilingual encoder scored ~13%
+on them. See findings.md ("Multilingual is NOT free") for the measurements.
 
-Design call: localized requests map to **canonical English track names**
-(`ベース`/`贝斯`/`бас` -> `name="Bass"`); plugin tokens and colour hexes are
-already language-neutral.
+The blocker was never the model. Word segmentation sits in front of it, because
+BIO tags are per-word and `reconstruct` consumes word-level tags, and that
+segmenter is English-shaped. Whoever picks up #1846 should start there:
+
+- **Latin-script + Cyrillic** (es, fr, de, it, pt, nl, ru): one Unicode-aware
+  regex fixes tokenization — verified. Costs a C++ mirror update
+  (`command_model.cpp` is byte-based) and a retrain, since the vocab changes.
+  Today accented words fragment: `añade` -> `a`, `ade`; `crée` -> `cr`, `e`.
+- **Japanese / Chinese**: no whitespace, so "one tag per word" has no natural
+  unit. Needs character-level segmentation, or moving BIO tagging to subwords
+  and rewriting the span logic in `reconstruct`. A design change.
+
+The DSL output is language-invariant either way — `track(name="Bass")` is the
+same in every locale — so the work is all on the input side.
 
 ## Layout
 
@@ -53,33 +74,74 @@ magda_dsl/
   grammar.lark     # mirrored verbatim from dsl_grammar.hpp (the CFG)
   vocab.py         # plugin inventory, colour palette, supported cmds + gaps
   dsl.py           # canonical action -> DSL renderer (gold by construction)
-  i18n.py          # ja/ru/zh curated seed banks (output = canonical English plan)
   validate.py      # lark parse + semantic checks
-dataset/generate.py    # template-based synthetic data (en procedural + curated)
+dataset/generate.py    # template-based synthetic data (English, procedural)
 baseline/rule_parser.py# Phase 1 no-model NL->DSL baseline (English)
 eval/make_testset.py   # build fixed testset.jsonl (hand-authored intents)
+eval/make_dev_testset.py # build dev_testset.jsonl  (held-out; select on this)
+eval/make_ood_testset.py # build ood_testset.jsonl  (held-out; sealed, report)
 eval/metrics.py        # valid-syntax / valid-command / exact-match / latency
 eval/run.py            # run a parser/model vs the test set
+model/net.py           # from-scratch conv net (Brevitas QAT, the FPGA shape)
+model/net_encoder.py   # pretrained-encoder swap (#1847) - same two heads
+model/data_encoder.py  # subword <-> word BIO alignment for the encoder
+model/train_encoder.py # fine-tune an encoder; reports OOD score each epoch
 ```
+
+## Measuring generalisation (read before trusting any number)
+
+There are **three** evaluation sets and confusing them is how the POC ended up
+believing a 46.5% model scored 98.2%:
+
+| set | authored from | use it for |
+|---|---|---|
+| `data/val.jsonl` | the same templates as train | nothing — it saturates at 100% and ranks checkpoints by nothing |
+| `eval/testset.jsonl` | the same case list as the templates | template recall only |
+| `eval/dev_testset.jsonl` | intent list + DSL semantics, by hand (46 cases) | **tuning and checkpoint selection** |
+| `eval/ood_testset.jsonl` | intent list + DSL semantics, by hand (71 cases) | **the reported number — keep it sealed** |
+
+The gap is not small: the shipped conv net scores 98.2% on `testset.jsonl` and
+**46.5%** on `ood_testset.jsonl`. Quote the second one.
+
+Both hand-authored sets assert at build time that no case appears verbatim in
+train/val or in each other, and the OOD builder reports token-level Jaccard to
+the nearest training row, so "held out" is checked rather than claimed.
+
+```bash
+python3 -m eval.make_dev_testset                       # 46 cases, tune vs these
+python3 -m eval.make_ood_testset                       # 71 cases, report vs these
+python3 -m eval.run --torch-model --ood --by-intent    # conv net, held out
+python3 -m eval.run --encoder-model model/artifacts_encoder_xlmr --ood --by-intent
+```
+
+**Never tune against `ood_testset.jsonl`.** A set you select against stops
+predicting how the model handles the next sentence and starts describing the
+71 it already saw — the same self-deception as scoring 111/111 on the
+templates, one level up. `train_encoder.py` selects on `dev` for exactly this
+reason and only prints `ood`.
 
 ## Run
 
 ```bash
-pip install -r requirements.txt          # lark
+pip install -r requirements.txt          # lark, torch, brevitas, transformers
 python3 -m eval.make_testset             # writes eval/testset.jsonl (committed)
-python3 -m dataset.generate --n 500      # writes data/train.jsonl
-python3 -m eval.run                      # baseline metrics, per language
+python3 -m dataset.generate --n 24000 --val 2000   # writes data/{train,val}.jsonl
+python3 -m eval.run                      # rule-parser baseline
 python3 -m eval.run --show-fails         # dump mismatches
 ```
 
 ## Metrics & targets (POC spec, adapted JSON->DSL)
 
 `valid_syntax` (parses under grammar.lark) >= 95%, `valid_command` >= 90%,
-`exact_match` >= 80%, latency < 500ms. The harness reports each overall and
-per language.
+`exact_match` >= 80%, latency < 500ms.
 
-Current baseline (no model): **en = 100% / 100% / 100%**, **ja/ru/zh = 0%**
-(the regex baseline is English-only; the 0% is the gap the trained model closes).
+Note `valid_syntax` sits a few points below 100% even for correct output: the
+`select_all_clips` intents emit `.clips.select()` with no condition, which the
+shipping CFG and interpreter both reject. Pre-existing bug, see findings.md.
+
+The no-model regex baseline scores **58.8%** exact in-distribution and **4.3%**
+on the held-out dev set — it was hand-fit to the original template set and the
+instruction surface has since tripled.
 
 ## Supported commands vs grammar gaps
 

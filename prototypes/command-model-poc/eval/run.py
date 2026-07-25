@@ -29,9 +29,24 @@ def main():
     ap.add_argument("--model", help="path to a trained .gguf; overrides --parser")
     ap.add_argument("--torch-model", nargs="?", const="model/artifacts",
                     help="dir with the Brevitas intent+slots checkpoint (default model/artifacts)")
+    ap.add_argument("--encoder-model", nargs="?", const="model/artifacts_encoder",
+                    help="dir with the pretrained-encoder checkpoint (default model/artifacts_encoder)")
     ap.add_argument("--testset", default=os.path.join(os.path.dirname(__file__), "testset.jsonl"))
+    ap.add_argument("--ood", action="store_true",
+                    help="score against eval/ood_testset.jsonl (the SEALED report set)")
+    ap.add_argument("--dev", action="store_true",
+                    help="score against eval/dev_testset.jsonl (tune against this one)")
     ap.add_argument("--show-fails", action="store_true")
+    ap.add_argument("--by-intent", action="store_true",
+                    help="per-intent and per-OOD-tag exact-match breakdown")
     args = ap.parse_args()
+
+    if args.ood and args.dev:
+        sys.exit("--ood and --dev are mutually exclusive")
+    if args.ood:
+        args.testset = os.path.join(os.path.dirname(__file__), "ood_testset.jsonl")
+    elif args.dev:
+        args.testset = os.path.join(os.path.dirname(__file__), "dev_testset.jsonl")
 
     if not os.path.exists(args.testset):
         sys.exit(f"test set not found: {args.testset}\nrun: python -m eval.make_testset")
@@ -41,6 +56,11 @@ def main():
         from model.gguf_parser import make_parser
         parser_fn = make_parser(args.model)
         args.parser = os.path.basename(args.model)
+    elif args.encoder_model:
+        from model.encoder_parser import build_parser
+        parser_fn = build_parser(os.path.abspath(args.encoder_model))
+        # Name the run after its checkpoint dir — several encoders are compared.
+        args.parser = "encoder:" + os.path.basename(args.encoder_model.rstrip("/"))
     elif args.torch_model:
         from model.intent_slot_parser import build_parser
         parser_fn = build_parser(os.path.abspath(args.torch_model))
@@ -53,6 +73,15 @@ def main():
 
     # Targets from the POC spec (adapted: valid-JSON -> valid-syntax).
     print("\n  targets: syntax>=95%  command>=90%  exact>=80%  latency<500ms")
+
+    if args.by_intent:
+        print()
+        print(metrics.format_groups(metrics.group_by(records, "intent"),
+                                    "exact match by intent", only_failing=True))
+        tags = metrics.group_by(records, "ood_tags")
+        if tags:
+            print()
+            print(metrics.format_groups(tags, "exact match by OOD pressure"))
 
     if args.show_fails:
         fails = [r for r in records if not r["exact"]]

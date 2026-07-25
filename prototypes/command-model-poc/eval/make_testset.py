@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from magda_dsl import dsl, i18n, vocab  # noqa: E402
+from magda_dsl import dsl, vocab  # noqa: E402
 
 T = vocab.resolve_plugin  # text -> token (legacy; plugins now use @alias below)
 C = vocab.COLORS
@@ -240,32 +240,16 @@ CASES = [
 ]
 
 
-# English-only by default (FPGA target: a small English vocab fits on-chip;
-# multilingual would blow up the embedding table). Flip INCLUDE_NON_EN=True to
-# also score ja/ru/zh from the parked curated seed banks.
-INCLUDE_NON_EN = False
-NON_EN_PER_LANG = 6
-
-
 def main():
     out = os.path.join(os.path.dirname(__file__), "testset.jsonl")
-    rows = []
-    for nl, actions in CASES:
-        rows.append({"lang": "en", "input": nl, "output": dsl.render(actions), "actions": actions})
-    if INCLUDE_NON_EN:
-        for lang in ("ja", "ru", "zh"):
-            for nl, actions in i18n.curated(lang)[-NON_EN_PER_LANG:]:
-                rows.append({"lang": lang, "input": nl, "output": dsl.render(actions), "actions": actions})
+    rows = [{"lang": "en", "input": nl, "output": dsl.render(actions), "actions": actions}
+            for nl, actions in CASES]
 
     with open(out, "w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    by_lang = {}
-    for r in rows:
-        by_lang[r["lang"]] = by_lang.get(r["lang"], 0) + 1
-    summary = ", ".join(f"{k}={v}" for k, v in by_lang.items())
-    print(f"wrote {len(rows)} test cases ({summary}) -> {out}")
+    print(f"wrote {len(rows)} test cases (en) -> {out}")
 
 
 if __name__ == "__main__":

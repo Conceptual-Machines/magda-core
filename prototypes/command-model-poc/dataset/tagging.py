@@ -42,6 +42,21 @@ GRID_PHRASES = {
 # one token.
 _TOK = re.compile(r"[@#]?[A-Za-z0-9_'\-]+(?:\.[0-9]+)?")
 
+# Units people type glued to the number ("-6db", "4bars"). Split those so the
+# numeric value can be tagged, but ONLY for this whitelist: a general
+# digits-then-letters split would wreck "16ths" (a grid phrase), "C3" (a pitch)
+# and "@pro_q_3" (an alias).
+_GLUED_UNIT = re.compile(r"^([+-]?[0-9]+(?:\.[0-9]+)?)(db|bars?|beats?|semitones?|st)$",
+                         re.IGNORECASE)
+
+
+def _split_glued_units(tokens):
+    out = []
+    for t in tokens:
+        m = _GLUED_UNIT.match(t)
+        out.extend([m.group(1), m.group(2)] if m else [t])
+    return out
+
 
 def _alias_surface(token: str) -> str:
     """DSL alias token '<serum>' -> the '@serum' surface the user types."""
@@ -60,7 +75,7 @@ TRACK_NAME_HINTS = [
 
 
 def tokenize(text: str):
-    return _TOK.findall(text)
+    return _split_glued_units(_TOK.findall(text))
 
 
 def _subseq(lower_tokens, words):
@@ -361,7 +376,9 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
     if intent == "notes_transpose":
         n = abs(_value_or_first_number(s, tokens))
         low = [t.lower() for t in tokens]
-        if any(w in low for w in ("down", "lower")):
+        # "drop"/"dropped" read as downward here; the templates only ever said
+        # "down"/"lower", so anything else came back +N (#1847 OOD miss).
+        if any(w in low for w in ("down", "lower", "drop", "dropped", "below")):
             n = -n
         return [{"type": "notes_transpose", "name": name, "semitones": n}]
     if intent == "notes_set_velocity":

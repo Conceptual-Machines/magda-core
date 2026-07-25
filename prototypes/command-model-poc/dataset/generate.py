@@ -19,7 +19,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from magda_dsl import dsl, i18n, vocab  # noqa: E402
+from magda_dsl import dsl, vocab  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Slot pools
@@ -777,9 +777,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=500, help="number of ENGLISH procedural train examples")
     ap.add_argument("--seed", type=int, default=7)
-    ap.add_argument("--langs", default="en",
-                    help="comma list. default en-only (FPGA target: small vocab = on-chip). "
-                         "non-en locales emit their curated seed bank, e.g. --langs en,ja,ru,zh")
     ap.add_argument("--out", default=os.path.join(here, "..", "data", "train.jsonl"))
     ap.add_argument("--val", type=int, default=0,
                     help="hold out this many English examples into a disjoint val split")
@@ -794,7 +791,6 @@ def main():
     ap.add_argument("--teacher-workers", type=int, default=8)
     args = ap.parse_args()
 
-    langs = [l.strip() for l in args.langs.split(",") if l.strip()]
     r = random.Random(args.seed)
 
     # English inputs that must never appear in train/val (the eval test set).
@@ -804,19 +800,18 @@ def main():
     # ---- English: procedural, deduped, leakage-guarded -------------------
     seen = set()
     en_rows = []
-    if "en" in langs:
-        target = args.n + args.val
-        attempts = 0
-        while len(en_rows) < target and attempts < target * 80:
-            attempts += 1
-            ex = make_english_example(r)
-            if ex["input"] in seen:
-                continue
-            if ex["input"] in excluded:
-                n_excluded += 1
-                continue
-            seen.add(ex["input"])
-            en_rows.append(ex)
+    target = args.n + args.val
+    attempts = 0
+    while len(en_rows) < target and attempts < target * 80:
+        attempts += 1
+        ex = make_english_example(r)
+        if ex["input"] in seen:
+            continue
+        if ex["input"] in excluded:
+            n_excluded += 1
+            continue
+        seen.add(ex["input"])
+        en_rows.append(ex)
 
     # Split English into val (first --val) and train (rest), disjoint by input.
     val_rows = en_rows[:args.val]
@@ -847,22 +842,11 @@ def main():
             augment(args.teacher_typo, True)
         print(f"teacher: train now {len(train_en)}, val now {len(val_rows)}")
 
-    # ---- Other locales: curated seed banks -> train ----------------------
     train_rows = list(train_en)
-    counts = {"en": len(train_en)}
-    for lang in langs:
-        if lang == "en":
-            continue
-        bank = [(nl, a) for nl, a in i18n.curated(lang) if nl not in excluded]
-        for nl, actions in bank:
-            train_rows.append({"lang": lang, "input": nl, "output": dsl.render(actions), "actions": actions})
-        counts[lang] = len(bank)
-
     train_path = os.path.abspath(args.out)
     _write(train_path, train_rows)
-    by_lang = ", ".join(f"{k}={v}" for k, v in counts.items())
     extra = f" [excluded {n_excluded} test-set inputs]" if excluded else ""
-    print(f"train: {len(train_rows)} examples ({by_lang}){extra} -> {train_path}")
+    print(f"train: {len(train_rows)} examples (en){extra} -> {train_path}")
 
     if args.val:
         val_path = os.path.abspath(args.val_out)

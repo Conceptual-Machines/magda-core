@@ -140,7 +140,46 @@ bool wordSearch(const std::string& hay, const std::string& needle) {
 }
 
 // ---------------------------------------------------------------------------
-// Tokenizer — mirrors _TOK = r"[@#]?[A-Za-z0-9_'\-]+(?:\.[0-9]+)?" findall.
+// Split a number glued to its unit ("-6db" -> "-6", "db") so the value can be
+// tagged. Mirrors dataset/tagging.py:_split_glued_units — same whitelist, and
+// for the same reason: a general digits-then-letters split would wreck "16ths"
+// (a grid phrase), "C3" (a pitch) and "@pro_q_3" (an alias).
+// ---------------------------------------------------------------------------
+bool splitGluedUnit(const std::string& tok, std::string& num, std::string& unit) {
+    static const char* kUnits[] = {"db",    "bar",      "bars",      "beat",
+                                   "beats", "semitone", "semitones", "st"};
+    size_t i = 0;
+    if (i < tok.size() && (tok[i] == '+' || tok[i] == '-'))
+        ++i;
+    size_t digitsStart = i;
+    while (i < tok.size() && tok[i] >= '0' && tok[i] <= '9')
+        ++i;
+    if (i == digitsStart)
+        return false;  // no leading number
+    if (i < tok.size() && tok[i] == '.') {
+        size_t frac = i + 1;
+        while (frac < tok.size() && tok[frac] >= '0' && tok[frac] <= '9')
+            ++frac;
+        if (frac > i + 1)
+            i = frac;
+    }
+    if (i == tok.size())
+        return false;  // pure number, nothing glued
+
+    std::string tail = toLower(tok.substr(i));
+    for (const char* u : kUnits) {
+        if (tail == u) {
+            num = tok.substr(0, i);
+            unit = tok.substr(i);
+            return true;
+        }
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Tokenizer — mirrors _TOK = r"[@#]?[A-Za-z0-9_'\-]+(?:\.[0-9]+)?" findall,
+// then dataset/tagging.py:_split_glued_units.
 // ---------------------------------------------------------------------------
 std::vector<std::string> tokenize(const std::string& text) {
     std::vector<std::string> toks;
@@ -167,7 +206,14 @@ std::vector<std::string> tokenize(const std::string& text) {
                    static_cast<unsigned char>(text[j]) <= '9')
                 ++j;
         }
-        toks.push_back(text.substr(start, j - start));
+        std::string tok = text.substr(start, j - start);
+        std::string num, unit;
+        if (splitGluedUnit(tok, num, unit)) {
+            toks.push_back(num);
+            toks.push_back(unit);
+        } else {
+            toks.push_back(tok);
+        }
         i = j;
     }
     return toks;

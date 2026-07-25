@@ -55,6 +55,8 @@ def evaluate(rows, parser_fn):
         records.append({
             "lang": lang, "input": row["input"], "gold": row["output"],
             "pred": pred, "valid": v.valid, "exact": exact, "errors": v.errors,
+            "intent": row["actions"][0]["type"] if row.get("actions") else "?",
+            "ood_tags": row.get("ood_tags", []),
         })
 
     def finalize(b):
@@ -70,6 +72,34 @@ def evaluate(rows, parser_fn):
     overall = finalize(buckets["__all__"])
     per_lang = {k: finalize(v) for k, v in buckets.items() if k != "__all__"}
     return overall, per_lang, records
+
+
+def group_by(records, key):
+    """Bucket eval records by a record field ('intent') or a list field
+    ('ood_tags', where a record counts once per tag). Returns
+    {bucket: (n_exact, n)} sorted worst-first, which is the order you want when
+    reading an out-of-distribution run: the buckets that broke come first."""
+    buckets = defaultdict(lambda: [0, 0])
+    for r in records:
+        values = r.get(key) or []
+        if isinstance(values, str):
+            values = [values]
+        for v in values:
+            buckets[v][0] += int(r["exact"])
+            buckets[v][1] += 1
+    return dict(sorted(buckets.items(), key=lambda kv: (kv[1][0] / kv[1][1], -kv[1][1])))
+
+
+def format_groups(groups, title, only_failing=False):
+    out = [f"-- {title} --"]
+    for name, (ok, n) in groups.items():
+        if only_failing and ok == n:
+            continue
+        bar = "#" * round(10 * ok / n) + "." * (10 - round(10 * ok / n))
+        out.append(f"  {name:<32} {bar} {ok:>3}/{n:<3} {ok / n:6.1%}")
+    if len(out) == 1:
+        out.append("  (all buckets clean)")
+    return "\n".join(out)
 
 
 def format_report(overall, per_lang, title="results"):
