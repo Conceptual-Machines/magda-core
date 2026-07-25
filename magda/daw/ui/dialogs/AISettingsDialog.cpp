@@ -1541,17 +1541,25 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             if (optimize == "Cost")
                 applyCheaperModel(out[magda::role::ROUTER], presetId);
         } else {
-            // Hybrid: router always local; music + controller cloud; command
-            // cloud for speed, local for cost.
+            // Hybrid: router always on-device; music + controller cloud; command
+            // cloud for speed, local GGUF for cost.
+            //
+            // NB this branch builds the configs itself rather than reading the
+            // HYBRID_* preset tables, so llm_presets.cpp and the code here have
+            // to be kept in step — changing only the table silently does nothing
+            // to the Simple UI.
             outPresetId =
                 optimize == "Speed" ? magda::preset::HYBRID_SPEED : magda::preset::HYBRID_QUALITY;
 
-            Config::AgentLLMConfig localCfg;
-            localCfg.provider = magda::provider::LLAMA_LOCAL;
-            out[magda::role::ROUTER] = localCfg;
+            Config::AgentLLMConfig fastCfg;
+            fastCfg.provider = magda::provider::FAST_INFERENCE;
+            out[magda::role::ROUTER] = fastCfg;
             out[magda::role::MUSIC] = makeCloudConfig(magda::role::MUSIC, presetId);
             out[magda::role::CONTROLLER] = makeCloudConfig(magda::role::CONTROLLER, presetId);
             if (optimize == "Speed") {
+                // Command stays cloud even here: the on-device command model is
+                // brittle outside its template distribution (#1847), so it is
+                // opt-in via Advanced rather than something a preset selects.
                 out[magda::role::COMMAND] = makeCloudConfig(magda::role::COMMAND, presetId);
             } else {
                 Config::AgentLLMConfig cmdLocal;

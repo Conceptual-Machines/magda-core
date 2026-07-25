@@ -97,7 +97,15 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::HYBRID_SPEED,
             "Hybrid - Optimize for Speed",
             {
-                {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
+                // Router runs on-device (#1843): sub-millisecond, offline, free,
+                // and a pure win because its label space *is* the seven
+                // ConsoleIntents — there is nothing to lose.
+                //
+                // Command deliberately does NOT: the on-device command model is
+                // brittle outside its template distribution (#1847), e.g.
+                // "track with @fm_0" yields a rack on the selected track. It
+                // stays opt-in via Advanced until it has a language prior.
+                {role::ROUTER, {provider::FAST_INFERENCE, "", "", ""}},
                 {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_NANO}},
                 {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
                 {role::FAUST, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
@@ -109,7 +117,10 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::HYBRID_QUALITY,
             "Hybrid - Optimize for Quality",
             {
-                {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
+                // Routing is a fixed 7-way choice, so the on-device classifier
+                // costs nothing in quality and saves an LLM round trip on every
+                // turn — worth taking even here.
+                {role::ROUTER, {provider::FAST_INFERENCE, "", "", ""}},
                 {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
                 {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_4}},
                 {role::FAUST, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_4}},
