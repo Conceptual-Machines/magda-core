@@ -796,18 +796,23 @@ class AISettingsDialog::LocalPage : public juce::Component {
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
 
             std::thread([this, cfg]() {
-                bool ok = LlamaModelManager::getInstance().loadModel(cfg);
-                juce::MessageManager::callAsync([this, ok, cfg]() {
+                std::string errorMessage;
+                bool ok = LlamaModelManager::getInstance().loadModel(cfg, &errorMessage);
+                juce::MessageManager::callAsync([this, ok, cfg, errorMessage]() {
                     loadButton_.setEnabled(true);
                     if (ok) {
                         auto& config = Config::getInstance();
                         config.setLocalModelPath(cfg.modelPath);
                         config.setLocalLlamaGpuLayers(cfg.gpuLayers);
                         config.setLocalLlamaContextSize(cfg.contextSize);
+                        updateStatus();
                     } else {
-                        statusLabel_.setText("Failed to load model", juce::dontSendNotification);
+                        statusLabel_.setText(errorMessage.empty()
+                                                 ? juce::String("Failed to load model")
+                                                 : juce::String(errorMessage),
+                                             juce::dontSendNotification);
+                        statusLabel_.setColour(juce::Label::textColourId, juce::Colours::red);
                     }
-                    updateStatus();
                 });
             }).detach();
             return;

@@ -25,7 +25,7 @@ class LlamaModelManager {
         int gpuLayers = -1;  // -1 = all layers on GPU (Metal)
     };
 
-    bool loadModel(const Config& config);
+    bool loadModel(const Config& config, std::string* errorMessage = nullptr);
     void unloadModel();
     bool isLoaded() const noexcept;
     bool isLoading() const noexcept;
@@ -60,6 +60,8 @@ class LlamaModelManager {
     LlamaModelManager(const LlamaModelManager&) = delete;
     LlamaModelManager& operator=(const LlamaModelManager&) = delete;
 
+    static std::string cpuCompatibilityError(bool isIntel, bool hasSSE42, bool hasAVX);
+    static std::string currentCpuCompatibilityError();
     std::string applyTemplate(const std::string& systemPrompt, const std::string& userMessage);
 
     mutable std::mutex mutex_;
