@@ -260,6 +260,7 @@ target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
     test_zoom_simple.cpp
     test_export_transport_stop_juce.cpp
+    test_offline_render_device_power_juce.cpp
     test_tracktion_engine_wrapper_refactoring_juce.cpp
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     test_midi_recording_juce.cpp
@@ -380,6 +381,9 @@ add_test(NAME external_plugin_state_restore_juce
 
 add_test(NAME section_scoped_device_ids_juce
          COMMAND magda_juce_tests "Section-Scoped Device IDs")
+
+add_test(NAME offline_render_device_power_juce
+         COMMAND magda_juce_tests "Offline Render Device Power Tests")
 
 add_test(NAME chord_progression_converter_juce
          COMMAND magda_juce_tests "Chord Progression Converter Tests")
