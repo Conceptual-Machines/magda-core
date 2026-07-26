@@ -6,10 +6,10 @@
 // bigger, far more accurate model only when the user asks. On held-out
 // phrasing the conv net scores 46.5% and this scores 91.5%.
 //
-// Files land in dataDir()/CommandModel/models/, which is where
-// CommandModelOnnx::defaultAssetDir() looks. Threading matches the stem
-// downloader: start() spawns a background juce::Thread, callbacks hop to the
-// message thread via callAsync.
+// Files land in CommandModelOnnx::defaultAssetDir(), which may be a
+// user-selected folder. Threading matches the stem downloader: start() spawns
+// a background juce::Thread, callbacks hop to the message thread via
+// callAsync.
 
 #pragma once
 

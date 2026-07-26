@@ -431,8 +431,9 @@ bool Interpreter::execute(const char* dslCode) {
         // Surface the underlying reasons, not just the count, so failures like
         // an unresolved plugin alias are diagnosable from the error alone.
         auto reasons = failureReasons.joinIntoString("; ");
-        ctx_.setError("All " + juce::String(failed) + " statement(s) failed" +
-                      (reasons.isEmpty() ? juce::String() : ": " + reasons));
+        const auto summary = failed == 1 ? juce::String("Command failed")
+                                         : "All " + juce::String(failed) + " commands failed";
+        ctx_.setError(summary + (reasons.isEmpty() ? juce::String() : ": " + reasons));
         return false;
     }
 
@@ -532,8 +533,8 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
             // track, which is both wrong and destructive-looking: "add @filter"
             // on an unselected project silently spawned a new track instead of
             // saying it had nowhere to put it.
-            ctx_.setError("No track selected — select a track first, or name one "
-                          "(e.g. \"add @filter to Bass\")");
+            ctx_.setError("No track selected. Select a track first, or name one "
+                          "(for example, \"add @filter to Bass\").");
             return false;
         } else {
             int existingId = forceNew ? -1 : findTrackByName(name);

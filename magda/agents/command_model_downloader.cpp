@@ -57,17 +57,26 @@ constexpr int kNumFiles = static_cast<int>(sizeof(kFiles) / sizeof(kFiles[0]));
 
 class CommandModelDownloader::Worker : public juce::Thread {
   public:
-    explicit Worker(ProgressCallback onProgress)
-        : juce::Thread("MAGDA CommandModelDownloader"), onProgress_(std::move(onProgress)) {}
+    Worker(juce::File destinationDir, ProgressCallback onProgress)
+        : juce::Thread("MAGDA CommandModelDownloader"),
+          destinationDir_(std::move(destinationDir)),
+          onProgress_(std::move(onProgress)) {}
 
     void run() override {
         Progress p;
         p.bytesTotal = CommandModelDownloader::expectedTotalBytes();
         p.phase = Phase::Downloading;
 
-        auto destDir = CommandModelDownloader::modelsDir();
-        if (!destDir.exists())
-            destDir.createDirectory();
+        if (!destinationDir_.isDirectory()) {
+            const auto result = destinationDir_.createDirectory();
+            if (result.failed()) {
+                p.phase = Phase::Failed;
+                p.errorMessage = "Could not create " + destinationDir_.getFullPathName() + ": " +
+                                 result.getErrorMessage();
+                postProgress(p);
+                return;
+            }
+        }
 
         for (int i = 0; i < kNumFiles; ++i) {
             p.currentFilename = kFiles[i].filename;
@@ -87,9 +96,9 @@ class CommandModelDownloader::Worker : public juce::Thread {
     }
 
   private:
-    // Stream into a temp file, verify SHA-256, then atomically rename.
+    // Stream into a temp file, verify completeness, then atomically rename.
     bool downloadOne(const ManifestEntry& entry, Progress& p) {
-        const auto dest = CommandModelDownloader::modelsDir().getChildFile(entry.filename);
+        const auto dest = destinationDir_.getChildFile(entry.filename);
 
         juce::URL url(fileUrl(entry));
         int statusCode = 0;
@@ -172,6 +181,7 @@ class CommandModelDownloader::Worker : public juce::Thread {
         juce::MessageManager::callAsync([cb, p]() { cb(p); });
     }
 
+    juce::File destinationDir_;
     ProgressCallback onProgress_;
 };
 
@@ -233,7 +243,9 @@ bool CommandModelDownloader::remove() {
 void CommandModelDownloader::start(ProgressCallback onProgress) {
     if (worker_ && worker_->isThreadRunning())
         return;
-    worker_ = std::make_unique<Worker>(std::move(onProgress));
+    // Keep one destination for the whole transfer even if the setting changes
+    // while the background worker is running.
+    worker_ = std::make_unique<Worker>(modelsDir(), std::move(onProgress));
     worker_->startThread();
 }
 

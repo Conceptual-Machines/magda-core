@@ -35,21 +35,24 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
     }
 
 #if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
-    // Probe once: a missing bundle is the normal case, not an error, and
-    // re-stat'ing three files on every command would be silly.
-    if (!encoderChecked_) {
-        encoderChecked_ = true;
-        const auto dir = CommandModelOnnx::defaultAssetDir();
-        if (CommandModelOnnx::isInstalled(dir)) {
-            try {
-                encoderModel_ = std::make_unique<CommandModelOnnx>(dir);
-                DBG("MAGDA CommandAgent: encoder command model loaded from " +
-                    juce::String(dir.string()));
-            } catch (const std::exception& e) {
-                // Fall back rather than fail the command outright.
-                DBG("MAGDA CommandAgent: encoder model unavailable (" + juce::String(e.what()) +
-                    "), using the conv net");
-            }
+    const auto dir = CommandModelOnnx::defaultAssetDir();
+    if (dir != encoderAssetDir_) {
+        encoderModel_.reset();
+        encoderAssetDir_ = dir;
+    }
+
+    // Recheck while absent so a model downloaded during this app session is
+    // picked up by the next command. Once loaded, no filesystem polling is
+    // needed unless the configured directory changes.
+    if (!encoderModel_ && CommandModelOnnx::isInstalled(dir)) {
+        try {
+            encoderModel_ = std::make_unique<CommandModelOnnx>(dir);
+            DBG("MAGDA CommandAgent: encoder command model loaded from " +
+                juce::String(dir.string()));
+        } catch (const std::exception& e) {
+            // Fall back rather than fail the command outright.
+            DBG("MAGDA CommandAgent: encoder model unavailable (" + juce::String(e.what()) +
+                "), using the conv net");
         }
     }
     if (encoderModel_) {

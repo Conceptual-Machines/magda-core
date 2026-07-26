@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <atomic>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -58,7 +59,7 @@ class CommandAgent {
     // the conv net's 46.5% (#1847). Absent by default — the bundle is a
     // separate download — so localModel_ stays the fallback.
     std::unique_ptr<CommandModelOnnx> encoderModel_;
-    bool encoderChecked_ = false;
+    std::filesystem::path encoderAssetDir_;
 };
 
 }  // namespace magda

@@ -1,5 +1,7 @@
 #include "command_model_onnx.hpp"
 
+#include <cstdlib>
+
 #if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
 
     #include <juce_core/juce_core.h>
@@ -7,7 +9,6 @@
 
     #include <algorithm>
     #include <cctype>
-    #include <cstdlib>
     #include <string>
     #include <unordered_map>
     #include <vector>
@@ -304,12 +305,22 @@ std::string CommandModelOnnx::generate(const std::string& text) const {
 // the downloader and the settings UI still need to know where the bundle goes
 // on builds where the backend itself is compiled out.
 #include "../daw/core/AppPaths.hpp"
+#include "../daw/core/Config.hpp"
 
 namespace magda {
 
 std::filesystem::path CommandModelOnnx::defaultAssetDir() {
     if (const char* env = std::getenv("MAGDA_COMMAND_MODEL_DIR"))
         return {env};
+
+    const auto configured = Config::getInstance().getCommandModelModelsDir();
+    if (!configured.empty()) {
+        std::filesystem::path path(configured);
+        std::error_code error;
+        if (std::filesystem::is_directory(path, error))
+            return path;
+    }
+
     // <dataDir>/CommandModel/models — same shape as MediaDB/models and
     // StemSeparation/models, so every downloaded bundle sits in the same place
     // relative to its feature.
