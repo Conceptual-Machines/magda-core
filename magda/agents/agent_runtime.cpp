@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -52,6 +53,7 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
     const auto startedAt = now_();
     const auto deadline = startedAt + definition.budget.maxWallTime;
     std::map<juce::String, std::size_t> identicalCallCounts;
+    std::set<juce::String> seenToolCallIds;
 
     const auto stop = [&](TerminalReason reason, juce::String detail = {}) {
         result.state =
@@ -138,6 +140,19 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
             return stop(TerminalReason::Completed);
         }
 
+        if (response.toolCallExecution == ModelResponse::ToolCallExecution::Parallel &&
+            response.toolCalls.size() > 1 &&
+            std::any_of(response.toolCalls.begin(), response.toolCalls.end(),
+                        [&](const ToolCall& call) {
+                            const auto* tool = findTool(definition, call.name);
+                            return tool != nullptr && tool->access == ToolAccess::Mutation;
+                        })) {
+            result.trace.push_back(std::move(trace));
+            return stop(TerminalReason::UnsafeParallelMutation,
+                        "Parallel tool batches containing mutations are not safe; retry "
+                        "sequentially");
+        }
+
         for (const auto& call : response.toolCalls) {
             if (cancellation.isCancellationRequested()) {
                 result.trace.push_back(std::move(trace));
@@ -159,12 +174,15 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
 
             ToolResult toolResult;
             const auto* tool = findTool(definition, call.name);
-            if (tool == nullptr) {
-                toolResult = makeErrorResult(call, result.finalRevision, "tool_not_allowed",
-                                             "Tool is not allowed for this agent surface");
-            } else if (call.id.isEmpty()) {
+            if (call.id.isEmpty()) {
                 toolResult = makeErrorResult(call, result.finalRevision, "invalid_tool_call",
                                              "Tool call ID must not be empty");
+            } else if (!seenToolCallIds.insert(call.id).second) {
+                toolResult = makeErrorResult(call, result.finalRevision, "duplicate_tool_call_id",
+                                             "Tool call ID was already used in this run");
+            } else if (tool == nullptr) {
+                toolResult = makeErrorResult(call, result.finalRevision, "tool_not_allowed",
+                                             "Tool is not allowed for this agent surface");
             } else {
                 const bool isMutation = tool->access == ToolAccess::Mutation;
                 if (isMutation && result.mutations >= definition.budget.maxMutations) {
@@ -173,19 +191,36 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
                 }
 
                 if (isMutation && approvalHook_) {
-                    const auto approval = approvalHook_({.tool = *tool,
-                                                         .call = call,
-                                                         .projectRevision = result.finalRevision,
-                                                         .permissions = input.permissions});
-                    if (!approval.approved) {
-                        toolResult = makeErrorResult(call, result.finalRevision, "approval_denied",
-                                                     approval.reason.isNotEmpty()
-                                                         ? approval.reason
-                                                         : "Mutation was not approved");
+                    try {
+                        const auto approval =
+                            approvalHook_({.tool = *tool,
+                                           .call = call,
+                                           .projectRevision = result.finalRevision,
+                                           .permissions = input.permissions});
+                        if (!approval.approved) {
+                            toolResult = makeErrorResult(
+                                call, result.finalRevision, "approval_denied",
+                                approval.reason.isNotEmpty() ? approval.reason
+                                                             : "Mutation was not approved");
+                        }
+                    } catch (const std::exception& error) {
+                        toolResult = makeErrorResult(call, result.finalRevision, "approval_error",
+                                                     error.what());
+                    } catch (...) {
+                        toolResult = makeErrorResult(call, result.finalRevision, "approval_error",
+                                                     "Approval hook threw an unknown exception");
                     }
                 }
 
                 if (!toolResult.error.has_value()) {
+                    if (cancellation.isCancellationRequested()) {
+                        result.trace.push_back(std::move(trace));
+                        return stop(TerminalReason::Cancelled, "Run cancelled");
+                    }
+                    if (timedOut()) {
+                        result.trace.push_back(std::move(trace));
+                        return stop(TerminalReason::TimeLimit, "Wall-time budget exhausted");
+                    }
                     if (isMutation)
                         ++result.mutations;
                     try {
@@ -239,6 +274,8 @@ const char* toString(TerminalReason reason) {
             return "time_limit";
         case TerminalReason::RepeatedToolCall:
             return "repeated_tool_call";
+        case TerminalReason::UnsafeParallelMutation:
+            return "unsafe_parallel_mutation";
         case TerminalReason::ModelError:
             return "model_error";
         case TerminalReason::InvalidModelResponse:

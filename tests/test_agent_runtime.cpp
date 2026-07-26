@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <functional>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 #include "magda/agents/agent_runtime.hpp"
@@ -249,9 +250,12 @@ TEST_CASE("AgentRuntime returns denied mutations to the model", "[agent-runtime]
 TEST_CASE("AgentRuntime terminates repeated failing calls at one revision", "[agent-runtime]") {
     FakeModel model;
     FakeExecutor executor;
-    model.handler = [](const ModelRequest&, const CancellationToken&) {
+    int callNumber = 0;
+    model.handler = [&callNumber](const ModelRequest&, const CancellationToken&) {
+        ++callNumber;
         return ModelResponse{.success = true,
-                             .toolCalls = {call("retry", "track.get", object({{"trackId", 404}}))}};
+                             .toolCalls = {call("retry-" + juce::String(callNumber), "track.get",
+                                                object({{"trackId", 404}}))}};
     };
     executor.handler = [](const ToolExecutionRequest& request, const CancellationToken&) {
         return ToolResult{.success = false,
@@ -383,5 +387,162 @@ TEST_CASE("AgentRuntime observes cancellation and time limits after model execut
         REQUIRE(result.reason == TerminalReason::TimeLimit);
         REQUIRE(result.steps == 1);
         REQUIRE(result.trace.size() == 1);
+    }
+}
+
+TEST_CASE("AgentRuntime executes declared sequential batches with a fresh revision per operation",
+          "[agent-runtime]") {
+    FakeModel model;
+    FakeExecutor executor;
+    int modelStep = 0;
+
+    model.handler = [&](const ModelRequest& request, const CancellationToken&) {
+        ++modelStep;
+        if (modelStep == 1) {
+            return ModelResponse{
+                .success = true,
+                .toolCalls = {call("mute-1", "track.mute", object({{"trackId", 1}})),
+                              call("mute-2", "track.mute", object({{"trackId", 2}}))}};
+        }
+        REQUIRE(request.projectRevision == 22);
+        REQUIRE(lastToolResult(request).projectRevision == 22);
+        return ModelResponse{.success = true, .text = "Muted both tracks."};
+    };
+    executor.handler = [](const ToolExecutionRequest& request, const CancellationToken&) {
+        return ToolResult{
+            .success = true, .projectRevision = request.expectedRevision + 1, .mutated = true};
+    };
+
+    AgentRuntime runtime(model, executor);
+    const auto result = runtime.run(definition({mutationTool("track.mute")}),
+                                    {.userMessage = "Mute both tracks.", .projectRevision = 20});
+
+    REQUIRE(result.reason == TerminalReason::Completed);
+    REQUIRE(executor.requests.size() == 2);
+    REQUIRE(executor.requests[0].expectedRevision == 20);
+    REQUIRE(executor.requests[1].expectedRevision == 21);
+    REQUIRE(result.finalRevision == 22);
+    REQUIRE(result.trace[0].revisionBefore == 20);
+    REQUIRE(result.trace[0].revisionAfter == 22);
+}
+
+TEST_CASE("AgentRuntime rejects parallel mutation batches before dispatch", "[agent-runtime]") {
+    FakeModel model;
+    FakeExecutor executor;
+    model.handler = [](const ModelRequest&, const CancellationToken&) {
+        return ModelResponse{.success = true,
+                             .toolCalls = {call("mute-1", "track.mute", object({{"trackId", 1}})),
+                                           call("read-1", "track.get", object({{"trackId", 1}}))},
+                             .toolCallExecution = ModelResponse::ToolCallExecution::Parallel};
+    };
+    executor.handler = [](const ToolExecutionRequest&, const CancellationToken&) -> ToolResult {
+        FAIL("Unsafe parallel mutation batch reached the executor");
+        return {};
+    };
+
+    AgentRuntime runtime(model, executor);
+    const auto result =
+        runtime.run(definition({mutationTool("track.mute"), readTool("track.get")}),
+                    {.userMessage = "Mute and inspect the track.", .projectRevision = 3});
+
+    REQUIRE(result.reason == TerminalReason::UnsafeParallelMutation);
+    REQUIRE(result.detail.contains("retry sequentially"));
+    REQUIRE(std::string_view{toString(result.reason)} == "unsafe_parallel_mutation");
+    REQUIRE(result.steps == 1);
+    REQUIRE(result.mutations == 0);
+    REQUIRE(executor.requests.empty());
+}
+
+TEST_CASE("AgentRuntime returns duplicate tool-call IDs to the model for repair",
+          "[agent-runtime]") {
+    FakeModel model;
+    FakeExecutor executor;
+    int modelStep = 0;
+
+    model.handler = [&](const ModelRequest& request, const CancellationToken&) {
+        ++modelStep;
+        if (modelStep == 1)
+            return ModelResponse{
+                .success = true,
+                .toolCalls = {call("read-1", "track.get", object({{"trackId", 1}}))}};
+        if (modelStep == 2)
+            return ModelResponse{
+                .success = true,
+                .toolCalls = {call("read-1", "track.get", object({{"trackId", 2}}))}};
+        REQUIRE(lastToolResult(request).error->code == "duplicate_tool_call_id");
+        return ModelResponse{.success = true, .text = "Kept the first result."};
+    };
+    executor.handler = [](const ToolExecutionRequest& request, const CancellationToken&) {
+        return ToolResult{.success = true,
+                          .content = object({{"trackId", 1}}),
+                          .projectRevision = request.expectedRevision};
+    };
+
+    AgentRuntime runtime(model, executor);
+    const auto result = runtime.run(definition({readTool("track.get")}),
+                                    {.userMessage = "Inspect tracks.", .projectRevision = 7});
+
+    REQUIRE(result.reason == TerminalReason::Completed);
+    REQUIRE(executor.requests.size() == 1);
+    REQUIRE(result.trace[1].toolResults[0].error->code == "duplicate_tool_call_id");
+}
+
+TEST_CASE("AgentRuntime makes approval failures observable and rechecks cancellation",
+          "[agent-runtime]") {
+    SECTION("approval hook exception") {
+        FakeModel model;
+        FakeExecutor executor;
+        int modelStep = 0;
+        model.handler = [&](const ModelRequest& request, const CancellationToken&) {
+            ++modelStep;
+            if (modelStep == 1)
+                return ModelResponse{
+                    .success = true,
+                    .toolCalls = {call("delete-1", "track.delete", object({{"trackId", 1}}))}};
+            REQUIRE(lastToolResult(request).error->code == "approval_error");
+            REQUIRE(lastToolResult(request).error->message == "approval unavailable");
+            return ModelResponse{.success = true, .text = "Approval could not be requested."};
+        };
+        executor.handler = [](const ToolExecutionRequest&, const CancellationToken&) -> ToolResult {
+            FAIL("Mutation with a failed approval hook reached the executor");
+            return {};
+        };
+
+        AgentRuntime runtime(model, executor, [](const ApprovalRequest&) -> ApprovalDecision {
+            throw std::runtime_error("approval unavailable");
+        });
+        const auto result = runtime.run(definition({mutationTool("track.delete")}),
+                                        {.userMessage = "Delete the track.", .projectRevision = 9});
+
+        REQUIRE(result.reason == TerminalReason::Completed);
+        REQUIRE(result.mutations == 0);
+        REQUIRE(executor.requests.empty());
+    }
+
+    SECTION("cancelled by approval owner before dispatch") {
+        FakeModel model;
+        FakeExecutor executor;
+        bool cancelled = false;
+        model.handler = [](const ModelRequest&, const CancellationToken&) {
+            return ModelResponse{
+                .success = true,
+                .toolCalls = {call("delete-1", "track.delete", object({{"trackId", 1}}))}};
+        };
+        executor.handler = [](const ToolExecutionRequest&, const CancellationToken&) -> ToolResult {
+            FAIL("Cancelled mutation reached the executor");
+            return {};
+        };
+
+        AgentRuntime runtime(model, executor, [&](const ApprovalRequest&) {
+            cancelled = true;
+            return ApprovalDecision{.approved = true};
+        });
+        const auto result = runtime.run(definition({mutationTool("track.delete")}),
+                                        {.userMessage = "Delete the track.", .projectRevision = 9},
+                                        CancellationToken([&cancelled] { return cancelled; }));
+
+        REQUIRE(result.reason == TerminalReason::Cancelled);
+        REQUIRE(result.mutations == 0);
+        REQUIRE(executor.requests.empty());
     }
 }
