@@ -483,6 +483,11 @@ void Config::load() {
 
                 for (const auto& prop : agentsObj->getProperties()) {
                     auto role = prop.name.toString().toStdString();
+                    // The model-based intent router was retired in favour of
+                    // deterministic context surfaces. Drop stale on-disk rows
+                    // so the next save removes the obsolete configuration.
+                    if (role == "router")
+                        continue;
                     if (auto* agentObj = prop.value.getDynamicObject()) {
                         AgentInferenceConfig profile;
                         profile.backend =
@@ -645,17 +650,6 @@ void Config::load() {
 
         AgentLLMConfig controllerCfg = musicCfg;
         setAgentLLMConfig("controller", controllerCfg);
-
-        AgentLLMConfig routerCfg;
-        if (isLegacyOpenAI && musicCfg.baseUrl.empty()) {
-            routerCfg.provider = "openai_chat";
-            routerCfg.model = "gpt-4.1-mini";
-            routerCfg.apiKey = musicCfg.apiKey;
-        } else {
-            // Mirror the user's existing provider for the router too
-            routerCfg = musicCfg;
-        }
-        setAgentLLMConfig("router", routerCfg);
     }
 
     browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);

@@ -1010,8 +1010,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                                      DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(advancedHintLabel_);
 
-        static constexpr std::array<std::pair<const char*, const char*>, 7> kRoles = {{
-            {magda::role::ROUTER, "Router"},
+        static constexpr std::array<std::pair<const char*, const char*>, 6> kRoles = {{
             {magda::role::COMMAND, "Command"},
             {magda::role::MUSIC, "Music"},
             {magda::role::FAUST, "Faust"},
@@ -1532,19 +1531,12 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                     out[role] = cfg;
                 }
             }
-            // Cost: cheaper model for router only (command needs the full model
-            // for CFG/Responses API).
-            if (optimize == "Cost")
-                applyCheaperModel(out[magda::role::ROUTER], presetId);
         } else {
-            // Hybrid: router always local; music + controller cloud; command
-            // cloud for speed, local for cost.
+            // Hybrid: music + controller are cloud; command is cloud for speed
+            // and local for cost.
             outPresetId =
                 optimize == "Speed" ? magda::preset::HYBRID_SPEED : magda::preset::HYBRID_QUALITY;
 
-            Config::AgentLLMConfig localCfg;
-            localCfg.provider = magda::provider::LLAMA_LOCAL;
-            out[magda::role::ROUTER] = localCfg;
             out[magda::role::MUSIC] = makeCloudConfig(magda::role::MUSIC, presetId);
             out[magda::role::CONTROLLER] = makeCloudConfig(magda::role::CONTROLLER, presetId);
             if (optimize == "Speed") {
@@ -1644,18 +1636,6 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         return Config::AgentLLMConfig{};
     }
 
-    static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& presetId) {
-        if (presetId == magda::preset::CLOUD_OPENAI)
-            cfg.model = magda::model::GPT_4_1_MINI;
-        else if (presetId == magda::preset::CLOUD_ANTHROPIC)
-            cfg.model = magda::model::CLAUDE_HAIKU;
-        else if (presetId == magda::preset::CLOUD_GEMINI)
-            cfg.model = magda::model::GEMINI_FLASH;
-        else if (presetId == magda::preset::CLOUD_DEEPSEEK)
-            cfg.model = magda::model::DEEPSEEK_CHAT;
-        // openrouter: keep default
-    }
-
     // Setup selector: Simple (preset) vs Advanced (per-agent grid)
     juce::Label setupLabel_;
     juce::ComboBox setupCombo_;
@@ -1678,7 +1658,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     // Advanced per-agent grid (AgentRow defined near the top of the class).
     juce::Label advancedHintLabel_;
-    std::array<AgentRow, 7> agentRows_;
+    std::array<AgentRow, 6> agentRows_;
 
     // MCP Tools
     juce::Label mcpSectionLabel_;
