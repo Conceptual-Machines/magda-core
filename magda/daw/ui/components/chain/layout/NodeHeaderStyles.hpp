@@ -89,7 +89,23 @@ class GainSliderWithMeterTooltip : public juce::Slider {
     GainSliderWithMeterTooltip(juce::Slider::SliderStyle style,
                                juce::Slider::TextEntryBoxPosition textPos,
                                const magda::LevelMeter& meter)
-        : juce::Slider(style, textPos), meter_(meter) {}
+        : juce::Slider(style, textPos), meter_(meter) {
+        // The slider overlays the device/rack meter inside a scrolling panel.
+        // Keep passive wheel/trackpad gestures scrolling that panel until the
+        // user deliberately grabs this slider.
+        setScrollWheelEnabled(false);
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        if (event.mods.isLeftButtonDown())
+            setScrollWheelEnabled(true);
+        juce::Slider::mouseDown(event);
+    }
+
+    void mouseExit(const juce::MouseEvent& event) override {
+        setScrollWheelEnabled(false);
+        juce::Slider::mouseExit(event);
+    }
 
     double valueToProportionOfLength(double value) override {
         const auto minDb = getMinimum();

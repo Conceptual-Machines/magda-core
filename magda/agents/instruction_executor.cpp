@@ -80,7 +80,7 @@ double InstructionExecutor::barsToTime(double bar) const {
     auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
-    return (bar - 1.0) * 4.0 * 60.0 / bpm;
+    return (bar - 1.0) * barsToBeats(1.0) * 60.0 / bpm;
 }
 
 double InstructionExecutor::barsToLength(double bars) const {
@@ -88,7 +88,7 @@ double InstructionExecutor::barsToLength(double bars) const {
     auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
-    return bars * 4.0 * 60.0 / bpm;
+    return bars * barsToBeats(1.0) * 60.0 / bpm;
 }
 
 double InstructionExecutor::barsToBeats(double bars) const {
@@ -239,11 +239,17 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
             currentClipId_ = seedClipId_;
             if (clipInfo->trackId != INVALID_TRACK_ID)
                 currentTrackId_ = clipInfo->trackId;
+        } else if (replaceSeedClipContents_) {
+            error_ = "The previous AI result is no longer available";
+            return false;
         } else {
             DBG("InstructionExecutor: ignoring stale seedClipId=" + juce::String(seedClipId_) +
                 " (clip no longer exists)");
             seedClipId_ = -1;
         }
+    } else if (replaceSeedClipContents_) {
+        error_ = "No previous AI result is available to revise";
+        return false;
     }
 
     // Multi-clip selection → populate selectedClips_ so SET/DEL apply to all
@@ -272,6 +278,23 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
     // One undo step for the whole turn. Property/track commands enqueued below
     // are collected by the UndoManager and wrapped into a single CompoundCommand.
     CompoundScope compound(api_.undo(), "AI Assistant");
+
+    if (replaceSeedClipContents_ && currentClipId_ >= 0) {
+        auto* clip = api_.clips().getClip(currentClipId_);
+        if (clip == nullptr || !clip->isMidi()) {
+            error_ = "The previous AI result is no longer a MIDI clip";
+            return false;
+        }
+
+        std::vector<size_t> noteIndices;
+        noteIndices.reserve(clip->midiNotes.size());
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+            noteIndices.push_back(i);
+        if (!noteIndices.empty()) {
+            api_.undo().executeCommand(
+                std::make_unique<DeleteMultipleMidiNotesCommand>(currentClipId_, noteIndices));
+        }
+    }
 
     for (const auto& inst : instructions) {
         bool ok = false;
@@ -645,8 +668,8 @@ bool InstructionExecutor::executeFx(const FxOp& op) {
 }
 
 bool InstructionExecutor::addFxToTrack(int trackId, const juce::String& fxName) {
-    // Internal plugin lookup — shares internal_plugins.hpp with the DSL
-    // interpreter so a single canonical alias per plugin is accepted by both.
+    // Internal plugin lookup shares the registry-derived catalog with the DSL
+    // interpreter, including display names, IDs and compatibility aliases.
     if (const auto* match = lookupInternalPluginByAlias(fxName)) {
         DeviceInfo device;
         device.name = match->displayName;
@@ -793,7 +816,7 @@ bool InstructionExecutor::executeSelect(const SelectOp& op) {
 
         if (op.field == "length" || op.field == "len") {
             // Compare clip length in bars
-            double clipLenBars = clip.length / barsToLength(1.0);
+            double clipLenBars = clip.placement.lengthBeats / barsToBeats(1.0);
             if (op.op == "<")
                 match = clipLenBars < numVal;
             else if (op.op == ">")
@@ -808,7 +831,7 @@ bool InstructionExecutor::executeSelect(const SelectOp& op) {
                 match = std::abs(clipLenBars - numVal) >= 0.01;
         } else if (op.field == "bar" || op.field == "start") {
             // Compare clip start position in bars (1-based)
-            double clipBar = clip.startTime / barsToLength(1.0) + 1.0;
+            double clipBar = clip.placement.startBeat / barsToBeats(1.0) + 1.0;
             if (op.op == "<")
                 match = clipBar < numVal;
             else if (op.op == ">")

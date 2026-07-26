@@ -816,6 +816,65 @@ TEST_CASE("DawProjectXmlAdapter routes a master-role channel to the master track
     REQUIRE(staged.tracks[0].name == "Audio 1");
 }
 
+TEST_CASE("DawProjectXmlAdapter imports Bitwig group and master channel destinations",
+          "[project][serialization][dawproject][routing]") {
+    // Bitwig labels group channels as role="master" because they are the master
+    // channel for their nested tracks. The actual project master is the only
+    // non-group master-role channel here.
+    const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<Project version="1.0">
+  <Structure>
+    <Track contentType="notes" loaded="true" id="tTop" name="Top-level Instrument">
+      <Channel audioChannels="2" destination="cMaster" role="regular" id="cTop"/>
+    </Track>
+    <Track contentType="tracks" loaded="true" id="tGroup" name="Hat group">
+      <Channel audioChannels="2" destination="cMaster" role="master" id="cGroup"/>
+      <Track contentType="notes" loaded="true" id="tChild" name="Closed Hat">
+        <Channel audioChannels="2" destination="cGroup" role="regular" id="cChild"/>
+      </Track>
+    </Track>
+    <Track contentType="audio notes" loaded="true" id="tMaster" name="Master">
+      <Channel audioChannels="2" role="master" id="cMaster"/>
+    </Track>
+  </Structure>
+</Project>)";
+
+    ProjectDocument doc;
+    juce::String error;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, doc, error));
+    REQUIRE(doc.tracks.size() == 4);
+
+    const TrackInfo* top = nullptr;
+    const TrackInfo* group = nullptr;
+    const TrackInfo* child = nullptr;
+    const TrackInfo* master = nullptr;
+    for (const auto& track : doc.tracks) {
+        if (track.name == "Top-level Instrument")
+            top = &track;
+        else if (track.name == "Hat group")
+            group = &track;
+        else if (track.name == "Closed Hat")
+            child = &track;
+        else if (track.name == "Master")
+            master = &track;
+    }
+
+    REQUIRE(top != nullptr);
+    REQUIRE(group != nullptr);
+    REQUIRE(child != nullptr);
+    REQUIRE(master != nullptr);
+    REQUIRE(group->type == TrackType::Group);
+    REQUIRE(master->type == TrackType::Master);
+    REQUIRE(top->audioOutputDevice == "master");
+    REQUIRE(group->audioOutputDevice == "master");
+    REQUIRE(child->audioOutputDevice == "track:" + juce::String(group->id));
+
+    auto staged = NativeProjectDocumentAdapter::toStagedProjectData(doc);
+    REQUIRE(staged.masterTrack != nullptr);
+    REQUIRE(staged.masterTrack->name == "Master");
+    REQUIRE(staged.tracks.size() == 3);
+}
+
 TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send routing",
           "[project][serialization][dawproject][builtin]") {
     const juce::String xml = R"(<?xml version="1.0" encoding="UTF-8"?>

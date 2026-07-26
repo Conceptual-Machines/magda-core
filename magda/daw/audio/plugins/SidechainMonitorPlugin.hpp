@@ -3,12 +3,11 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "../../core/TypeIds.hpp"
+#include "plugins/DeviceServices.hpp"
 
 namespace magda {
 
 namespace te = tracktion;
-
-class PluginManager;
 
 /**
  * @brief Lightweight te::Plugin that monitors MIDI on the audio thread for sidechain triggering.
@@ -16,9 +15,8 @@ class PluginManager;
  * Inserted at position 0 on source tracks that are sidechain sources or have
  * MIDI/Audio-triggered mods. Transparent — passes audio and MIDI through unchanged.
  * In applyToBuffer(), scans bufferForMidiMessages for note-on/off, writes to
- * SidechainTriggerBus (lock-free atomic counters), and calls
- * PluginManager::triggerSidechainNoteOn() to reset LFO phases via a pre-computed
- * cache (no TrackManager scan on audio thread).
+ * SidechainTriggerBus (lock-free atomic counters), and calls the injected
+ * DeviceRealtimeContext to reset LFO phases via a pre-computed cache.
  *
  * Registered via MagdaEngineBehaviour::createCustomPlugin() so TE handles
  * serialization/deserialization.
@@ -79,18 +77,17 @@ class SidechainMonitorPlugin : public te::Plugin {
     }
 
     /**
-     * @brief Set the PluginManager reference for forwarding triggers to destination tracks
+     * @brief Set the host service used for forwarding triggers to destination tracks
      */
-    void setPluginManager(PluginManager* pm) {
-        pluginManager_ = pm;
+    void setRealtimeContext(daw::audio::DeviceRealtimeContext* context) {
+        realtimeContext_ = context;
     }
 
     juce::CachedValue<int> sourceTrackIdValue;
 
   private:
     TrackId sourceTrackId_ = INVALID_TRACK_ID;
-    PluginManager* pluginManager_ = nullptr;
-    int heartbeatCount_ = 0;      // debug: per-instance heartbeat counter
+    daw::audio::DeviceRealtimeContext* realtimeContext_ = nullptr;
     int localHeldNoteCount_ = 0;  // audio-thread held-note count for gate detection
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SidechainMonitorPlugin)

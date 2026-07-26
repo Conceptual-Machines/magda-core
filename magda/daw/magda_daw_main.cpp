@@ -320,11 +320,24 @@ class MagdaDAWApplication : public JUCEApplication {
                 modelCfg.contextSize = config.getLocalLlamaContextSize();
                 DBG("Auto-loading local model: " << modelCfg.modelPath);
                 modelLoadThread_ = std::thread([modelCfg]() {
-                    bool ok = magda::LlamaModelManager::getInstance().loadModel(modelCfg);
+                    std::string errorMessage;
+                    bool ok =
+                        magda::LlamaModelManager::getInstance().loadModel(modelCfg, &errorMessage);
                     if (ok) {
                         DBG("Local model loaded successfully");
                     } else {
-                        DBG("Failed to load local model");
+                        const auto error = errorMessage.empty()
+                                               ? juce::String("Failed to load local model")
+                                               : juce::String(errorMessage);
+                        juce::Logger::writeToLog(error);
+                        if (errorMessage.empty())
+                            return;
+
+                        juce::MessageManager::callAsync([error]() {
+                            juce::AlertWindow::showMessageBoxAsync(
+                                juce::MessageBoxIconType::WarningIcon, "Local AI unavailable",
+                                error);
+                        });
                     }
                 });
             }

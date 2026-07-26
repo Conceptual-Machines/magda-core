@@ -159,9 +159,9 @@ void stereoCorrWidth(const juce::AudioBuffer<float>& buf, float& corr, float& wi
     width = ms > 1.0e-12 ? static_cast<float>(sumSide / ms) : 0.0f;
 }
 
-MixAnalysisAgent::TrackMix snapshotToMix(const juce::String& name, const std::string& role,
-                                         const TrackMeasurementSnapshot& s) {
-    MixAnalysisAgent::TrackMix t;
+MixAnalysisData::Track snapshotToMix(const juce::String& name, const std::string& role,
+                                     const TrackMeasurementSnapshot& s) {
+    MixAnalysisData::Track t;
     t.name = name.toStdString();
     t.role = role;
     t.integratedLufs = s.integratedLufs;
@@ -176,9 +176,9 @@ MixAnalysisAgent::TrackMix snapshotToMix(const juce::String& name, const std::st
     return t;
 }
 
-MixAnalysisAgent::TrackMix measureToMix(const juce::AudioBuffer<float>& buf, double sr,
-                                        const juce::String& name, const std::string& role,
-                                        bool truePeak, BandArray& bandsOut) {
+MixAnalysisData::Track measureToMix(const juce::AudioBuffer<float>& buf, double sr,
+                                    const juce::String& name, const std::string& role,
+                                    bool truePeak, BandArray& bandsOut) {
     auto mix = snapshotToMix(name, role, measure(buf, sr, &bandsOut, truePeak));
     mix.tonalDb = collapseToMacro(bandsOut);
     const auto sf = spectralFeatures(bandsOut);
@@ -207,18 +207,18 @@ std::vector<SectionBound> autoSections(int total, int n) {
 
 }  // namespace
 
-MixAnalysisAgent::TrackMix MixAnalysisInput::fingerprint(const juce::AudioBuffer<float>& buf,
-                                                         double sr, const juce::String& name,
-                                                         const std::string& role) {
+MixAnalysisData::Track MixAnalysisInput::fingerprint(const juce::AudioBuffer<float>& buf, double sr,
+                                                     const juce::String& name,
+                                                     const std::string& role) {
     BandArray bands{};
     return measureToMix(buf, sr, name, role, /*truePeak*/ true, bands);
 }
 
-MixAnalysisAgent::Input MixAnalysisInput::build(double sr, const std::vector<Source>& tracks,
-                                                const juce::AudioBuffer<float>* masterIn,
-                                                const std::vector<Source>& references,
-                                                const Options& opts) {
-    MixAnalysisAgent::Input input;
+MixAnalysisData MixAnalysisInput::build(double sr, const std::vector<Source>& tracks,
+                                        const juce::AudioBuffer<float>* masterIn,
+                                        const std::vector<Source>& references,
+                                        const Options& opts) {
+    MixAnalysisData measurements;
     std::vector<TrackBandEnergies> bandSet;
     int maxLen = 0;
 
@@ -229,7 +229,7 @@ MixAnalysisAgent::Input MixAnalysisInput::build(double sr, const std::vector<Sou
         maxLen = juce::jmax(maxLen, s.audio->getNumSamples());
 
         BandArray bands{};
-        input.tracks.push_back(
+        measurements.tracks.push_back(
             measureToMix(*s.audio, sr, s.name, s.role, /*truePeak*/ false, bands));
 
         TrackBandEnergies be;
@@ -259,11 +259,11 @@ MixAnalysisAgent::Input MixAnalysisInput::build(double sr, const std::vector<Sou
         master = &summed;
     }
     if (master != nullptr && master->getNumSamples() > 0)
-        input.master = fingerprint(*master, sr, "Master", "master");
+        measurements.master = fingerprint(*master, sr, "Master", "master");
 
     // Inter-track masking from the measured spectra.
     for (const auto& f : detectMasking(bandSet))
-        input.masking.push_back(
+        measurements.masking.push_back(
             {f.nameA.toStdString(), f.nameB.toStdString(), f.loHz, f.hiHz, f.severity});
 
     // Timeline: slice the master over time.
@@ -279,7 +279,7 @@ MixAnalysisAgent::Input MixAnalysisInput::build(double sr, const std::vector<Sou
             BandArray segBands{};
             auto segSnap = measure(win, sr, &segBands, /*truePeak*/ false);
 
-            MixAnalysisAgent::Segment seg;
+            MixAnalysisData::Segment seg;
             seg.label = sec.label.toStdString();
             seg.startSec = static_cast<float>(sec.start / sr);
             seg.endSec = static_cast<float>((sec.start + sec.len) / sr);
@@ -288,16 +288,16 @@ MixAnalysisAgent::Input MixAnalysisInput::build(double sr, const std::vector<Sou
             float segCorr = 1.0f;
             stereoCorrWidth(win, segCorr, seg.width);
             seg.tonalDb = collapseTo3(segBands);
-            input.timeline.push_back(std::move(seg));
+            measurements.timeline.push_back(std::move(seg));
         }
     }
 
     // References (genre targets).
     for (const auto& r : references)
         if (r.audio != nullptr && r.audio->getNumSamples() > 0)
-            input.references.push_back(fingerprint(*r.audio, sr, r.name, r.role));
+            measurements.references.push_back(fingerprint(*r.audio, sr, r.name, r.role));
 
-    return input;
+    return measurements;
 }
 
 }  // namespace magda::daw::audio

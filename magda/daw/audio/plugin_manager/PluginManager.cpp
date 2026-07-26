@@ -174,12 +174,14 @@ void captureVst3Info(DeviceInfo& devInfo, te::ExternalPlugin* ext) {
 
 PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController& trackController,
                              PluginWindowBridge& pluginWindowBridge,
-                             TransportStateManager& transportState)
+                             TransportStateManager& transportState,
+                             daw::audio::DeviceTrackContext& deviceTrackContext)
     : engine_(engine),
       edit_(edit),
       trackController_(trackController),
       pluginWindowBridge_(pluginWindowBridge),
       transportState_(transportState),
+      deviceTrackContext_(deviceTrackContext),
       instrumentRackManager_(edit),
       rackSyncManager_(edit, *this) {}
 

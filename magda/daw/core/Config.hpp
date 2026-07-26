@@ -187,12 +187,12 @@ class Config {
         scrollbarOnLeft = onLeft;
     }
 
-    // When true, the arrangement scrollbars hide on idle and fade in on hover.
+    // When true, the primary-view scrollbars hide on idle and fade in on hover.
     // When false, they are always visible (classic behaviour).
-    bool getArrangementScrollbarsAutoHide() const {
+    bool getMainViewScrollbarsAutoHide() const {
         return arrangementScrollbarsAutoHide;
     }
-    void setArrangementScrollbarsAutoHide(bool autoHide) {
+    void setMainViewScrollbarsAutoHide(bool autoHide) {
         arrangementScrollbarsAutoHide = autoHide;
     }
 
@@ -481,6 +481,15 @@ class Config {
         sampleTaggerModelsDir = dir;
     }
 
+    // User-chosen location for the optional command-model ONNX bundle.
+    // Empty string = default (dataDir/CommandModel/models).
+    std::string getCommandModelModelsDir() const {
+        return commandModelModelsDir;
+    }
+    void setCommandModelModelsDir(const std::string& dir) {
+        commandModelModelsDir = dir;
+    }
+
     // Load the Sample Tagger encoders + tokenizer eagerly at app startup
     // instead of waiting for the first DB query that needs them. Eats
     // ~700 MB of RAM and a few seconds of init time, but no first-query
@@ -594,12 +603,24 @@ class Config {
         bounceBitDepth = depth;
     }
 
-    // AI Configuration — per-agent LLM settings
+    // LLM-specific settings. This is one possible inference backend, not the
+    // configuration identity of an agent workload.
     struct AgentLLMConfig {
         std::string provider = "openai_chat";
         std::string baseUrl;
         std::string apiKey;
         std::string model;
+    };
+
+    // Agent role -> inference profile. New backends can be added without
+    // redefining agent roles or turning their configuration into "LLM roles".
+    struct AgentInferenceConfig {
+        std::string backend = "llm";
+        AgentLLMConfig llm;
+
+        bool usesLLM() const {
+            return backend == "llm";
+        }
     };
 
     std::string getAIPreset() const {
@@ -609,18 +630,39 @@ class Config {
         aiPreset = preset;
     }
 
-    AgentLLMConfig getAgentLLMConfig(const std::string& role) const {
-        auto it = agentConfigs.find(role);
-        if (it != agentConfigs.end())
+    AgentInferenceConfig getAgentInferenceConfig(const std::string& agentRole) const {
+        auto it = agentInferenceConfigs.find(agentRole);
+        if (it != agentInferenceConfigs.end())
             return it->second;
+        // Faust and Chord were split out of the Music workload after per-agent
+        // configs shipped. Keep pre-migration/in-memory configurations working
+        // even before they are saved again with the new explicit keys.
+        if (agentRole == "faust" || agentRole == "chord") {
+            if (auto music = agentInferenceConfigs.find("music");
+                music != agentInferenceConfigs.end())
+                return music->second;
+        }
         return {};
     }
-    void setAgentLLMConfig(const std::string& role, const AgentLLMConfig& config) {
-        agentConfigs[role] = config;
+    void setAgentInferenceConfig(const std::string& agentRole, const AgentInferenceConfig& config) {
+        agentInferenceConfigs[agentRole] = config;
     }
 
-    const std::map<std::string, AgentLLMConfig>& getAllAgentConfigs() const {
-        return agentConfigs;
+    // Temporary backend-specific bridge for existing LLM agents and settings
+    // UI. These are not role APIs; callers configuring an agent should use
+    // the inference-profile methods above.
+    AgentLLMConfig getAgentLLMConfig(const std::string& agentRole) const {
+        return getAgentInferenceConfig(agentRole).llm;
+    }
+    void setAgentLLMConfig(const std::string& agentRole, const AgentLLMConfig& config) {
+        auto profile = getAgentInferenceConfig(agentRole);
+        profile.backend = "llm";
+        profile.llm = config;
+        setAgentInferenceConfig(agentRole, profile);
+    }
+
+    const std::map<std::string, AgentInferenceConfig>& getAllAgentInferenceConfigs() const {
+        return agentInferenceConfigs;
     }
 
     // Per-provider API credentials (provider name → API key)
@@ -731,22 +773,30 @@ class Config {
 
     // Legacy setters — write to "music" agent config
     void setLLMProvider(const std::string& p) {
-        agentConfigs["music"].provider = p;
+        auto cfg = getAgentLLMConfig("music");
+        cfg.provider = p;
+        setAgentLLMConfig("music", cfg);
     }
     void setLLMBaseUrl(const std::string& url) {
-        agentConfigs["music"].baseUrl = url;
+        auto cfg = getAgentLLMConfig("music");
+        cfg.baseUrl = url;
+        setAgentLLMConfig("music", cfg);
     }
     void setLLMApiKey(const std::string& key) {
-        agentConfigs["music"].apiKey = key;
+        auto cfg = getAgentLLMConfig("music");
+        cfg.apiKey = key;
+        setAgentLLMConfig("music", cfg);
     }
     void setLLMModel(const std::string& model) {
-        agentConfigs["music"].model = model;
+        auto cfg = getAgentLLMConfig("music");
+        cfg.model = model;
+        setAgentLLMConfig("music", cfg);
     }
     void setOpenAIApiKey(const std::string& key) {
-        agentConfigs["music"].apiKey = key;
+        setLLMApiKey(key);
     }
     void setOpenAIModel(const std::string& model) {
-        agentConfigs["music"].model = model;
+        setLLMModel(model);
     }
 
     // Unified default colour palette (tracks + clips share the same palette)
@@ -1228,6 +1278,10 @@ class Config {
     // Empty = use the default dataDir/MediaDB/models.
     std::string sampleTaggerModelsDir = "";
 
+    // Optional override for the command-model ONNX bundle location.
+    // Empty = use the default dataDir/CommandModel/models.
+    std::string commandModelModelsDir = "";
+
     // Eagerly load the Sample Tagger encoders + tokenizer at startup
     // (vs lazy on first query).
     bool loadSampleTaggerOnStartup = false;
@@ -1273,10 +1327,13 @@ class Config {
 
     // AI settings
     std::string aiPreset = "local_embedded";
-    std::map<std::string, AgentLLMConfig> agentConfigs = {
-        {"router", {"llama_local", "", "", ""}}, {"command", {"llama_local", "", "", ""}},
-        {"music", {"llama_local", "", "", ""}},  {"controller", {"llama_local", "", "", ""}},
-        {"theme", {"llama_local", "", "", ""}},
+    std::map<std::string, AgentInferenceConfig> agentInferenceConfigs = {
+        {"command", {"llm", {"llama_local", "", "", ""}}},
+        {"music", {"llm", {"llama_local", "", "", ""}}},
+        {"faust", {"llm", {"llama_local", "", "", ""}}},
+        {"chord", {"llm", {"llama_local", "", "", ""}}},
+        {"controller", {"llm", {"llama_local", "", "", ""}}},
+        {"theme", {"llm", {"llama_local", "", "", ""}}},
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";

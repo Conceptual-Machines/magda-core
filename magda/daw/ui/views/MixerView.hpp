@@ -20,6 +20,7 @@
 #include "../components/mixer/MiniChainRow.hpp"
 #include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
+#include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "audio/MidiBridge.hpp"
@@ -303,8 +304,9 @@ class MixerView : public juce::Component,
     std::unique_ptr<MasterChannelStrip> masterStrip;
 
     // Scrollable area for channels
-    std::unique_ptr<juce::Viewport> channelViewport;
+    std::unique_ptr<WheelForwardingViewport> channelViewport;
     std::unique_ptr<juce::Component> channelContainer;
+    std::unique_ptr<MainViewScrollContainer> scrollContainer_;
 
     // Aux channel container (fixed, not scrollable, between channels and master)
     std::unique_ptr<juce::Component> auxContainer;

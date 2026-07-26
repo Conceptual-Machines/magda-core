@@ -294,6 +294,7 @@
   "main_window": {
     "loading.initializing": "Инициализация",
     "loading.scanning_devices": "Сканирование {0}- и {1}-устройств",
+    "loading.splitting_stems": "Разделение на стемы",
     "undo.render_clips": "Рендер клипов"
   },
   "export": {
@@ -380,7 +381,7 @@
     "toggle.stop_updates_playhead": "Стоп обновляет позицию воспроизведения",
     "toggle.follow_playhead": "Следовать за курсором во время воспроизведения",
     "toggle.headers_on_right": "Дорожки справа",
-    "toggle.autohide_arrangement_scrollbars": "Автоскрытие полос прокрутки аранжировки",
+    "toggle.autohide_arrangement_scrollbars": "Автоскрытие полос прокрутки главного вида",
     "toggle.confirm_track_delete": "Подтверждение перед удалением дорожки",
     "toggle.auto_monitor": "Автомониторинг выбранной дорожки",
     "toggle.open_macros_on_select": "Открывать макросы при выборе устройств или рэков",

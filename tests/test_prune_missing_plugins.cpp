@@ -67,6 +67,24 @@ void registerTestFormats(juce::AudioPluginFormatManager& fm) {
 #endif
 }
 
+struct ExternalPluginPath {
+    juce::String volumeRoot;
+    juce::String pluginPath;
+};
+
+ExternalPluginPath makeExternalPluginPath() {
+#if JUCE_MAC
+    return {"/Volumes/MAGDA Test Plugins", "/Volumes/MAGDA Test Plugins/VST3/MissingExternal.vst3"};
+#elif JUCE_WINDOWS
+    return {"Z:\\", "Z:\\VST3\\MissingExternal.vst3"};
+#elif JUCE_LINUX
+    return {"/media/magda/MAGDA Test Plugins",
+            "/media/magda/MAGDA Test Plugins/vst3/MissingExternal.vst3"};
+#else
+    return {};
+#endif
+}
+
 }  // namespace
 
 TEST_CASE("pruneMissingPlugins removes stale entries across formats", "[plugin][prune]") {
@@ -117,4 +135,61 @@ TEST_CASE("pruneMissingPlugins handles an empty list", "[plugin][prune]") {
     juce::KnownPluginList list;
     CHECK(TracktionEngineWrapper::pruneMissingPlugins(list, formatManager) == 0);
     CHECK(list.getNumTypes() == 0);
+}
+
+TEST_CASE("pruneMissingPlugins preserves entries on an unavailable external volume",
+          "[plugin][prune]") {
+    const auto external = makeExternalPluginPath();
+    if (external.volumeRoot.isEmpty()) {
+        SUCCEED("External-volume path classification is not supported on this platform");
+        return;
+    }
+
+    juce::AudioPluginFormatManager formatManager;
+    registerTestFormats(formatManager);
+
+    juce::KnownPluginList list;
+    list.addType(makeDesc("ExternalVST3", external.pluginPath));
+    list.addType(makeDesc("UninstalledLocalVST3", makeAbsentAbsolutePath("Uninstalled.vst3")));
+
+    bool probedExternalRoot = false;
+    const int removed = TracktionEngineWrapper::pruneMissingPlugins(
+        list, formatManager, [&external, &probedExternalRoot](const juce::String& root) {
+            if (root == external.volumeRoot) {
+                probedExternalRoot = true;
+                return false;
+            }
+            return true;
+        });
+
+    CHECK(probedExternalRoot);
+    CHECK(removed == 1);
+    CHECK(listContainsName(list, "ExternalVST3"));
+    CHECK_FALSE(listContainsName(list, "UninstalledLocalVST3"));
+}
+
+TEST_CASE("pruneMissingPlugins removes a missing plugin when its external volume is mounted",
+          "[plugin][prune]") {
+    const auto external = makeExternalPluginPath();
+    if (external.volumeRoot.isEmpty()) {
+        SUCCEED("External-volume path classification is not supported on this platform");
+        return;
+    }
+
+    juce::AudioPluginFormatManager formatManager;
+    registerTestFormats(formatManager);
+
+    juce::KnownPluginList list;
+    list.addType(makeDesc("UninstalledExternalVST3", external.pluginPath));
+
+    juce::String probedRoot;
+    const int removed = TracktionEngineWrapper::pruneMissingPlugins(
+        list, formatManager, [&probedRoot](const juce::String& root) {
+            probedRoot = root;
+            return true;
+        });
+
+    CHECK(probedRoot == external.volumeRoot);
+    CHECK(removed == 1);
+    CHECK_FALSE(listContainsName(list, "UninstalledExternalVST3"));
 }

@@ -214,7 +214,7 @@ magda_compile_faust_dsp(
     MAGDA_BITCRUSHER_GENERATED_CPP
 )
 # A phony target that just depends on every generated DSP .cpp; making
-# magda_daw depend on it forces the custom commands to fire before any
+# magda_base_devices depend on it forces the custom commands to fire before any
 # wrapper TU is compiled.
 add_custom_target(magda_compiled_dsps
     DEPENDS
@@ -260,81 +260,63 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_PITCH_HARMONIZER_GENERATED_CPP}"
         "${MAGDA_BITCRUSHER_GENERATED_CPP}"
 )
-add_dependencies(magda_daw magda_compiled_dsps)
-target_include_directories(magda_daw PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
+add_dependencies(magda_base_devices magda_compiled_dsps)
+target_include_directories(magda_base_devices PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
+
+file(GLOB_RECURSE _magda_device_pack_sources CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/*.hpp"
+)
+set(_magda_device_sdk_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustCustomViewKind.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/IFaustEditorModel.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/base/DeviceProcessor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/base/DeviceProcessor.hpp"
+)
+list(REMOVE_ITEM _magda_device_pack_sources ${_magda_device_sdk_sources})
+
+set(_magda_base_device_support_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TracktionHelpers.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/MaskingDetector.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/TrackMeasurer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/insert_capture/CaptureWindowMath.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/midi/MidiBroadcastBus.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transport/StepClock.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transport/StepClock.hpp"
+)
+file(GLOB _magda_device_dsp_sources CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/*.dsp")
+set_source_files_properties(${_magda_device_dsp_sources} PROPERTIES HEADER_FILE_ONLY TRUE)
+
+target_sources(magda_devices PRIVATE
+    ${_magda_device_sdk_sources}
+)
+
+target_sources(magda_base_devices PRIVATE
+    ${_magda_device_pack_sources}
+    ${_magda_device_dsp_sources}
+    ${_magda_base_device_support_sources}
+)
 
 target_sources(magda_daw PRIVATE
-    plugins/compiled/MagdaFilterCompiledPlugin.cpp
-    plugins/compiled/MagdaFilterCompiledPlugin.hpp
-    plugins/compiled/MagdaSaturatorCompiledPlugin.cpp
-    plugins/compiled/MagdaSaturatorCompiledPlugin.hpp
-    plugins/compiled/MagdaPolySynthCompiledPlugin.cpp
-    plugins/compiled/MagdaPolySynthCompiledPlugin.hpp
-    plugins/compiled/MagdaCompiledPolyInstrument.cpp
-    plugins/compiled/MagdaCompiledPolyInstrument.hpp
-    plugins/compiled/MagdaFMCompiledPlugin.cpp
-    plugins/compiled/MagdaFMCompiledPlugin.hpp
-    plugins/compiled/MagdaKickCompiledPlugin.cpp
-    plugins/compiled/MagdaKickCompiledPlugin.hpp
-    plugins/compiled/MagdaSnareCompiledPlugin.cpp
-    plugins/compiled/MagdaSnareCompiledPlugin.hpp
-    plugins/compiled/MagdaClapCompiledPlugin.cpp
-    plugins/compiled/MagdaClapCompiledPlugin.hpp
-    plugins/compiled/MagdaHatCompiledPlugin.cpp
-    plugins/compiled/MagdaHatCompiledPlugin.hpp
-    plugins/compiled/MagdaTomCompiledPlugin.cpp
-    plugins/compiled/MagdaTomCompiledPlugin.hpp
-    plugins/compiled/MagdaMarimbaCompiledPlugin.cpp
-    plugins/compiled/MagdaMarimbaCompiledPlugin.hpp
-    plugins/compiled/MagdaDjembeCompiledPlugin.cpp
-    plugins/compiled/MagdaDjembeCompiledPlugin.hpp
-    plugins/compiled/MagdaBellCompiledPlugin.cpp
-    plugins/compiled/MagdaBellCompiledPlugin.hpp
-    plugins/compiled/MagdaDelayCompiledPlugin.cpp
-    plugins/compiled/MagdaDelayCompiledPlugin.hpp
-    plugins/compiled/MagdaGrainDelayCompiledPlugin.cpp
-    plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp
-    plugins/compiled/MagdaGritCompiledPlugin.cpp
-    plugins/compiled/MagdaGritCompiledPlugin.hpp
-    plugins/compiled/MagdaMultibandCompiledPlugin.cpp
-    plugins/compiled/MagdaMultibandCompiledPlugin.hpp
-    plugins/compiled/MagdaPhaserCompiledPlugin.cpp
-    plugins/compiled/MagdaPhaserCompiledPlugin.hpp
-    plugins/compiled/MagdaCompressorCompiledPlugin.cpp
-    plugins/compiled/MagdaCompressorCompiledPlugin.hpp
-    plugins/compiled/MagdaModCompiledPlugin.cpp
-    plugins/compiled/MagdaModCompiledPlugin.hpp
-    plugins/compiled/MagdaChorusCompiledPlugin.cpp
-    plugins/compiled/MagdaChorusCompiledPlugin.hpp
-    plugins/compiled/MagdaFlangerCompiledPlugin.cpp
-    plugins/compiled/MagdaFlangerCompiledPlugin.hpp
-    plugins/compiled/MagdaRingModCompiledPlugin.cpp
-    plugins/compiled/MagdaRingModCompiledPlugin.hpp
-    plugins/compiled/MagdaFreqShiftCompiledPlugin.cpp
-    plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp
-    plugins/compiled/MagdaLimiterCompiledPlugin.cpp
-    plugins/compiled/MagdaLimiterCompiledPlugin.hpp
-    plugins/compiled/MagdaGateExpanderCompiledPlugin.cpp
-    plugins/compiled/MagdaGateExpanderCompiledPlugin.hpp
-    plugins/compiled/MagdaUtilityCompiledPlugin.cpp
-    plugins/compiled/MagdaUtilityCompiledPlugin.hpp
-    plugins/compiled/MagdaClipperCompiledPlugin.cpp
-    plugins/compiled/MagdaClipperCompiledPlugin.hpp
-    plugins/compiled/MagdaReverbCompiledPlugin.cpp
-    plugins/compiled/MagdaReverbCompiledPlugin.hpp
-    plugins/compiled/MagdaEqCompiledPlugin.cpp
-    plugins/compiled/MagdaEqCompiledPlugin.hpp
-    plugins/compiled/MagdaDimensionCompiledPlugin.cpp
-    plugins/compiled/MagdaDimensionCompiledPlugin.hpp
-    plugins/compiled/MagdaPitchCompiledPlugin.cpp
-    plugins/compiled/MagdaPitchCompiledPlugin.hpp
-    plugins/compiled/MagdaBitcrusherCompiledPlugin.cpp
-    plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp
-    plugins/compiled/CompiledPluginRegistry.cpp
-    plugins/compiled/CompiledPluginRegistry.hpp
-    plugins/compiled/CompiledFaustHost.hpp
-    plugins/compiled/CompiledFaustInterface.hpp
     AudioBridge.cpp
+    DeviceParameterDisplayTextProvider.cpp
+    DeviceParameterDisplayTextProvider.hpp
+    ClipCommands.cpp
+    TrackMeasurementManager.cpp
     AudioBridgeMixer.cpp
     AudioBridgeMixer.hpp
     CompService.cpp
@@ -342,29 +324,8 @@ target_sources(magda_daw PRIVATE
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
-    analysis/BandSpectrum.cpp
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
-    FaustResources.cpp
-    processors/base/DeviceProcessor.cpp
-    processors/base/DeviceProcessor.hpp
-    processors/base/AutomatablePluginProcessor.cpp
-    processors/base/AutomatablePluginProcessor.hpp
-    processors/ParameterInfoBuilder.cpp
-    processors/ParameterInfoBuilder.hpp
-    processors/external/ExternalPluginProcessor.cpp
-    processors/external/ExternalPluginProcessor.hpp
-    processors/internal/MidiDeviceProcessors.cpp
-    processors/internal/MidiDeviceProcessors.hpp
-    processors/internal/NativeDeviceProcessors.cpp
-    processors/internal/NativeDeviceProcessors.hpp
-    processors/te/TeProcessorWrappers.cpp
-    processors/te/TeProcessorWrappers.hpp
-    processors/CompiledFaustProcessor.cpp
-    processors/CompiledFaustProcessor.hpp
-    processors/DeviceProcessor.hpp
-    processors/DeviceProcessorFactory.cpp
-    processors/DeviceProcessorFactory.hpp
     MidiBridge.cpp
     midi/MidiDeviceMatch.cpp
     midi/MidiInputRouter.cpp
@@ -376,10 +337,7 @@ target_sources(magda_daw PRIVATE
     midi/QwertyMidiKeyboard.cpp
     session/SessionClipScheduler.cpp
     session/SessionClipAudioMonitor.cpp
-    session/SessionMonitorPlugin.cpp
     session/SessionRecorder.cpp
-    plugins/InternalPluginRegistry.cpp
-    plugins/InternalPluginRegistry.hpp
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
     midi/MidiActivityMonitor.cpp
@@ -409,48 +367,17 @@ target_sources(magda_daw PRIVATE
     session/ClipLaunchQuantization.cpp
     session/ClipSynchronizer.cpp
     session/ClipWarpSynchronizer.cpp
-    plugins/SidechainMonitorPlugin.cpp
-    plugins/SidechainPlugin.cpp
-    plugins/AudioSidechainMonitorPlugin.cpp
-    plugins/FollowerSourceTapPlugin.cpp
-    plugins/InsertCapturePlugin.cpp
     insert_capture/InsertRenderCaptureService.cpp
     ExternalInsertDeviceEnablement.cpp
-    plugins/MidiReceivePlugin.cpp
-    plugins/MagdaSamplerPlugin.cpp
-    plugins/mutable/MutableElementsPlugin.cpp
-    plugins/mutable/MutableRingsPlugin.cpp
-    plugins/mutable/MutableCloudsPlugin.cpp
-    plugins/DrumGridPlugin.cpp
-    plugins/MidiChordEnginePlugin.cpp
-    plugins/ArpeggiatorPlugin.cpp
-    plugins/MidiStrumPlugin.cpp
-    plugins/InstrumentMeterTapPlugin.cpp
-    plugins/OscilloscopePlugin.cpp
-    plugins/SpectrumAnalyzerPlugin.cpp
-    plugins/LevelsPlugin.cpp
-    plugins/TrackMeasurementPlugin.cpp
-    plugins/MidiDevicePlugin.cpp
-    plugins/FaustPlugin.cpp
-    plugins/FaustInstrumentPlugin.cpp
-    plugins/FaustPolyGuiStatics.cpp
-    plugins/FaustMetadataParser.cpp
-    plugins/FaustParamPool.cpp
-    plugins/FaustParamInfo.cpp
-    transport/StepClock.cpp
-    plugins/StepSequencerPlugin.cpp
-    plugins/PolyStepSequencerPlugin.cpp
     # Controller routing (issue #1050 -- Phase C)
     controllers/ControllerParamWriter.cpp
     controllers/ControllerRouter.cpp
     # Headers (listed for IDE visibility)
     AudioBridge.hpp
-    FaustResources.hpp
     session/SessionClipScheduler.hpp
     session/SessionClipAudioMonitor.hpp
     session/SessionClipCommandQueue.hpp
     session/SessionClipStateQueue.hpp
-    session/SessionMonitorPlugin.hpp
     MeteringBuffer.hpp
     params/ParameterQueue.hpp
     transport/TransportStateManager.hpp
@@ -468,34 +395,21 @@ target_sources(magda_daw PRIVATE
     session/ClipLaunchQuantization.hpp
     session/ClipSynchronizer.hpp
     session/ClipWarpSynchronizer.hpp
-    plugins/SidechainTriggerBus.hpp
-    plugins/SidechainMonitorPlugin.hpp
-    plugins/AudioSidechainMonitorPlugin.hpp
     midi/MidiBroadcastBus.hpp
-    plugins/MidiReceivePlugin.hpp
-    plugins/MagdaSamplerPlugin.hpp
-    plugins/DrumGridPlugin.hpp
-    plugins/DrumGridRoles.hpp
-    plugins/DrumGridTemplates.hpp
-    plugins/MidiChordEnginePlugin.hpp
-    plugins/ArpeggiatorPlugin.hpp
-    plugins/InstrumentMeterTapPlugin.hpp
-    plugins/AnalysisTapPlugin.hpp
-    plugins/OscilloscopePlugin.hpp
-    plugins/SpectrumAnalyzerPlugin.hpp
     analysis/AudioTapBuffer.hpp
-    plugins/MidiDevicePlugin.hpp
-    plugins/FaustPlugin.hpp
-    plugins/FaustCustomViewKind.hpp
-    plugins/FaustParamSlot.hpp
-    plugins/FaustMetadataParser.hpp
-    plugins/FaustParamPool.hpp
-    plugins/FaustParamInfo.hpp
-    transport/StepClock.hpp
-    plugins/MidiInThruSync.hpp
-    plugins/StepSequencerPlugin.hpp
-    plugins/PolyStepSequencerPlugin.hpp
 )
+
+# The base pack is compiled separately against magda::device_sdk. Keep its
+# sources movable by rejecting includes into host-owned DAW/application layers.
+set(_magda_device_boundary_sources
+    ${_magda_device_pack_sources}
+    ${_magda_base_device_support_sources}
+)
+magda_validate_device_pack_sources(
+    "MAGDA base device pack"
+    ${_magda_device_boundary_sources}
+)
+unset(_magda_device_boundary_sources)
 
 target_sources(magda_daw_app PRIVATE
     AudioEngineOptimizer.cpp

@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -72,20 +73,14 @@ juce::String joinSearchKeywords(juce::StringArray keywords) {
     return keywords.joinIntoString(" ");
 }
 
-void addOriginalMutableNameKeywords(juce::StringArray& keywords, InternalDeviceKind kind) {
-    switch (kind) {
-        case InternalDeviceKind::MutableElements:
-            keywords.addIfNotAlreadyThere("Elements");
-            break;
-        case InternalDeviceKind::MutableRings:
-            keywords.addIfNotAlreadyThere("Rings");
-            break;
-        case InternalDeviceKind::MutableClouds:
-            keywords.addIfNotAlreadyThere("Clouds");
-            break;
-        default:
-            break;
-    }
+void addOriginalMutableNameKeywords(juce::StringArray& keywords,
+                                    const audio::InternalPluginSpec& spec) {
+    if (audio::internalPluginHasTag(spec, "mutable-elements"))
+        keywords.addIfNotAlreadyThere("Elements");
+    else if (audio::internalPluginHasTag(spec, "mutable-rings"))
+        keywords.addIfNotAlreadyThere("Rings");
+    else if (audio::internalPluginHasTag(spec, "mutable-clouds"))
+        keywords.addIfNotAlreadyThere("Clouds");
 }
 
 juce::String searchKeywordsForInternalSpec(const audio::InternalPluginSpec& spec) {
@@ -93,7 +88,7 @@ juce::String searchKeywordsForInternalSpec(const audio::InternalPluginSpec& spec
     addSearchKeyword(keywords, spec.pluginId);
     for (int i = 0; i < spec.loadAliasCount; ++i)
         addSearchKeyword(keywords, spec.loadAliases[i]);
-    addOriginalMutableNameKeywords(keywords, spec.kind);
+    addOriginalMutableNameKeywords(keywords, spec);
     return joinSearchKeywords(keywords);
 }
 
@@ -544,8 +539,7 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     // Instrument (MIDI send + audio return). The split is carried by isInstrument
     // on the created DeviceInfo; the send/return picker lives in the device slot.
     // (The registry spec keeps showInBrowser=false so it isn't also auto-listed.)
-    if (const auto* insertSpec =
-            audio::findInternalPluginSpec(magda::InternalDeviceKind::ExternalInsert)) {
+    if (const auto* insertSpec = audio::findInternalPluginSpecWithTag("external-insert")) {
         list.push_back(PluginBrowserInfo::createInternal("External FX", insertSpec->pluginId,
                                                          /*isInstrument*/ false, "External"));
         list.push_back(PluginBrowserInfo::createInternal(
@@ -785,10 +779,22 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     }
 
     menu.addItem(3, "Configure Parameters...");
+    if (plugin.isExternal)
+        menu.addItem(13, "Configure AI Sound Designer...");
     menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
 
     const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
+
+    // Internal devices with a registered agent and external plugins with an
+    // explicit AI parameter selection can expose/hide the Sound Designer.
+    if (magda::isSoundDesignSupported(plugin.uniqueId) ||
+        ParameterConfigDialog::hasAiSoundDesignerParameters(plugin.uniqueId)) {
+        menu.addItem(
+            12, "AI Sound Designer", true,
+            magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier));
+        menu.addSeparator();
+    }
 
     // Instrument-form plugins can be manually routed as MIDI FX when their
     // runtime metadata is too synth-like to classify automatically.
@@ -875,6 +881,11 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 case 3:
                     showParameterConfigDialog(plugin);
                     break;
+                case 13:
+                    // External sound design uses the same parameter metadata
+                    // panel, with its dedicated "AI Agent" selection column.
+                    showParameterConfigDialog(plugin);
+                    break;
                 case 5:
                     toggleFavorite(plugin);
                     break;
@@ -910,6 +921,13 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                             p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
                     }
                     rebuildTree();
+                    break;
+                }
+                case 12: {
+                    auto& prefs = magda::PluginPreferences::getInstance();
+                    const auto pluginIdentifier = preferenceIdentifierForPlugin(plugin);
+                    prefs.setAiSoundDesignerEnabled(
+                        pluginIdentifier, !prefs.aiSoundDesignerEnabled(pluginIdentifier));
                     break;
                 }
                 case 98:

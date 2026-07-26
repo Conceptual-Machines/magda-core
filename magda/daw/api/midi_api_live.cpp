@@ -25,4 +25,10 @@ std::vector<juce::String> MidiApiLive::getOutputPortNames() const {
     return names;
 }
 
+bool MidiApiLive::injectTrackMidi(TrackId trackId, const juce::MidiMessage& msg) {
+    if (bridge_ == nullptr)
+        return false;
+    return bridge_->injectMidiToTrack(trackId, msg);
+}
+
 }  // namespace magda

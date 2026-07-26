@@ -1,0 +1,7 @@
+# Phase 0 (representation, n-gram baseline, eval, data pipeline): stdlib only.
+
+# Phase 1 (GRU training). Match the command-model POC's known-good stack.
+torch>=2.2
+
+# OpenEWLD ingest reads MusicXML with the stdlib (xml.etree + zipfile) — no
+# extra deps. Add music21 only if richer MusicXML handling is needed later.

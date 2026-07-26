@@ -263,12 +263,55 @@ juce_add_binary_data(MagdaAssets
 # Targets
 # =============================================================================
 
+# magda_types: leaf library of JUCE-only value types shared by the DAW today and
+# the device library later (epic #1836 / #1831). It borrows juce_core's headers
+# and defines but does NOT link the module: the juce_core unity source is
+# compiled once in magda_daw, so magda_types' undefined juce symbols resolve at
+# the final link instead of duplicating the object. The value-type headers stay
+# physically in core/ for now; relocating them into their own directory (and the
+# include-boundary guard) lands with the device-library carve (#1834).
+add_library(magda_types STATIC
+    core/ParameterUtils.cpp
+    # value-type headers (listed to document the leaf's surface)
+    core/TypeIds.hpp
+    core/TechnicalText.hpp
+    core/ChainNodePath.hpp
+    core/ControlTarget.hpp
+    core/ParameterInfo.hpp
+    core/ParameterUtils.hpp
+    core/DeviceInfo.hpp
+    core/KitRow.hpp
+    core/MacroInfo.hpp
+    core/ModInfo.hpp
+    core/TempoUtils.hpp
+)
+target_compile_features(magda_types PUBLIC cxx_std_20)
+target_include_directories(magda_types
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}  # dependents resolve "core/<type>.hpp"
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(magda_types
+    PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>)
+
 # Core library — populated by per-subdir CMakeLists.txt below.
 add_library(magda_daw STATIC
     command.cpp
     magda.cpp
     command.hpp
     magda.hpp
+)
+
+# Frozen device SDK usage requirements and runtime — populated below and by
+# audio/CMakeLists.txt. Device packs compile against magda::device_sdk; hosts
+# link magda::devices.
+add_library(magda_device_sdk INTERFACE)
+add_library(magda::device_sdk ALIAS magda_device_sdk)
+add_library(magda_devices STATIC)
+add_library(magda::devices ALIAS magda_devices)
+add_library(magda_base_devices STATIC)
+add_library(magda::base_devices ALIAS magda_base_devices)
+set_target_properties(magda_devices PROPERTIES
+    PUBLIC_HEADER
+    "audio/plugins/DeviceServices.hpp;audio/plugins/FaustCustomViewKind.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/processors/base/DeviceProcessor.hpp;audio/processors/DeviceProcessorFactory.hpp"
 )
 
 # JUCE GUI app — sources contributed below via add_subdirectory().
@@ -358,16 +401,62 @@ juce_add_console_app(magda_cli
 
 add_subdirectory(cli)
 add_subdirectory(core)
-add_subdirectory(audio)
 add_subdirectory(engine)
 add_subdirectory(project)
 add_subdirectory(music)
+add_subdirectory(audio)
 add_subdirectory(api)
 add_subdirectory(interfaces)
 add_subdirectory(profiling)
 add_subdirectory(ui)
 add_subdirectory(media_db)
 add_subdirectory(transcription)
+add_subdirectory(stem_separation)
+
+# Keep the library boundary one-way: agents may link magda_daw, but no source
+# compiled into magda_daw may include an agent header. This is a best-effort text
+# scan of listed sources, not a transitive dependency-graph check. App-only UI
+# sources are intentionally outside it because they form the composition layer.
+get_target_property(_magda_daw_sources magda_daw SOURCES)
+foreach(_magda_daw_source IN LISTS _magda_daw_sources)
+    if(_magda_daw_source MATCHES "^\\$<")
+        continue()
+    endif()
+    if(IS_ABSOLUTE "${_magda_daw_source}")
+        set(_magda_daw_source_path "${_magda_daw_source}")
+    else()
+        set(_magda_daw_source_path "${CMAKE_CURRENT_SOURCE_DIR}/${_magda_daw_source}")
+    endif()
+    if(EXISTS "${_magda_daw_source_path}"
+       AND _magda_daw_source_path MATCHES "\\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$")
+        file(READ "${_magda_daw_source_path}" _magda_daw_source_text)
+        if(_magda_daw_source_text
+           MATCHES "(^|\n)[ \t]*#[ \t]*include[ \t]*[<\"](\\.\\./)*agents/")
+            message(FATAL_ERROR
+                "magda_daw source includes an agent header: ${_magda_daw_source_path}")
+        endif()
+
+        # Core may query the opaque string-keyed registry seam, but it must
+        # never depend on a concrete device implementation. Device packs own
+        # those includes and contribute their specs through registerDevices().
+        if(_magda_daw_source_path MATCHES "/core/")
+            string(REGEX MATCHALL
+                "#[ \t]*include[ \t]*[<\"][^>\"]*audio/plugins/[^>\"]*Plugin\\.hpp"
+                _core_plugin_includes "${_magda_daw_source_text}")
+            if(_core_plugin_includes)
+                message(FATAL_ERROR
+                    "core source includes a concrete device header: "
+                    "${_magda_daw_source_path}\n${_core_plugin_includes}")
+            endif()
+        endif()
+    endif()
+endforeach()
+unset(_core_plugin_include)
+unset(_core_plugin_includes)
+unset(_magda_daw_source_text)
+unset(_magda_daw_source_path)
+unset(_magda_daw_source)
+unset(_magda_daw_sources)
 
 # =============================================================================
 # Linking, compile defs, includes
@@ -418,14 +507,25 @@ set(MAGDA_JUCE_STACK
     tracktion::tracktion_engine
     juce_llm
 )
+set(MAGDA_DEVICE_JUCE_STACK
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_audio_basics
+    juce::juce_audio_formats
+    juce::juce_audio_processors
+    juce::juce_dsp
+    tracktion::tracktion_engine
+)
 target_link_libraries(magda_daw
     PUBLIC
+    magda_types  # leaf value-type library (#1831); its types appear in magda_daw's public headers
+    magda_music  # leaf music-theory library (#1833)
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_devices>"  # SDK runtime
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # self-registering external-style pack
     MagdaAssets
-    magda::mutable  # Mutable Instruments DSP for the native Elements/Rings/Clouds ports (#1581)
     PRIVATE
     ${MAGDA_JUCE_STACK}
     LibXml2::LibXml2
-    faust::libfaust
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
     INTERFACE
@@ -435,6 +535,86 @@ target_link_libraries(magda_daw
     $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>>
     $<$<PLATFORM_ID:Linux>:$<LINK_ONLY:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>>
 )
+
+# The frozen SDK target carries only compile usage and link requirements. It
+# deliberately does not own concrete device sources, so in-tree and private
+# packs build under the same contract.
+target_compile_features(magda_device_sdk INTERFACE cxx_std_20)
+target_include_directories(magda_device_sdk
+    INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/audio
+)
+foreach(_magda_device_module IN LISTS MAGDA_DEVICE_JUCE_STACK)
+    target_include_directories(magda_device_sdk INTERFACE
+        $<TARGET_PROPERTY:${_magda_device_module},INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(magda_device_sdk INTERFACE
+        $<TARGET_PROPERTY:${_magda_device_module},INTERFACE_COMPILE_DEFINITIONS>)
+endforeach()
+target_compile_definitions(magda_device_sdk INTERFACE
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=1
+    JUCE_MODAL_LOOPS_PERMITTED=1
+    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
+    $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+)
+target_link_libraries(magda_device_sdk
+    INTERFACE
+    magda_types
+    magda_music
+    $<LINK_ONLY:${MAGDA_DEVICE_JUCE_STACK}>
+)
+
+# magda_devices owns the SDK runtime. The base pack is a separate static
+# library compiled against magda::device_sdk, exactly like an out-of-tree pack.
+# WHOLE_ARCHIVE above retains its public-hook registration anchor.
+target_compile_features(magda_devices PUBLIC cxx_std_20)
+target_include_directories(magda_devices PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
+)
+target_link_libraries(magda_devices
+    PUBLIC
+    magda_device_sdk
+    PRIVATE
+    MagdaAssets
+    magda::mutable
+    faust::libfaust
+)
+target_compile_features(magda_base_devices PRIVATE cxx_std_20)
+target_include_directories(magda_base_devices PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
+)
+target_link_libraries(magda_base_devices
+    PRIVATE
+    magda_device_sdk
+    MagdaAssets
+    magda::mutable
+    faust::libfaust
+)
+
+if(MAGDA_PRO_DEVICES)
+    if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "MAGDA_PRO_DEVICES=ON but no device pack was found at "
+            "${MAGDA_PRO_DEVICES_DIR}")
+    endif()
+
+    add_subdirectory(
+        "${MAGDA_PRO_DEVICES_DIR}"
+        "${CMAKE_BINARY_DIR}/magda_pro_devices"
+    )
+    if(NOT TARGET magda_pro_devices)
+        message(FATAL_ERROR
+            "The pro-device pack must define a magda_pro_devices target")
+    endif()
+
+    target_link_libraries(magda_daw
+        PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_pro_devices>")
+    target_compile_definitions(magda_daw PUBLIC MAGDA_PRO_DEVICES_ENABLED=1)
+endif()
 
 # Signalsmith's FFT-heavy processing cannot reliably meet real-time audio
 # deadlines at -O0. Keep the rest of Debug builds fully debuggable, but compile
@@ -739,25 +919,9 @@ else()
     )
 endif()
 
-# Copy faustlibraries (stdfaust.lib + dependencies) into the app so libfaust's
-# `import("stdfaust.lib")` resolves at runtime. FaustPlugin passes this dir as
-# `-I` argv to the interpreter compiler. Submodule path: third_party/faust/libraries.
-set(MAGDA_FAUST_LIBS_SRC "${CMAKE_SOURCE_DIR}/third_party/faust/libraries")
-if(APPLE)
-    add_custom_command(TARGET magda_daw_app POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${MAGDA_FAUST_LIBS_SRC}"
-            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/faustlibraries"
-        COMMENT "Copying Faust standard libraries to app bundle Resources"
-    )
-else()
-    add_custom_command(TARGET magda_daw_app POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${MAGDA_FAUST_LIBS_SRC}"
-            "$<TARGET_FILE_DIR:magda_daw_app>/faustlibraries"
-        COMMENT "Copying Faust standard libraries alongside app executable"
-    )
-endif()
+# Runtime-compiled devices need the Faust standard library beside every host.
+magda_stage_faust_libraries(magda_daw_app)
+magda_stage_faust_libraries(magda_cli)
 
 # Copy third_party/dawproject/ (vendored Project.xsd + MetaData.xsd) into the
 # app so DawProjectValidator can validate import/export against the schemas at
@@ -804,9 +968,9 @@ if(MAGDA_HAVE_CLAP)
             BUILD_RPATH "@executable_path/../Frameworks")
     elseif(WIN32)
         # Windows only searches the exe's directory, the cwd, and PATH — none of
-        # which include the FetchContent lib dir — so without this copy the first
-        # ORT call (Sample Tagger load) faults when the delay-loaded DLL fails to
-        # resolve.
+        # which include the FetchContent lib dir. onnxruntime.dll is a regular
+        # load-time import of MAGDA.exe, so omitting it prevents the application
+        # from reaching main().
         add_custom_command(TARGET magda_daw_app POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"

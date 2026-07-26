@@ -28,6 +28,7 @@ class MidiApiLive : public MidiApi {
     bool sendMidi(const juce::String& port, const juce::MidiMessage& msg) override;
     bool sendSysEx(const juce::String& port, const juce::uint8* data, size_t numBytes) override;
     std::vector<juce::String> getOutputPortNames() const override;
+    bool injectTrackMidi(TrackId trackId, const juce::MidiMessage& msg) override;
     juce::String getDefaultOutputPort() const override {
         return defaultOutputPort_;
     }

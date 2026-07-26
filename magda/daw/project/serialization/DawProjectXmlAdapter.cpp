@@ -1086,7 +1086,12 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         float level;
         bool preFader;
     };
+    struct PendingOutput {
+        size_t sourceTrackIndex;
+        juce::String destChannel;
+    };
     std::vector<PendingSend> pendingSends;
+    std::vector<PendingOutput> pendingOutputs;
     int nextAuxBus = 0;
 
     if (auto* structure = root->getChildByName("Structure")) {
@@ -1103,13 +1108,19 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 const size_t trackIndex = document.tracks.size();
 
                 if (auto* channel = trackElement->getChildByName("Channel")) {
-                    // The channel role drives the MAGDA track type. "master" routes
-                    // into MAGDA's singleton master (see toStagedProjectData);
-                    // "effect" is an aux/return track and gets a unique bus that its
-                    // sources' sends reference.
+                    // The channel role refines the structure-derived MAGDA track
+                    // type. A project master routes into MAGDA's singleton master
+                    // (see toStagedProjectData); "effect" is an aux/return track
+                    // and gets a unique bus that its sources' sends reference.
                     const auto role = channel->getStringAttribute("role", "regular");
                     const auto channelId = channel->getStringAttribute("id");
-                    if (role == "master") {
+                    const auto destination = channel->getStringAttribute("destination");
+
+                    // Bitwig uses role="master" both for the project master and
+                    // for group channels (the master channel of their nested
+                    // tracks). Preserve structure-derived groups instead of
+                    // turning every such channel into a MAGDA master track.
+                    if (role == "master" && track.type != TrackType::Group) {
                         track.type = TrackType::Master;
                     } else if (role == "effect") {
                         track.type = TrackType::Aux;
@@ -1118,6 +1129,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     }
                     if (channelId.isNotEmpty())
                         channelToTrackIndex[channelId] = trackIndex;
+                    if (destination.isNotEmpty())
+                        pendingOutputs.push_back({trackIndex, destination});
 
                     // Sends to aux/effect channels. Skip disabled sends (Bitwig
                     // writes a default disabled send from every track to every
@@ -1248,6 +1261,22 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
             idxIt != channelToTrackIndex.end())
             send.destTrackId = document.tracks[idxIt->second].id;
         document.tracks[ps.sourceTrackIndex].sends.push_back(send);
+    }
+
+    // Resolve direct channel outputs after all channels are known. MAGDA uses
+    // the literal "master" for its singleton output and "track:<id>" for group
+    // or other inter-track routing. An absent/unresolved DAWproject destination
+    // remains disconnected rather than inventing a route.
+    for (const auto& po : pendingOutputs) {
+        const auto destIt = channelToTrackIndex.find(po.destChannel);
+        if (destIt == channelToTrackIndex.end())
+            continue;
+
+        const auto& destinationTrack = document.tracks[destIt->second];
+        document.tracks[po.sourceTrackIndex].audioOutputDevice =
+            destinationTrack.type == TrackType::Master
+                ? juce::String("master")
+                : "track:" + juce::String(destinationTrack.id);
     }
 
     ClipId nextClipId = 1;

@@ -5,10 +5,13 @@
 
 #include <vector>
 
+#include "../core/TypeIds.hpp"
+
 namespace magda {
 
 /**
- * Outbound MIDI surface for scripts and agents — host → external device.
+ * MIDI surface for scripts and agents: outbound device feedback plus direct
+ * track injection for controller performance modes.
  *
  * Bidirectional controllers (Launchkey, Push, Launchpad) need this for
  * DAW-mode handshake, LED feedback, screen control. Inbound MIDI continues
@@ -33,6 +36,12 @@ class MidiApi {
 
     /** Default output selected for the currently loaded controller script. */
     virtual juce::String getDefaultOutputPort() const = 0;
+
+    /** Inject a controller-generated MIDI message directly into one MAGDA
+     *  track. Controller-script input ports are surface-only, so User/Note
+     *  modes use this path to play the selected track without also leaking
+     *  session and mixer button messages into instruments. */
+    virtual bool injectTrackMidi(TrackId trackId, const juce::MidiMessage& msg) = 0;
 };
 
 }  // namespace magda

@@ -7,6 +7,8 @@
 #include <memory>
 #include <vector>
 
+#include "plugins/DeviceServices.hpp"
+
 namespace magda::daw::audio {
 
 namespace te = tracktion::engine;
@@ -21,7 +23,7 @@ namespace te = tracktion::engine;
  */
 class DrumGridPlugin : public te::Plugin, private juce::Timer {
   public:
-    DrumGridPlugin(const te::PluginCreationInfo&);
+    DrumGridPlugin(const te::PluginCreationInfo&, DeviceIdAllocator&);
     ~DrumGridPlugin() override;
 
     //==============================================================================
@@ -201,6 +203,8 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     te::Plugin* getPadPlugin(int padIndex, int pluginIndex) const;
 
   private:
+    DeviceIdAllocator& deviceIdAllocator_;
+
     // Immutable, audio-thread-readable view of one chain. Holds owning Plugin::Ptr
     // copies so the graph stays alive for the duration of a process block even if
     // the message thread is concurrently rebuilding chains_. Note-range / remap

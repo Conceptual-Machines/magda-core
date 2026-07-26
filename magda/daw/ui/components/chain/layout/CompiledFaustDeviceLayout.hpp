@@ -22,8 +22,14 @@ namespace magda::daw::ui {
  */
 class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   public:
-    CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false)
-        : cellCount_(cellCount), cellsPerRow_(cellsPerRow), columnMajor_(columnMajor) {}
+    using ParameterEnabledPredicate = bool (*)(const magda::DeviceInfo&, int slotIndex);
+
+    CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false,
+                              ParameterEnabledPredicate isParameterEnabled = nullptr)
+        : cellCount_(cellCount),
+          cellsPerRow_(cellsPerRow),
+          columnMajor_(columnMajor),
+          isParameterEnabled_(isParameterEnabled) {}
 
     int cellCount() const override {
         return cellCount_;
@@ -42,6 +48,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     int cellCount_;
     int cellsPerRow_;
     bool columnMajor_;
+    ParameterEnabledPredicate isParameterEnabled_;
 };
 
 }  // namespace magda::daw::ui

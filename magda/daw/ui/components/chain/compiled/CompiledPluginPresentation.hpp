@@ -96,6 +96,9 @@ struct CompiledPresentationSpec {
     /// existing compiled plugin. EQ flips this so each band becomes a
     /// vertical strip rather than half a row.
     bool columnMajorGrid = false;
+    /// Optional device-specific enablement for a parameter slot. This changes
+    /// interaction/presentation only; the parameter remains automatable.
+    bool (*isParameterEnabled)(const magda::DeviceInfo& device, int slotIndex) = nullptr;
 };
 
 /// All presentation specs in stable iteration order. Each spec is defined

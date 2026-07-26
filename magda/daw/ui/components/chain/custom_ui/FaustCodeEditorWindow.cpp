@@ -27,23 +27,55 @@ class FaustCodeEditorWindow::Content : public juce::Component {
         compileBtn_.onClick = [this] { compile(); };
         addAndMakeVisible(compileBtn_);
 
-        statusLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
-        statusLabel_.setJustificationType(juce::Justification::topLeft);
-        addAndMakeVisible(statusLabel_);
+        // Compiler diagnostics can span several lines and are often useful as
+        // input to an AI assistant. A Label cannot be selected, so use a
+        // read-only TextEditor: it keeps the output scrollable and allows
+        // copying either a selected excerpt (Cmd/Ctrl+C) or the whole report.
+        statusOutput_.setMultiLine(true);
+        statusOutput_.setReadOnly(true);
+        statusOutput_.setScrollbarsShown(true);
+        statusOutput_.setCaretVisible(false);
+        statusOutput_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+        statusOutput_.setColour(juce::TextEditor::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::BACKGROUND));
+        statusOutput_.setColour(juce::TextEditor::textColourId,
+                                DarkTheme::getSecondaryTextColour());
+        statusOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+        statusOutput_.setColour(juce::TextEditor::focusedOutlineColourId,
+                                juce::Colours::transparentBlack);
+        statusOutput_.setColour(juce::TextEditor::highlightColourId,
+                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.45f));
+        statusOutput_.setColour(juce::TextEditor::highlightedTextColourId,
+                                DarkTheme::getTextColour());
+        statusOutput_.setTooltip("Select compiler output and press Cmd/Ctrl+C to copy");
+        addAndMakeVisible(statusOutput_);
+
+        copyStatusBtn_.setButtonText("Copy");
+        copyStatusBtn_.setLookAndFeel(&lnf_);
+        copyStatusBtn_.setTooltip("Copy all compiler output to the clipboard");
+        copyStatusBtn_.setEnabled(false);
+        copyStatusBtn_.onClick = [this] {
+            juce::SystemClipboard::copyTextToClipboard(statusOutput_.getText());
+        };
+        addAndMakeVisible(copyStatusBtn_);
 
         setSize(720, 540);
     }
 
     ~Content() override {
         compileBtn_.setLookAndFeel(nullptr);
+        copyStatusBtn_.setLookAndFeel(nullptr);
     }
 
     void resized() override {
         auto area = getLocalBounds().reduced(8);
-        auto bottom = area.removeFromBottom(80);
-        compileBtn_.setBounds(bottom.removeFromTop(28).removeFromLeft(120));
+        auto bottom = area.removeFromBottom(112);
+        auto actions = bottom.removeFromTop(28);
+        compileBtn_.setBounds(actions.removeFromLeft(120));
+        actions.removeFromLeft(4);
+        copyStatusBtn_.setBounds(actions.removeFromLeft(90));
         bottom.removeFromTop(4);
-        statusLabel_.setBounds(bottom);
+        statusOutput_.setBounds(bottom);
         editor_.setBounds(area);
     }
 
@@ -52,19 +84,24 @@ class FaustCodeEditorWindow::Content : public juce::Component {
         const auto src = document_.getAllContent();
         juce::String err;
         if (onCompile_ && onCompile_(src, err)) {
-            statusLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-            statusLabel_.setText("Compiled OK", juce::dontSendNotification);
+            setCompilerOutput("Compiled OK", DarkTheme::getSecondaryTextColour());
         } else {
-            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::red);
-            statusLabel_.setText(err, juce::dontSendNotification);
+            setCompilerOutput(err, juce::Colours::red);
         }
+    }
+
+    void setCompilerOutput(const juce::String& output, juce::Colour colour) {
+        statusOutput_.setColour(juce::TextEditor::textColourId, colour);
+        statusOutput_.setText(output, false);
+        copyStatusBtn_.setEnabled(output.isNotEmpty());
     }
 
     DialogLookAndFeel lnf_;  // declared before compileBtn_ so it outlives it
     juce::CodeDocument document_;
     juce::CodeEditorComponent editor_;
     juce::TextButton compileBtn_;
-    juce::Label statusLabel_;
+    juce::TextButton copyStatusBtn_;
+    juce::TextEditor statusOutput_;
     CompileFn onCompile_;
 };
 

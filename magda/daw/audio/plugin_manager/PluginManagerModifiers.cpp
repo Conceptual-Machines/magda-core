@@ -4,7 +4,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../../core/InternalDeviceKind.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/SidechainTraversal.hpp"
 #include "../../core/TrackManager.hpp"
@@ -21,6 +20,7 @@
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DrumGridPlugin.hpp"
+#include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
@@ -268,7 +268,7 @@ void PluginManager::syncDeviceModifiers(
         node.trackId = trackId;
         // Analysis devices (oscilloscope / spectrum) are transparent passthroughs
         // and expose no macros or mods, so never sync TE modifier state for them.
-        const bool analysis = ::magda::isAnalysisDevice(device.pluginId);
+        const bool analysis = daw::audio::isInternalAnalysisPlugin(device.pluginId);
         node.mods = (device.bypassed || analysis) ? nullptr : &device.mods;
         node.macros = (device.bypassed || analysis) ? nullptr : &device.macros;
 
@@ -352,6 +352,17 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 }
 
 // =============================================================================
+void PluginManager::triggerSidechain(TrackId sourceTrackId,
+                                     daw::audio::DeviceTriggerSource source) {
+    triggerSidechainNoteOn(sourceTrackId, source == daw::audio::DeviceTriggerSource::Midi
+                                              ? LFOTriggerMode::MIDI
+                                              : LFOTriggerMode::Audio);
+}
+
+void PluginManager::gateSidechain(TrackId sourceTrackId) {
+    gateSidechainLFOs(sourceTrackId);
+}
+
 void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
                                            std::optional<LFOTriggerMode> modeFilter) {
     if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)

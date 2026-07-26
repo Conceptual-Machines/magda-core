@@ -11,9 +11,8 @@
   appears in the Windows cert store as a virtual smart card).
 
   Point this at a staging directory containing the unsigned MAGDA.exe,
-  magda_plugin_scanner.exe and magda-installer.nsi - i.e. the extracted
-  MAGDA-<version>-MuseHub-Source.zip from a release, or the installer staging
-  dir from a local build. It then:
+  magda_plugin_scanner.exe, magda-installer.nsi, and Microsoft's signed
+  vc_redist.x64.exe from a local build's installer staging directory. It then:
     1. signs MAGDA.exe and magda_plugin_scanner.exe in place,
     2. runs makensis to build the installer,
     3. signs the installer,
@@ -25,8 +24,7 @@
 
 .PARAMETER StageDir
   Directory holding the unsigned exes + .nsi. Defaults to the script's own
-  directory (matches the MuseHub bundle layout, where this script sits beside
-  the inputs).
+  directory.
 
 .PARAMETER Version
   Version passed to makensis. Defaults to version.txt next to the .nsi.
@@ -108,6 +106,20 @@ if (-not $Version) {
 Write-Host "version  : $Version"
 Write-Host "stage    : $StageDir"
 
+# The installer bootstraps the dynamic VC/OpenMP runtime before installing
+# MAGDA. Validate this explicitly so local release regeneration fails with a
+# clear message rather than an opaque makensis "File not found" error.
+$vcRedist = Join-Path $StageDir "vc_redist.x64.exe"
+if (-not (Test-Path $vcRedist)) {
+    throw "vc_redist.x64.exe not found in $StageDir. Stage the Microsoft Visual C++ x64 Redistributable from VCToolsRedistDir."
+}
+$vcSignature = Get-AuthenticodeSignature $vcRedist
+if ($vcSignature.Status -ne "Valid" -or
+    $vcSignature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
+    throw "vc_redist.x64.exe has an invalid or unexpected signature: $($vcSignature.Status) / $($vcSignature.SignerCertificate.Subject)"
+}
+Write-Host "vc redist: $((Get-Item $vcRedist).VersionInfo.FileVersion)"
+
 # --- confirm the cert is present (waiting for SimplySign login if asked) ----
 # The cert only appears once SimplySign Desktop is logged in. With -WaitMinutes
 # > 0 the script parks and polls so a release job can be dispatched before you
@@ -154,8 +166,9 @@ function Invoke-Sign([string]$Path) {
     Write-Host ""
 }
 
-# 1. Sign the two MAGDA executables in place. The ONNX Runtime and libxml2 DLLs
-#    are already signed by their vendors and must not be re-signed.
+# 1. Sign the two MAGDA executables in place. The ONNX Runtime and libxml2 DLLs,
+#    plus vc_redist.x64.exe, are already signed by their vendors and must not be
+#    re-signed.
 Invoke-Sign (Join-Path $StageDir "MAGDA.exe")
 $scanner = Join-Path $StageDir "magda_plugin_scanner.exe"
 if (Test-Path $scanner) {

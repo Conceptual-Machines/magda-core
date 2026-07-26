@@ -22,6 +22,7 @@ static const char* const kRendersDir = "renders";
 static const char* const kBouncesDir = "bounces";
 static const char* const kExternalEditsDir = "external-edits";
 static const char* const kImportedDir = "imported";
+static const char* const kStemsDir = "stems";
 static const char* const kTempRootDir = "MAGDA";
 static const char* const kTempPrefix = "UnsavedProject_";
 static constexpr int kStaleTempDays = 7;
@@ -610,6 +611,12 @@ juce::File ProjectManager::getImportedDirectory() const {
     if (mediaDirectory_ == juce::File())
         return {};
     return mediaDirectory_.getChildFile(kImportedDir);
+}
+
+juce::File ProjectManager::getStemsDirectory() const {
+    if (mediaDirectory_ == juce::File())
+        return {};
+    return mediaDirectory_.getChildFile(kStemsDir);
 }
 
 void ProjectManager::createTempMediaDirectory() {

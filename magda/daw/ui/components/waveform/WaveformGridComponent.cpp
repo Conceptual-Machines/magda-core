@@ -226,12 +226,6 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
 
     g.saveState();
     if (g.reduceClipRegion(visibleRect)) {
-        // Reverse: flip graphics horizontally so waveform draws mirrored
-        if (clip.isReversed) {
-            g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, visibleRect.getCentreX(),
-                                                        visibleRect.getCentreY()));
-        }
-
         if (warpMode_ && !warpMarkers_.empty()) {
             paintWarpedWaveform(g, clip, waveformRect, waveColour, vertZoom);
         } else {
@@ -266,8 +260,54 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                                            audioWidth;
                     tStart = juce::jlimit(displayStart, displayEnd, tStart);
                     tEnd = juce::jlimit(displayStart, displayEnd, tEnd);
+                    // The editor ruler always describes the original source
+                    // file, so draw the full file forward first.
                     thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath, tStart,
                                                   tEnd, waveColour, vertZoom, useHighRes);
+
+                    // Reverse is a clip-region operation, not a whole-file
+                    // display transform. Redraw only the selected span in
+                    // reverse, leaving its ruler position and surrounding
+                    // source waveform unchanged.
+                    if (clip.isReversed && displayInfo_.activeRegionEndPositionSeconds >
+                                               displayInfo_.activeRegionStartPositionSeconds) {
+                        const int activeLeft =
+                            audioLeft +
+                            static_cast<int>(std::round(
+                                displayInfo_.activeRegionStartPositionSeconds * horizontalZoom_));
+                        const int activeRight =
+                            audioLeft +
+                            static_cast<int>(std::round(
+                                displayInfo_.activeRegionEndPositionSeconds * horizontalZoom_));
+                        auto activeVisible =
+                            juce::Rectangle<int>(activeLeft, waveformRect.getY(),
+                                                 activeRight - activeLeft, waveformRect.getHeight())
+                                .getIntersection(visibleRect);
+                        auto activeDrawRect = activeVisible.reduced(0, 4);
+                        if (!activeDrawRect.isEmpty()) {
+                            const double visibleActiveStart =
+                                juce::jlimit(displayInfo_.activeRegionStartPositionSeconds,
+                                             displayInfo_.activeRegionEndPositionSeconds,
+                                             static_cast<double>(activeVisible.getX() - audioLeft) /
+                                                 horizontalZoom_);
+                            const double visibleActiveEnd = juce::jlimit(
+                                displayInfo_.activeRegionStartPositionSeconds,
+                                displayInfo_.activeRegionEndPositionSeconds,
+                                static_cast<double>(activeVisible.getRight() - audioLeft) /
+                                    horizontalZoom_);
+                            const auto sourceRange = displayInfo_.displayRangeToSourceRange(
+                                visibleActiveStart, visibleActiveEnd);
+
+                            g.saveState();
+                            g.addTransform(juce::AffineTransform::scale(
+                                -1.0f, 1.0f, activeDrawRect.getCentreX(),
+                                activeDrawRect.getCentreY()));
+                            thumbnailManager.drawWaveform(
+                                g, activeDrawRect, clip.audio().source.filePath, sourceRange.first,
+                                sourceRange.second, waveColour, vertZoom, useHighRes);
+                            g.restoreState();
+                        }
+                    }
                 }
             }
         }
@@ -281,13 +321,6 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         displayInfo_.fileExtentTimeline() > displayInfo_.loopEndPositionSeconds) {
         double remainingStart = displayInfo_.loopEndPositionSeconds;
         double remainingEnd = displayInfo_.fileExtentTimeline();
-        // Source file range: convert timeline positions back to source file via ClipDisplayInfo
-        double remainingFileStart = displayInfo_.displayPositionToSourceTime(remainingStart);
-        double remainingFileEnd = displayInfo_.displayPositionToSourceTime(remainingEnd);
-
-        if (fileDuration > 0.0 && remainingFileEnd > fileDuration)
-            remainingFileEnd = fileDuration;
-
         int startX = waveformRect.getX() + static_cast<int>(remainingStart * horizontalZoom_);
         int endX = waveformRect.getX() + static_cast<int>(remainingEnd * horizontalZoom_);
         auto remainingRect = juce::Rectangle<int>(startX, waveformRect.getY(), endX - startX,
@@ -297,34 +330,33 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         auto clippedRemaining = remainingRect.getIntersection(visibleBounds);
         auto drawRect = clippedRemaining.reduced(0, 4);
         if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
-            // Adjust time range to visible portion
-            double totalFileTime = remainingFileEnd - remainingFileStart;
+            // Resolve the visible playback-time slice first, then convert it
+            // to the original-file domain. Reversing before clipping would
+            // select the opposite end of the file after a horizontal scroll.
             int remWidth = remainingRect.getWidth();
-            double visFileStart = remainingFileStart;
-            double visFileEnd = remainingFileEnd;
-            if (remWidth > 0 && totalFileTime > 0.0) {
-                visFileStart =
-                    remainingFileStart +
-                    totalFileTime *
-                        static_cast<double>(clippedRemaining.getX() - remainingRect.getX()) /
-                        remWidth;
-                visFileEnd =
-                    remainingFileStart +
-                    totalFileTime *
-                        static_cast<double>(clippedRemaining.getRight() - remainingRect.getX()) /
-                        remWidth;
-            }
-            if (clip.isReversed) {
-                g.saveState();
-                g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, drawRect.getCentreX(),
-                                                            drawRect.getCentreY()));
-            }
+            const double visibleFractionStart =
+                remWidth > 0
+                    ? static_cast<double>(clippedRemaining.getX() - remainingRect.getX()) / remWidth
+                    : 0.0;
+            const double visibleFractionEnd =
+                remWidth > 0
+                    ? static_cast<double>(clippedRemaining.getRight() - remainingRect.getX()) /
+                          remWidth
+                    : 1.0;
+            const double visibleDisplayStart =
+                remainingStart + (remainingEnd - remainingStart) * visibleFractionStart;
+            const double visibleDisplayEnd =
+                remainingStart + (remainingEnd - remainingStart) * visibleFractionEnd;
+            const auto visibleSourceRange =
+                displayInfo_.displayRangeToSourceRange(visibleDisplayStart, visibleDisplayEnd);
+            double visFileStart = visibleSourceRange.first;
+            double visFileEnd = visibleSourceRange.second;
+            if (fileDuration > 0.0)
+                visFileEnd = juce::jmin(visFileEnd, fileDuration);
             // Draw dimmer to indicate it's outside the loop
             auto dimColour = waveColour.withAlpha(0.4f);
             thumbnailManager.drawWaveform(g, drawRect, clip.audio().source.filePath, visFileStart,
                                           visFileEnd, dimColour, vertZoom, useHighRes);
-            if (clip.isReversed)
-                g.restoreState();
         }
     }
 }
@@ -616,8 +648,8 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
                                                 juce::Colour waveColour, float vertZoom) {
     // Warp rendering goes through the shared renderer so the editor and the
     // arrangement clip can never drift. The editor is a source-domain view: a
-    // single pass, no loop tiling. warpToPixelX maps a marker's warp-time through
-    // the same tempo-aware sourceToTimeline() used everywhere else.
+    // single pass, no loop tiling. The full source remains forward on the
+    // editor ruler; a reversed clip redraws only its active span mirrored.
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audio().source.filePath);
     const double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
@@ -634,6 +666,26 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
     spec.useHighRes = true;
     spec.looped = false;  // source-domain view: one pass, arrangement handles tiling
     drawWarpedWaveform(g, thumbnailManager, clip.audio().source.filePath, warpMarkers_, spec);
+
+    if (clip.isReversed && displayInfo_.activeRegionEndPositionSeconds >
+                               displayInfo_.activeRegionStartPositionSeconds) {
+        const int activeLeft =
+            timeToPixel(displayStartTime + displayInfo_.activeRegionStartPositionSeconds);
+        const int activeRight =
+            timeToPixel(displayStartTime + displayInfo_.activeRegionEndPositionSeconds);
+        spec.clipArea = juce::Rectangle<int>(activeLeft, waveformRect.getY(),
+                                             activeRight - activeLeft, waveformRect.getHeight())
+                            .getIntersection(getLocalBounds())
+                            .reduced(0, 4);
+        spec.warpToPixelX = [this, displayStartTime](double warpSeconds) {
+            const double forwardPosition = displayInfo_.sourceToTimeline(warpSeconds);
+            const double mirroredPosition = displayInfo_.activeRegionStartPositionSeconds +
+                                            displayInfo_.activeRegionEndPositionSeconds -
+                                            forwardPosition;
+            return (double)timeToPixel(displayStartTime + mirroredPosition);
+        };
+        drawWarpedWaveform(g, thumbnailManager, clip.audio().source.filePath, warpMarkers_, spec);
+    }
 }
 
 void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
@@ -806,8 +858,8 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
                 continue;
             ++inSourceCount;
 
-            // Convert source time to timeline display time via ClipDisplayInfo
-            double displayTime = displayInfo_.sourceToTimeline(t - sourceStart) + cycleOffset;
+            // Convert original-file time into the playback-file ruler domain.
+            double displayTime = displayInfo_.sourceTimeToDisplayPosition(t) + cycleOffset;
             double absDisplayTime = displayTime + displayStartTime;
             int px = timeToPixel(absDisplayTime);
 
@@ -1181,8 +1233,8 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             // Convert from display time to file-relative time
             double fileRelativeTime = clickTime - getDisplayStartTime();
 
-            // Convert timeline position to source file time (absolute warp time)
-            double warpTime = displayInfo_.timelineToSource(fileRelativeTime);
+            // Convert playback-file ruler position to original-file warp time.
+            double warpTime = displayInfo_.displayPositionToSourceTime(fileRelativeTime);
 
             // Find the corresponding sourceTime by interpolating from existing markers.
             // The warp curve maps warpTime -> sourceTime, so we need to find what
@@ -1342,16 +1394,16 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         // Pixel delta → timeline delta, then convert to source file delta
         double timelineDelta = (event.x - dragStartX_) / horizontalZoom_;
         // Convert timeline delta to source time delta
-        double sourceDelta = displayInfo_.timelineToSource(timelineDelta);
+        double sourceDelta = displayInfo_.displayDeltaToSourceDelta(timelineDelta);
         double newWarpTime = dragStartWarpTime_ + sourceDelta;
         if (newWarpTime < 0.0)
             newWarpTime = 0.0;
 
         // Snap to grid when snap is enabled and Alt is not held
         if (snapEnabled_ && !event.mods.isAltDown()) {
-            double timelinePos = displayInfo_.sourceToTimeline(newWarpTime);
+            double timelinePos = displayInfo_.sourceTimeToDisplayPosition(newWarpTime);
             timelinePos = snapTimeToGrid(timelinePos);
-            newWarpTime = displayInfo_.timelineToSource(timelinePos);
+            newWarpTime = displayInfo_.displayPositionToSourceTime(timelinePos);
         }
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerMove) {
@@ -1367,7 +1419,7 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             return;
 
         double timelineDelta = (event.x - dragStartX_) / horizontalZoom_;
-        double sourceDelta = displayInfo_.timelineToSource(timelineDelta);
+        double sourceDelta = displayInfo_.displayDeltaToSourceDelta(timelineDelta);
 
         // Move both sourceTime and warpTime by the same source-domain delta
         // This preserves the stretch relationship at this marker
@@ -1733,8 +1785,10 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
     for (int i = 1; i < numMarkers - 1; ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
 
-        // Warp time is in source file seconds — convert to timeline display time
-        double displayTime = displayInfo_.sourceToTimeline(marker.warpTime) + displayStartTime;
+        // Warp time is in original-file seconds; the editor ruler addresses
+        // the reversed playback proxy when reverse is active.
+        double displayTime =
+            displayInfo_.sourceTimeToDisplayPosition(marker.warpTime) + displayStartTime;
         int px = timeToPixel(displayTime);
 
         // Cull outside visible bounds and waveform rect
@@ -1785,7 +1839,8 @@ int WaveformGridComponent::findMarkerAtPixel(int x) const {
     int numMarkers = static_cast<int>(warpMarkers_.size());
     for (int i = 1; i < numMarkers - 1; ++i) {
         const auto& marker = warpMarkers_[static_cast<size_t>(i)];
-        double displayTime = displayInfo_.sourceToTimeline(marker.warpTime) + displayStartTime;
+        double displayTime =
+            displayInfo_.sourceTimeToDisplayPosition(marker.warpTime) + displayStartTime;
         int px = timeToPixel(displayTime);
         if (std::abs(x - px) <= WARP_MARKER_HIT_DISTANCE)
             return i;

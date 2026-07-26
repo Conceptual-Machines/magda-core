@@ -1,6 +1,6 @@
 #include <algorithm>
 
-#include "../../core/InternalDeviceKind.hpp"
+#include "../../audio/plugins/InternalPluginRegistry.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
@@ -34,7 +34,7 @@ void migrateUtilityWidthToPercent(DeviceInfo& device) {
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
     auto findAnalysis = [&elements](int order) {
         return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
-            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
+            return daw::audio::internalPostFxAnalysisOrder(element.device.pluginId) == order;
         });
     };
 
@@ -458,6 +458,14 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
     obj->setProperty("miniMixerParameters", juce::var(miniMixerParamsArray));
 
+    // AI sound-designer parameters
+    juce::Array<juce::var> aiSoundDesignerParamsArray;
+    for (auto index : device.aiSoundDesignerParameters) {
+        aiSoundDesignerParamsArray.add(index);
+    }
+    obj->setProperty("aiSoundDesignerParameters", juce::var(aiSoundDesignerParamsArray));
+    obj->setProperty("aiSoundDesignerPrompt", device.aiSoundDesignerPrompt);
+
     // Device volume
     obj->setProperty("gainValue", device.gainValue);
     obj->setProperty("gainDb", device.gainDb);
@@ -608,6 +616,16 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
             outDevice.miniMixerParameters.push_back(static_cast<int>(indexVar));
         }
     }
+
+    // AI sound-designer parameters
+    auto aiSoundDesignerParamsVar = obj->getProperty("aiSoundDesignerParameters");
+    if (aiSoundDesignerParamsVar.isArray()) {
+        auto* arr = aiSoundDesignerParamsVar.getArray();
+        for (const auto& indexVar : *arr) {
+            outDevice.aiSoundDesignerParameters.push_back(static_cast<int>(indexVar));
+        }
+    }
+    outDevice.aiSoundDesignerPrompt = obj->getProperty("aiSoundDesignerPrompt").toString();
 
     // Device volume
     outDevice.gainValue = obj->getProperty("gainValue");

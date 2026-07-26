@@ -7,14 +7,16 @@
 #include "../core/ChainRoutingModel.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/Config.hpp"
-#include "../core/InternalDeviceKind.hpp"
 #include "../core/ModulatorEngine.hpp"
 #include "../core/RackInfo.hpp"
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "DeviceParameterDisplayTextProvider.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
+#include "plugins/DeviceServices.hpp"
+#include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MidiInThruSync.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
@@ -114,7 +116,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     : engine_(engine),
       edit_(edit),
       trackController_(engine, edit),
-      pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_),
+      pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_,
+                     TrackManager::getInstance()),
       mixer_(edit, trackController_),
       midiInputRouter_(engine, edit, trackController_),
       controlTargetResolver_(trackController_, pluginManager_),
@@ -124,6 +127,22 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
       automationPlayback_(*this, edit),
       automationRecording_(edit) {
+    const auto oscilloscopeDefaults = Config::getInstance().getOscilloscopeDefaults();
+    const auto spectrumDefaults = Config::getInstance().getSpectrumDefaults();
+    daw::audio::DeviceServices deviceServices;
+    deviceServices.deviceIdAllocator = &TrackManager::getInstance();
+    deviceServices.trackContext = &TrackManager::getInstance();
+    deviceServices.realtimeContext = &pluginManager_;
+    deviceServices.sessionContext = &sessionAudioMonitor_;
+    deviceServices.meteringContext = &deviceMetering_;
+    deviceServices.defaults.oscilloscope.timebaseMs = oscilloscopeDefaults.timebaseMs;
+    deviceServices.defaults.spectrum.fftOrder = spectrumDefaults.fftOrder;
+    deviceServices.defaults.spectrum.slopeDbPerOct = spectrumDefaults.slopeDbPerOct;
+    deviceServices.defaults.spectrum.smoothing = spectrumDefaults.smoothing;
+    daw::audio::registerDeviceServices(edit_, deviceServices);
+
+    installDeviceParameterDisplayTextProviderFactory();
+
     // Wire up async plugin load completion callback to notify UI
     pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
         TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
@@ -161,6 +180,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
 
 AudioBridge::~AudioBridge() {
     DBG("AudioBridge::~AudioBridge - starting cleanup");
+    daw::audio::unregisterDeviceServices(edit_);
 
     // CRITICAL: Acquire lock BEFORE stopping timer to ensure proper synchronization.
     // This prevents race condition where timerCallback() could be running while
@@ -614,7 +634,7 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     // External-insert routing changed (#1623): auto-enable any hardware port
     // the insert now references, and re-apply the MIDI feedback guard so the
     // send target's own input port is dropped from this track's routing.
-    if (classifyInternalDevice(device->pluginId) == InternalDeviceKind::ExternalInsert) {
+    if (daw::audio::internalPluginHasTag(device->pluginId, "external-insert")) {
         refreshInsertDeviceEnablement();
         midiInputRouter_.reapplyExternalInstrumentSendbackGuard(devicePath.trackId);
     }
@@ -1181,13 +1201,24 @@ void AudioBridge::timerCallback() {
                 for (auto* teClip : track->getClips()) {
                     if (teClip->itemID.toString().toStdString() == *engineId) {
                         if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
-                            auto proxyFile = audioClip->getPlaybackFile().getFile();
-                            if (proxyFile.existsAsFile()) {
+                            auto playbackFile = audioClip->getPlaybackFile();
+                            const bool renderInProgress =
+                                engine_.getRenderManager().isProxyBeingGenerated(playbackFile);
+                            if (playbackFile.isValid() && !renderInProgress) {
                                 DBG("REVERSE TIMER: proxy ready — reallocating ("
-                                    << proxyFile.getFullPathName() << ")");
+                                    << playbackFile.getFile().getFullPathName() << ")");
                                 clipSynchronizer_.clearPendingReverseClipId();
-                                if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-                                    ctx->reallocate();
+                                // AudioFile::isValid() can become true before ReverseRenderJob has
+                                // finished validating and releasing the file from Tracktion's audio
+                                // cache. Rebuilding during that window preserves the silent reader
+                                // created while the proxy did not exist. Once the render manager no
+                                // longer owns a job for this proxy, validation is complete and a
+                                // new graph can safely open it.
+                                if (auto* context = edit_.getCurrentPlaybackContext())
+                                    context->reallocate();
+                                else
+                                    edit_.restartPlayback();
+                                if (edit_.getCurrentPlaybackContext() != nullptr) {
                                     if (clipSynchronizer_.onGraphReallocated)
                                         clipSynchronizer_.onGraphReallocated();
                                 }
@@ -1548,7 +1579,7 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     for (int i = 0; i < masterList.size(); ++i) {
         if (auto* existing = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
             sessionMonitorPlugin_ = existing;
-            sessionMonitorPlugin_->setAudioMonitor(&sessionAudioMonitor_);
+            sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);
             return;
         }
     }
@@ -1562,7 +1593,7 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     for (int i = 0; i < masterList.size(); ++i) {
         if (auto* mon = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
             sessionMonitorPlugin_ = mon;
-            sessionMonitorPlugin_->setAudioMonitor(&sessionAudioMonitor_);
+            sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);
             return;
         }
     }

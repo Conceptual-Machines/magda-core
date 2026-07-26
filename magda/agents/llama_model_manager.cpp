@@ -6,9 +6,11 @@
 
 #include "llama_model_manager.hpp"
 
+#include <juce_core/juce_core.h>
 #include <llama.h>
 
 #include <chrono>
+#include <utility>
 #include <vector>
 
 namespace magda {
@@ -22,7 +24,32 @@ LlamaModelManager::~LlamaModelManager() {
     unloadModel();
 }
 
-bool LlamaModelManager::loadModel(const Config& config) {
+std::string LlamaModelManager::cpuCompatibilityError(bool isIntel, bool hasSSE42, bool hasAVX) {
+    if (!isIntel || (hasSSE42 && hasAVX))
+        return {};
+
+    return "Embedded local AI requires a CPU with SSE 4.2 and AVX support. "
+           "Use a cloud provider or local server instead.";
+}
+
+std::string LlamaModelManager::currentCpuCompatibilityError() {
+#if JUCE_INTEL && !JUCE_MAC
+    return cpuCompatibilityError(true, juce::SystemStats::hasSSE42(), juce::SystemStats::hasAVX());
+#else
+    return {};
+#endif
+}
+
+bool LlamaModelManager::loadModel(const Config& config, std::string* errorMessage) {
+    if (errorMessage != nullptr)
+        errorMessage->clear();
+
+    if (auto cpuError = currentCpuCompatibilityError(); !cpuError.empty()) {
+        if (errorMessage != nullptr)
+            *errorMessage = std::move(cpuError);
+        return false;
+    }
+
     loading_.store(true, std::memory_order_release);
     struct LoadingReset {
         std::atomic<bool>& loading;
@@ -131,7 +158,8 @@ LlamaModelManager::InferenceResult LlamaModelManager::infer(const InferenceReque
     InferenceResult result;
 
     if (model_ == nullptr || ctx_ == nullptr) {
-        result.error = "No model loaded";
+        result.error = "Local (Embedded) model is not loaded. Download/enable it in "
+                       "Settings → Models, or pick a different provider for this agent.";
         return result;
     }
 

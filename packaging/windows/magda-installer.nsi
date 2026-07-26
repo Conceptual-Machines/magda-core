@@ -27,6 +27,35 @@ Unicode True
 !insertmacro MUI_LANGUAGE "English"
 
 Section "Install"
+    ; MAGDA, ONNX Runtime, and the OpenMP runtime dynamically link the
+    ; Microsoft Visual C++ v14 runtime. A clean consumer Windows installation
+    ; is not guaranteed to have it, so bootstrap the Microsoft-signed package
+    ; before placing MAGDA on disk. $PLUGINSDIR is removed automatically when
+    ; setup exits; the shared runtime itself remains serviceable by Windows.
+    SetOutPath "$PLUGINSDIR"
+    File "${__FILEDIR__}\vc_redist.x64.exe"
+    DetailPrint "Installing Microsoft Visual C++ Runtime..."
+    StrCpy $0 "-1"
+    ClearErrors
+    ExecWait '"$PLUGINSDIR\vc_redist.x64.exe" /install /quiet /norestart' $0
+    IfErrors vc_redist_failed
+    IntCmp $0 0 vc_redist_ok
+    ; 1638 (ERROR_PRODUCT_VERSION): an equal/newer v14 runtime is installed.
+    IntCmp $0 1638 vc_redist_ok
+    ; 3010 (ERROR_SUCCESS_REBOOT_REQUIRED): installation succeeded.
+    IntCmp $0 3010 vc_redist_reboot
+    Goto vc_redist_failed
+
+vc_redist_reboot:
+    SetRebootFlag true
+    Goto vc_redist_ok
+
+vc_redist_failed:
+    MessageBox MB_ICONSTOP|MB_OK \
+        "Microsoft Visual C++ Runtime installation failed (exit code $0). MAGDA was not installed."
+    Abort
+
+vc_redist_ok:
     SetOutPath $INSTDIR
     ; ${__FILEDIR__} resolves to the directory of this .nsi at compile time, so
     ; the installer builds correctly regardless of makensis's working directory.
@@ -34,12 +63,11 @@ Section "Install"
     File "${__FILEDIR__}\mgd_doc_icon.ico"
     File /nonfatal "${__FILEDIR__}\magda_plugin_scanner.exe"
 
-    ; All runtime DLLs staged next to MAGDA.exe: ONNX Runtime (delay-loaded by
-    ; the media DB sample tagger) and libxml2 + its transitive deps (DAWproject
-    ; XSD validation). Windows only searches the exe's directory, so these must
-    ; sit next to MAGDA.exe or the dependent call faults. The release staging
-    ; step asserts the critical DLLs are present, so this fails loudly upstream
-    ; if one goes missing.
+    ; All runtime DLLs staged next to MAGDA.exe: ONNX Runtime (a load-time app
+    ; dependency) and libxml2 + its transitive deps (DAWproject XSD validation).
+    ; Windows only searches the exe's directory, so these must sit next to
+    ; MAGDA.exe. The release staging step asserts the critical DLLs are present,
+    ; so this fails loudly upstream if one goes missing.
     File "${__FILEDIR__}\*.dll"
 
     ; Localization JSON files - StringTable looks for them next to MAGDA.exe

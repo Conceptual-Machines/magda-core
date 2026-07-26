@@ -49,6 +49,10 @@ void ClipApiLive::deleteClip(ClipId clipId) {
     ClipManager::getInstance().deleteClip(clipId);
 }
 
+void ClipApiLive::setClipEnabled(ClipId clipId, bool enabled) {
+    ClipManager::getInstance().setClipEnabled(clipId, enabled);
+}
+
 void ClipApiLive::setClipName(ClipId clipId, const juce::String& name) {
     ClipManager::getInstance().setClipName(clipId, name);
 }

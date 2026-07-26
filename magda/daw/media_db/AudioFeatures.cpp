@@ -22,6 +22,18 @@ constexpr int kFftSize = 1 << kFftOrder;  // 1024
 constexpr int kFftBins = kFftSize / 2;    // 512 (drop Nyquist for stats)
 constexpr int kHopSize = kFftSize / 4;    // 75% overlap
 
+using SimdFloat = juce::dsp::SIMDRegister<float>;
+constexpr auto kSimdWidth = SimdFloat::SIMDNumElements;
+static_assert(kFftBins % kSimdWidth == 0);
+
+alignas(SimdFloat::SIMDRegisterSize) constexpr auto kBinIndices = [] {
+    std::array<float, kFftBins> indices{};
+    for (std::size_t i = 0; i < indices.size(); ++i) {
+        indices[i] = static_cast<float>(i);
+    }
+    return indices;
+}();
+
 // ---- Krumhansl-Schmuckler key profiles (Krumhansl 1990) ------------------
 // Unnormalized; we L2-normalize at correlation time to make scoring a cosine.
 constexpr std::array<float, 12> kMajorProfile = {6.35F, 2.23F, 3.48F, 2.33F, 4.38F, 4.09F,
@@ -44,6 +56,24 @@ void normalize12(std::array<float, 12>& v) {
     for (float& x : v) {
         x *= inv;
     }
+}
+
+const std::array<float, 12>& normalizedMajorProfile() {
+    static const auto profile = [] {
+        auto normalized = kMajorProfile;
+        normalize12(normalized);
+        return normalized;
+    }();
+    return profile;
+}
+
+const std::array<float, 12>& normalizedMinorProfile() {
+    static const auto profile = [] {
+        auto normalized = kMinorProfile;
+        normalize12(normalized);
+        return normalized;
+    }();
+    return profile;
 }
 
 // ---- File decode ---------------------------------------------------------
@@ -125,106 +155,6 @@ struct SpectralStats {
     float transientDensity;
 };
 
-SpectralStats computeSpectralStats(const juce::AudioBuffer<float>& mono, int sampleRate) {
-    SpectralStats out{0.0F, 0.0F, 0.0F};
-    const int numSamples = mono.getNumSamples();
-    if (numSamples < kFftSize) {
-        return out;
-    }
-
-    juce::dsp::FFT fft(kFftOrder);
-    juce::dsp::WindowingFunction<float> window(kFftSize, juce::dsp::WindowingFunction<float>::hann);
-
-    std::vector<float> fftData(static_cast<size_t>(kFftSize) * 2, 0.0F);
-    std::vector<float> prevMag(kFftBins, 0.0F);
-    std::vector<float> flux;
-    flux.reserve(static_cast<size_t>(numSamples / kHopSize));
-
-    const float* src = mono.getReadPointer(0);
-    double sumCentroid = 0;
-    double sumFlatness = 0;
-    int frames = 0;
-
-    for (int start = 0; start + kFftSize <= numSamples; start += kHopSize) {
-        std::memcpy(fftData.data(), src + start, static_cast<size_t>(kFftSize) * sizeof(float));
-        std::memset(fftData.data() + kFftSize, 0, static_cast<size_t>(kFftSize) * sizeof(float));
-        window.multiplyWithWindowingTable(fftData.data(), kFftSize);
-        fft.performRealOnlyForwardTransform(fftData.data());
-
-        // Magnitude per positive-frequency bin
-        std::array<float, kFftBins> mag{};
-        for (int bin = 0; bin < kFftBins; ++bin) {
-            const float re = fftData[2 * bin];
-            const float im = fftData[2 * bin + 1];
-            mag[bin] = std::sqrt(re * re + im * im);
-        }
-
-        // Centroid: weighted mean of bin frequency by magnitude
-        double freqWeighted = 0;
-        double magSum = 0;
-        for (int bin = 0; bin < kFftBins; ++bin) {
-            const float f = bin * static_cast<float>(sampleRate) / kFftSize;
-            freqWeighted += mag[bin] * f;
-            magSum += mag[bin];
-        }
-        if (magSum > 0) {
-            sumCentroid += freqWeighted / magSum;
-        }
-
-        // Flatness: geometric / arithmetic mean
-        double logSum = 0;
-        double arithSum = 0;
-        for (float m : mag) {
-            logSum += std::log(m + 1e-10F);
-            arithSum += m;
-        }
-        const double geomMean = std::exp(logSum / kFftBins);
-        const double arithMean = arithSum / kFftBins;
-        if (arithMean > 0) {
-            sumFlatness += geomMean / arithMean;
-        }
-
-        // Spectral flux (positive bin-wise difference) for onset detection
-        float frameFlux = 0;
-        for (int bin = 0; bin < kFftBins; ++bin) {
-            const float d = mag[bin] - prevMag[bin];
-            if (d > 0) {
-                frameFlux += d;
-            }
-            prevMag[bin] = mag[bin];
-        }
-        flux.push_back(frameFlux);
-        ++frames;
-    }
-
-    if (frames > 0) {
-        out.centroid = static_cast<float>(sumCentroid / frames);
-        out.flatness = static_cast<float>(sumFlatness / frames);
-    }
-
-    // Transient density: peak picking on the flux envelope above 1.5×mean.
-    // Simple but matches the prototype's order of magnitude on Splice samples.
-    if (flux.size() >= 3) {
-        double meanFlux = 0;
-        for (float f : flux) {
-            meanFlux += f;
-        }
-        meanFlux /= flux.size();
-        const auto threshold = static_cast<float>(meanFlux * 1.5);
-        int peaks = 0;
-        for (std::size_t i = 1; i + 1 < flux.size(); ++i) {
-            if (flux[i] > flux[i - 1] && flux[i] > flux[i + 1] && flux[i] > threshold) {
-                ++peaks;
-            }
-        }
-        const double durationS = static_cast<double>(numSamples) / sampleRate;
-        if (durationS > 0) {
-            out.transientDensity = static_cast<float>(peaks / durationS);
-        }
-    }
-    return out;
-}
-
 // ---- Chroma + Krumhansl-Schmuckler key ----------------------------------
 
 struct ChromaKey {
@@ -233,53 +163,7 @@ struct ChromaKey {
     float confidence;
 };
 
-std::optional<ChromaKey> computeKey(const juce::AudioBuffer<float>& mono, int sampleRate) {
-    const int numSamples = mono.getNumSamples();
-    if (numSamples < kFftSize) {
-        return std::nullopt;
-    }
-
-    juce::dsp::FFT fft(kFftOrder);
-    juce::dsp::WindowingFunction<float> window(kFftSize, juce::dsp::WindowingFunction<float>::hann);
-
-    std::vector<float> fftData(static_cast<size_t>(kFftSize) * 2, 0.0F);
-    std::array<float, 12> chroma{};
-
-    const float* src = mono.getReadPointer(0);
-
-    for (int start = 0; start + kFftSize <= numSamples; start += kHopSize) {
-        std::memcpy(fftData.data(), src + start, static_cast<size_t>(kFftSize) * sizeof(float));
-        std::memset(fftData.data() + kFftSize, 0, static_cast<size_t>(kFftSize) * sizeof(float));
-        window.multiplyWithWindowingTable(fftData.data(), kFftSize);
-        fft.performRealOnlyForwardTransform(fftData.data());
-
-        for (int bin = 1; bin < kFftBins; ++bin) {  // skip DC
-            const float re = fftData[2 * bin];
-            const float im = fftData[2 * bin + 1];
-            const float mag = std::sqrt(re * re + im * im);
-            if (mag <= 0) {
-                continue;
-            }
-
-            const float f = bin * static_cast<float>(sampleRate) / kFftSize;
-            // Restrict to ~A0 .. C8 — outside this, FFT bin spacing is too coarse
-            // for pitched material to register on the right pitch class.
-            if (f < 27.5F || f > 4186.0F) {
-                continue;
-            }
-
-            // Pitch class via MIDI-semitone offset from A4 (440 Hz).
-            // A4 is MIDI 69; (69 % 12) = 9 → A. We want C=0 so subtract 9
-            // from (semitones + 69) ≡ add 9 mod 12 to the round-trip below.
-            const float semis = 12.0F * std::log2(f / 440.0F);
-            int pc = static_cast<int>(std::lround(semis + 9.0F)) % 12;
-            if (pc < 0) {
-                pc += 12;
-            }
-            chroma[pc] += mag;
-        }
-    }
-
+std::optional<ChromaKey> computeKey(std::array<float, 12> chroma) {
     float chromaTotal = 0;
     for (float c : chroma) {
         chromaTotal += c;
@@ -289,10 +173,8 @@ std::optional<ChromaKey> computeKey(const juce::AudioBuffer<float>& mono, int sa
     }
 
     normalize12(chroma);
-    auto normMajor = kMajorProfile;
-    auto normMinor = kMinorProfile;
-    normalize12(normMajor);
-    normalize12(normMinor);
+    const auto& normMajor = normalizedMajorProfile();
+    const auto& normMinor = normalizedMinorProfile();
 
     float bestScore = -1.0F;
     int bestRoot = 0;
@@ -317,6 +199,147 @@ std::optional<ChromaKey> computeKey(const juce::AudioBuffer<float>& mono, int sa
         }
     }
     return ChromaKey{std::string(kPitchClasses[bestRoot]), bestScale, std::max(0.0F, bestScore)};
+}
+
+struct FrameReductions {
+    float magnitudeSum;
+    float binWeightedSum;
+    float positiveFlux;
+};
+
+FrameReductions reduceFrame(const float* magnitudes, float* previousMagnitudes) {
+    auto magnitudeSum = SimdFloat::expand(0.0F);
+    auto binWeightedSum = SimdFloat::expand(0.0F);
+    auto positiveFlux = SimdFloat::expand(0.0F);
+    const auto zero = SimdFloat::expand(0.0F);
+
+    for (std::size_t offset = 0; offset < kFftBins; offset += kSimdWidth) {
+        const auto magnitude = SimdFloat::fromRawArray(magnitudes + offset);
+        const auto previous = SimdFloat::fromRawArray(previousMagnitudes + offset);
+        const auto bins = SimdFloat::fromRawArray(kBinIndices.data() + offset);
+        magnitudeSum += magnitude;
+        binWeightedSum = SimdFloat::multiplyAdd(binWeightedSum, magnitude, bins);
+        positiveFlux += SimdFloat::max(magnitude - previous, zero);
+        magnitude.copyToRawArray(previousMagnitudes + offset);
+    }
+
+    return {magnitudeSum.sum(), binWeightedSum.sum(), positiveFlux.sum()};
+}
+
+std::array<signed char, kFftBins> makePitchClassLookup(int sampleRate) {
+    std::array<signed char, kFftBins> lookup{};
+    lookup.fill(-1);
+
+    for (int bin = 1; bin < kFftBins; ++bin) {
+        const float frequency = bin * static_cast<float>(sampleRate) / kFftSize;
+        if (frequency < 27.5F || frequency > 4186.0F) {
+            continue;
+        }
+
+        const float semis = 12.0F * std::log2(frequency / 440.0F);
+        int pitchClass = static_cast<int>(std::lround(semis + 9.0F)) % 12;
+        if (pitchClass < 0) {
+            pitchClass += 12;
+        }
+        lookup[bin] = static_cast<signed char>(pitchClass);
+    }
+    return lookup;
+}
+
+struct SpectralAnalysis {
+    SpectralStats stats{0.0F, 0.0F, 0.0F};
+    std::optional<ChromaKey> key;
+};
+
+SpectralAnalysis computeSpectralAnalysis(const juce::AudioBuffer<float>& mono, int sampleRate,
+                                         bool analyseKey) {
+    SpectralAnalysis out;
+    const int numSamples = mono.getNumSamples();
+    if (numSamples < kFftSize) {
+        return out;
+    }
+
+    juce::dsp::FFT fft(kFftOrder);
+    juce::dsp::WindowingFunction<float> window(kFftSize, juce::dsp::WindowingFunction<float>::hann);
+
+    alignas(SimdFloat::SIMDRegisterSize) std::array<float, kFftSize * 2> fftData{};
+    alignas(SimdFloat::SIMDRegisterSize) std::array<float, kFftBins> previousMagnitudes{};
+    std::array<float, 12> chroma{};
+    const auto pitchClasses =
+        analyseKey ? makePitchClassLookup(sampleRate) : std::array<signed char, kFftBins>{};
+    std::vector<float> flux;
+    flux.reserve(static_cast<size_t>(numSamples / kHopSize));
+
+    const float* src = mono.getReadPointer(0);
+    const float binFrequency = static_cast<float>(sampleRate) / kFftSize;
+    double sumCentroid = 0;
+    double sumFlatness = 0;
+    int frames = 0;
+
+    for (int start = 0; start + kFftSize <= numSamples; start += kHopSize) {
+        std::memcpy(fftData.data(), src + start, static_cast<size_t>(kFftSize) * sizeof(float));
+        std::memset(fftData.data() + kFftSize, 0, static_cast<size_t>(kFftSize) * sizeof(float));
+        window.multiplyWithWindowingTable(fftData.data(), kFftSize);
+        fft.performFrequencyOnlyForwardTransform(fftData.data(), true);
+
+        const auto reductions = reduceFrame(fftData.data(), previousMagnitudes.data());
+        if (reductions.magnitudeSum > 0) {
+            sumCentroid += reductions.binWeightedSum * binFrequency / reductions.magnitudeSum;
+        }
+
+        double logSum = 0;
+        for (int bin = 0; bin < kFftBins; ++bin) {
+            logSum += std::log(fftData[bin] + 1e-10F);
+        }
+        const double geomMean = std::exp(logSum / kFftBins);
+        const double arithMean = reductions.magnitudeSum / kFftBins;
+        if (arithMean > 0) {
+            sumFlatness += geomMean / arithMean;
+        }
+
+        flux.push_back(reductions.positiveFlux);
+
+        if (analyseKey) {
+            for (int bin = 1; bin < kFftBins; ++bin) {
+                const int pitchClass = pitchClasses[bin];
+                if (pitchClass >= 0) {
+                    chroma[static_cast<std::size_t>(pitchClass)] += fftData[bin];
+                }
+            }
+        }
+        ++frames;
+    }
+
+    if (frames > 0) {
+        out.stats.centroid = static_cast<float>(sumCentroid / frames);
+        out.stats.flatness = static_cast<float>(sumFlatness / frames);
+    }
+
+    // Transient density: peak picking on the flux envelope above 1.5×mean.
+    // Simple but matches the prototype's order of magnitude on Splice samples.
+    if (flux.size() >= 3) {
+        double meanFlux = 0;
+        for (float value : flux) {
+            meanFlux += value;
+        }
+        meanFlux /= flux.size();
+        const auto threshold = static_cast<float>(meanFlux * 1.5);
+        int peaks = 0;
+        for (std::size_t i = 1; i + 1 < flux.size(); ++i) {
+            if (flux[i] > flux[i - 1] && flux[i] > flux[i + 1] && flux[i] > threshold) {
+                ++peaks;
+            }
+        }
+        const double durationS = static_cast<double>(numSamples) / sampleRate;
+        if (durationS > 0) {
+            out.stats.transientDensity = static_cast<float>(peaks / durationS);
+        }
+    }
+
+    if (analyseKey) {
+        out.key = computeKey(chroma);
+    }
+    return out;
 }
 
 }  // namespace
@@ -344,22 +367,29 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
     // --- Key: filename > DSP ---
     // Metadata-encoded keys (ACID root note) exist but are rare and decode
     // formats vary; punt to a future pass when we have a representative corpus.
-    if (auto pk = parseKeyFromPath(path)) {
-        f.keyRoot = pk->root;
-        f.keyScale = pk->scale;
+    const auto parsedKey = parseKeyFromPath(path);
+    if (parsedKey) {
+        const auto& pk = *parsedKey;
+        f.keyRoot = pk.root;
+        f.keyScale = pk.scale;
         // No DSP confidence — filename evidence is treated as ground truth.
-    } else if (auto ck = computeKey(decoded->mono, decoded->sampleRate)) {
-        f.keyRoot = ck->root;
-        f.keyScale = ck->scale;
-        f.keyConfidence = ck->confidence;
+    }
+
+    // Spectral statistics and optional chroma share a single windowed FFT pass.
+    const auto analysis =
+        computeSpectralAnalysis(decoded->mono, decoded->sampleRate, !parsedKey.has_value());
+    if (!parsedKey && analysis.key) {
+        const auto& ck = *analysis.key;
+        f.keyRoot = ck.root;
+        f.keyScale = ck.scale;
+        f.keyConfidence = ck.confidence;
     }
 
     // --- Always-DSP spectral stats ---
     f.rms = decoded->mono.getRMSLevel(0, 0, decoded->mono.getNumSamples());
-    const auto stats = computeSpectralStats(decoded->mono, decoded->sampleRate);
-    f.spectralCentroid = stats.centroid;
-    f.spectralFlatness = stats.flatness;
-    f.transientDensity = stats.transientDensity;
+    f.spectralCentroid = analysis.stats.centroid;
+    f.spectralFlatness = analysis.stats.flatness;
+    f.transientDensity = analysis.stats.transientDensity;
 
     return f;
 }

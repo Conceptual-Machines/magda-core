@@ -12,10 +12,10 @@ void prepareEditForOfflineRender(tracktion::Edit& edit) {
 
     tracktion::freePlaybackContextIfNotRecording(transport);
 
-    for (auto* track : tracktion::getAudioTracks(edit))
-        for (auto* plugin : track->pluginList)
-            if (!plugin->isEnabled())
-                plugin->setEnabled(true);
+    // Nothing here may touch plugin enablement (#1880). Every TE plugin's
+    // enabled flag already mirrors TrackManager::isDeviceEffectivelyEnabled,
+    // so powered-off devices must stay off through the render and stay off
+    // afterwards.
 }
 
 void preparePluginsForOfflineRender(TracktionEngineWrapper& engine) {

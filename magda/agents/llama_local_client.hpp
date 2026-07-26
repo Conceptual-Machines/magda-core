@@ -15,6 +15,8 @@ class LlamaLocalClient : public llm::LLMClient {
     llm::Response sendRequest(const llm::Request& request) const override;
     llm::Response sendStreamingRequest(const llm::Request& request,
                                        llm::StreamCallback onToken) const override;
+    llm::Response sendStreamingRequestDetailed(const llm::Request& request,
+                                               llm::StreamDeltaCallback onDelta) const override;
 
   protected:
     juce::String buildRequestBody(const llm::Request&) const override {

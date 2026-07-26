@@ -28,9 +28,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.cpp
     LinkModeManager.cpp
     GainStagingManager.cpp
-    TrackMeasurementManager.cpp
     UndoManager.cpp
-    ClipCommands.cpp
     ClipPropertyCommands.cpp
     WarpMarkerCommands.cpp
     TrackCommands.cpp
@@ -38,16 +36,15 @@ target_sources(magda_daw PRIVATE
     AutomationCommands.cpp
     ClipLaneFlattener.cpp
     MidiNoteCommands.cpp
-    ParameterInfo.cpp
-    ParameterUtils.cpp
+    ParameterInfo.cpp  # device-layer display provider registration seam
     StringTable.cpp
     ParameterDetector.cpp
     PresetManager.cpp
     DrumkitManager.cpp
+    DeviceCatalogMetadata.cpp
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp
-    InternalDeviceKind.cpp
     # Parameter alias system (issue #1062)
     aliases/Target.cpp
     aliases/ParamNameNormalize.cpp
@@ -75,12 +72,12 @@ target_sources(magda_daw PRIVATE
     GridDivision.hpp
     AppPaths.hpp
     UIScale.hpp
-    DeviceInfo.hpp
     DeviceUiContext.hpp
     ViewModeState.hpp
     ViewModeEvents.hpp
     ViewModeController.hpp
     LLMClientProvider.hpp
+    MixAnalysisData.hpp
     SessionViewState.hpp
     TrackInfo.hpp
     TrackManager.hpp
@@ -109,19 +106,13 @@ target_sources(magda_daw PRIVATE
     MidiNoteCommands.hpp
     ChordAnnotationCommands.hpp
     ChordProgressionConverter.hpp
-    MacroInfo.hpp
-    ModInfo.hpp
-    ParameterInfo.hpp
     ParameterDetector.hpp
-    ParameterUtils.hpp
-    TempoUtils.hpp
-    TechnicalText.hpp
     AutomationTypes.hpp
     AutomationInfo.hpp
     AutomationManager.hpp
     PresetManager.hpp
     DrumkitManager.hpp
-    KitRow.hpp
+    DeviceCatalogMetadata.hpp
     PluginPreferences.hpp
     PluginCapabilities.hpp
     PluginPresetScanner.hpp

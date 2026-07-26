@@ -11,6 +11,10 @@ set(TEST_SOURCES
     test_audio_export.cpp
     test_audio_to_midi.cpp
     test_command.cpp
+    test_command_model.cpp
+    test_command_model_downloader.cpp
+    test_unigram_tokenizer.cpp
+    test_command_model_onnx.cpp
     test_interfaces.cpp
     test_midi_clip_sync.cpp
     test_midi_clip_split.cpp
@@ -28,9 +32,11 @@ set(TEST_SOURCES
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
     test_openai_url.cpp
+    test_llm_tool_calls.cpp
     test_update_checker.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp
+    test_internal_plugin_registry.cpp
     test_external_insert_registry.cpp
     test_external_insert_enablement.cpp
     test_insert_capture.cpp
@@ -76,6 +82,11 @@ set(TEST_SOURCES
     test_dsl_add_chord.cpp
     test_dsl_add_arpeggio.cpp
     test_dsl_track_workflow.cpp
+    test_agent_device_catalog.cpp
+    test_chord_agent.cpp
+    test_faust_agent.cpp
+    test_dsl_project_commands.cpp
+    test_dsl_rack_commands.cpp
     test_scale_detection.cpp
     test_step_clock.cpp
     test_string_table.cpp
@@ -92,6 +103,9 @@ set(TEST_SOURCES
     test_mix_analysis_audio.cpp
     test_console_routing.cpp
     test_conversation_store.cpp
+    test_agent_runtime.cpp
+    test_console_agent_orchestrator.cpp
+    test_midi_context.cpp
     test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp
@@ -135,6 +149,7 @@ set(TEST_SOURCES
     test_lua_runtime.cpp
     # Lua bindings tests (issue #30 — bind MagdaApi)
     test_magda_api_lua_bindings.cpp
+    test_remote_api_contract.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
     test_lua_controller.cpp
     # Focused device API tests
@@ -169,6 +184,11 @@ set(TEST_SOURCES
     # Media database (issue #1319) — CLAP zero-shot tagging
     test_media_db_zero_shot_tags.cpp
     test_limiter_dsp.cpp
+    # Stem separation (issue #1288) — HPSS DSP engine + Demucs OLA geometry
+    test_hpss_separator.cpp
+    test_demucs_chunking.cpp
+    test_demucs_separator.cpp
+    test_spleeter_separator.cpp
 )
 
 # Create test executable
@@ -240,6 +260,7 @@ target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
     test_zoom_simple.cpp
     test_export_transport_stop_juce.cpp
+    test_offline_render_device_power_juce.cpp
     test_tracktion_engine_wrapper_refactoring_juce.cpp
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     test_midi_recording_juce.cpp
@@ -252,6 +273,7 @@ target_sources(magda_juce_tests PRIVATE
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_drum_grid_serialization_juce.cpp
+    test_device_services_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
@@ -264,6 +286,7 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_lane_sync_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
+    test_device_gain_slider.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
@@ -358,6 +381,9 @@ add_test(NAME external_plugin_state_restore_juce
 
 add_test(NAME section_scoped_device_ids_juce
          COMMAND magda_juce_tests "Section-Scoped Device IDs")
+
+add_test(NAME offline_render_device_power_juce
+         COMMAND magda_juce_tests "Offline Render Device Power Tests")
 
 add_test(NAME chord_progression_converter_juce
          COMMAND magda_juce_tests "Chord Progression Converter Tests")

@@ -18,6 +18,7 @@
 #include "api/clip_api.hpp"
 #include "api/magda_api.hpp"
 #include "api/project_api.hpp"
+#include "api/remote_api.hpp"
 #include "api/track_api.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/TrackManager.hpp"
@@ -123,55 +124,13 @@ std::optional<magda::TrackType> parseTrackType(const juce::String& text) {
     return std::nullopt;
 }
 
-juce::String trackTypeToString(magda::TrackType type) {
-    return juce::String(magda::getTrackTypeName(type)).toLowerCase();
-}
-
-juce::var midiNoteToJson(const magda::MidiNote& note) {
-    auto obj = new juce::DynamicObject();
-    obj->setProperty("note", note.noteNumber);
-    obj->setProperty("velocity", note.velocity);
-    obj->setProperty("startBeat", note.startBeat);
-    obj->setProperty("lengthBeats", note.lengthBeats);
-    return obj;
-}
-
 juce::var clipToJson(const magda::ClipInfo& clip) {
-    auto obj = new juce::DynamicObject();
-    obj->setProperty("id", clip.id);
-    obj->setProperty("trackId", clip.trackId);
-    obj->setProperty("name", clip.name);
-    obj->setProperty("type", clip.isAudio() ? "audio" : "midi");
-    obj->setProperty("view", clip.view == magda::ClipView::Session ? "session" : "arrangement");
-    obj->setProperty("startBeat", clip.placement.startBeat);
-    obj->setProperty("lengthBeats", clip.placement.lengthBeats);
-
-    juce::Array<juce::var> notes;
-    for (const auto& note : clip.midiNotes)
-        notes.add(midiNoteToJson(note));
-    obj->setProperty("notes", notes);
-
-    if (clip.isAudio())
-        obj->setProperty("sourceFile", clip.audio().source.filePath);
-
-    return obj;
+    return magda::remote::toJson(magda::remote::makeClipDto(clip));
 }
 
 juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
-    auto obj = new juce::DynamicObject();
-    obj->setProperty("id", track.id);
-    obj->setProperty("type", trackTypeToString(track.type));
-    obj->setProperty("name", track.name);
-    obj->setProperty("volume", track.volume);
-    obj->setProperty("pan", track.pan);
-    obj->setProperty("muted", track.muted);
-    obj->setProperty("soloed", track.soloed);
-    obj->setProperty("recordArmed", track.recordArmed);
-    obj->setProperty("audioInputDevice", track.audioInputDevice);
-    obj->setProperty("midiInputDevice", track.midiInputDevice);
-    obj->setProperty("audioOutputDevice", track.audioOutputDevice);
-    obj->setProperty("midiOutputDevice", track.midiOutputDevice);
-    obj->setProperty("parentId", track.parentId);
+    auto value = magda::remote::toJson(magda::remote::makeTrackDto(track));
+    auto* obj = value.getDynamicObject();
 
     juce::Array<juce::var> clips;
     for (auto clipId : api.clips().getClipsOnTrack(track.id)) {
@@ -179,26 +138,20 @@ juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
             clips.add(clipToJson(*clip));
     }
     obj->setProperty("clips", clips);
-    return obj;
+    return value;
 }
 
 juce::String dumpProjectJson(magda::MagdaApi& api) {
     const auto& project = api.project().getCurrentProjectInfo();
-    auto root = new juce::DynamicObject();
-    root->setProperty("name", project.name);
-    root->setProperty("filePath", project.filePath);
-    root->setProperty("tempo", project.tempo);
-    root->setProperty("timeSignatureNumerator", project.timeSignatureNumerator);
-    root->setProperty("timeSignatureDenominator", project.timeSignatureDenominator);
-    root->setProperty("sampleRate", project.sampleRate);
-    root->setProperty("timelineLengthBars", project.timelineLengthBars);
+    auto value = magda::remote::toJson(magda::remote::makeProjectDto(project));
+    auto* root = value.getDynamicObject();
 
     juce::Array<juce::var> tracks;
     for (const auto& track : api.tracks().getTracks())
         tracks.add(trackToJson(api, track));
     root->setProperty("tracks", tracks);
 
-    return juce::JSON::toString(juce::var(root), true);
+    return juce::JSON::toString(value, true);
 }
 
 struct CommandResult {

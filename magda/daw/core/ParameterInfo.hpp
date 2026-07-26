@@ -119,15 +119,21 @@ struct ParameterInfo {
     // Used by the UI formatter instead of computing from scale/range.
     std::vector<juce::String> valueTable;
 
-    // Live display text provider — queries the plugin through TrackManager
-    // at call time so the lookup is always safe (returns empty if device is
-    // gone). Preferred over valueTable when set — exact values, no quantization.
+    // Live display text provider. The owning device layer supplies the
+    // formatter, keeping this value type independent of the DAW/audio runtime.
+    // Preferred over valueTable when set — exact values, no quantization.
     // Shared so ParameterInfo copies remain cheap.
     struct DisplayTextProvider {
+        using Formatter = juce::String (*)(const DisplayTextProvider&, float);
+
         ChainNodePath devicePath;
         int deviceId = -1;
         int paramIndex = -1;
-        juce::String format(float normalizedValue) const;
+        Formatter formatter = nullptr;
+
+        juce::String format(float normalizedValue) const {
+            return formatter != nullptr ? formatter(*this, normalizedValue) : juce::String{};
+        }
     };
     std::shared_ptr<DisplayTextProvider> displayText;
 
@@ -185,6 +191,13 @@ struct ParameterInfo {
         return minValue < 0.0f && maxValue > 0.0f;
     }
 };
+
+using ParameterDisplayTextProviderFactory =
+    std::shared_ptr<ParameterInfo::DisplayTextProvider> (*)(const ChainNodePath&, int, int);
+
+bool registerParameterDisplayTextProviderFactory(ParameterDisplayTextProviderFactory factory);
+std::shared_ptr<ParameterInfo::DisplayTextProvider> makeParameterDisplayTextProvider(
+    const ChainNodePath& devicePath, int deviceId, int paramIndex);
 
 struct ParameterNormalizedValue {
     float value = 0.0f;

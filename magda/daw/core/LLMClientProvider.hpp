@@ -19,6 +19,9 @@ inline constexpr const char* DEEPSEEK = "deepseek";
 inline constexpr const char* OPENROUTER = "openrouter";
 inline constexpr const char* LLAMA_LOCAL = "llama_local";
 inline constexpr const char* LOCAL_SERVER = "local_server";
+// On-device tiny command model (magda/agents/command_model.*). Offline, instant,
+// free — no LLM call. Only meaningful for the COMMAND role.
+inline constexpr const char* FAST_INFERENCE = "fast_inference";
 }  // namespace provider
 
 inline constexpr const char* DEFAULT_LOCAL_SERVER_URL = "http://localhost:11434/v1";
@@ -93,9 +96,12 @@ inline constexpr const char* LLAMA_70B = "meta-llama/llama-3.3-70b-instruct";
 }  // namespace model
 
 namespace role {
-inline constexpr const char* ROUTER = "router";
+// Agent workload roles. They select an inference configuration; they are not
+// themselves tied to a particular model or inference implementation.
 inline constexpr const char* COMMAND = "command";
 inline constexpr const char* MUSIC = "music";
+inline constexpr const char* FAUST = "faust";
+inline constexpr const char* CHORD = "chord";
 inline constexpr const char* CONTROLLER = "controller";
 inline constexpr const char* THEME = "theme";
 }  // namespace role

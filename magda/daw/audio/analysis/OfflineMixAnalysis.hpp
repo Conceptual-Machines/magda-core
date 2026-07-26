@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "../../../agents/mixing_agent.hpp"
+#include "../../core/MixAnalysisData.hpp"
 #include "../../core/TypeIds.hpp"
 
 namespace magda {
@@ -20,23 +20,22 @@ namespace daw::audio {
 /**
  * @brief Offline whole-mix analysis driver (#886).
  *
- * Renders the mix offline (no playback), measures it with the production DSP via
- * MixAnalysisInput, and hands the result to MixAnalysisAgent -- the chosen path
- * for "analyse the mix" (render, do NOT make the user play through).
+ * Renders the mix offline (no playback) and measures it with the production DSP
+ * via MixAnalysisInput. Agent interpretation is deliberately outside this DAW
+ * service so magda_daw remains independent of magda_agents.
  *
  * The whole mix is the maximally relational case: every track judged against
  * every other (masking is already pairwise across the set), so there is no
  * "whole-mix vs relational" mode -- just a track set (default: all) and a depth.
  *
- *  - Shallow: ONE render pass of the summed mix -> fingerprint -> agent. Fast.
+ *  - Shallow: ONE render pass of the summed mix -> master fingerprint. Fast.
  *  - Deep:    master pass + each track isolated (N+1 passes) -> full per-track
- *             input (masking + tonal balance + timeline) -> agent. Scales with
- *             track count.
+ *             data (masking + tonal balance + timeline). Scales with track count.
  *
  * start() is called on the message thread: it does the edit-mutating setup
  * (stop transport, free playback context, enable plugins, prepare for offline
- * rendering), then runs the render passes + LLM call on a background thread,
- * reporting progress and the final result back on the message thread. The driver
+ * rendering), then runs the render passes + measurement on a background thread,
+ * reporting progress and the final data back on the message thread. The driver
  * owns itself and cleans up when done.
  *
  * Memory note: Deep currently holds every rendered stem buffer resident at once
@@ -63,21 +62,21 @@ class OfflineMixAnalysis {
             trackSet;          ///< tracks to isolate (Deep); empty => all audio tracks
         float bpm = 0.0f;      ///< project tempo (0 = omit)
         std::string genre;     ///< project genre (empty = omit)
-        std::string question;  ///< optional user question (empty = general assessment)
         int numSegments = 16;  ///< master timeline slices (Deep)
-        /// Measure-only: render + build the measured Input, deliver it via
-        /// onMeasured, and skip the LLM agent entirely (onComplete still fires
-        /// with a clean/empty Result, or an error Result on render failure).
-        bool skipAgent = false;
+    };
+
+    struct Result {
+        bool hasError = false;
+        std::string error;
     };
 
     /// Human-readable progress line, delivered on the message thread.
     using ProgressFn = std::function<void(const juce::String&)>;
-    /// Final agent result, delivered on the message thread.
-    using CompletionFn = std::function<void(MixAnalysisAgent::Result)>;
+    /// Render/measurement completion status, delivered on the message thread.
+    using CompletionFn = std::function<void(Result)>;
     /// The measured data (per-track levels + masking + tonal/timeline), delivered
-    /// on the message thread just before the agent step. Fired on success only.
-    using MeasuredFn = std::function<void(MixAnalysisAgent::Input)>;
+    /// on the message thread when measurement completes. Fired on success only.
+    using MeasuredFn = std::function<void(MixAnalysisData)>;
     /// Cancel handle: set it true to abort the render at the next chunk. The job
     /// then ends without firing onMeasured / a result.
     using CancelToken = std::shared_ptr<std::atomic<bool>>;
@@ -87,8 +86,7 @@ class OfflineMixAnalysis {
      * immediately (with a CancelToken; set it to abort); onProgress / onMeasured /
      * onComplete fire on the message thread. If the engine has no edit, onComplete
      * is called synchronously with an error and a null token is returned.
-     * onMeasured (optional) delivers the measured Input before the agent runs;
-     * pair it with Request::skipAgent to stop after measuring.
+     * onMeasured (optional) delivers the measured data on success.
      */
     static CancelToken start(TracktionEngineWrapper& engine, Request request, ProgressFn onProgress,
                              CompletionFn onComplete, MeasuredFn onMeasured = {});

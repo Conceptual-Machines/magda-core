@@ -1,5 +1,7 @@
 #include "SessionClipEditor.hpp"
 
+#include <cmath>
+
 #include "../../audio/AudioThumbnailManager.hpp"
 #include "../state/TimelineController.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -63,6 +65,32 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
             // Draw waveform
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
             thumbnail->drawChannels(g, waveformBounds, startTime, endTime, 1.0f);
+
+            if (clip->isReversed && di.fileExtentTimeline() > 0.0 &&
+                di.activeRegionEndPositionSeconds > di.activeRegionStartPositionSeconds) {
+                const double pixelsPerTimelineSecond =
+                    waveformBounds.getWidth() / di.fileExtentTimeline();
+                const int activeLeft =
+                    waveformBounds.getX() +
+                    static_cast<int>(
+                        std::round(di.activeRegionStartPositionSeconds * pixelsPerTimelineSecond));
+                const int activeRight =
+                    waveformBounds.getX() +
+                    static_cast<int>(
+                        std::round(di.activeRegionEndPositionSeconds * pixelsPerTimelineSecond));
+                const juce::Rectangle<int> activeBounds(activeLeft, waveformBounds.getY(),
+                                                        activeRight - activeLeft,
+                                                        waveformBounds.getHeight());
+                const auto sourceRange = di.displayRangeToSourceRange(
+                    di.activeRegionStartPositionSeconds, di.activeRegionEndPositionSeconds);
+
+                g.saveState();
+                g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, activeBounds.getCentreX(),
+                                                            activeBounds.getCentreY()));
+                thumbnail->drawChannels(g, activeBounds, sourceRange.first, sourceRange.second,
+                                        1.0f);
+                g.restoreState();
+            }
 
             // Draw loop region overlay. Loop X positions come from the
             // loop-region fields, NOT from the file extent — a loop with

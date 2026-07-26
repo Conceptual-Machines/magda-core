@@ -18,11 +18,22 @@ const std::unordered_set<ClipId>& SelectionApiLive::getSelectedClips() const {
     return SelectionManager::getInstance().getSelectedClips();
 }
 
+ChainNodePath SelectionApiLive::getSelectedChainNode() const {
+    return SelectionManager::getInstance().getSelectedChainNode();
+}
+
 AutomationLaneId SelectionApiLive::getSelectedAutomationLaneId() const {
     auto& sel = SelectionManager::getInstance();
     if (!sel.hasAutomationLaneSelection())
         return INVALID_AUTOMATION_LANE_ID;
     return sel.getAutomationLaneSelection().laneId;
+}
+
+AutomationClipId SelectionApiLive::getSelectedAutomationClipId() const {
+    auto& sel = SelectionManager::getInstance();
+    if (!sel.hasAutomationClipSelection())
+        return INVALID_AUTOMATION_CLIP_ID;
+    return sel.getAutomationClipSelection().clipId;
 }
 
 bool SelectionApiLive::hasNoteSelection() const {
@@ -53,6 +64,10 @@ void SelectionApiLive::selectClip(ClipId clipId) {
 
 void SelectionApiLive::selectClips(const std::unordered_set<ClipId>& clipIds) {
     SelectionManager::getInstance().selectClips(clipIds);
+}
+
+void SelectionApiLive::selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) {
+    SelectionManager::getInstance().selectAutomationClip(clipId, laneId);
 }
 
 void SelectionApiLive::selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) {

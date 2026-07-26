@@ -2,6 +2,7 @@
 
 #include "../daw/api/automation_api.hpp"
 #include "../daw/api/magda_api.hpp"
+#include "../daw/api/project_api.hpp"
 #include "../daw/api/selection_api.hpp"
 #include "../daw/api/track_api.hpp"
 #include "../daw/core/AutomationInfo.hpp"
@@ -23,7 +24,7 @@ minimum and 1.0 = parameter maximum. The user may speak in real units
 ("filter from 200Hz to 2kHz") but you emit normalized values; the DAW maps
 them back to the real parameter range.
 
-A BAR = 4 BEATS. "over 2 bars" = span 8 beats. "8 bars" = span 32 beats.
+Use the project timing included in Context: one bar is Context's beats_per_bar.
 
 INSTRUCTIONS:
   AUTO sin    start=<beat> end=<beat> min=<0..1> max=<0..1> cycles=<N>
@@ -35,6 +36,15 @@ INSTRUCTIONS:
   AUTO line   start=<beat> end=<beat> from=<0..1> to=<0..1>
   AUTO freeform points=(<beat>,<0..1>)(<beat>,<0..1>)...
   AUTO clear
+
+AUTOMATION CLIPS (times are beats; omit id to target the selected automation clip):
+  AUTO clip.new start=<beat> length=<beats> target=<...>
+  AUTO clip.delete [id=<clipId>]
+  AUTO clip.move [id=<clipId>] start=<beat>
+  AUTO clip.resize [id=<clipId>] length=<beats> [from_start=true]
+  AUTO clip.duplicate [id=<clipId>]
+  AUTO clip.set [id=<clipId>] name=<name> colour=<#RRGGBB> looping=<true|false> loop_length=<beats>
+  AUTO clip.points [id=<clipId>] points=(<localBeat>,<0..1>)(<localBeat>,<0..1>)...
 
 TARGETS (append ` target=<...>` to any instruction):
   target=volume     — currently selected track's volume fader (DEFAULT for
@@ -50,6 +60,8 @@ If the user does not specify a target, PICK THE RIGHT DEFAULT from the list
 above based on the words they used. Do not refuse.
 
 EXAMPLES:
+For bar-based requests, multiply the requested bar count by Context's
+beats_per_bar before emitting the beat positions. For example, at 4/4:
 "8 bar volume fade in" ->
 AUTO line start=0 end=32 from=0 to=1 target=volume
 
@@ -85,6 +97,11 @@ juce::String buildSelectionContext(MagdaApi& api) {
     auto& tmgr = api.tracks();
     juce::String out;
 
+    const auto& project = api.project().getCurrentProjectInfo();
+    out << "Project timing: " << project.timeSignatureNumerator << "/"
+        << project.timeSignatureDenominator << " (beats_per_bar=" << project.timeSignatureNumerator
+        << ", tempo=" << project.tempo << " BPM).\n";
+
     TrackId contextTrackId = sel.getSelectedTrack();
 
     auto selLaneId = sel.getSelectedAutomationLaneId();
@@ -111,6 +128,13 @@ juce::String buildSelectionContext(MagdaApi& api) {
         }
     } else {
         out << "No track is currently selected.";
+    }
+
+    const auto selectedClip = sel.getSelectedAutomationClipId();
+    if (selectedClip != INVALID_AUTOMATION_CLIP_ID) {
+        if (const auto* clip = amgr.getClip(selectedClip))
+            out << "\nSelected automation clip: id=" << clip->id << ", start=" << clip->startBeats
+                << ", length=" << clip->lengthBeats << " beats.";
     }
 
     return out;

@@ -1,7 +1,5 @@
 #include "session/SessionMonitorPlugin.hpp"
 
-#include "session/SessionClipAudioMonitor.hpp"
-
 namespace magda {
 
 const char* SessionMonitorPlugin::xmlTypeName = "sessionmonitor";
@@ -17,11 +15,11 @@ void SessionMonitorPlugin::deinitialise() {}
 void SessionMonitorPlugin::reset() {}
 
 void SessionMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!audioMonitor_)
+    if (!sessionContext_)
         return;
 
     double transportSeconds = fc.editTime.getStart().inSeconds();
-    audioMonitor_->process(transportSeconds);
+    sessionContext_->processSessionBlock(transportSeconds);
 }
 
 void SessionMonitorPlugin::restorePluginStateFromValueTree(const juce::ValueTree&) {}

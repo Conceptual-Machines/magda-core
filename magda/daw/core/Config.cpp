@@ -140,18 +140,21 @@ void Config::save() {
     root->setProperty("preferredInputChannels", preferredInputChannels);
     root->setProperty("preferredOutputChannels", preferredOutputChannels);
 
-    // AI — nested "ai" object with per-agent configs
+    // AI — nested "ai" object with per-agent inference profiles.
     {
         auto* aiObj = new juce::DynamicObject();
         aiObj->setProperty("preset", toJuceString(aiPreset));
 
         auto* agentsObj = new juce::DynamicObject();
-        for (const auto& [role, cfg] : agentConfigs) {
+        for (const auto& [role, profile] : agentInferenceConfigs) {
             auto* agentObj = new juce::DynamicObject();
-            agentObj->setProperty("provider", toJuceString(cfg.provider));
-            agentObj->setProperty("baseUrl", toJuceString(cfg.baseUrl));
-            agentObj->setProperty("apiKey", toJuceString(cfg.apiKey));
-            agentObj->setProperty("model", toJuceString(cfg.model));
+            agentObj->setProperty("backend", toJuceString(profile.backend));
+            auto* llmObj = new juce::DynamicObject();
+            llmObj->setProperty("provider", toJuceString(profile.llm.provider));
+            llmObj->setProperty("baseUrl", toJuceString(profile.llm.baseUrl));
+            llmObj->setProperty("apiKey", toJuceString(profile.llm.apiKey));
+            llmObj->setProperty("model", toJuceString(profile.llm.model));
+            agentObj->setProperty("llm", juce::var(llmObj));
             agentsObj->setProperty(juce::String(role), juce::var(agentObj));
         }
         aiObj->setProperty("agents", juce::var(agentsObj));
@@ -199,6 +202,7 @@ void Config::save() {
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
+    root->setProperty("commandModelModelsDir", toJuceString(commandModelModelsDir));
     root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     root->setProperty("mediaDbDir", toJuceString(mediaDbDir));
     root->setProperty("externalAudioEditorPath", toJuceString(externalAudioEditorPath));
@@ -474,16 +478,33 @@ void Config::load() {
             if (auto* agentsObj = agentsVar.getDynamicObject()) {
                 bool jsonHadController = false;
                 bool jsonHadMusic = false;
+                bool jsonHadFaust = false;
+                bool jsonHadChord = false;
                 bool jsonHadTheme = false;
 
                 for (const auto& prop : agentsObj->getProperties()) {
                     auto role = prop.name.toString().toStdString();
+                    // The model-based intent router was retired in favour of
+                    // deterministic context surfaces. Drop stale on-disk rows
+                    // so the next save removes the obsolete configuration.
+                    if (role == "router")
+                        continue;
                     if (auto* agentObj = prop.value.getDynamicObject()) {
-                        AgentLLMConfig cfg;
-                        cfg.provider = agentObj->getProperty("provider").toString().toStdString();
-                        cfg.baseUrl = agentObj->getProperty("baseUrl").toString().toStdString();
-                        cfg.apiKey = agentObj->getProperty("apiKey").toString().toStdString();
-                        cfg.model = agentObj->getProperty("model").toString().toStdString();
+                        AgentInferenceConfig profile;
+                        profile.backend =
+                            agentObj->hasProperty("backend")
+                                ? agentObj->getProperty("backend").toString().toStdString()
+                                : "llm";
+                        auto llmVar = agentObj->getProperty("llm");
+                        auto* llmObj = llmVar.getDynamicObject();
+                        // Flat provider/baseUrl/apiKey/model is the pre-profile
+                        // on-disk shape. Read it as the LLM backend payload.
+                        auto& cfg = profile.llm;
+                        const auto read = llmObj != nullptr ? llmObj : agentObj;
+                        cfg.provider = read->getProperty("provider").toString().toStdString();
+                        cfg.baseUrl = read->getProperty("baseUrl").toString().toStdString();
+                        cfg.apiKey = read->getProperty("apiKey").toString().toStdString();
+                        cfg.model = read->getProperty("model").toString().toStdString();
                         // Migrate: openai_chat + deepseek/openrouter baseUrl → own provider
                         if (cfg.provider == "openai_chat" && !cfg.baseUrl.empty()) {
                             if (cfg.baseUrl.find("deepseek") != std::string::npos) {
@@ -495,11 +516,15 @@ void Config::load() {
                             }
                         }
 
-                        agentConfigs[role] = cfg;
+                        agentInferenceConfigs[role] = profile;
                         if (role == "controller")
                             jsonHadController = true;
                         if (role == "music")
                             jsonHadMusic = true;
+                        if (role == "faust")
+                            jsonHadFaust = true;
+                        if (role == "chord")
+                            jsonHadChord = true;
                         if (role == "theme")
                             jsonHadTheme = true;
                     }
@@ -509,9 +534,13 @@ void Config::load() {
                 // a live config. Clone music so the user's cloud setup carries
                 // over instead of leaving the class-default llama_local in place.
                 if (!jsonHadController && jsonHadMusic)
-                    agentConfigs["controller"] = agentConfigs["music"];
+                    agentInferenceConfigs["controller"] = agentInferenceConfigs["music"];
+                if (!jsonHadFaust && jsonHadMusic)
+                    agentInferenceConfigs["faust"] = agentInferenceConfigs["music"];
+                if (!jsonHadChord && jsonHadMusic)
+                    agentInferenceConfigs["chord"] = agentInferenceConfigs["music"];
                 if (!jsonHadTheme && jsonHadMusic)
-                    agentConfigs["theme"] = agentConfigs["music"];
+                    agentInferenceConfigs["theme"] = agentInferenceConfigs["music"];
             }
 
             // Local llama settings
@@ -538,7 +567,10 @@ void Config::load() {
 
             // Migrate: openai_chat + a Responses-only model (gpt-5*, o-series)
             // -> openai_responses (older configs used the wrong provider)
-            for (auto& [role, cfg] : agentConfigs) {
+            for (auto& [role, profile] : agentInferenceConfigs) {
+                if (!profile.usesLLM())
+                    continue;
+                auto& cfg = profile.llm;
                 if (cfg.provider == "openai_chat" && cfg.baseUrl.empty()) {
                     if (requiresOpenAIResponsesAPI(juce::String(cfg.model))) {
                         cfg.provider = "openai_responses";
@@ -610,24 +642,15 @@ void Config::load() {
             if (!juce::String(musicCfg.model).startsWith("gpt-5"))
                 musicCfg.model = "gpt-5";
         }
-        agentConfigs["music"] = musicCfg;
+        setAgentLLMConfig("music", musicCfg);
+        setAgentLLMConfig("faust", musicCfg);
+        setAgentLLMConfig("chord", musicCfg);
 
         AgentLLMConfig commandCfg = musicCfg;
-        agentConfigs["command"] = commandCfg;
+        setAgentLLMConfig("command", commandCfg);
 
         AgentLLMConfig controllerCfg = musicCfg;
-        agentConfigs["controller"] = controllerCfg;
-
-        AgentLLMConfig routerCfg;
-        if (isLegacyOpenAI && musicCfg.baseUrl.empty()) {
-            routerCfg.provider = "openai_chat";
-            routerCfg.model = "gpt-4.1-mini";
-            routerCfg.apiKey = musicCfg.apiKey;
-        } else {
-            // Mirror the user's existing provider for the router too
-            routerCfg = musicCfg;
-        }
-        agentConfigs["router"] = routerCfg;
+        setAgentLLMConfig("controller", controllerCfg);
     }
 
     browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);
@@ -637,6 +660,7 @@ void Config::load() {
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
+    commandModelModelsDir = getString("commandModelModelsDir", commandModelModelsDir);
     loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     mediaDbDir = getString("mediaDbDir", mediaDbDir);
     externalAudioEditorPath = getString("externalAudioEditorPath", externalAudioEditorPath);

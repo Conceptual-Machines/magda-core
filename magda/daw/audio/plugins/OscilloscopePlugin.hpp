@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../core/Config.hpp"
 #include "plugins/AnalysisTapPlugin.hpp"
+#include "plugins/DeviceServices.hpp"
 
 namespace magda::daw::audio {
 
@@ -11,10 +11,11 @@ namespace magda::daw::audio {
  */
 class OscilloscopePlugin : public AnalysisTapPlugin {
   public:
-    explicit OscilloscopePlugin(const te::PluginCreationInfo& info)
+    OscilloscopePlugin(const te::PluginCreationInfo& info,
+                       const DevicePluginDefaults::Oscilloscope& defaults)
         : AnalysisTapPlugin(info, 262144) {  // ~5.4 s at 48k
         timebaseMsValue.referTo(state, juce::Identifier("timebaseMs"), getUndoManager(),
-                                magda::Config::getInstance().getOscilloscopeDefaults().timebaseMs);
+                                defaults.timebaseMs);
     }
 
     static const char* getPluginName() {

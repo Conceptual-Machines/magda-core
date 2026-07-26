@@ -1230,11 +1230,13 @@ TEST_CASE("Macro and mod custom names serialize", "[macro][mod][serialization]")
     REQUIRE(restored.mods[0].name == "Slow Sweep");
 }
 
-TEST_CASE("Device mini mixer parameters serialize", "[device][serialization][mixer]") {
+TEST_CASE("Device parameter selections serialize", "[device][serialization][mixer][ai]") {
     DeviceInfo device;
     device.name = "TestDevice";
     device.visibleParameters = {1, 3, 5};
     device.miniMixerParameters = {2, 4};
+    device.aiSoundDesignerParameters = {0, 6, 8};
+    device.aiSoundDesignerPrompt = "Keep transients crisp.";
     device.producesMidi = true;
 
     DeviceInfo restored;
@@ -1242,6 +1244,8 @@ TEST_CASE("Device mini mixer parameters serialize", "[device][serialization][mix
                                                      restored));
     REQUIRE(restored.visibleParameters == std::vector<int>{1, 3, 5});
     REQUIRE(restored.miniMixerParameters == std::vector<int>{2, 4});
+    REQUIRE(restored.aiSoundDesignerParameters == std::vector<int>{0, 6, 8});
+    REQUIRE(restored.aiSoundDesignerPrompt == "Keep transients crisp.");
     REQUIRE(restored.producesMidi);
 }
 

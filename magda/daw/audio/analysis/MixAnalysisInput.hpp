@@ -5,12 +5,12 @@
 #include <string>
 #include <vector>
 
-#include "../../../agents/mixing_agent.hpp"
+#include "../../core/MixAnalysisData.hpp"
 
 namespace magda::daw::audio {
 
 /**
- * @brief Builds a MixAnalysisAgent::Input from audio buffers (#886).
+ * @brief Builds MixAnalysisData from audio buffers (#886).
  *
  * Measures each track + the master + any reference masters with the production
  * analysis DSP (TrackMeasurer / BandSpectrum / MaskingDetector), detects
@@ -37,30 +37,29 @@ class MixAnalysisInput {
     };
 
     /**
-     * Build the agent input.
+     * Build the measured mix data.
      * @param sampleRate  applies to every buffer (they must share it).
      * @param tracks      every track stem.
      * @param master      the finished master; nullptr => a normalised (-1 dBFS)
      *                    sum of the track stems is used instead.
      * @param references  reference masters (genre targets), may be empty.
      */
-    static MixAnalysisAgent::Input build(double sampleRate, const std::vector<Source>& tracks,
-                                         const juce::AudioBuffer<float>* master,
-                                         const std::vector<Source>& references,
-                                         const Options& opts);
+    static MixAnalysisData build(double sampleRate, const std::vector<Source>& tracks,
+                                 const juce::AudioBuffer<float>* master,
+                                 const std::vector<Source>& references, const Options& opts);
 
     /// Convenience overload with default options.
-    static MixAnalysisAgent::Input build(double sampleRate, const std::vector<Source>& tracks,
-                                         const juce::AudioBuffer<float>* master,
-                                         const std::vector<Source>& references) {
+    static MixAnalysisData build(double sampleRate, const std::vector<Source>& tracks,
+                                 const juce::AudioBuffer<float>* master,
+                                 const std::vector<Source>& references) {
         return build(sampleRate, tracks, master, references, Options{});
     }
 
     /// Master-style fingerprint of one finished buffer (true-peak + tonal +
     /// spectral + whole-song correlation/width).
-    static MixAnalysisAgent::TrackMix fingerprint(const juce::AudioBuffer<float>& buf,
-                                                  double sampleRate, const juce::String& name,
-                                                  const std::string& role);
+    static MixAnalysisData::Track fingerprint(const juce::AudioBuffer<float>& buf,
+                                              double sampleRate, const juce::String& name,
+                                              const std::string& role);
 };
 
 }  // namespace magda::daw::audio

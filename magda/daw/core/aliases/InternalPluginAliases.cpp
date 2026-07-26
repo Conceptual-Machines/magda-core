@@ -1,6 +1,6 @@
 #include "InternalPluginAliases.hpp"
 
-#include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 
 namespace magda {
 
@@ -144,17 +144,9 @@ std::map<juce::String, StoredAlias> collectInternalPluginCuratedAliases() {
         }
     }
 
-    for (const auto* plugin : daw::audio::compiled::getAllCompiledPluginSpecs()) {
-        if (plugin == nullptr || plugin->aliases == nullptr)
-            continue;
+    for (const auto& alias : daw::audio::getAllInternalParameterAliases())
+        addAlias(alias.pluginKey, alias.alias, alias.paramIndex, alias.paramName);
 
-        const juce::String pluginKey =
-            plugin->aliasKey != nullptr ? plugin->aliasKey : plugin->pluginId;
-        for (int i = 0; i < plugin->aliasCount; ++i) {
-            const auto& spec = plugin->aliases[i];
-            addAlias(pluginKey, spec.alias, spec.paramIndex, spec.paramName);
-        }
-    }
     return out;
 }
 

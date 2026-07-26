@@ -1,31 +1,8 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 
-#include "../audio/plugins/ArpeggiatorPlugin.hpp"
-#include "../audio/plugins/AudioSidechainMonitorPlugin.hpp"
-#include "../audio/plugins/DrumGridPlugin.hpp"
-#include "../audio/plugins/FaustInstrumentPlugin.hpp"
-#include "../audio/plugins/FaustPlugin.hpp"
-#include "../audio/plugins/FollowerSourceTapPlugin.hpp"
-#include "../audio/plugins/InsertCapturePlugin.hpp"
-#include "../audio/plugins/InstrumentMeterTapPlugin.hpp"
-#include "../audio/plugins/LevelsPlugin.hpp"
-#include "../audio/plugins/MagdaSamplerPlugin.hpp"
-#include "../audio/plugins/MidiChordEnginePlugin.hpp"
-#include "../audio/plugins/MidiReceivePlugin.hpp"
-#include "../audio/plugins/MidiStrumPlugin.hpp"
-#include "../audio/plugins/OscilloscopePlugin.hpp"
-#include "../audio/plugins/PolyStepSequencerPlugin.hpp"
-#include "../audio/plugins/SidechainMonitorPlugin.hpp"
-#include "../audio/plugins/SidechainPlugin.hpp"
-#include "../audio/plugins/SpectrumAnalyzerPlugin.hpp"
-#include "../audio/plugins/StepSequencerPlugin.hpp"
-#include "../audio/plugins/TrackMeasurementPlugin.hpp"
+#include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
-#include "../audio/plugins/mutable/MutableCloudsPlugin.hpp"
-#include "../audio/plugins/mutable/MutableElementsPlugin.hpp"
-#include "../audio/plugins/mutable/MutableRingsPlugin.hpp"
-#include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
 namespace magda {
@@ -92,95 +69,12 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
     }
 
     tracktion::Plugin::Ptr createCustomPlugin(tracktion::PluginCreationInfo info) override {
-        auto type = info.state[tracktion::IDs::type].toString();
-        if (type == daw::audio::MagdaSamplerPlugin::xmlTypeName) {
-            return new daw::audio::MagdaSamplerPlugin(info);
-        }
-        if (type == daw::audio::MutableElementsPlugin::xmlTypeName) {
-            return new daw::audio::MutableElementsPlugin(info);
-        }
-        if (type == daw::audio::MutableRingsPlugin::xmlTypeName) {
-            return new daw::audio::MutableRingsPlugin(info);
-        }
-        if (type == daw::audio::MutableCloudsPlugin::xmlTypeName) {
-            return new daw::audio::MutableCloudsPlugin(info);
-        }
-        if (type == daw::audio::DrumGridPlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating DrumGridPlugin");
-            return new daw::audio::DrumGridPlugin(info);
-        }
-        if (type == SessionMonitorPlugin::xmlTypeName) {
-            return new SessionMonitorPlugin(info);
-        }
-        if (type == SidechainMonitorPlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating SidechainMonitorPlugin");
-            return new SidechainMonitorPlugin(info);
-        }
-        if (type == AudioSidechainMonitorPlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating AudioSidechainMonitorPlugin");
-            return new AudioSidechainMonitorPlugin(info);
-        }
-        if (type == FollowerSourceTapPlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating FollowerSourceTapPlugin");
-            return new FollowerSourceTapPlugin(info);
-        }
-        if (type == InsertCapturePlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating InsertCapturePlugin");
-            return new InsertCapturePlugin(info);
-        }
-        if (type == daw::audio::FaustPlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");
-            return new daw::audio::FaustPlugin(info);
-        }
-        if (type == daw::audio::FaustInstrumentPlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustInstrumentPlugin");
-            return new daw::audio::FaustInstrumentPlugin(info);
-        }
-        // Compiled-Faust plugins go through the registry; one factory per
-        // device lives in its own .cpp (see CompiledPluginRegistry.hpp).
+        if (auto plugin = daw::audio::createRegisteredCustomPlugin(info))
+            return plugin;
+
+        const auto type = info.state[tracktion::IDs::type].toString();
         if (auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
             return spec->createPlugin(info);
-        }
-        if (type == MidiReceivePlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");
-            return new MidiReceivePlugin(info);
-        }
-        if (type == daw::audio::MidiChordEnginePlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiChordEnginePlugin");
-            return new daw::audio::MidiChordEnginePlugin(info);
-        }
-        if (type == daw::audio::ArpeggiatorPlugin::xmlTypeName) {
-            return new daw::audio::ArpeggiatorPlugin(info);
-        }
-        if (type == daw::audio::MidiStrumPlugin::xmlTypeName) {
-            return new daw::audio::MidiStrumPlugin(info);
-        }
-        if (type == daw::audio::StepSequencerPlugin::xmlTypeName) {
-            return new daw::audio::StepSequencerPlugin(info);
-        }
-        if (type == daw::audio::PolyStepSequencerPlugin::xmlTypeName) {
-            return new daw::audio::PolyStepSequencerPlugin(info);
-        }
-        if (type == daw::audio::OscilloscopePlugin::xmlTypeName) {
-            return new daw::audio::OscilloscopePlugin(info);
-        }
-        if (type == daw::audio::SpectrumAnalyzerPlugin::xmlTypeName) {
-            return new daw::audio::SpectrumAnalyzerPlugin(info);
-        }
-        if (type == daw::audio::LevelsPlugin::xmlTypeName) {
-            return new daw::audio::LevelsPlugin(info);
-        }
-        if (type == daw::audio::SidechainPlugin::xmlTypeName) {
-            return new daw::audio::SidechainPlugin(info);
-        }
-        if (type == daw::audio::InstrumentMeterTapPlugin::xmlTypeName) {
-            return new daw::audio::InstrumentMeterTapPlugin(info);
-        }
-        if (type == daw::audio::TrackMeasurementPlugin::xmlTypeName) {
-            return new daw::audio::TrackMeasurementPlugin(info);
-        }
-        if (type == tracktion::ImpulseResponsePlugin::xmlTypeName) {
-            return new tracktion::ImpulseResponsePlugin(info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};

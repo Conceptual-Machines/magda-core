@@ -5,7 +5,7 @@
 #include <memory>
 
 #include "../daw/audio/AudioBridge.hpp"
-#include "../daw/audio/plugins/FaustPlugin.hpp"
+#include "../daw/audio/plugins/IFaustEditorModel.hpp"
 #include "../daw/core/TrackManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "faust_agent.hpp"
@@ -21,6 +21,8 @@ namespace {
 // applies it via FaustPlugin::loadDspSource on the message thread.
 class FaustCoderAgent : public CoderAgent {
   public:
+    explicit FaustCoderAgent(FaustAgent::Target target) : agent_(target) {}
+
     juce::String getUserCaveat() const override {
         return "note: generated code is a starting point - review and refine in the editor.";
     }
@@ -48,23 +50,18 @@ class FaustCoderAgent : public CoderAgent {
         if (result.hasError)
             return juce::String("error: ") + juce::String(result.error);
 
-        // faust-mcp drives the compile verification (and the auto-fix loop). If
-        // it's off, we generated the DSP but it hasn't been verified, so we
-        // stage the source into the editor instead of loading it live.
-        const bool verified = MCPServerManager::getInstance().isServerEnabled("faust-mcp");
-
         auto& mm = *juce::MessageManager::getInstance();
         auto applyOnce = [name = result.name, source = result.source, path,
-                          verified]() -> juce::String {
+                          verified = result.mcpVerified]() -> juce::String {
             auto& tm = TrackManager::getInstance();
             auto* device = tm.getDeviceInChainByPath(path);
-            if (device == nullptr ||
-                internalPluginFromId(device->pluginId) != InternalPlugin::Faust)
+            if (device == nullptr || (!device->pluginId.equalsIgnoreCase("faust") &&
+                                      !device->pluginId.equalsIgnoreCase("faustinstrument")))
                 return "(target device is not a Faust plugin)";
             auto* engine = tm.getAudioEngine();
             auto* bridge = engine ? engine->getAudioBridge() : nullptr;
             auto plugin = bridge ? bridge->getPlugin(path) : nullptr;
-            auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
+            auto* faust = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get());
             if (faust == nullptr)
                 return "(could not resolve live Faust plugin)";
             const auto displayName = name.empty() ? juce::String("AI DSP") : juce::String(name);
@@ -74,11 +71,12 @@ class FaustCoderAgent : public CoderAgent {
             if (!verified) {
                 faust->stageSourceForEditing(displayName, juce::String(source));
                 return juce::String("generated \"") + displayName +
-                       "\" - open the editor to compile (Faust MCP off)";
+                       "\" - open the editor to compile (Faust MCP disabled)";
             }
 
             juce::String err;
-            if (!faust->loadDspSource(displayName, juce::String(source), err))
+            if (!faust->loadDspSource(displayName, juce::String(source), err,
+                                      daw::audio::FaustCustomViewKind::None))
                 return juce::String("compile error: ") + err;
 
             // Faust's parameter set changes at runtime, so the DeviceInfo the
@@ -128,16 +126,18 @@ class FaustCoderAgent : public CoderAgent {
 }  // namespace
 
 std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId) {
-    switch (internalPluginFromId(pluginId)) {
-        case InternalPlugin::Faust:
-            return std::make_unique<FaustCoderAgent>();
+    switch (getInternalPluginCapabilities(pluginId).coderAgent) {
+        case CoderAgentKind::Faust:
+            return std::make_unique<FaustCoderAgent>(pluginId.equalsIgnoreCase("faustinstrument")
+                                                         ? FaustAgent::Target::Instrument
+                                                         : FaustAgent::Target::Effect);
         default:
             return nullptr;
     }
 }
 
 bool isCoderSupported(const juce::String& pluginId) {
-    return createCoderAgentFor(pluginId) != nullptr;
+    return getInternalPluginCapabilities(pluginId).supportsCoder();
 }
 
 std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId) {
@@ -148,8 +148,20 @@ std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& plugin
     return nullptr;
 }
 
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device) {
+    if (auto sd = createSoundDesignAgentFor(device))
+        return sd;
+    if (auto cd = createCoderAgentFor(device.pluginId))
+        return cd;
+    return nullptr;
+}
+
 bool isDeviceAISupported(const juce::String& pluginId) {
-    return isSoundDesignSupported(pluginId) || isCoderSupported(pluginId);
+    return getInternalPluginCapabilities(pluginId).supportsDeviceAI();
+}
+
+bool isDeviceAISupported(const DeviceInfo& device) {
+    return isSoundDesignSupported(device) || isCoderSupported(device.pluginId);
 }
 
 }  // namespace magda

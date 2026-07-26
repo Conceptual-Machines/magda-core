@@ -68,6 +68,45 @@ class StubAutomationApi : public AutomationApi {
     void clearLanePoints(AutomationLaneId) override {
         std::abort();
     }
+    bool retypeEmptyLane(AutomationLaneId, AutomationLaneType) override {
+        std::abort();
+    }
+    AutomationClipId createClip(AutomationLaneId, double, double) override {
+        std::abort();
+    }
+    AutomationClipInfo* getClip(AutomationClipId) override {
+        std::abort();
+    }
+    const AutomationClipInfo* getClip(AutomationClipId) const override {
+        std::abort();
+    }
+    void deleteClip(AutomationClipId) override {
+        std::abort();
+    }
+    void moveClip(AutomationClipId, double) override {
+        std::abort();
+    }
+    void resizeClip(AutomationClipId, double, bool) override {
+        std::abort();
+    }
+    AutomationClipId duplicateClip(AutomationClipId) override {
+        std::abort();
+    }
+    void setClipName(AutomationClipId, const juce::String&) override {
+        std::abort();
+    }
+    void setClipColour(AutomationClipId, juce::Colour) override {
+        std::abort();
+    }
+    void setClipLooping(AutomationClipId, bool) override {
+        std::abort();
+    }
+    void setClipLoopLength(AutomationClipId, double) override {
+        std::abort();
+    }
+    void setClipPoints(AutomationClipId, std::vector<AutomationPoint>) override {
+        std::abort();
+    }
     void beginNotificationBatch() override {
         std::abort();
     }
@@ -110,6 +149,7 @@ class MockSelectionApi : public SelectionApi {
     TrackId selectedTrack = INVALID_TRACK_ID;
     ClipId selectedClip = INVALID_CLIP_ID;
     std::unordered_set<ClipId> selectedClips;
+    ChainNodePath selectedChainNode;
     bool noteSelectionPresent = false;
     ClipId noteSelectionClipId = INVALID_CLIP_ID;
     std::vector<size_t> noteSelectionIndices;
@@ -130,8 +170,14 @@ class MockSelectionApi : public SelectionApi {
     const std::unordered_set<ClipId>& getSelectedClips() const override {
         return selectedClips;
     }
+    ChainNodePath getSelectedChainNode() const override {
+        return selectedChainNode;
+    }
     AutomationLaneId getSelectedAutomationLaneId() const override {
         return INVALID_AUTOMATION_LANE_ID;
+    }
+    AutomationClipId getSelectedAutomationClipId() const override {
+        return INVALID_AUTOMATION_CLIP_ID;
     }
     bool hasNoteSelection() const override {
         return noteSelectionPresent;
@@ -153,6 +199,9 @@ class MockSelectionApi : public SelectionApi {
     }
     void selectClips(const std::unordered_set<ClipId>& ids) override {
         clipsSelections.push_back(ids);
+    }
+    void selectAutomationClip(AutomationClipId, AutomationLaneId) override {
+        // not exercised by current DSL binding tests
     }
     void selectNotes(ClipId, const std::vector<size_t>&) override {
         // not exercised by current bindings
@@ -277,6 +326,32 @@ class MockTrackApi : public TrackApi {
     DeviceId addDeviceToTrack(TrackId, const DeviceInfo&) override {
         return INVALID_DEVICE_ID;
     }
+    DeviceId addDeviceToChain(TrackId, RackId, ChainId, const DeviceInfo&) override {
+        return INVALID_DEVICE_ID;
+    }
+    RackId addRackToTrack(TrackId, const juce::String&) override {
+        return INVALID_RACK_ID;
+    }
+    void removeRackFromTrack(TrackId, RackId) override {}
+    const RackInfo* getRack(TrackId, RackId) const override {
+        return nullptr;
+    }
+    void setRackBypassed(TrackId, RackId, bool) override {}
+    void setRackVolume(TrackId, RackId, float) override {}
+    ChainId addChainToRack(TrackId, RackId, const juce::String&) override {
+        return INVALID_CHAIN_ID;
+    }
+    void removeChainFromRack(TrackId, RackId, ChainId) override {}
+    const ChainInfo* getChain(TrackId, RackId, ChainId) const override {
+        return nullptr;
+    }
+    void setChainOutput(TrackId, RackId, ChainId, int) override {}
+    void setChainMuted(TrackId, RackId, ChainId, bool) override {}
+    void setChainBypassed(TrackId, RackId, ChainId, bool) override {}
+    void setChainSolo(TrackId, RackId, ChainId, bool) override {}
+    void setChainVolume(TrackId, RackId, ChainId, float) override {}
+    void setChainPan(TrackId, RackId, ChainId, float) override {}
+    void setChainName(TrackId, RackId, ChainId, const juce::String&) override {}
     const DeviceInfo* getPrimaryInstrument(TrackId) const override {
         return nullptr;
     }
@@ -300,6 +375,7 @@ class MockClipApi : public ClipApi {
     std::vector<CreateMidi> midiCreations;
     std::vector<ClipId> deleted;
     std::vector<std::pair<ClipId, juce::String>> nameWrites;
+    std::vector<std::pair<ClipId, bool>> enabledWrites;
     std::vector<std::pair<ClipId, juce::String>> grooveWrites;
     std::vector<std::pair<ClipId, MidiNote>> noteAdds;
 
@@ -343,6 +419,9 @@ class MockClipApi : public ClipApi {
     }
     void setClipName(ClipId id, const juce::String& name) override {
         nameWrites.push_back({id, name});
+    }
+    void setClipEnabled(ClipId id, bool enabled) override {
+        enabledWrites.push_back({id, enabled});
     }
     void setGrooveTemplate(ClipId id, const juce::String& tmpl) override {
         grooveWrites.push_back({id, tmpl});
@@ -480,6 +559,10 @@ class MockProjectApi : public ProjectApi {
     void setTempo(double bpm) override {
         info.tempo = bpm;
     }
+    void setTimeSignature(int numerator, int denominator) override {
+        info.timeSignatureNumerator = numerator;
+        info.timeSignatureDenominator = denominator;
+    }
 };
 
 class MockFocusedApi : public FocusedApi {
@@ -579,6 +662,11 @@ class MockMidiApi : public MidiApi {
         juce::MidiMessage msg;
     };
     std::vector<Send> sends;
+    struct Injection {
+        TrackId trackId;
+        juce::MidiMessage msg;
+    };
+    std::vector<Injection> injections;
     std::vector<juce::String> outputPortNames;
     juce::String defaultOutputPort;
 
@@ -596,6 +684,10 @@ class MockMidiApi : public MidiApi {
     }
     juce::String getDefaultOutputPort() const override {
         return defaultOutputPort;
+    }
+    bool injectTrackMidi(TrackId trackId, const juce::MidiMessage& msg) override {
+        injections.push_back({trackId, msg});
+        return true;
     }
 };
 

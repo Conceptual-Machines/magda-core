@@ -10,8 +10,10 @@ class SelectionApiLive : public SelectionApi {
     TrackId getSelectedTrack() const override;
     ClipId getSelectedClip() const override;
     const std::unordered_set<ClipId>& getSelectedClips() const override;
+    ChainNodePath getSelectedChainNode() const override;
 
     AutomationLaneId getSelectedAutomationLaneId() const override;
+    AutomationClipId getSelectedAutomationClipId() const override;
 
     bool hasNoteSelection() const override;
     ClipId getNoteSelectionClipId() const override;
@@ -21,6 +23,7 @@ class SelectionApiLive : public SelectionApi {
     void selectTracks(const std::unordered_set<TrackId>& trackIds) override;
     void selectClip(ClipId clipId) override;
     void selectClips(const std::unordered_set<ClipId>& clipIds) override;
+    void selectAutomationClip(AutomationClipId clipId, AutomationLaneId laneId) override;
     void selectNotes(ClipId clipId, const std::vector<size_t>& noteIndices) override;
     void clearNoteSelection() override;
 };

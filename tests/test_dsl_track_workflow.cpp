@@ -81,6 +81,16 @@ TEST_CASE("DSL track.move without index errors", "[dsl][tracks][reorder]") {
     REQUIRE_FALSE(interp.execute("track(id=1).track.move()"));
 }
 
+TEST_CASE("DSL missing track error uses readable ASCII punctuation", "[dsl][tracks][errors]") {
+    test::MockMagdaApi api;
+    dsl::Interpreter interp(api);
+
+    REQUIRE_FALSE(interp.execute("track(name=\"\").fx.add(name=\"<filter>\")"));
+    CHECK(std::string(interp.getError()) ==
+          "Command failed: No track selected. Select a track first, or name one "
+          "(for example, \"add @filter to Bass\").");
+}
+
 TEST_CASE("DSL groups explicit track ids and chains colour onto the group",
           "[dsl][tracks][group]") {
     auto& tm = TrackManager::getInstance();

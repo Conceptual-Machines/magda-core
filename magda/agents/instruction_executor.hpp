@@ -59,6 +59,16 @@ class InstructionExecutor {
         seedClipId_ = clipId;
     }
 
+    /**
+     * Replace the seeded MIDI clip's notes before applying generated note ops.
+     *
+     * This is opt-in and only takes effect for a valid seed clip. The removal
+     * and generated additions share the execute() compound undo transaction.
+     */
+    void setReplaceSeedClipContents(bool replace) {
+        replaceSeedClipContents_ = replace;
+    }
+
   private:
     bool executeTrack(const TrackOp& op);
     bool executeDel(const DelOp& op);
@@ -108,6 +118,7 @@ class InstructionExecutor {
     int currentTrackId_ = -1;
     int currentClipId_ = -1;
     int seedClipId_ = -1;
+    bool replaceSeedClipContents_ = false;
     bool autoCreatedClip_ = false;
     // Latest beat that pending NOTE/CHORD/ARP instructions reach in this
     // execute() call. autoCreateClip() uses this to size the new clip to fit

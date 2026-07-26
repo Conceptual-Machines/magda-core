@@ -294,6 +294,7 @@
   "main_window": {
     "loading.initializing": "初期化しています",
     "loading.scanning_devices": "{0}と {1} デバイスをスキャン中",
+    "loading.splitting_stems": "ステムに分ける",
     "undo.render_clips": "クリップのレンダリング"
   },
   "export": {
@@ -380,7 +381,7 @@
     "toggle.stop_updates_playhead": "停止した位置から再生する",
     "toggle.follow_playhead": "再生中は再生ヘッドをフォロー",
     "toggle.headers_on_right": "ヘッダーを右側に",
-    "toggle.autohide_arrangement_scrollbars": "アレンジメントビューのスクロールバーを自動的に隠す",
+    "toggle.autohide_arrangement_scrollbars": "メインビューのスクロールバーを自動で隠す",
     "toggle.confirm_track_delete": "トラックを削除する前に確認する",
     "toggle.auto_monitor": "選択したトラックを自動でモニターする",
     "toggle.open_macros_on_select": "デバイスまたはラック選択時にマクロを開く",

@@ -227,6 +227,53 @@ TEST_CASE("InstructionExecutor: auto-created MIDI clip matches generated content
     REQUIRE(api.undo_.executeCalls == 1);
 }
 
+TEST_CASE("InstructionExecutor: revise mode replaces a seeded MIDI clip without creating one",
+          "[compact][clip][revise]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    ClipInfo existing;
+    existing.id = 50;
+    existing.trackId = 10;
+    existing.setMidiContent();
+    existing.setPlacementBeats(0.0, 8.0);
+    MidiNote oldNote;
+    oldNote.noteNumber = 48;
+    existing.midiNotes.push_back(oldNote);
+    api.clips_.clips[existing.id] = existing;
+    api.clips_.clipsOnTrack[existing.trackId].push_back(existing.id);
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    exec.setSeedClipId(existing.id);
+    exec.setReplaceSeedClipContents(true);
+    REQUIRE(exec.execute(parseOrFail(parser, "NOTE C4 0 1")));
+
+    CHECK(exec.getCurrentClipId() == existing.id);
+    CHECK_FALSE(exec.didAutoCreateClip());
+    CHECK(api.clips_.midiCreations.empty());
+    // One undoable deletion plus one undoable generated-note addition.
+    CHECK(api.undo_.executeCalls == 2);
+}
+
+TEST_CASE("InstructionExecutor: revise mode refuses a missing seed instead of creating a clip",
+          "[compact][clip][revise]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    exec.setSeedClipId(404);
+    exec.setReplaceSeedClipContents(true);
+    REQUIRE_FALSE(exec.execute(parseOrFail(parser, "NOTE C4 0 1")));
+
+    CHECK(exec.getError().containsIgnoreCase("no longer available"));
+    CHECK(api.clips_.midiCreations.empty());
+    CHECK(api.undo_.executeCalls == 0);
+}
+
 TEST_CASE("InstructionExecutor: auto-created arpeggio clip matches emitted note span",
           "[compact][clip][arranger]") {
     using magda::test::MockMagdaApi;
@@ -320,4 +367,23 @@ TEST_CASE("InstructionExecutor: explicit arranger clip creation does not overlap
     const auto& created = api.clips_.midiCreations.front();
     REQUIRE(created.startBeats == Catch::Approx(8.0));
     REQUIRE(created.lengthBeats == Catch::Approx(8.0));
+}
+
+TEST_CASE("InstructionExecutor: bar-based clip creation honours the project time signature",
+          "[compact][clip][time_signature]") {
+    using magda::test::MockMagdaApi;
+
+    MockMagdaApi api;
+    api.selection_.selectedTrack = 10;
+    api.project_.info.timeSignatureNumerator = 3;
+    api.project_.info.timeSignatureDenominator = 4;
+
+    CompactParser parser;
+    InstructionExecutor exec(api);
+    REQUIRE(exec.execute(parseOrFail(parser, "CLIP 2 4")));
+
+    REQUIRE(api.clips_.midiCreations.size() == 1);
+    const auto& created = api.clips_.midiCreations.front();
+    CHECK(created.startBeats == Catch::Approx(3.0));
+    CHECK(created.lengthBeats == Catch::Approx(12.0));
 }

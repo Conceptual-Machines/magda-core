@@ -6,6 +6,7 @@
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/DeviceMeteringManager.hpp"
 #include "magda/daw/audio/plugin_manager/PluginManager.hpp"
+#include "magda/daw/audio/plugins/DeviceServices.hpp"
 #include "magda/daw/audio/plugins/DrumGridPlugin.hpp"
 #include "magda/daw/audio/plugins/InstrumentMeterTapPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
@@ -49,6 +50,21 @@ bool hasMidiOutputConnection(te::RackType& rackType) {
     }
     return false;
 }
+
+class ScopedDeviceServicesRegistration {
+  public:
+    ScopedDeviceServicesRegistration(te::Edit& edit, magda::daw::audio::DeviceServices services)
+        : edit_(edit) {
+        magda::daw::audio::registerDeviceServices(edit_, services);
+    }
+
+    ~ScopedDeviceServicesRegistration() {
+        magda::daw::audio::unregisterDeviceServices(edit_);
+    }
+
+  private:
+    te::Edit& edit_;
+};
 
 }  // namespace
 
@@ -110,6 +126,11 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expect(instrument != nullptr, "Sampler plugin must be created");
         if (!instrument)
             return;
+
+        magda::DeviceMeteringManager metering;
+        magda::daw::audio::DeviceServices deviceServices;
+        deviceServices.meteringContext = &metering;
+        ScopedDeviceServicesRegistration servicesRegistration(*edit, deviceServices);
 
         magda::InstrumentRackManager rackManager(*edit);
         auto rackPlugin = rackManager.wrapInstrument(instrument);
@@ -173,9 +194,6 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         constexpr magda::DeviceId deviceId = 4242;
         const auto devicePath = magda::ChainNodePath::topLevelDevice(1, deviceId);
-        magda::DeviceMeteringManager metering;
-        magda::DeviceMeteringManager::registerForEdit(*edit, &metering);
-
         rackManager.recordWrapping(devicePath, rackInstance->type, instrument, rackPlugin, false,
                                    2);
 
@@ -229,8 +247,6 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                                   "Unbound meter tap should pass audio through unchanged");
         expectWithinAbsoluteError(buffer.getSample(1, 0), -0.25f, 0.0001f,
                                   "Unbound meter tap should pass audio through unchanged");
-
-        magda::DeviceMeteringManager::unregisterForEdit(*edit);
     }
 
     static magda::DeviceInfo makeInternalDevice(magda::DeviceId id, const juce::String& name,

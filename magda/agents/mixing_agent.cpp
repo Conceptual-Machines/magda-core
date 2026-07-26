@@ -7,12 +7,6 @@
 
 namespace magda {
 
-const std::vector<std::string>& MixAnalysisAgent::tonalBandLabels() {
-    static const std::vector<std::string> labels = {"sub", "low",      "low-mid",
-                                                    "mid", "high-mid", "high"};
-    return labels;
-}
-
 const char* MixAnalysisAgent::getSystemPrompt() {
     return "You are a senior mixing engineer assessing a song. You cannot hear the audio; "
            "instead you are given objective measurements for every track and for the master bus.\n"
@@ -68,7 +62,7 @@ const char* MixAnalysisAgent::getSystemPrompt() {
 }
 
 juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
-    auto row = [](const TrackMix& t) -> juce::String {
+    auto row = [](const MixAnalysisData::Track& t) -> juce::String {
         juce::String r;
         r << t.name;
         if (!t.role.empty())
@@ -79,9 +73,10 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
           << " | " << juce::String(t.correlation, 2) << " | " << juce::String(t.width, 2);
         if (!t.tonalDb.empty()) {
             r << "\n    tonal:";
-            const auto& labels = tonalBandLabels();
+            const auto& labels = MixAnalysisData::Track::tonalBandLabels;
             for (size_t i = 0; i < t.tonalDb.size(); ++i)
-                r << " " << (i < labels.size() ? juce::String(labels[i]) : juce::String((int)i))
+                r << " "
+                  << (i < labels.size() ? juce::String(labels[i].data()) : juce::String((int)i))
                   << "=" << juce::String(t.tonalDb[i], 1);
             r << " | centroid=" << juce::String(juce::roundToInt(t.spectralCentroidHz)) << "Hz"
               << " flat=" << juce::String(t.spectralFlatness, 2)
@@ -102,41 +97,42 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
     if (!input.priorContext.empty())
         m << juce::String(input.priorContext) << "\n\n";
 
-    if (input.bpm > 0.0f || !input.genre.empty()) {
+    const auto& mix = input.measurements;
+    if (mix.bpm > 0.0f || !mix.genre.empty()) {
         m << "Song context:";
-        if (!input.genre.empty())
-            m << " genre=" << juce::String(input.genre);
-        if (input.bpm > 0.0f)
-            m << " | BPM=" << juce::String(input.bpm, 1);
+        if (!mix.genre.empty())
+            m << " genre=" << juce::String(mix.genre);
+        if (mix.bpm > 0.0f)
+            m << " | BPM=" << juce::String(mix.bpm, 1);
         m << "\n\n";
     }
 
-    m << "Mix measurements (" << static_cast<int>(input.tracks.size()) << " tracks).\n";
+    m << "Mix measurements (" << static_cast<int>(mix.tracks.size()) << " tracks).\n";
     m << "Columns: name [role] | LUFS-I | peak dB | TP | PLR | PSR | corr | width\n";
-    for (const auto& t : input.tracks)
+    for (const auto& t : mix.tracks)
         m << row(t) << "\n";
 
-    if (input.master)
-        m << "\n[MASTER] " << row(*input.master) << "\n";
+    if (mix.master)
+        m << "\n[MASTER] " << row(*mix.master) << "\n";
 
-    if (!input.references.empty()) {
+    if (!mix.references.empty()) {
         m << "\nReference tracks (well-mixed examples in the target genre -- compare the master "
              "against these; they define what 'right' looks like here):\n";
-        for (const auto& r : input.references)
+        for (const auto& r : mix.references)
             m << "[REF] " << row(r) << "\n";
     }
 
-    if (!input.masking.empty()) {
+    if (!mix.masking.empty()) {
         m << "\nMasking conflicts (measured; competing tracks per band):\n";
-        for (const auto& k : input.masking)
+        for (const auto& k : mix.masking)
             m << "  " << k.a << " vs " << k.b << " @ " << juce::String(juce::roundToInt(k.loHz))
               << "-" << juce::String(juce::roundToInt(k.hiHz)) << " Hz, severity "
               << juce::String(k.severity, 2) << "\n";
     }
 
-    if (!input.timeline.empty()) {
+    if (!mix.timeline.empty()) {
         m << "\nTimeline (master over time -- how the arrangement evolves):\n";
-        for (const auto& s : input.timeline) {
+        for (const auto& s : mix.timeline) {
             m << "  " << s.label << " [" << juce::String(s.startSec, 0) << "-"
               << juce::String(s.endSec, 0) << "s]: " << juce::String(s.integratedLufs, 1)
               << " LUFS, centroid " << juce::String(juce::roundToInt(s.spectralCentroidHz)) << "Hz"
@@ -163,7 +159,7 @@ MixAnalysisAgent::Result MixAnalysisAgent::generateStreaming(const Input& input,
     Result result;
     result.payload = buildUserMessage(input).toStdString();
 
-    if (input.tracks.empty()) {
+    if (input.measurements.tracks.empty()) {
         result.hasError = true;
         result.error = "No tracks to analyse.";
         return result;

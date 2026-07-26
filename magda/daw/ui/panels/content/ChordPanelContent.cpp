@@ -1,5 +1,6 @@
 #include "ChordPanelContent.hpp"
 
+#include "../../../../agents/chord_agent.hpp"
 #include "BinaryData.h"
 #include "core/ChordProgressionContext.hpp"
 #include "core/ClipManager.hpp"
@@ -464,7 +465,7 @@ void ChordPanelContent::suggestionsChanged(magda::daw::audio::MidiChordEnginePlu
 void ChordPanelContent::configChanged() {
     juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
         if (safeThis && safeThis->suggestionTab_ == SuggestionTab::AI) {
-            auto cfg = Config::getInstance().getAgentLLMConfig(magda::role::MUSIC);
+            auto cfg = Config::getInstance().getAgentLLMConfig(magda::role::CHORD);
             auto model = cfg.model.empty() ? cfg.provider : cfg.model;
             safeThis->aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
         }
@@ -888,7 +889,7 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
     aiModelLabel_.setVisible(!isKS);
 
     if (!isKS) {
-        auto cfg = Config::getInstance().getAgentLLMConfig(magda::role::MUSIC);
+        auto cfg = Config::getInstance().getAgentLLMConfig(magda::role::CHORD);
         auto model = cfg.model.empty() ? cfg.provider : cfg.model;
         aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
     }
@@ -1152,6 +1153,75 @@ void ChordPanelContent::startProgressionDrag(int progressionIndex) {
 }
 
 void ChordPanelContent::AIRequestThread::run() {
+    {
+        // ChordAgent owns the request/prompt/provider/parsing domain logic. This
+        // thread remains a thin UI adapter: snapshot state, relay stream tokens,
+        // then paint the structured result on the message thread.
+        magda::ChordAgent::Input input;
+        input.userPrompt = userPrompt_;
+        input.chordTrackProgression = magda::ChordProgressionContext::summary();
+        input.detectedKey = owner_.detectedKey_;
+        input.recentChords = owner_.recentChords_;
+        for (const auto& scale : owner_.detectedScales_)
+            input.detectedScales.emplace_back(scale.name);
+
+        auto safeThis = juce::Component::SafePointer<ChordPanelContent>(&owner_);
+        const auto finish = [safeThis](magda::ChordAgent::Result result) {
+            juce::MessageManager::callAsync([safeThis, result = std::move(result)]() mutable {
+                if (!safeThis)
+                    return;
+
+                safeThis->aiLoading_ = false;
+                safeThis->aiGreyOut_ = false;
+                safeThis->aiStreamingText_ =
+                    result.hasError ? "Error: " + result.error : juce::String();
+                if (auto* container =
+                        dynamic_cast<AIContainerComponent*>(safeThis->aiContainer_.get())) {
+                    container->greyOut = false;
+                    container->loading = false;
+                    container->promptText = {};
+                    container->streamingText = safeThis->aiStreamingText_;
+                }
+                for (auto& row : safeThis->aiRows_)
+                    for (auto& block : row->blocks)
+                        block->setAlpha(1.0f);
+                if (safeThis->aiSendBtn_)
+                    safeThis->aiSendBtn_->setEnabled(true);
+
+                if (!result.hasError && !result.progressions.empty() && safeThis->chordPlugin_) {
+                    safeThis->chordPlugin_->getAIProgressions() = std::move(result.progressions);
+                    safeThis->rebuildAIProgressionRows();
+                }
+                safeThis->resized();
+                safeThis->repaint();
+            });
+        };
+
+        magda::ChordAgent agent;
+        auto result = agent.generate(
+            input,
+            [safeThis](const juce::String& token) {
+                juce::MessageManager::callAsync([safeThis, token]() {
+                    if (!safeThis)
+                        return;
+                    safeThis->aiStreamingText_ += token;
+                    if (auto* container =
+                            dynamic_cast<AIContainerComponent*>(safeThis->aiContainer_.get())) {
+                        container->streamingText = safeThis->aiStreamingText_;
+                        safeThis->layoutAIProgressionRows();
+                        if (safeThis->aiViewport_)
+                            safeThis->aiViewport_->setViewPosition(
+                                0, std::max(0, container->getHeight() -
+                                                   safeThis->aiViewport_->getHeight()));
+                    }
+                });
+                return true;
+            },
+            [this] { return threadShouldExit() || owner_.aiCancelFlag_; });
+        finish(std::move(result));
+    }
+    return;
+
     // Build context from chord history and detected key
     juce::String context;
 

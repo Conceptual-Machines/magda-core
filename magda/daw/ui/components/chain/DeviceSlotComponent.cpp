@@ -8,9 +8,9 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
-#include "core/InternalDeviceKind.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/PluginCapabilities.hpp"
@@ -152,11 +152,14 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Register for gain-staging state so the slot can draw its staging overlay.
     magda::GainStagingManager::getInstance().addListener(this);
 
+    // Register for AI Sound Designer exposure toggles from the plugin browser.
+    magda::PluginPreferences::getInstance().addListener(this);
+
     // Note: BindingRegistry / ControllerRegistry listening is done by
     // NodeComponent (the base class) — it owns the controller-indicator
     // dots and the refresh logic.
 
-    refreshDeviceTraits(device.pluginId);
+    refreshDeviceTraits(device);
 
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
@@ -340,7 +343,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
     uiButton_->onClick = [this]() {
         // Analysis devices have no native editor; pop their UI into a floating window.
-        if (magda::isAnalysisDevice(device_.pluginId)) {
+        if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
             toggleAnalyzerWindow();
             return;
         }
@@ -616,8 +619,17 @@ DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::GainStagingManager::getInstance().removeListener(this);
+    magda::PluginPreferences::getInstance().removeListener(this);
     stopTimer();
     detachInlineUiFromLivePlugin();
+}
+
+void DeviceSlotComponent::aiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier) {
+    // Only re-lay-out if the toggle was for this slot's device.
+    if (pluginIdentifier != magda::PluginPreferences::identifierForDevice(device_))
+        return;
+    resized();
+    repaint();
 }
 
 void DeviceSlotComponent::timerCallback() {
@@ -635,7 +647,7 @@ void DeviceSlotComponent::timerCallback() {
     // Update UI button state to match the actual window state.
     if (uiButton_) {
         // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
-        const bool isOpen = magda::isAnalysisDevice(device_.pluginId)
+        const bool isOpen = audio::isInternalAnalysisPlugin(device_.pluginId)
                                 ? (analyzerWindow_ != nullptr && analyzerWindow_->isVisible())
                                 : bridge->isPluginWindowOpen(nodePath_);
         bool currentState = uiButton_->getToggleState();
@@ -701,6 +713,7 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
                                      });
 
     updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, newValue);
+    paramGrid_->refreshEnabledStates(device_, paramGrid_->getCurrentPage());
 }
 
 void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
@@ -716,7 +729,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
 bool DeviceSlotComponent::stripsAnalysisChrome() const {
     // Post-FX analysis devices are managed by the TrackChain header toggle, and
     // bypass/presets don't apply to a transparent tap, so drop that chrome.
-    return magda::isAnalysisDevice(device_.pluginId) && nodePath_.isPostFx();
+    return audio::isInternalAnalysisPlugin(device_.pluginId) && nodePath_.isPostFx();
 }
 
 bool DeviceSlotComponent::exposesDeviceModulation() const {
@@ -752,6 +765,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         updateParameterPagination();
         updateParameterSlots();
     }
+    refreshDeviceTraits(device_);
 
     // Hide power / preset / delete for post-FX analysis devices (the getters
     // return nullptr too, so the header layout skips placing them).
@@ -866,8 +880,8 @@ void DeviceSlotComponent::showSavePluginPresetDialog() {
     });
 }
 
-void DeviceSlotComponent::refreshDeviceTraits(const juce::String& pluginId) {
-    traits_ = makeDeviceSlotTraits(pluginId);
+void DeviceSlotComponent::refreshDeviceTraits(const magda::DeviceInfo& device) {
+    traits_ = makeDeviceSlotTraits(device);
 
     if (traits_.isTracktionDevice && tracktionLogo_ == nullptr) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
@@ -897,7 +911,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
-    refreshDeviceTraits(device.pluginId);
+    refreshDeviceTraits(device);
     syncModMacroControlsAvailability();
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
     setBypassed(device.bypassed);
@@ -1261,7 +1275,7 @@ const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
     if (!exposesDeviceModulation())
         return nullptr;
     if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
-        if (magda::isAnalysisDevice(dev->pluginId))
+        if (audio::isInternalAnalysisPlugin(dev->pluginId))
             return nullptr;  // analysis devices expose no macros
         return &dev->macros;
     }
@@ -1494,9 +1508,13 @@ void DeviceSlotComponent::goToNextPage() {
 // ============================================================================
 
 void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
+    // SelectionManager deliberately notifies listeners when the current node is selected again.
+    // NodeComponent uses that reselection to support header-click collapse/expand, but it must not
+    // be treated as a fresh selection by the "open macros on select" preference.
+    const bool wasAlreadySelected = isSelected();
     NodeComponent::chainNodeSelectionChanged(path);
 
-    if (!nodePath_.isValid() || path != nodePath_) {
+    if (wasAlreadySelected || !nodePath_.isValid() || path != nodePath_) {
         return;
     }
 
@@ -1553,7 +1571,7 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
     // Check for double-click
     if (e.getNumberOfClicks() == 2) {
         // Toggle the editor / analyzer window on double-click.
-        if (magda::isAnalysisDevice(device_.pluginId)) {
+        if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
             toggleAnalyzerWindow();
         } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {

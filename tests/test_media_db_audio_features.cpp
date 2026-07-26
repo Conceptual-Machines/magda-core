@@ -98,6 +98,8 @@ TEST_CASE("AudioFeatures: 440 Hz sine reports expected duration / RMS / centroid
     // plus mean-of-frames smoothing leaves us within a couple of hundred Hz)
     REQUIRE(feats->spectralCentroid > 350.0F);
     REQUIRE(feats->spectralCentroid < 600.0F);
+    REQUIRE(feats->spectralFlatness >= 0.0F);
+    REQUIRE(feats->spectralFlatness < 0.1F);
 }
 
 TEST_CASE("AudioFeatures: silence has RMS=0 and no transients", "[media_db][audio_features]") {
@@ -160,6 +162,30 @@ TEST_CASE("AudioFeatures: DSP key fallback returns a confidence value",
     REQUIRE(feats->keyRoot.has_value());
     REQUIRE(feats->keyConfidence.has_value());
     REQUIRE(feats->keyConfidence.value() > 0.0F);
+    REQUIRE(feats->keyConfidence.value() <= 1.0F);
+}
+
+TEST_CASE("AudioFeatures: click train reports finite spectral stats and transients",
+          "[media_db][audio_features]") {
+    TempDir dir;
+    constexpr int kSr = 44100;
+    constexpr double kDurationS = 2.0;
+    std::vector<float> samples(static_cast<std::size_t>(kDurationS * kSr), 0.0F);
+    for (int click = kSr / 8; click < static_cast<int>(samples.size()); click += kSr / 4) {
+        samples[static_cast<std::size_t>(click)] = 0.9F;
+    }
+    auto wav = dir.path() / "click_train.wav";
+    writeMonoWav(wav, samples, kSr);
+
+    auto feats = magda::media::extractFeatures(wav);
+    REQUIRE(feats.has_value());
+    REQUIRE(std::isfinite(feats->spectralCentroid));
+    REQUIRE(std::isfinite(feats->spectralFlatness));
+    REQUIRE(feats->spectralCentroid > 0.0F);
+    REQUIRE(feats->spectralFlatness >= 0.0F);
+    REQUIRE(feats->spectralFlatness <= 1.0F);
+    REQUIRE(feats->transientDensity > 2.0F);
+    REQUIRE(feats->transientDensity < 6.0F);
 }
 
 TEST_CASE("AudioFeatures returns nullopt for missing file", "[media_db][audio_features]") {

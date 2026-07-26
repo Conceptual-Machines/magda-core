@@ -1386,6 +1386,18 @@ void TrackManager::setDeviceMiniMixerParameters(const ChainNodePath& devicePath,
         device->miniMixerParameters = miniParams;
 }
 
+void TrackManager::setDeviceAiSoundDesignerParameters(const ChainNodePath& devicePath,
+                                                      const std::vector<int>& aiParams) {
+    if (auto* device = getDeviceInChainByPath(devicePath))
+        device->aiSoundDesignerParameters = aiParams;
+}
+
+void TrackManager::setDeviceAiSoundDesignerPrompt(const ChainNodePath& devicePath,
+                                                  const juce::String& prompt) {
+    if (auto* device = getDeviceInChainByPath(devicePath))
+        device->aiSoundDesignerPrompt = prompt;
+}
+
 void TrackManager::setDeviceMiniMixerParameters(DeviceId deviceId,
                                                 const std::vector<int>& miniParams) {
     if (auto* device = findUniqueBareDeviceIdMatch(masterTrack_, tracks_, deviceId))
@@ -1590,6 +1602,19 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
             notifyDeviceParameterChanged(devicePath, paramIndex, value);
         }
     }
+}
+
+void TrackManager::setDeviceParameterValueFromPlugin(DeviceId deviceId, int paramIndex,
+                                                     float value) {
+    const auto path = findDevicePath(deviceId);
+    if (path.isValid())
+        setDeviceParameterValueFromPlugin(path, paramIndex, value);
+}
+
+bool TrackManager::isChordTrackMuted() const {
+    const auto chordTrackId = getChordTrackId();
+    const auto* chordTrack = chordTrackId != INVALID_TRACK_ID ? getTrack(chordTrackId) : nullptr;
+    return chordTrack != nullptr && chordTrack->muted;
 }
 
 double TrackManager::getDeviceLatencySeconds(const ChainNodePath& devicePath) {

@@ -181,7 +181,7 @@ void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
             sidechainMonitors_[sourceTrackId] = teTrack->pluginList[i];
             auto* mon = dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i]);
             mon->setSourceTrackId(sourceTrackId);
-            mon->setPluginManager(this);
+            mon->setRealtimeContext(this);
             return;
         }
     }
@@ -196,7 +196,7 @@ void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
     if (plugin) {
         if (auto* mon = dynamic_cast<SidechainMonitorPlugin*>(plugin.get())) {
             mon->setSourceTrackId(sourceTrackId);
-            mon->setPluginManager(this);
+            mon->setRealtimeContext(this);
         }
         // Insert at position 0 so it sees MIDI before the instrument consumes it.
         // Audio peak detection is handled separately via LevelMeterPlugin.
@@ -379,7 +379,7 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
             audioSidechainMonitors_[sourceTrackId] = teTrack->pluginList[i];
             auto* mon = dynamic_cast<AudioSidechainMonitorPlugin*>(teTrack->pluginList[i]);
             mon->setSourceTrackId(sourceTrackId);
-            mon->setPluginManager(this);
+            mon->setRealtimeContext(this);
             MAGDA_ADSR_AUDIO_LOG("using existing monitor sourceTrack=" << sourceTrackId
                                                                        << " pluginIndex=" << i);
             return;
@@ -398,7 +398,7 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
     if (plugin) {
         if (auto* mon = dynamic_cast<AudioSidechainMonitorPlugin*>(plugin.get())) {
             mon->setSourceTrackId(sourceTrackId);
-            mon->setPluginManager(this);
+            mon->setRealtimeContext(this);
         }
         int insertPos = computeInsertPos();
         teTrack->pluginList.insertPlugin(plugin, insertPos, nullptr);
@@ -469,7 +469,7 @@ void PluginManager::ensureFollowerSourceTap(TrackId sourceTrackId) {
         followerSourceTaps_[sourceTrackId] = existing;
         if (auto* tap = dynamic_cast<FollowerSourceTapPlugin*>(existing)) {
             tap->setSourceTrackId(sourceTrackId);
-            tap->setPluginManager(this);
+            tap->setRealtimeContext(this);
         }
         MAGDA_ADSR_AUDIO_LOG("follower-tap reuse sourceTrack=" << sourceTrackId
                                                                << " index=" << existingIndex
@@ -515,7 +515,7 @@ void PluginManager::ensureFollowerSourceTap(TrackId sourceTrackId) {
     if (plugin) {
         if (auto* tap = dynamic_cast<FollowerSourceTapPlugin*>(plugin.get())) {
             tap->setSourceTrackId(sourceTrackId);
-            tap->setPluginManager(this);
+            tap->setRealtimeContext(this);
         }
         const int insertPos = desiredPos();
         teTrack->pluginList.insertPlugin(plugin, insertPos, nullptr);

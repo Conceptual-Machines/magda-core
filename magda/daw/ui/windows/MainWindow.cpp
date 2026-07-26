@@ -51,6 +51,7 @@
 #include "engine/PlaybackPositionTimer.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
+#include "stem_separation/StemSeparationService.hpp"
 
 #if JUCE_WINDOWS
     #include <dwmapi.h>
@@ -1295,10 +1296,27 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
         // No Tracktion Engine wrapper, don't show notification
         loadingOverlay_->setVisible(false);
     }
+
+    // Stem separation reuses the same banner: show with live percent while a
+    // split runs, fade out when it completes (#1288). Fires on the message
+    // thread.
+    magda::stems::StemSeparationService::getInstance().setActivityCallback(
+        [this](bool running, float progress) {
+            if (running) {
+                showLoadingMessage(trEllipsis("main_window.loading.splitting_stems") + " " +
+                                   juce::String(static_cast<int>(progress * 100.0F)) + "%");
+            } else {
+                hideLoadingMessage();
+            }
+        });
 }
 
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+
+    // The stem service outlives us (static singleton); drop its reference to
+    // this before members die.
+    magda::stems::StemSeparationService::getInstance().setActivityCallback(nullptr);
 
     // Drop the menu bar's reference to our command manager before it dies.
     MenuManager::getInstance().setCommandManager(nullptr);

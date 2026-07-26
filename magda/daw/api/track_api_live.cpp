@@ -64,6 +64,74 @@ DeviceId TrackApiLive::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
     return TrackManager::getInstance().addDeviceToTrack(trackId, device);
 }
 
+DeviceId TrackApiLive::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                        const DeviceInfo& device) {
+    return TrackManager::getInstance().addDeviceToChain(trackId, rackId, chainId, device);
+}
+
+RackId TrackApiLive::addRackToTrack(TrackId trackId, const juce::String& name) {
+    return TrackManager::getInstance().addRackToTrack(trackId, name);
+}
+
+void TrackApiLive::removeRackFromTrack(TrackId trackId, RackId rackId) {
+    TrackManager::getInstance().removeRackFromTrack(trackId, rackId);
+}
+
+const RackInfo* TrackApiLive::getRack(TrackId trackId, RackId rackId) const {
+    return TrackManager::getInstance().getRack(trackId, rackId);
+}
+
+void TrackApiLive::setRackBypassed(TrackId trackId, RackId rackId, bool bypassed) {
+    TrackManager::getInstance().setRackBypassed(trackId, rackId, bypassed);
+}
+
+void TrackApiLive::setRackVolume(TrackId trackId, RackId rackId, float volumeDb) {
+    TrackManager::getInstance().setRackVolume(trackId, rackId, volumeDb);
+}
+
+ChainId TrackApiLive::addChainToRack(TrackId trackId, RackId rackId, const juce::String& name) {
+    return TrackManager::getInstance().addChainToRack(ChainNodePath::rack(trackId, rackId), name);
+}
+
+void TrackApiLive::removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId) {
+    TrackManager::getInstance().removeChainFromRack(trackId, rackId, chainId);
+}
+
+const ChainInfo* TrackApiLive::getChain(TrackId trackId, RackId rackId, ChainId chainId) const {
+    return TrackManager::getInstance().getChain(trackId, rackId, chainId);
+}
+
+void TrackApiLive::setChainOutput(TrackId trackId, RackId rackId, ChainId chainId,
+                                  int outputIndex) {
+    TrackManager::getInstance().setChainOutput(trackId, rackId, chainId, outputIndex);
+}
+
+void TrackApiLive::setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) {
+    TrackManager::getInstance().setChainMuted(trackId, rackId, chainId, muted);
+}
+
+void TrackApiLive::setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
+                                    bool bypassed) {
+    TrackManager::getInstance().setChainBypassed(trackId, rackId, chainId, bypassed);
+}
+
+void TrackApiLive::setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo) {
+    TrackManager::getInstance().setChainSolo(trackId, rackId, chainId, solo);
+}
+
+void TrackApiLive::setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volumeDb) {
+    TrackManager::getInstance().setChainVolume(trackId, rackId, chainId, volumeDb);
+}
+
+void TrackApiLive::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) {
+    TrackManager::getInstance().setChainPan(trackId, rackId, chainId, pan);
+}
+
+void TrackApiLive::setChainName(TrackId trackId, RackId rackId, ChainId chainId,
+                                const juce::String& name) {
+    TrackManager::getInstance().setChainName(trackId, rackId, chainId, name);
+}
+
 const DeviceInfo* TrackApiLive::getPrimaryInstrument(TrackId trackId) const {
     return TrackManager::getInstance().getPrimaryInstrument(trackId);
 }

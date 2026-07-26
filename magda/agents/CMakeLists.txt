@@ -1,14 +1,7 @@
-# Agents - Simple in-process AI agent system
-# This provides a lightweight agent framework using JUCE threading
+# Production agent workflows and the reusable bounded runtime.
 
 set(AGENTS_SOURCES
-    agent_interface.hpp
-    agent_interface.cpp
-    agent_manager.hpp
-    agent_manager.cpp
-    simple_agent.hpp
-    simple_agent.cpp
-dsl_grammar.hpp
+    dsl_grammar.hpp
     dsl_interpreter.hpp
     dsl_interpreter.cpp
     music_helpers.hpp
@@ -17,6 +10,12 @@ dsl_grammar.hpp
     compact_parser.cpp
     conversation_store.hpp
     conversation_store.cpp
+    agent_runtime.hpp
+    agent_runtime.cpp
+    fast_inference_policy.hpp
+    fast_inference_policy.cpp
+    console_agent_orchestrator.hpp
+    console_agent_orchestrator.cpp
     instruction_executor.hpp
     instruction_executor.cpp
     llm_config_utils.hpp
@@ -24,8 +23,22 @@ dsl_grammar.hpp
     llm_presets.cpp
     command_agent.hpp
     command_agent.cpp
+    command_model.hpp
+    command_model.cpp
+    command_model_data.hpp
+    command_model_data.cpp
+    unigram_tokenizer.hpp
+    unigram_tokenizer.cpp
+    command_model_onnx.hpp
+    command_model_onnx.cpp
+    command_model_downloader.hpp
+    command_model_downloader.cpp
     music_agent.hpp
     music_agent.cpp
+    chord_agent.hpp
+    chord_agent.cpp
+    midi_context.hpp
+    midi_context.cpp
     drummer_agent.hpp
     drummer_agent.cpp
     gain_staging_agent.hpp
@@ -38,8 +51,6 @@ dsl_grammar.hpp
     automation_executor.cpp
     automation_agent.hpp
     automation_agent.cpp
-    router_agent.hpp
-    router_agent.cpp
     controller_profile_agent.hpp
     controller_profile_agent.cpp
     llama_model_manager.hpp
@@ -67,6 +78,8 @@ dsl_grammar.hpp
     device_ai_agent.hpp
     sound_design_agent.hpp
     sound_design_agent.cpp
+    generic_sound_design_agent.hpp
+    generic_sound_design_agent.cpp
     coder_agent.hpp
     coder_agent.cpp
     mcp/MCPClient.hpp

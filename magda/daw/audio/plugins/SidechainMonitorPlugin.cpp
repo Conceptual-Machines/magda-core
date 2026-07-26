@@ -1,7 +1,6 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 
 #include "midi/MidiBroadcastBus.hpp"
-#include "plugin_manager/PluginManager.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
 
 namespace magda {
@@ -30,8 +29,6 @@ void SidechainMonitorPlugin::reset() {
 
 void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Transparent passthrough — don't modify audio or MIDI
-
-    ++heartbeatCount_;
 
     // --- MIDI detection + broadcast ---
     if (fc.bufferForMidiMessages) {
@@ -76,8 +73,9 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
         if (hasNoteOn) {
             triggerBus.triggerNoteOn(sourceTrackId_);
-            if (pluginManager_)
-                pluginManager_->triggerSidechainNoteOn(sourceTrackId_, LFOTriggerMode::MIDI);
+            if (realtimeContext_)
+                realtimeContext_->triggerSidechain(sourceTrackId_,
+                                                   daw::audio::DeviceTriggerSource::Midi);
         }
 
         bus.endBlock(sourceTrackId_);

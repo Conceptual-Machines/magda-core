@@ -24,6 +24,10 @@ class ClipApi {
     virtual void deleteClip(ClipId clipId) = 0;
 
     virtual void setClipName(ClipId clipId, const juce::String& name) = 0;
+    // Enable/disable a clip (#1736): a disabled clip stays on the timeline but
+    // does not play. Exposed here so the DSL can mute a specific clip, which
+    // is tedious by hand and is the realistic use for a typed command.
+    virtual void setClipEnabled(ClipId clipId, bool enabled) = 0;
     virtual void setGrooveTemplate(ClipId clipId, const juce::String& templateName) = 0;
 
     virtual bool addMidiNote(ClipId clipId, double startBeat, int noteNumber, double lengthBeats,
