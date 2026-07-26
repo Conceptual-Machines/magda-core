@@ -1,6 +1,5 @@
 #include "command_model_downloader.hpp"
 
-#include <juce_cryptography/juce_cryptography.h>
 #include <juce_events/juce_events.h>
 
 #include "../daw/core/AppPaths.hpp"
@@ -10,46 +9,47 @@ namespace magda {
 
 namespace {
 
-// Sizes and SHA-256s are of the exact files produced by
-// prototypes/command-model-poc/model/export_onnx.py (its dist/ output). If the
-// model is re-exported and re-uploaded, update size + hash together or the
-// verify step will reject the download.
+// The model bundle is pinned to a HuggingFace REVISION, not to per-file
+// hashes.
+//
+// A /resolve/<commit-sha>/ URL is immutable: HF serves that exact blob forever,
+// so the revision *is* the content address and separate SHA-256s would be
+// redundant bookkeeping. Pinning /resolve/main/ instead — which this used to do
+// — means every upload silently invalidates the hashes baked into already
+// released builds, and those users get a checksum failure with no way to
+// recover.
+//
+// The pin also makes the app<->model pairing explicit: a build downloads the
+// model it was tested against, and publishing a new model cannot change what
+// shipped apps fetch. Updating the model is a one-line change here, followed by
+// re-running the parity tests against the new bundle.
+//
+// Sizes stay: they are a cheap existence/completeness check for isInstalled()
+// and a progress-bar total, not an integrity mechanism.
 struct ManifestEntry {
     const char* filename;
-    const char* url;
-    const char* sha256;
     juce::int64 size;
 };
 
+constexpr const char* kRepo = "ConceptualMachines/magda-command-model";
 constexpr const char* kRepoUrl = "https://huggingface.co/ConceptualMachines/magda-command-model";
-constexpr const char* kBase =
-    "https://huggingface.co/ConceptualMachines/magda-command-model/resolve/main/";
+
+// Bump together with the files, after re-running the parity tests.
+constexpr const char* kRevision = "8ecc49ab825a09ab57523f91170c2016f38f8af5";
 
 // DeBERTa-v3 base fine-tuned for intent + BIO slot tagging, embedding
 // quantized to int8 (the attention/FFN deliberately are NOT — quantizing them
 // drops the model from 96.5% to 0.9%; see the POC's findings.md).
 constexpr ManifestEntry kFiles[] = {
-    {
-        "command_model.onnx",
-        "https://huggingface.co/ConceptualMachines/magda-command-model/resolve/main/"
-        "command_model.onnx",
-        "c977afc9bcb90f568bb32aa4b08b40b32b6adf04ee771ff00376afc5553a51ce",
-        441544629,
-    },
-    {
-        "tokenizer.json",
-        "https://huggingface.co/ConceptualMachines/magda-command-model/resolve/main/"
-        "tokenizer.json",
-        "f5230e75eb411fcfac1d44d7eda2e69747638177fd86142458e748fcb12845e9",
-        8340513,
-    },
-    {
-        "maps.json",
-        "https://huggingface.co/ConceptualMachines/magda-command-model/resolve/main/maps.json",
-        "b987b1bd404c86758b18b4df425e23979972e91dbdfec5ef381662904df5f07b",
-        1357,
-    },
+    {"command_model.onnx", 441544629},
+    {"tokenizer.json", 8340513},
+    {"maps.json", 1357},
 };
+
+juce::String fileUrl(const ManifestEntry& e) {
+    return juce::String("https://huggingface.co/") + kRepo + "/resolve/" + kRevision + "/" +
+           e.filename;
+}
 
 constexpr int kNumFiles = static_cast<int>(sizeof(kFiles) / sizeof(kFiles[0]));
 
@@ -91,7 +91,7 @@ class CommandModelDownloader::Worker : public juce::Thread {
     bool downloadOne(const ManifestEntry& entry, Progress& p) {
         const auto dest = CommandModelDownloader::modelsDir().getChildFile(entry.filename);
 
-        juce::URL url(entry.url);
+        juce::URL url(fileUrl(entry));
         int statusCode = 0;
         const auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                                  .withConnectionTimeoutMs(30000)
@@ -148,9 +148,13 @@ class CommandModelDownloader::Worker : public juce::Thread {
         p.phase = Phase::Verifying;
         postProgress(p);
 
-        const auto actualHash = hashFile(tmp.getFile());
-        if (!actualHash.equalsIgnoreCase(entry.sha256)) {
-            p.errorMessage = juce::String("Checksum mismatch on ") + entry.filename;
+        // Size is the completeness check — a truncated download is the failure
+        // that actually happens. Integrity comes from the pinned revision:
+        // /resolve/<sha>/ cannot serve different bytes later.
+        if (tmp.getFile().getSize() != entry.size) {
+            p.errorMessage = juce::String(entry.filename) + ": expected " +
+                             juce::String(entry.size) + " bytes, got " +
+                             juce::String(tmp.getFile().getSize());
             return false;
         }
 
@@ -159,14 +163,6 @@ class CommandModelDownloader::Worker : public juce::Thread {
             return false;
         }
         return true;
-    }
-
-    static juce::String hashFile(const juce::File& f) {
-        juce::FileInputStream in(f);
-        if (!in.openedOk())
-            return {};
-        juce::SHA256 hash(in);
-        return hash.toHexString();
     }
 
     void postProgress(Progress p) {
