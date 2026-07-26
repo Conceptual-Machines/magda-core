@@ -1248,10 +1248,11 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 row.providerCombo.addItem(disp, itemId++);
                 row.providerIds.push_back(pid);
             }
-            // Two roles have an on-device model behind them: the command model
-            // (#1827) and the console router (#1843). Every other role still
-            // needs a real LLM, so the option is offered only on those rows.
-            if (row.role == magda::role::COMMAND || row.role == magda::role::ROUTER) {
+            // Only the command role has an on-device model behind it. The
+            // console router's tiny net was removed — #1875 retires the router
+            // entirely in favour of the agent orchestrator — so every other
+            // role still needs a real LLM.
+            if (row.role == magda::role::COMMAND) {
                 row.providerCombo.addItem("Fast Inference (Command)", itemId++);
                 row.providerIds.push_back(magda::provider::FAST_INFERENCE);
             }

@@ -14,7 +14,6 @@ set(TEST_SOURCES
     test_command_model.cpp
     test_unigram_tokenizer.cpp
     test_command_model_onnx.cpp
-    test_router_model.cpp
     test_interfaces.cpp
     test_midi_clip_sync.cpp
     test_midi_clip_split.cpp

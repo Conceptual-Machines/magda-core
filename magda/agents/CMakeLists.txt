@@ -36,10 +36,6 @@ dsl_grammar.hpp
     command_model_onnx.cpp
     command_model_downloader.hpp
     command_model_downloader.cpp
-    router_model.hpp
-    router_model.cpp
-    router_model_data.hpp
-    router_model_data.cpp
     music_agent.hpp
     music_agent.cpp
     chord_agent.hpp
@@ -58,8 +54,6 @@ dsl_grammar.hpp
     automation_executor.cpp
     automation_agent.hpp
     automation_agent.cpp
-    router_agent.hpp
-    router_agent.cpp
     controller_profile_agent.hpp
     controller_profile_agent.cpp
     llama_model_manager.hpp

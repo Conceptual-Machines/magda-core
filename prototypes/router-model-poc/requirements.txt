@@ -1,3 +1,0 @@
-# router classifier (Brevitas QAT, same stack as ../command-model-poc)
-torch>=2.2
-brevitas>=0.11
