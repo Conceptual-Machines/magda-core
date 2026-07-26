@@ -58,9 +58,15 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
             DBG("MAGDA CommandAgent (fast_inference, encoder): " + juce::String(result.dslOutput));
             return result;
         }
-        // Empty means the renderer rejected the perception — the conv net will
-        // not do better on the same input, so report rather than silently retry.
-        result.error = "Command model produced no output for this request.";
+        // Empty is a DECISION, not a failure: the model has an explicit
+        // abstain class, so out-of-scope requests return nothing rather than
+        // being mapped onto the nearest command and executed. Say that, rather
+        // than reporting it as a malfunction.
+        result.error = "That is not one of the on-device commands. Editing "
+                       "operations work here (tracks, clips, devices, notes); "
+                       "playback, mute/solo and questions do not — use a "
+                       "keyboard shortcut, or switch the Command provider to an "
+                       "LLM.";
         result.hasError = true;
         return result;
     }

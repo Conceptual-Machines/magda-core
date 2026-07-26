@@ -41,3 +41,35 @@
 {"lang": "en", "input": "snap Perc to quarter notes", "output": "track(name=\"Perc\").notes.quantize(grid=1)", "actions": [{"type": "notes_quantize", "name": "Perc", "grid": 1.0}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "grab the D4 notes on Lead", "output": "track(name=\"Lead\").notes.select(note.pitch == D4)", "actions": [{"type": "notes_select_pitch", "name": "Lead", "pitch": "D4"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "notes over 90 on Choir", "output": "track(name=\"Choir\").notes.select(note.velocity > 90)", "actions": [{"type": "notes_select_velocity_above", "name": "Choir", "value": 90}], "ood_tags": ["colloquial"]}
+{"lang": "en", "input": "solo the kick", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["retired"]}
+{"lang": "en", "input": "mute the strings track", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["retired"]}
+{"lang": "en", "input": "unsolo everything", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["retired"]}
+{"lang": "en", "input": "get it playing", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["transport"]}
+{"lang": "en", "input": "halt playback", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["transport"]}
+{"lang": "en", "input": "set the tempo to 92", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["transport"]}
+{"lang": "en", "input": "arm the drums for recording", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["transport"]}
+{"lang": "en", "input": "can you undo the last thing", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["history"]}
+{"lang": "en", "input": "scrap that", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["history", "colloquial"]}
+{"lang": "en", "input": "save this one", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["file"]}
+{"lang": "en", "input": "render it out to wav", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["file", "colloquial"]}
+{"lang": "en", "input": "what plugins are on the lead", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["query"]}
+{"lang": "en", "input": "how many bars is the intro", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["query"]}
+{"lang": "en", "input": "does the bass sound muddy", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["query", "advice"]}
+{"lang": "en", "input": "give this track more energy", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["advice"]}
+{"lang": "en", "input": "bring up the piano roll", "output": "", "actions": [{"type": "unsupported"}], "ood_tags": ["view"]}
+{"lang": "en", "input": "mute the Verse clip on Keys", "output": "track(name=\"Keys\").clips.select(clip.name == \"Verse\").clip.set(enabled=false)", "actions": [{"type": "clip_mute", "name": "Keys", "clip_name": "Verse", "enabled": false}], "ood_tags": []}
+{"lang": "en", "input": "disable clip 2 on Sub", "output": "track(name=\"Sub\").clip.set(index=2, enabled=false)", "actions": [{"type": "clip_mute", "name": "Sub", "index": 2, "enabled": false}], "ood_tags": ["colloquial"]}
+{"lang": "en", "input": "switch the Intro clip back on", "output": "track(name=\"\").clips.select(clip.name == \"Intro\").clip.set(enabled=true)", "actions": [{"type": "clip_mute", "name": "", "clip_name": "Intro", "enabled": true}], "ood_tags": ["unnamed", "colloquial"]}
+{"lang": "en", "input": "silence clip 1 please", "output": "track(name=\"\").clip.set(index=1, enabled=false)", "actions": [{"type": "clip_mute", "name": "", "index": 1, "enabled": false}], "ood_tags": ["unnamed"]}
+{"lang": "en", "input": "i could do with four tracks", "output": "track(name=\"\", new=true)\ntrack(name=\"\", new=true)\ntrack(name=\"\", new=true)\ntrack(name=\"\", new=true)", "actions": [{"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}], "ood_tags": ["filler"]}
+{"lang": "en", "input": "chuck in 6 tracks", "output": "track(name=\"\", new=true)\ntrack(name=\"\", new=true)\ntrack(name=\"\", new=true)\ntrack(name=\"\", new=true)\ntrack(name=\"\", new=true)\ntrack(name=\"\", new=true)", "actions": [{"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}, {"type": "create_track", "name": ""}], "ood_tags": []}
+{"lang": "en", "input": "knock up two perc tracks", "output": "track(name=\"Perc\", new=true)\ntrack(name=\"Perc\", new=true)", "actions": [{"type": "create_track", "name": "Perc"}, {"type": "create_track", "name": "Perc"}], "ood_tags": ["colloquial"]}
+{"lang": "en", "input": "put a clip at bar 17 on Choir", "output": "track(name=\"Choir\").clip.new(bar=17, length_bars=4)", "actions": [{"type": "clip_new", "name": "Choir", "length_bars": 4, "bar": 17}], "ood_tags": ["colloquial"]}
+{"lang": "en", "input": "new 2 bar clip at bar 5", "output": "track(name=\"\").clip.new(bar=5, length_bars=2)", "actions": [{"type": "clip_new", "name": "", "length_bars": 2, "bar": 5}], "ood_tags": ["unnamed"]}
+{"lang": "en", "input": "jump to track 4", "output": "track(id=4).select()", "actions": [{"type": "select_tracks", "id": 4}], "ood_tags": ["colloquial"]}
+{"lang": "en", "input": "grab track3 and track6", "output": "track(id=3).select()\ntrack(id=6).select()", "actions": [{"type": "select_tracks", "id": 3}, {"type": "select_tracks", "id": 6}], "ood_tags": []}
+{"lang": "en", "input": "lump track 2 and track 5 together", "output": "track(id=2).track.group(name=\"Group\", tracks=\"2,5\")", "actions": [{"type": "group_tracks", "ids": [2, 5], "name": "Group"}], "ood_tags": ["colloquial"]}
+{"lang": "en", "input": "run @eq and @compressor side by side", "output": "track(name=\"\").rack.new().fx.add(name=\"<eq>\").rack.chain_new().fx.add(name=\"<compressor>\")", "actions": [{"type": "create_rack_parallel", "name": "", "plugins": ["<eq>", "<compressor>"]}], "ood_tags": ["unnamed", "colloquial"]}
+{"lang": "en", "input": "parallel rack with @ott and @valhalla on Sub", "output": "track(name=\"Sub\").rack.new().fx.add(name=\"<ott>\").rack.chain_new().fx.add(name=\"<valhalla>\")", "actions": [{"type": "create_rack_parallel", "name": "Sub", "plugins": ["<ott>", "<valhalla>"]}], "ood_tags": []}
+{"lang": "en", "input": "insert a @saturator", "output": "track(name=\"\").fx.add(name=\"<saturator>\")", "actions": [{"type": "add_plugin", "name": "", "plugin": "<saturator>"}], "ood_tags": ["unnamed", "unseen-alias"]}
+{"lang": "en", "input": "i want an @eq on this", "output": "track(name=\"\").fx.add(name=\"<eq>\")", "actions": [{"type": "add_plugin", "name": "", "plugin": "<eq>"}], "ood_tags": ["unnamed", "filler"]}
