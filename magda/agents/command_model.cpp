@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -314,7 +315,13 @@ double parseNumber(const std::string& text) {
             while (j < n && std::isdigit(static_cast<unsigned char>(text[j])))
                 ++j;
         }
-        return std::stod(text.substr(i, j - i));
+        try {
+            return std::stod(text.substr(i, j - i));
+        } catch (const std::out_of_range&) {
+            return 0.0;
+        } catch (const std::invalid_argument&) {
+            return 0.0;
+        }
     }
     return 0.0;
 }
@@ -618,6 +625,8 @@ CommandModel::CommandModel() {
 }
 
 CommandModel::Prediction CommandModel::predict(const std::string& text) const {
+    static_assert(d::kMaxLen <= 64, "Command model token buffer is too small");
+
     Prediction out;
     auto toks = tokenize(expandAliasBrackets(text));
     if (static_cast<int>(toks.size()) > d::kMaxLen)

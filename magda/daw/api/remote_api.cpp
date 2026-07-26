@@ -2,12 +2,59 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace magda::remote {
 namespace {
 
+constexpr int kDefaultMaxStringLength = 16 * 1024;
+constexpr int kDefaultMaxArrayItems = 4096;
+
+bool schemaDeclaresType(const juce::var& schema, const char* expected) {
+    auto* object = schema.getDynamicObject();
+    if (object == nullptr)
+        return false;
+    const auto type = object->getProperty("type");
+    if (type.isString())
+        return type.toString() == expected;
+    if (auto* types = type.getArray())
+        return std::any_of(types->begin(), types->end(),
+                           [&](const auto& candidate) { return candidate.toString() == expected; });
+    return false;
+}
+
+void applyDefaultLimits(juce::var schema, const juce::String& propertyName = {}) {
+    auto* object = schema.getDynamicObject();
+    if (object == nullptr)
+        return;
+
+    if (schemaDeclaresType(schema, "string") && !object->hasProperty("maxLength"))
+        object->setProperty("maxLength", kDefaultMaxStringLength);
+    if (schemaDeclaresType(schema, "array") && !object->hasProperty("maxItems"))
+        object->setProperty("maxItems", kDefaultMaxArrayItems);
+
+    const bool isId =
+        propertyName == "id" || propertyName.endsWith("Id") || propertyName.endsWith("Ids");
+    if (isId && schemaDeclaresType(schema, "integer") && !object->hasProperty("maximum"))
+        object->setProperty("maximum", std::numeric_limits<int>::max());
+
+    if (auto* properties = object->getProperty("properties").getDynamicObject())
+        for (const auto& property : properties->getProperties())
+            applyDefaultLimits(property.value, property.name.toString());
+
+    const auto items = object->getProperty("items");
+    if (!items.isVoid())
+        applyDefaultLimits(items, propertyName);
+
+    if (auto* alternatives = object->getProperty("anyOf").getArray())
+        for (auto& alternative : *alternatives)
+            applyDefaultLimits(alternative, propertyName);
+}
+
 juce::var parseSchema(const char* json) {
-    return juce::JSON::parse(juce::String::fromUTF8(json));
+    auto schema = juce::JSON::parse(juce::String::fromUTF8(json));
+    applyDefaultLimits(schema);
+    return schema;
 }
 
 juce::var emptyObjectSchema() {
@@ -66,7 +113,8 @@ const juce::var& trackSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
-            "id":{"type":"integer","minimum":-2},
+            "id":{"anyOf":[{"type":"integer","const":-2},
+                           {"type":"integer","minimum":0}]},
             "type":{"type":"string","enum":["audio","group","aux","master","multi_out","chord"]},
             "name":{"type":"string"},
             "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
@@ -218,7 +266,8 @@ const juce::var& selectionSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
-            "trackId":{"type":["integer","null"],"minimum":-2},
+            "trackId":{"anyOf":[{"type":"null"},{"type":"integer","const":-2},
+                                {"type":"integer","minimum":0}]},
             "clipId":{"type":["integer","null"],"minimum":0},
             "clipIds":{"type":"array","items":{"type":"integer","minimum":0}},
             "automationLaneId":{"type":["integer","null"],"minimum":0},
@@ -281,7 +330,8 @@ const juce::var& automationTargetSchema() {
         "properties":{
             "kind":{"type":"string","enum":["plugin_param","device_macro","mod_param",
                 "track_volume","track_pan","send_level","tempo"]},
-            "trackId":{"type":["integer","null"],"minimum":0},
+            "trackId":{"anyOf":[{"type":"null"},{"type":"integer","const":-2},
+                                {"type":"integer","minimum":0}]},
             "deviceId":{"type":["integer","null"],"minimum":0},
             "parameterIndex":{"type":"integer","minimum":-1},
             "modId":{"type":"integer","minimum":-1},
@@ -383,12 +433,28 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
     if (schemaObject == nullptr)
         return;
 
+    if (auto* alternatives = schemaObject->getProperty("anyOf").getArray()) {
+        const auto matches =
+            std::any_of(alternatives->begin(), alternatives->end(), [&](const auto& alternative) {
+                std::vector<ValidationIssue> candidateIssues;
+                validateValue(value, alternative, path, candidateIssues);
+                return candidateIssues.empty();
+            });
+        if (!matches)
+            addIssue(issues, path, "any_of", "Value does not match any allowed schema");
+        return;
+    }
+
     const auto declaredType = schemaObject->getProperty("type");
     if (!declaredType.isVoid() && !typeMatches(value, declaredType)) {
         addIssue(issues, path, "type",
                  "Expected " + typeDescription(declaredType) + ", got a different JSON type");
         return;
     }
+
+    const auto requiredValue = schemaObject->getProperty("const");
+    if (!requiredValue.isVoid() && requiredValue != value)
+        addIssue(issues, path, "const", "Value does not match the required constant");
 
     if (auto* allowed = schemaObject->getProperty("enum").getArray()) {
         const auto found = std::any_of(allowed->begin(), allowed->end(),
@@ -415,7 +481,16 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
             addIssue(issues, path, "maximum", "Number is above the allowed maximum");
     }
 
+    if (value.isString()) {
+        const auto maxLength = schemaObject->getProperty("maxLength");
+        if (!maxLength.isVoid() && value.toString().length() > static_cast<int>(maxLength))
+            addIssue(issues, path, "max_length", "String exceeds the allowed length");
+    }
+
     if (auto* array = value.getArray()) {
+        const auto maxItems = schemaObject->getProperty("maxItems");
+        if (!maxItems.isVoid() && array->size() > static_cast<int>(maxItems))
+            addIssue(issues, path, "max_items", "Array exceeds the allowed item count");
         const auto itemSchema = schemaObject->getProperty("items");
         if (!itemSchema.isVoid()) {
             for (int index = 0; index < array->size(); ++index)
@@ -995,6 +1070,8 @@ OperationRegistry::OperationRegistry() {
 
     auto add = [this](const char* name, const char* summary, OperationAccess access,
                       juce::var input, juce::var output) {
+        applyDefaultLimits(input);
+        applyDefaultLimits(output);
         operations_.push_back({juce::String(name), juce::String(summary), access, std::move(input),
                                std::move(output)});
     };
@@ -1032,7 +1109,8 @@ OperationRegistry::OperationRegistry() {
     add("tracks.list", "List tracks", OperationAccess::Read, emptyObjectSchema(),
         arraySchema(trackSchema()));
     add("tracks.get", "Get one track", OperationAccess::Read, operationInputSchema(R"json({
-            "type":"object","properties":{"trackId":{"type":"integer","minimum":-2}},
+            "type":"object","properties":{"trackId":{"anyOf":[
+                {"type":"integer","const":-2},{"type":"integer","minimum":0}]}},
             "required":["trackId"],"additionalProperties":false
         })json"),
         trackSchema());

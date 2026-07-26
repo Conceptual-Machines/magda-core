@@ -25,6 +25,10 @@ inline constexpr int API_VERSION_MAJOR = 1;
 inline constexpr int API_VERSION_MINOR = 0;
 inline constexpr std::string_view API_VERSION = "1.0";
 
+// Request dispatch and projections that read MagdaApi live state must run on
+// JUCE's message thread. Transport adapters are responsible for hopping to it
+// before validation, execution, or response projection.
+
 enum class ErrorCode {
     InvalidRequest,
     UnknownOperation,

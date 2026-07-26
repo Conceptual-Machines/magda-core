@@ -40,11 +40,13 @@ TEST_CASE("SpleeterSeparator separates a synthetic mix", "[stems][spleeter][need
     magda::stems::SpleeterSeparator separator(dir / "vocals.onnx", dir / "accompaniment.onnx");
     REQUIRE(separator.isLoaded());
 
-    // ~15 s stereo at 44.1 kHz spans two 512-frame splits. A 220 Hz tone
+    // ~15 s stereo at 88.2 kHz spans two 512-frame splits after resampling.
+    // The odd source length locks the bounded Lagrange path against over-read.
+    // A 220 Hz tone
     // sits far below the 1024-bin cutoff, so the Wiener masks (which sum to
     // 1 by construction) must reconstruct it almost exactly.
-    constexpr int kSr = 44100;
-    constexpr int kLen = kSr * 15;
+    constexpr int kSr = 88200;
+    constexpr int kLen = kSr * 15 + 1;
     juce::AudioBuffer<float> input(2, kLen);
     for (int ch = 0; ch < 2; ++ch) {
         float* data = input.getWritePointer(ch);

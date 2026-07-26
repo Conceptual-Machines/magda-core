@@ -5,6 +5,12 @@
 #include <juce_cryptography/juce_cryptography.h>
 #include <juce_events/juce_events.h>
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 #include "AppPaths.hpp"
 
 namespace magda::stems {
@@ -78,6 +84,59 @@ const ModelManifest& manifestFor(StemModel model) {
 
 }  // namespace
 
+class ReadDeadline {
+  public:
+    explicit ReadDeadline(juce::WebInputStream& stream) : stream_(stream) {
+        watchdog_ = std::thread([this] {
+            std::unique_lock lock(mutex_);
+            auto observedGeneration = generation_;
+            while (!stopping_) {
+                if (condition_.wait_for(lock, std::chrono::seconds(30), [&] {
+                        return stopping_ || generation_ != observedGeneration;
+                    })) {
+                    observedGeneration = generation_;
+                    continue;
+                }
+                timedOut_.store(true);
+                lock.unlock();
+                stream_.cancel();
+                return;
+            }
+        });
+    }
+
+    ~ReadDeadline() {
+        {
+            std::scoped_lock lock(mutex_);
+            stopping_ = true;
+        }
+        condition_.notify_one();
+        if (watchdog_.joinable())
+            watchdog_.join();
+    }
+
+    void reset() {
+        {
+            std::scoped_lock lock(mutex_);
+            ++generation_;
+        }
+        condition_.notify_one();
+    }
+
+    [[nodiscard]] bool timedOut() const {
+        return timedOut_.load();
+    }
+
+  private:
+    juce::WebInputStream& stream_;
+    std::mutex mutex_;
+    std::condition_variable condition_;
+    std::thread watchdog_;
+    std::size_t generation_ = 0;
+    bool stopping_ = false;
+    std::atomic<bool> timedOut_{false};
+};
+
 // ===========================================================================
 // Worker — background thread that runs the actual download and verification
 // ===========================================================================
@@ -88,6 +147,12 @@ class StemModelDownloader::Worker : public juce::Thread {
         : juce::Thread("MAGDA StemModelDownloader"),
           model_(model),
           onProgress_(std::move(onProgress)) {}
+
+    void cancelDownload() {
+        signalThreadShouldExit();
+        if (auto* stream = activeStream_.load())
+            stream->cancel();
+    }
 
     void run() override {
         const auto& manifest = manifestFor(model_);
@@ -124,16 +189,21 @@ class StemModelDownloader::Worker : public juce::Thread {
     bool downloadOne(const ManifestEntry& entry, Progress& p) {
         const auto dest = StemModelDownloader::modelsDir().getChildFile(entry.filename);
 
-        juce::URL url(entry.url);
-        int statusCode = 0;
-        const auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                                 .withConnectionTimeoutMs(30000)
-                                 .withStatusCode(&statusCode);
-        auto stream = url.createInputStream(options);
-        if (stream == nullptr) {
+        juce::WebInputStream stream(juce::URL(entry.url), false);
+        stream.withConnectionTimeout(30000);
+        activeStream_.store(&stream);
+        struct ClearActiveStream {
+            std::atomic<juce::WebInputStream*>& active;
+            ~ClearActiveStream() {
+                active.store(nullptr);
+            }
+        } clearActiveStream{activeStream_};
+
+        if (!stream.connect(nullptr)) {
             p.errorMessage = juce::String("Could not connect to ") + entry.filename;
             return false;
         }
+        const int statusCode = stream.getStatusCode();
         if (statusCode != 0 && (statusCode < 200 || statusCode >= 300)) {
             p.errorMessage = juce::String(entry.filename) + ": HTTP " + juce::String(statusCode);
             return false;
@@ -148,22 +218,43 @@ class StemModelDownloader::Worker : public juce::Thread {
 
         constexpr int kChunk = 1 << 16;  // 64 KiB
         juce::MemoryBlock buf(kChunk);
+        ReadDeadline readDeadline(stream);
+        juce::int64 fileBytes = 0;
+        int lastPostedPercent = -1;
         for (;;) {
             if (threadShouldExit())
                 return false;  // tmp file destructs without renaming
-            const int read = stream->read(buf.getData(), kChunk);
+            const int read = stream.read(buf.getData(), kChunk);
+            readDeadline.reset();
+            if (readDeadline.timedOut()) {
+                p.errorMessage = juce::String("Read timed out on ") + entry.filename;
+                return false;
+            }
+            if (threadShouldExit())
+                return false;
             if (read < 0) {
                 p.errorMessage = juce::String("Read error on ") + entry.filename;
                 return false;
             }
             if (read == 0)
                 break;
+            if (fileBytes > entry.size - read) {
+                p.errorMessage =
+                    juce::String("Download exceeded expected size for ") + entry.filename;
+                return false;
+            }
             if (!out->write(buf.getData(), static_cast<size_t>(read))) {
                 p.errorMessage = juce::String("Write error on ") + dest.getFullPathName();
                 return false;
             }
+            fileBytes += read;
             p.bytesDone += read;
-            postProgress(p);
+            const int percent =
+                p.bytesTotal > 0 ? static_cast<int>((100 * p.bytesDone) / p.bytesTotal) : 0;
+            if (percent != lastPostedPercent) {
+                lastPostedPercent = percent;
+                postProgress(p);
+            }
         }
         out->flush();
         if (out->getStatus().failed()) {
@@ -211,6 +302,7 @@ class StemModelDownloader::Worker : public juce::Thread {
 
     StemModel model_;
     ProgressCallback onProgress_;
+    std::atomic<juce::WebInputStream*> activeStream_{nullptr};
 };
 
 // ===========================================================================
@@ -281,7 +373,7 @@ void StemModelDownloader::start(ProgressCallback onProgress) {
 
 void StemModelDownloader::cancel() {
     if (worker_)
-        worker_->signalThreadShouldExit();
+        worker_->cancelDownload();
 }
 
 bool StemModelDownloader::isRunning() const noexcept {

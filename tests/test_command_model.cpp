@@ -62,3 +62,14 @@ TEST_CASE("Command model tokenizer mirrors the Python reference", "[agents][comm
         CHECK(model.predict(p.input).tokens == p.expected);
     }
 }
+
+TEST_CASE("Command model rejects out-of-range numeric text without throwing",
+          "[agents][command_model]") {
+    const std::string hugeNumber(400, '9');
+    const CommandModel::Prediction prediction{
+        .intent = "set_track_volume",
+        .tokens = {"Bass", hugeNumber},
+        .tags = {"B-TRACK_NAME", "B-VALUE"},
+    };
+    CHECK_NOTHROW(CommandModel::renderPrediction(prediction));
+}

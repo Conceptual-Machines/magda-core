@@ -186,19 +186,35 @@ struct CommandModelOnnx::Impl {
             throw CommandModelOnnxError("failed to parse " + mapsPath.string());
 
         // maps.json stores name -> id; invert into dense id-indexed tables.
-        auto invert = [](const juce::var& obj, std::vector<std::string>& out) {
+        auto invert = [](const juce::var& obj, std::vector<std::string>& out, const char* mapName) {
             auto* dyn = obj.getDynamicObject();
             if (dyn == nullptr)
-                return;
-            for (const auto& prop : dyn->getProperties()) {
-                const int id = static_cast<int>(prop.value);
-                if (id >= static_cast<int>(out.size()))
-                    out.resize(static_cast<size_t>(id) + 1);
+                throw CommandModelOnnxError(std::string("maps.json missing ") + mapName);
+
+            const auto& properties = dyn->getProperties();
+            out.assign(static_cast<size_t>(properties.size()), {});
+            std::vector<bool> seen(out.size(), false);
+            for (const auto& prop : properties) {
+                if (!prop.value.isInt() && !prop.value.isInt64())
+                    throw CommandModelOnnxError(std::string("maps.json has a non-integer ") +
+                                                mapName + " id");
+                const auto rawId = static_cast<juce::int64>(prop.value);
+                if (rawId < 0 || rawId >= properties.size())
+                    throw CommandModelOnnxError(std::string("maps.json has an out-of-range ") +
+                                                mapName + " id");
+                const auto id = static_cast<size_t>(rawId);
+                if (seen[id])
+                    throw CommandModelOnnxError(std::string("maps.json has a duplicate ") +
+                                                mapName + " id");
+                seen[id] = true;
                 out[static_cast<size_t>(id)] = prop.name.toString().toStdString();
             }
+            if (std::find(seen.begin(), seen.end(), false) != seen.end())
+                throw CommandModelOnnxError(std::string("maps.json has a sparse ") + mapName +
+                                            " id map");
         };
-        invert(json.getProperty("intents", juce::var()), idToIntent);
-        invert(json.getProperty("tags", juce::var()), idToTag);
+        invert(json.getProperty("intents", juce::var()), idToIntent, "intent");
+        invert(json.getProperty("tags", juce::var()), idToTag, "tag");
         if (idToIntent.empty() || idToTag.empty())
             throw CommandModelOnnxError("maps.json missing intents/tags");
     }
@@ -286,7 +302,13 @@ CommandModel::Prediction CommandModelOnnx::predict(const std::string& text) cons
 }
 
 std::string CommandModelOnnx::generate(const std::string& text) const {
-    const auto p = predict(text);
+    CommandModel::Prediction p;
+    try {
+        p = predict(text);
+    } catch (const Ort::Exception& e) {
+        throw CommandModelOnnxError(std::string("ONNX command-model inference failed: ") +
+                                    e.what());
+    }
 
     juce::String tagged;
     for (size_t i = 0; i < p.tokens.size(); ++i)

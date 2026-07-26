@@ -185,8 +185,9 @@ extern const char* const kTags[];     // [kNumTags]    id -> BIO tag name
         f.write("".join(cpp))
 
     # ---- parity fixture --------------------------------------------------
-    rows = [json.loads(l) for l in open(os.path.join(POC, "eval", "testset.jsonl"),
-                                        encoding="utf-8") if l.strip()]
+    testset_path = os.path.join(POC, "eval", "testset.jsonl")
+    with open(testset_path, encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
     cases = []
     mism = 0
     for r in rows:

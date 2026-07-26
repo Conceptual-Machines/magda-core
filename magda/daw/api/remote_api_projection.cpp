@@ -19,6 +19,12 @@
 namespace magda::remote {
 namespace {
 
+void assertMessageThread() {
+#if !defined(MAGDA_ENABLE_TEST_HOOKS) || !MAGDA_ENABLE_TEST_HOOKS
+    JUCE_ASSERT_MESSAGE_THREAD;
+#endif
+}
+
 juce::String trackTypeName(TrackType type) {
     switch (type) {
         case TrackType::Audio:
@@ -283,6 +289,8 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
 }
 
 SelectionDto makeSelectionDto(MagdaApi& api) {
+    assertMessageThread();
+
     auto& selection = api.selection();
     SelectionDto dto;
     if (selection.getSelectedTrack() != INVALID_TRACK_ID)
@@ -305,12 +313,16 @@ SelectionDto makeSelectionDto(MagdaApi& api) {
 }
 
 TransportDto makeTransportDto(MagdaApi& api) {
+    assertMessageThread();
+
     const auto& transport = api.transport();
     return {transport.isPlaying(), transport.isRecording(), transport.isLoopEnabled(),
             transport.getPositionBeats()};
 }
 
 SessionDto makeSessionDto(MagdaApi& api) {
+    assertMessageThread();
+
     SessionDto dto;
     for (const auto& track : api.tracks().getTracks()) {
         for (const auto clipId : api.clips().getClipsOnTrack(track.id)) {

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace magda::stems::demucs {
 
@@ -45,7 +46,8 @@ std::vector<float> resampleChannel(const float* in, int numSamples, double srcRa
     if (outLen <= 0)
         return out;
     juce::LagrangeInterpolator interp;
-    interp.process(ratio, in, out.data(), outLen);
+    int inputSamplesUsed = 0;
+    interp.process(ratio, in, out.data(), outLen, numSamples, inputSamplesUsed);
     return out;
 }
 
@@ -81,8 +83,16 @@ struct DemucsSeparator::Impl {
         auto outputs =
             session.Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1, outputNames, 1);
 
-        const float* data = outputs[0].GetTensorData<float>();
         const size_t count = static_cast<size_t>(demucs::kNumStems) * 2 * demucs::kSegmentSamples;
+        const auto info = outputs[0].GetTensorTypeAndShapeInfo();
+        const auto shape = info.GetShape();
+        const std::array<int64_t, 4> expectedShape = {1, demucs::kNumStems, 2,
+                                                      demucs::kSegmentSamples};
+        if (shape != std::vector<int64_t>(expectedShape.begin(), expectedShape.end()) ||
+            info.GetElementCount() != count)
+            throw std::runtime_error("Demucs model returned an unexpected output shape");
+
+        const float* data = outputs[0].GetTensorData<float>();
         stemsOut.assign(data, data + count);
     }
 };
@@ -148,6 +158,8 @@ std::vector<Stem> DemucsSeparator::separate(const juce::AudioBuffer<float>& inpu
         try {
             impl_->runSegment(mix, stemsOut);
         } catch (const Ort::Exception&) {
+            return {};
+        } catch (const std::exception&) {
             return {};
         }
 

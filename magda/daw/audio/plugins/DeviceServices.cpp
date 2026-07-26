@@ -51,7 +51,11 @@ void unregisterDeviceServices(tracktion::engine::Edit& edit) {
 
 DeviceServices getDeviceServices(tracktion::engine::Edit& edit) {
     std::scoped_lock lock(servicesMutex);
-    return resolve(servicesByEdit[&edit]);
+    if (const auto found = servicesByEdit.find(&edit); found != servicesByEdit.end())
+        return resolve(found->second);
+
+    static ServiceEntry fallback;
+    return resolve(fallback);
 }
 
 }  // namespace magda::daw::audio

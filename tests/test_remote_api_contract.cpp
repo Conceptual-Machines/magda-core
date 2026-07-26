@@ -93,6 +93,63 @@ TEST_CASE("Remote API input validation returns structured issues",
         REQUIRE(error->issues.front().code == "maximum");
     }
 
+    SECTION("ids cannot overflow their C++ representation") {
+        const auto* operation = registry.find("clips.get");
+        REQUIRE(operation != nullptr);
+        const auto error = validateOperationInput(
+            *operation,
+            object({{"clipId", static_cast<juce::int64>(std::numeric_limits<int>::max()) + 1}}));
+        REQUIRE(error.has_value());
+        REQUIRE(error->issues.front().path == "$.clipId");
+        REQUIRE(error->issues.front().code == "maximum");
+    }
+
+    SECTION("the invalid track sentinel is not a public track id") {
+        for (const auto* operationName : {"tracks.get", "selection.set"}) {
+            const auto* operation = registry.find(operationName);
+            REQUIRE(operation != nullptr);
+            juce::var input = juce::String(operationName) == "tracks.get"
+                                  ? object({{"trackId", -1}})
+                                  : toJson(SelectionDto{.trackId = INVALID_TRACK_ID});
+            const auto error = validateOperationInput(*operation, input);
+            REQUIRE(error.has_value());
+            REQUIRE(error->issues.front().path == "$.trackId");
+            REQUIRE(error->issues.front().code == "any_of");
+        }
+    }
+
+    SECTION("master track ids remain valid") {
+        for (const auto* operationName : {"tracks.get", "selection.set"}) {
+            const auto* operation = registry.find(operationName);
+            REQUIRE(operation != nullptr);
+            juce::var input = juce::String(operationName) == "tracks.get"
+                                  ? object({{"trackId", MASTER_TRACK_ID}})
+                                  : toJson(SelectionDto{.trackId = MASTER_TRACK_ID});
+            REQUIRE_FALSE(validateOperationInput(*operation, input).has_value());
+        }
+    }
+
+    SECTION("strings and arrays have contract-wide limits") {
+        const auto* createTrack = registry.find("tracks.create");
+        REQUIRE(createTrack != nullptr);
+        const juce::String oversizedName = juce::String::repeatedString("x", 16 * 1024 + 1);
+        auto stringError = validateOperationInput(
+            *createTrack, object({{"name", oversizedName}, {"type", "audio"}}));
+        REQUIRE(stringError.has_value());
+        REQUIRE(stringError->issues.front().code == "max_length");
+
+        const auto* selection = registry.find("selection.set");
+        REQUIRE(selection != nullptr);
+        juce::Array<juce::var> oversizedIds;
+        for (int index = 0; index < 4097; ++index)
+            oversizedIds.add(index);
+        auto input = toJson(SelectionDto{});
+        input.getDynamicObject()->setProperty("clipIds", oversizedIds);
+        auto arrayError = validateOperationInput(*selection, input);
+        REQUIRE(arrayError.has_value());
+        REQUIRE(arrayError->issues.front().code == "max_items");
+    }
+
     SECTION("unknown field") {
         const auto* operation = registry.find("transport.seek");
         REQUIRE(operation != nullptr);
@@ -290,4 +347,11 @@ TEST_CASE("Remote session and automation projections use MagdaApi values",
     REQUIRE(dto.target.trackId == 1);
     REQUIRE(dto.points.size() == 2);
     REQUIRE(dto.points[1].curve == "step");
+
+    lane.target = AutomationTarget::trackVolume(MASTER_TRACK_ID);
+    const auto masterDto = makeAutomationLaneDto(lane);
+    REQUIRE(masterDto.target.trackId == MASTER_TRACK_ID);
+    const auto* operation = OperationRegistry::instance().find("automation.getLane");
+    REQUIRE(operation != nullptr);
+    REQUIRE(validateJson(toJson(masterDto), operation->outputSchema).empty());
 }

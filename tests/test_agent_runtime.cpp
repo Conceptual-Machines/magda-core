@@ -486,6 +486,8 @@ TEST_CASE("AgentRuntime terminates repeated failing calls at one revision", "[ag
     REQUIRE(result.steps == 3);
     REQUIRE(executor.requests.size() == 2);
     REQUIRE(result.finalRevision == 8);
+    REQUIRE(result.conversation.back().role == ConversationRole::Tool);
+    REQUIRE(result.conversation.back().toolResult->error->code == "repeated_tool_call");
 }
 
 TEST_CASE("AgentRuntime enforces mutation and token budgets", "[agent-runtime]") {
@@ -513,6 +515,8 @@ TEST_CASE("AgentRuntime enforces mutation and token budgets", "[agent-runtime]")
         REQUIRE(result.reason == TerminalReason::MutationLimit);
         REQUIRE(result.mutations == 1);
         REQUIRE(executor.requests.size() == 1);
+        REQUIRE(result.conversation.back().role == ConversationRole::Tool);
+        REQUIRE(result.conversation.back().toolResult->error->code == "mutation_limit");
     }
 
     SECTION("token budget") {

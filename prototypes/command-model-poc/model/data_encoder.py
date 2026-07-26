@@ -50,7 +50,8 @@ def canon(token: str) -> str:
 
 
 def load_rows(path):
-    return [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+    with open(path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 
 def build_label_maps(rows):
@@ -65,13 +66,15 @@ def build_label_maps(rows):
 
 
 def save_maps(path, intents, tags, model_name):
-    json.dump({"intents": intents, "tags": tags, "model_name": model_name,
-               "max_len": MAX_LEN},
-              open(path, "w", encoding="utf-8"), ensure_ascii=False)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"intents": intents, "tags": tags, "model_name": model_name,
+                   "max_len": MAX_LEN},
+                  f, ensure_ascii=False)
 
 
 def load_maps(path):
-    m = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as f:
+        m = json.load(f)
     return m["intents"], m["tags"], m["model_name"]
 
 

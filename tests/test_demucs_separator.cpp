@@ -35,10 +35,11 @@ TEST_CASE("DemucsSeparator separates a synthetic mix", "[stems][demucs][needs-mo
     magda::stems::DemucsSeparator separator(envPath);
     REQUIRE(separator.isLoaded());
 
-    // ~10 s stereo at 44.1 kHz: spans two OLA chunks. A 220 Hz tone with a
-    // soft attack envelope reads as tonal material, not drums.
-    constexpr int kSr = 44100;
-    constexpr int kLen = kSr * 10;
+    // ~10 s stereo at 88.2 kHz: spans two OLA chunks after resampling. The
+    // odd source length exercises both bounded Lagrange resample directions.
+    // A 220 Hz tone with a soft attack envelope reads as tonal material.
+    constexpr int kSr = 88200;
+    constexpr int kLen = kSr * 10 + 1;
     juce::AudioBuffer<float> input(2, kLen);
     for (int ch = 0; ch < 2; ++ch) {
         float* data = input.getWritePointer(ch);

@@ -260,6 +260,17 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
                                        .text = response.text,
                                        .toolCalls = response.toolCalls});
 
+        const auto completeUnexecutedCalls = [&](std::size_t firstCall, const juce::String& code,
+                                                 const juce::String& message) {
+            for (std::size_t index = firstCall; index < response.toolCalls.size(); ++index) {
+                auto toolResult =
+                    makeErrorResult(response.toolCalls[index], result.finalRevision, code, message);
+                trace.toolResults.push_back(toolResult);
+                result.conversation.push_back(
+                    {.role = ConversationRole::Tool, .toolResult = std::move(toolResult)});
+            }
+        };
+
         if (response.toolCalls.empty()) {
             result.trace.push_back(std::move(trace));
             if (response.text.isEmpty())
@@ -276,18 +287,24 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
                             const auto* tool = findTool(effectiveDefinition, call.name);
                             return tool != nullptr && tool->access == ToolAccess::Mutation;
                         })) {
+            completeUnexecutedCalls(0, "unsafe_parallel_mutation",
+                                    "Parallel mutation batch was not executed");
             result.trace.push_back(std::move(trace));
             return stop(TerminalReason::UnsafeParallelMutation,
                         "Parallel tool batches containing mutations are not safe; retry "
                         "sequentially");
         }
 
-        for (const auto& call : response.toolCalls) {
+        for (std::size_t callIndex = 0; callIndex < response.toolCalls.size(); ++callIndex) {
+            const auto& call = response.toolCalls[callIndex];
             if (cancellation.isCancellationRequested()) {
+                completeUnexecutedCalls(callIndex, "cancelled", "Run cancelled before execution");
                 result.trace.push_back(std::move(trace));
                 return stop(TerminalReason::Cancelled, "Run cancelled");
             }
             if (timedOut()) {
+                completeUnexecutedCalls(callIndex, "time_limit",
+                                        "Wall-time budget exhausted before execution");
                 result.trace.push_back(std::move(trace));
                 return stop(TerminalReason::TimeLimit, "Wall-time budget exhausted");
             }
@@ -296,6 +313,8 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
             auto& identicalCount = identicalCallCounts[fingerprint];
             ++identicalCount;
             if (identicalCount > effectiveDefinition.budget.maxIdenticalCallsAtRevision) {
+                completeUnexecutedCalls(callIndex, "repeated_tool_call",
+                                        "Repeated tool call was not executed");
                 result.trace.push_back(std::move(trace));
                 return stop(TerminalReason::RepeatedToolCall,
                             "Repeated tool call at the same project revision: " + call.name);
@@ -315,6 +334,8 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
             } else {
                 const bool isMutation = tool->access == ToolAccess::Mutation;
                 if (isMutation && result.mutations >= effectiveDefinition.budget.maxMutations) {
+                    completeUnexecutedCalls(callIndex, "mutation_limit",
+                                            "Mutation budget exhausted before execution");
                     result.trace.push_back(std::move(trace));
                     return stop(TerminalReason::MutationLimit, "Mutation budget exhausted");
                 }
@@ -343,10 +364,14 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
 
                 if (!toolResult.error.has_value()) {
                     if (cancellation.isCancellationRequested()) {
+                        completeUnexecutedCalls(callIndex, "cancelled",
+                                                "Run cancelled before execution");
                         result.trace.push_back(std::move(trace));
                         return stop(TerminalReason::Cancelled, "Run cancelled");
                     }
                     if (timedOut()) {
+                        completeUnexecutedCalls(callIndex, "time_limit",
+                                                "Wall-time budget exhausted before execution");
                         result.trace.push_back(std::move(trace));
                         return stop(TerminalReason::TimeLimit, "Wall-time budget exhausted");
                     }

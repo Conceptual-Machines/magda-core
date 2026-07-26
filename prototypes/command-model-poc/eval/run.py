@@ -69,7 +69,9 @@ def main():
         parser_fn = PARSERS[args.parser]
     overall, per_lang, records = metrics.evaluate(rows, parser_fn)
 
-    print(metrics.format_report(overall, per_lang, title=f"{args.parser} vs {os.path.basename(args.testset)}"))
+    title = f"{args.parser} vs {os.path.basename(args.testset)}"
+    print(title)
+    print(metrics.format_report(overall, per_lang))
 
     # Targets from the POC spec (adapted: valid-JSON -> valid-syntax).
     print("\n  targets: syntax>=95%  command>=90%  exact>=80%  latency<500ms")

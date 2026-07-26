@@ -61,6 +61,11 @@ class StemSeparationService {
     // (error completion) if the clip isn't audio or the engine is unavailable.
     void splitClipIntoStems(ClipId sourceClipId, Engine engine, Completion onComplete);
 
+    // Request cancellation of the running split and any queued splits.
+    // Completion callbacks still fire after their pre-created tracks are
+    // cleaned up.
+    void cancelAll();
+
     StemSeparationService(const StemSeparationService&) = delete;
     StemSeparationService& operator=(const StemSeparationService&) = delete;
 
@@ -70,6 +75,7 @@ class StemSeparationService {
 
     std::unique_ptr<juce::ThreadPool> pool_;
     std::atomic<int> pendingJobs_{0};
+    std::atomic<bool> cancelRequested_{false};
     ActivityCallback activityCallback_;  // message thread only
 };
 

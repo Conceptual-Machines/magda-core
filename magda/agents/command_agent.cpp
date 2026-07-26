@@ -56,7 +56,17 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
         }
     }
     if (encoderModel_) {
-        result.dslOutput = encoderModel_->generate(message);
+        try {
+            result.dslOutput = encoderModel_->generate(message);
+        } catch (const std::exception& error) {
+            result.error = std::string("On-device command model failed: ") + error.what();
+            result.hasError = true;
+            return result;
+        } catch (...) {
+            result.error = "On-device command model failed with an unknown error.";
+            result.hasError = true;
+            return result;
+        }
         if (!result.dslOutput.empty()) {
             DBG("MAGDA CommandAgent (fast_inference, encoder): " + juce::String(result.dslOutput));
             return result;
@@ -78,7 +88,17 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
     if (!localModel_)
         localModel_ = std::make_unique<CommandModel>();
 
-    result.dslOutput = localModel_->generate(message);
+    try {
+        result.dslOutput = localModel_->generate(message);
+    } catch (const std::exception& error) {
+        result.error = std::string("On-device command model failed: ") + error.what();
+        result.hasError = true;
+        return result;
+    } catch (...) {
+        result.error = "On-device command model failed with an unknown error.";
+        result.hasError = true;
+        return result;
+    }
     if (result.dslOutput.empty()) {
         result.error = "Command model produced no output for this request.";
         result.hasError = true;

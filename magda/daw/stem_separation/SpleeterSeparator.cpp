@@ -12,6 +12,7 @@
     #include <array>
     #include <cmath>
     #include <filesystem>
+    #include <stdexcept>
 
 namespace magda::stems {
 
@@ -29,7 +30,8 @@ std::vector<float> resampleChannel(const float* in, int numSamples, double srcRa
     if (outLen <= 0)
         return out;
     juce::LagrangeInterpolator interp;
-    interp.process(ratio, in, out.data(), outLen);
+    int inputSamplesUsed = 0;
+    interp.process(ratio, in, out.data(), outLen, numSamples, inputSamplesUsed);
     return out;
 }
 
@@ -73,6 +75,11 @@ struct SpleeterSeparator::Impl {
         const char* outputNames[] = {"y"};
         auto outputs =
             session.Run(Ort::RunOptions{nullptr}, inputNames, &inputTensor, 1, outputNames, 1);
+
+        const auto info = outputs[0].GetTensorTypeAndShapeInfo();
+        if (info.GetShape() != std::vector<int64_t>(shape.begin(), shape.end()) ||
+            info.GetElementCount() != x.size())
+            throw std::runtime_error("Spleeter model returned an unexpected output shape");
 
         const float* data = outputs[0].GetTensorData<float>();
         return {data, data + x.size()};
@@ -129,130 +136,140 @@ std::vector<Stem> SpleeterSeparator::separate(const juce::AudioBuffer<float>& in
     const std::vector<float> window = periodicHann();
     juce::dsp::FFT fft(12);  // 4096
 
-    // Full complex spectra per channel (for mask application) and the
-    // magnitude tensor both models consume.
-    std::array<std::vector<float>, 2> spectra;  // numFrames x kNumBins x (re,im)
-    std::vector<float> x(static_cast<size_t>(2) * paddedFrames * sp::kKeptBins, 0.0F);
+    // Process one 512-frame model split at a time. Keeping the STFT, input
+    // tensor and both model outputs chunk-local bounds peak memory for long
+    // files; only the input signal and final model-rate stem audio scale with
+    // duration.
+    std::vector<float> norm(static_cast<size_t>(paddedLen), 0.0F);
+    std::array<std::array<std::vector<float>, 2>, 2> rendered;
+    for (auto& stem : rendered)
+        for (auto& channel : stem)
+            channel.assign(static_cast<size_t>(paddedLen), 0.0F);
 
     std::vector<float> frame(static_cast<size_t>(sp::kFftSize) * 2);
-    for (int ch = 0; ch < 2; ++ch) {
-        spectra[static_cast<size_t>(ch)].assign(static_cast<size_t>(numFrames) * sp::kNumBins * 2,
-                                                0.0F);
+    for (int split = 0; split < numSplits; ++split) {
+        const int firstFrame = split * sp::kFramesPerSplit;
+        const int framesThisSplit = std::min(sp::kFramesPerSplit, numFrames - firstFrame);
+        if (framesThisSplit <= 0)
+            break;
 
-        for (int t = 0; t < numFrames; ++t) {
-            const int start = t * sp::kHop;
-            std::fill(frame.begin(), frame.end(), 0.0F);
-            for (int i = 0; i < sp::kFftSize; ++i) {
-                const int pos = start + i;
-                if (pos < total)
-                    frame[static_cast<size_t>(i)] =
-                        signal[static_cast<size_t>(ch)][static_cast<size_t>(pos)] *
-                        window[static_cast<size_t>(i)];
-            }
-            fft.performRealOnlyForwardTransform(frame.data(), true);
+        std::array<std::vector<float>, 2> spectra;
+        for (auto& channel : spectra)
+            channel.assign(static_cast<size_t>(framesThisSplit) * sp::kNumBins * 2, 0.0F);
+        std::vector<float> x(static_cast<size_t>(2) * sp::kFramesPerSplit * sp::kKeptBins, 0.0F);
 
-            for (int b = 0; b < sp::kNumBins; ++b) {
-                const float re = frame[static_cast<size_t>(2 * b)];
-                const float im = frame[static_cast<size_t>(2 * b + 1)];
-                const size_t sIdx =
-                    (static_cast<size_t>(t) * sp::kNumBins + static_cast<size_t>(b)) * 2;
-                spectra[static_cast<size_t>(ch)][sIdx] = re;
-                spectra[static_cast<size_t>(ch)][sIdx + 1] = im;
-                if (b < sp::kKeptBins) {
-                    const size_t xIdx =
-                        (static_cast<size_t>(ch) * paddedFrames + static_cast<size_t>(t)) *
-                            sp::kKeptBins +
-                        static_cast<size_t>(b);
+        for (int ch = 0; ch < 2; ++ch) {
+            for (int localFrame = 0; localFrame < framesThisSplit; ++localFrame) {
+                const int globalFrame = firstFrame + localFrame;
+                const int start = globalFrame * sp::kHop;
+                std::fill(frame.begin(), frame.end(), 0.0F);
+                for (int i = 0; i < sp::kFftSize; ++i) {
+                    const int pos = start + i;
+                    if (pos < total)
+                        frame[static_cast<size_t>(i)] =
+                            signal[static_cast<size_t>(ch)][static_cast<size_t>(pos)] *
+                            window[static_cast<size_t>(i)];
+                    if (ch == 0 && start + i < paddedLen)
+                        norm[static_cast<size_t>(start + i)] +=
+                            window[static_cast<size_t>(i)] * window[static_cast<size_t>(i)];
+                }
+                fft.performRealOnlyForwardTransform(frame.data(), true);
+
+                for (int b = 0; b < sp::kKeptBins; ++b) {
+                    const float re = frame[static_cast<size_t>(2 * b)];
+                    const float im = frame[static_cast<size_t>(2 * b + 1)];
+                    const size_t xIdx = (static_cast<size_t>(ch) * sp::kFramesPerSplit +
+                                         static_cast<size_t>(localFrame)) *
+                                            sp::kKeptBins +
+                                        static_cast<size_t>(b);
+                    const size_t sIdx =
+                        (static_cast<size_t>(localFrame) * sp::kNumBins + static_cast<size_t>(b)) *
+                        2;
+                    spectra[static_cast<size_t>(ch)][sIdx] = re;
+                    spectra[static_cast<size_t>(ch)][sIdx + 1] = im;
                     x[xIdx] = std::sqrt(re * re + im * im);
+                }
+                for (int b = sp::kKeptBins; b < sp::kNumBins; ++b) {
+                    const size_t sIdx =
+                        (static_cast<size_t>(localFrame) * sp::kNumBins + static_cast<size_t>(b)) *
+                        2;
+                    spectra[static_cast<size_t>(ch)][sIdx] = frame[static_cast<size_t>(2 * b)];
+                    spectra[static_cast<size_t>(ch)][sIdx + 1] =
+                        frame[static_cast<size_t>(2 * b + 1)];
                 }
             }
         }
-        if (!report(0.1F + 0.05F * static_cast<float>(ch)))
+
+        std::vector<float> vocalsMag;
+        std::vector<float> accompMag;
+        try {
+            vocalsMag = impl_->run(impl_->vocals, x, 1);
+            accompMag = impl_->run(impl_->accompaniment, x, 1);
+        } catch (const Ort::Exception&) {
+            return {};
+        } catch (const std::exception&) {
+            return {};
+        }
+
+        for (int stem = 0; stem < 2; ++stem) {
+            for (int ch = 0; ch < 2; ++ch) {
+                for (int localFrame = 0; localFrame < framesThisSplit; ++localFrame) {
+                    std::fill(frame.begin(), frame.end(), 0.0F);
+                    for (int b = 0; b < sp::kKeptBins; ++b) {
+                        const size_t yIdx = (static_cast<size_t>(ch) * sp::kFramesPerSplit +
+                                             static_cast<size_t>(localFrame)) *
+                                                sp::kKeptBins +
+                                            static_cast<size_t>(b);
+                        const float v = vocalsMag[yIdx];
+                        const float a = accompMag[yIdx];
+                        const float sum = v * v + a * a + 1.0e-10F;
+                        const float mask = ((stem == 0 ? v * v : a * a) + 0.5e-10F) / sum;
+                        const size_t sIdx = (static_cast<size_t>(localFrame) * sp::kNumBins +
+                                             static_cast<size_t>(b)) *
+                                            2;
+                        frame[static_cast<size_t>(2 * b)] =
+                            spectra[static_cast<size_t>(ch)][sIdx] * mask;
+                        frame[static_cast<size_t>(2 * b + 1)] =
+                            spectra[static_cast<size_t>(ch)][sIdx + 1] * mask;
+                    }
+
+                    fft.performRealOnlyInverseTransform(frame.data());
+                    const int start = (firstFrame + localFrame) * sp::kHop;
+                    auto& output = rendered[static_cast<size_t>(stem)][static_cast<size_t>(ch)];
+                    for (int i = 0; i < sp::kFftSize && start + i < paddedLen; ++i)
+                        output[static_cast<size_t>(start + i)] +=
+                            frame[static_cast<size_t>(i)] * window[static_cast<size_t>(i)];
+                }
+            }
+        }
+
+        if (!report(0.9F * static_cast<float>(split + 1) / static_cast<float>(numSplits)))
             return {};
     }
 
-    // Both UNets consume the identical tensor.
-    std::vector<float> vocalsMag;
-    std::vector<float> accompMag;
-    try {
-        vocalsMag = impl_->run(impl_->vocals, x, numSplits);
-        if (!report(0.5F))
-            return {};
-        accompMag = impl_->run(impl_->accompaniment, x, numSplits);
-    } catch (const Ort::Exception&) {
-        return {};
-    }
-    if (!report(0.8F))
-        return {};
-
-    // Wiener-combined soft masks applied to the full complex STFT; bins the
-    // model never saw (>= 1024, incl. Nyquist) are zeroed, as in the
-    // reference. Reconstruction is HPSS-style weight-normalized overlap-add.
-    std::vector<float> norm(static_cast<size_t>(paddedLen), 0.0F);
-    for (int t = 0; t < numFrames; ++t) {
-        const int start = t * sp::kHop;
-        for (int i = 0; i < sp::kFftSize && start + i < paddedLen; ++i)
-            norm[static_cast<size_t>(start + i)] +=
-                window[static_cast<size_t>(i)] * window[static_cast<size_t>(i)];
-    }
+    for (auto& stem : rendered)
+        for (auto& channel : stem)
+            for (int i = 0; i < paddedLen; ++i) {
+                const float weight = norm[static_cast<size_t>(i)];
+                channel[static_cast<size_t>(i)] *= weight > 1.0e-8F ? 1.0F / weight : 0.0F;
+            }
 
     const auto names = stemNames();
     std::vector<Stem> result(2);
-    std::array<std::vector<float>, 2> out;  // current stem, per channel
-
-    for (int s = 0; s < 2; ++s) {
-        result[static_cast<size_t>(s)].name = names[static_cast<size_t>(s)];
-        result[static_cast<size_t>(s)].audio.setSize(numChannels, numSamples);
-        result[static_cast<size_t>(s)].audio.clear();
-
-        for (auto& ch : out)
-            ch.assign(static_cast<size_t>(paddedLen), 0.0F);
-
-        for (int ch = 0; ch < 2; ++ch) {
-            for (int t = 0; t < numFrames; ++t) {
-                std::fill(frame.begin(), frame.end(), 0.0F);
-                for (int b = 0; b < sp::kKeptBins; ++b) {
-                    const size_t yIdx =
-                        (static_cast<size_t>(ch) * paddedFrames + static_cast<size_t>(t)) *
-                            sp::kKeptBins +
-                        static_cast<size_t>(b);
-                    const float v = vocalsMag[yIdx];
-                    const float a = accompMag[yIdx];
-                    const float sum = v * v + a * a + 1.0e-10F;
-                    const float mask = ((s == 0 ? v * v : a * a) + 0.5e-10F) / sum;
-
-                    const size_t sIdx =
-                        (static_cast<size_t>(t) * sp::kNumBins + static_cast<size_t>(b)) * 2;
-                    frame[static_cast<size_t>(2 * b)] =
-                        spectra[static_cast<size_t>(ch)][sIdx] * mask;
-                    frame[static_cast<size_t>(2 * b + 1)] =
-                        spectra[static_cast<size_t>(ch)][sIdx + 1] * mask;
-                }
-
-                fft.performRealOnlyInverseTransform(frame.data());
-
-                const int start = t * sp::kHop;
-                for (int i = 0; i < sp::kFftSize && start + i < paddedLen; ++i)
-                    out[static_cast<size_t>(ch)][static_cast<size_t>(start + i)] +=
-                        frame[static_cast<size_t>(i)] * window[static_cast<size_t>(i)];
-            }
-
-            for (int i = 0; i < paddedLen; ++i) {
-                const float n = norm[static_cast<size_t>(i)];
-                out[static_cast<size_t>(ch)][static_cast<size_t>(i)] *=
-                    n > 1.0e-8F ? 1.0F / n : 0.0F;
-            }
-        }
+    for (int stem = 0; stem < 2; ++stem) {
+        result[static_cast<size_t>(stem)].name = names[static_cast<size_t>(stem)];
+        result[static_cast<size_t>(stem)].audio.setSize(numChannels, numSamples);
+        result[static_cast<size_t>(stem)].audio.clear();
 
         for (int ch = 0; ch < numChannels; ++ch) {
-            const auto& src = out[static_cast<size_t>(ch % 2)];
+            const auto& src = rendered[static_cast<size_t>(stem)][static_cast<size_t>(ch % 2)];
             std::vector<float> back =
                 resampleChannel(src.data(), total, sp::kSampleRate, sampleRate);
             const int copyLen = std::min(numSamples, static_cast<int>(back.size()));
-            result[static_cast<size_t>(s)].audio.copyFrom(ch, 0, back.data(), copyLen);
+            result[static_cast<size_t>(stem)].audio.copyFrom(ch, 0, back.data(), copyLen);
         }
 
-        if (!report(0.8F + 0.1F * static_cast<float>(s + 1)))
+        if (!report(0.9F + 0.05F * static_cast<float>(stem + 1)))
             return {};
     }
 
