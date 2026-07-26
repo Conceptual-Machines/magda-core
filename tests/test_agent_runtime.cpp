@@ -63,6 +63,19 @@ class FakeExecutor final : public ToolExecutor {
     }
 };
 
+class FakeFastInferencePolicy final : public FastInferencePolicy {
+  public:
+    std::function<FastInferenceResult(const FastInferenceRequest&, const CancellationToken&)>
+        handler;
+    std::vector<FastInferenceRequest> requests;
+
+    FastInferenceResult evaluate(const FastInferenceRequest& request,
+                                 const CancellationToken& cancellation) override {
+        requests.push_back(request);
+        return handler(request, cancellation);
+    }
+};
+
 const ToolResult& lastToolResult(const ModelRequest& request) {
     for (auto it = request.conversation.rbegin(); it != request.conversation.rend(); ++it)
         if (it->toolResult.has_value())
@@ -71,6 +84,206 @@ const ToolResult& lastToolResult(const ModelRequest& request) {
 }
 
 }  // namespace
+
+TEST_CASE("AgentRuntime can narrow tools with advisory fast inference", "[agent-runtime][fast]") {
+    FakeModel model;
+    FakeExecutor executor;
+    FakeFastInferencePolicy policy;
+
+    policy.handler = [](const FastInferenceRequest& request, const CancellationToken&) {
+        REQUIRE(request.userMessage == "Turn down the bass");
+        REQUIRE(request.agentId == "arrangement");
+        REQUIRE(request.contextFeatures["selectedEntityType"].toString() == "track");
+        REQUIRE(request.availableOperations ==
+                std::vector<juce::String>{"track.read", "track.gain.set", "clip.move"});
+        return FastInferenceResult{
+            .decision = FastInferenceDecision::NarrowAgentTools,
+            .confidence = 0.91f,
+            .operations = {{.operationId = "clip.move", .confidence = 0.40f},
+                           {.operationId = "track.gain.set", .confidence = 0.96f},
+                           {.operationId = "not.available", .confidence = 1.0f}}};
+    };
+    model.handler = [](const ModelRequest& request, const CancellationToken&) {
+        REQUIRE(request.tools.size() == 1);
+        REQUIRE(request.tools.front().name == "track.gain.set");
+        return ModelResponse{.success = true, .text = "I would turn down the bass."};
+    };
+
+    auto def = definition(
+        {readTool("track.read"), mutationTool("track.gain.set"), mutationTool("clip.move")});
+    def.fastInference = {.enabled = true,
+                         .allowToolNarrowing = true,
+                         .maxNarrowedTools = 1,
+                         .minimumNarrowingConfidence = 0.5f};
+
+    AgentRuntime runtime(model, executor, {}, AgentRuntime::Clock::now, &policy);
+    const auto result = runtime.run(
+        def, {.userMessage = "Turn down the bass",
+              .fastInferenceContext = object({{"selectedEntityType", juce::var("track")}})});
+
+    REQUIRE(result.state == RunState::Completed);
+    REQUIRE(policy.requests.size() == 1);
+    REQUIRE(result.fastInference.evaluated);
+    REQUIRE(result.fastInference.predictedDecision == FastInferenceDecision::NarrowAgentTools);
+    REQUIRE(result.fastInference.appliedDecision == FastInferenceDecision::NarrowAgentTools);
+    REQUIRE(result.fastInference.selectedTools == std::vector<juce::String>{"track.gain.set"});
+}
+
+TEST_CASE("AgentRuntime executes calibrated direct plans through normal safety boundaries",
+          "[agent-runtime][fast]") {
+    FakeModel model;
+    FakeExecutor executor;
+    FakeFastInferencePolicy policy;
+    int modelCalls = 0;
+    int approvalCalls = 0;
+
+    model.handler = [&](const ModelRequest&, const CancellationToken&) {
+        ++modelCalls;
+        return ModelResponse{.success = true, .text = "Unexpected model call"};
+    };
+    policy.handler = [](const FastInferenceRequest&, const CancellationToken&) {
+        return FastInferenceResult{
+            .decision = FastInferenceDecision::DirectPlan,
+            .confidence = 0.98f,
+            .operations = {{.operationId = "track.mute.set",
+                            .arguments = object({{"trackId", 7}, {"muted", true}}),
+                            .confidence = 0.97f}}};
+    };
+    executor.handler = [](const ToolExecutionRequest& request, const CancellationToken&) {
+        REQUIRE(request.call.id == "fast-inference-1");
+        REQUIRE(request.call.name == "track.mute.set");
+        REQUIRE(static_cast<int>(request.call.arguments["trackId"]) == 7);
+        REQUIRE(request.expectedRevision == 22);
+        REQUIRE(request.permissions.principal == "console");
+        return ToolResult{.success = true, .projectRevision = 23, .mutated = true};
+    };
+
+    auto def = definition({mutationTool("track.mute.set")});
+    def.fastInference.enabled = true;
+    def.fastInference.directPlanConfidenceByOperation["track.mute.set"] = 0.95f;
+
+    AgentRuntime runtime(
+        model, executor,
+        [&](const ApprovalRequest& request) {
+            ++approvalCalls;
+            REQUIRE(request.call.name == "track.mute.set");
+            REQUIRE(request.projectRevision == 22);
+            return ApprovalDecision{.approved = true};
+        },
+        AgentRuntime::Clock::now, &policy);
+    const auto result =
+        runtime.run(def, {.userMessage = "Mute the bass",
+                          .projectRevision = 22,
+                          .permissions = {.principal = "console", .scopes = {"project.write"}}});
+
+    REQUIRE(result.state == RunState::Completed);
+    REQUIRE(result.finalText == "OK");
+    REQUIRE(result.finalRevision == 23);
+    REQUIRE(result.mutations == 1);
+    REQUIRE(result.steps == 1);
+    REQUIRE(modelCalls == 0);
+    REQUIRE(approvalCalls == 1);
+    REQUIRE(executor.requests.size() == 1);
+    REQUIRE(result.fastInference.appliedDecision == FastInferenceDecision::DirectPlan);
+}
+
+TEST_CASE("Denied fast direct plans fall back without bypassing approval",
+          "[agent-runtime][fast]") {
+    FakeModel model;
+    FakeExecutor executor;
+    FakeFastInferencePolicy policy;
+
+    policy.handler = [](const FastInferenceRequest&, const CancellationToken&) {
+        return FastInferenceResult{.decision = FastInferenceDecision::DirectPlan,
+                                   .confidence = 0.99f,
+                                   .operations = {{.operationId = "track.delete",
+                                                   .arguments = object({{"trackId", 7}}),
+                                                   .confidence = 0.99f}}};
+    };
+    model.handler = [](const ModelRequest& request, const CancellationToken&) {
+        REQUIRE_FALSE(lastToolResult(request).success);
+        REQUIRE(lastToolResult(request).error->code == "approval_denied");
+        return ModelResponse{.success = true, .text = "The deletion was not approved."};
+    };
+    executor.handler = [](const ToolExecutionRequest&, const CancellationToken&) {
+        FAIL("A denied direct plan must not reach the executor");
+        return ToolResult{};
+    };
+
+    auto def = definition({mutationTool("track.delete")});
+    def.fastInference.enabled = true;
+    def.fastInference.directPlanConfidenceByOperation["track.delete"] = 0.98f;
+
+    AgentRuntime runtime(
+        model, executor,
+        [](const ApprovalRequest&) {
+            return ApprovalDecision{.approved = false, .reason = "Destructive operation"};
+        },
+        AgentRuntime::Clock::now, &policy);
+    const auto result = runtime.run(def, {.userMessage = "Delete the bass track"});
+
+    REQUIRE(result.state == RunState::Completed);
+    REQUIRE(result.finalText == "The deletion was not approved.");
+    REQUIRE(result.steps == 2);
+    REQUIRE(result.mutations == 0);
+    REQUIRE(executor.requests.empty());
+    REQUIRE(result.fastInference.fallbackReason.contains("execution failed"));
+}
+
+TEST_CASE("AgentRuntime falls back when a direct prediction is not calibrated",
+          "[agent-runtime][fast]") {
+    FakeModel model;
+    FakeExecutor executor;
+    FakeFastInferencePolicy policy;
+
+    policy.handler = [](const FastInferenceRequest&, const CancellationToken&) {
+        return FastInferenceResult{
+            .decision = FastInferenceDecision::DirectPlan,
+            .confidence = 0.90f,
+            .operations = {{.operationId = "project.delete", .confidence = 1.0f}}};
+    };
+    model.handler = [](const ModelRequest& request, const CancellationToken&) {
+        REQUIRE(request.tools.size() == 1);
+        REQUIRE(request.tools.front().name == "project.delete");
+        return ModelResponse{.success = true, .text = "This needs the general path."};
+    };
+
+    auto def = definition({mutationTool("project.delete")});
+    def.fastInference.enabled = true;  // No per-operation direct threshold: never direct.
+
+    AgentRuntime runtime(model, executor, {}, AgentRuntime::Clock::now, &policy);
+    const auto result = runtime.run(def, {.userMessage = "Delete the project"});
+
+    REQUIRE(result.state == RunState::Completed);
+    REQUIRE(result.finalText == "This needs the general path.");
+    REQUIRE(executor.requests.empty());
+    REQUIRE(result.fastInference.appliedDecision == FastInferenceDecision::NeedsGeneralAgent);
+    REQUIRE(result.fastInference.fallbackReason.contains("confidence policy"));
+}
+
+TEST_CASE("Disabled fast inference leaves AgentRuntime behavior unchanged",
+          "[agent-runtime][fast]") {
+    FakeModel model;
+    FakeExecutor executor;
+    FakeFastInferencePolicy policy;
+
+    policy.handler = [](const FastInferenceRequest&, const CancellationToken&) {
+        FAIL("Disabled policy must not be evaluated");
+        return FastInferenceResult{};
+    };
+    model.handler = [](const ModelRequest& request, const CancellationToken&) {
+        REQUIRE(request.tools.size() == 2);
+        return ModelResponse{.success = true, .text = "General result"};
+    };
+
+    auto def = definition({readTool("track.read"), mutationTool("track.rename")});
+    AgentRuntime runtime(model, executor, {}, AgentRuntime::Clock::now, &policy);
+    const auto result = runtime.run(def, {.userMessage = "What is selected?"});
+
+    REQUIRE(result.state == RunState::Completed);
+    REQUIRE_FALSE(result.fastInference.evaluated);
+    REQUIRE(policy.requests.empty());
+}
 
 TEST_CASE("AgentRuntime performs dependent actions with refreshed revisions", "[agent-runtime]") {
     FakeModel model;
