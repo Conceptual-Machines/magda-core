@@ -547,10 +547,16 @@ void AIChatConsoleContent::RequestThread::run() {
     magda::RoutingContext routingCtx;
     routingCtx.hasExplicitAlias = trimmedMessage.startsWithChar('@');
     routingCtx.hasExplicitCommand = trimmedMessage.startsWith("[COMMAND:");
+    routingCtx.explicitAgentOverride = magda::explicitAgentOverrideFromMessage(message);
     routingCtx.drummerModeActive = owner_.drummerModeActive_;
     // Mixer view hard-scopes to MIXING via the view surface; there's no separate
     // attached-capture override anymore (the analysis lives in MixAnalysisService).
     routingCtx.mixCaptureAttached = false;
+    // Transitional fallback only: this panel still dispatches the pre-#1863
+    // specialist agent implementations because a Remote API ToolExecutor/model
+    // adapter is not wired yet. New surface-runtime integrations leave this
+    // disabled, making resolveAgentSurface() classification-free.
+    routingCtx.allowLegacyRouterFallback = true;
 
     auto classify = [&]() -> std::string {
         if (!owner_.routerAgent_)
@@ -1472,6 +1478,18 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
 
 juce::String AIChatConsoleContent::rewriteSlashCommand(const juce::String& text) {
     auto trimmed = text.trimStart();
+
+    // /agent <surface> <request> — retain an @surface prefix for deterministic
+    // routing after the slash registry accepts this escape hatch.
+    if (trimmed.startsWithIgnoreCase("/agent ")) {
+        const auto invocation = magda::daw::ui::SlashCommandRegistry::parse(trimmed);
+        auto tokens = juce::StringArray::fromTokens(invocation.positional, false);
+        if (tokens.size() >= 2) {
+            const auto surface = tokens[0];
+            tokens.remove(0);
+            return "@" + surface + " " + tokens.joinIntoString(" ");
+        }
+    }
 
     // /groove <request> — constrain LLM to groove/swing template operations only
     if (trimmed.startsWithIgnoreCase("/groove ")) {
@@ -2995,6 +3013,18 @@ void AIChatConsoleContent::buildSlashCommands() {
 
     slashRegistry_ = std::make_unique<magda::daw::ui::SlashCommandRegistry>(
         [this](const juce::String& msg) { appendToChat(msg); });
+
+    // /agent — explicit deterministic surface override. It falls through to
+    // rewriteSlashCommand(), which converts it to @surface text for routing.
+    SlashCommand agent;
+    agent.name = "agent";
+    agent.description = "Override the contextual AI surface for one request";
+    agent.usage = "/agent <surface> <request>";
+    agent.details =
+        "Surfaces: arrangement, piano-roll, session, mixer, automation, device, master, drummer.";
+    agent.handler = [](const juce::String&, const std::map<juce::String, juce::String>&,
+                       const juce::String&) { return false; };
+    slashRegistry_->add(std::move(agent));
 
     // /design — 4OSC sound design. The handler reads --category=<cat> if
     // present, stashes it as the override that finishPresetGeneration

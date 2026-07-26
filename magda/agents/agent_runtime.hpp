@@ -81,11 +81,16 @@ struct ModelRequest {
 };
 
 struct ModelResponse {
+    // Parallel describes a provider-requested concurrent batch. The runtime may serialize
+    // read-only calls, but rejects a parallel batch containing any mutation.
+    enum class ToolCallExecution { Sequential, Parallel };
+
     bool success = false;
     juce::String error;
     juce::String text;
     std::vector<ToolCall> toolCalls;
     std::size_t tokensUsed = 0;
+    ToolCallExecution toolCallExecution = ToolCallExecution::Sequential;
 };
 
 struct PermissionContext {
@@ -125,6 +130,8 @@ struct ToolExecutionRequest {
 class ToolExecutor {
   public:
     virtual ~ToolExecutor() = default;
+    // Production adapters must delegate this boundary to RemoteApiService. Keeping the runtime
+    // transport-independent also makes scripted model/tool tests deterministic.
     virtual ToolResult execute(const ToolExecutionRequest& request,
                                const CancellationToken& cancellation) = 0;
 };
@@ -160,6 +167,7 @@ enum class TerminalReason {
     MutationLimit,
     TimeLimit,
     RepeatedToolCall,
+    UnsafeParallelMutation,
     ModelError,
     InvalidModelResponse,
 };
