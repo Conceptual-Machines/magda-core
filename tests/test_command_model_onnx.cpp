@@ -77,7 +77,12 @@ TEST_CASE("ONNX command model reproduces the Python DSL byte-for-byte",
     }
 
     UNSCOPED_INFO("checked " << checked << " cases, " << mismatches << " mismatches");
-    CHECK(checked >= 231);
+    // Every fixture row must actually run — a literal expected count goes stale
+    // whenever the eval sets change (removing intents shrank them from 231 to
+    // 216), which turns a drift guard into a maintenance chore. The floor only
+    // catches a fixture that emptied.
+    CHECK(checked == static_cast<int>(cases->size()));
+    CHECK(checked > 150);
     CHECK(mismatches == 0);
 }
 

@@ -68,11 +68,11 @@ Scored as exact-match on the fully rendered command, not on tags.
 | | in-distribution | **held-out phrasing** |
 |---|---|---|
 | previous model (51k-param conv net, from scratch) | 98.2% | **46.5%** |
-| **this model** | 100% | **91.5%** |
+| **this model** | 100% | **~90%** |
 
 The two columns matter more than the numbers. The in-distribution set is
 authored from the same case list the training templates come from, so a high
-score there means the model recalls its templates. The held-out set is 71 cases
+score there means the model recalls its templates. The held-out set is 68 cases
 hand-written from the command list alone, in the register people actually type:
 lowercase, filler, contractions, typos. That is the number that predicts
 behaviour on input nobody has seen.
