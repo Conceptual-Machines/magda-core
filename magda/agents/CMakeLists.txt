@@ -21,6 +21,16 @@ set(AGENTS_SOURCES
     llm_presets.cpp
     command_agent.hpp
     command_agent.cpp
+    command_model.hpp
+    command_model.cpp
+    command_model_data.hpp
+    command_model_data.cpp
+    unigram_tokenizer.hpp
+    unigram_tokenizer.cpp
+    command_model_onnx.hpp
+    command_model_onnx.cpp
+    command_model_downloader.hpp
+    command_model_downloader.cpp
     music_agent.hpp
     music_agent.cpp
     chord_agent.hpp

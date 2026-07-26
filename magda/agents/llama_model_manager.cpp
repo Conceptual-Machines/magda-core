@@ -158,7 +158,8 @@ LlamaModelManager::InferenceResult LlamaModelManager::infer(const InferenceReque
     InferenceResult result;
 
     if (model_ == nullptr || ctx_ == nullptr) {
-        result.error = "No model loaded";
+        result.error = "Local (Embedded) model is not loaded. Download/enable it in "
+                       "Settings → Models, or pick a different provider for this agent.";
         return result;
     }
 

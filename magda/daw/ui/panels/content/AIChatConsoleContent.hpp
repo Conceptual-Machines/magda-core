@@ -328,6 +328,13 @@ class AIChatConsoleContent : public PanelContent,
 
     class AutocompletePopup;
     std::unique_ptr<AutocompletePopup> autocompletePopup_;
+    // Accepting a completion rewrites the document, which fires BOTH document
+    // listeners (delete + insert) and so queues two deferred onInputChanged()
+    // calls, each with the caret parked just after the freshly-inserted
+    // @alias — matching it again and re-opening the popup we just closed.
+    // Holds the exact text inserted, so every callback for that content is
+    // absorbed and completion resumes as soon as the user types.
+    juce::String suppressAutocompleteForContent_;
     std::vector<AliasEntry> allAliases_;
 
     void buildAliasList();

@@ -3,6 +3,8 @@
 #include <utility>
 
 #include "../daw/core/ClipManager.hpp"
+#include "../daw/core/Config.hpp"
+#include "../daw/core/LLMClientProvider.hpp"
 #include "../daw/core/MixAnalysisService.hpp"
 #include "../daw/core/TrackManager.hpp"
 #include "automation_agent.hpp"
@@ -45,11 +47,18 @@ ConsoleAgentOrchestrator::ConsoleAgentOrchestrator(CommandAgent& command, MusicA
                                     const CancellationToken& cancellation) {
         if (cancellation.isCancellationRequested())
             return ConsoleRunOutput{.cancelled = true};
-        auto result =
-            command.generateStreaming(composePrompt(request), [&](const juce::String& token) {
-                emit(observer, ConsoleRunEventType::Token, ConsoleRunStream::Primary, token);
-                return !cancellation.isCancellationRequested();
-            });
+        // The on-device command model is a fixed intent+slot tagger trained on
+        // a single bare command: prepending conversation history shifts every
+        // span and corrupts the intent. Feed it the raw request; every other
+        // backend gets the full contextual prompt.
+        const bool fastInference =
+            Config::getInstance().getAgentLLMConfig(role::COMMAND).provider ==
+            provider::FAST_INFERENCE;
+        const std::string prompt = fastInference ? request.userMessage : composePrompt(request);
+        auto result = command.generateStreaming(prompt, [&](const juce::String& token) {
+            emit(observer, ConsoleRunEventType::Token, ConsoleRunStream::Primary, token);
+            return !cancellation.isCancellationRequested();
+        });
         if (result.hasError)
             return errorOutput(result.error);
         ConsoleRunOutput output;

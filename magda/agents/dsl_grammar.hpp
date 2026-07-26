@@ -59,7 +59,8 @@ method: "." method_call
 method_call: "clip" "." "new" "(" params? ")"
            | "clip" "." "rename" "(" params? ")"
            | "clip" "." "delete" "(" params? ")"
-           | "clips" "." "select" "(" clip_condition ")"
+           | "clip" "." "set" "(" params? ")"
+           | "clips" "." "select" "(" clip_condition? ")"
            | "track" "." "set" "(" params? ")"
            | "track" "." "group" "(" params? ")"
            | "track" "." "move" "(" params? ")"
@@ -156,6 +157,7 @@ METHOD CHAINING:
 - .clip.rename(name="Intro") - Rename all currently selected clips (omit index)
 - .clip.rename(name="Clip {i}") - Rename selected clips with auto-numbering: Clip 1, Clip 2, etc.
 - .clip.delete(index=0) - Delete clip at index on track
+- .clip.set(enabled=false) - Mute/disable clip(s): the selected clips, or index=N
 - .select() - Select track in the UI
 - .clips.select(clip.length_bars >= 2) - Select clips matching predicate (numeric fields: length_bars, start_bar, length, start, start_beats, id, track_id; string fields: name, type; ops: ==, !=, >, >=, <, <=; string fields support == and != only)
 

@@ -64,6 +64,11 @@ DeviceId TrackApiLive::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
     return TrackManager::getInstance().addDeviceToTrack(trackId, device);
 }
 
+DeviceId TrackApiLive::addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
+                                        const DeviceInfo& device) {
+    return TrackManager::getInstance().addDeviceToChain(trackId, rackId, chainId, device);
+}
+
 RackId TrackApiLive::addRackToTrack(TrackId trackId, const juce::String& name) {
     return TrackManager::getInstance().addRackToTrack(trackId, name);
 }

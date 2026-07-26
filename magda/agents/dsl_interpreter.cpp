@@ -390,12 +390,15 @@ bool Interpreter::execute(const char* dslCode) {
 
     int succeeded = 0;
     int failed = 0;
+    juce::StringArray failureReasons;
 
     while (tok.hasMore()) {
         auto savedPos = tok.savePosition();
 
         if (!parseStatement(tok)) {
             // Log the error as a warning and skip to the next statement
+            DBG("MAGDA DSL: statement failed: " + ctx_.error);
+            failureReasons.add(ctx_.error);
             ctx_.addResult("[!] " + ctx_.error);
             ctx_.error.clear();
             ctx_.hasError = false;
@@ -425,7 +428,11 @@ bool Interpreter::execute(const char* dslCode) {
     DBG("MAGDA DSL: Execution complete");
 
     if (succeeded == 0 && failed > 0) {
-        ctx_.setError("All " + juce::String(failed) + " statement(s) failed");
+        // Surface the underlying reasons, not just the count, so failures like
+        // an unresolved plugin alias are diagnosable from the error alone.
+        auto reasons = failureReasons.joinIntoString("; ");
+        ctx_.setError("All " + juce::String(failed) + " statement(s) failed" +
+                      (reasons.isEmpty() ? juce::String() : ": " + reasons));
         return false;
     }
 
@@ -476,6 +483,12 @@ bool Interpreter::parseProjectStatement(Tokenizer& tok) {
 bool Interpreter::parseTrackStatement(Tokenizer& tok) {
     tok.next();  // consume 'track'
 
+    // A new track() head starts fresh device scope: clear any rack/chain
+    // context left by a prior statement so a bare fx.add targets the track,
+    // not a stale rack chain. rack.new re-establishes chain scope in-chain.
+    ctx_.currentRackId = INVALID_RACK_ID;
+    ctx_.currentChainId = INVALID_CHAIN_ID;
+
     if (!tok.expect(TokenType::LPAREN)) {
         ctx_.setError("Expected '(' after 'track'");
         return false;
@@ -505,17 +518,36 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         juce::String name(params.get("name"));
         bool forceNew = params.getBool("new", false);
 
-        int existingId = forceNew ? -1 : findTrackByName(name);
-
-        if (existingId >= 0) {
-            ctx_.currentTrackId = existingId;
-            DBG("MAGDA DSL: Found existing track '" + name + "'");
+        // An empty name that isn't explicitly `new` targets the current
+        // selection rather than creating a blank track. This is how the
+        // on-device command model expresses "add X to the current track" — it
+        // emits no track name, so `track(name="").fx.add(...)`. currentTrackId
+        // was seeded from the UI selection at the top of execute().
+        if (name.isEmpty() && !forceNew && ctx_.currentTrackId >= 0) {
+            DBG("MAGDA DSL: empty name -> targeting selected track " +
+                juce::String(ctx_.currentTrackId));
+        } else if (name.isEmpty() && !forceNew) {
+            // Empty name means "the selected track" — with nothing selected
+            // there is no target. Falling through would create a blank unnamed
+            // track, which is both wrong and destructive-looking: "add @filter"
+            // on an unselected project silently spawned a new track instead of
+            // saying it had nowhere to put it.
+            ctx_.setError("No track selected — select a track first, or name one "
+                          "(e.g. \"add @filter to Bass\")");
+            return false;
         } else {
-            auto trackType = parseTrackType(params);
-            auto trackId = tm.createTrack(name, trackType);
-            ctx_.currentTrackId = trackId;
-            api_.selection().selectTrack(trackId);
-            ctx_.addResult("Created track '" + name + "'");
+            int existingId = forceNew ? -1 : findTrackByName(name);
+
+            if (existingId >= 0) {
+                ctx_.currentTrackId = existingId;
+                DBG("MAGDA DSL: Found existing track '" + name + "'");
+            } else {
+                auto trackType = parseTrackType(params);
+                auto trackId = tm.createTrack(name, trackType);
+                ctx_.currentTrackId = trackId;
+                api_.selection().selectTrack(trackId);
+                ctx_.addResult("Created track '" + name + "'");
+            }
         }
     } else {
         // track() with no params — create unnamed track
@@ -686,6 +718,8 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeDeleteClip(params);
         else if (methodKey == "clip.rename")
             success = executeRenameClip(params);
+        else if (methodKey == "clip.set")
+            success = executeSetClip(params);
         else if (methodKey == "fx.add")
             success = executeAddFx(params);
         else if (methodKey == "rack.new")
@@ -1143,6 +1177,50 @@ bool Interpreter::executeDeleteClip(const Params& params) {
     return true;
 }
 
+bool Interpreter::executeSetClip(const Params& params) {
+    if (!params.has("enabled")) {
+        ctx_.setError("clip.set requires 'enabled' parameter");
+        return false;
+    }
+    const bool enabled = params.getBool("enabled", true);
+    auto& cm = api_.clips();
+    const juce::String verb = enabled ? "Enabled" : "Disabled";
+
+    if (params.has("index")) {
+        if (ctx_.currentTrackId < 0) {
+            ctx_.setError("No track context for clip.set with index");
+            return false;
+        }
+        auto clipIds = cm.getClipsOnTrack(ctx_.currentTrackId);
+        int index = params.getInt("index");
+        if (index < 0 || index >= static_cast<int>(clipIds.size())) {
+            ctx_.setError("Clip index " + juce::String(index) + " out of range");
+            return false;
+        }
+        cm.setClipEnabled(clipIds[static_cast<size_t>(index)], enabled);
+        ctx_.addResult(verb + " clip at index " + juce::String(index));
+        return true;
+    }
+
+    // Otherwise act on the current selection — which is what a preceding
+    // clips.select(...) in the same statement will have just populated.
+    auto& sm = api_.selection();
+    const auto& selected = sm.getSelectedClips();
+    if (!selected.empty()) {
+        for (auto id : selected)
+            cm.setClipEnabled(id, enabled);
+        ctx_.addResult(verb + " " + juce::String(static_cast<int>(selected.size())) + " clips");
+        return true;
+    }
+    if (auto single = sm.getSelectedClip(); single != INVALID_CLIP_ID) {
+        cm.setClipEnabled(single, enabled);
+        ctx_.addResult(verb + " clip");
+        return true;
+    }
+    ctx_.setError("No clip selected for clip.set");
+    return false;
+}
+
 bool Interpreter::executeRenameClip(const Params& params) {
     if (!params.has("name")) {
         ctx_.setError("clip.rename requires 'name' parameter");
@@ -1214,12 +1292,24 @@ bool Interpreter::executeAddFx(const Params& params) {
         return false;
     }
 
+    // Place the device into the active rack chain when one is in scope (set by a
+    // preceding rack.new/chain_new), else onto the track's top-level chain. This
+    // is what lets "create a rack with @serum" put the device inside the rack.
+    auto placeDevice = [this](const DeviceInfo& dev) {
+        if (ctx_.currentChainId != INVALID_CHAIN_ID && ctx_.currentRackId != INVALID_RACK_ID)
+            return api_.tracks().addDeviceToChain(ctx_.currentTrackId, ctx_.currentRackId,
+                                                  ctx_.currentChainId, dev);
+        return api_.tracks().addDeviceToTrack(ctx_.currentTrackId, dev);
+    };
+
     juce::String fxName(params.get("name"));
     juce::String formatHint(params.get("format"));
 
     // Strip <alias> token wrapper — resolve at execution time
     if (fxName.startsWith("<") && fxName.endsWith(">"))
         fxName = fxName.substring(1, fxName.length() - 1);
+
+    DBG("MAGDA DSL fx.add: name=\"" + fxName + "\" track=" + juce::String(ctx_.currentTrackId));
 
     // --- Internal plugin lookup ---
     // Built-in plugins come from the audio registries through internal_plugins.hpp.
@@ -1232,14 +1322,25 @@ bool Interpreter::executeAddFx(const Params& params) {
         device.deviceType = match->deviceType;
         device.isInstrument = (match->deviceType == DeviceType::Instrument);
 
-        auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
+        DBG("MAGDA DSL fx.add: resolved internal '" + match->displayName + "' (pluginId=" +
+            match->pluginId + ", instrument=" + (device.isInstrument ? "yes" : "no") + ")");
+
+        auto deviceId = placeDevice(device);
         if (deviceId == INVALID_DEVICE_ID) {
-            ctx_.setError("Failed to add internal FX '" + fxName + "' to track");
+            juce::String why = "Failed to add internal device '" + match->displayName +
+                               "' to track " + juce::String(ctx_.currentTrackId);
+            if (device.isInstrument)
+                why += " (track cannot host an instrument)";
+            DBG("MAGDA DSL fx.add: " + why);
+            ctx_.setError(why);
             return false;
         }
-        ctx_.addResult("Added internal FX '" + match->displayName + "'");
+        ctx_.addResult("Added internal device '" + match->displayName + "'");
         return true;
     }
+
+    DBG("MAGDA DSL fx.add: '" + fxName +
+        "' not found in internal registry; trying scanned plugins");
 
     // --- External plugin lookup via KnownPluginList ---
     auto* engine = api_.tracks().getAudioEngine();
@@ -1308,7 +1409,7 @@ bool Interpreter::executeAddFx(const Params& params) {
 
     bestMatch = nullptr;  // no longer safe to dereference
 
-    auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
+    auto deviceId = placeDevice(device);
     if (deviceId == INVALID_DEVICE_ID) {
         ctx_.setError("Failed to add FX '" + fxName + "' to track");
         return false;
@@ -1584,42 +1685,55 @@ bool Interpreter::executeSelect() {
 }
 
 bool Interpreter::executeSelectClips(Tokenizer& tok) {
-    // Parse: (clip.field op value)
+    // Parse: (clip.field op value) — or () meaning every clip on the track.
     if (!tok.expect(TokenType::LPAREN)) {
         ctx_.setError("Expected '(' after 'clips.select'");
         return false;
     }
 
-    if (!tok.expect("clip")) {
-        ctx_.setError("Expected 'clip' in clips.select condition");
-        return false;
-    }
-    if (!tok.expect(TokenType::DOT)) {
-        ctx_.setError("Expected '.' after 'clip'");
-        return false;
-    }
+    // `clips.select()` with no predicate = select all clips on the track. Both
+    // command-model backends have always emitted this for "select all clips",
+    // and it errored out with "Expected 'clip' in clips.select condition"
+    // because the parser demanded a condition. An empty predicate is the
+    // natural reading of "all", and the grammar allows it.
+    const bool selectAll = tok.peek().is(TokenType::RPAREN);
+    if (selectAll)
+        tok.next();  // consume ')'
 
-    Token field = tok.next();
-    if (field.type != TokenType::IDENTIFIER) {
-        ctx_.setError("Expected field name after 'clip.'");
-        return false;
-    }
-
-    Token op = tok.next();
-    if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
-        op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
-        op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
-        ctx_.setError("Expected comparison operator in clips.select condition");
-        return false;
-    }
-
+    Token field;
+    Token op;
     std::string valueStr;
-    if (!parseValue(tok, valueStr))
-        return false;
+    if (!selectAll) {
+        if (!tok.expect("clip")) {
+            ctx_.setError("Expected 'clip' in clips.select condition");
+            return false;
+        }
+        if (!tok.expect(TokenType::DOT)) {
+            ctx_.setError("Expected '.' after 'clip'");
+            return false;
+        }
 
-    if (!tok.expect(TokenType::RPAREN)) {
-        ctx_.setError("Expected ')' after clips.select condition");
-        return false;
+        field = tok.next();
+        if (field.type != TokenType::IDENTIFIER) {
+            ctx_.setError("Expected field name after 'clip.'");
+            return false;
+        }
+
+        op = tok.next();
+        if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
+            op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
+            op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
+            ctx_.setError("Expected comparison operator in clips.select condition");
+            return false;
+        }
+
+        if (!parseValue(tok, valueStr))
+            return false;
+
+        if (!tok.expect(TokenType::RPAREN)) {
+            ctx_.setError("Expected ')' after clips.select condition");
+            return false;
+        }
     }
 
     // Determine if this is a string or numeric field
@@ -1659,6 +1773,8 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
 
     // Resolve a clip field to either a numeric or string match
     auto matchClip = [&](const ClipInfo* clip) -> bool {
+        if (selectAll)
+            return true;  // no predicate = every clip on the target
         if (isStringField) {
             juce::String strVal;
             if (field.value == "name")

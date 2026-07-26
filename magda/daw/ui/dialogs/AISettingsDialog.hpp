@@ -29,6 +29,7 @@ class AISettingsDialog : public juce::Component {
     class ConfigPage;
     class SampleTaggerPage;
     class StemSeparationPage;
+    class CommandModelPage;
     class ModelDownloadsPage;
 
     class TabComponent : public juce::TabbedComponent {
@@ -47,6 +48,7 @@ class AISettingsDialog : public juce::Component {
     std::unique_ptr<ConfigPage> configPage_;
     std::unique_ptr<SampleTaggerPage> samplePage_;
     std::unique_ptr<StemSeparationPage> stemsPage_;
+    std::unique_ptr<CommandModelPage> commandModelPage_;
     std::unique_ptr<ModelDownloadsPage> modelDownloadsPage_;
 
     juce::TextButton okBtn_{"OK"};

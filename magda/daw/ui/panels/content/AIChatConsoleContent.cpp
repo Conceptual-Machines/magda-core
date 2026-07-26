@@ -654,6 +654,8 @@ void AIChatConsoleContent::RequestThread::run() {
     const auto convoChannel = conversationChannel(owner_.currentViewMode_);
     const std::string priorContext = owner_.conversation_.render(convoChannel);
 
+    // The fast-inference raw-message rule now lives in
+    // ConsoleAgentOrchestrator, which owns prompt composition.
     // Step 2: Dispatch directly from the selected surface.
     std::string dslCode;                                   // DSL from command agent
     std::vector<magda::Instruction> musicInstructions;     // IR from music agent
@@ -814,7 +816,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
     chatHistory_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId,
                            juce::Colours::transparentBlack);
-    chatHistory_.setColour(juce::TextEditor::highlightColourId, juce::Colours::transparentBlack);
+    // Selection colours must be set explicitly: JUCE defaults
+    // highlightedTextColourId to BLACK, which is invisible on a dark
+    // background, so dragging over the transcript made the text vanish.
+    chatHistory_.setColour(juce::TextEditor::highlightColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
     addAndMakeVisible(chatHistory_);
 
@@ -974,6 +981,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setColour(juce::TextEditor::textColourId, juce::Colour(0xff88ff88));
     dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    dslOutput_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
 
     // DSL code editor
@@ -1358,6 +1368,12 @@ void AIChatConsoleContent::lookAndFeelChanged() {
     // palette after a live theme change. updateConfigStatus() re-applies
     // configStatusLabel_'s state colour.
     chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    chatHistory_.setColour(juce::TextEditor::highlightColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+    dslOutput_.setColour(juce::TextEditor::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
     if (inputBox_ != nullptr) {
         inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
@@ -2490,6 +2506,7 @@ void AIChatConsoleContent::insertParamAlias(const juce::String& pluginAlias,
             false);
     }
 
+    suppressAutocompleteForContent_ = inputDocument_.getAllContent();
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
@@ -2522,6 +2539,7 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
             juce::CodeDocument::Position(inputDocument_, atPos + 1 + (int)alias.length()), false);
     }
 
+    suppressAutocompleteForContent_ = inputDocument_.getAllContent();
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
@@ -2649,6 +2667,22 @@ void AIChatConsoleContent::onInputChanged() {
     if (!inputBox_)
         return;
     auto text = inputDocument_.getAllContent();
+
+    // Suppress by CONTENT, not by a one-shot flag. replaceAllContent() fires
+    // BOTH document listeners — a delete of the old text and an insert of the
+    // new — so accepting a completion queues two deferred onInputChanged()
+    // calls. A one-shot is consumed by the first and the second re-opens the
+    // popup we just closed, which is what left it stuck on screen with Tab
+    // unable to dismiss it. Keyed on the text we inserted, any number of
+    // callbacks are absorbed, and the moment the user types anything the
+    // content differs and completion resumes.
+    if (suppressAutocompleteForContent_.isNotEmpty()) {
+        if (text == suppressAutocompleteForContent_) {
+            hideAutocomplete();
+            return;
+        }
+        suppressAutocompleteForContent_.clear();
+    }
     int caretPos = inputBox_->getCaretPos().getPosition();
 
     // Slash commands at start of input
@@ -2880,6 +2914,7 @@ void AIChatConsoleContent::insertSlashCommand(const juce::String& command) {
     inputDocument_.replaceAllContent(newText);
     inputBox_->moveCaretTo(juce::CodeDocument::Position(inputDocument_, newText.length()), false);
 
+    suppressAutocompleteForContent_ = inputDocument_.getAllContent();
     hideAutocomplete();
     inputBox_->grabKeyboardFocus();
 }
