@@ -71,6 +71,8 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_SCCACHE_ROLE_ARN }}
         aws-region: eu-west-2
+        retry-max-attempts: 3
+        action-timeout-s: 90
 
     - name: Setup sccache
       id: sccache

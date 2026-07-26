@@ -13,6 +13,7 @@
 #include "TrackInfo.hpp"
 #include "TrackTypes.hpp"
 #include "ViewModeState.hpp"
+#include "audio/plugins/DeviceServices.hpp"
 
 namespace magda {
 
@@ -125,7 +126,7 @@ class TrackManagerListener {
  *
  * Provides CRUD operations for tracks and notifies listeners of changes.
  */
-class TrackManager {
+class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::DeviceTrackContext {
   public:
     static constexpr int MAX_SENDS_PER_TRACK = 8;  // Tracktion Engine aux bus limit
 
@@ -136,7 +137,7 @@ class TrackManager {
     TrackManager& operator=(const TrackManager&) = delete;
 
     // Allocate an FX-section DeviceId (used by DrumGrid for per-pad chain plugins)
-    DeviceId allocateDeviceId() {
+    DeviceId allocateDeviceId() override {
         return nextFxDeviceId_++;
     }
     RackId allocateRackId() {
@@ -146,7 +147,7 @@ class TrackManager {
         return nextChainId_++;
     }
     // Ensure restored DrumGrid pad/plugin IDs do not collide with FX-section IDs.
-    void ensureDeviceIdAbove(DeviceId id) {
+    void ensureDeviceIdAbove(DeviceId id) override {
         nextFxDeviceId_ = std::max(nextFxDeviceId_, id + 1);
     }
     void ensurePostFxDeviceIdAbove(DeviceId id) {
@@ -611,6 +612,8 @@ class TrackManager {
      */
     void setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath, int paramIndex,
                                            float value);
+    void setDeviceParameterValueFromPlugin(DeviceId deviceId, int paramIndex, float value) override;
+    bool isChordTrackMuted() const override;
 
     /**
      * @brief Get plugin latency for a device by querying the audio engine

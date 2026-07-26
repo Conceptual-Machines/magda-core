@@ -14,6 +14,7 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TypeIds.hpp"
 #include "modifiers/CurveSnapshot.hpp"
+#include "plugins/DeviceServices.hpp"
 #include "plugins/DrumGridPlugin.hpp"
 #include "processors/base/DeviceProcessor.hpp"
 #include "racks/InstrumentRackManager.hpp"
@@ -68,7 +69,8 @@ struct PluginLoadResult {
  * - PluginWindowBridge& (for closing plugin windows)
  * - TransportStateManager& (for tone generator bypass state)
  */
-class PluginManager : public daw::audio::DrumGridPlugin::Listener {
+class PluginManager : public daw::audio::DrumGridPlugin::Listener,
+                      public daw::audio::DeviceRealtimeContext {
   public:
     /**
      * @brief Construct PluginManager with required dependencies
@@ -79,7 +81,8 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param transportState Reference to TransportStateManager for transport state
      */
     PluginManager(te::Engine& engine, te::Edit& edit, TrackController& trackController,
-                  PluginWindowBridge& pluginWindowBridge, TransportStateManager& transportState);
+                  PluginWindowBridge& pluginWindowBridge, TransportStateManager& transportState,
+                  daw::audio::DeviceTrackContext& deviceTrackContext);
 
     // =========================================================================
     // Plugin/Device Lookup
@@ -397,7 +400,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param mono unrectified mono downmix of the source audio (length numSamples)
      */
     void pushFollowerSourceBuffer(TrackId sourceTrackId, const float* mono, int numSamples,
-                                  double sampleRate);
+                                  double sampleRate) override;
+
+    void triggerSidechain(TrackId sourceTrackId, daw::audio::DeviceTriggerSource source) override;
+    void gateSidechain(TrackId sourceTrackId) override;
 
     /**
      * @brief Rebuild the sidechain LFO cache for all tracks
@@ -607,6 +613,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     TrackController& trackController_;
     PluginWindowBridge& pluginWindowBridge_;
     TransportStateManager& transportState_;
+    daw::audio::DeviceTrackContext& deviceTrackContext_;
 
     // Instrument rack wrapping (synth + audio passthrough)
     InstrumentRackManager instrumentRackManager_;

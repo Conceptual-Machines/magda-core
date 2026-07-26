@@ -254,26 +254,6 @@ jobs:
         echo "Stapling notarization ticket..."
         xcrun stapler staple "$DMG_NAME"
 
-    - name: Create MuseHub app bundle (arm64)
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        # MuseHub rejects DMGs; it wants a notarized .app zipped with symlinks
-        # preserved (their "zip -y"). The DMG notarization above registered this
-        # app's code hash with Apple, so we can staple the ticket straight into
-        # the .app, then ditto-zip it (ditto preserves the framework symlinks a
-        # plain zip would flatten). Stays a CI artifact, not a public release asset.
-        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
-        ZIP_NAME="MAGDA-${VERSION}-macOS-arm64.app.zip"
-
-        xcrun stapler staple "$APP_PATH"
-        xcrun stapler validate "$APP_PATH"
-
-        ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
-        shasum -a 256 "$ZIP_NAME" > "${ZIP_NAME}.sha256"
-        echo "MuseHub bundle created: $ZIP_NAME"
-        ls -lh "$ZIP_NAME"
-
     - name: Generate checksum
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -289,8 +269,6 @@ jobs:
         path: |
           MAGDA-*-macOS-arm64.dmg
           MAGDA-*-macOS-arm64.dmg.sha256
-          MAGDA-*-macOS-arm64.app.zip
-          MAGDA-*-macOS-arm64.app.zip.sha256
 
     - name: Clean up
       if: always()
@@ -530,26 +508,6 @@ jobs:
         echo "Stapling notarization ticket..."
         xcrun stapler staple "$DMG_NAME"
 
-    - name: Create MuseHub app bundle (x86_64)
-      env:
-        VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        # MuseHub rejects DMGs; it wants a notarized .app zipped with symlinks
-        # preserved (their "zip -y"). The DMG notarization above registered this
-        # app's code hash with Apple, so we can staple the ticket straight into
-        # the .app, then ditto-zip it (ditto preserves the framework symlinks a
-        # plain zip would flatten). Stays a CI artifact, not a public release asset.
-        APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
-        ZIP_NAME="MAGDA-${VERSION}-macOS-x86_64.app.zip"
-
-        xcrun stapler staple "$APP_PATH"
-        xcrun stapler validate "$APP_PATH"
-
-        ditto -c -k --keepParent "$APP_PATH" "$ZIP_NAME"
-        shasum -a 256 "$ZIP_NAME" > "${ZIP_NAME}.sha256"
-        echo "MuseHub bundle created: $ZIP_NAME"
-        ls -lh "$ZIP_NAME"
-
     - name: Generate checksum
       env:
         VERSION: ${{ steps.version.outputs.version }}
@@ -565,8 +523,6 @@ jobs:
         path: |
           MAGDA-*-macOS-x86_64.dmg
           MAGDA-*-macOS-x86_64.dmg.sha256
-          MAGDA-*-macOS-x86_64.app.zip
-          MAGDA-*-macOS-x86_64.app.zip.sha256
 
     - name: Clean up
       if: always()
@@ -850,6 +806,32 @@ jobs:
         Copy-Item "packaging\windows\magda-installer.nsi" "$stage\"
         Copy-Item "assets\mgd_doc_icon.ico" "$stage\"
         Copy-Item "${{ steps.locate.outputs.exe_path }}" "$stage\MAGDA.exe"
+
+        # MAGDA and ONNX Runtime dynamically link the Microsoft Visual C++
+        # runtime (MSVCP140/VCRUNTIME140/VCOMP140). Developer machines usually
+        # already have it, but a clean consumer Windows installation may not.
+        # Bundle the redistributable from the same MSVC toolchain that built
+        # this release so the NSIS installer can bootstrap it before MAGDA is
+        # installed. Do not download "latest" here: matching the active
+        # toolchain keeps release inputs deterministic.
+        if ([string]::IsNullOrWhiteSpace($env:VCToolsRedistDir)) {
+          Write-Error "VCToolsRedistDir is not set by the MSVC environment"
+          exit 1
+        }
+        $vcRedist = Join-Path $env:VCToolsRedistDir "vc_redist.x64.exe"
+        if (-not (Test-Path $vcRedist)) {
+          Write-Error "Visual C++ x64 Redistributable not found at $vcRedist"
+          exit 1
+        }
+        $vcSignature = Get-AuthenticodeSignature $vcRedist
+        if ($vcSignature.Status -ne "Valid" -or
+            $vcSignature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
+          Write-Error "Visual C++ Redistributable has an invalid or unexpected signature: $($vcSignature.Status) / $($vcSignature.SignerCertificate.Subject)"
+          exit 1
+        }
+        Copy-Item $vcRedist "$stage\vc_redist.x64.exe"
+        $vcVersion = (Get-Item $vcRedist).VersionInfo.FileVersion
+        Write-Output "Staged Microsoft Visual C++ x64 Redistributable $vcVersion"
 
         $exeDir = Split-Path "${{ steps.locate.outputs.exe_path }}"
         $scanner = Join-Path $exeDir "magda_plugin_scanner.exe"
@@ -1205,8 +1187,7 @@ jobs:
 
   create-release:
     # Publish a GitHub Release only for tag pushes. A workflow_dispatch run is
-    # for regenerating build artifacts (e.g. the MuseHub .app.zip for an already
-    # released version) and must never mutate a published release.
+    # for regenerating build artifacts and must never mutate a published release.
     if: >-
       ${{
         always() &&

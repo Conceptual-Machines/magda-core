@@ -1,10 +1,5 @@
 #include "plugins/FollowerSourceTapPlugin.hpp"
 
-#include <atomic>
-
-#include "modifiers/ADSRDebugLog.hpp"
-#include "plugin_manager/PluginManager.hpp"
-
 namespace magda {
 
 const char* FollowerSourceTapPlugin::xmlTypeName = "followersourcetap";
@@ -23,31 +18,16 @@ FollowerSourceTapPlugin::~FollowerSourceTapPlugin() {
 void FollowerSourceTapPlugin::initialise(const te::PluginInitialisationInfo& info) {
     sampleRate_ = info.sampleRate;
     monoScratch_.assign(static_cast<size_t>(juce::jmax(1, info.blockSizeSamples)), 0.0f);
-    MAGDA_ADSR_AUDIO_LOG("follower-tap initialise sourceTrack="
-                         << sourceTrackId_ << " blockSamples=" << info.blockSizeSamples
-                         << " sampleRate=" << info.sampleRate);
 }
 
 void FollowerSourceTapPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Transparent passthrough - never modify audio.
-    if (!pluginManager_ || !fc.destBuffer || fc.bufferNumSamples <= 0) {
-        static std::atomic<int> skippedLogThrottle{0};
-        if ((skippedLogThrottle.fetch_add(1, std::memory_order_relaxed) % 200) == 0) {
-            MAGDA_ADSR_AUDIO_LOG("follower-tap skip sourceTrack="
-                                 << sourceTrackId_
-                                 << " hasPm=" << static_cast<int>(pluginManager_ != nullptr)
-                                 << " hasBuffer=" << static_cast<int>(fc.destBuffer != nullptr)
-                                 << " numSamples=" << fc.bufferNumSamples);
-        }
+    if (!realtimeContext_ || !fc.destBuffer || fc.bufferNumSamples <= 0) {
         return;
     }
 
     const int numSamples = fc.bufferNumSamples;
     if (static_cast<int>(monoScratch_.size()) < numSamples) {
-        MAGDA_ADSR_AUDIO_LOG("follower-tap skip-too-large sourceTrack="
-                             << sourceTrackId_
-                             << " scratch=" << static_cast<int>(monoScratch_.size())
-                             << " numSamples=" << numSamples);
         return;  // Block larger than prepared scratch; skip this block's detection.
     }
 
@@ -68,18 +48,7 @@ void FollowerSourceTapPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         }
     }
 
-    static std::atomic<int> blockLogThrottle{0};
-    if ((blockLogThrottle.fetch_add(1, std::memory_order_relaxed) % 100) == 0) {
-        float monoPeak = 0.0f;
-        for (int i = 0; i < numSamples; ++i)
-            monoPeak = std::max(monoPeak, std::abs(mono[i]));
-        MAGDA_ADSR_AUDIO_LOG("follower-tap block sourceTrack="
-                             << sourceTrackId_ << " channels=" << numChannels
-                             << " start=" << fc.bufferStartSample << " samples=" << numSamples
-                             << " monoPeak=" << monoPeak << " sampleRate=" << sampleRate_);
-    }
-
-    pluginManager_->pushFollowerSourceBuffer(sourceTrackId_, mono, numSamples, sampleRate_);
+    realtimeContext_->pushFollowerSourceBuffer(sourceTrackId_, mono, numSamples, sampleRate_);
 }
 
 void FollowerSourceTapPlugin::restorePluginStateFromValueTree(const juce::ValueTree&) {
@@ -89,7 +58,6 @@ void FollowerSourceTapPlugin::restorePluginStateFromValueTree(const juce::ValueT
 void FollowerSourceTapPlugin::setSourceTrackId(TrackId trackId) {
     sourceTrackId_ = trackId;
     sourceTrackIdValue = trackId;
-    MAGDA_ADSR_AUDIO_LOG("follower-tap set-source sourceTrack=" << sourceTrackId_);
 }
 
 }  // namespace magda

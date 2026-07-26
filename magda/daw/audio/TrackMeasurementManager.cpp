@@ -1,10 +1,10 @@
-#include "TrackMeasurementManager.hpp"
+#include "core/TrackMeasurementManager.hpp"
 
-#include "../audio/AudioBridge.hpp"
-#include "../audio/plugin_manager/PluginManager.hpp"
-#include "../audio/plugins/TrackMeasurementPlugin.hpp"
 #include "../engine/AudioEngine.hpp"
-#include "TrackManager.hpp"
+#include "audio/AudioBridge.hpp"
+#include "audio/plugin_manager/PluginManager.hpp"
+#include "audio/plugins/TrackMeasurementPlugin.hpp"
+#include "core/TrackManager.hpp"
 
 namespace magda {
 

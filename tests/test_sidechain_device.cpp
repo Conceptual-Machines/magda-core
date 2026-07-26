@@ -3,7 +3,6 @@
 
 #include "../magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "../magda/daw/audio/plugins/SidechainPlugin.hpp"
-#include "../magda/daw/core/InternalDeviceKind.hpp"
 #include "../magda/daw/core/TrackManager.hpp"
 #include "../magda/daw/project/serialization/ProjectSerializer.hpp"
 
@@ -14,23 +13,21 @@ using namespace magda;
 // ============================================================================
 
 TEST_CASE("Sidechain device - classification and registry", "[sidechain][device]") {
-    SECTION("pluginId classifies to the Sidechain kind") {
-        REQUIRE(classifyInternalDevice("sidechain") == InternalDeviceKind::Sidechain);
-        REQUIRE(classifyInternalDevice("SIDECHAIN") == InternalDeviceKind::Sidechain);
+    SECTION("pluginId resolves to the Sidechain registration") {
+        REQUIRE(daw::audio::internalPluginHasTag("sidechain", "sidechain"));
+        REQUIRE(daw::audio::internalPluginHasTag("SIDECHAIN", "sidechain"));
     }
 
-    SECTION("does not collide with the monitor infrastructure kinds") {
-        REQUIRE(classifyInternalDevice("midisidechainmonitor") ==
-                InternalDeviceKind::SidechainMonitor);
-        REQUIRE(classifyInternalDevice("audiosidechainmonitor") ==
-                InternalDeviceKind::AudioSidechainMonitor);
+    SECTION("does not collide with monitor infrastructure registrations") {
+        REQUIRE_FALSE(daw::audio::internalPluginHasTag("midisidechainmonitor", "sidechain"));
+        REQUIRE_FALSE(daw::audio::internalPluginHasTag("audiosidechainmonitor", "sidechain"));
     }
 
     SECTION("metadata present") {
-        const auto* metadata = getInternalDeviceMetadata(InternalDeviceKind::Sidechain);
+        const auto* metadata = daw::audio::findInternalPluginSpec("sidechain");
         REQUIRE(metadata != nullptr);
         REQUIRE(juce::String(metadata->displayName) == "Sidechain");
-        REQUIRE(juce::String(metadata->category) == "Dynamics");
+        REQUIRE(juce::String(metadata->browserCategory) == "Dynamics");
     }
 
     SECTION("registry spec is browsable, effect, with a processor factory") {
@@ -42,15 +39,15 @@ TEST_CASE("Sidechain device - classification and registry", "[sidechain][device]
             }
         }
         REQUIRE(spec != nullptr);
-        REQUIRE(spec->kind == InternalDeviceKind::Sidechain);
+        REQUIRE(daw::audio::internalPluginHasTag(*spec, "sidechain"));
         REQUIRE(spec->showInBrowser);
         REQUIRE_FALSE(spec->isInstrument);
         REQUIRE(spec->createProcessor != nullptr);
     }
 
     SECTION("not an analysis device (keeps macros and mods)") {
-        REQUIRE_FALSE(isAnalysisDevice("sidechain"));
-        REQUIRE_FALSE(isMidiGeneratorDevice("sidechain"));
+        REQUIRE_FALSE(daw::audio::isInternalAnalysisPlugin("sidechain"));
+        REQUIRE_FALSE(daw::audio::isInternalMidiGeneratorPlugin("sidechain"));
     }
 }
 

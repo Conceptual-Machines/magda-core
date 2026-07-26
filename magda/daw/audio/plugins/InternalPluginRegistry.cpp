@@ -1,345 +1,195 @@
 #include "plugins/InternalPluginRegistry.hpp"
 
-#include <array>
+#include <algorithm>
+#include <mutex>
+#include <vector>
 
-#include "TracktionHelpers.hpp"
-#include "plugins/ArpeggiatorPlugin.hpp"
-#include "plugins/DrumGridPlugin.hpp"
-#include "plugins/FaustInstrumentPlugin.hpp"
-#include "plugins/FaustPlugin.hpp"
-#include "plugins/InstrumentMeterTapPlugin.hpp"
-#include "plugins/LevelsPlugin.hpp"
-#include "plugins/MagdaSamplerPlugin.hpp"
-#include "plugins/MidiChordEnginePlugin.hpp"
-#include "plugins/MidiReceivePlugin.hpp"
-#include "plugins/MidiStrumPlugin.hpp"
-#include "plugins/OscilloscopePlugin.hpp"
-#include "plugins/PolyStepSequencerPlugin.hpp"
-#include "plugins/SidechainMonitorPlugin.hpp"
-#include "plugins/SidechainPlugin.hpp"
-#include "plugins/SpectrumAnalyzerPlugin.hpp"
-#include "plugins/StepSequencerPlugin.hpp"
-#include "plugins/TrackMeasurementPlugin.hpp"
-#include "plugins/mutable/MutableCloudsPlugin.hpp"
-#include "plugins/mutable/MutableElementsPlugin.hpp"
-#include "plugins/mutable/MutableRingsPlugin.hpp"
-#include "processors/DeviceProcessor.hpp"
-#include "processors/internal/MidiDeviceProcessors.hpp"
-#include "processors/internal/NativeDeviceProcessors.hpp"
-#include "session/SessionMonitorPlugin.hpp"
+#include "processors/base/DeviceProcessor.hpp"
 
 namespace magda::daw::audio {
 
 namespace {
 
-template <typename PluginType> bool matches(te::Plugin* plugin) {
-    return dynamic_cast<PluginType*>(plugin) != nullptr;
-}
-
-template <typename ProcessorType>
-std::unique_ptr<DeviceProcessor> makeProcessor(DeviceId deviceId, te::Plugin::Ptr plugin) {
-    return std::make_unique<ProcessorType>(deviceId, plugin);
-}
-
-constexpr const char* kEqAliases[] = {"eq", "equaliser"};
-constexpr const char* kCompressorAliases[] = {"compressor"};
-constexpr const char* kReverbAliases[] = {"reverb"};
-constexpr const char* kDelayAliases[] = {"delay"};
-constexpr const char* kChorusAliases[] = {"chorus"};
-constexpr const char* kPhaserAliases[] = {"phaser"};
-constexpr const char* kLowpassAliases[] = {"lowpass"};
-constexpr const char* kPitchShiftAliases[] = {"pitchshift"};
-constexpr const char* kImpulseResponseAliases[] = {"impulseresponse"};
-constexpr const char* kFourOscAliases[] = {"4osc"};
-constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
-constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
-constexpr const char* kOscilloscopeAliases[] = {"scope"};
-constexpr const char* kSpectrumAliases[] = {"spectrum", "analyzer"};
-constexpr const char* kLevelsAliases[] = {"loudness", "lufs"};
-constexpr const char* kSidechainAliases[] = {"duck", "pump", "volumeshaper"};
-
-const InternalPluginSpec kSpecs[] = {
-    {InternalDeviceKind::TeEq, te::EqualiserPlugin::xmlTypeName, "Equaliser", "EQ",
-     "Four-band equaliser for broad tonal shaping and corrective filtering.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kEqAliases, std::size(kEqAliases),
-     matches<te::EqualiserPlugin>, makeProcessor<EqualiserProcessor>},
-    {InternalDeviceKind::TeCompressor, te::CompressorPlugin::xmlTypeName, "Compressor", "Dynamics",
-     "Track compressor for controlling level, transient shape, and sustain.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kCompressorAliases,
-     std::size(kCompressorAliases), matches<te::CompressorPlugin>,
-     makeProcessor<CompressorProcessor>},
-    {InternalDeviceKind::TeReverb, te::ReverbPlugin::xmlTypeName, "Reverb", "Reverb",
-     "Algorithmic space effect for room, plate, and ambience-style tails.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kReverbAliases,
-     std::size(kReverbAliases), matches<te::ReverbPlugin>, makeProcessor<ReverbProcessor>},
-    {InternalDeviceKind::TeDelay, te::DelayPlugin::xmlTypeName, "Delay", "Delay",
-     "Tempo-capable delay effect for echoes and rhythmic repeats.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kDelayAliases,
-     std::size(kDelayAliases), matches<te::DelayPlugin>, makeProcessor<DelayProcessor>},
-    {InternalDeviceKind::TeChorus, te::ChorusPlugin::xmlTypeName, "Chorus", "Modulation",
-     "Modulated delay effect for width, movement, and ensemble-style thickening.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kChorusAliases,
-     std::size(kChorusAliases), matches<te::ChorusPlugin>, makeProcessor<ChorusProcessor>},
-    {InternalDeviceKind::TePhaser, te::PhaserPlugin::xmlTypeName, "Phaser", "Modulation",
-     "Swept phase-cancellation effect for resonant movement and stereo motion.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kPhaserAliases,
-     std::size(kPhaserAliases), matches<te::PhaserPlugin>, makeProcessor<PhaserProcessor>},
-    {InternalDeviceKind::TeLowpass, te::LowPassPlugin::xmlTypeName, "Lowpass", "Filter",
-     "Low-pass filter for removing high-frequency content.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kLowpassAliases,
-     std::size(kLowpassAliases), matches<te::LowPassPlugin>, makeProcessor<FilterProcessor>, true},
-    {InternalDeviceKind::TePitchShift, te::PitchShiftPlugin::xmlTypeName, "Pitch Shift", "Pitch",
-     "Pitch shifting effect for transposition and special effects.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kPitchShiftAliases,
-     std::size(kPitchShiftAliases), matches<te::PitchShiftPlugin>,
-     makeProcessor<PitchShiftProcessor>},
-    {InternalDeviceKind::TeImpulseResponse, te::ImpulseResponsePlugin::xmlTypeName, "IR Reverb",
-     "Reverb", "Convolution-style response loader for captured spaces and resonant bodies.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kImpulseResponseAliases,
-     std::size(kImpulseResponseAliases), matches<te::ImpulseResponsePlugin>,
-     makeProcessor<ImpulseResponseProcessor>, true},
-    {InternalDeviceKind::TeVolumeAndPan, te::VolumeAndPanPlugin::xmlTypeName, "Legacy Volume/Pan",
-     "Legacy", "Legacy Tracktion volume and pan device, kept for old project loads.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<te::VolumeAndPanPlugin>, makeProcessor<UtilityProcessor>},
-    {InternalDeviceKind::TeFourOsc, te::FourOscPlugin::xmlTypeName, "4OSC Synth", "Synth",
-     "Four-oscillator subtractive instrument with modulation and macro-friendly controls.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kFourOscAliases,
-     std::size(kFourOscAliases), matches<te::FourOscPlugin>, makeProcessor<FourOscProcessor>, true,
-     true},
-    {InternalDeviceKind::TeToneGenerator, te::ToneGeneratorPlugin::xmlTypeName, "Test Tone",
-     "Utility", "Simple tone generator for calibration, routing checks, and utility signals.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kToneAliases, std::size(kToneAliases),
-     matches<te::ToneGeneratorPlugin>, makeProcessor<ToneGeneratorProcessor>, true},
-    {InternalDeviceKind::TeLevelMeter, te::LevelMeterPlugin::xmlTypeName, "Level Meter", "Meter",
-     "Signal meter for monitoring level inside a chain.",
-     InternalPluginCreateMode::LevelMeterValueTree, false, true, kMeterAliases,
-     std::size(kMeterAliases), matches<te::LevelMeterPlugin>, nullptr},
-    // Hardware send/return insert (External FX / Instrument). Created like any
-    // other TE built-in (string factory + saved-state round-trip); send/return
-    // device selection lives in the plugin's CachedValue state. No DeviceProcessor
-    // (no automatable param grid) and no rack hosting for now. Browser exposure +
-    // the send/return picker UI land in a later phase, so showInBrowser stays off.
-    {InternalDeviceKind::ExternalInsert, te::InsertPlugin::xmlTypeName, "External Insert",
-     "External", "Hardware send/return insert for outboard audio FX and MIDI instruments.",
-     InternalPluginCreateMode::SavedStateOrFresh, false, true, nullptr, 0,
-     matches<te::InsertPlugin>, nullptr, false, false},
-    {InternalDeviceKind::MagdaSampler, MagdaSamplerPlugin::xmlTypeName, "Sampler", "Sampler",
-     "Sample playback instrument with envelope, pitch, start/end, and looping controls.",
-     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MagdaSamplerPlugin>,
-     makeProcessor<MagdaSamplerProcessor>, true, true},
-    {InternalDeviceKind::DrumGrid, DrumGridPlugin::xmlTypeName, "Drum Grid", "Drums",
-     "Pad-based drum instrument with per-pad sample and effect chains.",
-     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<DrumGridPlugin>,
-     makeProcessor<DrumGridProcessor>, true, true},
-    {InternalDeviceKind::MidiChordEngine, MidiChordEnginePlugin::xmlTypeName, "Chord Engine",
-     "MIDI", "MIDI processor for chord generation, voicing, and harmonic transforms.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<MidiChordEnginePlugin>, nullptr, true},
-    {InternalDeviceKind::Arpeggiator, ArpeggiatorPlugin::xmlTypeName, "Arpeggiator", "MIDI",
-     "MIDI arpeggiator for rhythmic note patterns and held-note motion.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<ArpeggiatorPlugin>, makeProcessor<ArpeggiatorProcessor>, true},
-    {InternalDeviceKind::Strum, MidiStrumPlugin::xmlTypeName, "Strum", "MIDI",
-     "Curve-shaped strum: turns a held chord into a strum / roll / arpeggio for any instrument.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0, matches<MidiStrumPlugin>,
-     makeProcessor<StrumProcessor>, true},
-    {InternalDeviceKind::StepSequencer, StepSequencerPlugin::xmlTypeName, "Step Sequencer", "MIDI",
-     "MIDI step sequencer for pattern-driven notes and rhythmic control.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<StepSequencerPlugin>, makeProcessor<StepSequencerProcessor>, true},
-    {InternalDeviceKind::PolyStepSequencer, PolyStepSequencerPlugin::xmlTypeName, "Poly Sequencer",
-     "MIDI", "Polyphonic MIDI step sequencer with multiple notes per step for chord patterns.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<PolyStepSequencerPlugin>, makeProcessor<PolyStepSequencerProcessor>, true},
-    {InternalDeviceKind::Sidechain, SidechainPlugin::xmlTypeName, "Sidechain", "Dynamics",
-     "MIDI-triggered volume shaper: ducks its own gain with a retriggerable curve keyed "
-     "from a chosen source track's notes.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kSidechainAliases,
-     std::size(kSidechainAliases), matches<SidechainPlugin>, makeProcessor<SidechainProcessor>,
-     true},
-    {InternalDeviceKind::Faust, FaustPlugin::xmlTypeName, "Faust", "Experimental",
-     "Interpreted Faust device for loading and editing user DSP code.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0, matches<FaustPlugin>,
-     makeProcessor<FaustProcessor>, true},
-    {InternalDeviceKind::FaustInstrument, FaustInstrumentPlugin::xmlTypeName, "Faust Instrument",
-     "Experimental", "Polyphonic Faust synth instrument driven by MIDI (POC).",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, nullptr, 0,
-     matches<FaustInstrumentPlugin>, makeProcessor<FaustInstrumentProcessor>, true, true},
-    {InternalDeviceKind::MidiReceive, ::magda::MidiReceivePlugin::xmlTypeName, "MIDI Receive",
-     "MIDI", "Internal MIDI routing endpoint used by MAGDA track and device routing.",
-     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
-     matches<::magda::MidiReceivePlugin>, nullptr},
-    {InternalDeviceKind::SidechainMonitor, ::magda::SidechainMonitorPlugin::xmlTypeName,
-     "Sidechain Monitor", "Utility", "Internal monitor used to expose sidechain signal state.",
-     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
-     matches<::magda::SidechainMonitorPlugin>, nullptr},
-    {InternalDeviceKind::AudioSidechainMonitor, "audiosidechainmonitor", "Audio Sidechain Monitor",
-     "Utility", "Internal audio monitor used by sidechain-aware devices.",
-     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0, nullptr, nullptr},
-    {InternalDeviceKind::InstrumentMeterTap, InstrumentMeterTapPlugin::xmlTypeName,
-     "Instrument Meter Tap", "Meter",
-     "Internal meter tap used to observe instrument output levels.",
-     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
-     matches<InstrumentMeterTapPlugin>, nullptr},
-    {InternalDeviceKind::TrackMeasurement, TrackMeasurementPlugin::xmlTypeName, "Track Measurement",
-     "Meter", "Internal post-fader tap measuring loudness, peak and stereo for the mixing tools.",
-     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
-     matches<TrackMeasurementPlugin>, nullptr},
-    {InternalDeviceKind::SessionMonitor, ::magda::SessionMonitorPlugin::xmlTypeName,
-     "Session Monitor", "Session", "Internal monitor used by session playback and launch state.",
-     InternalPluginCreateMode::Unsupported, false, false, nullptr, 0,
-     matches<::magda::SessionMonitorPlugin>, nullptr},
-    {InternalDeviceKind::Oscilloscope, OscilloscopePlugin::xmlTypeName, "Oscilloscope", "Analysis",
-     "Transparent waveform monitor for inspecting signal shape over time.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kOscilloscopeAliases,
-     std::size(kOscilloscopeAliases), matches<OscilloscopePlugin>, nullptr, true},
-    {InternalDeviceKind::SpectrumAnalyzer, SpectrumAnalyzerPlugin::xmlTypeName, "Spectrum Analyzer",
-     "Analysis", "Real-time FFT spectrum display with log-frequency axis and peak hold.",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kSpectrumAliases,
-     std::size(kSpectrumAliases), matches<SpectrumAnalyzerPlugin>, nullptr, true},
-    {InternalDeviceKind::Levels, LevelsPlugin::xmlTypeName, "Levels", "Analysis",
-     "Loudness, true-peak and stereo meter (LUFS, dBTP, correlation, dynamics).",
-     InternalPluginCreateMode::SavedStateOrFresh, true, true, kLevelsAliases,
-     std::size(kLevelsAliases), matches<LevelsPlugin>, nullptr, true},
-    {InternalDeviceKind::MutableElements, MutableElementsPlugin::xmlTypeName, "Materia", "Synth",
-     "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike exciter into a "
-     "modal + string resonator and stereo space).",
-     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0,
-     matches<MutableElementsPlugin>, makeProcessor<MutableElementsProcessor>, true, true},
-    {InternalDeviceKind::MutableRings, MutableRingsPlugin::xmlTypeName, "Halo", "Synth",
-     "Mutable Instruments Rings port: polyphonic resonator (modal / sympathetic / inharmonic / "
-     "FM models) excited by MIDI.",
-     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableRingsPlugin>,
-     makeProcessor<MutableRingsProcessor>, true, true},
-    {InternalDeviceKind::MutableClouds, MutableCloudsPlugin::xmlTypeName, "Nimbus", "Texture",
-     "Mutable Instruments Clouds port: granular texture processor (granular / stretch / "
-     "looping-delay / spectral) with freeze.",
-     InternalPluginCreateMode::FreshValueTree, true, true, nullptr, 0, matches<MutableCloudsPlugin>,
-     makeProcessor<MutableCloudsProcessor>, true, false},
-};
-
-// Pointer view over kSpecs, derived from the table so it can never desync.
-// (A hand-maintained index list previously fell behind and silently hid the
-// last few devices from the browser and from classification.)
-const auto kSpecPtrs = [] {
-    std::array<const InternalPluginSpec*, std::size(kSpecs)> ptrs{};
-    for (size_t i = 0; i < std::size(kSpecs); ++i)
-        ptrs[i] = &kSpecs[i];
-    return ptrs;
-}();
-
 bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) {
     if (spec.pluginId != nullptr && type.equalsIgnoreCase(spec.pluginId))
         return true;
 
-    for (int i = 0; i < spec.loadAliasCount; ++i) {
-        if (spec.loadAliases[i] != nullptr && type.equalsIgnoreCase(spec.loadAliases[i]))
+    for (int i = 0; i < spec.loadAliasCount; ++i)
+        if (spec.loadAliases != nullptr && spec.loadAliases[i] != nullptr &&
+            type.equalsIgnoreCase(spec.loadAliases[i]))
             return true;
-    }
 
     return false;
 }
 
-te::Plugin::Ptr createFreshValueTreePlugin(te::Edit& edit, const char* xmlTypeName) {
-    juce::ValueTree pluginState(te::IDs::PLUGIN);
-    pluginState.setProperty(te::IDs::type, xmlTypeName, nullptr);
-    return edit.getPluginCache().createNewPlugin(pluginState);
-}
+struct RegistryState {
+    std::mutex mutex;
+    std::vector<DevicePackRegistration> packRegistrations;
+    bool initialized = false;
+};
 
-bool shouldUseTracktionStringFactory(InternalDeviceKind kind) {
-    switch (kind) {
-        case InternalDeviceKind::TeEq:
-        case InternalDeviceKind::TeCompressor:
-        case InternalDeviceKind::TeReverb:
-        case InternalDeviceKind::TeDelay:
-        case InternalDeviceKind::TeChorus:
-        case InternalDeviceKind::TePhaser:
-        case InternalDeviceKind::TeLowpass:
-        case InternalDeviceKind::TePitchShift:
-        case InternalDeviceKind::TeImpulseResponse:
-        case InternalDeviceKind::TeVolumeAndPan:
-        case InternalDeviceKind::TeFourOsc:
-        case InternalDeviceKind::TeToneGenerator:
-        case InternalDeviceKind::ExternalInsert:
-            return true;
-        default:
-            return false;
-    }
+RegistryState& registryState() {
+    static RegistryState state;
+    return state;
 }
 
 }  // namespace
 
-std::span<const InternalPluginSpec* const> getAllInternalPluginSpecs() {
-    return {kSpecPtrs.data(), kSpecPtrs.size()};
+bool InternalPluginRegistry::registerPlugin(InternalPluginSpec spec) {
+    if (spec.pluginId == nullptr || juce::String(spec.pluginId).isEmpty() ||
+        findForLoadType(spec.pluginId) != nullptr)
+        return false;
+
+    for (int i = 0; i < spec.loadAliasCount; ++i) {
+        if (spec.loadAliases == nullptr || spec.loadAliases[i] == nullptr)
+            return false;
+        if (findForLoadType(spec.loadAliases[i]) != nullptr)
+            return false;
+        for (int previous = 0; previous < i; ++previous)
+            if (juce::String(spec.loadAliases[i]).equalsIgnoreCase(spec.loadAliases[previous]))
+                return false;
+    }
+
+    auto owned = std::make_unique<InternalPluginSpec>(std::move(spec));
+    pointers_.push_back(owned.get());
+    specs_.push_back(std::move(owned));
+    return true;
 }
 
-const InternalPluginSpec* findInternalPluginSpec(InternalDeviceKind kind) {
-    if (kind == InternalDeviceKind::External)
-        return nullptr;
+bool InternalPluginRegistry::registerParameterAlias(InternalParameterAliasSpec alias) {
+    if (alias.pluginKey == nullptr || alias.alias == nullptr || alias.paramIndex < 0)
+        return false;
 
-    for (const auto* spec : kSpecPtrs)
-        if (spec->kind == kind)
-            return spec;
+    const auto duplicate = std::find_if(
+        parameterAliases_.begin(), parameterAliases_.end(), [&alias](const auto& existing) {
+            return juce::String(existing.pluginKey).equalsIgnoreCase(alias.pluginKey) &&
+                   juce::String(existing.alias).equalsIgnoreCase(alias.alias);
+        });
+    if (duplicate != parameterAliases_.end())
+        return false;
 
+    parameterAliases_.push_back(alias);
+    return true;
+}
+
+std::span<const InternalPluginSpec* const> InternalPluginRegistry::getAll() const {
+    return {pointers_.data(), pointers_.size()};
+}
+
+std::span<const InternalParameterAliasSpec> InternalPluginRegistry::getParameterAliases() const {
+    return {parameterAliases_.data(), parameterAliases_.size()};
+}
+
+const InternalPluginSpec* InternalPluginRegistry::find(const juce::String& pluginId) const {
+    return findForLoadType(pluginId);
+}
+
+const InternalPluginSpec* InternalPluginRegistry::findForLoadType(const juce::String& type) const {
+    for (const auto& spec : specs_)
+        if (typeMatchesAlias(type, *spec))
+            return spec.get();
     return nullptr;
+}
+
+bool registerDevicePack(DevicePackRegistration registerDevices) {
+    if (registerDevices == nullptr)
+        return false;
+
+    auto& state = registryState();
+    const std::lock_guard lock(state.mutex);
+    if (state.initialized ||
+        std::find(state.packRegistrations.begin(), state.packRegistrations.end(),
+                  registerDevices) != state.packRegistrations.end())
+        return false;
+
+    state.packRegistrations.push_back(registerDevices);
+    return true;
+}
+
+InternalPluginRegistry& getInternalPluginRegistry() {
+    static InternalPluginRegistry registry;
+    static const bool initialized = [] {
+        auto& state = registryState();
+        const std::lock_guard lock(state.mutex);
+        for (const auto hook : state.packRegistrations)
+            hook(registry);
+        state.initialized = true;
+        return true;
+    }();
+    (void)initialized;
+    return registry;
+}
+
+std::span<const InternalPluginSpec* const> getAllInternalPluginSpecs() {
+    return getInternalPluginRegistry().getAll();
+}
+
+std::span<const InternalParameterAliasSpec> getAllInternalParameterAliases() {
+    return getInternalPluginRegistry().getParameterAliases();
 }
 
 const InternalPluginSpec* findInternalPluginSpec(const juce::String& pluginId) {
-    return findInternalPluginSpec(classifyInternalDevice(pluginId));
+    return getInternalPluginRegistry().find(pluginId);
 }
 
 const InternalPluginSpec* findInternalPluginSpecForLoadType(const juce::String& type) {
-    for (const auto* spec : kSpecPtrs)
-        if (typeMatchesAlias(type, *spec))
-            return spec;
+    return getInternalPluginRegistry().findForLoadType(type);
+}
 
+bool internalPluginHasTag(const InternalPluginSpec& spec, const char* tag) {
+    if (tag == nullptr)
+        return false;
+    for (int i = 0; i < spec.tagCount; ++i)
+        if (spec.tags != nullptr && spec.tags[i] != nullptr &&
+            juce::String(spec.tags[i]).equalsIgnoreCase(tag))
+            return true;
+    return false;
+}
+
+bool internalPluginHasTag(const juce::String& pluginId, const char* tag) {
+    if (const auto* spec = findInternalPluginSpec(pluginId))
+        return internalPluginHasTag(*spec, tag);
+    return false;
+}
+
+const InternalPluginSpec* findInternalPluginSpecWithTag(const char* tag) {
+    for (const auto* spec : getAllInternalPluginSpecs())
+        if (internalPluginHasTag(*spec, tag))
+            return spec;
     return nullptr;
+}
+
+bool isInternalAnalysisPlugin(const juce::String& pluginId) {
+    return internalPluginHasTag(pluginId, "analysis");
+}
+
+bool isInternalMidiGeneratorPlugin(const juce::String& pluginId) {
+    return internalPluginHasTag(pluginId, "midi-generator");
+}
+
+int internalPostFxAnalysisOrder(const juce::String& pluginId) {
+    if (internalPluginHasTag(pluginId, "post-fx-analysis-0"))
+        return 0;
+    if (internalPluginHasTag(pluginId, "post-fx-analysis-1"))
+        return 1;
+    if (internalPluginHasTag(pluginId, "post-fx-analysis-2"))
+        return 2;
+    return -1;
 }
 
 te::Plugin::Ptr createInternalPluginFromSpec(const InternalPluginSpec& spec, te::Edit& edit,
                                              const juce::String& savedPluginState) {
-    if (spec.pluginId == nullptr || spec.createMode == InternalPluginCreateMode::Unsupported)
+    if (spec.createInEdit == nullptr)
         return nullptr;
+    return spec.createInEdit(spec, edit, savedPluginState);
+}
 
-    if (spec.createMode == InternalPluginCreateMode::LevelMeterValueTree)
-        return edit.getPluginCache().createNewPlugin(te::LevelMeterPlugin::create());
-
-    if (spec.createMode == InternalPluginCreateMode::SavedStateOrFresh &&
-        savedPluginState.isNotEmpty()) {
-        if (auto xml = juce::parseXML(savedPluginState)) {
-            auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid()) {
-                stripTracktionIdsRecursive(savedState);
-                return edit.getPluginCache().createNewPlugin(savedState);
-            }
-        } else {
-            DBG("createInternalPluginFromSpec: failed to parse saved state for " << spec.pluginId);
-        }
-    }
-
-    if (spec.createMode == InternalPluginCreateMode::FreshValueTree)
-        return createFreshValueTreePlugin(edit, spec.pluginId);
-
-    te::Plugin::Ptr plugin;
-    if (shouldUseTracktionStringFactory(spec.kind))
-        plugin = edit.getPluginCache().createNewPlugin(spec.pluginId, {});
-
-    if (!plugin)
-        plugin = createFreshValueTreePlugin(edit, spec.pluginId);
-
-    if (plugin != nullptr && spec.kind == InternalDeviceKind::TeEq) {
-        auto params = plugin->getAutomatableParameters();
-        const float defaultFreqs[4] = {100.0f, 500.0f, 3000.0f, 10000.0f};
-        for (int band = 0; band < 4; ++band) {
-            int freqIndex = band * 3;
-            if (freqIndex < params.size() && params[freqIndex])
-                params[freqIndex]->setParameterFromHost(defaultFreqs[band],
-                                                        juce::sendNotificationSync);
-        }
-    }
-
-    return plugin;
+te::Plugin::Ptr createRegisteredCustomPlugin(const te::PluginCreationInfo& info) {
+    const auto type = info.state[te::IDs::type].toString();
+    const auto* spec = findInternalPluginSpecForLoadType(type);
+    if (spec == nullptr || spec->createCustomPlugin == nullptr)
+        return {};
+    return spec->createCustomPlugin(info);
 }
 
 std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPluginSpec& spec,

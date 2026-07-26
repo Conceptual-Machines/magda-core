@@ -685,6 +685,12 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     updateModTimerState();
 }
 
+void ParamSlotComponent::enablementChanged() {
+    // The disabled treatment is painted over the child controls, so changing
+    // enabled state must invalidate the whole slot.
+    repaint();
+}
+
 void ParamSlotComponent::resized() {
     auto bounds = getLocalBounds();
 

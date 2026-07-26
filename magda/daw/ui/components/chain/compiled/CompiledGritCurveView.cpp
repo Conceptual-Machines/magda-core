@@ -189,6 +189,17 @@ const CompiledPresentationSpec& getMagdaGritPresentation() {
             return std::make_unique<CompiledGritCurveView>(pluginId);
         },
         .suppressLegacyUis = {},
+        .isParameterEnabled =
+            [](const magda::DeviceInfo& device, int slotIndex) {
+                using Grit = magda::daw::audio::compiled::MagdaGritCompiledPlugin;
+                if (slotIndex != Grit::kWidthSlot)
+                    return true;
+
+                const auto mode = static_cast<Grit::Mode>(juce::jlimit(
+                    0, Grit::kModeCount - 1,
+                    static_cast<int>(std::round(valueForSlot(device, Grit::kModeSlot, 0.0f)))));
+                return mode != Grit::Mode::Sine;
+            },
     };
     return kSpec;
 }

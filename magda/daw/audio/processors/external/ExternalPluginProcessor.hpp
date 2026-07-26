@@ -1,5 +1,6 @@
 #pragma once
 
+#include "plugins/DeviceServices.hpp"
 #include "processors/base/DeviceProcessor.hpp"
 
 namespace magda {
@@ -15,7 +16,8 @@ namespace magda {
  */
 class ExternalPluginProcessor : public DeviceProcessor, public te::AutomatableParameter::Listener {
   public:
-    ExternalPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+    ExternalPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin,
+                            daw::audio::DeviceTrackContext* trackContext);
     ~ExternalPluginProcessor() override;
 
     void setParameter(const juce::String& paramName, float value) override;
@@ -44,6 +46,7 @@ class ExternalPluginProcessor : public DeviceProcessor, public te::AutomatablePa
     mutable bool parametersCached_ = false;
     bool listeningForChanges_ = false;
     bool settingParameterFromUI_ = false;
+    daw::audio::DeviceTrackContext* trackContext_ = nullptr;
 
     void cacheParameterNames() const;
     void propagateParameterChange(te::AutomatableParameter& param);

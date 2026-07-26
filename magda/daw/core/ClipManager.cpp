@@ -1237,7 +1237,8 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
     if (rightClip.isAudio()) {
         // In autoTempo/warp mode, speedRatio is 1.0 but actual stretch is projectBPM/source
         // interpretation BPM. Use the tempo ratio to convert timeline seconds to source seconds.
-        if (clip->audio().interpretation.bpm > 0.0) {
+        const bool useSourceBeatProcessing = clip->autoTempo || clip->warpEnabled;
+        if (useSourceBeatProcessing && clip->audio().interpretation.bpm > 0.0) {
             double deltaBeats = leftLengthBeats;
             rightClip.offsetBeats += deltaBeats;
             rightClip.offset = rightClip.offsetBeats * 60.0 / clip->audio().interpretation.bpm;

@@ -7,17 +7,16 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
-#include "../audio/plugins/SidechainPlugin.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
-#include "InternalDeviceKind.hpp"
 #include "ModulatorEngine.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
+#include "audio/plugins/InternalPluginRegistry.hpp"
 
 namespace magda {
 
@@ -232,8 +231,8 @@ void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements)
     // canonical order among themselves without disturbing any non-analysis
     // post-FX devices' relative positions.
     std::stable_sort(elements.begin(), elements.end(), [](const auto& a, const auto& b) {
-        const int oa = postFxAnalysisDeviceOrder(a.device.pluginId);
-        const int ob = postFxAnalysisDeviceOrder(b.device.pluginId);
+        const int oa = daw::audio::internalPostFxAnalysisOrder(a.device.pluginId);
+        const int ob = daw::audio::internalPostFxAnalysisOrder(b.device.pluginId);
         if (oa < 0 || ob < 0)
             return false;  // leave non-analysis devices where they are
         return oa < ob;
@@ -1894,8 +1893,7 @@ TrackManager::ExternalInstrumentRouting TrackManager::getExternalInstrumentRouti
         if (!magda::isDevice(e))
             continue;
         const auto& d = magda::getDevice(e);
-        if (!(d.isInstrument &&
-              classifyInternalDevice(d.pluginId) == InternalDeviceKind::ExternalInsert))
+        if (!(d.isInstrument && daw::audio::internalPluginHasTag(d.pluginId, "external-insert")))
             continue;
 
         routing.present = true;
@@ -1953,7 +1951,9 @@ void TrackManager::stampDefaultKitIfMissing(DeviceInfo& dev) {
 }
 
 void TrackManager::seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath) {
-    if (classifyInternalDevice(dev.pluginId) != InternalDeviceKind::Sidechain)
+    const auto* spec = daw::audio::findInternalPluginSpec(dev.pluginId);
+    if (spec == nullptr || !daw::audio::internalPluginHasTag(*spec, "sidechain") ||
+        spec->defaultModulationParamIndex < 0)
         return;
     if (!dev.mods.empty())
         return;
@@ -1984,9 +1984,7 @@ void TrackManager::seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePat
     // Full negative depth on the duck output: gain = 1 - depth * (1 - curve),
     // i.e. at full depth the gain follows the drawn curve exactly. The
     // faceplate's depth control edits this link amount.
-    mod.addLink(
-        ControlTarget::pluginParam(devicePath, daw::audio::SidechainPlugin::kGainParamIndex),
-        -1.0f);
+    mod.addLink(ControlTarget::pluginParam(devicePath, spec->defaultModulationParamIndex), -1.0f);
     dev.mods.push_back(mod);
 }
 
@@ -1999,7 +1997,8 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         if (track->type == TrackType::Master &&
-            (device.deviceType == DeviceType::MIDI || isMidiGeneratorDevice(device.pluginId))) {
+            (device.deviceType == DeviceType::MIDI ||
+             daw::audio::isInternalMidiGeneratorPlugin(device.pluginId))) {
             DBG("Cannot add MIDI generator to master track");
             return INVALID_DEVICE_ID;
         }
@@ -2025,7 +2024,8 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             return INVALID_DEVICE_ID;
         }
         if (track->type == TrackType::Master &&
-            (device.deviceType == DeviceType::MIDI || isMidiGeneratorDevice(device.pluginId))) {
+            (device.deviceType == DeviceType::MIDI ||
+             daw::audio::isInternalMidiGeneratorPlugin(device.pluginId))) {
             DBG("Cannot add MIDI generator to master track");
             return INVALID_DEVICE_ID;
         }
@@ -2083,14 +2083,14 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     // The Sidechain device cannot work post-fader: device mods only sync for
     // main-chain devices, so its bundled duck modulator would never run (and
     // this path does not seed it). Reject instead of creating a dead insert.
-    if (classifyInternalDevice(device.pluginId) == InternalDeviceKind::Sidechain) {
+    if (daw::audio::internalPluginHasTag(device.pluginId, "sidechain")) {
         DBG("Cannot add Sidechain device to post-fx chain");
         return INVALID_DEVICE_ID;
     }
 
     // Analysis devices (oscilloscope / spectrum) are unique per kind in post-fx:
     // the header toggles rely on a 1:1 mapping. Regular FX may repeat freely.
-    if (isAnalysisDevice(device.pluginId) &&
+    if (daw::audio::isInternalAnalysisPlugin(device.pluginId) &&
         findPostFxDevice(trackId, device.pluginId) != INVALID_DEVICE_ID) {
         DBG("Post-fx already has analysis device " << device.pluginId << "; skipping duplicate");
         return INVALID_DEVICE_ID;
@@ -2099,7 +2099,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     DeviceInfo newDevice = device;
     newDevice.id = nextPostFxDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
-    if (isAnalysisDevice(newDevice.pluginId))
+    if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
 
     auto& elements = track->chain.postFxChainElements;
@@ -2164,7 +2164,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
     DeviceInfo newDevice = device;
     newDevice.id = nextMixerAnalysisDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
-    if (isAnalysisDevice(newDevice.pluginId))
+    if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
     notifyTrackDevicesChanged(trackId);
@@ -3152,7 +3152,7 @@ DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
     newDevice.id = nextFxDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
     stampDefaultKitIfMissing(newDevice);
-    if (isAnalysisDevice(newDevice.pluginId))
+    if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     return newDevice;
 }

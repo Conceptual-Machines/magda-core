@@ -1346,11 +1346,20 @@ AIChatConsoleContent::AIChatConsoleContent() {
             configStatusLabel_.setText("Loading model...", juce::dontSendNotification);
             configStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
             std::thread([this, cfg]() {
-                bool ok = magda::LlamaModelManager::getInstance().loadModel(cfg);
-                juce::MessageManager::callAsync([this, ok]() {
-                    if (!ok)
-                        DBG("Console: failed to load local model");
-                    updateConfigStatus();
+                std::string errorMessage;
+                bool ok = magda::LlamaModelManager::getInstance().loadModel(cfg, &errorMessage);
+                juce::MessageManager::callAsync([this, ok, errorMessage]() {
+                    if (ok) {
+                        updateConfigStatus();
+                        return;
+                    }
+
+                    DBG("Console: failed to load local model");
+                    configStatusLabel_.setText(errorMessage.empty()
+                                                   ? juce::String("Failed to load local model")
+                                                   : juce::String(errorMessage),
+                                               juce::dontSendNotification);
+                    configStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::red);
                 });
             }).detach();
         }

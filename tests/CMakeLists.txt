@@ -32,9 +32,11 @@ set(TEST_SOURCES
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
     test_openai_url.cpp
+    test_llm_tool_calls.cpp
     test_update_checker.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp
+    test_internal_plugin_registry.cpp
     test_external_insert_registry.cpp
     test_external_insert_enablement.cpp
     test_insert_capture.cpp
@@ -101,6 +103,7 @@ set(TEST_SOURCES
     test_mix_analysis_audio.cpp
     test_console_routing.cpp
     test_conversation_store.cpp
+    test_agent_runtime.cpp
     test_midi_context.cpp
     test_llama_model_manager.cpp
     test_track_reorder.cpp
@@ -145,6 +148,7 @@ set(TEST_SOURCES
     test_lua_runtime.cpp
     # Lua bindings tests (issue #30 — bind MagdaApi)
     test_magda_api_lua_bindings.cpp
+    test_remote_api_contract.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
     test_lua_controller.cpp
     # Focused device API tests
@@ -267,6 +271,7 @@ target_sources(magda_juce_tests PRIVATE
     test_timeline_loop_activation_juce.cpp
     test_midi_signal_routing_juce.cpp
     test_drum_grid_serialization_juce.cpp
+    test_device_services_juce.cpp
     test_master_sidechain_juce.cpp
     test_midi_bridge_note_events_juce.cpp
     test_section_scoped_device_ids_juce.cpp
@@ -279,6 +284,7 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_lane_sync_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
+    test_device_gain_slider.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp

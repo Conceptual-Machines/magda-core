@@ -1,13 +1,12 @@
 #include "plugins/MidiChordEnginePlugin.hpp"
 
-#include "core/TrackManager.hpp"
-
 namespace magda::daw::audio {
 
 const char* MidiChordEnginePlugin::xmlTypeName = "midichordengine";
 
-MidiChordEnginePlugin::MidiChordEnginePlugin(const te::PluginCreationInfo& info)
-    : te::Plugin(info) {
+MidiChordEnginePlugin::MidiChordEnginePlugin(const te::PluginCreationInfo& info,
+                                             DeviceTrackContext* trackContext)
+    : te::Plugin(info), trackContext_(trackContext) {
     for (auto& n : heldNotes_)
         n.store(0, std::memory_order_relaxed);
     // Start timer here as fallback — initialise() may not be called
@@ -114,14 +113,11 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 void MidiChordEnginePlugin::timerCallback() {
     // Drop playback MIDI before it enters this engine when the chord track is
     // muted (audition off) AND the transport is playing. Live authoring while
-    // stopped is unaffected. The chord track is a singleton.
+    // stopped is unaffected. Chord-track state comes from the injected project context.
     {
-        auto& tm = magda::TrackManager::getInstance();
-        const auto chordId = tm.getChordTrackId();
-        const auto* chordTrack =
-            chordId != magda::INVALID_TRACK_ID ? tm.getTrack(chordId) : nullptr;
         const bool playing = edit.getTransport().isPlaying();
-        auditionMuted_.store(chordTrack != nullptr && chordTrack->muted && playing,
+        auditionMuted_.store(trackContext_ != nullptr && trackContext_->isChordTrackMuted() &&
+                                 playing,
                              std::memory_order_relaxed);
     }
 

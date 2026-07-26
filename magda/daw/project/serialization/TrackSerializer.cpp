@@ -1,6 +1,6 @@
 #include <algorithm>
 
-#include "../../core/InternalDeviceKind.hpp"
+#include "../../audio/plugins/InternalPluginRegistry.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
@@ -34,7 +34,7 @@ void migrateUtilityWidthToPercent(DeviceInfo& device) {
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
     auto findAnalysis = [&elements](int order) {
         return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
-            return postFxAnalysisDeviceOrder(element.device.pluginId) == order;
+            return daw::audio::internalPostFxAnalysisOrder(element.device.pluginId) == order;
         });
     };
 

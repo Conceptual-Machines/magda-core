@@ -1,30 +1,28 @@
 #include "ParameterInfo.hpp"
 
-#include "TrackManager.hpp"
-#include "audio/AudioBridge.hpp"
-#include "audio/processors/base/DeviceProcessor.hpp"
-#include "engine/AudioEngine.hpp"
+#include <atomic>
 
 namespace magda {
 
-juce::String ParameterInfo::DisplayTextProvider::format(float normalizedValue) const {
-    auto* engine = TrackManager::getInstance().getAudioEngine();
-    if (!engine)
-        return {};
-    auto* bridge = engine->getAudioBridge();
-    if (!bridge)
-        return {};
+namespace {
 
-    auto path = devicePath;
-    if (!path.isValid() && deviceId != INVALID_DEVICE_ID)
-        path = TrackManager::getInstance().findDevicePath(deviceId);
-    if (!path.isValid())
-        return {};
+std::atomic<ParameterDisplayTextProviderFactory> providerFactory{nullptr};
 
-    auto* processor = bridge->getDeviceProcessor(path);
-    if (!processor)
-        return {};
-    return processor->formatParameterValue(paramIndex, normalizedValue);
+}  // namespace
+
+bool registerParameterDisplayTextProviderFactory(ParameterDisplayTextProviderFactory factory) {
+    if (factory == nullptr)
+        return false;
+
+    auto expected = static_cast<ParameterDisplayTextProviderFactory>(nullptr);
+    return providerFactory.compare_exchange_strong(expected, factory) || expected == factory;
+}
+
+std::shared_ptr<ParameterInfo::DisplayTextProvider> makeParameterDisplayTextProvider(
+    const ChainNodePath& devicePath, int deviceId, int paramIndex) {
+    if (const auto factory = providerFactory.load())
+        return factory(devicePath, deviceId, paramIndex);
+    return {};
 }
 
 }  // namespace magda

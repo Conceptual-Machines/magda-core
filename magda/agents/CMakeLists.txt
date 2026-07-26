@@ -17,6 +17,8 @@ dsl_grammar.hpp
     compact_parser.cpp
     conversation_store.hpp
     conversation_store.cpp
+    agent_runtime.hpp
+    agent_runtime.cpp
     instruction_executor.hpp
     instruction_executor.cpp
     llm_config_utils.hpp
