@@ -847,6 +847,58 @@ TEST_CASE("JoinClipsCommand - split then join roundtrip", "[clip][command][join]
     REQUIRE(joined->midiNotes.size() == originalNoteCount);
 }
 
+TEST_CASE("SplitClipCommand - time-based audio ignores detected BPM for source offset",
+          "[clip][command][split][audio]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId original = createAudio(track, 0.0, 4.0);
+
+    auto& cm = ClipManager::getInstance();
+    auto* source = cm.getClip(original);
+    REQUIRE(source != nullptr);
+    source->autoTempo = false;
+    source->warpEnabled = false;
+    source->audio().interpretation.bpm = 180.0;
+    source->speedRatio = 1.25;
+    source->offset = 0.4;
+
+    SplitClipCommand cmd(original, secondsToBeatPosition(2.0), 120.0);
+    REQUIRE(cmd.canExecute());
+    cmd.execute();
+
+    const auto* right = cm.getClip(cmd.getRightClipId());
+    REQUIRE(right != nullptr);
+    // Detected source BPM is metadata when tempo-follow and warp are disabled.
+    // The right side must continue at timeline delta * speed ratio.
+    REQUIRE(right->offset == Catch::Approx(0.4 + 2.0 * 1.25));
+}
+
+TEST_CASE("SplitClipCommand - undo notifies restored left clip property",
+          "[clip][command][split][undo]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId original = createAudio(track, 0.0, 4.0);
+
+    RecordingClipListener listener;
+    auto& cm = ClipManager::getInstance();
+    cm.addListener(&listener);
+
+    SplitClipCommand cmd(original, secondsToBeatPosition(2.0), 120.0);
+    REQUIRE(cmd.canExecute());
+    cmd.execute();
+
+    listener.clipsChangedCount = 0;
+    listener.propertyChangedClipIds.clear();
+    cmd.undo();
+
+    cm.removeListener(&listener);
+
+    REQUIRE(cm.getClip(original) != nullptr);
+    REQUIRE(cm.getClip(original)->length == Catch::Approx(4.0));
+    REQUIRE(listener.clipsChangedCount > 0);
+    REQUIRE(listener.sawPropertyChangeFor(original));
+}
+
 // ============================================================================
 // DeleteClipCommand
 // ============================================================================

@@ -11,6 +11,7 @@
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/session/ClipSynchronizer.hpp"
+#include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
@@ -134,6 +135,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
         testSplitDrivesLeftClipUpdateThroughListener();
+        testSplitUndoRestoresAudioThroughListener();
         testBeatModeSplitRendersRightSide();
         testBeatModeSplitWrapsLoopPhaseAtBoundary();
         testBeatModeDuplicateRendersCopy();
@@ -1646,6 +1648,38 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                              "Left MIDI TE clip should hold only the notes before the split");
             }
         }
+    }
+
+    void testSplitUndoRestoresAudioThroughListener() {
+        beginTest("Undo split restores left audio clip in engine");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(), ClipView::Arrangement, 60.0);
+
+        SplitClipCommand split(clipId, BeatPosition{2.0}, 60.0);
+        expect(split.canExecute(), "Split should be executable");
+        split.execute();
+
+        auto* splitLeft = f.getTeAudioClip(clipId);
+        expect(splitLeft != nullptr, "Left TE clip should exist after split");
+        if (splitLeft != nullptr)
+            expectWithinAbsoluteError(splitLeft->getPosition().getEnd().inSeconds(), 2.0, 0.01);
+
+        split.undo();
+
+        auto* restored = f.getTeAudioClip(clipId);
+        expect(restored != nullptr, "Restored TE clip should exist after undo");
+        if (restored != nullptr)
+            expectWithinAbsoluteError(restored->getPosition().getEnd().inSeconds(), 4.0, 0.01);
+
+        f.edit->restartPlayback();
+        auto result = f.renderToSeconds(3.2);
+        if (!hasRenderableBuffer(result, "split undo"))
+            return;
+        expectAudioInRange(result.buffer, result.sampleRate, 2.2, 0.8,
+                           "restored region after split undo");
     }
 
     void testBeatModeSplitRendersRightSide() {

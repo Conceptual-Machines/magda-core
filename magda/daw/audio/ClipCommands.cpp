@@ -360,6 +360,10 @@ void SplitClipCommand::restoreState(const ClipInfo& state) {
     // Restore original clip completely
     if (auto* clip = clipManager.getClip(clipId_)) {
         *clip = state;  // Full restoration - no missing fields!
+        // Deleting the right clip only drives structural synchronization. The
+        // restored left clip also changed length/offset/loop state and must be
+        // pushed back into the engine or Tracktion retains the split state.
+        clipManager.forceNotifyClipPropertyChanged(clipId_);
         clipManager.forceNotifyClipsChanged();
     }
 }
