@@ -202,6 +202,7 @@ void Config::save() {
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
     root->setProperty("sampleTaggerModelsDir", toJuceString(sampleTaggerModelsDir));
+    root->setProperty("commandModelModelsDir", toJuceString(commandModelModelsDir));
     root->setProperty("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     root->setProperty("mediaDbDir", toJuceString(mediaDbDir));
     root->setProperty("externalAudioEditorPath", toJuceString(externalAudioEditorPath));
@@ -659,6 +660,7 @@ void Config::load() {
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
     sampleTaggerModelsDir = getString("sampleTaggerModelsDir", sampleTaggerModelsDir);
+    commandModelModelsDir = getString("commandModelModelsDir", commandModelModelsDir);
     loadSampleTaggerOnStartup = getBool("loadSampleTaggerOnStartup", loadSampleTaggerOnStartup);
     mediaDbDir = getString("mediaDbDir", mediaDbDir);
     externalAudioEditorPath = getString("externalAudioEditorPath", externalAudioEditorPath);

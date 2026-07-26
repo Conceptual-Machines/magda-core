@@ -481,6 +481,15 @@ class Config {
         sampleTaggerModelsDir = dir;
     }
 
+    // User-chosen location for the optional command-model ONNX bundle.
+    // Empty string = default (dataDir/CommandModel/models).
+    std::string getCommandModelModelsDir() const {
+        return commandModelModelsDir;
+    }
+    void setCommandModelModelsDir(const std::string& dir) {
+        commandModelModelsDir = dir;
+    }
+
     // Load the Sample Tagger encoders + tokenizer eagerly at app startup
     // instead of waiting for the first DB query that needs them. Eats
     // ~700 MB of RAM and a few seconds of init time, but no first-query
@@ -1268,6 +1277,10 @@ class Config {
     // Optional override for the Sample Tagger ONNX bundle location.
     // Empty = use the default dataDir/MediaDB/models.
     std::string sampleTaggerModelsDir = "";
+
+    // Optional override for the command-model ONNX bundle location.
+    // Empty = use the default dataDir/CommandModel/models.
+    std::string commandModelModelsDir = "";
 
     // Eagerly load the Sample Tagger encoders + tokenizer at startup
     // (vs lazy on first query).

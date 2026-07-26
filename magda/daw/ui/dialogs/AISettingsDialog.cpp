@@ -1028,7 +1028,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
             styleCombo(r.providerCombo);
             AgentRow* rp = &r;
-            r.providerCombo.onChange = [this, rp]() { fillRowModel(*rp, {}); };
+            r.providerCombo.onChange = [this, rp]() { fillRowModel(*rp, {}, {}); };
             addAndMakeVisible(r.providerCombo);
 
             // Pick-from-list only - no free-text model entry.
@@ -1148,7 +1148,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     }
 
     // Provider options offered in the Advanced grid: configured cloud
-    // providers (from the Cloud tab) plus the two local sources.
+    // providers (from the Cloud tab) plus one Local group. The right-hand
+    // combo chooses the specific local backend.
     std::vector<std::pair<std::string, juce::String>> advancedProviderOptions() const {
         std::vector<std::pair<std::string, juce::String>> opts;
         if (cloudPage) {
@@ -1156,23 +1157,42 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 if (auto* info = findProviderInfo(pid))
                     opts.emplace_back(pid, juce::String(info->displayName));
         }
-        opts.emplace_back(magda::provider::LLAMA_LOCAL, juce::String("Local (Embedded)"));
-        opts.emplace_back(magda::provider::LOCAL_SERVER, juce::String("Local Server"));
+        opts.emplace_back(magda::provider::LLAMA_LOCAL, juce::String("Local"));
         return opts;
     }
 
-    std::string rowProviderId(const AgentRow& row) const {
+    static bool isLocalProviderId(const std::string& id) {
+        return id == magda::provider::LLAMA_LOCAL || id == magda::provider::LOCAL_SERVER ||
+               id == magda::provider::FAST_INFERENCE;
+    }
+
+    std::string rowProviderGroupId(const AgentRow& row) const {
         int idx = row.providerCombo.getSelectedId() - 1;
         if (idx >= 0 && idx < static_cast<int>(row.providerIds.size()))
             return row.providerIds[static_cast<size_t>(idx)];
         return {};
     }
 
+    std::string rowProviderId(const AgentRow& row) const {
+        const auto groupId = rowProviderGroupId(row);
+        if (groupId != magda::provider::LLAMA_LOCAL)
+            return groupId;
+
+        if (row.modelCombo.getSelectedId() == 2)
+            return magda::provider::LOCAL_SERVER;
+        if (row.role == magda::role::COMMAND && row.modelCombo.getSelectedId() == 3)
+            return magda::provider::FAST_INFERENCE;
+        return magda::provider::LLAMA_LOCAL;
+    }
+
     // Select the combo item matching a provider id. openai_responses and
-    // openai_chat share one "OpenAI" entry, so they map interchangeably.
+    // openai_chat share one "OpenAI" entry, and all local backends share one
+    // "Local" entry.
     void selectRowProviderById(AgentRow& row, std::string id) {
         if (id == magda::provider::OPENAI_RESPONSES)
             id = magda::provider::OPENAI_CHAT;
+        if (isLocalProviderId(id))
+            id = magda::provider::LLAMA_LOCAL;
         for (size_t i = 0; i < row.providerIds.size(); ++i) {
             auto cand = row.providerIds[i];
             if (cand == magda::provider::OPENAI_RESPONSES)
@@ -1187,28 +1207,31 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             row.providerCombo.setSelectedId(1, juce::dontSendNotification);
     }
 
-    // Fill a row's model combo from the selected provider's catalogue. The combo
-    // is pick-from-list only (no free text). Local providers take no per-agent
-    // model, so the combo is disabled: embedded shows nothing, local-server
-    // shows the shared model id read-only.
-    void fillRowModel(AgentRow& row, const juce::String& desiredModel) {
-        auto pid = rowProviderId(row);
+    // Fill the right-hand combo with either a cloud model catalogue or the
+    // available local backends. desiredProvider restores a saved local choice.
+    void fillRowModel(AgentRow& row, const juce::String& desiredModel,
+                      const std::string& desiredProvider) {
+        const auto providerGroupId = rowProviderGroupId(row);
         row.modelCombo.clear(juce::dontSendNotification);
-        if (pid == magda::provider::LLAMA_LOCAL || pid == magda::provider::LOCAL_SERVER ||
-            pid == magda::provider::FAST_INFERENCE) {
-            if (pid == magda::provider::LOCAL_SERVER) {
-                auto shared = Config::getInstance().getLocalServerModel();
-                if (!shared.empty()) {
-                    row.modelCombo.addItem(juce::String(shared), 1);
-                    row.modelCombo.setSelectedId(1, juce::dontSendNotification);
-                }
-            }
-            row.modelCombo.setEnabled(false);
+        if (providerGroupId == magda::provider::LLAMA_LOCAL) {
+            row.modelCombo.addItem("Embedded", 1);
+            row.modelCombo.addItem("Server", 2);
+            if (row.role == magda::role::COMMAND)
+                row.modelCombo.addItem("Fast Inference (Command)", 3);
+
+            int selectedId = 1;
+            if (desiredProvider == magda::provider::LOCAL_SERVER)
+                selectedId = 2;
+            else if (row.role == magda::role::COMMAND &&
+                     desiredProvider == magda::provider::FAST_INFERENCE)
+                selectedId = 3;
+            row.modelCombo.setSelectedId(selectedId, juce::dontSendNotification);
+            row.modelCombo.setEnabled(true);
             return;
         }
         row.modelCombo.setEnabled(true);
 
-        auto models = knownModelsForProvider(pid);
+        auto models = knownModelsForProvider(providerGroupId);
         bool desiredInCatalogue = false;
         for (const auto& m : models)
             if (m == desiredModel) {
@@ -1247,16 +1270,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 row.providerCombo.addItem(disp, itemId++);
                 row.providerIds.push_back(pid);
             }
-            // Only the command role has an on-device model behind it. The
-            // console router's tiny net was removed — #1875 retires the router
-            // entirely in favour of the agent orchestrator — so every other
-            // role still needs a real LLM.
-            if (row.role == magda::role::COMMAND) {
-                row.providerCombo.addItem("Fast Inference (Command)", itemId++);
-                row.providerIds.push_back(magda::provider::FAST_INFERENCE);
-            }
             selectRowProviderById(row, prevProvider);
-            fillRowModel(row, prevModel);
+            fillRowModel(row, prevModel, prevProvider);
         }
     }
 
@@ -1271,7 +1286,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             if (it == cfgs.end())
                 continue;
             selectRowProviderById(row, it->second.provider);
-            fillRowModel(row, juce::String(it->second.model));
+            fillRowModel(row, juce::String(it->second.model), it->second.provider);
         }
     }
 
@@ -1389,7 +1404,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         for (auto& row : agentRows_) {
             auto cfg = config.getAgentLLMConfig(row.role);
             selectRowProviderById(row, cfg.provider);
-            fillRowModel(row, juce::String(cfg.model));
+            fillRowModel(row, juce::String(cfg.model), cfg.provider);
         }
     }
 
@@ -2012,8 +2027,8 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
         bounds.removeFromTop(12);
 
         for (auto& row : rows_) {
-            row->setBounds(bounds.removeFromTop(84));
-            bounds.removeFromTop(8);
+            row->setBounds(bounds.removeFromTop(106));
+            bounds.removeFromTop(10);
         }
     }
 
@@ -2065,7 +2080,7 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
             bounds.removeFromTop(4);
             progressBar_.setBounds(bounds.removeFromTop(18));
             bounds.removeFromTop(6);
-            actionButton_.setBounds(bounds.removeFromTop(26).removeFromLeft(200));
+            actionButton_.setBounds(bounds.removeFromTop(32).removeFromLeft(280));
         }
 
         void refreshStatus() {
@@ -2154,9 +2169,9 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
         blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
         blurbLabel_.setJustificationType(juce::Justification::topLeft);
         blurbLabel_.setText(
-            "The Command agent's \"Fast Inference (Command)\" provider turns typed requests into "
-            "DAW commands offline. A small model is built in; this optional download is a much "
-            "more accurate one that understands ordinary phrasing rather than fixed templates.",
+            "Fast Inference runs Command requests locally and works immediately with MAGDA's "
+            "built-in basic model. Download the larger model for better understanding of natural "
+            "language. Cloud providers do not use this model.",
             juce::dontSendNotification);
         addAndMakeVisible(blurbLabel_);
 
@@ -2166,9 +2181,19 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
 
         locationField_.setReadOnly(true);
         styleEditor(locationField_, "");
-        locationField_.setText(magda::CommandModelDownloader::modelsDir().getFullPathName(),
-                               juce::dontSendNotification);
         addAndMakeVisible(locationField_);
+
+        browseButton_.setButtonText("Browse...");
+        browseButton_.onClick = [this]() { browseForLocation(); };
+        addAndMakeVisible(browseButton_);
+
+        resetLocationButton_.setButtonText("Reset");
+        resetLocationButton_.onClick = [this]() {
+            magda::Config::getInstance().setCommandModelModelsDir(std::string{});
+            magda::Config::getInstance().save();
+            refreshStatus();
+        };
+        addAndMakeVisible(resetLocationButton_);
 
         nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
         nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
@@ -2207,6 +2232,10 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
 
         auto locRow = bounds.removeFromTop(rowH);
         locationCaption_.setBounds(locRow.removeFromLeft(labelW));
+        resetLocationButton_.setBounds(locRow.removeFromRight(70).reduced(0, 1));
+        locRow.removeFromRight(4);
+        browseButton_.setBounds(locRow.removeFromRight(90).reduced(0, 1));
+        locRow.removeFromRight(4);
         locationField_.setBounds(locRow.reduced(0, 1));
         bounds.removeFromTop(12);
 
@@ -2226,9 +2255,12 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
 
   private:
     void refreshStatus() {
+        locationField_.setText(magda::CommandModelDownloader::modelsDir().getFullPathName(),
+                               juce::dontSendNotification);
         const auto sizeMb =
             juce::String(magda::CommandModelDownloader::expectedTotalBytes() / (1024 * 1024));
         const bool installed = magda::CommandModelDownloader::isInstalled();
+        const bool downloading = downloader_.isRunning();
         const juce::String name = magda::CommandModelDownloader::displayName();
 
         nameLabel_.setText(name + (installed ? " - Installed. Used automatically by Fast "
@@ -2236,6 +2268,30 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
                                              : " - Not installed. The built-in model is in use."),
                            juce::dontSendNotification);
         actionButton_.setButtonText(installed ? "Remove" : "Download (" + sizeMb + " MB)");
+        browseButton_.setEnabled(!downloading);
+        resetLocationButton_.setEnabled(!downloading);
+    }
+
+    void browseForLocation() {
+        const auto currentDir = magda::CommandModelDownloader::modelsDir();
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Choose a folder for the Command model",
+            currentDir.exists() ? currentDir
+                                : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+        const juce::Component::SafePointer<CommandModelPage> self(this);
+        fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                      juce::FileBrowserComponent::canSelectDirectories,
+                                  [self](const juce::FileChooser& fc) {
+                                      if (self == nullptr)
+                                          return;
+                                      const auto picked = fc.getResult();
+                                      if (!picked.isDirectory())
+                                          return;
+                                      magda::Config::getInstance().setCommandModelModelsDir(
+                                          picked.getFullPathName().toStdString());
+                                      magda::Config::getInstance().save();
+                                      self->refreshStatus();
+                                  });
     }
 
     void handleActionClick() {
@@ -2252,6 +2308,8 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
         progressValue_ = 0.0;
         progressBar_.setVisible(true);
         actionButton_.setButtonText("Cancel");
+        browseButton_.setEnabled(false);
+        resetLocationButton_.setEnabled(false);
 
         // SafePointer: the download outlives dialog dismissal and the callback
         // hops through callAsync.
@@ -2271,6 +2329,8 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
                        p.phase == Phase::Cancelled) {
                 self->progressBar_.setVisible(false);
                 self->refreshStatus();
+                self->browseButton_.setEnabled(true);
+                self->resetLocationButton_.setEnabled(true);
                 if (p.phase == Phase::Failed) {
                     self->nameLabel_.setText("Download failed: " + p.errorMessage,
                                              juce::dontSendNotification);
@@ -2282,6 +2342,9 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
     juce::Label blurbLabel_;
     juce::Label locationCaption_;
     juce::TextEditor locationField_;
+    juce::TextButton browseButton_;
+    juce::TextButton resetLocationButton_;
+    std::unique_ptr<juce::FileChooser> fileChooser_;
     juce::Label nameLabel_;
     std::unique_ptr<juce::HyperlinkButton> sourceLink_;
     // ProgressBar holds a reference to the value; declare the value first.
