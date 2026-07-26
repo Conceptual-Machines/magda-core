@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -315,13 +316,13 @@ double parseNumber(const std::string& text) {
             while (j < n && std::isdigit(static_cast<unsigned char>(text[j])))
                 ++j;
         }
-        try {
-            return std::stod(text.substr(i, j - i));
-        } catch (const std::out_of_range&) {
-            return 0.0;
-        } catch (const std::invalid_argument&) {
-            return 0.0;
-        }
+        // strtod, not stod: the matched text is always a valid literal, and
+        // Python's float() never raises on magnitude - it saturates to
+        // +/-inf, which "{:g}" renders as "inf". strtod returns +/-HUGE_VAL
+        // on overflow, so it matches the reference exactly where stod threw
+        // out_of_range. Downstream the DSL interpreter clamps (juce::jlimit),
+        // so inf executes as the parameter bound rather than as 0.
+        return std::strtod(text.substr(i, j - i).c_str(), nullptr);
     }
     return 0.0;
 }

@@ -312,5 +312,21 @@ TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);
 AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane);
 
+// makeSelectionDto, makeTransportDto, and makeSessionDto read MagdaApi live
+// state and assert the JUCE message thread. Tests drive them from the Catch2
+// runner thread with no MessageManager, so they suspend the assertion at
+// runtime for their scope; application code never changes this.
+void setMessageThreadAssertionEnabled(bool enabled);
+bool isMessageThreadAssertionEnabled();
+
+class ScopedMessageThreadAssertionDisabler {
+  public:
+    ScopedMessageThreadAssertionDisabler();
+    ~ScopedMessageThreadAssertionDisabler();
+
+  private:
+    bool previous_ = true;
+};
+
 }  // namespace remote
 }  // namespace magda

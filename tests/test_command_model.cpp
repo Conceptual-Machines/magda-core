@@ -63,13 +63,22 @@ TEST_CASE("Command model tokenizer mirrors the Python reference", "[agents][comm
     }
 }
 
-TEST_CASE("Command model rejects out-of-range numeric text without throwing",
+// Python's float() saturates out-of-range literals to +/-inf, and "{:g}"
+// renders that as "inf"/"-inf" - so an absurd value surfaces in the DSL
+// instead of silently executing as 0. The interpreter clamps non-finite
+// values at the parameter bounds (juce::jlimit).
+TEST_CASE("Command model matches Python float() on out-of-range numeric text",
           "[agents][command_model]") {
     const std::string hugeNumber(400, '9');
-    const CommandModel::Prediction prediction{
+    CommandModel::Prediction prediction{
         .intent = "set_track_volume",
         .tokens = {"Bass", hugeNumber},
         .tags = {"B-TRACK_NAME", "B-VALUE"},
     };
-    CHECK_NOTHROW(CommandModel::renderPrediction(prediction));
+    CHECK(CommandModel::renderPrediction(prediction) ==
+          "track(name=\"Bass\").track.set(volume_db=inf)");
+
+    prediction.tokens[1] = "-" + hugeNumber;
+    CHECK(CommandModel::renderPrediction(prediction) ==
+          "track(name=\"Bass\").track.set(volume_db=-inf)");
 }

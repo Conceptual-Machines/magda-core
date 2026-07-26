@@ -159,7 +159,7 @@ StemSeparationService::StemSeparationService() : pool_(std::make_unique<juce::Th
 StemSeparationService::~StemSeparationService() {
     // Drain UNBOUNDED (timeout < 0) before pool_ is freed; see
     // TranscriptionService for why the built-in finite drain is not enough.
-    cancelRequested_.store(true);
+    ++cancelGeneration_;
     if (pool_)
         pool_->removeAllJobs(true, -1);
 }
@@ -187,7 +187,9 @@ void StemSeparationService::setActivityCallback(ActivityCallback callback) {
 }
 
 void StemSeparationService::cancelAll() {
-    cancelRequested_.store(true);
+    // Bumping the generation cancels only jobs enqueued before this call;
+    // a split started afterwards snapshots the new value and runs normally.
+    ++cancelGeneration_;
 }
 
 void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engine,
@@ -204,8 +206,6 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
                 (*completion)(groupId, error);
         });
     };
-    if (pendingJobs_.load() == 0)
-        cancelRequested_.store(false);
     ++pendingJobs_;
     if (activityCallback_)
         activityCallback_(true, 0.0F);
@@ -285,9 +285,14 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
 
     pool_->addJob([this, sourceClipId, engine, filePath, baseName, sourceTrackId, startBeat,
                    sceneIndex, bpm, stemsRoot, stemTrackIds, groupId, report = std::move(report),
-                   failAndCleanup = std::move(failAndCleanup)]() {
+                   failAndCleanup = std::move(failAndCleanup),
+                   enqueueGeneration = cancelGeneration_.load()]() {
+        // Cancelled iff cancelAll() ran after this job was enqueued.
+        auto cancelled = [this, enqueueGeneration]() {
+            return cancelGeneration_.load() != enqueueGeneration;
+        };
         try {
-            if (cancelRequested_.load()) {
+            if (cancelled()) {
                 failAndCleanup("Separation cancelled");
                 return;
             }
@@ -309,8 +314,8 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
             // Throttle progress to whole-percent steps on the message thread,
             // feeding the activity banner.
             auto lastPercent = std::make_shared<int>(-1);
-            auto progress = [this, lastPercent](float frac) {
-                if (cancelRequested_.load())
+            auto progress = [this, lastPercent, cancelled](float frac) {
+                if (cancelled())
                     return false;
                 const int percent = static_cast<int>(frac * 100.0F);
                 if (percent != *lastPercent) {
@@ -325,8 +330,7 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
 
             std::vector<Stem> stems = separator->separate(input, sampleRate, progress);
             if (stems.empty()) {
-                failAndCleanup(cancelRequested_.load() ? "Separation cancelled"
-                                                       : "Separation failed");
+                failAndCleanup(cancelled() ? "Separation cancelled" : "Separation failed");
                 return;
             }
 

@@ -26,12 +26,22 @@ std::vector<float> resampleChannel(const float* in, int numSamples, double srcRa
         return {in, in + numSamples};
     const double ratio = srcRate / dstRate;
     const int outLen = static_cast<int>(std::ceil(numSamples / ratio));
-    std::vector<float> out(static_cast<size_t>(std::max(outLen, 0)), 0.0F);
     if (outLen <= 0)
-        return out;
+        return {};
+    // The Lagrange group delay is getBaseLatency() input samples (2), which
+    // is latency / ratio output samples. Rounding the fractional case leaves
+    // at most half an output sample of residual offset.
+    const int latencyOut =
+        static_cast<int>(std::lround(juce::LagrangeInterpolator::getBaseLatency() / ratio));
+    std::vector<float> out(static_cast<size_t>(outLen + latencyOut), 0.0F);
     juce::LagrangeInterpolator interp;
-    int inputSamplesUsed = 0;
-    interp.process(ratio, in, out.data(), outLen, numSamples, inputSamplesUsed);
+    // By-value wrapAround count, not an out-param; 0 = zero-pad past the end,
+    // covering both the discarded warm-up and the final tail samples. The
+    // bounded overload keeps reads within numSamples.
+    const int wrapAround = 0;
+    interp.process(ratio, in, out.data(), outLen + latencyOut, numSamples, wrapAround);
+    // Drop the warm-up so the output is time-aligned with the input.
+    out.erase(out.begin(), out.begin() + latencyOut);
     return out;
 }
 

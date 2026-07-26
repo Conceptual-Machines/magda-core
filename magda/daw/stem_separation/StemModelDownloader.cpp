@@ -150,8 +150,12 @@ class StemModelDownloader::Worker : public juce::Thread {
 
     void cancelDownload() {
         signalThreadShouldExit();
-        if (auto* stream = activeStream_.load())
-            stream->cancel();
+        // streamLock_ keeps the stream alive across cancel(); the worker only
+        // holds it to set/clear the pointer, never across a blocking read, so
+        // a stuck read still unblocks promptly.
+        const juce::ScopedLock lock(streamLock_);
+        if (activeStream_ != nullptr)
+            activeStream_->cancel();
     }
 
     void run() override {
@@ -191,13 +195,19 @@ class StemModelDownloader::Worker : public juce::Thread {
 
         juce::WebInputStream stream(juce::URL(entry.url), false);
         stream.withConnectionTimeout(30000);
-        activeStream_.store(&stream);
+        {
+            const juce::ScopedLock lock(streamLock_);
+            activeStream_ = &stream;
+        }
         struct ClearActiveStream {
-            std::atomic<juce::WebInputStream*>& active;
+            Worker& worker;
             ~ClearActiveStream() {
-                active.store(nullptr);
+                // Under streamLock_ so cancelDownload() can never see the
+                // pointer after the stack-allocated stream is destroyed.
+                const juce::ScopedLock lock(worker.streamLock_);
+                worker.activeStream_ = nullptr;
             }
-        } clearActiveStream{activeStream_};
+        } clearActiveStream{*this};
 
         if (!stream.connect(nullptr)) {
             p.errorMessage = juce::String("Could not connect to ") + entry.filename;
@@ -302,7 +312,8 @@ class StemModelDownloader::Worker : public juce::Thread {
 
     StemModel model_;
     ProgressCallback onProgress_;
-    std::atomic<juce::WebInputStream*> activeStream_{nullptr};
+    juce::CriticalSection streamLock_;
+    juce::WebInputStream* activeStream_ = nullptr;  // guarded by streamLock_
 };
 
 // ===========================================================================

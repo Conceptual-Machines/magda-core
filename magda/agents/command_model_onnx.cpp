@@ -181,42 +181,17 @@ struct CommandModelOnnx::Impl {
         session = Ort::Session(env, (dir / "command_model.onnx").c_str(), sessionOptions);
 
         const auto mapsPath = dir / "maps.json";
-        auto json = juce::JSON::parse(juce::File(juce::String(mapsPath.string())));
-        if (json.isVoid())
-            throw CommandModelOnnxError("failed to parse " + mapsPath.string());
-
-        // maps.json stores name -> id; invert into dense id-indexed tables.
-        auto invert = [](const juce::var& obj, std::vector<std::string>& out, const char* mapName) {
-            auto* dyn = obj.getDynamicObject();
-            if (dyn == nullptr)
-                throw CommandModelOnnxError(std::string("maps.json missing ") + mapName);
-
-            const auto& properties = dyn->getProperties();
-            out.assign(static_cast<size_t>(properties.size()), {});
-            std::vector<bool> seen(out.size(), false);
-            for (const auto& prop : properties) {
-                if (!prop.value.isInt() && !prop.value.isInt64())
-                    throw CommandModelOnnxError(std::string("maps.json has a non-integer ") +
-                                                mapName + " id");
-                const auto rawId = static_cast<juce::int64>(prop.value);
-                if (rawId < 0 || rawId >= properties.size())
-                    throw CommandModelOnnxError(std::string("maps.json has an out-of-range ") +
-                                                mapName + " id");
-                const auto id = static_cast<size_t>(rawId);
-                if (seen[id])
-                    throw CommandModelOnnxError(std::string("maps.json has a duplicate ") +
-                                                mapName + " id");
-                seen[id] = true;
-                out[static_cast<size_t>(id)] = prop.name.toString().toStdString();
-            }
-            if (std::find(seen.begin(), seen.end(), false) != seen.end())
-                throw CommandModelOnnxError(std::string("maps.json has a sparse ") + mapName +
-                                            " id map");
-        };
-        invert(json.getProperty("intents", juce::var()), idToIntent, "intent");
-        invert(json.getProperty("tags", juce::var()), idToTag, "tag");
-        if (idToIntent.empty() || idToTag.empty())
-            throw CommandModelOnnxError("maps.json missing intents/tags");
+        const auto mapsText =
+            juce::File(juce::String(mapsPath.string())).loadFileAsString().toStdString();
+        try {
+            auto maps = parseCommandModelMaps(mapsText);
+            idToIntent = std::move(maps.idToIntent);
+            idToTag = std::move(maps.idToTag);
+        } catch (const CommandModelOnnxError& error) {
+            // The shared parser cannot know which file it was fed; re-anchor
+            // the message to the bundle on disk.
+            throw CommandModelOnnxError(std::string(error.what()) + " (" + mapsPath.string() + ")");
+        }
     }
 };
 
@@ -235,9 +210,14 @@ CommandModelOnnx::CommandModelOnnx(CommandModelOnnx&&) noexcept = default;
 CommandModelOnnx& CommandModelOnnx::operator=(CommandModelOnnx&&) noexcept = default;
 
 bool CommandModelOnnx::isInstalled(const std::filesystem::path& dir) {
-    return std::filesystem::exists(dir / "command_model.onnx") &&
-           std::filesystem::exists(dir / "tokenizer.json") &&
-           std::filesystem::exists(dir / "maps.json");
+    // error_code overloads only: a stat failure (EACCES, dead mount) means
+    // "not installed". The throwing overload let a filesystem_error escape
+    // CommandAgent::generateLocal's unguarded isInstalled call and hang the
+    // console on "Thinking".
+    std::error_code error;
+    return std::filesystem::exists(dir / "command_model.onnx", error) &&
+           std::filesystem::exists(dir / "tokenizer.json", error) &&
+           std::filesystem::exists(dir / "maps.json", error);
 }
 
 CommandModel::Prediction CommandModelOnnx::predict(const std::string& text) const {
@@ -323,13 +303,60 @@ std::string CommandModelOnnx::generate(const std::string& text) const {
 
 #endif  // MAGDA_HAVE_CLAP
 
-// Path resolution needs no ONNX Runtime, so it lives outside the CLAP guard:
-// the downloader and the settings UI still need to know where the bundle goes
-// on builds where the backend itself is compiled out.
+// Path resolution and maps.json parsing need no ONNX Runtime, so they live
+// outside the CLAP guard: the downloader and the settings UI still need to
+// know where the bundle goes on builds where the backend itself is compiled
+// out, and the maps validation stays testable everywhere.
+#include <juce_core/juce_core.h>
+
+#include <algorithm>
+
 #include "../daw/core/AppPaths.hpp"
 #include "../daw/core/Config.hpp"
 
 namespace magda {
+
+CommandModelMaps parseCommandModelMaps(const std::string& mapsJson) {
+    const auto json = juce::JSON::parse(juce::String(mapsJson));
+    if (json.isVoid())
+        throw CommandModelOnnxError("failed to parse maps.json");
+
+    // maps.json stores name -> id; invert into dense id-indexed tables.
+    auto invert = [](const juce::var& obj, std::vector<std::string>& out, const char* mapName) {
+        auto* dyn = obj.getDynamicObject();
+        if (dyn == nullptr)
+            throw CommandModelOnnxError(std::string("maps.json missing ") + mapName);
+
+        const auto& properties = dyn->getProperties();
+        out.assign(static_cast<size_t>(properties.size()), {});
+        std::vector<bool> seen(out.size(), false);
+        for (const auto& prop : properties) {
+            if (!prop.value.isInt() && !prop.value.isInt64())
+                throw CommandModelOnnxError(std::string("maps.json has a non-integer ") + mapName +
+                                            " id");
+            const auto rawId = static_cast<juce::int64>(prop.value);
+            if (rawId < 0 || rawId >= properties.size())
+                throw CommandModelOnnxError(std::string("maps.json has an out-of-range ") +
+                                            mapName + " id");
+            const auto id = static_cast<size_t>(rawId);
+            if (seen[id])
+                throw CommandModelOnnxError(std::string("maps.json has a duplicate ") + mapName +
+                                            " id");
+            seen[id] = true;
+            out[static_cast<size_t>(id)] = prop.name.toString().toStdString();
+        }
+        if (std::find(seen.begin(), seen.end(), false) != seen.end())
+            throw CommandModelOnnxError(std::string("maps.json has a sparse ") + mapName +
+                                        " id map");
+    };
+
+    CommandModelMaps maps;
+    invert(json.getProperty("intents", juce::var()), maps.idToIntent, "intent");
+    invert(json.getProperty("tags", juce::var()), maps.idToTag, "tag");
+    if (maps.idToIntent.empty() || maps.idToTag.empty())
+        throw CommandModelOnnxError("maps.json missing intents/tags");
+    return maps;
+}
 
 std::filesystem::path CommandModelOnnx::defaultAssetDir() {
     if (const char* env = std::getenv("MAGDA_COMMAND_MODEL_DIR"))

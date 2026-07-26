@@ -25,6 +25,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "command_model.hpp"
 
@@ -34,6 +35,19 @@ class CommandModelOnnxError : public std::runtime_error {
   public:
     using std::runtime_error::runtime_error;
 };
+
+/** maps.json inverted: dense id-indexed name tables for intents and tags. */
+struct CommandModelMaps {
+    std::vector<std::string> idToIntent;
+    std::vector<std::string> idToTag;
+};
+
+/** Parses and validates maps.json text: "intents" and "tags" objects mapping
+ *  name -> id, where each map's ids must be integers covering [0, size) with
+ *  no duplicates. Throws CommandModelOnnxError on any violation. A free
+ *  function, and compiled on every build, so the validation is testable
+ *  without the model bundle or ONNX Runtime. */
+[[nodiscard]] CommandModelMaps parseCommandModelMaps(const std::string& mapsJson);
 
 class CommandModelOnnx {
   public:

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
@@ -19,10 +20,14 @@
 namespace magda::remote {
 namespace {
 
+std::atomic<bool> messageThreadAssertionEnabled{true};
+
 void assertMessageThread() {
-#if !defined(MAGDA_ENABLE_TEST_HOOKS) || !MAGDA_ENABLE_TEST_HOOKS
-    JUCE_ASSERT_MESSAGE_THREAD;
-#endif
+    // Live-state projections must run on the JUCE message thread. Tests that
+    // call them from the Catch2 runner thread (no MessageManager) suspend the
+    // assertion at runtime; it stays live in every application build.
+    if (isMessageThreadAssertionEnabled())
+        JUCE_ASSERT_MESSAGE_THREAD;
 }
 
 juce::String trackTypeName(TrackType type) {
@@ -208,6 +213,23 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
 }
 
 }  // namespace
+
+void setMessageThreadAssertionEnabled(bool enabled) {
+    messageThreadAssertionEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool isMessageThreadAssertionEnabled() {
+    return messageThreadAssertionEnabled.load(std::memory_order_relaxed);
+}
+
+ScopedMessageThreadAssertionDisabler::ScopedMessageThreadAssertionDisabler()
+    : previous_(isMessageThreadAssertionEnabled()) {
+    setMessageThreadAssertionEnabled(false);
+}
+
+ScopedMessageThreadAssertionDisabler::~ScopedMessageThreadAssertionDisabler() {
+    setMessageThreadAssertionEnabled(previous_);
+}
 
 ProjectDto makeProjectDto(const ProjectInfo& project) {
     ProjectDto dto;

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include "magda/agents/command_model_onnx.hpp"
 
@@ -108,3 +109,59 @@ TEST_CASE("ONNX command model tags words, not subwords", "[agents][command_model
 }
 
 #endif  // MAGDA_HAVE_CLAP
+
+// maps.json validation lives outside the CLAP guard (like defaultAssetDir),
+// so these run on every build and need no model bundle. A model trained
+// against one id table and decoded through another mislabels every
+// prediction, so a maps.json whose ids are not a dense 0..n-1 range must be
+// rejected at load, not silently reindexed.
+TEST_CASE("Command model maps.json ids must form a dense 0..n-1 range",
+          "[agents][command_model][onnx]") {
+    using magda::CommandModelOnnxError;
+    using magda::parseCommandModelMaps;
+
+    // Wrap one intents object with a minimal valid tags object, so each
+    // section exercises exactly one violation.
+    const auto withIntents = [](const std::string& intents) {
+        return "{\"intents\": " + intents + ", \"tags\": {\"O\": 0}}";
+    };
+
+    SECTION("valid maps invert to dense id-indexed tables") {
+        const auto maps =
+            parseCommandModelMaps("{\"intents\": {\"set_track_volume\": 1, \"create_track\": 0},"
+                                  " \"tags\": {\"O\": 0, \"B-VALUE\": 2, \"B-TRACK_NAME\": 1}}");
+        CHECK(maps.idToIntent == std::vector<std::string>{"create_track", "set_track_volume"});
+        CHECK(maps.idToTag == std::vector<std::string>{"O", "B-TRACK_NAME", "B-VALUE"});
+    }
+    SECTION("negative id") {
+        CHECK_THROWS_AS(parseCommandModelMaps(withIntents("{\"a\": -1, \"b\": 0}")),
+                        CommandModelOnnxError);
+    }
+    SECTION("id at or beyond the map size") {
+        CHECK_THROWS_AS(parseCommandModelMaps(withIntents("{\"a\": 0, \"b\": 2}")),
+                        CommandModelOnnxError);
+    }
+    SECTION("duplicate id") {
+        CHECK_THROWS_AS(parseCommandModelMaps(withIntents("{\"a\": 0, \"b\": 0}")),
+                        CommandModelOnnxError);
+    }
+    SECTION("sparse map") {
+        // One entry whose id skips slot 0: the table would hold a hole.
+        CHECK_THROWS_AS(parseCommandModelMaps(withIntents("{\"a\": 1}")), CommandModelOnnxError);
+    }
+    SECTION("non-integer id") {
+        CHECK_THROWS_AS(parseCommandModelMaps(withIntents("{\"a\": 0.5, \"b\": 0}")),
+                        CommandModelOnnxError);
+        CHECK_THROWS_AS(parseCommandModelMaps(withIntents("{\"a\": \"0\", \"b\": 1}")),
+                        CommandModelOnnxError);
+    }
+    SECTION("missing or empty map objects") {
+        CHECK_THROWS_AS(parseCommandModelMaps("{\"intents\": {\"a\": 0}}"), CommandModelOnnxError);
+        CHECK_THROWS_AS(parseCommandModelMaps("{\"intents\": {}, \"tags\": {\"O\": 0}}"),
+                        CommandModelOnnxError);
+    }
+    SECTION("unparseable text") {
+        CHECK_THROWS_AS(parseCommandModelMaps(""), CommandModelOnnxError);
+        CHECK_THROWS_AS(parseCommandModelMaps("not json"), CommandModelOnnxError);
+    }
+}

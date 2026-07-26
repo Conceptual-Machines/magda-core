@@ -23,7 +23,45 @@ bool schemaDeclaresType(const juce::var& schema, const char* expected) {
     return false;
 }
 
-void applyDefaultLimits(juce::var schema, const juce::String& propertyName = {}) {
+// Every integer field is bounded to the C++ int range so an int64 value can
+// never truncate on decode; ids additionally get a non-negative floor so a
+// negative int64 cannot alias a valid id through modular wrap. Explicit
+// bounds are honoured (the -1 index sentinels declare minimum -1), and const
+// and enum schemas already pin their values (the master track sentinel -2
+// uses an explicit const/anyOf form), so those are left untouched.
+void applyIntegerBounds(juce::var schema, const juce::String& propertyName = {}) {
+    auto* object = schema.getDynamicObject();
+    if (object == nullptr)
+        return;
+
+    if (schemaDeclaresType(schema, "integer") && !object->hasProperty("const") &&
+        !object->hasProperty("enum")) {
+        const bool isId =
+            propertyName == "id" || propertyName.endsWith("Id") || propertyName.endsWith("Ids");
+        if (!object->hasProperty("minimum"))
+            object->setProperty("minimum", isId ? 0 : std::numeric_limits<int>::min());
+        if (!object->hasProperty("maximum"))
+            object->setProperty("maximum", std::numeric_limits<int>::max());
+    }
+
+    if (auto* properties = object->getProperty("properties").getDynamicObject())
+        for (const auto& property : properties->getProperties())
+            applyIntegerBounds(property.value, property.name.toString());
+
+    const auto items = object->getProperty("items");
+    if (!items.isVoid())
+        applyIntegerBounds(items, propertyName);
+
+    if (auto* alternatives = object->getProperty("anyOf").getArray())
+        for (auto& alternative : *alternatives)
+            applyIntegerBounds(alternative, propertyName);
+}
+
+// Blanket DoS caps for request payloads. Response schemas must stay valid for
+// anything the model can hold (a dense MIDI clip easily exceeds 4096 notes),
+// so these defaults are applied to operation input schemas only; output
+// collections carry explicit caps where a real limit exists.
+void applyRequestLimits(juce::var schema) {
     auto* object = schema.getDynamicObject();
     if (object == nullptr)
         return;
@@ -33,27 +71,22 @@ void applyDefaultLimits(juce::var schema, const juce::String& propertyName = {})
     if (schemaDeclaresType(schema, "array") && !object->hasProperty("maxItems"))
         object->setProperty("maxItems", kDefaultMaxArrayItems);
 
-    const bool isId =
-        propertyName == "id" || propertyName.endsWith("Id") || propertyName.endsWith("Ids");
-    if (isId && schemaDeclaresType(schema, "integer") && !object->hasProperty("maximum"))
-        object->setProperty("maximum", std::numeric_limits<int>::max());
-
     if (auto* properties = object->getProperty("properties").getDynamicObject())
         for (const auto& property : properties->getProperties())
-            applyDefaultLimits(property.value, property.name.toString());
+            applyRequestLimits(property.value);
 
     const auto items = object->getProperty("items");
     if (!items.isVoid())
-        applyDefaultLimits(items, propertyName);
+        applyRequestLimits(items);
 
     if (auto* alternatives = object->getProperty("anyOf").getArray())
         for (auto& alternative : *alternatives)
-            applyDefaultLimits(alternative, propertyName);
+            applyRequestLimits(alternative);
 }
 
 juce::var parseSchema(const char* json) {
     auto schema = juce::JSON::parse(juce::String::fromUTF8(json));
-    applyDefaultLimits(schema);
+    applyIntegerBounds(schema);
     return schema;
 }
 
@@ -158,7 +191,7 @@ const juce::var& clipSchema() {
                 "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars","2_bars",
                     "1_bar","1/2","1/4","1/8","1/16"]},
                 "followAction":{"type":"string","enum":["none","next","previous","random","stop","again"]},
-                "notes":{"type":"array"}
+                "notes":{"type":"array","maxItems":100000}
             },
             "required":["id","trackId","type","view","name","colourArgb","startBeat","lengthBeats",
                         "enabled","sceneIndex","launchMode","launchQuantize","followAction","notes"],
@@ -369,7 +402,7 @@ const juce::var& automationLaneSchema() {
                 "type":{"type":"string","enum":["absolute","clip_based"]},
                 "name":{"type":"string"},
                 "target":{},
-                "points":{"type":"array"},
+                "points":{"type":"array","maxItems":100000},
                 "clipIds":{"type":"array","items":{"type":"integer","minimum":0}}
             },
             "required":["id","type","name","target","points","clipIds"],
@@ -434,14 +467,17 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
         return;
 
     if (auto* alternatives = schemaObject->getProperty("anyOf").getArray()) {
-        const auto matches =
-            std::any_of(alternatives->begin(), alternatives->end(), [&](const auto& alternative) {
-                std::vector<ValidationIssue> candidateIssues;
-                validateValue(value, alternative, path, candidateIssues);
-                return candidateIssues.empty();
-            });
-        if (!matches)
-            addIssue(issues, path, "any_of", "Value does not match any allowed schema");
+        std::vector<ValidationIssue> branchIssues;
+        for (int index = 0; index < alternatives->size(); ++index) {
+            std::vector<ValidationIssue> candidateIssues;
+            validateValue(value, (*alternatives)[index],
+                          path + "<anyOf:" + juce::String(index) + ">", candidateIssues);
+            if (candidateIssues.empty())
+                return;
+            branchIssues.insert(branchIssues.end(), candidateIssues.begin(), candidateIssues.end());
+        }
+        addIssue(issues, path, "any_of", "Value does not match any allowed schema");
+        issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
         return;
     }
 
@@ -530,12 +566,27 @@ juce::var nullableId(const std::optional<int>& id) {
     return id ? juce::var(*id) : juce::var();
 }
 
+// validateJson bounds every integer field to its C++ range before any decode
+// runs; this clamp is a second line of defence so an out-of-range int64 can
+// never wrap into a different valid value if a schema misses a bound.
+template <typename Integer> Integer decodeBoundedInt(const juce::var& value) {
+    constexpr auto lowest = static_cast<juce::int64>(std::numeric_limits<Integer>::lowest());
+    constexpr auto highest = static_cast<juce::int64>(std::numeric_limits<Integer>::max());
+    const auto wide = static_cast<juce::int64>(value);
+    jassert(wide >= lowest && wide <= highest);
+    return static_cast<Integer>(std::clamp(wide, lowest, highest));
+}
+
+int readInt(const juce::var& object, const char* property) {
+    return decodeBoundedInt<int>(object[property]);
+}
+
 template <typename Id>
 std::optional<Id> readNullableId(const juce::var& object, const char* property) {
     const auto value = object[property];
     if (value.isVoid())
         return std::nullopt;
-    return static_cast<Id>(static_cast<int>(value));
+    return decodeBoundedInt<Id>(value);
 }
 
 template <typename Integer>
@@ -552,7 +603,7 @@ template <typename Integer> std::vector<Integer> readIntegerArray(const juce::va
     if (auto* array = value.getArray()) {
         result.reserve(static_cast<size_t>(array->size()));
         for (const auto& item : *array)
-            result.push_back(static_cast<Integer>(static_cast<juce::int64>(item)));
+            result.push_back(decodeBoundedInt<Integer>(item));
     }
     return result;
 }
@@ -844,7 +895,7 @@ juce::var toJson(const AutomationLaneDto& dto) {
 std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, midiNoteSchema(), error))
         return std::nullopt;
-    return MidiNoteDto{static_cast<int>(json["note"]), static_cast<int>(json["velocity"]),
+    return MidiNoteDto{readInt(json, "note"), readInt(json, "velocity"),
                        static_cast<double>(json["startBeat"]),
                        static_cast<double>(json["lengthBeats"])};
 }
@@ -855,11 +906,11 @@ std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error) {
     ProjectDto dto;
     dto.name = json["name"].toString();
     dto.tempo = static_cast<double>(json["tempo"]);
-    dto.timeSignatureNumerator = static_cast<int>(json["timeSignatureNumerator"]);
-    dto.timeSignatureDenominator = static_cast<int>(json["timeSignatureDenominator"]);
+    dto.timeSignatureNumerator = readInt(json, "timeSignatureNumerator");
+    dto.timeSignatureDenominator = readInt(json, "timeSignatureDenominator");
     dto.sampleRate = static_cast<double>(json["sampleRate"]);
-    dto.timelineLengthBars = static_cast<int>(json["timelineLengthBars"]);
-    dto.keyRoot = static_cast<int>(json["keyRoot"]);
+    dto.timelineLengthBars = readInt(json, "timelineLengthBars");
+    dto.keyRoot = readInt(json, "keyRoot");
     dto.keyQuality = json["keyQuality"].toString();
     dto.loopEnabled = static_cast<bool>(json["loopEnabled"]);
     dto.loopStartBeats = static_cast<double>(json["loopStartBeats"]);
@@ -871,10 +922,10 @@ std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, trackSchema(), error))
         return std::nullopt;
     TrackDto dto;
-    dto.id = static_cast<int>(json["id"]);
+    dto.id = readInt(json, "id");
     dto.type = json["type"].toString();
     dto.name = json["name"].toString();
-    dto.colourArgb = static_cast<std::uint32_t>(static_cast<juce::int64>(json["colourArgb"]));
+    dto.colourArgb = decodeBoundedInt<std::uint32_t>(json["colourArgb"]);
     dto.parentId = readNullableId<TrackId>(json, "parentId");
     dto.childIds = readIntegerArray<TrackId>(json["childIds"]);
     dto.volume = static_cast<double>(json["volume"]);
@@ -894,12 +945,12 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, clipSchema(), error))
         return std::nullopt;
     ClipDto dto;
-    dto.id = static_cast<int>(json["id"]);
-    dto.trackId = static_cast<int>(json["trackId"]);
+    dto.id = readInt(json, "id");
+    dto.trackId = readInt(json, "trackId");
     dto.type = json["type"].toString();
     dto.view = json["view"].toString();
     dto.name = json["name"].toString();
-    dto.colourArgb = static_cast<std::uint32_t>(static_cast<juce::int64>(json["colourArgb"]));
+    dto.colourArgb = decodeBoundedInt<std::uint32_t>(json["colourArgb"]);
     dto.startBeat = static_cast<double>(json["startBeat"]);
     dto.lengthBeats = static_cast<double>(json["lengthBeats"]);
     dto.enabled = static_cast<bool>(json["enabled"]);
@@ -922,8 +973,8 @@ std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, deviceSchema(), error))
         return std::nullopt;
     DeviceDto dto;
-    dto.id = static_cast<int>(json["id"]);
-    dto.trackId = static_cast<int>(json["trackId"]);
+    dto.id = readInt(json, "id");
+    dto.trackId = readInt(json, "trackId");
     dto.rackId = readNullableId<RackId>(json, "rackId");
     dto.chainId = readNullableId<ChainId>(json, "chainId");
     dto.name = json["name"].toString();
@@ -939,10 +990,10 @@ std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, chainSchema(), error))
         return std::nullopt;
     ChainDto dto;
-    dto.id = static_cast<int>(json["id"]);
-    dto.rackId = static_cast<int>(json["rackId"]);
+    dto.id = readInt(json, "id");
+    dto.rackId = readInt(json, "rackId");
     dto.name = json["name"].toString();
-    dto.outputIndex = static_cast<int>(json["outputIndex"]);
+    dto.outputIndex = readInt(json, "outputIndex");
     dto.muted = static_cast<bool>(json["muted"]);
     dto.solo = static_cast<bool>(json["solo"]);
     dto.bypassed = static_cast<bool>(json["bypassed"]);
@@ -957,8 +1008,8 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, rackSchema(), error))
         return std::nullopt;
     RackDto dto;
-    dto.id = static_cast<int>(json["id"]);
-    dto.trackId = static_cast<int>(json["trackId"]);
+    dto.id = readInt(json, "id");
+    dto.trackId = readInt(json, "trackId");
     dto.parentRackId = readNullableId<RackId>(json, "parentRackId");
     dto.parentChainId = readNullableId<ChainId>(json, "parentChainId");
     dto.name = json["name"].toString();
@@ -1022,9 +1073,9 @@ std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error) {
     SessionDto dto;
     for (const auto& item : *json["slots"].getArray()) {
         SessionSlotDto slot;
-        slot.trackId = static_cast<int>(item["trackId"]);
-        slot.sceneIndex = static_cast<int>(item["sceneIndex"]);
-        slot.clipId = static_cast<int>(item["clipId"]);
+        slot.trackId = readInt(item, "trackId");
+        slot.sceneIndex = readInt(item, "sceneIndex");
+        slot.clipId = readInt(item, "clipId");
         slot.state = item["state"].toString();
         dto.slots.push_back(std::move(slot));
     }
@@ -1035,20 +1086,20 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
     if (!prepareDecode(json, automationLaneSchema(), error))
         return std::nullopt;
     AutomationLaneDto dto;
-    dto.id = static_cast<int>(json["id"]);
+    dto.id = readInt(json, "id");
     dto.type = json["type"].toString();
     dto.name = json["name"].toString();
     const auto target = json["target"];
     dto.target.kind = target["kind"].toString();
     dto.target.trackId = readNullableId<TrackId>(target, "trackId");
     dto.target.deviceId = readNullableId<DeviceId>(target, "deviceId");
-    dto.target.parameterIndex = static_cast<int>(target["parameterIndex"]);
-    dto.target.modId = static_cast<int>(target["modId"]);
-    dto.target.modParameterIndex = static_cast<int>(target["modParameterIndex"]);
-    dto.target.sendBusIndex = static_cast<int>(target["sendBusIndex"]);
+    dto.target.parameterIndex = readInt(target, "parameterIndex");
+    dto.target.modId = readInt(target, "modId");
+    dto.target.modParameterIndex = readInt(target, "modParameterIndex");
+    dto.target.sendBusIndex = readInt(target, "sendBusIndex");
     for (const auto& item : *json["points"].getArray()) {
         AutomationPointDto point;
-        point.id = static_cast<int>(item["id"]);
+        point.id = readInt(item, "id");
         point.beatPosition = static_cast<double>(item["beatPosition"]);
         point.value = static_cast<double>(item["value"]);
         point.curve = item["curve"].toString();
@@ -1070,8 +1121,11 @@ OperationRegistry::OperationRegistry() {
 
     auto add = [this](const char* name, const char* summary, OperationAccess access,
                       juce::var input, juce::var output) {
-        applyDefaultLimits(input);
-        applyDefaultLimits(output);
+        // DTO schemas are shared between input and output roles, so cap a deep
+        // copy: the request-only DoS limits must never leak into a response
+        // schema, which has to stay valid for anything the model can hold.
+        input = input.clone();
+        applyRequestLimits(input);
         operations_.push_back({juce::String(name), juce::String(summary), access, std::move(input),
                                std::move(output)});
     };

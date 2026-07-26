@@ -17,6 +17,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -62,8 +64,9 @@ class StemSeparationService {
     void splitClipIntoStems(ClipId sourceClipId, Engine engine, Completion onComplete);
 
     // Request cancellation of the running split and any queued splits.
-    // Completion callbacks still fire after their pre-created tracks are
-    // cleaned up.
+    // Only splits enqueued before this call are affected; one enqueued
+    // afterwards runs normally. Completion callbacks still fire after their
+    // pre-created tracks are cleaned up.
     void cancelAll();
 
     StemSeparationService(const StemSeparationService&) = delete;
@@ -75,7 +78,9 @@ class StemSeparationService {
 
     std::unique_ptr<juce::ThreadPool> pool_;
     std::atomic<int> pendingJobs_{0};
-    std::atomic<bool> cancelRequested_{false};
+    // Each job snapshots this at enqueue; cancelAll() bumps it, so only jobs
+    // enqueued before the call observe a mismatch and treat it as cancelled.
+    std::atomic<std::uint64_t> cancelGeneration_{0};
     ActivityCallback activityCallback_;  // message thread only
 };
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <functional>
 #include <stdexcept>
@@ -81,6 +82,25 @@ const ToolResult& lastToolResult(const ModelRequest& request) {
         if (it->toolResult.has_value())
             return *it->toolResult;
     throw std::logic_error("No tool result");
+}
+
+// Providers reject a transcript whose assistant turn has dangling tool calls,
+// so every call in the final assistant turn must have a matching tool result
+// (real or synthesized) later in the conversation.
+void requireFinalToolCallsResolved(const RunResult& result) {
+    const auto assistant = std::find_if(
+        result.conversation.rbegin(), result.conversation.rend(),
+        [](const ConversationTurn& turn) { return turn.role == ConversationRole::Assistant; });
+    REQUIRE(assistant != result.conversation.rend());
+    for (const auto& toolCall : assistant->toolCalls) {
+        INFO("tool call without a result: " << toolCall.id);
+        // [rbegin, assistant) are exactly the turns after the assistant turn.
+        REQUIRE(
+            std::any_of(result.conversation.rbegin(), assistant, [&](const ConversationTurn& turn) {
+                return turn.role == ConversationRole::Tool && turn.toolResult.has_value() &&
+                       turn.toolResult->callId == toolCall.id;
+            }));
+    }
 }
 
 }  // namespace
@@ -643,6 +663,43 @@ TEST_CASE("AgentRuntime executes declared sequential batches with a fresh revisi
     REQUIRE(result.trace[0].revisionAfter == 22);
 }
 
+TEST_CASE("AgentRuntime completes tool calls cut off by the wall-time limit mid-batch",
+          "[agent-runtime]") {
+    FakeModel model;
+    FakeExecutor executor;
+    auto now = AgentRuntime::Clock::time_point{};
+
+    model.handler = [](const ModelRequest&, const CancellationToken&) {
+        return ModelResponse{.success = true,
+                             .toolCalls = {call("mute-1", "track.mute", object({{"trackId", 1}})),
+                                           call("mute-2", "track.mute", object({{"trackId", 2}}))}};
+    };
+    executor.handler = [&now](const ToolExecutionRequest& request, const CancellationToken&) {
+        now += std::chrono::seconds(2);  // The first execution exhausts the budget.
+        return ToolResult{
+            .success = true, .projectRevision = request.expectedRevision + 1, .mutated = true};
+    };
+
+    auto agent = definition({mutationTool("track.mute")});
+    agent.budget.maxWallTime = std::chrono::seconds(1);
+    AgentRuntime runtime(model, executor, {}, [&now] { return now; });
+    const auto result =
+        runtime.run(agent, {.userMessage = "Mute both tracks.", .projectRevision = 5});
+
+    REQUIRE(result.reason == TerminalReason::TimeLimit);
+    REQUIRE(executor.requests.size() == 1);
+    REQUIRE(result.mutations == 1);
+    REQUIRE(result.finalRevision == 6);
+    // The executed call keeps its real result; the cut-off one is completed
+    // with a synthesized "time_limit" result.
+    REQUIRE(result.trace[0].toolResults.size() == 2);
+    REQUIRE(result.trace[0].toolResults[0].callId == "mute-1");
+    REQUIRE(result.trace[0].toolResults[0].success);
+    REQUIRE(result.trace[0].toolResults[1].callId == "mute-2");
+    REQUIRE(result.trace[0].toolResults[1].error->code == "time_limit");
+    requireFinalToolCallsResolved(result);
+}
+
 TEST_CASE("AgentRuntime rejects parallel mutation batches before dispatch", "[agent-runtime]") {
     FakeModel model;
     FakeExecutor executor;
@@ -668,6 +725,13 @@ TEST_CASE("AgentRuntime rejects parallel mutation batches before dispatch", "[ag
     REQUIRE(result.steps == 1);
     REQUIRE(result.mutations == 0);
     REQUIRE(executor.requests.empty());
+    // Every call in the rejected batch still gets a synthesized result.
+    REQUIRE(result.trace[0].toolResults.size() == 2);
+    REQUIRE(result.trace[0].toolResults[0].callId == "mute-1");
+    REQUIRE(result.trace[0].toolResults[0].error->code == "unsafe_parallel_mutation");
+    REQUIRE(result.trace[0].toolResults[1].callId == "read-1");
+    REQUIRE(result.trace[0].toolResults[1].error->code == "unsafe_parallel_mutation");
+    requireFinalToolCallsResolved(result);
 }
 
 TEST_CASE("AgentRuntime returns duplicate tool-call IDs to the model for repair",
@@ -743,7 +807,8 @@ TEST_CASE("AgentRuntime makes approval failures observable and rechecks cancella
         model.handler = [](const ModelRequest&, const CancellationToken&) {
             return ModelResponse{
                 .success = true,
-                .toolCalls = {call("delete-1", "track.delete", object({{"trackId", 1}}))}};
+                .toolCalls = {call("delete-1", "track.delete", object({{"trackId", 1}})),
+                              call("delete-2", "track.delete", object({{"trackId", 2}}))}};
         };
         executor.handler = [](const ToolExecutionRequest&, const CancellationToken&) -> ToolResult {
             FAIL("Cancelled mutation reached the executor");
@@ -754,12 +819,21 @@ TEST_CASE("AgentRuntime makes approval failures observable and rechecks cancella
             cancelled = true;
             return ApprovalDecision{.approved = true};
         });
-        const auto result = runtime.run(definition({mutationTool("track.delete")}),
-                                        {.userMessage = "Delete the track.", .projectRevision = 9},
-                                        CancellationToken([&cancelled] { return cancelled; }));
+        const auto result =
+            runtime.run(definition({mutationTool("track.delete")}),
+                        {.userMessage = "Delete both tracks.", .projectRevision = 9},
+                        CancellationToken([&cancelled] { return cancelled; }));
 
         REQUIRE(result.reason == TerminalReason::Cancelled);
         REQUIRE(result.mutations == 0);
         REQUIRE(executor.requests.empty());
+        // The whole batch, including the never-reached second call, completes
+        // with synthesized "cancelled" results.
+        REQUIRE(result.trace[0].toolResults.size() == 2);
+        REQUIRE(result.trace[0].toolResults[0].callId == "delete-1");
+        REQUIRE(result.trace[0].toolResults[0].error->code == "cancelled");
+        REQUIRE(result.trace[0].toolResults[1].callId == "delete-2");
+        REQUIRE(result.trace[0].toolResults[1].error->code == "cancelled");
+        requireFinalToolCallsResolved(result);
     }
 }

@@ -104,6 +104,42 @@ TEST_CASE("Remote API input validation returns structured issues",
         REQUIRE(error->issues.front().code == "maximum");
     }
 
+    SECTION("nullable ids reject negative int64 wrap-around") {
+        const DeviceDto device{10,           3,          5,    std::nullopt, "Synth",
+                               "instrument", "internal", true, false,        -3.0};
+        auto json = toJson(device);
+        // 5 - 2^32 decodes back to rack 5 if the id is truncated to 32 bits.
+        json.getDynamicObject()->setProperty(
+            "rackId", juce::var(static_cast<juce::int64>(5) - (static_cast<juce::int64>(1) << 32)));
+        Error error;
+        REQUIRE_FALSE(deviceFromJson(json, error).has_value());
+        REQUIRE(error.code == ErrorCode::ValidationFailed);
+        REQUIRE(error.issues.front().path == "$.rackId");
+        REQUIRE(error.issues.front().code == "minimum");
+    }
+
+    SECTION("non-id integer selectors reject int64 truncation") {
+        const auto* operation = registry.find("session.launchScene");
+        REQUIRE(operation != nullptr);
+        const auto error = validateOperationInput(
+            *operation,
+            object({{"sceneIndex",
+                     juce::var(static_cast<juce::int64>(std::numeric_limits<int>::max()) + 1)}}));
+        REQUIRE(error.has_value());
+        REQUIRE(error->issues.front().path == "$.sceneIndex");
+        REQUIRE(error->issues.front().code == "maximum");
+    }
+
+    SECTION("anyOf failures include branch-level issues") {
+        const auto* operation = registry.find("tracks.get");
+        REQUIRE(operation != nullptr);
+        const auto error = validateOperationInput(*operation, object({{"trackId", -1}}));
+        REQUIRE(error.has_value());
+        REQUIRE(error->issues.front().code == "any_of");
+        REQUIRE(error->issues.size() > 1);
+        REQUIRE(error->issues[1].path.startsWith("$.trackId<anyOf:"));
+    }
+
     SECTION("the invalid track sentinel is not a public track id") {
         for (const auto* operationName : {"tracks.get", "selection.set"}) {
             const auto* operation = registry.find(operationName);
@@ -129,7 +165,7 @@ TEST_CASE("Remote API input validation returns structured issues",
         }
     }
 
-    SECTION("strings and arrays have contract-wide limits") {
+    SECTION("request inputs enforce blanket string and array limits") {
         const auto* createTrack = registry.find("tracks.create");
         REQUIRE(createTrack != nullptr);
         const juce::String oversizedName = juce::String::repeatedString("x", 16 * 1024 + 1);
@@ -148,6 +184,21 @@ TEST_CASE("Remote API input validation returns structured issues",
         auto arrayError = validateOperationInput(*selection, input);
         REQUIRE(arrayError.has_value());
         REQUIRE(arrayError->issues.front().code == "max_items");
+    }
+
+    SECTION("response schemas are not capped by the request DoS limits") {
+        SelectionDto selection;
+        for (int index = 0; index < 4200; ++index)
+            selection.clipIds.push_back(index);
+        const auto json = toJson(selection);
+        const auto* get = registry.find("selection.get");
+        REQUIRE(get != nullptr);
+        REQUIRE(validateJson(json, get->outputSchema).empty());
+        const auto* set = registry.find("selection.set");
+        REQUIRE(set != nullptr);
+        const auto error = validateOperationInput(*set, json);
+        REQUIRE(error.has_value());
+        REQUIRE(error->issues.front().code == "max_items");
     }
 
     SECTION("unknown field") {
@@ -224,8 +275,46 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     requireRoundTrip(lane, automationLaneFromJson);
 }
 
+TEST_CASE("Dense response payloads round-trip and validate against the published schema",
+          "[remote-api][contract][dto]") {
+    ClipDto clip;
+    clip.id = 9;
+    clip.trackId = 3;
+    clip.type = "midi";
+    clip.view = "arrangement";
+    clip.name = "Dense";
+    clip.colourArgb = 0xffaabbcc;
+    clip.lengthBeats = 1250.0;
+    clip.launchMode = "trigger";
+    clip.launchQuantize = "none";
+    clip.followAction = "none";
+    clip.notes.reserve(5000);
+    for (int index = 0; index < 5000; ++index)
+        clip.notes.push_back({36 + index % 48, 100, index * 0.25, 0.25});
+    requireRoundTrip(clip, clipFromJson);
+    const auto* clipsGet = OperationRegistry::instance().find("clips.get");
+    REQUIRE(clipsGet != nullptr);
+    REQUIRE(validateJson(toJson(clip), clipsGet->outputSchema).empty());
+
+    AutomationLaneDto lane;
+    lane.id = 5;
+    lane.type = "absolute";
+    lane.name = "Volume";
+    lane.target = {"track_volume", 3, std::nullopt, -1, -1, -1, -1};
+    lane.points.reserve(5000);
+    for (int index = 0; index < 5000; ++index)
+        lane.points.push_back({index, index * 0.25, 0.5, "linear"});
+    requireRoundTrip(lane, automationLaneFromJson);
+    const auto* getLane = OperationRegistry::instance().find("automation.getLane");
+    REQUIRE(getLane != nullptr);
+    REQUIRE(validateJson(toJson(lane), getLane->outputSchema).empty());
+}
+
 TEST_CASE("Remote projections expose only allow-listed state",
           "[remote-api][contract][projection]") {
+    // Catch2 runs on a plain thread with no MessageManager; suspend the
+    // projections' message-thread assertion for this scope.
+    const ScopedMessageThreadAssertionDisabler threadAssertionGuard;
     magda::test::MockMagdaApi api;
 
     api.project_.info.name = "Safe project";
@@ -308,6 +397,7 @@ TEST_CASE("Remote projections expose only allow-listed state",
 
 TEST_CASE("Remote session and automation projections use MagdaApi values",
           "[remote-api][contract][projection]") {
+    const ScopedMessageThreadAssertionDisabler threadAssertionGuard;
     magda::test::MockMagdaApi api;
     TrackInfo track;
     track.id = 1;
