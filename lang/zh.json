@@ -294,6 +294,7 @@
   "main_window": {
     "loading.initializing": "正在初始化",
     "loading.scanning_devices": "正在扫描{0}和{1}设备",
+    "loading.splitting_stems": "正在分离音轨",
     "undo.render_clips": "渲染片段"
   },
   "export": {
@@ -380,7 +381,7 @@
     "toggle.stop_updates_playhead": "停止时更新播放头位置",
     "toggle.follow_playhead": "播放时跟随播放头",
     "toggle.headers_on_right": "轨道头右置",
-    "toggle.autohide_arrangement_scrollbars": "自动隐藏编曲区滚动条",
+    "toggle.autohide_arrangement_scrollbars": "自动隐藏主视图滚动条",
     "toggle.confirm_track_delete": "删除轨道前要求确认",
     "toggle.auto_monitor": "自动监听所选轨道",
     "toggle.open_macros_on_select": "选择设备或机架时打开宏",
