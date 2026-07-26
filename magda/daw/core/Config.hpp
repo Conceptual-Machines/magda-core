@@ -1315,7 +1315,6 @@ class Config {
     // AI settings
     std::string aiPreset = "local_embedded";
     std::map<std::string, AgentInferenceConfig> agentInferenceConfigs = {
-        {"router", {"llm", {"llama_local", "", "", ""}}},
         {"command", {"llm", {"llama_local", "", "", ""}}},
         {"music", {"llm", {"llama_local", "", "", ""}}},
         {"faust", {"llm", {"llama_local", "", "", ""}}},

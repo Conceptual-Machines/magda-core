@@ -10,7 +10,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::LOCAL_EMBEDDED,
             "Local (Embedded)",
             {
-                {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
                 {role::COMMAND, {provider::LLAMA_LOCAL, "", "", ""}},
                 {role::MUSIC, {provider::LLAMA_LOCAL, "", "", ""}},
                 {role::FAUST, {provider::LLAMA_LOCAL, "", "", ""}},
@@ -25,7 +24,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
                 // Base URL / model / key are resolved from Config at request
                 // time (one server, one model for all roles), so the preset
                 // leaves them blank — same pattern as LOCAL_EMBEDDED.
-                {role::ROUTER, {provider::LOCAL_SERVER, "", "", ""}},
                 {role::COMMAND, {provider::LOCAL_SERVER, "", "", ""}},
                 {role::MUSIC, {provider::LOCAL_SERVER, "", "", ""}},
                 {role::FAUST, {provider::LOCAL_SERVER, "", "", ""}},
@@ -37,7 +35,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::CLOUD_OPENAI,
             "Cloud (OpenAI)",
             {
-                {role::ROUTER, {provider::OPENAI_CHAT, "", "", model::GPT_4_1}},
                 {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
                 {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_5}},
                 {role::FAUST, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_5}},
@@ -49,7 +46,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::CLOUD_ANTHROPIC,
             "Cloud (Anthropic)",
             {
-                {role::ROUTER, {provider::ANTHROPIC, "", "", model::CLAUDE_HAIKU}},
                 {role::COMMAND, {provider::ANTHROPIC, "", "", model::CLAUDE_SONNET}},
                 {role::MUSIC, {provider::ANTHROPIC, "", "", model::CLAUDE_OPUS}},
                 {role::FAUST, {provider::ANTHROPIC, "", "", model::CLAUDE_OPUS}},
@@ -61,7 +57,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::CLOUD_GEMINI,
             "Cloud (Gemini)",
             {
-                {role::ROUTER, {provider::GEMINI, "", "", model::GEMINI_FLASH}},
                 {role::COMMAND, {provider::GEMINI, "", "", model::GEMINI_FLASH}},
                 {role::MUSIC, {provider::GEMINI, "", "", model::GEMINI_PRO}},
                 {role::FAUST, {provider::GEMINI, "", "", model::GEMINI_PRO}},
@@ -73,7 +68,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::CLOUD_DEEPSEEK,
             "Cloud (DeepSeek)",
             {
-                {role::ROUTER, {provider::DEEPSEEK, "", "", model::DEEPSEEK_CHAT}},
                 {role::COMMAND, {provider::DEEPSEEK, "", "", model::DEEPSEEK_CHAT}},
                 {role::MUSIC, {provider::DEEPSEEK, "", "", model::DEEPSEEK_REASONER}},
                 {role::FAUST, {provider::DEEPSEEK, "", "", model::DEEPSEEK_REASONER}},
@@ -85,7 +79,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::CLOUD_OPENROUTER,
             "Cloud (OpenRouter)",
             {
-                {role::ROUTER, {provider::OPENROUTER, "", "", model::LLAMA_70B}},
                 {role::COMMAND, {provider::OPENROUTER, "", "", model::LLAMA_70B}},
                 {role::MUSIC, {provider::OPENROUTER, "", "", model::LLAMA_70B}},
                 {role::FAUST, {provider::OPENROUTER, "", "", model::LLAMA_70B}},
@@ -97,7 +90,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::HYBRID_SPEED,
             "Hybrid - Optimize for Speed",
             {
-                {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
                 {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_NANO}},
                 {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
                 {role::FAUST, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
@@ -109,7 +101,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::HYBRID_QUALITY,
             "Hybrid - Optimize for Quality",
             {
-                {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
                 {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
                 {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_4}},
                 {role::FAUST, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_4}},

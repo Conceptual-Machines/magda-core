@@ -1,14 +1,7 @@
-# Agents - Simple in-process AI agent system
-# This provides a lightweight agent framework using JUCE threading
+# Production agent workflows and the reusable bounded runtime.
 
 set(AGENTS_SOURCES
-    agent_interface.hpp
-    agent_interface.cpp
-    agent_manager.hpp
-    agent_manager.cpp
-    simple_agent.hpp
-    simple_agent.cpp
-dsl_grammar.hpp
+    dsl_grammar.hpp
     dsl_interpreter.hpp
     dsl_interpreter.cpp
     music_helpers.hpp
@@ -19,6 +12,8 @@ dsl_grammar.hpp
     conversation_store.cpp
     agent_runtime.hpp
     agent_runtime.cpp
+    console_agent_orchestrator.hpp
+    console_agent_orchestrator.cpp
     instruction_executor.hpp
     instruction_executor.cpp
     llm_config_utils.hpp
@@ -44,8 +39,6 @@ dsl_grammar.hpp
     automation_executor.cpp
     automation_agent.hpp
     automation_agent.cpp
-    router_agent.hpp
-    router_agent.cpp
     controller_profile_agent.hpp
     controller_profile_agent.cpp
     llama_model_manager.hpp
