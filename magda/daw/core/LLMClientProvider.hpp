@@ -98,7 +98,6 @@ inline constexpr const char* LLAMA_70B = "meta-llama/llama-3.3-70b-instruct";
 namespace role {
 // Agent workload roles. They select an inference configuration; they are not
 // themselves tied to a particular model or inference implementation.
-inline constexpr const char* ROUTER = "router";
 inline constexpr const char* COMMAND = "command";
 inline constexpr const char* MUSIC = "music";
 inline constexpr const char* FAUST = "faust";

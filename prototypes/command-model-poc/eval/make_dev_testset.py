@@ -156,9 +156,6 @@ CASES = [
     # ------------------------------------------------- abstain (out of scope)
     # The model has an explicit reject class. These must return nothing: a
     # false abstain costs a message, a false command edits the project.
-    ("solo the kick", [{"type": "unsupported"}], ["retired"]),
-    ("mute the strings track", [{"type": "unsupported"}], ["retired"]),
-    ("unsolo everything", [{"type": "unsupported"}], ["retired"]),
     ("get it playing", [{"type": "unsupported"}], ["transport"]),
     ("halt playback", [{"type": "unsupported"}], ["transport"]),
     ("set the tempo to 92", [{"type": "unsupported"}], ["transport"]),
@@ -167,11 +164,11 @@ CASES = [
     ("scrap that", [{"type": "unsupported"}], ["history", "colloquial"]),
     ("save this one", [{"type": "unsupported"}], ["file"]),
     ("render it out to wav", [{"type": "unsupported"}], ["file", "colloquial"]),
-    ("what plugins are on the lead", [{"type": "unsupported"}], ["query"]),
-    ("how many bars is the intro", [{"type": "unsupported"}], ["query"]),
-    ("does the bass sound muddy", [{"type": "unsupported"}], ["query", "advice"]),
-    ("give this track more energy", [{"type": "unsupported"}], ["advice"]),
     ("bring up the piano roll", [{"type": "unsupported"}], ["view"]),
+    ("loop from bar 9", [{"type": "unsupported"}], ["transport"]),
+    ("arm Keys for recording", [{"type": "unsupported"}], ["transport"]),
+    ("collapse all the tracks", [{"type": "unsupported"}], ["view"]),
+    ("bounce the master out", [{"type": "unsupported"}], ["file", "colloquial"]),
 
     # ------------------------------------------------ newer command coverage
     ("mute the Verse clip on Keys",

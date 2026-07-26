@@ -29,6 +29,9 @@
 #include "SlashCommands.hpp"
 
 namespace magda {
+namespace agent {
+class ConsoleAgentOrchestrator;
+}
 class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
@@ -38,7 +41,6 @@ class DrummerAgent;
 class MagdaApi;
 class MagdaApiLive;
 class MusicAgent;
-class RouterAgent;
 class SvgButton;
 }  // namespace magda
 
@@ -219,11 +221,11 @@ class AIChatConsoleContent : public PanelContent,
     magda::ConversationStore conversation_;
     static magda::ConversationStore::Channel conversationChannel(magda::ViewMode mode);
 
-    std::unique_ptr<magda::RouterAgent> routerAgent_;
     std::unique_ptr<magda::CommandAgent> commandAgent_;
     std::unique_ptr<magda::MusicAgent> musicAgent_;
     std::unique_ptr<magda::DrummerAgent> drummerAgent_;
     std::unique_ptr<magda::AutomationAgent> automationAgent_;
+    std::unique_ptr<magda::agent::ConsoleAgentOrchestrator> agentOrchestrator_;
     std::unique_ptr<magda::ControllerProfileAgent> controllerAgent_;
     std::unique_ptr<magda::FourOscAgent> fourOscAgent_;
     std::unique_ptr<magda::ThemeAgent> themeAgent_;
@@ -250,7 +252,7 @@ class AIChatConsoleContent : public PanelContent,
 
     // /design <description> — kick the FourOscAgent on a background thread
     // and dump the parsed JSON into chat. Kept on its own thread so a
-    // long preset generation can't block the main router/command/music
+    // long preset generation can't block the main agent
     // pipeline running in requestThread_.
     class FourOscRequestThread : public juce::Thread {
       public:
