@@ -382,7 +382,6 @@ def _canon_name(s: str) -> str:
 
 
 def reconstruct(intent: str, tokens, tags) -> list[dict]:
-    intent = _refine_intent(intent, tokens)
     s = _spans(tokens, tags)
     name = _canon_name(s.get("TRACK_NAME", [""])[0]) if s.get("TRACK_NAME") else ""
     if not name:
@@ -391,6 +390,7 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
         claimed = {w.lower() for slot_vals in s.values() for v in slot_vals
                    for w in v.split()}
         name = _track_name_from_tokens([t for t in tokens if t.lower() not in claimed])
+    intent = _refine_intent(intent, tokens, name)
 
     if intent in ("create_track", "create_rack", "create_rack_parallel"):
         act = {"type": intent, "name": name}
@@ -569,13 +569,38 @@ def _value_or_first_number(spans, tokens) -> float:
     return _parse_number(" ".join(tokens))
 
 
-def _refine_intent(intent: str, tokens) -> str:
+# Verbs that unambiguously mean "remove this track". Deliberately broad, since
+# the guard below only *blocks* on their absence.
+_DELETE_VERBS = ("delete", "remove", "bin", "trash", "scrap", "kill", "ditch",
+                 "lose", "rid", "drop")
+
+
+def _refine_intent(intent: str, tokens, name: str = "") -> str:
+    """Guard the one intent whose errors are unrecoverable.
+
+    delete_track destroys work, so it is the one place worth being deterministic
+    rather than trusting the classifier. Without a resolved track name it needs
+    both a deletion verb AND a mention of a track; otherwise nothing in the
+    sentence actually asked to delete anything in the project.
+
+    "undo that" has neither and used to render track(name="").delete().
+    "scrap that" has the verb but no object — "that" is the previous action, not
+    a track. "delete the selected track" has no name span but says "track", so
+    it passes.
+    """
     if intent != "delete_track":
         return intent
+    if name:
+        return "delete_track"          # an explicit target settles it
     text = " ".join(tokens).lower()
-    if re.search(r"\b(delete|remove)\b", text):
+    has_verb = any(re.search(r"\b" + v + r"\b", text) for v in _DELETE_VERBS)
+    names_a_track = re.search(r"\btracks?\b", text) is not None
+    # A verb alone is not enough: "scrap that" and "delete that" carry one but
+    # point at no track — "that" is the previous action, not an object in the
+    # project. Require something track-shaped to act on.
+    if has_verb and names_a_track:
         return "delete_track"
-    return intent
+    return "unsupported"
 
 
 def _track_name_from_tokens(tokens) -> str:

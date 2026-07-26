@@ -556,24 +556,42 @@ std::vector<std::string> pluginsFromTokens(const std::vector<std::string>& token
 
 // tagging._refine_intent
 //
-// mute_track and solo_track are retired from the ENCODER's intent set (they are
-// real-time mixer states, not edits — nobody types a sentence to hit a button
-// with a keyboard shortcut). They stay here because the renderer is shared: the
-// conv net's shipped weights still predict them, and what a model can emit is
-// decided by its own label map, not by this switch. Deleting the branches broke
-// the conv net's parity fixture, which is exactly the coupling this comment is
-// here to prevent re-breaking.
-std::string refineIntent(const std::string& intent, const std::vector<std::string>& tokens) {
-    if (intent != "delete_track" && intent != "mute_track" && intent != "solo_track")
+// Guards the one intent whose errors are unrecoverable. delete_track destroys
+// work, so it is deterministic rather than trusted to the classifier: without a
+// resolved track name it needs BOTH a deletion verb AND a mention of a track.
+// "undo that" has neither and used to render track(name="").delete(); "scrap
+// that" has the verb but no object, since "that" is the previous action rather
+// than something in the project.
+//
+// mute_track and solo_track are retired from the encoder's intent set but stay
+// here because the renderer is shared — the conv net's shipped weights still
+// predict them, and what a model can emit is decided by its own label map.
+std::string refineIntent(const std::string& intent, const std::vector<std::string>& tokens,
+                         const std::string& name) {
+    if (intent == "mute_track" || intent == "solo_track") {
+        std::string text = toLower(join(tokens, " "));
+        if (wordSearch(text, "delete") || wordSearch(text, "remove"))
+            return "delete_track";
+        if (wordSearch(text, "mute") || wordSearch(text, "silence"))
+            return "mute_track";
+        if (wordSearch(text, "solo") || wordSearch(text, "isolate"))
+            return "solo_track";
         return intent;
-    std::string text = toLower(join(tokens, " "));
-    if (wordSearch(text, "delete") || wordSearch(text, "remove"))
-        return "delete_track";
-    if (wordSearch(text, "mute") || wordSearch(text, "silence"))
-        return "mute_track";
-    if (wordSearch(text, "solo") || wordSearch(text, "isolate"))
-        return "solo_track";
-    return intent;
+    }
+    if (intent != "delete_track")
+        return intent;
+    if (!name.empty())
+        return "delete_track";  // an explicit target settles it
+
+    static const char* kDeleteVerbs[] = {"delete", "remove", "bin",  "trash", "scrap",
+                                         "kill",   "ditch",  "lose", "rid",   "drop"};
+    const std::string text = toLower(join(tokens, " "));
+    bool hasVerb = false;
+    for (const char* v : kDeleteVerbs)
+        if (wordSearch(text, v))
+            hasVerb = true;
+    const bool namesATrack = wordSearch(text, "track") || wordSearch(text, "tracks");
+    return (hasVerb && namesATrack) ? "delete_track" : "unsupported";
 }
 
 // ---------------------------------------------------------------------------
@@ -716,12 +734,16 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
         return "";
 
     const auto& tokens = p.tokens;
-    std::string intent = refineIntent(p.intent, tokens);
     Spans s = collectSpans(tokens, p.tags);
 
     std::string name = s.has("TRACK_NAME") ? canonName(s.first("TRACK_NAME")) : "";
     if (name.empty())
         name = trackNameFromTokens(tokens);
+    std::string intent = refineIntent(p.intent, tokens, name);
+    // refineIntent can DOWNGRADE to abstain (a delete with nothing to delete),
+    // so re-check here rather than relying on no branch below matching.
+    if (intent == "unsupported")
+        return "";
 
     auto trackRef = [&]() { return "track(name=" + q(name) + ")"; };
     std::vector<std::string> lines;

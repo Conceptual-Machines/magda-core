@@ -35,7 +35,7 @@ constexpr const char* kRepo = "ConceptualMachines/magda-command-model";
 constexpr const char* kRepoUrl = "https://huggingface.co/ConceptualMachines/magda-command-model";
 
 // Bump together with the files, after re-running the parity tests.
-constexpr const char* kRevision = "8ecc49ab825a09ab57523f91170c2016f38f8af5";
+constexpr const char* kRevision = "6c311f7ff9543ed0079b27f130ad13d26c1a4d59";
 
 // DeBERTa-v3 base fine-tuned for intent + BIO slot tagging, embedding
 // quantized to int8 (the attention/FFN deliberately are NOT — quantizing them
