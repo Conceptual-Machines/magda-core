@@ -171,6 +171,246 @@ def gen_create_with_plugins(r: random.Random):
     return r.choice(templates), [{"type": "create_track", "name": name, "plugins": list(tokens)}]
 
 
+def gen_clip_mute(r: random.Random):
+    """Mute/disable a specific clip — the realistic typed-command case.
+
+    Soloing a track is a keystroke and nobody would route it through a model
+    with latency. Singling out one clip by name or index is genuinely fiddly
+    with a mouse, which is where a typed command earns its place.
+    """
+    on_track = r.random() < 0.6
+    name = r.choice(TRACK_NAMES) if on_track else ""
+    where = f" on {name}" if on_track else ""
+    enable = r.random() < 0.25
+    by_name = r.random() < 0.55
+
+    if by_name:
+        clip = r.choice(CLIP_NAMES + MULTIWORD_CLIP_NAMES)
+        if enable:
+            templates = [
+                f"unmute the {clip} clip{where}",
+                f"enable the {clip} clip{where}",
+                f"turn the {clip} clip back on{where}",
+                f"re-enable {clip}{where}",
+            ]
+        else:
+            templates = [
+                f"mute the {clip} clip{where}",
+                f"disable the {clip} clip{where}",
+                f"silence the {clip} clip{where}",
+                f"turn off the {clip} clip{where}",
+                f"mute {clip}{where}",
+                f"disable {clip}{where}",
+                f"skip the {clip} clip{where}",
+            ]
+        act = {"type": "clip_mute", "name": name, "clip_name": clip, "enabled": enable}
+    else:
+        idx = r.choice(CLIP_INDEX_VALUES)
+        if enable:
+            templates = [
+                f"unmute clip {idx}{where}",
+                f"enable clip {idx}{where}",
+                f"turn clip {idx} back on{where}",
+            ]
+        else:
+            templates = [
+                f"mute clip {idx}{where}",
+                f"disable clip {idx}{where}",
+                f"silence clip {idx}{where}",
+                f"turn off clip {idx}{where}",
+            ]
+        act = {"type": "clip_mute", "name": name, "index": idx, "enabled": enable}
+    return r.choice(templates), [act]
+
+
+def gen_select_tracks(r: random.Random):
+    """Select tracks by 1-based index: "select track 1 and track 2".
+
+    Indexes, not names — track(id=N) already means exactly this, so no grammar
+    change is needed. Templates include the glued "track1" form, which the
+    tokenizer splits, because that is how people actually type it.
+    """
+    n = r.choice([1, 1, 2, 2, 3])
+    ids = r.sample(range(1, 9), n)
+    ids.sort()
+    glued = r.random() < 0.3
+
+    def ref(i):
+        return f"track{i}" if glued else f"track {i}"
+
+    if n == 1:
+        joined = ref(ids[0])
+        templates = [
+            f"select {joined}",
+            f"select {joined} please",
+            f"go to {joined}",
+            f"focus {joined}",
+            f"highlight {joined}",
+        ]
+    else:
+        joined = " and ".join(ref(i) for i in ids[:-1]) + " and " + ref(ids[-1]) \
+            if n > 2 else " and ".join(ref(i) for i in ids)
+        csv = ", ".join(ref(i) for i in ids[:-1]) + " and " + ref(ids[-1])
+        templates = [
+            f"select {joined}",
+            f"select {csv}",
+            f"highlight {joined}",
+            f"select tracks {' and '.join(str(i) for i in ids)}",
+        ]
+    return r.choice(templates), [{"type": "select_tracks", "id": i} for i in ids]
+
+
+def gen_group_tracks_by_index(r: random.Random):
+    """Group tracks by index, with the group name OPTIONAL.
+
+    gen_group_tracks always supplies a name ("group tracks 1, 2 and 3 as
+    Drums"), so "group track 1 and track 2" had no matching shape and resolved
+    to track(id=0) — a track that does not exist.
+    """
+    n = r.choice([2, 2, 3, 4])
+    ids = sorted(r.sample(range(1, 9), n))
+    glued = r.random() < 0.3
+
+    def ref(i):
+        return f"track{i}" if glued else f"track {i}"
+
+    joined = " and ".join(ref(i) for i in ids)
+    named = r.random() < 0.4
+    if named:
+        name = r.choice(TRACK_NAMES)
+        templates = [
+            f"group {joined} as {name}",
+            f"group {joined} into {name}",
+            f"put {joined} in a group called {name}",
+        ]
+        gname = name
+    else:
+        templates = [
+            f"group {joined}",
+            f"group {joined} together",
+            f"put {joined} in a group",
+            f"bundle {joined}",
+            f"make a group from {joined}",
+        ]
+        gname = "Group"
+    return r.choice(templates), [{"type": "group_tracks", "ids": ids, "name": gname}]
+
+
+def gen_create_track_multi(r: random.Random):
+    """Several tracks at once: "create 3 tracks", "add two bass tracks".
+
+    The model emits ONE intent, so the count rides in a COUNT slot and
+    tagging.reconstruct repeats the action. Counts are small and appear as both
+    digits and words, since people type both.
+    """
+    n = r.choice([2, 2, 3, 3, 4, 5, 6, 8])
+    as_word = r.random() < 0.4
+    word = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 8: "eight"}[n]
+    cnt = word if as_word else str(n)
+
+    named = r.random() < 0.5
+    name = r.choice(TRACK_NAMES) if named else ""
+    if named:
+        templates = [
+            f"create {cnt} {name.lower()} tracks",
+            f"add {cnt} {name.lower()} tracks",
+            f"make {cnt} {name.lower()} tracks",
+            f"i need {cnt} {name.lower()} tracks",
+            f"give me {cnt} {name.lower()} tracks",
+        ]
+    else:
+        templates = [
+            f"create {cnt} tracks",
+            f"add {cnt} tracks",
+            f"make {cnt} new tracks",
+            f"i need {cnt} tracks",
+            f"give me {cnt} tracks",
+            f"{cnt} new tracks please",
+            f"can you add {cnt} tracks",
+        ]
+    return r.choice(templates), [{"type": "create_track", "name": name} for _ in range(n)]
+
+
+def gen_clip_new_at_bar(r: random.Random):
+    """A clip positioned at a bar, with or without an explicit length.
+
+    Without this, "create a clip at bar 49" had only one number to work with
+    and it was tagged as the LENGTH — producing a 49-bar clip auto-placed
+    wherever the track happened to end.
+    """
+    on_track = r.random() < 0.5
+    name = r.choice(TRACK_NAMES) if on_track else ""
+    bar = r.choice([1, 2, 4, 5, 8, 9, 12, 16, 17, 24, 32, 33, 41, 49, 64])
+    with_len = r.random() < 0.4
+    length = r.choice(CLIP_BAR_VALUES)
+    where = f" on {name}" if on_track else ""
+
+    if with_len:
+        templates = [
+            f"create a {length} bar clip at bar {bar}{where}",
+            f"add a {length} bar clip at bar {bar}{where}",
+            f"new {length} bar clip starting at bar {bar}{where}",
+            f"put a {length} bar clip at bar {bar}{where}",
+        ]
+        act = {"type": "clip_new", "name": name, "length_bars": length, "bar": bar}
+    else:
+        templates = [
+            f"create a new clip at bar {bar}{where}",
+            f"add a clip at bar {bar}{where}",
+            f"new clip at bar {bar}{where}",
+            f"put a clip at bar {bar}{where}",
+            f"make a clip starting at bar {bar}{where}",
+            f"clip at bar {bar}{where}",
+        ]
+        act = {"type": "clip_new", "name": name, "length_bars": 4, "bar": bar}
+    return r.choice(templates), [act]
+
+
+def gen_create_rack_parallel(r: random.Random):
+    """A rack whose devices run in PARALLEL — one chain each — rather than in
+    series inside a single chain.
+
+    The distinguishing signal is the word "parallel" (or "separate chains"), so
+    it must never appear in gen_create_rack's templates. Always two or more
+    devices: "a parallel rack with @eq" alone is indistinguishable from the
+    series case and would only blur the boundary.
+    """
+    on_track = r.random() < 0.5
+    name = r.choice(TRACK_NAMES) if on_track else ""
+
+    aliases = [r.choice(PLUGIN_ALIASES)]
+    aliases.append(r.choice([a for a in PLUGIN_ALIASES if a != aliases[0]]))
+    if r.random() < 0.25:
+        aliases.append(r.choice([a for a in PLUGIN_ALIASES if a not in aliases]))
+    surfaces, tokens = zip(*(_alias_pair(a) for a in aliases))
+    joined = " and ".join(surfaces)
+
+    if on_track:
+        templates = [
+            f"add a rack with {joined} in parallel on {name}",
+            f"create a parallel rack with {joined} on the {name.lower()} track",
+            f"make a rack on {name} with {joined} in parallel",
+            f"new parallel rack with {joined} on {name}",
+            f"rack {joined} in parallel on the {name.lower()} track",
+            f"put {joined} on separate chains in a rack on {name}",
+        ]
+    else:
+        templates = [
+            f"add a rack with {joined} in parallel",
+            f"create a parallel rack with {joined}",
+            f"make a rack with {joined} in parallel",
+            f"new parallel rack with {joined}",
+            f"rack {joined} in parallel",
+            f"put {joined} on separate chains in a rack",
+            f"parallel rack with {joined}",
+            f"{joined} in parallel please",
+            f"run {joined} in parallel",
+            f"i want {joined} side by side in a rack",
+        ]
+    return r.choice(templates), [{"type": "create_rack_parallel", "name": name,
+                                  "plugins": list(tokens)}]
+
+
 def gen_create_rack(r: random.Random):
     """Create a rack, optionally on a named track and optionally pre-filled with
     devices. Empty name -> the selected track (interpreter targets selection).
@@ -190,14 +430,14 @@ def gen_create_rack(r: random.Random):
             templates = [
                 f"create a rack with {joined} on the {name.lower()} track",
                 f"add a rack with {joined} to {name}",
-                f"make a parallel rack with {joined} on {name}",
+                f"put a rack with {joined} on {name}",
                 f"new rack on {name} with {joined}",
             ]
         else:
             templates = [
                 f"create a rack with {joined}",
                 f"add a rack with {joined}",
-                f"make a parallel rack with {joined}",
+                f"make a rack with {joined}",
                 f"new rack with {joined}",
             ]
     else:
@@ -240,12 +480,47 @@ def gen_add_plugin(r: random.Random):
         return r.choice(templates), actions
 
     at, token = _alias_pair(r.choice(PLUGIN_ALIASES))
+
+    # ~30% target the SELECTED track — no track named at all. Without these
+    # every add_plugin example carried a track name, so the only "add a/an X"
+    # shape anywhere in the data was create_track ("add a bass track with
+    # @serum"), and the indefinite article became a create signal: "add a
+    # @filter" produced track(name="", new=true) and spawned a track instead of
+    # putting the filter on the one the user was working on. The distinguishing
+    # signal must be the word "track", not the article.
+    if r.random() < 0.3:
+        templates = [
+            f"add {at}",
+            f"add a {at}",
+            f"add an {at}",
+            f"put {at} on this track",
+            f"put a {at} on this track",
+            f"insert {at}",
+            f"insert a {at}",
+            f"load {at}",
+            f"load a {at}",
+            f"throw {at} on",
+            f"throw a {at} on here",
+            f"chuck a {at} on",
+            f"i want a {at}",
+            f"i need {at} on this",
+            f"give me a {at}",
+            f"stick a {at} on here",
+            f"{at} on this track",
+            f"add {at} here",
+            f"add a {at} to the current track",
+            f"slap a {at} on this one",
+        ]
+        return r.choice(templates), [{"type": "add_plugin", "name": "", "plugin": token}]
+
     templates = [
         f"add {at} to the {name.lower()} track",
         f"put {at} on {name}",
         f"load {at} on the {name.lower()} track",
         f"insert {at} on {name}",
         f"throw {at} on the {name.lower()} track",
+        f"add a {at} to the {name.lower()} track",
+        f"put a {at} on {name}",
     ]
     return r.choice(templates), [{"type": "add_plugin", "name": name, "plugin": token}]
 
@@ -273,17 +548,6 @@ def gen_delete_track(r: random.Random):
     ]
     return r.choice(templates), [{"type": "delete_track", "name": name}]
 
-
-def gen_mute_track(r: random.Random):
-    name = r.choice(TRACK_NAMES)
-    templates = [f"mute {name}", f"mute the {name.lower()} track", f"silence {name}"]
-    return r.choice(templates), [{"type": "mute_track", "name": name}]
-
-
-def gen_solo_track(r: random.Random):
-    name = r.choice(TRACK_NAMES)
-    templates = [f"solo {name}", f"solo the {name.lower()} track", f"isolate {name}"]
-    return r.choice(templates), [{"type": "solo_track", "name": name}]
 
 
 def gen_set_volume(r: random.Random):
@@ -679,12 +943,16 @@ GENERATORS = [
     (gen_create_track, 0.08),
     (gen_create_named, 0.05),
     (gen_create_with_plugins, 0.08),
-    (gen_create_rack, 0.06),
+    (gen_create_rack, 0.05),
+    (gen_create_rack_parallel, 0.03),
+    (gen_create_track_multi, 0.03),
+    (gen_clip_new_at_bar, 0.03),
+    (gen_select_tracks, 0.03),
+    (gen_clip_mute, 0.04),
+    (gen_group_tracks_by_index, 0.02),
     (gen_add_plugin, 0.09),
     (gen_rename_track, 0.05),
-    (gen_delete_track, 0.04),
-    (gen_mute_track, 0.04),
-    (gen_solo_track, 0.03),
+    (gen_delete_track, 0.05),
     (gen_set_volume, 0.05),
     (gen_set_pan, 0.05),
     (gen_set_color, 0.04),
@@ -728,15 +996,23 @@ def make_english_example(r: random.Random):
     return {"lang": "en", "input": nl, "output": dsl.render(actions), "actions": actions}
 
 
-def _load_inputs(path):
-    """Return the set of `input` strings in a jsonl file (for leakage guard)."""
+def _load_inputs(paths):
+    """Return the set of `input` strings across jsonl files (leakage guard).
+
+    Accepts a comma-separated list: ALL held-out sets must be excluded, not
+    just the in-distribution one. A regenerated corpus once produced a row
+    identical to an OOD case ("make the vocals track pink"), which would have
+    quietly turned a sealed evaluation row into a training row.
+    """
     out = set()
-    if path and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    out.add(json.loads(line)["input"])
+    for path in (paths or "").split(","):
+        path = path.strip()
+        if path and os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        out.add(json.loads(line)["input"])
     return out
 
 
@@ -781,8 +1057,12 @@ def main():
     ap.add_argument("--val", type=int, default=0,
                     help="hold out this many English examples into a disjoint val split")
     ap.add_argument("--val-out", default=os.path.join(here, "..", "data", "val.jsonl"))
-    ap.add_argument("--exclude", default=os.path.join(here, "..", "eval", "testset.jsonl"),
-                    help="jsonl whose inputs are kept OUT of train/val (leakage guard); '' to disable")
+    ap.add_argument("--exclude",
+                    default=",".join(os.path.join(here, "..", "eval", f)
+                                     for f in ("testset.jsonl", "dev_testset.jsonl",
+                                               "ood_testset.jsonl")),
+                    help="comma-separated jsonl whose inputs are kept OUT of train/val "
+                         "(leakage guard); '' to disable")
     ap.add_argument("--teacher", type=int, default=0,
                     help="LLM-teacher paraphrases per base example (0 = templates only)")
     ap.add_argument("--teacher-typo", type=int, default=0,

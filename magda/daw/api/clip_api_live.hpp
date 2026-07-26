@@ -16,6 +16,7 @@ class ClipApiLive : public ClipApi {
     void deleteClip(ClipId clipId) override;
 
     void setClipName(ClipId clipId, const juce::String& name) override;
+    void setClipEnabled(ClipId clipId, bool enabled) override;
     void setGrooveTemplate(ClipId clipId, const juce::String& templateName) override;
 
     bool addMidiNote(ClipId clipId, double startBeat, int noteNumber, double lengthBeats,

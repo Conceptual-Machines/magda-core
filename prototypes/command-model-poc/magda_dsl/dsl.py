@@ -51,22 +51,37 @@ def render_action(a: dict) -> list[str]:
             line += f'.fx.add(name={q(p)})'
         return [line]
 
+    if t == "create_rack_parallel":
+        # Same rack, but each device gets its OWN chain so they run in
+        # parallel rather than in series. fx.add lands in the active chain, and
+        # rack.chain_new opens a new one — so the first device goes into the
+        # rack's default chain and every later device follows a chain_new.
+        line = f'{_track_ref(a)}.rack.new()'
+        for i, p in enumerate(a.get("plugins", [])):
+            if i:
+                line += '.rack.chain_new()'
+            line += f'.fx.add(name={q(p)})'
+        return [line]
+
     if t == "add_plugin":
         return [f'{_track_ref(a)}.fx.add(name={q(a["plugin"])})']
 
     if t == "rename_track":
         return [f'{_track_ref(a)}.track.set(name={q(a["new_name"])})']
 
-    if t == "delete_track":
-        if a.get("all"):
-            return [f'filter(tracks, track.name == {q(a["name"])}).delete()']
-        return [f'{_track_ref(a)}.delete()']
-
+    # mute_track / solo_track are retired from the ENCODER's intent set (real-time
+    # mixer states, not edits) but stay renderable: the conv net's shipped
+    # weights still predict them and both models share this renderer.
     if t == "mute_track":
         return [f'{_track_ref(a)}.track.set(mute=true)']
 
     if t == "solo_track":
         return [f'{_track_ref(a)}.track.set(solo=true)']
+
+    if t == "delete_track":
+        if a.get("all"):
+            return [f'filter(tracks, track.name == {q(a["name"])}).delete()']
+        return [f'{_track_ref(a)}.delete()']
 
     if t == "set_track_volume":
         return [f'{_track_ref(a)}.track.set(volume_db={a["volume_db"]:g})']
@@ -81,6 +96,11 @@ def render_action(a: dict) -> list[str]:
         anchor = a["ids"][0]
         ids = ",".join(str(i) for i in a["ids"])
         return [f'track(id={anchor}).track.group(name={q(a["name"])}, tracks={q(ids)})']
+
+    if t == "select_tracks":
+        # 1-based index into the state snapshot, which is what track(id=N)
+        # already means — no new grammar needed.
+        return [f'track(id={a["id"]}).select()']
 
     if t == "select_all_clips":
         return [f'{_track_ref(a)}.clips.select()']
@@ -120,7 +140,24 @@ def render_action(a: dict) -> list[str]:
 
     # --- clip ops ---------------------------------------------------------
     if t == "clip_new":
+        # `bar` positions the clip; omitted, the interpreter auto-places after
+        # the last clip on the track. Length defaults to 4 bars there too, but
+        # we always emit it so the DSL reads unambiguously.
+        if a.get("bar") is not None:
+            return [f'{_track_ref(a)}.clip.new(bar={a["bar"]:g}, '
+                    f'length_bars={a["length_bars"]:g})']
         return [f'{_track_ref(a)}.clip.new(length_bars={a["length_bars"]:g})']
+
+    if t == "clip_mute":
+        # Disable clips: the ones a preceding clips.select matched, or a
+        # specific index. A disabled clip stays on the timeline but is silent.
+        enabled = "true" if a.get("enabled") else "false"
+        if a.get("clip_name"):
+            return [f'{_track_ref(a)}.clips.select(clip.name == {q(a["clip_name"])})'
+                    f'.clip.set(enabled={enabled})']
+        if a.get("index") is not None:
+            return [f'{_track_ref(a)}.clip.set(index={a["index"]:g}, enabled={enabled})']
+        return [f'{_track_ref(a)}.clip.set(enabled={enabled})']
 
     if t == "clip_rename":
         return [f'{_track_ref(a)}.clip.rename(name={q(a["clip_name"])})']

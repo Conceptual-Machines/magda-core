@@ -33,8 +33,8 @@ constexpr ManifestEntry kFiles[] = {
         "command_model.onnx",
         "https://huggingface.co/ConceptualMachines/magda-command-model/resolve/main/"
         "command_model.onnx",
-        "17ce237efdb66a847cc7506b3bdefa46faaf2d07e5c7899c8f41da29a0c86a75",
-        441535401,
+        "eea7c3f50f43080d0a56ed2ff36ed919ef77683b1475ad8e30cdfc71f159e76e",
+        441547705,
     },
     {
         "tokenizer.json",
@@ -46,8 +46,8 @@ constexpr ManifestEntry kFiles[] = {
     {
         "maps.json",
         "https://huggingface.co/ConceptualMachines/magda-command-model/resolve/main/maps.json",
-        "7b0670bddc6ee1d79bdb316f9f7da075fe091481fc29cae0faa6201747951b97",
-        1299,
+        "96c6f49aacbfa50c4dc5fa6f586a665bf2535f000815e86b6dce0ed5a3e22b52",
+        1376,
     },
 };
 

@@ -111,6 +111,10 @@ CASES = [
     ("stick a rack with @ott and @eq on Vocals",
      [{"type": "create_rack", "name": "Vocals", "plugins": [A("ott"), A("eq")]}],
      ["colloquial"]),
+    # Parallel chains: one chain per device, not both in series.
+    ("i want @eq and @compressor running in parallel in a rack",
+     [{"type": "create_rack_parallel", "name": "",
+       "plugins": [A("eq"), A("compressor")]}], ["unnamed", "colloquial"]),
 
     # ----------------------------------------------------------- add_plugin
     ("slap @ott on Drums",
@@ -142,11 +146,6 @@ CASES = [
      [{"type": "delete_track", "name": "Vocals"}], ["colloquial"]),
     ("i dont need the perc track anymore, delete it",
      [{"type": "delete_track", "name": "Perc"}], ["typo", "multi-clause"]),
-    ("can you mute the guitar",
-     [{"type": "mute_track", "name": "Guitar"}], ["filler"]),
-    ("mute the hats", [{"type": "mute_track", "name": "Hats"}], []),
-    ("solo the vocals for a sec",
-     [{"type": "solo_track", "name": "Vocals"}], ["colloquial"]),
 
     # -------------------------------------------------------- volume/pan/col
     ("bring the bass down to -6db",

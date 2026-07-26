@@ -718,6 +718,8 @@ bool Interpreter::parseMethodChain(Tokenizer& tok) {
             success = executeDeleteClip(params);
         else if (methodKey == "clip.rename")
             success = executeRenameClip(params);
+        else if (methodKey == "clip.set")
+            success = executeSetClip(params);
         else if (methodKey == "fx.add")
             success = executeAddFx(params);
         else if (methodKey == "rack.new")
@@ -1173,6 +1175,50 @@ bool Interpreter::executeDeleteClip(const Params& params) {
     }
 
     return true;
+}
+
+bool Interpreter::executeSetClip(const Params& params) {
+    if (!params.has("enabled")) {
+        ctx_.setError("clip.set requires 'enabled' parameter");
+        return false;
+    }
+    const bool enabled = params.getBool("enabled", true);
+    auto& cm = api_.clips();
+    const juce::String verb = enabled ? "Enabled" : "Disabled";
+
+    if (params.has("index")) {
+        if (ctx_.currentTrackId < 0) {
+            ctx_.setError("No track context for clip.set with index");
+            return false;
+        }
+        auto clipIds = cm.getClipsOnTrack(ctx_.currentTrackId);
+        int index = params.getInt("index");
+        if (index < 0 || index >= static_cast<int>(clipIds.size())) {
+            ctx_.setError("Clip index " + juce::String(index) + " out of range");
+            return false;
+        }
+        cm.setClipEnabled(clipIds[static_cast<size_t>(index)], enabled);
+        ctx_.addResult(verb + " clip at index " + juce::String(index));
+        return true;
+    }
+
+    // Otherwise act on the current selection — which is what a preceding
+    // clips.select(...) in the same statement will have just populated.
+    auto& sm = api_.selection();
+    const auto& selected = sm.getSelectedClips();
+    if (!selected.empty()) {
+        for (auto id : selected)
+            cm.setClipEnabled(id, enabled);
+        ctx_.addResult(verb + " " + juce::String(static_cast<int>(selected.size())) + " clips");
+        return true;
+    }
+    if (auto single = sm.getSelectedClip(); single != INVALID_CLIP_ID) {
+        cm.setClipEnabled(single, enabled);
+        ctx_.addResult(verb + " clip");
+        return true;
+    }
+    ctx_.setError("No clip selected for clip.set");
+    return false;
 }
 
 bool Interpreter::executeRenameClip(const Params& params) {
@@ -1639,42 +1685,55 @@ bool Interpreter::executeSelect() {
 }
 
 bool Interpreter::executeSelectClips(Tokenizer& tok) {
-    // Parse: (clip.field op value)
+    // Parse: (clip.field op value) — or () meaning every clip on the track.
     if (!tok.expect(TokenType::LPAREN)) {
         ctx_.setError("Expected '(' after 'clips.select'");
         return false;
     }
 
-    if (!tok.expect("clip")) {
-        ctx_.setError("Expected 'clip' in clips.select condition");
-        return false;
-    }
-    if (!tok.expect(TokenType::DOT)) {
-        ctx_.setError("Expected '.' after 'clip'");
-        return false;
-    }
+    // `clips.select()` with no predicate = select all clips on the track. Both
+    // command-model backends have always emitted this for "select all clips",
+    // and it errored out with "Expected 'clip' in clips.select condition"
+    // because the parser demanded a condition. An empty predicate is the
+    // natural reading of "all", and the grammar allows it.
+    const bool selectAll = tok.peek().is(TokenType::RPAREN);
+    if (selectAll)
+        tok.next();  // consume ')'
 
-    Token field = tok.next();
-    if (field.type != TokenType::IDENTIFIER) {
-        ctx_.setError("Expected field name after 'clip.'");
-        return false;
-    }
-
-    Token op = tok.next();
-    if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
-        op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
-        op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
-        ctx_.setError("Expected comparison operator in clips.select condition");
-        return false;
-    }
-
+    Token field;
+    Token op;
     std::string valueStr;
-    if (!parseValue(tok, valueStr))
-        return false;
+    if (!selectAll) {
+        if (!tok.expect("clip")) {
+            ctx_.setError("Expected 'clip' in clips.select condition");
+            return false;
+        }
+        if (!tok.expect(TokenType::DOT)) {
+            ctx_.setError("Expected '.' after 'clip'");
+            return false;
+        }
 
-    if (!tok.expect(TokenType::RPAREN)) {
-        ctx_.setError("Expected ')' after clips.select condition");
-        return false;
+        field = tok.next();
+        if (field.type != TokenType::IDENTIFIER) {
+            ctx_.setError("Expected field name after 'clip.'");
+            return false;
+        }
+
+        op = tok.next();
+        if (op.type != TokenType::EQUALS_EQUALS && op.type != TokenType::NOT_EQUALS &&
+            op.type != TokenType::GREATER && op.type != TokenType::GREATER_EQUALS &&
+            op.type != TokenType::LESS && op.type != TokenType::LESS_EQUALS) {
+            ctx_.setError("Expected comparison operator in clips.select condition");
+            return false;
+        }
+
+        if (!parseValue(tok, valueStr))
+            return false;
+
+        if (!tok.expect(TokenType::RPAREN)) {
+            ctx_.setError("Expected ')' after clips.select condition");
+            return false;
+        }
     }
 
     // Determine if this is a string or numeric field
@@ -1714,6 +1773,8 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
 
     // Resolve a clip field to either a numeric or string match
     auto matchClip = [&](const ClipInfo* clip) -> bool {
+        if (selectAll)
+            return true;  // no predicate = every clip on the target
         if (isStringField) {
             juce::String strVal;
             if (field.value == "name")

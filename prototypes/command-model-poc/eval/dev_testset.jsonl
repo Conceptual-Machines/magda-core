@@ -17,8 +17,6 @@
 {"lang": "en", "input": "lets rename Sub to Sub Boom", "output": "track(name=\"Sub\").track.set(name=\"Sub Boom\")", "actions": [{"type": "rename_track", "name": "Sub", "new_name": "Sub Boom"}], "ood_tags": ["typo"]}
 {"lang": "en", "input": "bin the strings track", "output": "track(name=\"Strings\").delete()", "actions": [{"type": "delete_track", "name": "Strings"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "can we lose Choir", "output": "track(name=\"Choir\").delete()", "actions": [{"type": "delete_track", "name": "Choir"}], "ood_tags": ["filler"]}
-{"lang": "en", "input": "quiet the perc track", "output": "track(name=\"Perc\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Perc"}], "ood_tags": ["colloquial"]}
-{"lang": "en", "input": "just the keys please", "output": "track(name=\"Keys\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Keys"}], "ood_tags": ["filler"]}
 {"lang": "en", "input": "knock Strings back to -9 dB", "output": "track(name=\"Strings\").track.set(volume_db=-9)", "actions": [{"type": "set_track_volume", "name": "Strings", "volume_db": -9}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "pads at -15db thanks", "output": "track(name=\"Pads\").track.set(volume_db=-15)", "actions": [{"type": "set_track_volume", "name": "Pads", "volume_db": -15}], "ood_tags": ["glued-unit", "filler"]}
 {"lang": "en", "input": "shove the perc hard left", "output": "track(name=\"Perc\").track.set(pan=-1)", "actions": [{"type": "set_track_pan", "name": "Perc", "pan": -1.0}], "ood_tags": ["colloquial"]}

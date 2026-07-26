@@ -178,6 +178,29 @@ bool splitGluedUnit(const std::string& tok, std::string& num, std::string& unit)
 }
 
 // ---------------------------------------------------------------------------
+// "track1" -> "track", "1": a track reference typed without a space. Mirrors
+// dataset/tagging.py:_GLUED_TRACK, and is anchored on the literal word "track"
+// for the same reason — a general letters-then-digits split would wreck
+// "@fm_0", "pro_q_3" and "C3".
+// ---------------------------------------------------------------------------
+bool splitGluedTrack(const std::string& tok, std::string& word, std::string& digits) {
+    size_t i = 0;
+    while (i < tok.size() && !(tok[i] >= '0' && tok[i] <= '9'))
+        ++i;
+    if (i == 0 || i == tok.size())
+        return false;
+    const std::string head = toLower(tok.substr(0, i));
+    if (head != "track" && head != "tracks")
+        return false;
+    for (size_t j = i; j < tok.size(); ++j)
+        if (!(tok[j] >= '0' && tok[j] <= '9'))
+            return false;
+    word = tok.substr(0, i);
+    digits = tok.substr(i);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Tokenizer — mirrors _TOK = r"[@#]?[A-Za-z0-9_'\-]+(?:\.[0-9]+)?" findall,
 // then dataset/tagging.py:_split_glued_units.
 // ---------------------------------------------------------------------------
@@ -211,6 +234,9 @@ std::vector<std::string> tokenize(const std::string& text) {
         if (splitGluedUnit(tok, num, unit)) {
             toks.push_back(num);
             toks.push_back(unit);
+        } else if (splitGluedTrack(tok, unit, num)) {
+            toks.push_back(unit);  // "track"
+            toks.push_back(num);   // "1"
         } else {
             toks.push_back(tok);
         }
@@ -529,6 +555,14 @@ std::vector<std::string> pluginsFromTokens(const std::vector<std::string>& token
 }
 
 // tagging._refine_intent
+//
+// mute_track and solo_track are retired from the ENCODER's intent set (they are
+// real-time mixer states, not edits — nobody types a sentence to hit a button
+// with a keyboard shortcut). They stay here because the renderer is shared: the
+// conv net's shipped weights still predict them, and what a model can emit is
+// decided by its own label map, not by this switch. Deleting the branches broke
+// the conv net's parity fixture, which is exactly the coupling this comment is
+// here to prevent re-breaking.
 std::string refineIntent(const std::string& intent, const std::vector<std::string>& tokens) {
     if (intent != "delete_track" && intent != "mute_track" && intent != "solo_track")
         return intent;
@@ -689,17 +723,27 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
 
     if (intent == "create_track") {
         std::string head = "track(name=" + q(name) + ", new=true)";
+        // "create 3 tracks" — the model emits one intent and the count rides
+        // in a COUNT slot; the repetition happens here. Capped, since a large
+        // number is far more likely a typo than an intention.
+        int repeat = 1;
+        if (s.has("COUNT")) {
+            const int n = static_cast<int>(std::lround(parseNumber(s.first("COUNT"))));
+            repeat = std::clamp(n, 1, 16);
+        }
         std::vector<std::string> plugs;
         for (const auto& pl : s.list("PLUGIN"))
             plugs.push_back(aliasToken(pl));
         if (plugs.empty())
             plugs = pluginsFromTokens(tokens);
-        if (plugs.empty()) {
-            lines.push_back(head);
-        } else {
-            lines.push_back(head + ".fx.add(name=" + q(plugs[0]) + ")");
-            for (size_t i = 1; i < plugs.size(); ++i)
-                lines.push_back("track(name=" + q(name) + ").fx.add(name=" + q(plugs[i]) + ")");
+        for (int rep = 0; rep < repeat; ++rep) {
+            if (plugs.empty()) {
+                lines.push_back(head);
+            } else {
+                lines.push_back(head + ".fx.add(name=" + q(plugs[0]) + ")");
+                for (size_t i = 1; i < plugs.size(); ++i)
+                    lines.push_back("track(name=" + q(name) + ").fx.add(name=" + q(plugs[i]) + ")");
+            }
         }
     } else if (intent == "create_rack") {
         // rack.new on the track (empty name -> selection); devices chain onto
@@ -712,6 +756,28 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
             plugs = pluginsFromTokens(tokens);
         for (const auto& p : plugs)
             line += ".fx.add(name=" + q(p) + ")";
+        lines.push_back(line);
+    } else if (intent == "select_tracks") {
+        // 1-based index into the state snapshot — track(id=N) already means
+        // exactly this, so no grammar change was needed.
+        for (const auto& idStr : s.list("TRACK_ID"))
+            lines.push_back("track(id=" + idStr + ").select()");
+    } else if (intent == "create_rack_parallel") {
+        // Same rack, one chain PER device so they run in parallel instead of
+        // in series. fx.add lands in the active chain and rack.chain_new opens
+        // a new one, so the first device uses the rack's default chain and
+        // each later device follows a chain_new. Mirrors magda_dsl/dsl.py.
+        std::string line = trackRef() + ".rack.new()";
+        std::vector<std::string> plugs;
+        for (const auto& pl : s.list("PLUGIN"))
+            plugs.push_back(aliasToken(pl));
+        if (plugs.empty())
+            plugs = pluginsFromTokens(tokens);
+        for (size_t i = 0; i < plugs.size(); ++i) {
+            if (i > 0)
+                line += ".rack.chain_new()";
+            line += ".fx.add(name=" + q(plugs[i]) + ")";
+        }
         lines.push_back(line);
     } else if (intent == "add_plugin") {
         std::vector<std::string> plugs;
@@ -790,7 +856,12 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
         std::vector<int> ids;
         for (const auto& x : s.list("TRACK_ID"))
             ids.push_back(static_cast<int>(std::lround(parseNumber(x))));
+        // A name is optional: "group track 1 and track 2" is a complete
+        // request. Without a default the renderer emitted name="" and the
+        // whole statement failed.
         std::string groupName = canonName(s.first("GROUP_NAME"));
+        if (groupName.empty())
+            groupName = "Group";
         int anchor = ids.empty() ? 0 : ids[0];
         std::vector<std::string> idStrs;
         for (int x : ids)
@@ -798,8 +869,49 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
         lines.push_back("track(id=" + std::to_string(anchor) + ").track.group(name=" +
                         q(groupName) + ", tracks=" + q(join(idStrs, ",")) + ")");
     } else if (intent == "clip_new") {
-        lines.push_back(trackRef() +
-                        ".clip.new(length_bars=" + fmtG(valueOrFirstNumber(s, tokens)) + ")");
+        // A BAR span positions the clip; with only a bar given the length
+        // falls back to 4 rather than reusing the bar number, which is what
+        // turned "create a clip at bar 49" into a 49-bar clip.
+        const bool hasBar = s.has("BAR");
+        const double length = s.has("VALUE") ? parseNumber(s.first("VALUE"))
+                                             : (hasBar ? 4.0 : valueOrFirstNumber(s, tokens));
+        if (hasBar) {
+            lines.push_back(trackRef() + ".clip.new(bar=" + fmtG(parseNumber(s.first("BAR"))) +
+                            ", length_bars=" + fmtG(length) + ")");
+        } else {
+            lines.push_back(trackRef() + ".clip.new(length_bars=" + fmtG(length) + ")");
+        }
+    } else if (intent == "clip_mute") {
+        // Default is to disable; "unmute"/"enable"/"back on" flip it. Testing
+        // for a bare "on" is wrong — "turn off clip 0 ON Foley" contains one.
+        // Mirrors dataset/tagging.py:reconstruct.
+        bool enabled = false;
+        std::string joined;
+        for (const auto& t : tokens)
+            joined += (joined.empty() ? "" : " ") + toLower(t);
+        for (const auto& t : tokens) {
+            const std::string lt = toLower(t);
+            if (lt == "unmute" || lt == "enable" || lt == "enabled" || lt == "re-enable")
+                enabled = true;
+        }
+        if (joined.find("back on") != std::string::npos)
+            enabled = true;
+        for (const auto& t : tokens) {
+            const std::string lt = toLower(t);
+            if (lt == "mute" || lt == "disable" || lt == "silence" || lt == "skip" || lt == "off")
+                enabled = false;
+        }
+        const std::string flag = enabled ? "true" : "false";
+        if (s.has("CLIP_NAME")) {
+            lines.push_back(trackRef() +
+                            ".clips.select(clip.name == " + q(canonName(s.first("CLIP_NAME"))) +
+                            ").clip.set(enabled=" + flag + ")");
+        } else if (s.has("VALUE")) {
+            lines.push_back(trackRef() + ".clip.set(index=" + fmtG(parseNumber(s.first("VALUE"))) +
+                            ", enabled=" + flag + ")");
+        } else {
+            lines.push_back(trackRef() + ".clip.set(enabled=" + flag + ")");
+        }
     } else if (intent == "clip_rename") {
         lines.push_back(trackRef() + ".clip.rename(name=" + q(canonName(s.first("CLIP_NAME"))) +
                         ")");

@@ -23,8 +23,6 @@ SUPPORTED_COMMANDS = [
     "add_plugin",        # ....fx.add(name=..)
     "rename_track",      # ....track.set(name=..)
     "delete_track",      # ....delete()
-    "mute_track",        # ....track.set(mute=true)
-    "solo_track",        # ....track.set(solo=true)
     "set_track_volume",  # ....track.set(volume_db=..)
     "set_track_pan",     # ....track.set(pan=..)
     "set_track_color",   # ....track.set(colour="#..")

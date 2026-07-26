@@ -85,16 +85,6 @@ CASES = [
     ("delete Pads", [{"type": "delete_track", "name": "Pads"}]),
     ("remove the vocals track", [{"type": "delete_track", "name": "Vocals"}]),
 
-    # --- mute_track ---
-    ("mute Drums", [{"type": "mute_track", "name": "Drums"}]),
-    ("mute the bass track", [{"type": "mute_track", "name": "Bass"}]),
-    ("silence Pads", [{"type": "mute_track", "name": "Pads"}]),
-    ("mute the vocals track", [{"type": "mute_track", "name": "Vocals"}]),
-
-    # --- solo_track ---
-    ("solo Drums", [{"type": "solo_track", "name": "Drums"}]),
-    ("solo the lead track", [{"type": "solo_track", "name": "Lead"}]),
-    ("isolate Bass", [{"type": "solo_track", "name": "Bass"}]),
 
     # --- set_track_volume ---
     ("set Bass volume to -6 dB", [{"type": "set_track_volume", "name": "Bass", "volume_db": -6}]),

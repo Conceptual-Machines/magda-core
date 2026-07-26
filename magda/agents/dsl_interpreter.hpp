@@ -210,6 +210,7 @@ class Interpreter {
     bool executeDeleteClip(const Params& params);
     bool executeAddFx(const Params& params);
     bool executeRenameClip(const Params& params);
+    bool executeSetClip(const Params& params);
     bool executeSelect();
     bool executeForEach(Tokenizer& tok);
     bool executeSelectClips(Tokenizer& tok);

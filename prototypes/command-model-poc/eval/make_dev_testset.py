@@ -91,8 +91,6 @@ CASES = [
     # ------------------------------------------------------ delete/mute/solo
     ("bin the strings track", [{"type": "delete_track", "name": "Strings"}], ["colloquial"]),
     ("can we lose Choir", [{"type": "delete_track", "name": "Choir"}], ["filler"]),
-    ("quiet the perc track", [{"type": "mute_track", "name": "Perc"}], ["colloquial"]),
-    ("just the keys please", [{"type": "solo_track", "name": "Keys"}], ["filler"]),
 
     # -------------------------------------------------------- volume/pan/col
     ("knock Strings back to -9 dB",

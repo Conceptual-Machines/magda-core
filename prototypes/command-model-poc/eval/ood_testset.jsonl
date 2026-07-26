@@ -16,6 +16,7 @@
 {"lang": "en", "input": "i want a rack on drums", "output": "track(name=\"Drums\").rack.new()", "actions": [{"type": "create_rack", "name": "Drums"}], "ood_tags": ["filler"]}
 {"lang": "en", "input": "wrap @serum in a rack on the bass track", "output": "track(name=\"Bass\").rack.new().fx.add(name=\"<serum>\")", "actions": [{"type": "create_rack", "name": "Bass", "plugins": ["<serum>"]}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "stick a rack with @ott and @eq on Vocals", "output": "track(name=\"Vocals\").rack.new().fx.add(name=\"<ott>\").fx.add(name=\"<eq>\")", "actions": [{"type": "create_rack", "name": "Vocals", "plugins": ["<ott>", "<eq>"]}], "ood_tags": ["colloquial"]}
+{"lang": "en", "input": "i want @eq and @compressor running in parallel in a rack", "output": "track(name=\"\").rack.new().fx.add(name=\"<eq>\").rack.chain_new().fx.add(name=\"<compressor>\")", "actions": [{"type": "create_rack_parallel", "name": "", "plugins": ["<eq>", "<compressor>"]}], "ood_tags": ["unnamed", "colloquial"]}
 {"lang": "en", "input": "slap @ott on Drums", "output": "track(name=\"Drums\").fx.add(name=\"<ott>\")", "actions": [{"type": "add_plugin", "name": "Drums", "plugin": "<ott>"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "the bass needs @pro_q_3", "output": "track(name=\"Bass\").fx.add(name=\"<pro_q_3>\")", "actions": [{"type": "add_plugin", "name": "Bass", "plugin": "<pro_q_3>"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "can you drop @1176 onto the vocals", "output": "track(name=\"Vocals\").fx.add(name=\"<1176>\")", "actions": [{"type": "add_plugin", "name": "Vocals", "plugin": "<1176>"}], "ood_tags": ["filler"]}
@@ -27,9 +28,6 @@
 {"lang": "en", "input": "rename Keys, make it Rhodes", "output": "track(name=\"Keys\").track.set(name=\"Rhodes\")", "actions": [{"type": "rename_track", "name": "Keys", "new_name": "Rhodes"}], "ood_tags": ["multi-clause"]}
 {"lang": "en", "input": "get rid of the vocals track", "output": "track(name=\"Vocals\").delete()", "actions": [{"type": "delete_track", "name": "Vocals"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "i dont need the perc track anymore, delete it", "output": "track(name=\"Perc\").delete()", "actions": [{"type": "delete_track", "name": "Perc"}], "ood_tags": ["typo", "multi-clause"]}
-{"lang": "en", "input": "can you mute the guitar", "output": "track(name=\"Guitar\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Guitar"}], "ood_tags": ["filler"]}
-{"lang": "en", "input": "mute the hats", "output": "track(name=\"Hats\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Hats"}], "ood_tags": []}
-{"lang": "en", "input": "solo the vocals for a sec", "output": "track(name=\"Vocals\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Vocals"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "bring the bass down to -6db", "output": "track(name=\"Bass\").track.set(volume_db=-6)", "actions": [{"type": "set_track_volume", "name": "Bass", "volume_db": -6}], "ood_tags": ["colloquial", "glued-unit"]}
 {"lang": "en", "input": "drums are too loud, take them to -4 dB", "output": "track(name=\"Drums\").track.set(volume_db=-4)", "actions": [{"type": "set_track_volume", "name": "Drums", "volume_db": -4}], "ood_tags": ["multi-clause"]}
 {"lang": "en", "input": "push Keys up to 2 dB", "output": "track(name=\"Keys\").track.set(volume_db=2)", "actions": [{"type": "set_track_volume", "name": "Keys", "volume_db": 2}], "ood_tags": ["colloquial"]}

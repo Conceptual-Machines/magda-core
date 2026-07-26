@@ -30,13 +30,6 @@
 {"lang": "en", "input": "remove track Drums", "output": "track(name=\"Drums\").delete()", "actions": [{"type": "delete_track", "name": "Drums"}]}
 {"lang": "en", "input": "delete Pads", "output": "track(name=\"Pads\").delete()", "actions": [{"type": "delete_track", "name": "Pads"}]}
 {"lang": "en", "input": "remove the vocals track", "output": "track(name=\"Vocals\").delete()", "actions": [{"type": "delete_track", "name": "Vocals"}]}
-{"lang": "en", "input": "mute Drums", "output": "track(name=\"Drums\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Drums"}]}
-{"lang": "en", "input": "mute the bass track", "output": "track(name=\"Bass\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Bass"}]}
-{"lang": "en", "input": "silence Pads", "output": "track(name=\"Pads\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Pads"}]}
-{"lang": "en", "input": "mute the vocals track", "output": "track(name=\"Vocals\").track.set(mute=true)", "actions": [{"type": "mute_track", "name": "Vocals"}]}
-{"lang": "en", "input": "solo Drums", "output": "track(name=\"Drums\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Drums"}]}
-{"lang": "en", "input": "solo the lead track", "output": "track(name=\"Lead\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Lead"}]}
-{"lang": "en", "input": "isolate Bass", "output": "track(name=\"Bass\").track.set(solo=true)", "actions": [{"type": "solo_track", "name": "Bass"}]}
 {"lang": "en", "input": "set Bass volume to -6 dB", "output": "track(name=\"Bass\").track.set(volume_db=-6)", "actions": [{"type": "set_track_volume", "name": "Bass", "volume_db": -6}]}
 {"lang": "en", "input": "turn the drums track to -3 dB", "output": "track(name=\"Drums\").track.set(volume_db=-3)", "actions": [{"type": "set_track_volume", "name": "Drums", "volume_db": -3}]}
 {"lang": "en", "input": "make Vocals 0 dB", "output": "track(name=\"Vocals\").track.set(volume_db=0)", "actions": [{"type": "set_track_volume", "name": "Vocals", "volume_db": 0}]}

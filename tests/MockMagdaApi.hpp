@@ -375,6 +375,7 @@ class MockClipApi : public ClipApi {
     std::vector<CreateMidi> midiCreations;
     std::vector<ClipId> deleted;
     std::vector<std::pair<ClipId, juce::String>> nameWrites;
+    std::vector<std::pair<ClipId, bool>> enabledWrites;
     std::vector<std::pair<ClipId, juce::String>> grooveWrites;
     std::vector<std::pair<ClipId, MidiNote>> noteAdds;
 
@@ -418,6 +419,9 @@ class MockClipApi : public ClipApi {
     }
     void setClipName(ClipId id, const juce::String& name) override {
         nameWrites.push_back({id, name});
+    }
+    void setClipEnabled(ClipId id, bool enabled) override {
+        enabledWrites.push_back({id, enabled});
     }
     void setGrooveTemplate(ClipId id, const juce::String& tmpl) override {
         grooveWrites.push_back({id, tmpl});
