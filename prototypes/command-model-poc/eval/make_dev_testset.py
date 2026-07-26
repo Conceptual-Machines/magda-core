@@ -154,7 +154,6 @@ CASES = [
      ["colloquial"]),
 
     # --------------------------------------------------------------- groove
-    ("what grooves have i got", [{"type": "groove_list"}], ["colloquial"]),
 ]
 
 HERE = os.path.dirname(os.path.abspath(__file__))

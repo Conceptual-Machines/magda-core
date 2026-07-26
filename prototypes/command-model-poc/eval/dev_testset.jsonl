@@ -41,4 +41,3 @@
 {"lang": "en", "input": "snap Perc to quarter notes", "output": "track(name=\"Perc\").notes.quantize(grid=1)", "actions": [{"type": "notes_quantize", "name": "Perc", "grid": 1.0}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "grab the D4 notes on Lead", "output": "track(name=\"Lead\").notes.select(note.pitch == D4)", "actions": [{"type": "notes_select_pitch", "name": "Lead", "pitch": "D4"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "notes over 90 on Choir", "output": "track(name=\"Choir\").notes.select(note.velocity > 90)", "actions": [{"type": "notes_select_velocity_above", "name": "Choir", "value": 90}], "ood_tags": ["colloquial"]}
-{"lang": "en", "input": "what grooves have i got", "output": "groove.list()", "actions": [{"type": "groove_list"}], "ood_tags": ["colloquial"]}

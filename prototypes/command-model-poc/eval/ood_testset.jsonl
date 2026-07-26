@@ -65,5 +65,4 @@
 {"lang": "en", "input": "select every C3 on the bass track", "output": "track(name=\"Bass\").notes.select(note.pitch == C3)", "actions": [{"type": "notes_select_pitch", "name": "Bass", "pitch": "C3"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "anything above 100 velocity on Drums", "output": "track(name=\"Drums\").notes.select(note.velocity > 100)", "actions": [{"type": "notes_select_velocity_above", "name": "Drums", "value": 100}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "notes quieter than 40 on Drums", "output": "track(name=\"Drums\").notes.select(note.velocity < 40)", "actions": [{"type": "notes_select_velocity_below", "name": "Drums", "value": 40}], "ood_tags": ["colloquial"]}
-{"lang": "en", "input": "give me the list of grooves", "output": "groove.list()", "actions": [{"type": "groove_list"}], "ood_tags": ["colloquial"]}
 {"lang": "en", "input": "put the Shuffle groove on at 0.4 strength", "output": "groove.set(template=\"Shuffle\", strength=0.4)", "actions": [{"type": "groove_set", "template": "Shuffle", "strength": 0.4}], "ood_tags": ["colloquial"]}

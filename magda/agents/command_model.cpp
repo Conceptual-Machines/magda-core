@@ -709,6 +709,11 @@ std::string CommandModel::generate(const std::string& text) const {
 std::string CommandModel::renderPrediction(const Prediction& p) {
     if (p.tokens.empty())
         return "";
+    // Abstain: a closed label set cannot decline unless declining is a label.
+    // Without it, an out-of-scope request lands on the nearest intent and gets
+    // executed — "can you mute the guitar" produced groove.list() and ran it.
+    if (p.intent == "unsupported")
+        return "";
 
     const auto& tokens = p.tokens;
     std::string intent = refineIntent(p.intent, tokens);

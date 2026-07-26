@@ -21,12 +21,30 @@ undoable transaction.
 
 Fine-tuned from `microsoft/deberta-v3-base`. English only.
 
+## Scope: edits, not gestures
+
+The command set covers **editing operations** — creating and naming tracks,
+adding devices, building racks, clip and note operations, grouping, selection
+by predicate. Deliberately excluded are real-time transport and mixer states
+(play/stop, track mute, solo): those have keyboard shortcuts, and a model with
+latency is strictly worse than the button. Queries ("what's the tempo") are
+excluded too — they are answers, not edits.
+
+Those requests are not merely unsupported; they are trained as an explicit
+**abstain** class, so the model returns nothing rather than executing whichever
+command happened to be nearest. A closed label set cannot decline unless
+declining is itself a label.
+
+Note that clip enable/disable *is* covered: it is a persistent property of the
+project, unlike a mixer mute, and picking one clip out by name is exactly the
+kind of thing typing beats clicking at.
+
 ## What it actually does
 
 **It never writes the command.** It does perception only, in a single forward
 pass, and emits two things:
 
-1. which of 38 commands this is
+1. which of 39 commands this is (one of which is "none of these")
 2. a BIO tag per word saying what role that word plays
 
 ```
@@ -64,9 +82,9 @@ English, it named tracks after whichever word sat in the name position during
 training:
 
 ```
-"can you mute the guitar"    -> track(name="Can You").track.set(mute=true)
-"push Keys up to 2 dB"       -> track(name="Push").track.set(volume_db=2)
-"the bass needs @pro_q_3"    -> track(name="Bass Needs").track.set(colour="None")
+"can you drop @1176 onto the vocals" -> track(name="Can You Drop @1176")...
+"push Keys up to 2 dB"               -> track(name="Push").track.set(volume_db=2)
+"the bass needs @pro_q_3"            -> track(name="Bass Needs").track.set(colour="None")
 ```
 
 Politeness wrappers scored 10%. With a pretrained encoder they score 100%.
@@ -80,8 +98,8 @@ Politeness wrappers scored 10%. With a pretrained encoder they score 100%.
 | `maps.json` | 1 KB | intent and BIO tag id maps |
 
 Inputs are `input_ids` and `attention_mask`, both `int64 [batch, seq]` with
-dynamic sequence length. Outputs are `intent_logits [batch, 38]` and
-`slot_logits [batch, seq, 18]`.
+dynamic sequence length. Outputs are `intent_logits [batch, 39]` and
+`slot_logits [batch, seq, 20]`.
 
 ## Quantization warning
 
@@ -133,8 +151,8 @@ and `unigram_tokenizer.cpp` in the MAGDA repo.
 
 ## Training
 
-24,000 template-generated English examples with LLM-paraphrased inputs, 4
-epochs, lr 3e-5 for the encoder and 1e-3 for the two heads. Checkpoints are
+24,000 template-generated English examples (no LLM paraphrasing in this
+build), 4 epochs, lr 3e-5 for the encoder and 1e-3 for the two heads. Checkpoints are
 selected on a hand-authored held-out set, never on the reported one — the
 val split is drawn from the same templates as training and saturates at 100%
 after one epoch, which makes it useless for ranking checkpoints.
@@ -147,8 +165,10 @@ after one epoch, which makes it useless for ranking checkpoints.
 - **Plugin references need the `@` sigil.** `track with @serum` works;
   `track with serum` does not, and degrades into an unrelated command rather
   than failing cleanly.
-- **Closed command set.** 38 commands. It cannot express anything outside them
-  and will map an unsupported request onto the nearest one it has.
+- **Closed command set.** 38 commands plus an explicit abstain class. Anything
+  outside them returns nothing rather than being mapped onto the nearest
+  command — but abstain recall is not perfect, so an unusual out-of-scope
+  request can still land on a command.
 - Sentences where the verb trails its object ("i don't need the perc track
   anymore, delete it") are a known weak spot.
 

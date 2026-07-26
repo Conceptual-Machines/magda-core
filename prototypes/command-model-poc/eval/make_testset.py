@@ -202,8 +202,6 @@ CASES = [
      [{"type": "groove_set", "template": "MPC Swing", "strength": 0.5}]),
     ("apply the Shuffle groove at strength 0.7",
      [{"type": "groove_set", "template": "Shuffle", "strength": 0.7}]),
-    ("which grooves are available", [{"type": "groove_list"}]),
-    ("show me the groove list", [{"type": "groove_list"}]),
 
     # --- create_rack (#1837) ---
     ("create a rack", [{"type": "create_rack", "name": ""}]),

@@ -31,6 +31,14 @@ def render_action(a: dict) -> list[str]:
     """Render a single action to one or more canonical DSL lines."""
     t = a["type"]
 
+    if t == "unsupported":
+        # Out of scope: render nothing so the caller can say so, rather than
+        # executing the nearest intent. A closed label set has no way to
+        # abstain unless abstaining is itself a label — without this,
+        # "mute the guitar" (deliberately not a command any more) landed on
+        # groove.list() and ran it.
+        return []
+
     if t == "create_track":
         head = f'track(name={q(a["name"])}, new=true)'
         plugins = a.get("plugins", [])
@@ -200,9 +208,6 @@ def render_action(a: dict) -> list[str]:
     # --- groove (timing/swing) -------------------------------------------
     if t == "groove_set":
         return [f'groove.set(template={q(a["template"])}, strength={a["strength"]:g})']
-
-    if t == "groove_list":
-        return ["groove.list()"]
 
     raise ValueError(f"unknown action type: {t!r}")
 

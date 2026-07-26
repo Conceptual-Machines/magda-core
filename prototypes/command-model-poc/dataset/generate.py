@@ -171,6 +171,80 @@ def gen_create_with_plugins(r: random.Random):
     return r.choice(templates), [{"type": "create_track", "name": name, "plugins": list(tokens)}]
 
 
+def gen_unsupported(r: random.Random):
+    """Requests the command model must ABSTAIN from, not guess at.
+
+    A closed intent set cannot decline unless declining is a label. Without
+    this class every out-of-scope request lands on the nearest intent and gets
+    executed: "can you mute the guitar" produced groove.list() and ran it.
+
+    Weighted heavily relative to any single command, because the space it
+    covers is far larger AND the errors are asymmetric: a false abstain is a
+    "not supported" message, a false command edits the user's project.
+
+    Templates are parameterised rather than fixed strings — the generator
+    dedupes by input, so a list of constants caps this class at its own length
+    however much weight it is given.
+    """
+    name = r.choice(TRACK_NAMES)
+    other = r.choice([t for t in TRACK_NAMES if t != name])
+    low, low2 = name.lower(), other.lower()
+    alias, _ = _alias_pair(r.choice(PLUGIN_ALIASES))
+    n = r.choice([1, 2, 4, 8, 16, 32, 33, 64])
+    bpm = r.choice([80, 90, 100, 110, 120, 128, 140, 150, 174])
+    key = r.choice(["C", "D", "E", "F", "G", "A", "Bb", "F#"])
+    mode = r.choice(["major", "minor"])
+
+    groups = [
+        # retired: real-time mixer states, still typed by people
+        [f"mute {name}", f"mute the {low} track", f"unmute {name}",
+         f"solo {name}", f"solo the {low} track", f"unsolo {name}",
+         f"can you mute the {low}", f"isolate {name}",
+         f"mute everything except {name}", f"silence the {low} track",
+         f"solo {low} and {low2}", f"mute {low} and {low2}",
+         f"unmute all tracks", f"clear all solos", f"mute everything"],
+        # transport / playback — short inputs, where abstain currently leaks
+        ["play", "stop", "pause", "start playback", "hit play", "record",
+         "rewind", "go to the start", f"jump to bar {n}", f"loop from bar {n}",
+         "turn on the metronome", f"record arm {name}", "punch in",
+         f"set the tempo to {bpm}", f"change the key to {key} {mode}",
+         f"set bpm to {bpm}", "half time", "double time",
+         f"play from bar {n}", f"loop bars {n} to {n + 8}"],
+        # file / project / history. Weighted with many short forms: one- and
+        # two-word inputs are where abstain leaks, and "undo" leaking to
+        # track.delete() is the worst outcome the model can produce.
+        ["save", "save the project", "save as", "export the mix",
+         "bounce to wav", "open my last session", "render the master",
+         "import a sample", "close the project", "new project",
+         f"export {name} as wav", f"bounce {low} to audio",
+         "undo", "undo that", "undo the last thing", "undo please",
+         "can you undo that", "revert", "revert that", "go back",
+         "step back", "take that back", "cancel that", "never mind",
+         "redo", "redo that", "redo it", "put that back",
+         "undo everything", "undo the last change", "roll back"],
+        # queries — answers, not edits
+        ["which grooves are available", "show me the groove list", "list grooves",
+         "what grooves have i got", "list the plugins", "what tracks do i have",
+         "how many tracks are there", f"what is on the {low} track",
+         f"is {alias} installed", "show me the mixer", "what's the tempo",
+         "what key is this in", "how long is the project",
+         f"what plugins are on {name}", f"how loud is {name}",
+         f"what colour is {name}"],
+        # advice / chat / help
+        ["what does this do", "how do i add a plugin", "why is this clipping",
+         "is the mix too loud", "help", "what can you do", "make it sound better",
+         "make this more interesting", "fix my mix", "does this sound ok",
+         "any ideas", "thanks", "hello", f"why does {name} sound bad",
+         f"how do i make {low} louder", "give me some feedback"],
+        # UI / view state
+        ["zoom in", "zoom out", "open the piano roll", "show automation",
+         "hide the browser", "full screen", "switch to session view",
+         "open the mixer", "toggle the sidebar", f"scroll to {name}",
+         f"open {alias}", f"show the {low} track"],
+    ]
+    return r.choice(r.choice(groups)), [{"type": "unsupported"}]
+
+
 def gen_clip_mute(r: random.Random):
     """Mute/disable a specific clip — the realistic typed-command case.
 
@@ -873,19 +947,6 @@ def gen_groove_set(r: random.Random):
     return r.choice(templates), [{"type": "groove_set", "template": template, "strength": strength}]
 
 
-def gen_groove_list(r: random.Random):
-    # Combinatorial phrasings so dedup keeps plenty of uniques and this rare
-    # (parameter-less) intent actually trains. Kept general so it generalises
-    # to the hand-authored testset phrasings without memorising them.
-    verb = r.choice(["list", "show", "show me", "display", "what are",
-                     "which", "give me"])
-    obj = r.choice(["grooves", "the grooves", "groove templates",
-                    "the groove templates", "available grooves",
-                    "groove presets", "the groove list", "all grooves"])
-    tail = r.choice(["", "", " available", " do we have", " are there"])
-    text = f"{verb} {obj}{tail}".strip()
-    return text, [{"type": "groove_list"}]
-
 
 def gen_select_clips_length_at_least(r: random.Random):
     name = r.choice(TRACK_NAMES)
@@ -949,6 +1010,7 @@ GENERATORS = [
     (gen_clip_new_at_bar, 0.03),
     (gen_select_tracks, 0.03),
     (gen_clip_mute, 0.04),
+    (gen_unsupported, 0.12),
     (gen_group_tracks_by_index, 0.02),
     (gen_add_plugin, 0.09),
     (gen_rename_track, 0.05),
@@ -984,7 +1046,6 @@ GENERATORS = [
     (gen_notes_select_velocity_above, 0.015),
     (gen_notes_select_velocity_below, 0.015),
     (gen_groove_set, 0.02),
-    (gen_groove_list, 0.02),
 ]
 
 

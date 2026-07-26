@@ -239,7 +239,6 @@ CASES = [
      ["colloquial"]),
 
     # --------------------------------------------------------------- groove
-    ("give me the list of grooves", [{"type": "groove_list"}], ["colloquial"]),
     ("put the Shuffle groove on at 0.4 strength",
      [{"type": "groove_set", "template": "Shuffle", "strength": 0.4}], ["colloquial"]),
 ]

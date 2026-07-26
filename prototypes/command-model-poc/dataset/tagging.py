@@ -273,7 +273,7 @@ def tag(input_text: str, actions: list[dict]):
         _tag_span(tags, lower, a["template"], "GROOVE_NAME")
         _tag_value(tags, lower, a["strength"])
 
-    elif intent == "groove_list":
+    elif intent == "unsupported":
         pass
 
     return intent, tokens, tags
@@ -526,8 +526,8 @@ def reconstruct(intent: str, tokens, tags) -> list[dict]:
         return [{"type": "groove_set",
                  "template": _canon_name(s.get("GROOVE_NAME", [""])[0]),
                  "strength": _value_or_first_number(s, tokens)}]
-    if intent == "groove_list":
-        return [{"type": "groove_list"}]
+    if intent == "unsupported":
+        return [{"type": "unsupported"}]
     raise ValueError(intent)
 
 
