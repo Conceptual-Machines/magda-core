@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "fast_inference_policy.hpp"
+
 namespace magda::agent {
 
 enum class ToolAccess { Read, Mutation };
@@ -66,6 +68,7 @@ struct AgentDefinition {
     juce::var baselineContext;
     std::vector<ToolDefinition> tools;
     RunBudget budget;
+    FastInferenceConfig fastInference;
 };
 
 struct ModelRequest {
@@ -155,6 +158,9 @@ struct AgentRunInput {
     std::vector<ConversationTurn> conversation;
     std::uint64_t projectRevision = 0;
     PermissionContext permissions;
+    // Compact, structured features only (for example active surface and
+    // selected entity type). The policy does not receive the full DAW state.
+    juce::var fastInferenceContext;
 };
 
 enum class RunState { Ready, Running, Completed, Stopped };
@@ -193,6 +199,7 @@ struct RunResult {
     std::size_t mutations = 0;
     std::vector<ConversationTurn> conversation;
     std::vector<StepTrace> trace;
+    FastInferenceTrace fastInference;
 };
 
 class AgentRuntime {
@@ -201,7 +208,7 @@ class AgentRuntime {
     using Now = std::function<Clock::time_point()>;
 
     AgentRuntime(Model& model, ToolExecutor& executor, ApprovalHook approvalHook = {},
-                 Now now = Clock::now);
+                 Now now = Clock::now, FastInferencePolicy* fastInferencePolicy = nullptr);
 
     RunResult run(const AgentDefinition& definition, AgentRunInput input,
                   CancellationToken cancellation = {});
@@ -211,6 +218,7 @@ class AgentRuntime {
     ToolExecutor& executor_;
     ApprovalHook approvalHook_;
     Now now_;
+    FastInferencePolicy* fastInferencePolicy_ = nullptr;
 };
 
 const char* toString(TerminalReason reason);

@@ -12,6 +12,8 @@ set(AGENTS_SOURCES
     conversation_store.cpp
     agent_runtime.hpp
     agent_runtime.cpp
+    fast_inference_policy.hpp
+    fast_inference_policy.cpp
     console_agent_orchestrator.hpp
     console_agent_orchestrator.cpp
     instruction_executor.hpp
