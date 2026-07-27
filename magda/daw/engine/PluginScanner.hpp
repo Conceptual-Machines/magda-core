@@ -86,7 +86,6 @@ class PluginScanner : private juce::Thread {
     juce::StringArray failedPlugins_;
 
     // Exclusion management
-    juce::File getExclusionFile() const;
     void loadExclusions();
     void saveExclusions();
     std::vector<ExcludedPlugin> excludedPlugins_;

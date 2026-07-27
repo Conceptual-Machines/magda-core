@@ -17,6 +17,7 @@ target_sources(magda_daw PRIVATE
     TracktionEngineWrapperPlugins.cpp
     MagdaUIBehaviour.cpp
     PluginExclusions.cpp
+    PluginMetadataStore.cpp
     PluginScanner.cpp
     PluginScanCoordinator.cpp
     ScanWorker.cpp

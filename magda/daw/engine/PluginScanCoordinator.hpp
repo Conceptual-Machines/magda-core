@@ -109,7 +109,6 @@ class PluginScanCoordinator : private juce::Timer {
     void killOrphanScannerProcesses();
 
     // Exclusion management
-    juce::File getExclusionFile() const;
     void loadExclusions();
     void saveExclusions();
 

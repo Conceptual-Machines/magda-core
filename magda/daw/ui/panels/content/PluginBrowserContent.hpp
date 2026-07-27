@@ -134,13 +134,11 @@ class PluginBrowserContent : public PanelContent,
     void toggleFavorite(const PluginBrowserInfo& plugin);
     void saveFavorites();
     void loadFavorites();
-    juce::File getFavoritesFile() const;
 
     // Aliases
     void showEditAliasDialog(const PluginBrowserInfo& plugin);
     void saveAliases();
     void loadAliases();
-    juce::File getAliasesFile() const;
 
     // User folders (issue #1700) — user-defined browser folders, persisted
     // like favorites/aliases. A plugin lives in at most one folder; anything

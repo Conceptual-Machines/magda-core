@@ -54,6 +54,7 @@
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginMetadataStore.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
@@ -2331,11 +2332,13 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
 
 void AIChatConsoleContent::buildAliasList() {
     allAliases_.clear();
+    std::map<juce::String, std::size_t> aliasIndex;
 
     // Internal plugins — single source of truth in internal_plugins.hpp,
     // shared with the DSL interpreter and InstructionExecutor so the autocomplete
     // dropdown lists exactly the aliases the agent layer accepts.
     for (const auto& entry : magda::getInternalPlugins()) {
+        aliasIndex[entry.pluginId] = allAliases_.size();
         allAliases_.push_back({entry.primaryAlias, entry.displayName});
     }
 
@@ -2346,32 +2349,20 @@ void AIChatConsoleContent::buildAliasList() {
         DBG("AIChatConsole: buildAliasList - KnownPluginList has " << types.size() << " plugins");
         for (const auto& desc : types) {
             auto alias = PluginBrowserInfo::generateAlias(desc.name);
+            aliasIndex[desc.createIdentifierString()] = allAliases_.size();
             allAliases_.push_back({alias, desc.name});
         }
     } else {
         DBG("AIChatConsole: buildAliasList - engine not available via TrackManager");
     }
 
-    // Load custom alias overrides
-    auto aliasFile = magda::paths::pluginAliasesFile();
-
-    if (aliasFile.existsAsFile()) {
-        if (auto xml = juce::parseXML(aliasFile)) {
-            for (auto* elem : xml->getChildIterator()) {
-                auto key = elem->getStringAttribute("key");
-                auto alias = elem->getStringAttribute("alias");
-                // Find and update the matching entry
-                for (auto& entry : allAliases_) {
-                    // Match by uniqueId or by plugin name
-                    if (entry.pluginName == key ||
-                        PluginBrowserInfo::generateAlias(entry.pluginName) ==
-                            PluginBrowserInfo::generateAlias(key)) {
-                        entry.alias = alias;
-                        break;
-                    }
-                }
-            }
+    try {
+        for (const auto& [key, alias] : magda::PluginMetadataStore::openDefault().aliases()) {
+            if (const auto it = aliasIndex.find(key); it != aliasIndex.end())
+                allAliases_[it->second].alias = alias;
         }
+    } catch (const std::exception& e) {
+        DBG("AIChatConsole: failed to load plugin aliases: " << e.what());
     }
 
     // Sort by alias

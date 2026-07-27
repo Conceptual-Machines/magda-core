@@ -22,6 +22,7 @@
 #include "core/PluginAlias.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
+#include "engine/PluginMetadataStore.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
@@ -30,13 +31,6 @@ namespace {
 
 juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
     return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
-}
-
-juce::StringArray visiblePluginKeys(const std::vector<PluginBrowserInfo>& plugins) {
-    juce::StringArray keys;
-    for (const auto& plugin : plugins)
-        keys.addIfNotAlreadyThere(preferenceIdentifierForPlugin(plugin));
-    return keys;
 }
 
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
@@ -972,115 +966,58 @@ void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
     rebuildTree();
 }
 
-juce::File PluginBrowserContent::getFavoritesFile() const {
-    return magda::paths::pluginFavoritesFile();
-}
-
 void PluginBrowserContent::saveFavorites() {
-    juce::XmlElement root("PluginFavorites");
-    const auto visibleKeys = visiblePluginKeys(plugins_);
-
-    if (auto existing = juce::parseXML(getFavoritesFile())) {
-        for (auto* elem : existing->getChildIterator()) {
-            const auto key = elem->getStringAttribute("key");
-            if (key.isNotEmpty() && !visibleKeys.contains(key))
-                root.addChildElement(new juce::XmlElement(*elem));
+    try {
+        auto store = magda::PluginMetadataStore::openDefault();
+        std::vector<magda::PluginFavoriteUpdate> updates;
+        updates.reserve(plugins_.size());
+        for (const auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            updates.push_back({key, plugin.name, plugin.isFavorite});
         }
+        store.saveFavorites(updates);
+    } catch (const std::exception& e) {
+        DBG("Failed to save plugin favorites: " << e.what());
     }
-
-    for (const auto& p : plugins_) {
-        if (p.isFavorite) {
-            auto* elem = root.createNewChildElement("Plugin");
-            elem->setAttribute("key", p.uniqueId.isNotEmpty() ? p.uniqueId : p.name);
-            elem->setAttribute("name", p.name);
-        }
-    }
-
-    auto file = getFavoritesFile();
-    file.getParentDirectory().createDirectory();
-    root.writeTo(file);
 }
 
 void PluginBrowserContent::loadFavorites() {
-    auto file = getFavoritesFile();
-    if (!file.existsAsFile())
-        return;
-
-    auto xml = juce::parseXML(file);
-    if (!xml)
-        return;
-
-    // Collect favorite keys
-    juce::StringArray favoriteKeys;
-    for (auto* elem : xml->getChildIterator()) {
-        favoriteKeys.add(elem->getStringAttribute("key"));
+    try {
+        const auto favoriteKeys = magda::PluginMetadataStore::openDefault().favoriteKeys();
+        for (auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            plugin.isFavorite = favoriteKeys.contains(key);
+        }
+    } catch (const std::exception& e) {
+        DBG("Failed to load plugin favorites: " << e.what());
     }
-
-    // Apply to plugins
-    for (auto& p : plugins_) {
-        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        p.isFavorite = favoriteKeys.contains(key);
-    }
-}
-
-juce::File PluginBrowserContent::getAliasesFile() const {
-    return magda::paths::pluginAliasesFile();
 }
 
 void PluginBrowserContent::saveAliases() {
-    juce::XmlElement root("PluginAliases");
-    const auto visibleKeys = visiblePluginKeys(plugins_);
-
-    if (auto existing = juce::parseXML(getAliasesFile())) {
-        for (auto* elem : existing->getChildIterator()) {
-            const auto key = elem->getStringAttribute("key");
-            if (key.isNotEmpty() && !visibleKeys.contains(key))
-                root.addChildElement(new juce::XmlElement(*elem));
+    try {
+        auto store = magda::PluginMetadataStore::openDefault();
+        std::map<juce::String, juce::String> aliases;
+        for (const auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto defaultAlias = PluginBrowserInfo::generateAlias(plugin.name);
+            aliases[key] = plugin.alias == defaultAlias ? juce::String() : plugin.alias;
         }
+        store.saveAliases(aliases);
+    } catch (const std::exception& e) {
+        DBG("Failed to save plugin aliases: " << e.what());
     }
-
-    for (const auto& p : plugins_) {
-        if (p.alias.isEmpty())
-            continue;
-
-        // Only save if alias differs from auto-generated default
-        auto defaultAlias = PluginBrowserInfo::generateAlias(p.name);
-        if (p.alias == defaultAlias)
-            continue;
-
-        auto* elem = root.createNewChildElement("Alias");
-        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        elem->setAttribute("key", key);
-        elem->setAttribute("alias", p.alias);
-    }
-
-    auto file = getAliasesFile();
-    file.getParentDirectory().createDirectory();
-    root.writeTo(file);
 }
 
 void PluginBrowserContent::loadAliases() {
-    auto file = getAliasesFile();
-    if (!file.existsAsFile())
-        return;
-
-    auto xml = juce::parseXML(file);
-    if (!xml)
-        return;
-
-    // Build a map of key -> alias
-    std::map<juce::String, juce::String> aliasMap;
-    for (auto* elem : xml->getChildIterator()) {
-        aliasMap[elem->getStringAttribute("key")] = elem->getStringAttribute("alias");
-    }
-
-    // Apply custom aliases over auto-generated ones
-    for (auto& p : plugins_) {
-        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        auto it = aliasMap.find(key);
-        if (it != aliasMap.end()) {
-            p.alias = it->second;
+    try {
+        const auto aliasMap = magda::PluginMetadataStore::openDefault().aliases();
+        for (auto& plugin : plugins_) {
+            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            if (const auto it = aliasMap.find(key); it != aliasMap.end())
+                plugin.alias = it->second;
         }
+    } catch (const std::exception& e) {
+        DBG("Failed to load plugin aliases: " << e.what());
     }
 }
 

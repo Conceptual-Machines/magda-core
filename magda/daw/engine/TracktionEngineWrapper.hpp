@@ -482,14 +482,14 @@ class TracktionEngineWrapper : public AudioEngine,
                                        const juce::Array<juce::PluginDescription>& freshScan);
 
     /**
-     * @brief Clear the plugin list and delete the saved file
+     * @brief Clear scanned plugins while preserving user metadata
      * Use this before a fresh rescan
      */
     void clearPluginList();
 
     /**
-     * @brief Get the file path where plugin list is stored
-     * @return Path to the plugin list XML file
+     * @brief Get the database path where plugin metadata is stored
+     * @return Path to plugin_metadata.db
      */
     juce::File getPluginListFile() const;
 

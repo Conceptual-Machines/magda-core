@@ -1,5 +1,6 @@
 #include "PluginScanCoordinator.hpp"
 
+#include "PluginMetadataStore.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 
@@ -462,10 +463,6 @@ void PluginScanCoordinator::killOrphanScannerProcesses() {
 }
 
 // Exclusion management
-juce::File PluginScanCoordinator::getExclusionFile() const {
-    return magda::paths::pluginExclusionsFile();
-}
-
 const std::vector<ExcludedPlugin>& PluginScanCoordinator::getExcludedPlugins() const {
     return excludedPlugins_;
 }
@@ -491,12 +488,21 @@ void PluginScanCoordinator::excludePlugin(const juce::String& pluginPath,
 }
 
 void PluginScanCoordinator::loadExclusions() {
-    excludedPlugins_ = loadExclusionList(getExclusionFile());
+    try {
+        excludedPlugins_ = PluginMetadataStore::openDefault().loadExclusions();
+    } catch (const std::exception& e) {
+        DBG("[ScanCoordinator] Failed to load exclusions: " << e.what());
+        excludedPlugins_.clear();
+    }
     DBG("[ScanCoordinator] Loaded " << excludedPlugins_.size() << " excluded plugins");
 }
 
 void PluginScanCoordinator::saveExclusions() {
-    saveExclusionList(getExclusionFile(), excludedPlugins_);
+    try {
+        PluginMetadataStore::openDefault().saveExclusions(excludedPlugins_);
+    } catch (const std::exception& e) {
+        DBG("[ScanCoordinator] Failed to save exclusions: " << e.what());
+    }
 }
 
 juce::File PluginScanCoordinator::getScanReportFile() const {
