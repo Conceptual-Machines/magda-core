@@ -2,6 +2,8 @@
 
 #include <BinaryData.h>
 
+#include <unordered_set>
+
 #include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -552,14 +554,18 @@ void PluginBrowserContent::loadExternalPlugins() {
         return;
     }
 
+    const auto pluginTypes = engine_->getPreferredPluginTypes();
     try {
-        juce::StringArray preferredKeys;
-        for (const auto& description : engine_->getPreferredPluginTypes())
-            preferredKeys.add(description.createIdentifierString());
+        std::unordered_set<juce::String> preferredKeys;
+        preferredKeys.reserve(static_cast<std::size_t>(pluginTypes.size()));
+        for (const auto& description : pluginTypes)
+            preferredKeys.insert(description.createIdentifierString());
 
         const auto records = magda::PluginMetadataStore::defaultForCurrentThread().query();
+        std::vector<PluginBrowserInfo> queriedPlugins;
+        queriedPlugins.reserve(records.size());
         for (const auto& record : records) {
-            if (!preferredKeys.contains(record.key))
+            if (preferredKeys.count(record.key) == 0)
                 continue;
 
             PluginBrowserInfo plugin;
@@ -575,17 +581,23 @@ void PluginBrowserContent::loadExternalPlugins() {
             plugin.isExternal = true;
             plugin.uniqueId = record.key;
             plugin.fileOrIdentifier = record.fileOrIdentifier;
-            plugins_.push_back(std::move(plugin));
+            queriedPlugins.push_back(std::move(plugin));
         }
 
-        DBG("Loaded " << records.size() << " external plugin metadata records");
-        return;
+        if (queriedPlugins.size() == static_cast<std::size_t>(pluginTypes.size())) {
+            for (auto& plugin : queriedPlugins)
+                plugins_.push_back(std::move(plugin));
+            DBG("Loaded " << queriedPlugins.size() << " external plugin metadata records");
+            return;
+        }
+        DBG("Plugin metadata query returned " << queriedPlugins.size() << " of "
+                                              << pluginTypes.size()
+                                              << " preferred plugins; using KnownPluginList");
     } catch (const std::exception& e) {
         DBG("Failed to query plugin metadata for browser: " << e.what()
                                                             << "; using KnownPluginList");
     }
 
-    const auto pluginTypes = engine_->getPreferredPluginTypes();
     for (const auto& description : pluginTypes)
         plugins_.push_back(PluginBrowserInfo::fromPluginDescription(description));
     DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList fallback");

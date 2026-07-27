@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "PluginExclusions.hpp"
-#include "media_db/SqliteUtils.hpp"
+#include "core/SqliteUtils.hpp"
 
 namespace magda {
 

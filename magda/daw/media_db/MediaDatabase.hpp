@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <string>
 
-#include "SqliteUtils.hpp"
+#include "core/SqliteUtils.hpp"
 
 namespace magda::media {
 

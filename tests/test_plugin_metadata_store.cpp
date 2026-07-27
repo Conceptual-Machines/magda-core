@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <exception>
+#include <string>
 #include <thread>
 
 #include "magda/daw/engine/PluginMetadataStore.hpp"
@@ -59,6 +60,18 @@ int scalarInt(const juce::File& database, const char* sql) {
     REQUIRE(sqlite3_finalize(statement) == SQLITE_OK);
     REQUIRE(sqlite3_close(db) == SQLITE_OK);
     return result;
+}
+
+std::string exceptionMessage(const std::exception_ptr& error) {
+    if (!error)
+        return {};
+    try {
+        std::rethrow_exception(error);
+    } catch (const std::exception& e) {
+        return e.what();
+    } catch (...) {
+        return "unknown non-standard exception";
+    }
 }
 
 }  // namespace
@@ -255,6 +268,8 @@ TEST_CASE("PluginMetadataStore serializes concurrent first opens",
     first.join();
     second.join();
 
+    INFO("first open: " + exceptionMessage(firstError));
+    INFO("second open: " + exceptionMessage(secondError));
     CHECK_FALSE(firstError);
     CHECK_FALSE(secondError);
     magda::PluginMetadataStore reopened(database);

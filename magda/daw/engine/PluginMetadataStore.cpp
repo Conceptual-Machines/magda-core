@@ -66,11 +66,16 @@ PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile, LegacyF
     db_.open(utf8(file_.getFullPathName()), "open plugin metadata database");
 
     try {
-        sqlite3_busy_timeout(db_.get(), 5000);
+        sqlite3_busy_timeout(db_.get(), 60000);
         sqlite::exec(db_.get(), "PRAGMA journal_mode=WAL");
         sqlite::exec(db_.get(), "PRAGMA synchronous=NORMAL");
+        // Serialize schema setup and the one-time import as one initialization
+        // unit. This closes the remaining race between concurrent first opens
+        // before importLegacyFilesOnce() acquires its nested savepoint.
+        Transaction initialization(db_.get(), sqlite::TransactionMode::Immediate);
         createSchema();
         importLegacyFilesOnce();
+        initialization.commit();
     } catch (...) {
         db_.close();
         throw;
@@ -95,11 +100,15 @@ PluginMetadataStore& PluginMetadataStore::defaultForCurrentThread() {
 
 void PluginMetadataStore::createSchema() {
     const auto version = readUserVersion(db_.get());
-    if (version < 0)
-        throw sqlite::Error("read plugin metadata schema version");
     if (version > kPluginMetadataSchemaVersion)
         throw sqlite::Error("plugin metadata database schema is newer than this build");
 
+    // Version 1 is fully described by the idempotent DDL below. Before
+    // increasing kPluginMetadataSchemaVersion, add an ordered migration step
+    // here for every prior version, then update this assertion. CREATE TABLE
+    // IF NOT EXISTS alone cannot upgrade an existing table.
+    static_assert(kPluginMetadataSchemaVersion == 1,
+                  "Add a plugin metadata schema migration before bumping the version");
     sqlite::exec(db_.get(), R"SQL(
         CREATE TABLE IF NOT EXISTS plugin (
             plugin_key         TEXT PRIMARY KEY,
@@ -128,8 +137,10 @@ void PluginMetadataStore::createSchema() {
             ON plugin (file_or_identifier);
         CREATE INDEX IF NOT EXISTS idx_plugin_alias ON plugin (alias);
     )SQL");
-    if (version < kPluginMetadataSchemaVersion)
-        sqlite::exec(db_.get(), "PRAGMA user_version = 1");
+    if (version < kPluginMetadataSchemaVersion) {
+        const auto stamp = "PRAGMA user_version = " + std::to_string(kPluginMetadataSchemaVersion);
+        sqlite::exec(db_.get(), stamp.c_str());
+    }
 }
 
 void PluginMetadataStore::importLegacyFilesOnce() {
@@ -234,7 +245,7 @@ void PluginMetadataStore::saveKnownPlugins(const juce::KnownPluginList& plugins)
 }
 
 void PluginMetadataStore::loadKnownPlugins(juce::KnownPluginList& plugins) const {
-    juce::KnownPluginList loaded;
+    std::vector<juce::PluginDescription> loaded;
     Statement stmt(db_.get(), "SELECT description_xml FROM plugin "
                               "WHERE description_xml IS NOT NULL ORDER BY rowid");
     int result = SQLITE_OK;
@@ -242,13 +253,13 @@ void PluginMetadataStore::loadKnownPlugins(juce::KnownPluginList& plugins) const
         if (auto xml = juce::parseXML(columnText(stmt.get(), 0))) {
             juce::PluginDescription description;
             if (description.loadFromXml(*xml))
-                loaded.addType(description);
+                loaded.push_back(std::move(description));
         }
     }
     requireReadComplete(db_.get(), result);
 
     plugins.clear();
-    for (const auto& description : loaded.getTypes())
+    for (const auto& description : loaded)
         plugins.addType(description);
 }
 
