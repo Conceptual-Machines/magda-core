@@ -24,6 +24,8 @@ Projects you have already saved still load whichever exact plugin they reference
 - **Scan for Plugins** — Start a full scan of all listed directories. A progress bar shows scan progress.
 - **View Scan Report** — Open the log from the most recent scan, showing which plugins were found, loaded, or rejected.
 
+Plugins whose files have disappeared are dropped from the list on startup, with one exception: if the missing file lived on an **external or network volume that is not currently mounted**, the entry is kept. An unplugged drive is not evidence that you uninstalled the plugin, so the entry is waiting for you when you plug it back in. This covers `/Volumes/...` on macOS, drive letters and UNC shares on Windows, and `/media`, `/run/media`, and `/mnt` on Linux.
+
 ## Excluded Plugins
 
 Plugins that failed to load or were manually excluded appear here with the reason and date. Use **Remove Selected** to re-enable individual plugins or **Reset All** to clear the entire exclusion list.

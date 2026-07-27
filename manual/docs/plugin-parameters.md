@@ -20,20 +20,25 @@ The dialog shows one row per parameter with the following columns:
 
 | Column | Description |
 |--------|-------------|
-| **Name** | Parameter name as reported by the plugin. |
+| **Parameter** | Parameter name as reported by the plugin. |
 | **Visible** | Toggle whether the parameter shows up in MAGDA's chain, inspector, and AI prompts. Hide parameters you never touch to reduce clutter. |
+| **Mini FX** | Include the parameter in the device's compact mini view. |
+| **AI Agent** | Allow the [AI sound designer](panels/ai-assistant.md#ai-sound-design-for-third-party-plugins) to set this parameter. Independent of **Visible**. |
 | **Unit** | Display unit — Hz, dB, ms, %, semitones, or any custom string. |
 | **Range** | Minimum, centre, and maximum values in the parameter's own domain. Narrow the range so sliders and AI-generated values stay in the useful zone. |
-| **Scale** | Linear, logarithmic, or exponential response curve. |
 
 ### Actions
 
-- **Select All / Deselect All** — Toggle visibility across the whole list.
+- **Select All / Deselect All** — Toggle every row in the column chosen by the dropdown beside them (**Visible**, **Mini FX**, or **AI Agent**).
 - **Detect** — Run the deterministic heuristic pass (instant, offline). Picks up units and ranges that the plugin's own display strings give away.
 - **AI Detect** — Run the heuristic pass and then send anything it couldn't resolve to the configured LLM (see below).
-- **Reset** — Discard all inferred units, ranges, and AI-detected values for this plugin and put every parameter back to a plain 0–100 % view.
+- **AI Prompt...** — Standing instructions added to every sound-design request for this plugin. The button shows a checkmark once a prompt is saved.
+- **Reset** — Discard all inferred units, ranges, AI parameter selections, and the custom prompt for this plugin, putting every parameter back to a plain 0–100 % view.
 - **Apply** — Save changes without closing the dialog.
 - **OK / Cancel** — Save and close, or discard.
+
+!!! note "Internal devices"
+    MAGDA's own devices report proper units and ranges already, and their sound designers introspect every parameter, so the dialog drops the **Visible** and **AI Agent** columns for them and offers only the **Mini FX** choice.
 
 ## AI Detect
 
@@ -42,7 +47,7 @@ Typing units and ranges by hand for a plugin with dozens of parameters is tediou
 The results populate the dialog so you can review them before applying — tweak anything you disagree with and hit **Apply**.
 
 !!! note
-    AI Detect uses whichever provider is configured in [Preferences > AI](interface/preferences.md). It works with both cloud providers and local inference.
+    AI Detect uses whichever provider is configured in [AI Settings](interface/ai-settings.md). It works with both cloud providers and local inference.
 
 ## Learn Mode
 

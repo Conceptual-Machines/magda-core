@@ -140,7 +140,7 @@ Only one script can be active at a time. Loading a new script replaces the previ
 
 ### Scripts Tab
 
-The Scripts tab in the Controllers dialog lists every `.lua` file in your scripts folder, one row each. Each row shows:
+The Scripts tab in the Controllers dialog lists the scripts available to you — the factory scripts you have enabled, plus every `.lua` file in your own scripts folder. Each row shows:
 
 | Column | Description |
 |---|---|
@@ -152,19 +152,36 @@ The Scripts tab in the Controllers dialog lists every `.lua` file in your script
 
 Header buttons:
 
-- **Open Folder** — reveals the scripts folder in the OS file browser
-- **Import…** — pick a `.lua` from disk, copy it into the scripts folder, refresh the list
+- **+ Add script** — pick from the factory scripts bundled with MAGDA (see [Factory Scripts](#factory-scripts)) and add it to the list
+- **Open Scripts Folder** — reveals your scripts folder in the OS file browser
+- **Import script…** — pick a `.lua` from disk, copy it into the scripts folder, refresh the list. You are asked before an existing file of the same name is replaced.
 - **Reload** — re-evaluate the active script (or load the alphabetically-first script if none is active). Picks up file edits without restarting MAGDA.
 
-Click a row's port columns to assign / change the MIDI ports for that script. Right-click a row to remove the script file.
+Click a row's port columns to assign / change the MIDI ports for that script. Right-click a row for **Reveal in Finder**, **Unload** (on the active script), and **Disable factory script** (on a factory one).
+
+### Factory Scripts
+
+MAGDA ships with ready-made scripts for common controllers. They live inside the application rather than in your scripts folder, and are added to the list through **+ Add script** rather than by copying files.
+
+| Script | Controller |
+|--------|-----------|
+| `launchkey_mini_mk4.lua` | Novation Launchkey Mini MK4 — transport, pads, knobs, scene switching |
+| `launchpad_mk1.lua` | Novation Launchpad MK1 / Classic — session grid, scene launch, banking, User 1/2 note layouts |
+| `launchpad_mk2.lua` | Novation Launchpad MK2 — session grid, scene launch, banking, User 1/2 note layouts |
+| `8-knobs.lua` | Any 8-knob controller — CC 1–8 drive the volume of tracks 1–8 |
+| `foot-pedal.lua` | Any sustain pedal — CC 64 launches and stops the selected session clip |
+
+**Disable factory script** removes one from the list; **+ Add script** brings it back. Once every factory script is enabled the button reports that there is nothing left to add.
+
+To modify one, add it, use **Reveal in Finder** to find it, and copy it into your own scripts folder under a new name.
 
 ### Scripts Folder
 
 | Platform | Path |
 |---|---|
-| macOS | `~/Library/MAGDA/scripts/` |
-| Windows | `%APPDATA%\MAGDA\scripts\` |
-| Linux | `~/.config/MAGDA/scripts/` |
+| macOS | `~/Library/MAGDA/Scripts/Controllers/` |
+| Windows | `%APPDATA%\MAGDA\Scripts\Controllers\` |
+| Linux | `~/.config/MAGDA/Scripts/Controllers/` |
 
 The folder is created on first launch. Drop `.lua` files in there and they show up in the Scripts tab. Per-script port assignments are saved alongside.
 

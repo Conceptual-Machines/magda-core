@@ -13,6 +13,23 @@ track(name="Bass", new=true)
   .notes.add_chord(root=C4, quality=major, beat=0, length=4)
 ```
 
+## Project
+
+Project-wide timing settings.
+
+```
+project.set(bpm=128)
+project.set(time_signature="7/8")
+project.set(bpm=128, time_signature="3/4")
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `bpm` | number | Project tempo. `tempo` is accepted as a synonym. |
+| `time_signature` | string | Written as `numerator/denominator`, e.g. `"7/8"` |
+
+At least one of the two must be given.
+
 ## Tracks
 
 ### Creating & referencing tracks
@@ -33,10 +50,20 @@ track(name="Bass").track.set(name="Sub Bass", volume_db=-3, pan=0.5, mute=true, 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Rename the track |
+| `colour` | string | Track colour as a hex string, e.g. `"#ff5a36"` |
 | `volume_db` | number | Volume in dB |
 | `pan` | number | Pan position (-1.0 left to 1.0 right) |
 | `mute` | bool | Mute the track |
 | `solo` | bool | Solo the track |
+
+### Grouping and ordering
+
+```
+track(id=1).track.group(name="Drums", tracks="1,2,3")   // Group tracks by 1-based id
+track(id=4).track.move(index=1)                          // Move to first position
+```
+
+`track.group` switches the context to the new group, so you can keep chaining onto it. `track.move` positions the track among its siblings — top-level tracks, or the children of its parent group.
 
 ### Other track operations
 
@@ -67,19 +94,39 @@ track(name="Bass").clip.rename(name="Part {i}")         // Rename selected clips
 track(name="Bass").clip.delete(index=0)                 // Delete clip at index
 ```
 
+### Enabling and disabling clips
+
+```
+track(name="Bass").clip.set(enabled=false, index=0)     // Disable clip at index
+track(name="Bass").clip.set(enabled=false)              // Disable the selected clips
+```
+
+`clip.set` currently takes `enabled` only. Without `index` it acts on the current selection, which makes it natural to chain after a `clips.select(...)` in the same statement. See [Enabling and Disabling Clips](../clips.md#enabling-and-disabling-clips).
+
 ### Selecting clips
 
 ```
 track(id=1).clips.select(clip.length_bars >= 2)
 track(id=1).clips.select(clip.start_bar == 1)
+track(id=1).clips.select(clip.name == "Intro")
+track(id=1).clips.select()                              // Every clip on the track
 ```
 
-| Field | Description |
-|-------|-------------|
-| `clip.length_bars` | Clip length in bars |
-| `clip.start_bar` | Clip start position in bars |
+| Field | Type | Description |
+|-------|------|-------------|
+| `clip.length_bars` | number | Clip length in bars |
+| `clip.start_bar` | number | Clip start position, in bars, 1-based |
+| `clip.start_beats` | number | Clip start position in beats |
+| `clip.length` | number | Clip length in seconds |
+| `clip.start` | number | Clip start position in seconds |
+| `clip.id` | number | Clip id |
+| `clip.track_id` | number | Owning track id |
+| `clip.name` | string | Clip name |
+| `clip.type` | string | Clip type |
 
-Operators: `==`, `!=`, `>`, `>=`, `<`, `<=`
+Prefer the bar and beat fields. `clip.length` and `clip.start` are seconds derived from the current tempo, so a predicate written against them stops matching if the tempo changes.
+
+Operators: `==`, `!=`, `>`, `>=`, `<`, `<=`. String fields accept `==` and `!=` only. Omitting the condition entirely selects every clip on the track.
 
 ## Notes
 
@@ -185,12 +232,37 @@ track(name="Vocals").fx.add(name="Pro-Q 3", format="VST3")
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `name` | string | Effect name |
+| `name` | string | Device name or alias |
 | `format` | string | Optional: `VST3`, `AU`, or `VST` to disambiguate |
 
-**Built-in effects:** `eq`, `compressor`, `reverb`, `delay`, `chorus`, `phaser`, `filter`, `utility`, `pitch shift`, `ir reverb`
+**MAGDA devices** are added by exact display name or by a canonical alias — `eq`, `compressor`, `reverb`, `delay`, `chorus`, `phaser`, `filter`, `utility`, `pitch shift`, `ir reverb` and the rest of the [device registry](../devices/built-in.md). The alias list is generated from the registry itself, so it follows whatever is installed rather than a fixed set.
 
-Third-party plugins are referenced by their scanned name. Use the `@alias` syntax in the AI chat to autocomplete plugin names.
+Third-party plugins are referenced by their scanned name, or by an alias token such as `<pro_q_3>` or `<surge_xt>`. Use the `@alias` syntax in the AI chat to autocomplete plugin names.
+
+## Racks
+
+Rack operations act on the track in context. Each one remembers the rack (and chain) it just touched, so a following call can omit the ids.
+
+```
+track(id=1).rack.new(name="Parallel").rack.chain_new(name="Wet")
+track(id=1).rack.set(id=12, bypassed=true, volume_db=-3)
+track(id=1).rack.chain_set(rack_id=12, chain_id=34, volume_db=-6, pan=0.2)
+track(id=1).rack.chain_delete(rack_id=12, chain_id=34)
+track(id=1).rack.delete(id=12)
+```
+
+| Method | Parameters |
+|--------|------------|
+| `rack.new` | `name` (default `"Rack"`). Creates the rack with its default chain. |
+| `rack.delete` | `id` — defaults to the rack just created |
+| `rack.set` | `id`, plus `bypassed` and/or `volume_db` |
+| `rack.chain_new` | `rack_id` (defaults to the current rack), `name` (default `"Chain"`) |
+| `rack.chain_delete` | `rack_id`, `chain_id` |
+| `rack.chain_set` | `rack_id`, `chain_id`, plus any of `name`, `muted`, `solo`, `bypassed`, `volume_db`, `pan`, `output` |
+
+`rack.set` and `rack.chain_set` need at least one property to change, and report an error otherwise. Rack and chain ids come from the state snapshot — see [FX Chain & Racks](../fx-chain.md).
+
+While a rack chain is in scope, `fx.add` puts the device **inside that chain** rather than on the track's top-level chain. That is what makes a single statement able to build a rack and fill it.
 
 ## Filter Operations
 
@@ -200,8 +272,16 @@ Bulk operations on tracks matching a condition.
 filter(tracks, track.name == "Drums").track.set(mute=true)
 filter(tracks, track.name == "Drums").delete()
 filter(tracks, track.name == "Drums").select()
+filter(tracks, track.name == "Drums").track.group(name="Group")
 filter(tracks, track.name == "Drums").for_each(.clip.new(bar=1, length_bars=4))
 filter(tracks, track.name == "Drums").for_each(.fx.add(name="reverb").track.set(volume_db=-6))
+```
+
+The only supported predicate is an exact name match, `track.name == "..."`. Omitting the condition entirely targets **every** track:
+
+```
+filter(tracks).track.set(mute=true)
+filter(tracks).track.group(name="All Tracks")
 ```
 
 ## Groove / Swing
@@ -261,6 +341,14 @@ groove.list()
 
 Returns all available groove template names (built-in and custom).
 
+## Built-in Functions
+
+```
+track(id=1).clip.new(length_bars=random(1, 4))
+```
+
+`random(min, max)` returns a value between `min` and `max` inclusive — an integer when both arguments are integers, a float otherwise.
+
 ## Examples
 
 ### Simple track with clip
@@ -297,6 +385,27 @@ track(name="Arp", new=true)
   .clip.new(length_bars=4)
   .notes.add_arpeggio(root=E4, quality=min, beat=0, step=0.5, beats=8)
   .notes.add_arpeggio(root=C4, quality=major, beat=8, step=0.5, beats=8)
+```
+
+### Parallel rack
+
+```
+track(name="Drums")
+  .rack.new(name="Parallel")
+  .rack.chain_new(name="Crushed")
+  .fx.add(name="compressor")
+```
+
+### Set the session up in 3/4 at 96 BPM
+
+```
+project.set(bpm=96, time_signature="3/4")
+```
+
+### Disable every clip shorter than a bar
+
+```
+track(id=1).clips.select(clip.length_bars < 1).clip.set(enabled=false)
 ```
 
 ### Bulk operations

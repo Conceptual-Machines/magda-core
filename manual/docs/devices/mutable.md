@@ -70,3 +70,9 @@ A stereo granular texture processor with four modes. It processes whatever audio
 ## Macros, modulation, and presets
 
 All three ports are standard MAGDA devices, so their parameters accept [macros](../modulation/macros.md) and [modulators](../modulation/overview.md), and patches save and recall through the [preset system](../panels/browsers.md).
+
+## AI sound design
+
+Click the **AI** icon in the device header and describe the sound you want. The agent reads this device's own parameters and their real-world ranges, then writes values into them. See [Per-Device AI Panel](../panels/ai-assistant.md#per-device-ai-panel).
+
+Materia and Halo support this. Nimbus does not — it processes incoming audio rather than generating notes, so there is no preset for an agent to design.

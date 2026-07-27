@@ -53,6 +53,7 @@ nav:
       - Controllers: interface/controllers.md
   - Tracks: tracks.md
   - Clips: clips.md
+  - Stem Separation: stem-separation.md
   - FX Chain & Racks: fx-chain.md
   - Plugin Parameters: plugin-parameters.md
   - Arrangement View: arrangement-view.md

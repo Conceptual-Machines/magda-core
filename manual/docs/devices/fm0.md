@@ -38,3 +38,7 @@ Each operator also has an **Enable** toggle (on by default; disabling stops it b
 ## Macros, modulation, and presets
 
 FM0 sits in the standard device slot, so its parameters accept [macros](../modulation/macros.md) and [modulators](../modulation/overview.md), and patches save and recall through the [preset system](../panels/browsers.md).
+
+## AI sound design
+
+Click the **AI** icon in the device header and describe the sound you want. The agent reads this device's own parameters and their real-world ranges, then writes values into them. See [Per-Device AI Panel](../panels/ai-assistant.md#per-device-ai-panel).
