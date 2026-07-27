@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <map>
+#include <vector>
 
 #include "PanelContent.hpp"
 #include "SearchTextEditor.hpp"
@@ -11,7 +12,7 @@
 
 namespace magda {
 class TracktionEngineWrapper;
-}
+}  // namespace magda
 
 namespace magda::daw::ui {
 

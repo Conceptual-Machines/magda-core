@@ -2,13 +2,12 @@
 
 #include <BinaryData.h>
 
-#include <unordered_set>
-
 #include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
+#include "PluginBrowserMetadataMerge.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
@@ -556,43 +555,13 @@ void PluginBrowserContent::loadExternalPlugins() {
 
     const auto pluginTypes = engine_->getPreferredPluginTypes();
     try {
-        std::unordered_set<juce::String> preferredKeys;
-        preferredKeys.reserve(static_cast<std::size_t>(pluginTypes.size()));
-        for (const auto& description : pluginTypes)
-            preferredKeys.insert(description.createIdentifierString());
-
         const auto records = magda::PluginMetadataStore::defaultForCurrentThread().query();
-        std::vector<PluginBrowserInfo> queriedPlugins;
-        queriedPlugins.reserve(records.size());
-        for (const auto& record : records) {
-            if (preferredKeys.count(record.key) == 0)
-                continue;
-
-            PluginBrowserInfo plugin;
-            plugin.name = record.name;
-            plugin.manufacturer = record.manufacturer;
-            plugin.category = record.isInstrument ? "Instrument" : "Effect";
-            plugin.format = record.format;
-            plugin.subcategory = record.category.isNotEmpty() ? record.category : "Other";
-            plugin.alias = record.alias.isNotEmpty()
-                               ? record.alias
-                               : PluginBrowserInfo::generateAlias(record.name);
-            plugin.isFavorite = record.isFavorite;
-            plugin.isExternal = true;
-            plugin.uniqueId = record.key;
-            plugin.fileOrIdentifier = record.fileOrIdentifier;
-            queriedPlugins.push_back(std::move(plugin));
-        }
-
-        if (queriedPlugins.size() == static_cast<std::size_t>(pluginTypes.size())) {
-            for (auto& plugin : queriedPlugins)
-                plugins_.push_back(std::move(plugin));
-            DBG("Loaded " << queriedPlugins.size() << " external plugin metadata records");
-            return;
-        }
-        DBG("Plugin metadata query returned " << queriedPlugins.size() << " of "
-                                              << pluginTypes.size()
-                                              << " preferred plugins; using KnownPluginList");
+        auto mergedPlugins = mergeExternalPluginMetadata(pluginTypes, records);
+        for (auto& plugin : mergedPlugins)
+            plugins_.push_back(std::move(plugin));
+        DBG("Merged " << records.size() << " plugin metadata records across " << pluginTypes.size()
+                      << " preferred plugins");
+        return;
     } catch (const std::exception& e) {
         DBG("Failed to query plugin metadata for browser: " << e.what()
                                                             << "; using KnownPluginList");
