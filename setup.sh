@@ -49,7 +49,7 @@ print_status "Initializing git submodules..."
 git submodule update --init --recursive
 
 # Check if submodules were initialized successfully
-if [ ! -d "third_party/tracktion_engine/modules/juce/modules" ]; then
+if [ ! -d "third_party/JUCE/modules" ]; then
     print_error "Failed to initialize submodules. Please check your network connection and try again."
     exit 1
 fi

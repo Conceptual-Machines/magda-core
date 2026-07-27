@@ -18,3 +18,7 @@
 	path = third_party/eurorack
 	url = https://github.com/Conceptual-Machines/eurorack.git
 	branch = magda
+[submodule "third_party/JUCE"]
+	path = third_party/JUCE
+	url = https://github.com/juce-framework/JUCE.git
+	branch = develop

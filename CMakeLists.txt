@@ -175,6 +175,11 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
+# JUCE is a first-class dependency of this repo, not something we inherit from
+# Tracktion Engine. It must be added before the engine so the engine binds to
+# this copy; the engine's own nested modules/juce stays dormant.
+add_subdirectory(third_party/JUCE)
+
 # Tracktion Engine for DAW functionality (using local submodule)
 add_subdirectory(third_party/tracktion_engine)
 
