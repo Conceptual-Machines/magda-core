@@ -1,6 +1,7 @@
 #include "PluginMetadataStore.hpp"
 
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -12,6 +13,8 @@ namespace {
 
 using sqlite::Statement;
 using sqlite::Transaction;
+
+std::mutex initializationMutex;
 
 std::string utf8(const juce::String& text) {
     return text.toStdString();
@@ -67,11 +70,14 @@ PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile, LegacyF
 
     try {
         sqlite3_busy_timeout(db_.get(), 60000);
-        sqlite::exec(db_.get(), "PRAGMA journal_mode=WAL");
-        sqlite::exec(db_.get(), "PRAGMA synchronous=NORMAL");
-        // Serialize schema setup and the one-time import as one initialization
-        // unit. This closes the remaining race between concurrent first opens
-        // before importLegacyFilesOnce() acquires its nested savepoint.
+        // Changing the journal mode can return SQLITE_BUSY without invoking the
+        // busy handler when two connections open a fresh database together.
+        // Cover that step as well as the transactional setup for concurrent
+        // first opens within the application.
+        const std::lock_guard initializationLock(initializationMutex);
+        sqlite::exec(db_.get(), "PRAGMA journal_mode=WAL", "set plugin metadata journal mode");
+        sqlite::exec(db_.get(), "PRAGMA synchronous=NORMAL",
+                     "set plugin metadata synchronous mode");
         Transaction initialization(db_.get(), sqlite::TransactionMode::Immediate);
         createSchema();
         importLegacyFilesOnce();
