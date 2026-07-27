@@ -222,11 +222,12 @@ end
 
 ## Bundled Examples
 
-Working scripts ship in the `examples/scripts/` folder of the repo:
+Working scripts ship inside the application:
 
-- `foot-pedal.lua` — sustain-pedal launches the selected session clip
+- `foot-pedal.lua` — sustain pedal launches and stops the selected session clip
 - `8-knobs.lua` — eight CCs drive eight track volumes
-- `launchpad.lua` — Novation Launchpad clip launcher with LED feedback
-- `launchkey_mini_mk4.lua` — full Launchkey Mini MK4 surface (transport, pads, knobs, sceneswitching)
+- `launchpad_mk1.lua` — Novation Launchpad MK1 / Classic: session grid, scene launch, banking, User 1/2 note layouts
+- `launchpad_mk2.lua` — the same surface for the Launchpad MK2
+- `launchkey_mini_mk4.lua` — full Launchkey Mini MK4 surface (transport, pads, knobs, scene switching)
 
-Copy any of them into your scripts folder (see [Controllers — Scripts Folder](../interface/controllers.md#scripts-folder)) and load via the Controllers dialog.
+Add any of them from the Controllers dialog's Scripts tab with **+ Add script** — see [Controllers — Factory Scripts](../interface/controllers.md#factory-scripts). To adapt one, reveal it on disk and copy it into your own [scripts folder](../interface/controllers.md#scripts-folder) under a new name.

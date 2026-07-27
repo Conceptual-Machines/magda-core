@@ -114,7 +114,7 @@ Running a language model locally is demanding, and your hardware sets a hard cei
 - **CPU instruction set.** On Windows and Linux systems with an Intel or AMD processor, MAGDA's embedded local model requires SSE 4.2 and AVX. This does not affect cloud providers or local-server mode.
 - **GPU.** Local inference is far more responsive with GPU acceleration: Metal on Apple Silicon, or CUDA on supported builds. An Apple Silicon Mac or a dedicated GPU with plenty of VRAM makes a large difference. On CPU alone it still works, just slowly.
 - Larger general-purpose models need correspondingly more RAM (when running on CPU) or VRAM (when offloaded to a GPU). A bigger model on an underpowered machine will be slow, or simply fail to load.
-- If responses are slow or a model fails to load, choose a smaller or more heavily quantised model, lower the **GPU Layers**, or reduce the **Context** size on the [AI Settings](interface/ai-settings.md) Local tab.
+- If responses are slow or a model fails to load, choose a smaller or more heavily quantised model, switch **GPU Layers** to **Custom** with a lower count, or reduce the **Context** size under [AI Settings](interface/ai-settings.md#local-llm) > Models > Local LLM.
 
 If your machine does not meet these specs, do not expect usable local AI from it. Use a cloud provider instead: it will give far better results than a local model struggling on limited hardware.
 

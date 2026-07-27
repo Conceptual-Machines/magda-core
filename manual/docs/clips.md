@@ -223,6 +223,12 @@ MAGDA can detect the notes in an audio clip and turn them into MIDI. Right-click
 
 Transcription works best on clearly pitched, reasonably clean material (a solo vocal, a bassline, a lead). Dense mixes and heavily layered audio give rougher results that usually want some cleanup in the [Piano Roll](panels/piano-roll.md).
 
+## Split into Stems
+
+Right-click an audio clip and choose **Split into Stems** to separate it onto new tracks — vocals, drums, bass and other with Demucs, vocals against everything else with Spleeter, or harmonic against percussive content with the download-free HPSS engine. The stem tracks appear in a group beneath the source, the source track is muted, and each stem clip keeps the original's position, stretch mode, and warp markers.
+
+See [Stem Separation](stem-separation.md) for the engines, the model downloads, and where the rendered files land.
+
 ## Crossfades
 
 A crossfade is a real overlap between two adjacent audio clips: the outgoing clip fades down as the incoming clip fades up across the shared region.

@@ -102,3 +102,7 @@ Band-passed noise shaped by a fast three-peak flam envelope, followed by a diffu
 ## Macros, modulation, and presets
 
 Each drum voice is a standard MAGDA device, so its parameters accept [macros](../modulation/macros.md) and [modulators](../modulation/overview.md), and patches save and recall through the [preset system](../panels/browsers.md). On a Drum Grid, each pad chain can carry its own macro and modulator links.
+
+## AI sound design
+
+Click the **AI** icon in the device header and describe the sound you want. The agent reads this device's own parameters and their real-world ranges, then writes values into them. See [Per-Device AI Panel](../panels/ai-assistant.md#per-device-ai-panel).

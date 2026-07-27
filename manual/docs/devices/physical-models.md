@@ -43,3 +43,7 @@ A struck, fixed-pitch modal church-bell model.
 ## Macros, modulation, and presets
 
 Each model is a standard MAGDA device, so its parameters accept [macros](../modulation/macros.md) and [modulators](../modulation/overview.md), and patches save and recall through the [preset system](../panels/browsers.md).
+
+## AI sound design
+
+Click the **AI** icon in the device header and describe the sound you want. The agent reads this device's own parameters and their real-world ranges, then writes values into them. See [Per-Device AI Panel](../panels/ai-assistant.md#per-device-ai-panel).

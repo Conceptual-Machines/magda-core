@@ -30,6 +30,12 @@ The chain can contain:
 
 See [Plugin Parameters](plugin-parameters.md) for per-plugin parameter visibility, custom units and ranges, and AI-assisted classification.
 
+### Device Power
+
+The power button in a device header takes the device out of the signal path. A chain's power button does the same for every device in it. Both states are part of the project: they survive save and reload, and they are honoured when you render — a device that is powered off is powered off in an exported or bounced file too.
+
+The gain slider in a device or rack header ignores the scroll wheel until you click it. This keeps a stray trackpad gesture over a device header scrolling the chain rather than changing its gain. Once you have clicked the slider the wheel adjusts it, until the pointer leaves.
+
 ### Delta Solo
 
 The **Δ** button in a device header (tooltip *Delta Solo: processed signal minus dry input*) lets you hear only what that device changes: MAGDA subtracts the device's latency-aligned dry input from its processed output, so you audition the difference alone. It is the direct way to check exactly what a compressor, EQ, or saturator is doing to the signal.
