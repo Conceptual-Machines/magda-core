@@ -111,6 +111,7 @@ class PluginScanCoordinator : private juce::Timer {
     // Exclusion management
     void loadExclusions();
     void saveExclusions();
+    bool exclusionsLoaded_ = false;
 
     // State
     std::atomic<bool> isScanning_{false};

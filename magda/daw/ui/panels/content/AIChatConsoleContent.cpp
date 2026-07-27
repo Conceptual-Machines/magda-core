@@ -2357,7 +2357,8 @@ void AIChatConsoleContent::buildAliasList() {
     }
 
     try {
-        for (const auto& [key, alias] : magda::PluginMetadataStore::openDefault().aliases()) {
+        for (const auto& [key, alias] :
+             magda::PluginMetadataStore::defaultForCurrentThread().aliases()) {
             if (const auto it = aliasIndex.find(key); it != aliasIndex.end())
                 allAliases_[it->second].alias = alias;
         }

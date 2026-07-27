@@ -182,18 +182,23 @@ void PluginScanner::excludePlugin(const juce::String& pluginPath, const juce::St
 }
 
 void PluginScanner::loadExclusions() {
+    exclusionsLoaded_ = false;
     try {
-        excludedPlugins_ = PluginMetadataStore::openDefault().loadExclusions();
+        excludedPlugins_ = PluginMetadataStore::defaultForCurrentThread().loadExclusions();
+        exclusionsLoaded_ = true;
     } catch (const std::exception& e) {
         DBG("Failed to load plugin exclusions: " << e.what());
-        excludedPlugins_.clear();
     }
     DBG("Loaded " << excludedPlugins_.size() << " excluded plugins");
 }
 
 void PluginScanner::saveExclusions() {
+    if (!exclusionsLoaded_) {
+        DBG("Skipping plugin exclusion save because the last load failed");
+        return;
+    }
     try {
-        PluginMetadataStore::openDefault().saveExclusions(excludedPlugins_);
+        PluginMetadataStore::defaultForCurrentThread().saveExclusions(excludedPlugins_);
     } catch (const std::exception& e) {
         DBG("Failed to save plugin exclusions: " << e.what());
     }

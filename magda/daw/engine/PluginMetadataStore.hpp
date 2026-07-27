@@ -8,10 +8,11 @@
 #include <vector>
 
 #include "PluginExclusions.hpp"
-
-struct sqlite3;
+#include "media_db/SqliteUtils.hpp"
 
 namespace magda {
+
+inline constexpr int kPluginMetadataSchemaVersion = 1;
 
 struct PluginMetadataRecord {
     juce::String key;
@@ -52,8 +53,11 @@ class PluginMetadataStore {
 
     PluginMetadataStore(const PluginMetadataStore&) = delete;
     PluginMetadataStore& operator=(const PluginMetadataStore&) = delete;
+    PluginMetadataStore(PluginMetadataStore&&) noexcept = default;
+    PluginMetadataStore& operator=(PluginMetadataStore&&) noexcept = default;
 
     static PluginMetadataStore openDefault();
+    static PluginMetadataStore& defaultForCurrentThread();
 
     void saveKnownPlugins(const juce::KnownPluginList& plugins);
     void loadKnownPlugins(juce::KnownPluginList& plugins) const;
@@ -78,11 +82,20 @@ class PluginMetadataStore {
     }
 
   private:
+    struct LegacyFiles {
+        juce::File pluginList;
+        juce::File favorites;
+        juce::File aliases;
+        juce::File exclusions;
+    };
+
+    PluginMetadataStore(const juce::File& databaseFile, LegacyFiles legacyFiles);
     void createSchema();
     void importLegacyFilesOnce();
 
-    sqlite3* db_ = nullptr;
+    sqlite::Connection db_;
     juce::File file_;
+    LegacyFiles legacyFiles_;
 };
 
 }  // namespace magda

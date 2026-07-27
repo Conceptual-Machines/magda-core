@@ -1,63 +1,17 @@
 #include "PluginMetadataStore.hpp"
 
-#include <sqlite3.h>
-
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "core/AppPaths.hpp"
 
 namespace magda {
 namespace {
 
-class Statement {
-  public:
-    Statement(sqlite3* db, const char* sql) {
-        if (sqlite3_prepare_v2(db, sql, -1, &stmt_, nullptr) != SQLITE_OK)
-            throw std::runtime_error(sqlite3_errmsg(db));
-    }
-    ~Statement() {
-        sqlite3_finalize(stmt_);
-    }
-    sqlite3_stmt* get() const {
-        return stmt_;
-    }
-    void reset() {
-        sqlite3_reset(stmt_);
-        sqlite3_clear_bindings(stmt_);
-    }
-
-  private:
-    sqlite3_stmt* stmt_ = nullptr;
-};
-
-void exec(sqlite3* db, const char* sql) {
-    char* message = nullptr;
-    if (sqlite3_exec(db, sql, nullptr, nullptr, &message) != SQLITE_OK) {
-        std::string error = message ? message : sqlite3_errmsg(db);
-        sqlite3_free(message);
-        throw std::runtime_error(error);
-    }
-}
-
-class Transaction {
-  public:
-    explicit Transaction(sqlite3* db) : db_(db) {
-        exec(db_, "BEGIN IMMEDIATE");
-    }
-    ~Transaction() {
-        if (!committed_)
-            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
-    }
-    void commit() {
-        exec(db_, "COMMIT");
-        committed_ = true;
-    }
-
-  private:
-    sqlite3* db_;
-    bool committed_ = false;
-};
+using sqlite::Statement;
+using sqlite::Transaction;
 
 std::string utf8(const juce::String& text) {
     return text.toStdString();
@@ -73,11 +27,6 @@ juce::String columnText(sqlite3_stmt* stmt, int column) {
     return text ? juce::String::fromUTF8(reinterpret_cast<const char*>(text)) : juce::String();
 }
 
-void stepDone(sqlite3* db, sqlite3_stmt* stmt) {
-    if (sqlite3_step(stmt) != SQLITE_DONE)
-        throw std::runtime_error(sqlite3_errmsg(db));
-}
-
 void upsertSparsePlugin(sqlite3* db, const juce::String& key, const juce::String& name) {
     Statement stmt(db, R"SQL(
         INSERT INTO plugin (plugin_key, name) VALUES (?, ?)
@@ -86,43 +35,72 @@ void upsertSparsePlugin(sqlite3* db, const juce::String& key, const juce::String
     )SQL");
     bindText(stmt.get(), 1, key);
     bindText(stmt.get(), 2, name);
-    stepDone(db, stmt.get());
+    stmt.stepDone();
+}
+
+int readUserVersion(sqlite3* db) {
+    Statement stmt(db, "PRAGMA user_version");
+    if (sqlite3_step(stmt.get()) == SQLITE_ROW)
+        return sqlite3_column_int(stmt.get(), 0);
+    throw sqlite::Error("read plugin metadata schema version: " + sqlite::lastError(db));
+}
+
+void requireReadComplete(sqlite3* db, int result) {
+    if (result != SQLITE_DONE)
+        throw sqlite::Error(sqlite::lastError(db));
 }
 
 }  // namespace
 
-PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile) : file_(databaseFile) {
+PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile)
+    : PluginMetadataStore(
+          databaseFile, {databaseFile.getParentDirectory().getChildFile("PluginList.xml"),
+                         databaseFile.getParentDirectory().getChildFile("plugin_favorites.xml"),
+                         databaseFile.getParentDirectory().getChildFile("plugin_aliases.xml"),
+                         databaseFile.getParentDirectory().getChildFile("plugin_exclusions.txt")}) {
+}
+
+PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile, LegacyFiles legacyFiles)
+    : file_(databaseFile), legacyFiles_(std::move(legacyFiles)) {
     (void)file_.getParentDirectory().createDirectory();
-    if (sqlite3_open(utf8(file_.getFullPathName()).c_str(), &db_) != SQLITE_OK) {
-        const std::string error = db_ ? sqlite3_errmsg(db_) : "unknown SQLite error";
-        sqlite3_close(db_);
-        db_ = nullptr;
-        throw std::runtime_error("open plugin metadata database: " + error);
-    }
+    db_.open(utf8(file_.getFullPathName()), "open plugin metadata database");
 
     try {
-        sqlite3_busy_timeout(db_, 5000);
-        exec(db_, "PRAGMA journal_mode=WAL");
-        exec(db_, "PRAGMA synchronous=NORMAL");
+        sqlite3_busy_timeout(db_.get(), 5000);
+        sqlite::exec(db_.get(), "PRAGMA journal_mode=WAL");
+        sqlite::exec(db_.get(), "PRAGMA synchronous=NORMAL");
         createSchema();
         importLegacyFilesOnce();
     } catch (...) {
-        sqlite3_close(db_);
-        db_ = nullptr;
+        db_.close();
         throw;
     }
 }
 
-PluginMetadataStore::~PluginMetadataStore() {
-    sqlite3_close(db_);
-}
+PluginMetadataStore::~PluginMetadataStore() = default;
 
 PluginMetadataStore PluginMetadataStore::openDefault() {
-    return PluginMetadataStore(paths::pluginMetadataFile());
+    return PluginMetadataStore(paths::pluginMetadataFile(),
+                               {paths::pluginListFile(), paths::pluginFavoritesFile(),
+                                paths::pluginAliasesFile(), paths::pluginExclusionsFile()});
+}
+
+PluginMetadataStore& PluginMetadataStore::defaultForCurrentThread() {
+    thread_local std::unique_ptr<PluginMetadataStore> store;
+    const auto expectedFile = paths::pluginMetadataFile();
+    if (!store || store->file() != expectedFile)
+        store = std::make_unique<PluginMetadataStore>(openDefault());
+    return *store;
 }
 
 void PluginMetadataStore::createSchema() {
-    exec(db_, R"SQL(
+    const auto version = readUserVersion(db_.get());
+    if (version < 0)
+        throw sqlite::Error("read plugin metadata schema version");
+    if (version > kPluginMetadataSchemaVersion)
+        throw sqlite::Error("plugin metadata database schema is newer than this build");
+
+    sqlite::exec(db_.get(), R"SQL(
         CREATE TABLE IF NOT EXISTS plugin (
             plugin_key         TEXT PRIMARY KEY,
             name               TEXT NOT NULL DEFAULT '',
@@ -150,26 +128,30 @@ void PluginMetadataStore::createSchema() {
             ON plugin (file_or_identifier);
         CREATE INDEX IF NOT EXISTS idx_plugin_alias ON plugin (alias);
     )SQL");
+    if (version < kPluginMetadataSchemaVersion)
+        sqlite::exec(db_.get(), "PRAGMA user_version = 1");
 }
 
 void PluginMetadataStore::importLegacyFilesOnce() {
+    Transaction transaction(db_.get(), sqlite::TransactionMode::Immediate);
     Statement migrated(
-        db_, "SELECT 1 FROM plugin_store_meta WHERE key='legacy_import_complete' LIMIT 1");
-    if (sqlite3_step(migrated.get()) == SQLITE_ROW)
+        db_.get(), "SELECT 1 FROM plugin_store_meta WHERE key='legacy_import_complete' LIMIT 1");
+    const auto migrationStatus = sqlite3_step(migrated.get());
+    if (migrationStatus == SQLITE_ROW) {
+        transaction.commit();
         return;
+    }
+    requireReadComplete(db_.get(), migrationStatus);
 
-    const auto legacyDirectory = file_.getParentDirectory();
-    const auto pluginListFile = legacyDirectory.getChildFile("PluginList.xml");
-    if (pluginListFile.existsAsFile()) {
-        if (auto xml = juce::XmlDocument::parse(pluginListFile)) {
+    if (legacyFiles_.pluginList.existsAsFile()) {
+        if (auto xml = juce::XmlDocument::parse(legacyFiles_.pluginList)) {
             juce::KnownPluginList plugins;
             plugins.recreateFromXml(*xml);
             saveKnownPlugins(plugins);
         }
     }
 
-    const auto favoritesFile = legacyDirectory.getChildFile("plugin_favorites.xml");
-    if (auto xml = juce::parseXML(favoritesFile)) {
+    if (auto xml = juce::parseXML(legacyFiles_.favorites)) {
         for (auto* child : xml->getChildIterator()) {
             const auto key = child->getStringAttribute("key");
             if (key.isNotEmpty())
@@ -177,8 +159,7 @@ void PluginMetadataStore::importLegacyFilesOnce() {
         }
     }
 
-    const auto aliasesFile = legacyDirectory.getChildFile("plugin_aliases.xml");
-    if (auto xml = juce::parseXML(aliasesFile)) {
+    if (auto xml = juce::parseXML(legacyFiles_.aliases)) {
         for (auto* child : xml->getChildIterator()) {
             const auto key = child->getStringAttribute("key");
             if (key.isNotEmpty())
@@ -186,17 +167,19 @@ void PluginMetadataStore::importLegacyFilesOnce() {
         }
     }
 
-    saveExclusions(loadExclusionList(legacyDirectory.getChildFile("plugin_exclusions.txt")));
-    exec(db_, "INSERT INTO plugin_store_meta (key, value) "
-              "VALUES ('legacy_import_complete', '1')");
+    saveExclusions(loadExclusionList(legacyFiles_.exclusions));
+    sqlite::exec(db_.get(), "INSERT OR IGNORE INTO plugin_store_meta (key, value) "
+                            "VALUES ('legacy_import_complete', '1')");
+    transaction.commit();
 }
 
 void PluginMetadataStore::saveKnownPlugins(const juce::KnownPluginList& plugins) {
-    Transaction transaction(db_);
-    exec(db_, "CREATE TEMP TABLE IF NOT EXISTS plugin_seen (plugin_key TEXT PRIMARY KEY)");
-    exec(db_, "DELETE FROM plugin_seen");
+    Transaction transaction(db_.get(), sqlite::TransactionMode::Immediate);
+    sqlite::exec(db_.get(),
+                 "CREATE TEMP TABLE IF NOT EXISTS plugin_seen (plugin_key TEXT PRIMARY KEY)");
+    sqlite::exec(db_.get(), "DELETE FROM plugin_seen");
 
-    Statement upsert(db_, R"SQL(
+    Statement upsert(db_.get(), R"SQL(
         INSERT INTO plugin (
             plugin_key, name, description_xml, format, category, manufacturer,
             file_or_identifier, is_instrument
@@ -210,7 +193,7 @@ void PluginMetadataStore::saveKnownPlugins(const juce::KnownPluginList& plugins)
             file_or_identifier=excluded.file_or_identifier,
             is_instrument=excluded.is_instrument
     )SQL");
-    Statement seen(db_, "INSERT OR IGNORE INTO plugin_seen (plugin_key) VALUES (?)");
+    Statement seen(db_.get(), "INSERT OR IGNORE INTO plugin_seen (plugin_key) VALUES (?)");
 
     for (const auto& description : plugins.getTypes()) {
         const auto key = description.createIdentifierString();
@@ -225,22 +208,22 @@ void PluginMetadataStore::saveKnownPlugins(const juce::KnownPluginList& plugins)
         bindText(upsert.get(), 6, description.manufacturerName);
         bindText(upsert.get(), 7, description.fileOrIdentifier);
         sqlite3_bind_int(upsert.get(), 8, description.isInstrument ? 1 : 0);
-        stepDone(db_, upsert.get());
+        upsert.stepDone();
         upsert.reset();
 
         bindText(seen.get(), 1, key);
-        stepDone(db_, seen.get());
+        seen.stepDone();
         seen.reset();
     }
 
-    exec(db_, R"SQL(
+    sqlite::exec(db_.get(), R"SQL(
         DELETE FROM plugin
         WHERE description_xml IS NOT NULL
           AND plugin_key NOT IN (SELECT plugin_key FROM plugin_seen)
           AND favorite = 0
           AND alias IS NULL
     )SQL");
-    exec(db_, R"SQL(
+    sqlite::exec(db_.get(), R"SQL(
         UPDATE plugin
         SET description_xml=NULL, format=NULL, category=NULL, manufacturer=NULL,
             file_or_identifier=NULL, is_instrument=0
@@ -251,23 +234,29 @@ void PluginMetadataStore::saveKnownPlugins(const juce::KnownPluginList& plugins)
 }
 
 void PluginMetadataStore::loadKnownPlugins(juce::KnownPluginList& plugins) const {
-    plugins.clear();
-    Statement stmt(db_, "SELECT description_xml FROM plugin "
-                        "WHERE description_xml IS NOT NULL ORDER BY rowid");
-    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+    juce::KnownPluginList loaded;
+    Statement stmt(db_.get(), "SELECT description_xml FROM plugin "
+                              "WHERE description_xml IS NOT NULL ORDER BY rowid");
+    int result = SQLITE_OK;
+    while ((result = sqlite3_step(stmt.get())) == SQLITE_ROW) {
         if (auto xml = juce::parseXML(columnText(stmt.get(), 0))) {
             juce::PluginDescription description;
             if (description.loadFromXml(*xml))
-                plugins.addType(description);
+                loaded.addType(description);
         }
     }
+    requireReadComplete(db_.get(), result);
+
+    plugins.clear();
+    for (const auto& description : loaded.getTypes())
+        plugins.addType(description);
 }
 
 void PluginMetadataStore::clearKnownPlugins() {
-    Transaction transaction(db_);
-    exec(db_, "DELETE FROM plugin WHERE favorite=0 AND alias IS NULL");
-    exec(db_, "UPDATE plugin SET description_xml=NULL, format=NULL, category=NULL, "
-              "manufacturer=NULL, file_or_identifier=NULL, is_instrument=0");
+    Transaction transaction(db_.get(), sqlite::TransactionMode::Immediate);
+    sqlite::exec(db_.get(), "DELETE FROM plugin WHERE favorite=0 AND alias IS NULL");
+    sqlite::exec(db_.get(), "UPDATE plugin SET description_xml=NULL, format=NULL, category=NULL, "
+                            "manufacturer=NULL, file_or_identifier=NULL, is_instrument=0");
     transaction.commit();
 }
 
@@ -277,13 +266,13 @@ void PluginMetadataStore::setFavorite(const juce::String& key, const juce::Strin
 }
 
 void PluginMetadataStore::saveFavorites(const std::vector<PluginFavoriteUpdate>& updates) {
-    Transaction transaction(db_);
-    Statement stmt(db_, "UPDATE plugin SET favorite=? WHERE plugin_key=?");
+    Transaction transaction(db_.get(), sqlite::TransactionMode::Immediate);
+    Statement stmt(db_.get(), "UPDATE plugin SET favorite=? WHERE plugin_key=?");
     for (const auto& update : updates) {
-        upsertSparsePlugin(db_, update.key, update.name);
+        upsertSparsePlugin(db_.get(), update.key, update.name);
         sqlite3_bind_int(stmt.get(), 1, update.favorite ? 1 : 0);
         bindText(stmt.get(), 2, update.key);
-        stepDone(db_, stmt.get());
+        stmt.stepDone();
         stmt.reset();
     }
     transaction.commit();
@@ -291,9 +280,11 @@ void PluginMetadataStore::saveFavorites(const std::vector<PluginFavoriteUpdate>&
 
 juce::StringArray PluginMetadataStore::favoriteKeys() const {
     juce::StringArray result;
-    Statement stmt(db_, "SELECT plugin_key FROM plugin WHERE favorite=1 ORDER BY plugin_key");
-    while (sqlite3_step(stmt.get()) == SQLITE_ROW)
+    Statement stmt(db_.get(), "SELECT plugin_key FROM plugin WHERE favorite=1 ORDER BY plugin_key");
+    int status = SQLITE_OK;
+    while ((status = sqlite3_step(stmt.get())) == SQLITE_ROW)
         result.add(columnText(stmt.get(), 0));
+    requireReadComplete(db_.get(), status);
     return result;
 }
 
@@ -302,16 +293,16 @@ void PluginMetadataStore::setAlias(const juce::String& key, const juce::String& 
 }
 
 void PluginMetadataStore::saveAliases(const std::map<juce::String, juce::String>& aliasesToSave) {
-    Transaction transaction(db_);
-    Statement stmt(db_, "UPDATE plugin SET alias=? WHERE plugin_key=?");
+    Transaction transaction(db_.get(), sqlite::TransactionMode::Immediate);
+    Statement stmt(db_.get(), "UPDATE plugin SET alias=? WHERE plugin_key=?");
     for (const auto& [key, alias] : aliasesToSave) {
-        upsertSparsePlugin(db_, key, {});
+        upsertSparsePlugin(db_.get(), key, {});
         if (alias.isEmpty())
             sqlite3_bind_null(stmt.get(), 1);
         else
             bindText(stmt.get(), 1, alias);
         bindText(stmt.get(), 2, key);
-        stepDone(db_, stmt.get());
+        stmt.stepDone();
         stmt.reset();
     }
     transaction.commit();
@@ -319,23 +310,25 @@ void PluginMetadataStore::saveAliases(const std::map<juce::String, juce::String>
 
 std::map<juce::String, juce::String> PluginMetadataStore::aliases() const {
     std::map<juce::String, juce::String> result;
-    Statement stmt(db_, "SELECT plugin_key, alias FROM plugin "
-                        "WHERE alias IS NOT NULL ORDER BY plugin_key");
-    while (sqlite3_step(stmt.get()) == SQLITE_ROW)
+    Statement stmt(db_.get(), "SELECT plugin_key, alias FROM plugin "
+                              "WHERE alias IS NOT NULL ORDER BY plugin_key");
+    int status = SQLITE_OK;
+    while ((status = sqlite3_step(stmt.get())) == SQLITE_ROW)
         result[columnText(stmt.get(), 0)] = columnText(stmt.get(), 1);
+    requireReadComplete(db_.get(), status);
     return result;
 }
 
 void PluginMetadataStore::saveExclusions(const std::vector<ExcludedPlugin>& entries) {
-    Transaction transaction(db_);
-    exec(db_, "DELETE FROM plugin_exclusion");
-    Statement stmt(db_,
+    Transaction transaction(db_.get(), sqlite::TransactionMode::Immediate);
+    sqlite::exec(db_.get(), "DELETE FROM plugin_exclusion");
+    Statement stmt(db_.get(),
                    "INSERT INTO plugin_exclusion (path, reason, excluded_at) VALUES (?, ?, ?)");
     for (const auto& entry : entries) {
         bindText(stmt.get(), 1, entry.path);
         bindText(stmt.get(), 2, entry.reason);
         bindText(stmt.get(), 3, entry.timestamp);
-        stepDone(db_, stmt.get());
+        stmt.stepDone();
         stmt.reset();
     }
     transaction.commit();
@@ -343,10 +336,13 @@ void PluginMetadataStore::saveExclusions(const std::vector<ExcludedPlugin>& entr
 
 std::vector<ExcludedPlugin> PluginMetadataStore::loadExclusions() const {
     std::vector<ExcludedPlugin> result;
-    Statement stmt(db_, "SELECT path, reason, excluded_at FROM plugin_exclusion ORDER BY rowid");
-    while (sqlite3_step(stmt.get()) == SQLITE_ROW)
+    Statement stmt(db_.get(),
+                   "SELECT path, reason, excluded_at FROM plugin_exclusion ORDER BY rowid");
+    int status = SQLITE_OK;
+    while ((status = sqlite3_step(stmt.get())) == SQLITE_ROW)
         result.push_back(
             {columnText(stmt.get(), 0), columnText(stmt.get(), 1), columnText(stmt.get(), 2)});
+    requireReadComplete(db_.get(), status);
     return result;
 }
 
@@ -367,7 +363,7 @@ std::vector<PluginMetadataRecord> PluginMetadataStore::query(
                "WHERE e.path=plugin.file_or_identifier)";
     sql += " ORDER BY name COLLATE NOCASE, plugin_key";
 
-    Statement stmt(db_, sql.c_str());
+    Statement stmt(db_.get(), sql.c_str());
     int bind = 1;
     if (query.favorite)
         sqlite3_bind_int(stmt.get(), bind++, *query.favorite ? 1 : 0);
@@ -377,13 +373,15 @@ std::vector<PluginMetadataRecord> PluginMetadataStore::query(
         bindText(stmt.get(), bind++, query.format);
 
     std::vector<PluginMetadataRecord> result;
-    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+    int status = SQLITE_OK;
+    while ((status = sqlite3_step(stmt.get())) == SQLITE_ROW) {
         result.push_back({columnText(stmt.get(), 0), columnText(stmt.get(), 1),
                           columnText(stmt.get(), 2), columnText(stmt.get(), 3),
                           columnText(stmt.get(), 4), columnText(stmt.get(), 5),
                           columnText(stmt.get(), 6), sqlite3_column_int(stmt.get(), 7) != 0,
                           sqlite3_column_int(stmt.get(), 8) != 0});
     }
+    requireReadComplete(db_.get(), status);
     return result;
 }
 

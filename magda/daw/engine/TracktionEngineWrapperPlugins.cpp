@@ -323,10 +323,14 @@ void TracktionEngineWrapper::savePluginList() {
         DBG("Cannot save plugin list: engine not initialized");
         return;
     }
+    if (!pluginMetadataLoaded_) {
+        DBG("Skipping plugin metadata save because the last load failed");
+        return;
+    }
 
     auto& knownPlugins = engine_->getPluginManager().knownPluginList;
     try {
-        auto store = PluginMetadataStore::openDefault();
+        auto& store = PluginMetadataStore::defaultForCurrentThread();
         store.saveKnownPlugins(knownPlugins);
         DBG("Saved plugin metadata (" << knownPlugins.getNumTypes()
                                       << " plugins) to: " << store.file().getFullPathName());
@@ -342,14 +346,15 @@ void TracktionEngineWrapper::loadPluginList() {
     }
 
     auto& knownPlugins = engine_->getPluginManager().knownPluginList;
+    pluginMetadataLoaded_ = false;
     try {
-        auto store = PluginMetadataStore::openDefault();
+        auto& store = PluginMetadataStore::defaultForCurrentThread();
         store.loadKnownPlugins(knownPlugins);
+        pluginMetadataLoaded_ = true;
         DBG("Loaded plugin metadata (" << knownPlugins.getNumTypes()
                                        << " plugins) from: " << store.file().getFullPathName());
     } catch (const std::exception& e) {
         DBG("Failed to load plugin metadata: " << e.what());
-        knownPlugins.clear();
     }
 }
 
@@ -432,8 +437,9 @@ void TracktionEngineWrapper::clearPluginList() {
     knownPlugins.clear();
 
     try {
-        auto store = PluginMetadataStore::openDefault();
+        auto& store = PluginMetadataStore::defaultForCurrentThread();
         store.clearKnownPlugins();
+        pluginMetadataLoaded_ = true;
         DBG("Cleared scanned plugins from: " << store.file().getFullPathName());
     } catch (const std::exception& e) {
         DBG("Failed to clear plugin metadata: " << e.what());

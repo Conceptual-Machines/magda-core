@@ -1,6 +1,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <exception>
+#include <thread>
 
 #include "magda/daw/engine/PluginMetadataStore.hpp"
 
@@ -8,8 +10,8 @@ namespace {
 
 struct TempDirectory {
     TempDirectory()
-        : directory(juce::File::getCurrentWorkingDirectory().getChildFile(
-              "magda-plugin-metadata-" + juce::Uuid().toString())) {
+        : directory(juce::File::getSpecialLocation(juce::File::tempDirectory)
+                        .getChildFile("magda-plugin-metadata-" + juce::Uuid().toString())) {
         const auto result = directory.createDirectory();
         INFO(result.getErrorMessage().toStdString());
         REQUIRE(result.wasOk());
@@ -36,6 +38,29 @@ juce::PluginDescription description(const juce::String& name, const juce::String
     return result;
 }
 
+void executeSql(const juce::File& database, const char* sql) {
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open(database.getFullPathName().toRawUTF8(), &db) == SQLITE_OK);
+    char* message = nullptr;
+    const auto result = sqlite3_exec(db, sql, nullptr, nullptr, &message);
+    INFO((message ? message : ""));
+    sqlite3_free(message);
+    REQUIRE(result == SQLITE_OK);
+    REQUIRE(sqlite3_close(db) == SQLITE_OK);
+}
+
+int scalarInt(const juce::File& database, const char* sql) {
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open(database.getFullPathName().toRawUTF8(), &db) == SQLITE_OK);
+    sqlite3_stmt* statement = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db, sql, -1, &statement, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(statement) == SQLITE_ROW);
+    const auto result = sqlite3_column_int(statement, 0);
+    REQUIRE(sqlite3_finalize(statement) == SQLITE_OK);
+    REQUIRE(sqlite3_close(db) == SQLITE_OK);
+    return result;
+}
+
 }  // namespace
 
 TEST_CASE("PluginMetadataStore round-trips descriptions and user metadata",
@@ -58,6 +83,7 @@ TEST_CASE("PluginMetadataStore round-trips descriptions and user metadata",
     }
 
     magda::PluginMetadataStore reopened(database);
+    CHECK(scalarInt(database, "PRAGMA user_version") == magda::kPluginMetadataSchemaVersion);
     juce::KnownPluginList output;
     reopened.loadKnownPlugins(output);
     REQUIRE(output.getNumTypes() == 2);
@@ -68,6 +94,29 @@ TEST_CASE("PluginMetadataStore round-trips descriptions and user metadata",
     REQUIRE(exclusions.size() == 1);
     CHECK(exclusions.front().path == effect.fileOrIdentifier);
     CHECK(exclusions.front().reason == "crash");
+}
+
+TEST_CASE("PluginMetadataStore keeps sparse user metadata when plugins disappear after a rescan",
+          "[plugin][metadata-store]") {
+    TempDirectory temp;
+    magda::PluginMetadataStore store(temp.directory.getChildFile("plugin_metadata.db"));
+
+    const auto favorite = description("Missing Favorite", "/plugins/Favorite.vst3", 2101, true);
+    const auto aliased = description("Missing Alias", "/plugins/Aliased.vst3", 2102, false);
+    juce::KnownPluginList initial;
+    initial.addType(favorite);
+    initial.addType(aliased);
+    store.saveKnownPlugins(initial);
+    store.setFavorite(favorite.createIdentifierString(), favorite.name, true);
+    store.setAlias(aliased.createIdentifierString(), "missing_alias");
+
+    juce::KnownPluginList emptyRescan;
+    store.saveKnownPlugins(emptyRescan);
+
+    CHECK(store.favoriteKeys().contains(favorite.createIdentifierString()));
+    REQUIRE(store.aliases().count(aliased.createIdentifierString()) == 1);
+    CHECK(store.aliases().at(aliased.createIdentifierString()) == "missing_alias");
+    CHECK(store.query().empty());
 }
 
 TEST_CASE("PluginMetadataStore directly queries across metadata concerns",
@@ -135,4 +184,79 @@ TEST_CASE("PluginMetadataStore imports legacy files once", "[plugin][metadata-st
     REQUIRE(temp.directory.getChildFile("plugin_aliases.xml").replaceWithText("<PluginAliases/>"));
     magda::PluginMetadataStore reopened(database);
     CHECK(reopened.aliases().at(legacyPlugin.createIdentifierString()) == "legacy_custom");
+}
+
+TEST_CASE("PluginMetadataStore rolls back an interrupted legacy import",
+          "[plugin][metadata-store][migration]") {
+    TempDirectory temp;
+    const auto database = temp.directory.getChildFile("plugin_metadata.db");
+
+    // Create the schema, then recreate the first-import state with a trigger
+    // that simulates an interruption during the final legacy dataset.
+    { magda::PluginMetadataStore schema(database); }
+    executeSql(database, R"SQL(
+        DELETE FROM plugin_store_meta WHERE key='legacy_import_complete';
+        CREATE TRIGGER fail_legacy_exclusion
+        BEFORE INSERT ON plugin_exclusion
+        BEGIN
+            SELECT RAISE(ABORT, 'simulated legacy import failure');
+        END;
+    )SQL");
+
+    const auto legacyPlugin = description("Atomic Legacy", "/plugins/Atomic.vst3", 3101, true);
+    juce::KnownPluginList legacyList;
+    legacyList.addType(legacyPlugin);
+    REQUIRE(legacyList.createXml()->writeTo(temp.directory.getChildFile("PluginList.xml")));
+    REQUIRE(temp.directory.getChildFile("plugin_favorites.xml")
+                .replaceWithText("<PluginFavorites><Plugin key=\"" +
+                                 legacyPlugin.createIdentifierString() +
+                                 "\" name=\"Atomic Legacy\"/></PluginFavorites>"));
+    REQUIRE(temp.directory.getChildFile("plugin_aliases.xml")
+                .replaceWithText("<PluginAliases><Alias key=\"" +
+                                 legacyPlugin.createIdentifierString() +
+                                 "\" alias=\"atomic_legacy\"/></PluginAliases>"));
+    REQUIRE(temp.directory.getChildFile("plugin_exclusions.txt")
+                .replaceWithText("/plugins/BadAtomic.vst3\tcrash\t2026-07-27T12:00:00Z\n"));
+
+    CHECK_THROWS_AS(magda::PluginMetadataStore(database), magda::sqlite::Error);
+    CHECK(scalarInt(database, "SELECT COUNT(*) FROM plugin") == 0);
+    CHECK(scalarInt(database, "SELECT COUNT(*) FROM plugin_store_meta "
+                              "WHERE key='legacy_import_complete'") == 0);
+
+    executeSql(database, "DROP TRIGGER fail_legacy_exclusion");
+    magda::PluginMetadataStore recovered(database);
+    CHECK(recovered.query().size() == 1);
+    CHECK(recovered.favoriteKeys().contains(legacyPlugin.createIdentifierString()));
+    CHECK(recovered.aliases().at(legacyPlugin.createIdentifierString()) == "atomic_legacy");
+    CHECK(recovered.loadExclusions().size() == 1);
+}
+
+TEST_CASE("PluginMetadataStore serializes concurrent first opens",
+          "[plugin][metadata-store][migration]") {
+    TempDirectory temp;
+    const auto database = temp.directory.getChildFile("plugin_metadata.db");
+    const auto legacyPlugin =
+        description("Concurrent Legacy", "/plugins/Concurrent.vst3", 3201, true);
+    juce::KnownPluginList legacyList;
+    legacyList.addType(legacyPlugin);
+    REQUIRE(legacyList.createXml()->writeTo(temp.directory.getChildFile("PluginList.xml")));
+
+    std::exception_ptr firstError;
+    std::exception_ptr secondError;
+    auto open = [&database](std::exception_ptr& error) {
+        try {
+            magda::PluginMetadataStore store(database);
+        } catch (...) {
+            error = std::current_exception();
+        }
+    };
+    std::thread first(open, std::ref(firstError));
+    std::thread second(open, std::ref(secondError));
+    first.join();
+    second.join();
+
+    CHECK_FALSE(firstError);
+    CHECK_FALSE(secondError);
+    magda::PluginMetadataStore reopened(database);
+    CHECK(reopened.query().size() == 1);
 }

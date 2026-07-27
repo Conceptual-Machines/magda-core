@@ -118,6 +118,8 @@ class PluginBrowserContent : public PanelContent,
     // Plugin data
     std::vector<PluginBrowserInfo> plugins_;
     magda::TracktionEngineWrapper* engine_ = nullptr;  // For plugin scanning
+    bool favoritesLoaded_ = false;
+    bool aliasesLoaded_ = false;
 
     void buildInternalPluginList();
     void loadExternalPlugins();

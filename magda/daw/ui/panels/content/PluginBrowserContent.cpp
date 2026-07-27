@@ -552,13 +552,43 @@ void PluginBrowserContent::loadExternalPlugins() {
         return;
     }
 
-    auto pluginTypes = engine_->getPreferredPluginTypes();
+    try {
+        juce::StringArray preferredKeys;
+        for (const auto& description : engine_->getPreferredPluginTypes())
+            preferredKeys.add(description.createIdentifierString());
 
-    for (const auto& desc : pluginTypes) {
-        plugins_.push_back(PluginBrowserInfo::fromPluginDescription(desc));
+        const auto records = magda::PluginMetadataStore::defaultForCurrentThread().query();
+        for (const auto& record : records) {
+            if (!preferredKeys.contains(record.key))
+                continue;
+
+            PluginBrowserInfo plugin;
+            plugin.name = record.name;
+            plugin.manufacturer = record.manufacturer;
+            plugin.category = record.isInstrument ? "Instrument" : "Effect";
+            plugin.format = record.format;
+            plugin.subcategory = record.category.isNotEmpty() ? record.category : "Other";
+            plugin.alias = record.alias.isNotEmpty()
+                               ? record.alias
+                               : PluginBrowserInfo::generateAlias(record.name);
+            plugin.isFavorite = record.isFavorite;
+            plugin.isExternal = true;
+            plugin.uniqueId = record.key;
+            plugin.fileOrIdentifier = record.fileOrIdentifier;
+            plugins_.push_back(std::move(plugin));
+        }
+
+        DBG("Loaded " << records.size() << " external plugin metadata records");
+        return;
+    } catch (const std::exception& e) {
+        DBG("Failed to query plugin metadata for browser: " << e.what()
+                                                            << "; using KnownPluginList");
     }
 
-    DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList");
+    const auto pluginTypes = engine_->getPreferredPluginTypes();
+    for (const auto& description : pluginTypes)
+        plugins_.push_back(PluginBrowserInfo::fromPluginDescription(description));
+    DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList fallback");
 }
 
 void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
@@ -967,8 +997,12 @@ void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
 }
 
 void PluginBrowserContent::saveFavorites() {
+    if (!favoritesLoaded_) {
+        DBG("Skipping plugin favorite save because the last load failed");
+        return;
+    }
     try {
-        auto store = magda::PluginMetadataStore::openDefault();
+        auto& store = magda::PluginMetadataStore::defaultForCurrentThread();
         std::vector<magda::PluginFavoriteUpdate> updates;
         updates.reserve(plugins_.size());
         for (const auto& plugin : plugins_) {
@@ -982,20 +1016,27 @@ void PluginBrowserContent::saveFavorites() {
 }
 
 void PluginBrowserContent::loadFavorites() {
+    favoritesLoaded_ = false;
     try {
-        const auto favoriteKeys = magda::PluginMetadataStore::openDefault().favoriteKeys();
+        const auto favoriteKeys =
+            magda::PluginMetadataStore::defaultForCurrentThread().favoriteKeys();
         for (auto& plugin : plugins_) {
             const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
             plugin.isFavorite = favoriteKeys.contains(key);
         }
+        favoritesLoaded_ = true;
     } catch (const std::exception& e) {
         DBG("Failed to load plugin favorites: " << e.what());
     }
 }
 
 void PluginBrowserContent::saveAliases() {
+    if (!aliasesLoaded_) {
+        DBG("Skipping plugin alias save because the last load failed");
+        return;
+    }
     try {
-        auto store = magda::PluginMetadataStore::openDefault();
+        auto& store = magda::PluginMetadataStore::defaultForCurrentThread();
         std::map<juce::String, juce::String> aliases;
         for (const auto& plugin : plugins_) {
             const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
@@ -1009,13 +1050,15 @@ void PluginBrowserContent::saveAliases() {
 }
 
 void PluginBrowserContent::loadAliases() {
+    aliasesLoaded_ = false;
     try {
-        const auto aliasMap = magda::PluginMetadataStore::openDefault().aliases();
+        const auto aliasMap = magda::PluginMetadataStore::defaultForCurrentThread().aliases();
         for (auto& plugin : plugins_) {
             const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
             if (const auto it = aliasMap.find(key); it != aliasMap.end())
                 plugin.alias = it->second;
         }
+        aliasesLoaded_ = true;
     } catch (const std::exception& e) {
         DBG("Failed to load plugin aliases: " << e.what());
     }

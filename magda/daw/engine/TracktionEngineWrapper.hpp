@@ -665,6 +665,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Plugin scanning state
     bool isScanning_ = false;
+    bool pluginMetadataLoaded_ = false;
     std::function<void(float, const juce::String&)> scanProgressCallback_;
     std::unique_ptr<PluginScanCoordinator> pluginScanCoordinator_;
     std::thread pluginDiscoveryThread_;
