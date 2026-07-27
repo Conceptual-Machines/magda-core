@@ -301,6 +301,44 @@ std::string CommandModelOnnx::generate(const std::string& text) const {
 
 }  // namespace magda
 
+#else  // MAGDA_HAVE_CLAP
+
+// Stub for builds without ONNX Runtime (currently Intel macOS), matching
+// SpleeterSeparator and the CLAP encoders: the class always links, so callers
+// holding one need no conditional compilation of their own. Without this,
+// CommandAgent's unique_ptr member left ~CommandAgent referencing a destructor
+// that no translation unit defined, and the Intel link failed.
+//
+// isInstalled() is false whatever sits on disk, since a downloaded bundle is
+// unusable without a backend to run it, so CommandAgent stays on the conv net.
+// That leaves the remaining members unreachable, and they refuse rather than
+// answer quietly.
+namespace magda {
+
+struct CommandModelOnnx::Impl {};
+
+CommandModelOnnx::CommandModelOnnx(const std::filesystem::path&) {
+    throw CommandModelOnnxError("this build has no ONNX Runtime backend");
+}
+
+CommandModelOnnx::~CommandModelOnnx() = default;
+CommandModelOnnx::CommandModelOnnx(CommandModelOnnx&&) noexcept = default;
+CommandModelOnnx& CommandModelOnnx::operator=(CommandModelOnnx&&) noexcept = default;
+
+bool CommandModelOnnx::isInstalled(const std::filesystem::path&) {
+    return false;
+}
+
+CommandModel::Prediction CommandModelOnnx::predict(const std::string&) const {
+    throw CommandModelOnnxError("this build has no ONNX Runtime backend");
+}
+
+std::string CommandModelOnnx::generate(const std::string&) const {
+    throw CommandModelOnnxError("this build has no ONNX Runtime backend");
+}
+
+}  // namespace magda
+
 #endif  // MAGDA_HAVE_CLAP
 
 // Path resolution and maps.json parsing need no ONNX Runtime, so they live
