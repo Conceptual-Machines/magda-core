@@ -39,8 +39,18 @@ DILATIONS = (1, 2, 4)
 
 
 def _fmt(x: float) -> str:
-    """9 significant digits round-trips a float32 exactly."""
-    return "%.9g" % float(x)
+    """9 significant digits round-trips a float32 exactly.
+
+    The f suffix is not cosmetic: these tables initialise const float arrays, so
+    an unsuffixed literal is a double narrowed at each element. MSVC reports
+    that as C4305 once per element, which is ~36k warnings on the Windows build.
+    A bare "0" cannot simply take the suffix ("0f" is not a valid literal), so
+    integral output gains a decimal point first.
+    """
+    s = "%.9g" % float(x)
+    if not any(c in s for c in ".eE"):
+        s += ".0"
+    return s + "f"
 
 
 def _wrap(values, per_line: int) -> str:
