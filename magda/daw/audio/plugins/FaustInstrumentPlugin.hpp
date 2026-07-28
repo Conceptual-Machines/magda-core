@@ -13,7 +13,7 @@
 
 // libfaust types are forward-declared so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
-class interpreter_dsp_factory;
+class dsp_factory;
 class dsp_poly;
 
 namespace magda::daw::audio {
@@ -117,7 +117,7 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
         // mydsp_poly owns (and deletes) the per-voice DSP it was built from;
         // we delete the factory separately, after poly, in the destructor.
         std::unique_ptr<::dsp_poly> poly;
-        interpreter_dsp_factory* factory = nullptr;
+        dsp_factory* factory = nullptr;
         int dspIn = 0;
         int dspOut = 0;
         std::vector<FaustParamPool::ActiveBindingDescriptor> activeBindings;

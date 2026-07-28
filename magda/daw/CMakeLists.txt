@@ -245,18 +245,6 @@ juce_add_binary_data(MagdaAssets
     # themes and the user's own files (see UserTheme.cpp).
     ../../assets/themes/concrete_warehouse.json
     ../../assets/themes/neon_cyberpunk.json
-    # Bundled Faust starter DSPs — embedded so users always have something
-    # in the loader picker even on a fresh install.
-    audio/faust_dsp/magda_drive.dsp
-    audio/faust_dsp/magda_tremolo.dsp
-    audio/faust_dsp/magda_delay.dsp
-    audio/faust_dsp/magda_granular_delay.dsp
-    audio/faust_dsp/magda_filter_svf.dsp
-    audio/faust_dsp/magda_filter_ladder.dsp
-    audio/faust_dsp/magda_filter_korg35.dsp
-    audio/faust_dsp/magda_filter_oberheim.dsp
-    audio/faust_dsp/magda_filter_sk.dsp
-    audio/faust_dsp/magda_filter_diode.dsp
 )
 
 # =============================================================================
@@ -595,6 +583,11 @@ target_link_libraries(magda_base_devices
     faust::libfaust
 )
 
+# magda_faust_backend carries which libfaust factory this build actually
+# contains, so FaustBackend.hpp resolves to the backend that is really linked.
+target_link_libraries(magda_devices PRIVATE magda_faust_backend)
+target_link_libraries(magda_base_devices PRIVATE magda_faust_backend)
+
 if(MAGDA_PRO_DEVICES)
     if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
         message(FATAL_ERROR
@@ -922,6 +915,8 @@ endif()
 # Runtime-compiled devices need the Faust standard library beside every host.
 magda_stage_faust_libraries(magda_daw_app)
 magda_stage_faust_libraries(magda_cli)
+magda_stage_faust_runtime_dsp(magda_daw_app)
+magda_stage_faust_runtime_dsp(magda_cli)
 
 # Copy third_party/dawproject/ (vendored Project.xsd + MetaData.xsd) into the
 # app so DawProjectValidator can validate import/export against the schemas at

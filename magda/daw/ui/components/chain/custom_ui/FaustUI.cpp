@@ -165,10 +165,35 @@ void FaustUI::showLoadMenu() {
         return;
 
     juce::PopupMenu menu;
+    // Grouped by the folder each .dsp was discovered in. getBundledStarterDsps
+    // sorts by category, so each run of equal categories is one submenu, and
+    // the ids stay in step with the vector index the callback resolves.
     auto starters = magda::daw::audio::getBundledStarterDsps();
     int id = 1;
-    for (const auto& s : starters)
-        menu.addItem(id++, s.name);
+    juce::String currentCategory;
+    juce::PopupMenu categoryMenu;
+    auto flushCategory = [&menu, &categoryMenu, &currentCategory] {
+        if (currentCategory.isNotEmpty()) {
+            menu.addSubMenu(currentCategory.substring(0, 1).toUpperCase() +
+                                currentCategory.substring(1),
+                            categoryMenu);
+            categoryMenu = juce::PopupMenu();
+        }
+    };
+    for (const auto& s : starters) {
+        // A .dsp sitting at the root of the staged folder has no category and
+        // is listed at the top level rather than under a submenu.
+        const auto& category = s.category;
+        if (category != currentCategory) {
+            flushCategory();
+            currentCategory = category;
+        }
+        if (category.isEmpty())
+            menu.addItem(id++, s.name);
+        else
+            categoryMenu.addItem(id++, s.name);
+    }
+    flushCategory();
 
     // User-saved effects from the FaustEffects library (written by the save
     // button). Grouped in a submenu so the bundled starters stay tidy.

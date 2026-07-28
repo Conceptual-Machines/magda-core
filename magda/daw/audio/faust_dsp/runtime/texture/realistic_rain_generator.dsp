@@ -43,8 +43,8 @@ roof_layer = roof_trig * rand_engine * roof_mix * 0.6;
 
 // --- Layer C: Liquid Surface Puddle Splashes ---
 bubble_trig    = abs(rand_engine) > (0.998 - (intensity * 0.005));
-bubble_pulse   = fixed_decay(0.991, bubble_trig); 
-dynamic_cutoff = 200.0 + (bubble_pulse * 1500.0); 
+bubble_pulse   = fixed_decay(0.991, bubble_trig);
+dynamic_cutoff = 200.0 + (bubble_pulse * 1500.0);
 puddle_layer   = (bubble_pulse * rand_engine) : fi.lowpass(1, dynamic_cutoff) * puddle_mix * 0.4;
 
 // --- Layer D: River Splashes (High-Resonance Interpolated Comb Engine) ---
@@ -77,7 +77,7 @@ comb_core     = comb_loop ~ _;
 river_plop = comb_core : fi.highpass(1, 1100.0) * river_env * river_mix * 12.0;
 
 // Dynamic sample-and-hold stereo panning allocation per individual drop
-// By using an independent noise signal mapped from 0.0 to 1.0, 
+// By using an independent noise signal mapped from 0.0 to 1.0,
 // drops are guaranteed to scatter symmetrically between left and right channels.
 random_pan = (no.noise + 1.0) * 0.5;
 pan_L   = ba.latch(splash_trig, random_pan);
@@ -99,10 +99,10 @@ with {
     };
 
     // Slowed-down trigger configuration optimized for clear drops
-    puddle_rate = 1.0;        
-    min_f = 250.0;      
-    max_f = 3500.0;     
-    gamma = 5.0;        
+    puddle_rate = 1.0;
+    min_f = 250.0;
+    max_f = 3500.0;
+    gamma = 5.0;
 
     poisson_thresh = puddle_rate / ma.SR;
     puddle_noise1  = (no.noise + 1.0) * 0.5;
@@ -142,4 +142,3 @@ rain_L_calc = clipper((distant_L + roof_L + puddle_L + river_L + puddle_module_o
 rain_R_calc = clipper((distant_R + roof_R + puddle_R + river_R + puddle_module_out) * 0.4) : dc_block;
 
 process(in_L, in_R) = clipper(in_L + rain_L_calc), clipper(in_R + rain_R_calc);
-

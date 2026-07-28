@@ -111,7 +111,7 @@ jobs:
         path: |
           third_party/faust/build/bin
           third_party/faust/build/lib
-        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug
 
     - name: Cache prebuilt Mutable artifact
       id: mutable-cache
