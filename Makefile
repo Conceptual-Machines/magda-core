@@ -406,6 +406,10 @@ lint-fix:
 		echo "❌ compile_commands.json not found. Run 'make debug' first."; \
 		exit 1; \
 	fi
+	@if [ -z "$(CLANG_TIDY)" ]; then \
+		echo "❌ clang-tidy not found on PATH or at /opt/homebrew/opt/llvm/bin"; \
+		exit 1; \
+	fi
 	@echo "⚠️  This will modify your source files!"
 	@read -p "Continue? [y/N] " -n 1 -r; \
 	echo; \
