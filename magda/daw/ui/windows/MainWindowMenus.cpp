@@ -122,8 +122,12 @@ void MainWindow::openProjectFile(const juce::File& file) {
                 safeThis->mainComponent->hideLoadingMessage();
 
             if (!success) {
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                       tr("dialogs.open_project"), error);
+                // Empty error = user cancelled the unsaved-changes prompt;
+                // nothing went wrong, so stay silent.
+                if (error.isNotEmpty()) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           tr("dialogs.open_project"), error);
+                }
             } else {
                 auto& config = Config::getInstance();
                 config.addRecentProject(file.getFullPathName().toStdString());

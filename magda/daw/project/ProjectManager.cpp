@@ -10,6 +10,7 @@
 #include "../core/Config.hpp"
 #include "../core/TempoUtils.hpp"
 #include "../core/TrackManager.hpp"
+#include "../core/UndoManager.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "serialization/ProjectSerializer.hpp"
 #include "version.hpp"
@@ -128,6 +129,10 @@ bool ProjectManager::newProject() {
     createTempMediaDirectory();
     ensureMediaSubdirectories(mediaDirectory_);
 
+    // The old project's commands reference ids that no longer exist. Clearing
+    // last also drops the markDirty() that clearAllTracks/Clips may have
+    // triggered, so the fresh project starts clean.
+    UndoManager::getInstance().clearHistory();
     clearDirty();
     notifyProjectOpened();
 
@@ -264,6 +269,10 @@ bool ProjectManager::loadProject(const juce::File& file,
     mediaDirectory_ = file.getParentDirectory().getChildFile(mediaDirName);
     ensureMediaSubdirectories(mediaDirectory_);
 
+    // The previous project's undo stack cannot be applied to this one — its
+    // commands reference track/clip ids that are gone.
+    UndoManager::getInstance().clearHistory();
+
     // If we recovered from autosave, mark dirty so the user can save properly
     if (fileToLoad != file) {
         isDirty_ = true;
@@ -352,6 +361,9 @@ void ProjectManager::importDawProjectAsync(
                 currentFile_ = juce::File();
                 isProjectOpen_ = true;
 
+                // An import has never been saved as a .mgd, so it starts dirty
+                // — but the previous project's undo stack still has to go.
+                UndoManager::getInstance().clearHistory();
                 isDirty_ = true;
                 notifyProjectOpened();
                 notifyDirtyStateChanged();
@@ -372,7 +384,7 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
     // Pre-flight checks on the message thread
     if (isDirty_ && !showUnsavedChangesDialog()) {
         if (onComplete)
-            onComplete(false, "Cancelled by user");
+            onComplete(false, {});  // empty error = user cancelled, not a failure
         return;
     }
 
@@ -437,6 +449,10 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
                 mediaDirectory_ = originalFile.getParentDirectory().getChildFile(mediaDirName);
                 ensureMediaSubdirectories(mediaDirectory_);
 
+                // The previous project's undo stack cannot be applied to this
+                // one — its commands reference ids that are gone.
+                UndoManager::getInstance().clearHistory();
+
                 if (recoveredFromAutosave) {
                     isDirty_ = true;
                     notifyDirtyStateChanged();
@@ -477,6 +493,7 @@ bool ProjectManager::closeProject() {
     currentFile_ = juce::File();
     mediaDirectory_ = juce::File();
     isProjectOpen_ = false;
+    UndoManager::getInstance().clearHistory();
     clearDirty();
     notifyProjectClosed();
 

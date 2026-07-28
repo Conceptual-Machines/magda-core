@@ -1,5 +1,7 @@
 #include "UndoManager.hpp"
 
+#include "../project/ProjectManager.hpp"
+
 namespace magda {
 
 // ============================================================================
@@ -21,6 +23,11 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
 
     // Execute the command
     command->execute();
+
+    // Every undoable command mutates project state, so this is the one place
+    // that has to flag unsaved changes — otherwise New/Open/Close discard the
+    // user's work without ever showing the unsaved-changes prompt.
+    ProjectManager::getInstance().markDirty();
 
     // If in compound operation, collect commands instead of pushing to stack
     if (compoundDepth_ > 0) {
@@ -57,6 +64,9 @@ bool UndoManager::undo() {
     // Undo the command
     command->undo();
 
+    // Undoing moves state away from what is on disk just as much as doing.
+    ProjectManager::getInstance().markDirty();
+
     // Push to redo stack
     redoStack_.push_back(std::move(command));
 
@@ -78,6 +88,8 @@ bool UndoManager::redo() {
 
     // Re-execute the command
     command->execute();
+
+    ProjectManager::getInstance().markDirty();
 
     // Push to undo stack
     undoStack_.push_back(std::move(command));
