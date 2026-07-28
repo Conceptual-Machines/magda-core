@@ -92,7 +92,13 @@ else()
         set(INCLUDE_WASMTIME OFF CACHE BOOL "" FORCE)
     elseif(MAGDA_FAUST_BACKEND STREQUAL "wasm")
         set(LLVM_BACKEND OFF CACHE STRING "" FORCE)
-        set(INTERP_COMP_BACKEND OFF CACHE STRING "" FORCE)
+        # The interpreter runtime rides along even though the wasm factory is
+        # the one we use. instructions_compiler.cpp includes
+        # interpreter_code_container.hh unconditionally, so libfaust always
+        # references interpreter_dsp's vtable; GCC and Clang drop it as unused
+        # but MSVC requires the definitions and the Windows link fails without
+        # them. It also leaves the interpreter available as a fallback.
+        set(INTERP_COMP_BACKEND "STATIC" CACHE STRING "" FORCE)
         set(WASM_BACKEND "STATIC" CACHE STRING "" FORCE)
         # WASMTIME_LIB / WASMTIME_INCLUDE_DIR are published by
         # third_party/wasmtime above; libfaust links and includes them

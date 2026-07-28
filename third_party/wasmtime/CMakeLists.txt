@@ -31,6 +31,12 @@ endif()
 add_library(wasmtime INTERFACE)
 target_include_directories(wasmtime SYSTEM INTERFACE "${WASMTIME_ROOT}/include")
 
+# wasm.h declares the whole C API __declspec(dllimport) on MSVC unless
+# LIBWASM_STATIC is defined. We link the static library, so without this every
+# call resolves to an __imp_ symbol that does not exist and the Windows link
+# fails. Harmless elsewhere: the guard is _WIN32-only.
+target_compile_definitions(wasmtime INTERFACE LIBWASM_STATIC)
+
 # Without these the final link fails on undefined symbols rather than at
 # configure time.
 if(APPLE)
