@@ -139,6 +139,8 @@ set(TEST_SOURCES
     test_gesture_router.cpp
     # Key mapping persistence tests (epic:command-registry -- #20)
     test_key_mapping_store.cpp
+    test_menu_manager.cpp
+    ../magda/daw/ui/windows/MenuManager.cpp
     # MIDI device identifier matcher tests (issue #1050)
     test_midi_device_match.cpp
     # MIDI Learn session tests (issue #924)

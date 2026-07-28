@@ -118,6 +118,11 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     // Set up the menu bar
     void initialize(const MenuCallbacks& callbacks);
 
+    // Invoke a command-backed menu action through the same callback used by a
+    // menu click. Returns false when the command is not handled or its callback
+    // has not been configured.
+    bool invokeApplicationCommand(juce::CommandID commandID);
+
     // Source of truth for menu shortcut hints (#1352). When set, menu items
     // render the command's current key from the mapping set instead of a
     // hardcoded per-platform string, so remaps (#20) stay in sync. Owned by

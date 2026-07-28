@@ -563,6 +563,11 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
     };
 
     switch (info.commandID) {
+        case saveProject:
+        case saveProjectAs:
+        case exportAudio:
+            return MenuManager::getInstance().invokeApplicationCommand(info.commandID);
+
         case undo:
             UndoManager::getInstance().undo();
             return true;
