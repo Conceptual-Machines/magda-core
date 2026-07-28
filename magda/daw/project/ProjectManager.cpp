@@ -29,6 +29,9 @@ static const char* const kTempPrefix = "UnsavedProject_";
 static constexpr int kStaleTempDays = 7;
 static const char* const kAutosaveExtension = ".autosave";
 static constexpr int kDefaultAutoSaveIntervalMs = 60000;
+static const char* const kProjectChangedWhileLoading =
+    "The current project changed while the new project was loading. "
+    "Open the file again to avoid losing those changes.";
 
 namespace {
 
@@ -129,9 +132,7 @@ bool ProjectManager::newProject() {
     createTempMediaDirectory();
     ensureMediaSubdirectories(mediaDirectory_);
 
-    // The old project's commands reference ids that no longer exist. Clearing
-    // last also drops the markDirty() that clearAllTracks/Clips may have
-    // triggered, so the fresh project starts clean.
+    // The old project's commands reference ids that no longer exist.
     UndoManager::getInstance().clearHistory();
     clearDirty();
     notifyProjectOpened();
@@ -272,14 +273,12 @@ bool ProjectManager::loadProject(const juce::File& file,
     // The previous project's undo stack cannot be applied to this one — its
     // commands reference track/clip ids that are gone.
     UndoManager::getInstance().clearHistory();
+    clearDirty();
 
     // If we recovered from autosave, mark dirty so the user can save properly
     if (fileToLoad != file) {
-        isDirty_ = true;
-        notifyDirtyStateChanged();
+        markDirty();
         autosaveFile.deleteFile();
-    } else {
-        clearDirty();
     }
 
     deleteAutosaveFile();
@@ -336,46 +335,56 @@ void ProjectManager::importDawProjectAsync(
     // Join any previous background load before starting a new one.
     joinBackgroundThread();
 
+    const auto startingRevision = mutationRevision_;
     auto fileCopy = file;
-    loadThread_ = std::thread([fileCopy, importedDir, onBeforeCommit, onComplete, this]() {
-        auto staged = std::make_shared<StagedProjectData>();
-        const bool ok = ProjectSerializer::loadDawProjectAndStage(fileCopy, *staged, importedDir);
-        juce::String error;
-        if (!ok) {
-            DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
-            error = ProjectSerializer::getLastError();
-        }
-
-        // Bounce back to the message thread for commit + notification.
-        juce::MessageManager::callAsync([this, staged, ok, error, onBeforeCommit, onComplete]() {
-            if (ok) {
-                resetTransportForProjectBoundary();
-
-                if (onBeforeCommit)
-                    onBeforeCommit(staged->info);
-
-                ProjectSerializer::commitStaged(*staged);
-
-                currentProject_ = staged->info;
-                currentProject_.filePath = {};
-                currentFile_ = juce::File();
-                isProjectOpen_ = true;
-
-                // An import has never been saved as a .mgd, so it starts dirty
-                // — but the previous project's undo stack still has to go.
-                UndoManager::getInstance().clearHistory();
-                isDirty_ = true;
-                notifyProjectOpened();
-                notifyDirtyStateChanged();
-
-                if (onAfterLoad)
-                    onAfterLoad(currentProject_);
+    loadThread_ =
+        std::thread([fileCopy, importedDir, startingRevision, onBeforeCommit, onComplete, this]() {
+            auto staged = std::make_shared<StagedProjectData>();
+            const bool ok =
+                ProjectSerializer::loadDawProjectAndStage(fileCopy, *staged, importedDir);
+            juce::String error;
+            if (!ok) {
+                DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
+                error = ProjectSerializer::getLastError();
             }
 
-            if (onComplete)
-                onComplete(ok, error);
+            // Bounce back to the message thread for commit + notification.
+            juce::MessageManager::callAsync(
+                [this, staged, ok, error, startingRevision, onBeforeCommit, onComplete]() {
+                    if (ok) {
+                        if (mutationRevision_ != startingRevision) {
+                            if (onComplete)
+                                onComplete(false, kProjectChangedWhileLoading);
+                            return;
+                        }
+
+                        resetTransportForProjectBoundary();
+
+                        if (onBeforeCommit)
+                            onBeforeCommit(staged->info);
+
+                        ProjectSerializer::commitStaged(*staged);
+
+                        currentProject_ = staged->info;
+                        currentProject_.filePath = {};
+                        currentFile_ = juce::File();
+                        isProjectOpen_ = true;
+
+                        // An import has never been saved as a .mgd, so it starts dirty
+                        // — but the previous project's undo stack still has to go.
+                        UndoManager::getInstance().clearHistory();
+                        clearDirty();
+                        markDirty();
+                        notifyProjectOpened();
+
+                        if (onAfterLoad)
+                            onAfterLoad(currentProject_);
+                    }
+
+                    if (onComplete)
+                        onComplete(ok, error);
+                });
         });
-    });
 }
 
 void ProjectManager::loadProjectAsync(const juce::File& file,
@@ -413,11 +422,12 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
     // Join any previous background load before starting a new one
     joinBackgroundThread();
 
+    const auto startingRevision = mutationRevision_;
     auto originalFile = file;
 
     // Launch background thread for I/O + parse + staging
     loadThread_ = std::thread([fileCopy, originalFile, recoveredFromAutosave, onBeforeCommit,
-                               onComplete, this]() {
+                               onComplete, startingRevision, this]() {
         auto staged = std::make_shared<StagedProjectData>();
         bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged);
         juce::String error;
@@ -429,8 +439,15 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
 
         // Bounce back to the message thread for commit + notification
         juce::MessageManager::callAsync([this, staged, ok, error, originalFile,
-                                         recoveredFromAutosave, onBeforeCommit, onComplete]() {
+                                         recoveredFromAutosave, startingRevision, onBeforeCommit,
+                                         onComplete]() {
             if (ok) {
+                if (mutationRevision_ != startingRevision) {
+                    if (onComplete)
+                        onComplete(false, kProjectChangedWhileLoading);
+                    return;
+                }
+
                 resetTransportForProjectBoundary();
 
                 // Set tempo/time sig/loop BEFORE committing tracks & clips,
@@ -452,13 +469,11 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
                 // The previous project's undo stack cannot be applied to this
                 // one — its commands reference ids that are gone.
                 UndoManager::getInstance().clearHistory();
+                clearDirty();
 
                 if (recoveredFromAutosave) {
-                    isDirty_ = true;
-                    notifyDirtyStateChanged();
+                    markDirty();
                     deleteAutosaveFile();
-                } else {
-                    clearDirty();
                 }
 
                 notifyProjectOpened();
@@ -541,15 +556,38 @@ void ProjectManager::setLoopSettings(bool enabled, double startBeats, double end
 }
 
 void ProjectManager::markDirty() {
-    if (!isDirty_) {
-        isDirty_ = true;
-        notifyDirtyStateChanged();
-    }
+    ++mutationRevision_;
+    if (undoableMutationDepth_ == 0)
+        externalDirty_ = true;
+    refreshDirtyState();
 }
 
 void ProjectManager::clearDirty() {
-    if (isDirty_) {
-        isDirty_ = false;
+    externalDirty_ = false;
+    UndoManager::getInstance().markCurrentStateSaved();
+    refreshDirtyState();
+}
+
+void ProjectManager::beginUndoableMutation() {
+    ++undoableMutationDepth_;
+}
+
+void ProjectManager::endUndoableMutation() {
+    jassert(undoableMutationDepth_ > 0);
+    if (undoableMutationDepth_ > 0)
+        --undoableMutationDepth_;
+}
+
+void ProjectManager::setUndoHistoryDirty(bool dirty) {
+    ++mutationRevision_;
+    undoHistoryDirty_ = dirty;
+    refreshDirtyState();
+}
+
+void ProjectManager::refreshDirtyState() {
+    const bool shouldBeDirty = externalDirty_ || undoHistoryDirty_;
+    if (isDirty_ != shouldBeDirty) {
+        isDirty_ = shouldBeDirty;
         notifyDirtyStateChanged();
     }
 }

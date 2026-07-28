@@ -21,32 +21,37 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
         return;
     }
 
-    // Execute the command
+    const auto beforeStateId = currentStateId_;
+    auto& projectManager = ProjectManager::getInstance();
+    projectManager.beginUndoableMutation();
     command->execute();
-
-    // Every undoable command mutates project state, so this is the one place
-    // that has to flag unsaved changes — otherwise New/Open/Close discard the
-    // user's work without ever showing the unsaved-changes prompt.
-    ProjectManager::getInstance().markDirty();
+    projectManager.endUndoableMutation();
+    currentStateId_ = nextStateId_++;
 
     // If in compound operation, collect commands instead of pushing to stack
     if (compoundDepth_ > 0) {
         compoundCommands_.push_back(std::move(command));
+        updateProjectDirtyState();
         return;
     }
 
     // Check if we can merge with the previous command
-    if (!undoStack_.empty() && undoStack_.back()->canMergeWith(command.get())) {
-        undoStack_.back()->mergeWith(command.get());
+    // Do not merge across the saved checkpoint: doing so would make the exact
+    // on-disk state unreachable by undo.
+    if (!undoStack_.empty() && beforeStateId != savedStateId_ &&
+        undoStack_.back().command->canMergeWith(command.get())) {
+        undoStack_.back().command->mergeWith(command.get());
+        undoStack_.back().afterStateId = currentStateId_;
     } else {
         // Add to undo stack
-        undoStack_.push_back(std::move(command));
+        undoStack_.push_back({std::move(command), beforeStateId, currentStateId_});
         trimUndoStack();
     }
 
     // Clear redo stack (new action invalidates redo history)
     redoStack_.clear();
 
+    updateProjectDirtyState();
     notifyListeners();
 }
 
@@ -56,20 +61,21 @@ bool UndoManager::undo() {
     }
 
     // Pop from undo stack
-    auto command = std::move(undoStack_.back());
+    auto entry = std::move(undoStack_.back());
     undoStack_.pop_back();
 
-    DBG("📝 UNDO: Undoing '" << command->getDescription() << "'");
+    DBG("📝 UNDO: Undoing '" << entry.command->getDescription() << "'");
 
-    // Undo the command
-    command->undo();
-
-    // Undoing moves state away from what is on disk just as much as doing.
-    ProjectManager::getInstance().markDirty();
+    auto& projectManager = ProjectManager::getInstance();
+    projectManager.beginUndoableMutation();
+    entry.command->undo();
+    projectManager.endUndoableMutation();
+    currentStateId_ = entry.beforeStateId;
 
     // Push to redo stack
-    redoStack_.push_back(std::move(command));
+    redoStack_.push_back(std::move(entry));
 
+    updateProjectDirtyState();
     notifyListeners();
 
     return true;
@@ -81,19 +87,21 @@ bool UndoManager::redo() {
     }
 
     // Pop from redo stack
-    auto command = std::move(redoStack_.back());
+    auto entry = std::move(redoStack_.back());
     redoStack_.pop_back();
 
-    DBG("📝 UNDO: Redoing '" << command->getDescription() << "'");
+    DBG("📝 UNDO: Redoing '" << entry.command->getDescription() << "'");
 
-    // Re-execute the command
-    command->execute();
-
-    ProjectManager::getInstance().markDirty();
+    auto& projectManager = ProjectManager::getInstance();
+    projectManager.beginUndoableMutation();
+    entry.command->execute();
+    projectManager.endUndoableMutation();
+    currentStateId_ = entry.afterStateId;
 
     // Push to undo stack
-    undoStack_.push_back(std::move(command));
+    undoStack_.push_back(std::move(entry));
 
+    updateProjectDirtyState();
     notifyListeners();
 
     return true;
@@ -103,14 +111,14 @@ juce::String UndoManager::getUndoDescription() const {
     if (undoStack_.empty()) {
         return {};
     }
-    return undoStack_.back()->getDescription();
+    return undoStack_.back().command->getDescription();
 }
 
 juce::String UndoManager::getRedoDescription() const {
     if (redoStack_.empty()) {
         return {};
     }
-    return redoStack_.back()->getDescription();
+    return redoStack_.back().command->getDescription();
 }
 
 void UndoManager::clearHistory() {
@@ -121,10 +129,16 @@ void UndoManager::clearHistory() {
     notifyListeners();
 }
 
+void UndoManager::markCurrentStateSaved() {
+    savedStateId_ = currentStateId_;
+    updateProjectDirtyState();
+}
+
 void UndoManager::beginCompoundOperation(const juce::String& description) {
     if (compoundDepth_ == 0) {
         compoundDescription_ = description;
         compoundCommands_.clear();
+        compoundBeforeStateId_ = currentStateId_;
     }
     compoundDepth_++;
 }
@@ -140,7 +154,7 @@ void UndoManager::endCompoundOperation() {
         // Create compound command and add to undo stack
         auto compound =
             std::make_unique<CompoundCommand>(compoundDescription_, std::move(compoundCommands_));
-        undoStack_.push_back(std::move(compound));
+        undoStack_.push_back({std::move(compound), compoundBeforeStateId_, currentStateId_});
         trimUndoStack();
 
         // Clear redo stack
@@ -173,6 +187,10 @@ void UndoManager::trimUndoStack() {
     while (undoStack_.size() > maxUndoSteps_) {
         undoStack_.pop_front();
     }
+}
+
+void UndoManager::updateProjectDirtyState() {
+    ProjectManager::getInstance().setUndoHistoryDirty(currentStateId_ != savedStateId_);
 }
 
 // ============================================================================
