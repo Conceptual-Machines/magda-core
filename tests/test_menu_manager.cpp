@@ -45,6 +45,7 @@ TEST_CASE("MenuManager dispatches registered application commands to menu callba
         magda::CommandIDs::exportAudio,          magda::CommandIDs::deleteTrack,
         magda::CommandIDs::toggleArrangeSession, magda::CommandIDs::about,
     };
+    static_assert(calls.size() == commandIDs.size());
 
     for (const auto commandID : commandIDs)
         REQUIRE(menuManager.invokeApplicationCommand(commandID));

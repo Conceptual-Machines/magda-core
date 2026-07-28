@@ -89,6 +89,9 @@ void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleCommand::M
 void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& commands) {
     using namespace CommandIDs;
 
+    // `zoom` describes a group of View-menu controls, not one action, and
+    // `showHelp` is still a placeholder. Do not expose either as a bindable
+    // command until each has a concrete action to perform.
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
@@ -110,10 +113,6 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         togglePianoRollFullscreen,
         // Help
         about};
-
-    // `zoom` describes a group of View-menu controls, not one action, and
-    // `showHelp` is still a placeholder. Do not expose either as a bindable
-    // command until each has a concrete action to perform.
 
     commands.addArray(allCommands, juce::numElementsInArray(allCommands));
 }
