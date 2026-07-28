@@ -48,6 +48,15 @@ else
     LAUNCH             :=
 endif
 
+# clang-tidy lookup. Homebrew's LLVM is newer than the Apple toolchain's, so
+# prefer it when it is installed; otherwise take whatever is on PATH (the
+# distro package on Linux). Override with `make lint CLANG_TIDY=/path/to/it`.
+CLANG_TIDY ?= $(shell if [ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]; then \
+		echo /opt/homebrew/opt/llvm/bin/clang-tidy; \
+	else \
+		command -v clang-tidy 2>/dev/null; \
+	fi)
+
 # Default target
 .PHONY: all
 all: debug
@@ -345,14 +354,15 @@ lint:
 		echo "❌ compile_commands.json not found. Run 'make debug' first."; \
 		exit 1; \
 	fi
-	@if [ ! -f /opt/homebrew/opt/llvm/bin/clang-tidy ]; then \
-		echo "❌ clang-tidy not found at /opt/homebrew/opt/llvm/bin/clang-tidy"; \
-		echo "Install with: brew install llvm"; \
+	@if [ -z "$(CLANG_TIDY)" ]; then \
+		echo "❌ clang-tidy not found on PATH or at /opt/homebrew/opt/llvm/bin"; \
+		echo "Install with: brew install llvm   (macOS)"; \
+		echo "              apt install clang-tidy   (Debian/Ubuntu)"; \
 		exit 1; \
 	fi
 	@echo "📋 Analyzing magda/daw sources..."
 	@find magda/daw -name "*.cpp" -type f -exec \
-		/opt/homebrew/opt/llvm/bin/clang-tidy \
+		$(CLANG_TIDY) \
 		{} \
 		--config-file=.clang-tidy \
 		--format-style=file \
@@ -368,13 +378,17 @@ lint-changed:
 		echo "❌ compile_commands.json not found. Run 'make debug' first."; \
 		exit 1; \
 	fi
+	@if [ -z "$(CLANG_TIDY)" ]; then \
+		echo "❌ clang-tidy not found on PATH or at /opt/homebrew/opt/llvm/bin"; \
+		exit 1; \
+	fi
 	@CHANGED_FILES=$$(git diff --name-only --diff-filter=d HEAD | grep '\.cpp$$' || true); \
 	if [ -z "$$CHANGED_FILES" ]; then \
 		echo "No modified .cpp files found"; \
 	else \
 		echo "Analyzing: $$CHANGED_FILES"; \
 		for file in $$CHANGED_FILES; do \
-			/opt/homebrew/opt/llvm/bin/clang-tidy \
+			$(CLANG_TIDY) \
 				$$file \
 				--config-file=.clang-tidy \
 				--format-style=file \
@@ -397,7 +411,7 @@ lint-fix:
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		find magda/daw -name "*.cpp" -type f -exec \
-			/opt/homebrew/opt/llvm/bin/clang-tidy \
+			$(CLANG_TIDY) \
 			{} \
 			--config-file=.clang-tidy \
 			--format-style=file \
@@ -417,7 +431,11 @@ lint-file:
 		exit 1; \
 	fi
 	@echo "🔍 Analyzing $(FILE)..."
-	@/opt/homebrew/opt/llvm/bin/clang-tidy \
+	@if [ -z "$(CLANG_TIDY)" ]; then \
+		echo "❌ clang-tidy not found on PATH or at /opt/homebrew/opt/llvm/bin"; \
+		exit 1; \
+	fi
+	@$(CLANG_TIDY) \
 		$(FILE) \
 		--config-file=.clang-tidy \
 		--format-style=file \
