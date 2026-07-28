@@ -198,7 +198,7 @@ jobs:
         path: |
           third_party/faust/build/bin
           third_party/faust/build/lib
-        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug
 
     - name: Cache prebuilt Mutable artifact
       id: mutable-cache
@@ -452,8 +452,8 @@ jobs:
         COMPILER=$(cc --version | head -n1 | shasum | cut -c1-12)
         CACHE_ROOT="$HOME/magda-ci-cache"
 
-        FAUST_DEBUG_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-interp-debug"
-        FAUST_RELEASE_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-interp-release"
+        FAUST_DEBUG_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-wasm-debug"
+        FAUST_RELEASE_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-wasm-release"
         MUTABLE_DEBUG_DIR="$CACHE_ROOT/mutable-artifact-${EURORACK_SHA}-${COMPILER}-debug"
         MUTABLE_RELEASE_DIR="$CACHE_ROOT/mutable-artifact-${EURORACK_SHA}-${COMPILER}-release"
 
@@ -725,8 +725,8 @@ jobs:
       shell: powershell
       run: |
         $cacheRoot = 'C:\magda-ci-cache'
-        $faustDebugDir = "$cacheRoot\faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug"
-        $faustReleaseDir = "$cacheRoot\faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release"
+        $faustDebugDir = "$cacheRoot\faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug"
+        $faustReleaseDir = "$cacheRoot\faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-release"
         $mutableDebugDir = "$cacheRoot\mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug"
         $mutableReleaseDir = "$cacheRoot\mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-release"
 
@@ -748,7 +748,7 @@ jobs:
         path: |
           third_party/faust/build/bin
           third_party/faust/build/lib
-        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-debug
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug
 
     - name: Cache prebuilt Mutable artifact (github-hosted)
       if: runner.environment == 'github-hosted'

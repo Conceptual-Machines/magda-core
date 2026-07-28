@@ -11,6 +11,44 @@ set_property(CACHE MAGDA_FAUST_BACKEND PROPERTY STRINGS "wasm" "interp" "llvm")
 set(MAGDA_FAUST_PREBUILT_DIR "" CACHE PATH
     "Directory containing a prebuilt Faust artifact (bin/faust + lib/libfaust); builds from source when empty/missing")
 
+# wasmtime C API — the JIT behind the wasm backend. Bytecode Alliance ships a
+# prebuilt per (OS, arch); we pin one per platform, same shape as the ONNX
+# Runtime block in the repository root.
+#
+# Fetched for BOTH branches below. A prebuilt libfaust built with the wasm
+# backend still carries undefined wasmtime_* symbols, and the cached artifact
+# is only Faust's own bin/ and lib/, so the prebuilt path needs the runtime
+# just as much as a source build does.
+if(MAGDA_FAUST_BACKEND STREQUAL "wasm")
+    set(WASMTIME_VERSION v47.0.2)
+    if(APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"
+                  OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"))
+        set(WASMTIME_ASSET aarch64-macos-c-api.tar.xz)
+        set(WASMTIME_HASH SHA256=c013fe243fd6e13cd63f13dcfa88c3aff5664e356181a2e1bda2c3bf8381fde0)
+    elseif(APPLE)
+        set(WASMTIME_ASSET x86_64-macos-c-api.tar.xz)
+        set(WASMTIME_HASH SHA256=5910124fafa760b8dc3444aae034ba224a7454fe1bb7855d1bed5fc118941588)
+    elseif(UNIX AND NOT APPLE)
+        set(WASMTIME_ASSET x86_64-linux-c-api.tar.xz)
+        set(WASMTIME_HASH SHA256=35f70f64eb5f9ca72018f3279218a137112c7876b026710315af9ef272a4e91c)
+    elseif(WIN32)
+        set(WASMTIME_ASSET x86_64-windows-c-api.zip)
+        set(WASMTIME_HASH SHA256=80ed88b37de47bbc439f2690aea5f695b85b8bf2c7919556a93803c4f09ffd92)
+    else()
+        message(FATAL_ERROR
+            "wasmtime: no prebuilt C API for this platform "
+            "(set MAGDA_FAUST_BACKEND=interp to skip)")
+    endif()
+
+    FetchContent_Declare(
+        wasmtime
+        URL      "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${WASMTIME_ASSET}"
+        URL_HASH ${WASMTIME_HASH}
+    )
+    FetchContent_MakeAvailable(wasmtime)
+    add_subdirectory(third_party/wasmtime)
+endif()
+
 if(MAGDA_FAUST_PREBUILT_DIR
    AND EXISTS "${MAGDA_FAUST_PREBUILT_DIR}/lib"
    AND EXISTS "${MAGDA_FAUST_PREBUILT_DIR}/bin")
@@ -19,39 +57,6 @@ if(MAGDA_FAUST_PREBUILT_DIR
 else()
     if(MAGDA_FAUST_PREBUILT_DIR)
         message(WARNING "MAGDA_FAUST_PREBUILT_DIR set but artifact missing under it; building Faust from source")
-    endif()
-
-    # wasmtime C API — the JIT behind the wasm backend. Bytecode Alliance ships
-    # a prebuilt per (OS, arch); we pin one per platform, same shape as the
-    # ONNX Runtime block in the repository root.
-    if(MAGDA_FAUST_BACKEND STREQUAL "wasm")
-        set(WASMTIME_VERSION v47.0.2)
-        if(APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"
-                      OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"))
-            set(WASMTIME_ASSET aarch64-macos-c-api.tar.xz)
-            set(WASMTIME_HASH SHA256=c013fe243fd6e13cd63f13dcfa88c3aff5664e356181a2e1bda2c3bf8381fde0)
-        elseif(APPLE)
-            set(WASMTIME_ASSET x86_64-macos-c-api.tar.xz)
-            set(WASMTIME_HASH SHA256=5910124fafa760b8dc3444aae034ba224a7454fe1bb7855d1bed5fc118941588)
-        elseif(UNIX AND NOT APPLE)
-            set(WASMTIME_ASSET x86_64-linux-c-api.tar.xz)
-            set(WASMTIME_HASH SHA256=35f70f64eb5f9ca72018f3279218a137112c7876b026710315af9ef272a4e91c)
-        elseif(WIN32)
-            set(WASMTIME_ASSET x86_64-windows-c-api.zip)
-            set(WASMTIME_HASH SHA256=80ed88b37de47bbc439f2690aea5f695b85b8bf2c7919556a93803c4f09ffd92)
-        else()
-            message(FATAL_ERROR
-                "wasmtime: no prebuilt C API for this platform "
-                "(set MAGDA_FAUST_BACKEND=interp to skip)")
-        endif()
-
-        FetchContent_Declare(
-            wasmtime
-            URL      "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${WASMTIME_ASSET}"
-            URL_HASH ${WASMTIME_HASH}
-        )
-        FetchContent_MakeAvailable(wasmtime)
-        add_subdirectory(third_party/wasmtime)
     endif()
 
     set(INCLUDE_EXECUTABLE ON CACHE BOOL "" FORCE)

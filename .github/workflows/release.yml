@@ -63,7 +63,7 @@ jobs:
         path: |
           third_party/faust/build/bin
           third_party/faust/build/lib
-        key: ${{ runner.os }}-arm64-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release
+        key: ${{ runner.os }}-arm64-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-release
 
     - name: Cache prebuilt Mutable artifact
       id: mutable-cache
@@ -328,7 +328,7 @@ jobs:
         path: |
           third_party/faust/build/bin
           third_party/faust/build/lib
-        key: ${{ runner.os }}-x86_64-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release
+        key: ${{ runner.os }}-x86_64-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-release
 
     - name: Cache prebuilt Mutable artifact
       id: mutable-cache
@@ -716,7 +716,7 @@ jobs:
         $faustSha = (git -C third_party/faust rev-parse HEAD).Trim()
         $eurorackSha = (git -C third_party/eurorack rev-parse HEAD).Trim()
         $compiler = if ($env:VCToolsVersion) { $env:VCToolsVersion } else { "unknown" }
-        $faustDir = "C:\magda-ci-cache\faust-artifact-$faustSha-$compiler-interp-release"
+        $faustDir = "C:\magda-ci-cache\faust-artifact-$faustSha-$compiler-wasm-release"
         $mutableDir = "C:\magda-ci-cache\mutable-artifact-$eurorackSha-$compiler-release"
 
         echo "faust_dir=$faustDir" >> $env:GITHUB_OUTPUT
@@ -1022,7 +1022,7 @@ jobs:
         path: |
           third_party/faust/build/bin
           third_party/faust/build/lib
-        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-interp-release
+        key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-release
 
     - name: Cache prebuilt Mutable artifact
       id: mutable-cache
