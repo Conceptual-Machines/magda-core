@@ -154,6 +154,10 @@ juce::File configFile() {
     return alwaysOSDefault().getChildFile("config.json");
 }
 
+juce::File pluginMetadataFile() {
+    return dataDir().getChildFile("plugin_metadata.db");
+}
+
 juce::File pluginListFile() {
     return dataDir().getChildFile("PluginList.xml");
 }

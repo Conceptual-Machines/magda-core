@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <map>
+#include <vector>
 
 #include "PanelContent.hpp"
 #include "SearchTextEditor.hpp"
@@ -11,7 +12,7 @@
 
 namespace magda {
 class TracktionEngineWrapper;
-}
+}  // namespace magda
 
 namespace magda::daw::ui {
 
@@ -118,6 +119,8 @@ class PluginBrowserContent : public PanelContent,
     // Plugin data
     std::vector<PluginBrowserInfo> plugins_;
     magda::TracktionEngineWrapper* engine_ = nullptr;  // For plugin scanning
+    bool favoritesLoaded_ = false;
+    bool aliasesLoaded_ = false;
 
     void buildInternalPluginList();
     void loadExternalPlugins();
@@ -134,13 +137,11 @@ class PluginBrowserContent : public PanelContent,
     void toggleFavorite(const PluginBrowserInfo& plugin);
     void saveFavorites();
     void loadFavorites();
-    juce::File getFavoritesFile() const;
 
     // Aliases
     void showEditAliasDialog(const PluginBrowserInfo& plugin);
     void saveAliases();
     void loadAliases();
-    juce::File getAliasesFile() const;
 
     // User folders (issue #1700) — user-defined browser folders, persisted
     // like favorites/aliases. A plugin lives in at most one folder; anything

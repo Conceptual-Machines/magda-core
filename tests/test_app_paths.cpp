@@ -114,6 +114,8 @@ TEST_CASE("paths subpaths compose under dataDir", "[app_paths]") {
             juce::File("/tmp/magda-subpath-test/Scripts/Controllers"));
     REQUIRE(paths::controllerProfilesDir() == juce::File("/tmp/magda-subpath-test/controllers"));
     REQUIRE(paths::pluginConfigsDir() == juce::File("/tmp/magda-subpath-test/PluginConfigs"));
+    REQUIRE(paths::pluginMetadataFile() ==
+            juce::File("/tmp/magda-subpath-test/plugin_metadata.db"));
     REQUIRE(paths::pluginListFile() == juce::File("/tmp/magda-subpath-test/PluginList.xml"));
     REQUIRE(paths::pluginExclusionsFile() ==
             juce::File("/tmp/magda-subpath-test/plugin_exclusions.txt"));

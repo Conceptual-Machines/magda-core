@@ -482,14 +482,14 @@ class TracktionEngineWrapper : public AudioEngine,
                                        const juce::Array<juce::PluginDescription>& freshScan);
 
     /**
-     * @brief Clear the plugin list and delete the saved file
+     * @brief Clear scanned plugins while preserving user metadata
      * Use this before a fresh rescan
      */
     void clearPluginList();
 
     /**
-     * @brief Get the file path where plugin list is stored
-     * @return Path to the plugin list XML file
+     * @brief Get the database path where plugin metadata is stored
+     * @return Path to plugin_metadata.db
      */
     juce::File getPluginListFile() const;
 
@@ -665,6 +665,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Plugin scanning state
     bool isScanning_ = false;
+    bool pluginMetadataLoaded_ = false;
     std::function<void(float, const juce::String&)> scanProgressCallback_;
     std::unique_ptr<PluginScanCoordinator> pluginScanCoordinator_;
     std::thread pluginDiscoveryThread_;

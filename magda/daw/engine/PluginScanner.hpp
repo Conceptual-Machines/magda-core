@@ -86,10 +86,10 @@ class PluginScanner : private juce::Thread {
     juce::StringArray failedPlugins_;
 
     // Exclusion management
-    juce::File getExclusionFile() const;
     void loadExclusions();
     void saveExclusions();
     std::vector<ExcludedPlugin> excludedPlugins_;
+    bool exclusionsLoaded_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginScanner)
 };
