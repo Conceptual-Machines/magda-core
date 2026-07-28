@@ -1,4 +1,4 @@
-declare name "MagdaTremolo";
+declare name "Tremolo";
 declare description "Stage 1 Faust POC effect: stereo tremolo (sine LFO).";
 
 import("stdfaust.lib");

@@ -1,4 +1,5 @@
-declare name "MagdaDrive";
+declare name "Drive";
+declare magda_view "MagdaDrive";
 declare description "Stage 1 Faust POC effect: drive + lowpass + gain, stereo.";
 
 import("stdfaust.lib");

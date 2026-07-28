@@ -245,18 +245,6 @@ juce_add_binary_data(MagdaAssets
     # themes and the user's own files (see UserTheme.cpp).
     ../../assets/themes/concrete_warehouse.json
     ../../assets/themes/neon_cyberpunk.json
-    # Bundled Faust starter DSPs — embedded so users always have something
-    # in the loader picker even on a fresh install.
-    audio/faust_dsp/runtime/distortion/magda_drive.dsp
-    audio/faust_dsp/runtime/modulation/magda_tremolo.dsp
-    audio/faust_dsp/compiled/delay/magda_delay.dsp
-    audio/faust_dsp/compiled/delay/magda_granular_delay.dsp
-    audio/faust_dsp/compiled/filter/magda_filter_svf.dsp
-    audio/faust_dsp/compiled/filter/magda_filter_ladder.dsp
-    audio/faust_dsp/compiled/filter/magda_filter_korg35.dsp
-    audio/faust_dsp/compiled/filter/magda_filter_oberheim.dsp
-    audio/faust_dsp/compiled/filter/magda_filter_sk.dsp
-    audio/faust_dsp/compiled/filter/magda_filter_diode.dsp
 )
 
 # =============================================================================
@@ -927,6 +915,8 @@ endif()
 # Runtime-compiled devices need the Faust standard library beside every host.
 magda_stage_faust_libraries(magda_daw_app)
 magda_stage_faust_libraries(magda_cli)
+magda_stage_faust_runtime_dsp(magda_daw_app)
+magda_stage_faust_runtime_dsp(magda_cli)
 
 # Copy third_party/dawproject/ (vendored Project.xsd + MetaData.xsd) into the
 # app so DawProjectValidator can validate import/export against the schemas at

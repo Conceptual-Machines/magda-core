@@ -1,16 +1,31 @@
 #include "FaustResources.hpp"
 
-#include <BinaryData.h>
+#include <algorithm>
+#include <regex>
+#include <string>
 
 namespace magda::daw::audio {
 
 namespace {
 
-juce::String readBinaryDspAsString(const char* resourceName) {
-    int size = 0;
-    if (auto* data = BinaryData::getNamedResource(resourceName, size); data && size > 0)
-        return juce::String::fromUTF8(data, size);
+// Pulls a global `declare <key> "<value>";` out of .dsp source. Faust allows
+// arbitrary global metadata, so the file itself carries everything the loader
+// needs and no filename has to be repeated in C++.
+juce::String readDeclare(const juce::String& source, juce::StringRef key) {
+    const std::regex re("declare\\s+" + std::string(key.text) + "\\s+\"([^\"]*)\"");
+    const std::string subject = source.toStdString();
+    std::smatch m;
+    if (std::regex_search(subject, m, re) && m.size() > 1)
+        return juce::String(m[1].str()).trim();
     return {};
+}
+
+FaustCustomViewKind viewKindFromName(const juce::String& name) {
+    // Keyed on the enum's own spelling, so a DSP opts into a bespoke view with
+    // `declare magda_view "MagdaDrive";` and this table never learns filenames.
+    if (name == "MagdaDrive")
+        return FaustCustomViewKind::MagdaDrive;
+    return FaustCustomViewKind::None;
 }
 
 }  // namespace
@@ -27,27 +42,47 @@ juce::File getFaustLibrariesPath() {
 #endif
 }
 
+juce::File getFaustRuntimeDspPath() {
+    auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+#if JUCE_MAC
+    return exe.getChildFile("Contents/Resources/faust_dsp");
+#else
+    return exe.getParentDirectory().getChildFile("faust_dsp");
+#endif
+}
+
 std::vector<StarterDsp> getBundledStarterDsps() {
-    // Resource names follow juce_add_binary_data's slugifier: dots → underscores.
-    static const struct {
-        const char* displayName;
-        const char* filename;
-        const char* resourceName;
-        FaustCustomViewKind viewKind;
-    } kStarters[] = {
-        {"Drive", "magda_drive.dsp", "magda_drive_dsp", FaustCustomViewKind::MagdaDrive},
-        {"Tremolo", "magda_tremolo.dsp", "magda_tremolo_dsp", FaustCustomViewKind::None},
-        {"Delay", "magda_delay.dsp", "magda_delay_dsp", FaustCustomViewKind::None},
-        {"Granular Delay", "magda_granular_delay.dsp", "magda_granular_delay_dsp",
-         FaustCustomViewKind::None},
-    };
+    const auto root = getFaustRuntimeDspPath();
+    if (!root.isDirectory())
+        return {};
 
     std::vector<StarterDsp> out;
-    for (const auto& s : kStarters) {
-        auto src = readBinaryDspAsString(s.resourceName);
-        if (src.isNotEmpty())
-            out.push_back({juce::String(s.displayName), juce::String(s.filename), src, s.viewKind});
+    for (const auto& entry :
+         juce::RangedDirectoryIterator(root, true, "*.dsp", juce::File::findFiles)) {
+        const auto file = entry.getFile();
+        const auto source = file.loadFileAsString();
+        if (source.isEmpty())
+            continue;
+
+        StarterDsp dsp;
+        // `declare name` is the DSP's own title; fall back to the file name so
+        // a .dsp without one still shows up rather than being silently skipped.
+        dsp.name = readDeclare(source, "name");
+        if (dsp.name.isEmpty())
+            dsp.name = file.getFileNameWithoutExtension().replaceCharacter('_', ' ');
+        dsp.filename = file.getFileName();
+        dsp.source = source;
+        dsp.viewKind = viewKindFromName(readDeclare(source, "magda_view"));
+        // The directory the file sits in, e.g. runtime/texture -> "texture".
+        dsp.category = file.getParentDirectory().getFileName();
+        out.push_back(std::move(dsp));
     }
+
+    std::sort(out.begin(), out.end(), [](const StarterDsp& a, const StarterDsp& b) {
+        if (a.category != b.category)
+            return a.category < b.category;
+        return a.name < b.name;
+    });
     return out;
 }
 

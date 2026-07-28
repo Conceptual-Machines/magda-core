@@ -9,11 +9,11 @@
 namespace magda::daw::audio {
 
 struct StarterDsp {
-    juce::String name;      // Display name shown in the loader UI.
-    juce::String filename;  // For matching against juce::BinaryData.
+    juce::String name;      // From the file's `declare name`, else its filename.
+    juce::String filename;  // File name as found on disk.
     juce::String source;    // The .dsp file contents.
-    FaustCustomViewKind viewKind =
-        FaustCustomViewKind::None;  // Bound bespoke FaustUI view, if any.
+    juce::String category;  // Containing folder, e.g. "texture".
+    FaustCustomViewKind viewKind = FaustCustomViewKind::None;  // From `declare magda_view`, if any.
 };
 
 // Path to the Faust standard libraries directory bundled alongside the app.
@@ -22,8 +22,15 @@ struct StarterDsp {
 // case so the plugin always loads.
 juce::File getFaustLibrariesPath();
 
-// Returns the bundled starter .dsp files (compiled into MagdaAssets via
-// juce_add_binary_data).
+// Path to the runtime .dsp library staged alongside the app. Like
+// getFaustLibrariesPath(), the returned File may not exist outside an
+// installed bundle.
+juce::File getFaustRuntimeDspPath();
+
+// Every .dsp discovered under getFaustRuntimeDspPath(), recursively. Nothing
+// is hardcoded: dropping a file into the staged folder is enough for it to
+// appear, and each file describes itself via `declare name` / `declare
+// magda_view`. Returns empty when the folder is missing.
 std::vector<StarterDsp> getBundledStarterDsps();
 
 }  // namespace magda::daw::audio

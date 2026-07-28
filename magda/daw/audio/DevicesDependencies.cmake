@@ -190,6 +190,27 @@ function(magda_stage_faust_libraries TARGET_NAME)
     )
 endfunction()
 
+# Stage the runtime-compiled .dsp library beside a device-hosting executable.
+# These are discovered by scanning at startup rather than embedded, so adding
+# an effect is a matter of dropping a file in (see FaustResources.cpp).
+function(magda_stage_faust_runtime_dsp TARGET_NAME)
+    get_target_property(_magda_target_is_bundle ${TARGET_NAME} MACOSX_BUNDLE)
+    if(APPLE AND _magda_target_is_bundle)
+        set(_magda_faust_dsp_destination
+            "$<TARGET_BUNDLE_CONTENT_DIR:${TARGET_NAME}>/Resources/faust_dsp")
+    else()
+        set(_magda_faust_dsp_destination
+            "$<TARGET_FILE_DIR:${TARGET_NAME}>/faust_dsp")
+    endif()
+
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp/runtime"
+            "${_magda_faust_dsp_destination}"
+        COMMENT "Copying runtime Faust DSP library for ${TARGET_NAME}"
+    )
+endfunction()
+
 # Fail configuration when a device pack reaches into host-owned DAW layers.
 # Callers pass the pack's complete source list, making this check usable by
 # in-tree, submodule, and private packs alike.
