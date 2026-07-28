@@ -411,21 +411,22 @@ lint-fix:
 		exit 1; \
 	fi
 	@echo "⚠️  This will modify your source files!"
-	@read -p "Continue? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		find magda/daw -name "*.cpp" -type f -exec \
-			$(CLANG_TIDY) \
-			{} \
-			--config-file=.clang-tidy \
-			--format-style=file \
-			-p=$(BUILD_DIR) \
-			--fix \
-			--fix-errors \;; \
-		echo "✅ Fixes applied"; \
-	else \
-		echo "❌ Cancelled"; \
-	fi
+	@printf "Continue? [y/N] "; \
+	read REPLY; \
+	case "$$REPLY" in \
+		[Yy]*) \
+			find magda/daw -name "*.cpp" -type f -exec \
+				$(CLANG_TIDY) \
+				{} \
+				--config-file=.clang-tidy \
+				--format-style=file \
+				-p=$(BUILD_DIR) \
+				--fix \
+				--fix-errors \;; \
+			echo "✅ Fixes applied" ;; \
+		*) \
+			echo "❌ Cancelled" ;; \
+	esac
 
 # Lint specific file
 .PHONY: lint-file

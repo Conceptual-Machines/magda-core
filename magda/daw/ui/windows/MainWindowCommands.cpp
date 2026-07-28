@@ -476,6 +476,12 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
     auto& selectionManager = SelectionManager::getInstance();
     auto selectedClips = selectionManager.getSelectedClips();
 
+    // Command-backed application/menu actions share the same callback path as
+    // menu clicks. Keeping this before the local switch prevents registered
+    // menu commands from silently becoming dead custom key bindings.
+    if (MenuManager::getInstance().invokeApplicationCommand(info.commandID))
+        return true;
+
     // Helper: resolve time selection track indices to TrackIds
     auto resolveTimeSelectionTrackIds = [this]() -> std::vector<TrackId> {
         std::vector<TrackId> trackIds;
@@ -563,11 +569,6 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
     };
 
     switch (info.commandID) {
-        case saveProject:
-        case saveProjectAs:
-        case exportAudio:
-            return MenuManager::getInstance().invokeApplicationCommand(info.commandID);
-
         case undo:
             UndoManager::getInstance().undo();
             return true;

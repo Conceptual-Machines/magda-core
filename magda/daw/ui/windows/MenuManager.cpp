@@ -42,6 +42,12 @@ bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
     std::function<void()>* callback = nullptr;
 
     switch (commandID) {
+        case CommandIDs::newProject:
+            callback = &callbacks_.onNewProject;
+            break;
+        case CommandIDs::openProject:
+            callback = &callbacks_.onOpenProject;
+            break;
         case CommandIDs::saveProject:
             callback = &callbacks_.onSaveProject;
             break;
@@ -51,12 +57,29 @@ bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
         case CommandIDs::exportAudio:
             callback = &callbacks_.onExportAudio;
             break;
+        case CommandIDs::deleteTrack:
+            callback = &callbacks_.onDeleteTrack;
+            break;
+        case CommandIDs::toggleArrangeSession:
+            callback = &callbacks_.onToggleArrangeSession;
+            break;
+        case CommandIDs::zoom:
+            callback = &callbacks_.onZoom;
+            break;
+        case CommandIDs::showHelp:
+            callback = &callbacks_.onShowHelp;
+            break;
+        case CommandIDs::about:
+            callback = &callbacks_.onAbout;
+            break;
         default:
             return false;
     }
 
-    if (!*callback)
+    if (!*callback) {
+        jassertfalse;
         return false;
+    }
 
     (*callback)();
     return true;
