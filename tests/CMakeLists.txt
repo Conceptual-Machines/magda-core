@@ -115,6 +115,8 @@ set(TEST_SOURCES
     test_faust_metadata_parser.cpp
     test_faust_param_pool.cpp
     test_faust_param_info.cpp
+    # Runtime execution backend (interp / wasm+wasmtime), issue #1382
+    test_faust_backend.cpp
     # Parameter alias system tests (PR 1)
     test_param_name_normalize.cpp
     test_alias_parser.cpp
@@ -201,6 +203,9 @@ target_link_libraries(magda_tests
     magda_agents
     magda_scripting
     Catch2::Catch2WithMain
+    # Faust runtime headers + the backend selection, so test_faust_backend.cpp
+    # resolves to the same factory the app was built with.
+    magda_faust_backend
     # JUCE (core + gui_basics) comes transitively from magda_daw, compiled once
     # there; direct links would recompile the JUCE stack into this target.
 )

@@ -6,10 +6,10 @@
 #include <map>
 #include <regex>
 
+#include "FaustBackend.hpp"
 #include "FaustMetadataParser.hpp"
 #include "FaustResources.hpp"
 #include "faust/dsp/dsp.h"
-#include "faust/dsp/interpreter-dsp.h"
 #include "faust/gui/UI.h"
 #include "faust/gui/meta.h"
 
@@ -273,7 +273,7 @@ juce::String wrapDualMono(const juce::String& source) {
 FaustPlugin::FaustState::~FaustState() {
     dsp.reset();
     if (factory)
-        deleteInterpreterDSPFactory(factory);
+        magda::faust::deleteFactory(factory);
 }
 
 std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String& source,
@@ -295,7 +295,7 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String
         argv.push_back("-I");
         argv.push_back(libsPath.c_str());
 
-        auto* factory = createInterpreterDSPFactoryFromString(
+        auto* factory = magda::faust::createFactoryFromString(
             "magda_faust", src, static_cast<int>(argv.size()), argv.data(), err);
         if (!factory) {
             e = juce::String(err);
@@ -306,7 +306,7 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String
         state->dsp.reset(factory->createDSPInstance());
         if (!state->dsp) {
             e = "createDSPInstance returned null";
-            return nullptr;  // ~FaustState will deleteInterpreterDSPFactory
+            return nullptr;  // ~FaustState will delete the factory
         }
         state->dsp->init(sampleRate);
         state->dspIn = state->dsp->getNumInputs();

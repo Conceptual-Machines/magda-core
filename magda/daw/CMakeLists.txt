@@ -595,6 +595,11 @@ target_link_libraries(magda_base_devices
     faust::libfaust
 )
 
+# magda_faust_backend carries which libfaust factory this build actually
+# contains, so FaustBackend.hpp resolves to the backend that is really linked.
+target_link_libraries(magda_devices PRIVATE magda_faust_backend)
+target_link_libraries(magda_base_devices PRIVATE magda_faust_backend)
+
 if(MAGDA_PRO_DEVICES)
     if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
         message(FATAL_ERROR

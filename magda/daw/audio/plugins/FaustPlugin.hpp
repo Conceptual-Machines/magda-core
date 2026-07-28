@@ -14,7 +14,7 @@
 // libfaust types are forward-declared here so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
 class dsp;
-class interpreter_dsp_factory;
+class dsp_factory;
 
 namespace magda::daw::audio {
 
@@ -136,7 +136,7 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // the snapshot's lifetime.
     struct FaustState {
         std::unique_ptr<::dsp> dsp;
-        interpreter_dsp_factory* factory = nullptr;
+        dsp_factory* factory = nullptr;
         int dspIn = 0;
         int dspOut = 0;
         // Audio-thread view of the active slots: which pool slot →

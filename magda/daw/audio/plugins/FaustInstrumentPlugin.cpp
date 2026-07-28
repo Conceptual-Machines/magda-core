@@ -5,9 +5,9 @@
 #include <cmath>
 #include <map>
 
+#include "FaustBackend.hpp"
 #include "FaustMetadataParser.hpp"
 #include "FaustResources.hpp"
-#include "faust/dsp/interpreter-dsp.h"
 #include "faust/dsp/poly-dsp.h"
 #include "faust/gui/UI.h"
 #include "faust/gui/meta.h"
@@ -332,7 +332,7 @@ struct VoiceHarvester : public ::UI {
 FaustInstrumentPlugin::FaustState::~FaustState() {
     poly.reset();  // deletes the per-voice DSPs it owns
     if (factory)
-        deleteInterpreterDSPFactory(factory);
+        magda::faust::deleteFactory(factory);
 }
 
 std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compile(
@@ -346,7 +346,7 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
     argv.push_back(libsPath.c_str());
 
     std::string err;
-    auto* factory = createInterpreterDSPFactoryFromString(
+    auto* factory = magda::faust::createFactoryFromString(
         "magda_faust_instrument", src, static_cast<int>(argv.size()), argv.data(), err);
     if (!factory) {
         errorOut = juce::String(err);
