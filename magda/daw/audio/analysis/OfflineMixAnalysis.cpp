@@ -1,22 +1,17 @@
 #include "OfflineMixAnalysis.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <atomic>
 #include <chrono>
 #include <memory>
 
-// clang-format off
-#include <tracktion_engine/tracktion_engine.h>
-// clang-format on
-
 #include "../../core/TrackManager.hpp"
-#include "../../engine/TracktionEngineWrapper.hpp"
-#include "../AudioBridge.hpp"
+#include "../../engine/AudioEngine.hpp"
 #include "MixAnalysisInput.hpp"
 
 namespace magda {
 namespace daw::audio {
-
-namespace tk = tracktion;
 
 namespace {
 
@@ -41,74 +36,67 @@ juce::String formatSeconds(double seconds) {
     return juce::String(s) + "s";
 }
 
+bool runOnMessageThreadBlocking(std::function<void()> operation) {
+    auto* messageManager = juce::MessageManager::getInstanceWithoutCreating();
+    if (messageManager == nullptr || messageManager->isThisTheMessageThread()) {
+        operation();
+        return true;
+    }
+
+    juce::WaitableEvent completed;
+    if (!juce::MessageManager::callAsync([&operation, &completed]() {
+            operation();
+            completed.signal();
+        }))
+        return false;
+
+    completed.wait();
+    return true;
+}
+
 // Run one offline render pass to outFile, blocking until done. tracksToDo empty
 // => all tracks (the RenderTask path treats an empty bitset as "no track filter").
 // onProgress is called with the pass's 0..1 render progress. Returns false on
 // failure or cancellation.
-bool renderPass(const tk::Renderer::Parameters& base, const juce::File& outFile,
-                const juce::BigInteger& tracksToDo, bool useMasterPlugins,
-                std::atomic<bool>& cancel, const std::function<void(float)>& onProgress) {
-    tk::Renderer::Parameters params = base;
-    params.destFile = outFile;
-    params.tracksToDo = tracksToDo;
-    params.useMasterPlugins = useMasterPlugins;
+bool renderPass(AudioEngine& engine, OfflineRenderRequest request, const juce::File& outFile,
+                std::optional<TrackId> trackId, bool useMasterPlugins, std::atomic<bool>& cancel,
+                const std::function<void(float)>& onProgress) {
+    request.destination = outFile;
+    request.useMasterPlugins = useMasterPlugins;
+    if (trackId)
+        request.trackIds = {*trackId};
 
-    std::atomic<float> progress{0.0f};
-    tk::Renderer::RenderTask task("MixAnalysis", params, &progress, nullptr);
+    // Creating and destroying a render task changes transport/plugin state, so
+    // keep those lifecycle operations on the message thread. Only the actual
+    // render loop runs on this analysis worker.
+    std::unique_ptr<OfflineRenderTask> task;
+    if (!runOnMessageThreadBlocking(
+            [&task, &engine, &request]() { task = engine.createOfflineRenderTask(request); }))
+        return false;
+    if (!task)
+        return false;
 
-    for (;;) {
-        if (cancel.load())
-            return false;
-        const auto status = task.runJob();
-        if (onProgress)
-            onProgress(progress.load());
-        if (status == juce::ThreadPoolJob::jobHasFinished)
-            return outFile.existsAsFile() && task.errorMessage.isEmpty();
-        if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
-            juce::Thread::sleep(1);
-            continue;
-        }
-        return false;  // error
-    }
+    const bool success = task->run([&cancel]() { return cancel.load(); }, onProgress).success;
+    if (!runOnMessageThreadBlocking([&task]() { task.reset(); }))
+        task.reset();
+    return success;
 }
 
 // Background driver: owns itself, deletes on completion. Setup runs in the ctor
 // (message thread); the render passes + measurement run in run() (background).
 class AnalysisJob : public juce::Thread {
   public:
-    AnalysisJob(TracktionEngineWrapper& engine, OfflineMixAnalysis::Request request,
+    AnalysisJob(AudioEngine& engine, OfflineMixAnalysis::Request request,
                 OfflineMixAnalysis::ProgressFn onProgress,
                 OfflineMixAnalysis::CompletionFn onComplete,
                 OfflineMixAnalysis::MeasuredFn onMeasured, OfflineMixAnalysis::CancelToken cancel)
         : juce::Thread("OfflineMixAnalysis"),
           engine_(engine),
-          edit_(*engine.getEdit()),
           request_(std::move(request)),
           onProgress_(std::move(onProgress)),
           onComplete_(std::move(onComplete)),
           onMeasured_(std::move(onMeasured)),
-          cancel_(std::move(cancel)),
-          inhibitor_(edit_.getTransport()) {
-        // Message-thread setup, mirroring the export path: TE asserts the play
-        // context is not active during an offline render.
-        auto& transport = edit_.getTransport();
-        if (transport.isPlaying())
-            transport.stop(false, false);
-        tk::freePlaybackContextIfNotRecording(transport);
-
-        for (auto* track : tk::getAudioTracks(edit_))
-            for (auto* plugin : track->pluginList)
-                if (!plugin->isEnabled())
-                    plugin->setEnabled(true);
-
-        if (auto* bridge = engine_.getAudioBridge())
-            bridge->getPluginManager().prepareForRendering();
-
-        // Block the transport for the render's lifetime: starting playback while
-        // the render owns the edit corrupts the node graph (NodeRenderContext
-        // asserts). Cleared in run()'s completion.
-        engine_.setOfflineRenderActive(true);
-
+          cancel_(std::move(cancel)) {
         startThread();
     }
 
@@ -123,13 +111,6 @@ class AnalysisJob : public juce::Thread {
 
         // Restore + deliver + self-destruct on the message thread.
         juce::MessageManager::callAsync([this, result = std::move(result)]() mutable {
-            if (auto* bridge = engine_.getAudioBridge())
-                bridge->getPluginManager().restoreAfterRendering();
-            // The ctor freed the live playback context for the render
-            // (freePlaybackContextIfNotRecording); rebuild it so live monitoring
-            // and metering (the master VU etc.) resume instead of staying dead.
-            edit_.getTransport().ensureContextAllocated();
-            engine_.setOfflineRenderActive(false);  // re-allow playback
             if (onComplete_)
                 onComplete_(std::move(result));
             delete this;
@@ -158,24 +139,23 @@ class AnalysisJob : public juce::Thread {
         const double sampleRate = kAnalysisSampleRate;
 
         // Resolve the render range.
-        tk::TimeRange range;
-        if (request_.range == OfflineMixAnalysis::RangeMode::LoopRange)
-            range = edit_.getTransport().getLoopRange();
-        if (range.getLength() <= tk::TimeDuration())
-            range = tk::TimeRange(tk::TimePosition(), tk::TimePosition() + edit_.getLength());
+        double rangeStart = 0.0;
+        double rangeEnd = engine_.getEditLengthSeconds();
+        if (request_.range == OfflineMixAnalysis::RangeMode::LoopRange) {
+            const auto loop = engine_.getLoopRegionSeconds();
+            if (loop.second > loop.first) {
+                rangeStart = loop.first;
+                rangeEnd = loop.second;
+            }
+        }
 
-        // Shared render parameters (mirrors the export settings).
-        tk::Renderer::Parameters base(edit_);
-        base.audioFormat = engine_.getEngine()->getAudioFileFormatManager().getWavFormat();
+        OfflineRenderRequest base;
         base.bitDepth = 24;
-        base.sampleRateForAudio = sampleRate;
-        base.blockSizeForAudio = 512;
-        base.shouldNormalise = false;
+        base.sampleRate = sampleRate;
         base.usePlugins = true;
-        base.checkNodesForAudio = false;
-        base.realTimeRender = false;
-        base.time = range;
-        base.endAllowance = tk::TimeDuration::fromSeconds(2.0);  // let reverbs/delays decay
+        base.startSeconds = rangeStart;
+        base.endSeconds = rangeEnd;
+        base.endAllowanceSeconds = 2.0;
 
         const auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
 
@@ -187,18 +167,19 @@ class AnalysisJob : public juce::Thread {
         // Resolve the track set up front (Deep) so the total pass count -- and
         // therefore the progress estimate -- is known before rendering starts:
         // one master pass plus one pass per track.
-        std::vector<tk::AudioTrack*> teTracks;
+        std::vector<TrackId> trackIds;
         if (deep) {
             if (request_.trackSet.empty()) {
-                for (auto* track : tk::getAudioTracks(edit_))
-                    teTracks.push_back(track);
-            } else if (auto* bridge = engine_.getAudioBridge()) {
+                for (const auto& track : TrackManager::getInstance().getTracks())
+                    if (track.type == TrackType::Audio)
+                        trackIds.push_back(track.id);
+            } else {
                 for (auto id : request_.trackSet)
-                    if (auto* track = bridge->getAudioTrack(id))
-                        teTracks.push_back(track);
+                    if (TrackManager::getInstance().getTrack(id) != nullptr)
+                        trackIds.push_back(id);
             }
         }
-        const int totalPasses = deep ? 1 + static_cast<int>(teTracks.size()) : 1;
+        const int totalPasses = deep ? 1 + static_cast<int>(trackIds.size()) : 1;
 
         // Progress + ETA across all passes. Each pass reports its own 0..1 render
         // progress; we fold that into an overall fraction and extrapolate the time
@@ -234,8 +215,7 @@ class AnalysisJob : public juce::Thread {
         phaseLabel = deep ? "Rendering mix (master)..." : "Rendering mix...";
         postProgress(phaseLabel);
         auto masterFile = tempDir.getNonexistentChildFile("magda_mix_master", ".wav");
-        if (!renderPass(base, masterFile, {} /* all tracks */, /*useMasterPlugins*/ true, *cancel_,
-                        reportProgress)) {
+        if (!renderPass(engine_, base, masterFile, std::nullopt, true, *cancel_, reportProgress)) {
             masterFile.deleteFile();
             err.hasError = true;
             err.error = cancel_->load() ? "Cancelled." : "Mix render failed.";
@@ -261,20 +241,16 @@ class AnalysisJob : public juce::Thread {
             measurements.master = mix;
             measurements.tracks.push_back(std::move(mix));
         } else {
-            const auto allTracks = tk::getAllTracks(edit_);
-
             // Buffers must outlive the build() call; unique_ptr keeps Source
             // pointers stable as the vector grows.
             std::vector<std::unique_ptr<juce::AudioBuffer<float>>> stemBufs;
             std::vector<MixAnalysisInput::Source> sources;
             std::vector<magda::TrackId> sourceTrackIds;  // aligned with sources for post-build tags
-            stemBufs.reserve(teTracks.size());
-            sources.reserve(teTracks.size());
-            sourceTrackIds.reserve(teTracks.size());
+            stemBufs.reserve(trackIds.size());
+            sources.reserve(trackIds.size());
+            sourceTrackIds.reserve(trackIds.size());
 
-            auto* bridge = engine_.getAudioBridge();
-
-            const int total = static_cast<int>(teTracks.size());
+            const int total = static_cast<int>(trackIds.size());
             int skipped = 0;
             for (int i = 0; i < total; ++i) {
                 if (cancel_->load()) {
@@ -282,26 +258,23 @@ class AnalysisJob : public juce::Thread {
                     err.error = "Cancelled.";
                     return err;
                 }
-                auto* track = teTracks[static_cast<size_t>(i)];
+                const auto trackId = trackIds[static_cast<size_t>(i)];
+                const auto* track = TrackManager::getInstance().getTrack(trackId);
+                if (track == nullptr) {
+                    ++skipped;
+                    continue;
+                }
                 passesDone = 1 + i;  // master pass + tracks finished so far
 
                 // Name the current pass so the user sees track-by-track progress.
                 // Reset lastPct so the new label posts immediately (not throttled).
-                phaseLabel = "Rendering: " + track->getName() + "  (" + juce::String(i + 1) + "/" +
+                phaseLabel = "Rendering: " + track->name + "  (" + juce::String(i + 1) + "/" +
                              juce::String(total) + ")";
                 lastPct = -1.0;
 
-                const int bit = allTracks.indexOf(track);
-                if (bit < 0) {
-                    ++skipped;
-                    continue;
-                }
-                juce::BigInteger bits;
-                bits.setBit(bit);
-
                 auto stemFile = tempDir.getNonexistentChildFile("magda_mix_stem", ".wav");
                 // Stems are pre-master (useMasterPlugins=false) so each is comparable.
-                if (!renderPass(base, stemFile, bits, /*useMasterPlugins*/ false, *cancel_,
+                if (!renderPass(engine_, base, stemFile, trackId, false, *cancel_,
                                 reportProgress)) {
                     stemFile.deleteFile();
                     ++skipped;
@@ -318,12 +291,11 @@ class AnalysisJob : public juce::Thread {
                 }
 
                 MixAnalysisInput::Source src;
-                src.name = track->getName();
+                src.name = track->name;
                 src.audio = buf.get();
                 stemBufs.push_back(std::move(buf));
                 sources.push_back(std::move(src));
-                sourceTrackIds.push_back(bridge ? bridge->getTrackIdForTeTrack(track->itemID)
-                                                : magda::INVALID_TRACK_ID);
+                sourceTrackIds.push_back(trackId);
             }
 
             if (sources.empty()) {
@@ -368,23 +340,21 @@ class AnalysisJob : public juce::Thread {
         return {};
     }
 
-    TracktionEngineWrapper& engine_;
-    tk::Edit& edit_;
+    AudioEngine& engine_;
     OfflineMixAnalysis::Request request_;
     OfflineMixAnalysis::ProgressFn onProgress_;
     OfflineMixAnalysis::CompletionFn onComplete_;
     OfflineMixAnalysis::MeasuredFn onMeasured_;
-    tk::TransportControl::ReallocationInhibitor inhibitor_;  // held for the render's lifetime
     OfflineMixAnalysis::CancelToken cancel_;
 };
 
 }  // namespace
 
-OfflineMixAnalysis::CancelToken OfflineMixAnalysis::start(TracktionEngineWrapper& engine,
-                                                          Request request, ProgressFn onProgress,
+OfflineMixAnalysis::CancelToken OfflineMixAnalysis::start(AudioEngine& engine, Request request,
+                                                          ProgressFn onProgress,
                                                           CompletionFn onComplete,
                                                           MeasuredFn onMeasured) {
-    if (engine.getEdit() == nullptr) {
+    if (!engine.hasActiveEdit()) {
         Result r;
         r.hasError = true;
         r.error = "No active edit to analyse.";

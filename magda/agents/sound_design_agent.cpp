@@ -2,13 +2,9 @@
 
 #include <juce_events/juce_events.h>
 
-#include "audio/AudioBridge.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/plugins/PolyStepSequencerPlugin.hpp"
-#include "audio/plugins/StepSequencerPlugin.hpp"
+#include "api/magda_api.hpp"
+#include "api/plugin_api.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
-#include "core/TrackManager.hpp"
-#include "engine/AudioEngine.hpp"
 #include "four_osc_agent.hpp"
 #include "four_osc_apply.hpp"
 #include "generic_sound_design_agent.hpp"
@@ -27,9 +23,14 @@ namespace {
 // SoundDesignAgent subclass and declare its handler in the capability catalog.
 class FourOscSoundDesignAgent : public SoundDesignAgent {
   public:
+    explicit FourOscSoundDesignAgent(PluginApi* plugins) : plugins_(plugins) {}
+
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
                                   llm::Conversation& conversation,
                                   TokenCallback onToken = {}) override {
+        if (plugins_ == nullptr)
+            return "(MagdaApi plugin operations are unavailable)";
+
         juce::ignoreUnused(conversation);  // 4OSC preset design is single-shot
         agent_.resetCancel();
         if (shouldStop_.load())
@@ -58,14 +59,13 @@ class FourOscSoundDesignAgent : public SoundDesignAgent {
         if (categoryOverride_.isNotEmpty())
             result.preset.category = categoryOverride_.toStdString();
 
-        // The apply step writes onto te::Plugin / te::FourOscPlugin state and
-        // calls notifyTrackDevicesChanged, both of which TE asserts must run
-        // on the message thread (TRACKTION_ASSERT_MESSAGE_THREAD). Hop there
-        // and block until it finishes — generation runs on a worker thread
-        // and we still want a synchronous status to return.
+        // The live API apply step updates device state and notifies the track,
+        // operations which must run on the message thread. Hop there and
+        // block until it finishes — generation runs on a worker thread and
+        // we still want a synchronous status to return.
         auto& mm = *juce::MessageManager::getInstance();
         if (mm.isThisTheMessageThread())
-            return applyFourOscPresetToPath(result.preset, path);
+            return applyFourOscPresetToPath(*plugins_, result.preset, path);
 
         // Heap-allocated shared state so the queued lambda stays safe even
         // if this worker thread gets force-killed (~AIPanelComponent runs
@@ -78,8 +78,9 @@ class FourOscSoundDesignAgent : public SoundDesignAgent {
         };
         auto state = std::make_shared<ApplyState>();
         const auto preset = result.preset;
-        mm.callAsync([state, preset, path]() {
-            state->status = applyFourOscPresetToPath(preset, path);
+        auto* plugins = plugins_;
+        mm.callAsync([state, preset, path, plugins]() {
+            state->status = applyFourOscPresetToPath(*plugins, preset, path);
             state->done.signal();
         });
 
@@ -108,6 +109,7 @@ class FourOscSoundDesignAgent : public SoundDesignAgent {
   private:
     FourOscAgent agent_;
     juce::String categoryOverride_;
+    PluginApi* plugins_ = nullptr;
 };
 
 // Build a device-context string for the Poly Step Sequencer agent.
@@ -116,78 +118,26 @@ class FourOscSoundDesignAgent : public SoundDesignAgent {
 // Thread-safe: getPlugin uses a ScopedLock; CachedValue reads are value-copies
 // (atomic-equivalent) safe off the message thread; getChains() is read-only
 // after construction and stable while the edit is live.
-std::string buildPolyStepSequencerContext(const ChainNodePath& path) {
-    auto& tm = TrackManager::getInstance();
-    auto* engine = tm.getAudioEngine();
-    auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-    if (bridge == nullptr)
-        return {};
-
-    auto plugin = bridge->getPlugin(path);
-    auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-    if (seq == nullptr)
+std::string buildPolyStepSequencerContext(PluginApi& plugins, const ChainNodePath& path) {
+    const auto context = plugins.getPolySequencerContext(path);
+    if (!context)
         return {};
 
     std::string ctx = "DEVICE CONTEXT:\n";
-    const auto viewMode = seq->viewMode.get().toStdString();
+    const auto viewMode = context->viewMode.toStdString();
     ctx += "viewMode=" + (viewMode.empty() ? "keys" : viewMode) + "\n";
 
-    // Emit current settings so the model knows not to change them unless asked.
-    {
-        char buf[128];
-        std::snprintf(buf, sizeof(buf),
-                      "currentSettings: numSteps=%d, rate=%d, swing=%.2f, gateLength=%.2f\n",
-                      seq->numSteps.get(), seq->rate.get(), static_cast<double>(seq->swing.get()),
-                      static_cast<double>(seq->gateLength.get()));
-        ctx += buf;
-    }
+    char buf[128];
+    std::snprintf(buf, sizeof(buf),
+                  "currentSettings: numSteps=%d, rate=%d, swing=%.2f, gateLength=%.2f\n",
+                  context->numSteps, context->rate, static_cast<double>(context->swing),
+                  static_cast<double>(context->gateLength));
+    ctx += buf;
 
-    // Walk the owner track for a downstream DrumGridPlugin (mirrors the
-    // findDownstreamDrumGrid logic in PolyStepSequencerUI).
-    auto* track = seq->getOwnerTrack();
-    if (track != nullptr) {
-        namespace te = tracktion::engine;
-        bool passedSelf = false;
-        daw::audio::DrumGridPlugin* drumGrid = nullptr;
-        daw::audio::DrumGridPlugin* fallback = nullptr;
-        for (auto* p : track->pluginList) {
-            if (p == seq) {
-                passedSelf = true;
-                continue;
-            }
-            auto* found = dynamic_cast<daw::audio::DrumGridPlugin*>(p);
-            if (found == nullptr) {
-                if (auto* rackInstance = dynamic_cast<te::RackInstance*>(p)) {
-                    if (rackInstance->type != nullptr) {
-                        for (auto* inner : rackInstance->type->getPlugins()) {
-                            found = dynamic_cast<daw::audio::DrumGridPlugin*>(inner);
-                            if (found != nullptr)
-                                break;
-                        }
-                    }
-                }
-            }
-            if (found != nullptr) {
-                if (passedSelf) {
-                    drumGrid = found;
-                    break;
-                }
-                if (fallback == nullptr)
-                    fallback = found;
-            }
-        }
-        if (drumGrid == nullptr && !passedSelf)
-            drumGrid = fallback;
-
-        if (drumGrid != nullptr && !drumGrid->getChains().empty()) {
-            ctx += "LANE MAP:\n";
-            for (const auto& chain : drumGrid->getChains()) {
-                if (chain == nullptr)
-                    continue;
-                ctx += "note " + std::to_string(chain->lowNote) + " = " +
-                       chain->name.toStdString() + "\n";
-            }
-        }
+    if (!context->laneNames.empty()) {
+        ctx += "LANE MAP:\n";
+        for (const auto& [note, name] : context->laneNames)
+            ctx += "note " + std::to_string(note) + " = " + name.toStdString() + "\n";
     }
 
     return ctx;
@@ -196,6 +146,8 @@ std::string buildPolyStepSequencerContext(const ChainNodePath& path) {
 // Poly Step Sequencer -- generate patterns from a prompt.
 class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
   public:
+    explicit PolyStepSequencerSoundDesignAgent(PluginApi* plugins) : plugins_(plugins) {}
+
     juce::String getUserCaveat() const override {
         return "note: generated pattern is a starting point - edit steps to taste.";
     }
@@ -203,6 +155,9 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
                                   llm::Conversation& conversation,
                                   TokenCallback onToken = {}) override {
+        if (plugins_ == nullptr)
+            return "(MagdaApi plugin operations are unavailable)";
+
         juce::ignoreUnused(conversation);  // pattern design is single-shot
         agent_.resetCancel();
         if (shouldStop_.load())
@@ -212,7 +167,7 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
         // generation. buildPolyStepSequencerContext is safe off the message
         // thread: getPlugin uses a ScopedLock and the chain/CachedValue reads
         // are stable value-copies while the edit is live.
-        const auto deviceContext = buildPolyStepSequencerContext(path);
+        const auto deviceContext = buildPolyStepSequencerContext(*plugins_, path);
 
         PolyStepSequencerAgent::GenerateResult result;
         if (onToken) {
@@ -234,7 +189,7 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
         // Apply must run on the message thread (TE ValueTree asserts it).
         auto& mm = *juce::MessageManager::getInstance();
         if (mm.isThisTheMessageThread())
-            return applyPolyStepSequencerPresetToPath(result.preset, path);
+            return applyPolyStepSequencerPresetToPath(*plugins_, result.preset, path);
 
         struct ApplyState {
             juce::String status;
@@ -242,8 +197,9 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
         };
         auto state = std::make_shared<ApplyState>();
         const auto preset = result.preset;
-        mm.callAsync([state, preset, path]() {
-            state->status = applyPolyStepSequencerPresetToPath(preset, path);
+        auto* plugins = plugins_;
+        mm.callAsync([state, preset, path, plugins]() {
+            state->status = applyPolyStepSequencerPresetToPath(*plugins, preset, path);
             state->done.signal();
         });
 
@@ -265,35 +221,31 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
 
   private:
     PolyStepSequencerAgent agent_;
+    PluginApi* plugins_ = nullptr;
 };
 
 // Build a device-context string for the mono Step Sequencer agent.
 // Reads the current numSteps/rate/swing/gateLength from the live plugin.
 // Thread-safe: getPlugin uses a ScopedLock; CachedValue reads are value-copies.
-std::string buildStepSequencerContext(const ChainNodePath& path) {
-    auto& tm = TrackManager::getInstance();
-    auto* engine = tm.getAudioEngine();
-    auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-    if (bridge == nullptr)
-        return {};
-
-    auto plugin = bridge->getPlugin(path);
-    auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
-    if (seq == nullptr)
+std::string buildStepSequencerContext(PluginApi& plugins, const ChainNodePath& path) {
+    const auto context = plugins.getStepSequencerContext(path);
+    if (!context)
         return {};
 
     char buf[128];
     std::snprintf(
         buf, sizeof(buf),
         "DEVICE CONTEXT:\ncurrentSettings: numSteps=%d, rate=%d, swing=%.2f, gateLength=%.2f\n",
-        seq->numSteps.get(), seq->rate.get(), static_cast<double>(seq->swing.get()),
-        static_cast<double>(seq->gateLength.get()));
+        context->numSteps, context->rate, static_cast<double>(context->swing),
+        static_cast<double>(context->gateLength));
     return buf;
 }
 
 // Mono Step Sequencer -- generate 303-style patterns from a prompt.
 class StepSequencerSoundDesignAgent : public SoundDesignAgent {
   public:
+    explicit StepSequencerSoundDesignAgent(PluginApi* plugins) : plugins_(plugins) {}
+
     juce::String getUserCaveat() const override {
         return "note: generated pattern is a starting point - edit steps to taste.";
     }
@@ -301,12 +253,15 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
                                   llm::Conversation& conversation,
                                   TokenCallback onToken = {}) override {
+        if (plugins_ == nullptr)
+            return "(MagdaApi plugin operations are unavailable)";
+
         juce::ignoreUnused(conversation);  // pattern design is single-shot
         agent_.resetCancel();
         if (shouldStop_.load())
             return "cancelled";
 
-        const auto deviceContext = buildStepSequencerContext(path);
+        const auto deviceContext = buildStepSequencerContext(*plugins_, path);
 
         StepSequencerAgent::GenerateResult result;
         if (onToken) {
@@ -328,7 +283,7 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
         // Apply must run on the message thread (TE ValueTree asserts it).
         auto& mm = *juce::MessageManager::getInstance();
         if (mm.isThisTheMessageThread())
-            return applyStepSequencerPresetToPath(result.preset, path);
+            return applyStepSequencerPresetToPath(*plugins_, result.preset, path);
 
         struct ApplyState {
             juce::String status;
@@ -336,8 +291,9 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
         };
         auto state = std::make_shared<ApplyState>();
         const auto preset = result.preset;
-        mm.callAsync([state, preset, path]() {
-            state->status = applyStepSequencerPresetToPath(preset, path);
+        auto* plugins = plugins_;
+        mm.callAsync([state, preset, path, plugins]() {
+            state->status = applyStepSequencerPresetToPath(*plugins, preset, path);
             state->done.signal();
         });
 
@@ -359,24 +315,27 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
 
   private:
     StepSequencerAgent agent_;
+    PluginApi* plugins_ = nullptr;
 };
 
 }  // namespace
 
-std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId) {
+std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId,
+                                                            MagdaApi* api) {
+    auto* plugins = api != nullptr ? &api->plugins() : nullptr;
     switch (getInternalPluginCapabilities(pluginId).soundDesignAgent) {
         // 4OSC keeps its bespoke agent for now — its wave/filter/voice/FX
         // controls are ValueTree properties, not automatable parameters, so it
         // can't yet go through the generic path. TODO: make those controls
         // automatable and retire FourOscSoundDesignAgent / FourOscAgent.
         case SoundDesignAgentKind::FourOsc:
-            return std::make_unique<FourOscSoundDesignAgent>();
+            return std::make_unique<FourOscSoundDesignAgent>(plugins);
         // The sequencers are MIDI generators with pattern-shaped output, not
         // parameter presets — they stay on their own bespoke agents.
         case SoundDesignAgentKind::PolyStepSequencer:
-            return std::make_unique<PolyStepSequencerSoundDesignAgent>();
+            return std::make_unique<PolyStepSequencerSoundDesignAgent>(plugins);
         case SoundDesignAgentKind::StepSequencer:
-            return std::make_unique<StepSequencerSoundDesignAgent>();
+            return std::make_unique<StepSequencerSoundDesignAgent>(plugins);
         // Every other MAGDA sound generator (compiled Faust synths + native
         // Mutable ports). The only per-device inputs are the display name +
         // description used to prime the LLM.
@@ -403,8 +362,9 @@ bool isSoundDesignSupported(const juce::String& pluginId) {
     return getInternalPluginCapabilities(pluginId).supportsSoundDesign();
 }
 
-std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const DeviceInfo& device) {
-    if (auto internal = createSoundDesignAgentFor(device.pluginId))
+std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const DeviceInfo& device,
+                                                            MagdaApi* api) {
+    if (auto internal = createSoundDesignAgentFor(device.pluginId, api))
         return internal;
 
     if (device.format == PluginFormat::Internal || device.aiSoundDesignerParameters.empty())

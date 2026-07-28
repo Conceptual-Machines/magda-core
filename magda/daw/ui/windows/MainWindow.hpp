@@ -21,7 +21,6 @@
 
 namespace magda {
 
-class TracktionEngineWrapper;
 class TransportPanel;
 class ThemeFileWatcher;
 
@@ -106,10 +105,9 @@ class MainWindow : public juce::DocumentWindow,
     void setupMenuCallbacks();
 
     // Export helper methods
-    void performExport(const ExportAudioDialog::Settings& settings, TracktionEngineWrapper* engine);
+    void performExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine);
     // The actual chooser + render flow, after performExport's pre-checks pass.
-    void launchAudioExport(const ExportAudioDialog::Settings& settings,
-                           TracktionEngineWrapper* engine);
+    void launchAudioExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine);
     void performMidiExport(const ExportMidiDialog::Settings& settings);
     juce::String getFileExtensionForFormat(const juce::String& format) const;
     int getBitDepthForFormat(const juce::String& format) const;

@@ -208,7 +208,7 @@ class AIChatConsoleContent : public PanelContent,
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
     // Live MagdaApi backing the agent layer. Normally borrowed from
-    // TracktionEngineWrapper (the engine outlives this panel). When the
+    // application audio engine (which outlives this panel). When the
     // engine is unreachable (headless tests, init failure), we fall back
     // to owning a fresh MagdaApiLive in ownedApi_ so the pointer is never
     // null and downstream agents / executors can dereference unconditionally.

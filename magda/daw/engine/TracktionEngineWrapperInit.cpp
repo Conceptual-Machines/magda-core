@@ -32,6 +32,10 @@ TracktionEngineWrapper::~TracktionEngineWrapper() {
     shutdown();
 }
 
+std::unique_ptr<AudioEngine> createDefaultAudioEngine() {
+    return std::make_unique<TracktionEngineWrapper>();
+}
+
 bool TracktionEngineWrapper::isHeadlessRuntime() const {
     if (forceHeadless_)
         return true;
@@ -74,23 +78,22 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // wants a flat string; format the phase here.
     if (!isHeadlessRuntime() && Config::getInstance().getScanPluginsOnStartup()) {
         auto splashStatus = onPluginScanStatus;
-        detectNewPlugins(
-            [splashStatus](IncrementalScanPhase phase, const juce::String& currentPlugin) {
-                if (!splashStatus)
-                    return;
-                switch (phase) {
-                    case IncrementalScanPhase::Discovering:
-                        splashStatus("Checking for new plugins...");
-                        break;
-                    case IncrementalScanPhase::UpToDate:
-                        splashStatus("Plugins up to date");
-                        break;
-                    case IncrementalScanPhase::Scanning:
-                        splashStatus("Scanning: " +
-                                     juce::File(currentPlugin).getFileNameWithoutExtension());
-                        break;
-                }
-            });
+        detectNewPlugins([splashStatus](PluginScanPhase phase, const juce::String& currentPlugin) {
+            if (!splashStatus)
+                return;
+            switch (phase) {
+                case PluginScanPhase::Discovering:
+                    splashStatus("Checking for new plugins...");
+                    break;
+                case PluginScanPhase::UpToDate:
+                    splashStatus("Plugins up to date");
+                    break;
+                case PluginScanPhase::Scanning:
+                    splashStatus("Scanning: " +
+                                 juce::File(currentPlugin).getFileNameWithoutExtension());
+                    break;
+            }
+        });
     }
 
     // Log registered plugin formats
@@ -383,7 +386,6 @@ void TracktionEngineWrapper::createEditAndBridges() {
     }
 
     // Configure AudioBridge
-    audioBridge_->setEngineWrapper(this);
     audioBridge_->enableAllMidiInputDevices();
 
     // Wire up state capture before project save

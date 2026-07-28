@@ -7,6 +7,8 @@
 
 namespace magda {
 
+class MagdaApi;
+
 /**
  * @brief Per-device "design me a preset" agent interface.
  *
@@ -37,13 +39,15 @@ class SoundDesignAgent : public DeviceAIAgent {
  * "4osc"). The returned agent is owned by the caller; create one
  * per design session so cancel state doesn't leak.
  */
-std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId);
+std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const juce::String& pluginId,
+                                                            MagdaApi* api = nullptr);
 
 /**
  * Device-aware factory. External plugins get the generic introspection agent
  * only when the user has explicitly selected parameters for it.
  */
-std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const DeviceInfo& device);
+std::unique_ptr<SoundDesignAgent> createSoundDesignAgentFor(const DeviceInfo& device,
+                                                            MagdaApi* api = nullptr);
 
 /**
  * Quick check used by non-UI callers. UI surfaces read the shared capability

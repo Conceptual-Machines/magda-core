@@ -24,7 +24,6 @@
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "project/MediaCollector.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -366,8 +365,8 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onCollectFiles = [this]() {
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        if (!engine || !engine->getEdit()) {
+        auto* engine = mainComponent->getAudioEngine();
+        if (!engine || !engine->hasActiveEdit()) {
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon, tr("collect.title"), tr("collect.alert.no_edit"));
             return;
@@ -392,8 +391,8 @@ void MainWindow::setupMenuCallbacks() {
             return;  // Export already in progress
         }
 
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
-        if (!engine || !engine->getEdit()) {
+        auto* engine = mainComponent->getAudioEngine();
+        if (!engine || !engine->hasActiveEdit()) {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    tr("dialogs.export_audio"),
                                                    tr("dialogs.error.export_no_edit"));
@@ -419,7 +418,7 @@ void MainWindow::setupMenuCallbacks() {
         if (fileChooser_ != nullptr)
             return;
 
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        auto* engine = mainComponent->getAudioEngine();
         bool hasLoopRegion = engine && engine->isLooping();
 
         ExportMidiDialog::showDialog(
@@ -639,15 +638,7 @@ void MainWindow::setupMenuCallbacks() {
         }
         DBG("deviceManager valid - showing dialog");
 
-        // Pass TE DeviceManager so channel preferences operate at the TE level
-        tracktion::DeviceManager* teDeviceManager = nullptr;
-        if (auto* teEngine =
-                dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine())) {
-            if (auto* tracktionEngine = teEngine->getEngine()) {
-                teDeviceManager = &tracktionEngine->getDeviceManager();
-            }
-        }
-        AudioSettingsDialog::showDialog(this, deviceManager, teDeviceManager);
+        AudioSettingsDialog::showDialog(this, engine);
     };
 
     // View menu callbacks
@@ -963,7 +954,7 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onPluginSettings = [this]() {
         if (!mainComponent)
             return;
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        auto* engine = mainComponent->getAudioEngine();
         if (!engine)
             return;
         PluginSettingsDialog::showDialog(engine, this);

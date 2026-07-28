@@ -11,7 +11,7 @@
 #include "core/Config.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
 
@@ -972,7 +972,6 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
 
     DBG("Scanning parameters for " << uniqueId);
 
-    // Get access to the audio engine to load the plugin
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (!audioEngine) {
         DBG("No audio engine available");
@@ -980,166 +979,28 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
         return;
     }
 
-    // Get the TracktionEngineWrapper to access KnownPluginList
-    auto* tracktionEngine = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
-    if (!tracktionEngine) {
-        DBG("Audio engine is not TracktionEngineWrapper");
-        buildMockParameters();
-        return;
-    }
-
-    // Find the plugin description in the known plugin list (copy by value —
-    // createPluginInstance can modify the list, invalidating pointers into it)
-    auto& knownPlugins = tracktionEngine->getKnownPluginList();
-    juce::PluginDescription pluginDesc;
-    bool found = false;
-
-    for (const auto& desc : knownPlugins.getTypes()) {
-        if (desc.createIdentifierString() == uniqueId) {
-            pluginDesc = desc;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        DBG("Plugin description not found for " << uniqueId);
-        buildMockParameters();
-        return;
-    }
-
-    // Instantiate the plugin temporarily to scan its parameters
-    juce::String errorMessage;
-    auto& formatManager = tracktionEngine->getEdit()->engine.getPluginManager().pluginFormatManager;
-
-    auto instance = formatManager.createPluginInstance(pluginDesc, 44100.0, 512, errorMessage);
-
-    if (!instance) {
-        DBG("Failed to instantiate plugin: " << errorMessage);
-        buildMockParameters();
-        return;
-    }
-
-    // Scan all parameters from the plugin
     parameters_.clear();
     scanInputs_.clear();
-    int numParams = instance->getParameters().size();
-
-    // Sample points for display text extraction
-    const float samplePoints[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-
-    for (int i = 0; i < numParams; ++i) {
-        auto* param = instance->getParameters()[i];
-        if (!param)
-            continue;
-
-        // Match TE's ExternalPlugin filtering: only include automatable params
-        if (!param->isAutomatable())
-            continue;
-
-        auto paramName = param->getName(128);
-        if (paramName.isEmpty())
-            continue;
-
+    for (auto& scanned : audioEngine->scanPluginParameters(uniqueId, false)) {
         MockParameterInfo info;
-        info.name = paramName;
-        info.defaultValue = param->getDefaultValue();
-        info.isVisible = true;  // All visible by default
-        // Plugin labels can be messy (e.g. "% [-96.0dB...6.0dB]").
-        // Only keep short, clean labels as the unit; discard the rest.
-        auto rawLabel = param->getLabel().trim();
-        if (rawLabel.length() <= 6 && !rawLabel.contains("[") && !rawLabel.contains("("))
-            info.unit = rawLabel.isEmpty()
-                            ? magda::technicalText(magda::TechnicalTextToken::Percent)
-                            : rawLabel;
-        else
-            info.unit = magda::technicalText(magda::TechnicalTextToken::Percent);
-
-        // Build scan input for detection
-        magda::ParameterScanInput scanInput;
-        scanInput.paramIndex = i;
-        scanInput.name = info.name;
-        scanInput.label = rawLabel;  // Pass raw label to detector for heuristics
-
-        // Try to get parameter range if it's a RangedAudioParameter
-        if (auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(param)) {
-            auto range = rangedParam->getNormalisableRange();
-            info.rangeMin = range.start;
-            info.rangeMax = range.end;
-            info.rangeCenter = (range.start + range.end) / 2.0f;
-            scanInput.rangeMin = range.start;
-            scanInput.rangeMax = range.end;
-        } else {
-            info.rangeMin = 0.0f;
-            info.rangeMax = 1.0f;
-            info.rangeCenter = 0.5f;
-            scanInput.rangeMin = 0.0f;
-            scanInput.rangeMax = 1.0f;
-        }
-
-        // Get state count for discrete detection
-        scanInput.stateCount = param->getNumSteps();
-        // JUCE returns 0x7fffffff for continuous params
-        if (scanInput.stateCount > 1000)
-            scanInput.stateCount = 0;
-
-        // Collect display texts for detection (sampled) and full value table for display.
-        if (scanInput.stateCount > 0 && scanInput.stateCount <= 1000) {
-            // Discrete: get ALL state labels
-            for (int s = 0; s < scanInput.stateCount; ++s) {
-                float norm =
-                    (scanInput.stateCount == 1)
-                        ? 0.0f
-                        : static_cast<float>(s) / static_cast<float>(scanInput.stateCount - 1);
-                auto text = param->getText(norm, 128);
-                scanInput.displayTexts.push_back(text);
-            }
-            info.valueTable = scanInput.displayTexts;
-        } else {
-            // Sample 5 points for detection
-            for (auto sp : samplePoints) {
-                scanInput.displayTexts.push_back(param->getText(sp, 128));
-            }
-
-            // If all sampled texts look like labels (start with a letter),
-            // this is likely a discrete param that JUCE reports as continuous.
-            // Sweep to discover all unique choices.
-            bool allLabels = true;
-            for (const auto& t : scanInput.displayTexts) {
-                auto trimmed = t.trim();
-                if (trimmed.isEmpty() || !((trimmed[0] >= 'A' && trimmed[0] <= 'Z') ||
-                                           (trimmed[0] >= 'a' && trimmed[0] <= 'z'))) {
-                    allLabels = false;
-                    break;
-                }
-            }
-            if (allLabels) {
-                scanInput.displayTexts.clear();
-                std::vector<juce::String> seen;
-                for (int s = 0; s <= 1000; ++s) {
-                    float norm = static_cast<float>(s) / 1000.0f;
-                    auto text = param->getText(norm, 128);
-                    if (seen.empty() || seen.back() != text) {
-                        seen.push_back(text);
-                        scanInput.displayTexts.push_back(text);
-                    }
-                }
-                info.valueTable = scanInput.displayTexts;
-            } else {
-                // Continuous: collect full value table (every 0.1% step)
-                const int tableSize = 1001;
-                info.valueTable.reserve(tableSize);
-                for (int s = 0; s < tableSize; ++s) {
-                    float norm = static_cast<float>(s) / static_cast<float>(tableSize - 1);
-                    info.valueTable.push_back(param->getText(norm, 128));
-                }
-            }
-        }
-
-        parameters_.push_back(info);
-        scanInputs_.push_back(std::move(scanInput));
+        info.name = scanned.name;
+        info.defaultValue = scanned.defaultValue;
+        info.isVisible = true;
+        info.unit = scanned.unit;
+        info.rangeMin = scanned.rangeMin;
+        info.rangeMax = scanned.rangeMax;
+        info.rangeCenter = scanned.rangeCenter;
+        info.scale = scanned.scale;
+        info.valueTable = std::move(scanned.valueTable);
+        parameters_.push_back(std::move(info));
+        scanInputs_.push_back(std::move(scanned.scanInput));
     }
 
+    if (parameters_.empty()) {
+        DBG("Plugin parameter scan failed for " << uniqueId);
+        buildMockParameters();
+        return;
+    }
     DBG("Scanned " << parameters_.size() << " parameters");
 
     // Cache the results for future use
@@ -1148,98 +1009,24 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
 
 bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId) {
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* tracktionEngine = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
-    if (tracktionEngine == nullptr) {
-        DBG("No TracktionEngineWrapper for internal scan");
+    if (audioEngine == nullptr)
         return false;
-    }
-
-    auto* edit = tracktionEngine->getEdit();
-    if (edit == nullptr) {
-        DBG("No edit for internal scan");
-        return false;
-    }
-
-    // Spin up a throwaway instance just to read its parameter list. It lives in
-    // the edit's plugin cache (never added to a track) and is released when this
-    // Ptr drops at the end of the scan. Internal-registry devices go through
-    // their spec (which handles short ids / fresh-state quirks); compiled-Faust
-    // devices instantiate by xmlTypeName via the engine's createCustomPlugin.
-    namespace te = tracktion::engine;
-    te::Plugin::Ptr plugin;
-    if (const auto* internalSpec = magda::daw::audio::findInternalPluginSpec(pluginId)) {
-        plugin = magda::daw::audio::createInternalPluginFromSpec(*internalSpec, *edit);
-    } else {
-        // Compiled-Faust devices: instantiate from a typed PLUGIN ValueTree
-        // (the bare-string createNewPlugin overload doesn't route custom types).
-        juce::ValueTree pluginState(te::IDs::PLUGIN);
-        pluginState.setProperty(te::IDs::type, pluginId, nullptr);
-        plugin = edit->getPluginCache().createNewPlugin(pluginState);
-    }
-
-    if (plugin == nullptr) {
-        DBG("Failed to create plugin for scan: " << pluginId);
-        return false;
-    }
 
     parameters_.clear();
     scanInputs_.clear();
-
-    const float samplePoints[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-
-    auto teParams = plugin->getAutomatableParameters();
-    for (int i = 0; i < teParams.size(); ++i) {
-        auto* param = teParams[i];
-        if (param == nullptr)
-            continue;
-
-        auto name = param->getParameterName();
-        if (name.isEmpty())
-            continue;
-
-        const auto range = param->getValueRange();
-        const float rangeMin = range.getStart();
-        const float rangeMax = range.getEnd();
-
+    for (auto& scanned : audioEngine->scanPluginParameters(pluginId, true)) {
         MockParameterInfo info;
-        info.name = name;
-        info.isVisible = true;  // unused for internal devices (Visible col hidden)
-        info.defaultValue = param->getDefaultValue().value_or(rangeMin);
-        info.rangeMin = rangeMin;
-        info.rangeMax = rangeMax;
-        info.rangeCenter = (rangeMin + rangeMax) * 0.5f;
-        info.unit = magda::technicalText(
-            magda::TechnicalTextToken::Percent);  // Detect can refine units/scale from the display
-                                                  // texts
-
-        const int numStates = param->getNumberOfStates();
-        if (numStates == 2)
-            info.scale = magda::ParameterScale::Boolean;
-        else if (numStates > 0 && numStates <= 12)
-            info.scale = magda::ParameterScale::Discrete;
-        else
-            info.scale = magda::ParameterScale::Linear;
-
-        magda::ParameterScanInput scanInput;
-        scanInput.paramIndex = i;
-        scanInput.name = name;
-        scanInput.label = param->getLabel();
-        scanInput.rangeMin = rangeMin;
-        scanInput.rangeMax = rangeMax;
-        scanInput.stateCount = (numStates > 1 && numStates <= 1000) ? numStates : 0;
-
-        // Sample display texts so Detect can infer real units/scales. TE's
-        // valueToString expects a plugin-native (raw) value.
-        for (float sp : samplePoints) {
-            const float raw = rangeMin + (rangeMax - rangeMin) * sp;
-            scanInput.displayTexts.push_back(param->valueToString(raw));
-        }
-        if (info.scale == magda::ParameterScale::Discrete ||
-            info.scale == magda::ParameterScale::Boolean)
-            info.valueTable = scanInput.displayTexts;
-
+        info.name = scanned.name;
+        info.isVisible = true;
+        info.defaultValue = scanned.defaultValue;
+        info.rangeMin = scanned.rangeMin;
+        info.rangeMax = scanned.rangeMax;
+        info.rangeCenter = scanned.rangeCenter;
+        info.unit = scanned.unit;
+        info.scale = scanned.scale;
+        info.valueTable = std::move(scanned.valueTable);
         parameters_.push_back(std::move(info));
-        scanInputs_.push_back(std::move(scanInput));
+        scanInputs_.push_back(std::move(scanned.scanInput));
     }
 
     DBG("Scanned " << parameters_.size() << " internal params for " << pluginId);

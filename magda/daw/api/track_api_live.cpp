@@ -136,8 +136,4 @@ const DeviceInfo* TrackApiLive::getPrimaryInstrument(TrackId trackId) const {
     return TrackManager::getInstance().getPrimaryInstrument(trackId);
 }
 
-AudioEngine* TrackApiLive::getAudioEngine() const {
-    return TrackManager::getInstance().getAudioEngine();
-}
-
 }  // namespace magda

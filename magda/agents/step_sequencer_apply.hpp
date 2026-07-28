@@ -7,6 +7,8 @@
 
 namespace magda {
 
+class PluginApi;
+
 /**
  * @brief Apply a parsed StepSequencer preset to a specific device path.
  *
@@ -22,7 +24,8 @@ namespace magda {
  * an error string starting with "()" if the path doesn't resolve to a
  * StepSequencerPlugin.
  */
-juce::String applyStepSequencerPresetToPath(const StepSequencerAgent::Preset& preset,
+juce::String applyStepSequencerPresetToPath(PluginApi& plugins,
+                                            const StepSequencerAgent::Preset& preset,
                                             const ChainNodePath& path);
 
 }  // namespace magda

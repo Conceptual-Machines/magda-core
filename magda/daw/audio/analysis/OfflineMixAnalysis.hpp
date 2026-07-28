@@ -13,7 +13,7 @@
 
 namespace magda {
 
-class TracktionEngineWrapper;
+class AudioEngine;
 
 namespace daw::audio {
 
@@ -88,7 +88,7 @@ class OfflineMixAnalysis {
      * is called synchronously with an error and a null token is returned.
      * onMeasured (optional) delivers the measured data on success.
      */
-    static CancelToken start(TracktionEngineWrapper& engine, Request request, ProgressFn onProgress,
+    static CancelToken start(AudioEngine& engine, Request request, ProgressFn onProgress,
                              CompletionFn onComplete, MeasuredFn onMeasured = {});
 };
 

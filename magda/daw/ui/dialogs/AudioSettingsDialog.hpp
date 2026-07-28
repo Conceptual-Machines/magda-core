@@ -2,9 +2,10 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 namespace magda {
+
+class AudioEngine;
 
 /**
  * Custom channel selector that shows both stereo pairs and individual mono channels
@@ -13,7 +14,7 @@ namespace magda {
 class CustomChannelSelector : public juce::Component {
   public:
     CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput,
-                          tracktion::DeviceManager* teDeviceManager = nullptr);
+                          AudioEngine* audioEngine);
     ~CustomChannelSelector() override;
 
     void resized() override;
@@ -26,7 +27,7 @@ class CustomChannelSelector : public juce::Component {
     void refreshChannelStates();
 
     juce::AudioDeviceManager* deviceManager_;
-    tracktion::DeviceManager* teDeviceManager_;
+    AudioEngine* audioEngine_;
     bool isInput_;
 
     void onPreviewToggled(int startChannel);
@@ -52,8 +53,7 @@ class AudioSettingsDialog : public juce::Component,
                             private juce::ChangeListener,
                             private juce::ComboBox::Listener {
   public:
-    explicit AudioSettingsDialog(juce::AudioDeviceManager* deviceManager,
-                                 tracktion::DeviceManager* teDeviceManager = nullptr);
+    explicit AudioSettingsDialog(AudioEngine* audioEngine);
     ~AudioSettingsDialog() override;
 
     void resized() override;
@@ -65,8 +65,7 @@ class AudioSettingsDialog : public juce::Component,
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
 
     // Static method to show as modal dialog
-    static void showDialog(juce::Component* parent, juce::AudioDeviceManager* deviceManager,
-                           tracktion::DeviceManager* teDeviceManager = nullptr);
+    static void showDialog(juce::Component* parent, AudioEngine* audioEngine);
 
   private:
     void populateDeviceLists();
@@ -96,7 +95,7 @@ class AudioSettingsDialog : public juce::Component,
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;
     juce::AudioDeviceManager* deviceManager_;
-    tracktion::DeviceManager* teDeviceManager_;
+    AudioEngine* audioEngine_;
     juce::ComboBox* driverTypeComboBox_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)

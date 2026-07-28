@@ -1,5 +1,7 @@
 #include "TempoSequenceRippleCommand.hpp"
 
+#include "TracktionEngineWrapper.hpp"
+
 namespace magda {
 
 namespace te = tracktion;
@@ -112,6 +114,26 @@ void TempoSequenceRippleCommand::undo() {
 
 juce::String TempoSequenceRippleCommand::getDescription() const {
     return "Ripple Tempo Sequence";
+}
+
+std::unique_ptr<UndoableCommand> TracktionEngineWrapper::createTempoSequenceRippleCommand(
+    TempoSequenceRippleMode mode, double startBeat, double endBeat) {
+    if (!currentEdit_)
+        return nullptr;
+    TempoSequenceRippleCommand::Mode commandMode;
+    switch (mode) {
+        case TempoSequenceRippleMode::Insert:
+            commandMode = TempoSequenceRippleCommand::Mode::Insert;
+            break;
+        case TempoSequenceRippleMode::Delete:
+            commandMode = TempoSequenceRippleCommand::Mode::Delete;
+            break;
+        case TempoSequenceRippleMode::Duplicate:
+            commandMode = TempoSequenceRippleCommand::Mode::Duplicate;
+            break;
+    }
+    return std::make_unique<TempoSequenceRippleCommand>(*currentEdit_, commandMode, startBeat,
+                                                        endBeat);
 }
 
 }  // namespace magda

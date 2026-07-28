@@ -10,7 +10,6 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
 namespace {

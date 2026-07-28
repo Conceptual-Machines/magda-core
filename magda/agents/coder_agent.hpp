@@ -7,6 +7,7 @@
 namespace magda {
 
 struct DeviceInfo;
+class MagdaApi;
 
 /**
  * @brief Per-device "write me code" agent interface.
@@ -30,7 +31,8 @@ class CoderAgent : public DeviceAIAgent {};
  * owned by the caller; create one per session so cancel state doesn't
  * leak.
  */
-std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId);
+std::unique_ptr<CoderAgent> createCoderAgentFor(const juce::String& pluginId,
+                                                MagdaApi* api = nullptr);
 
 /// Quick check for non-UI callers. UI surfaces read the shared capability
 /// catalog directly; this returns the same declarative state.
@@ -41,8 +43,10 @@ bool isCoderSupported(const juce::String& pluginId);
  * `pluginId` — sound-design first, then coder. Use this from generic
  * UI (the AI side panel) that doesn't care which kind of agent runs.
  */
-std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId);
-std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device);
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const juce::String& pluginId,
+                                                      MagdaApi* api = nullptr);
+std::unique_ptr<DeviceAIAgent> createDeviceAIAgentFor(const DeviceInfo& device,
+                                                      MagdaApi* api = nullptr);
 
 /// True iff any kind of DeviceAIAgent (sound design OR coder) exists
 /// for `pluginId`.

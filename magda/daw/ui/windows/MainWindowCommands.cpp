@@ -21,8 +21,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
-#include "engine/TempoSequenceRippleCommand.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -72,12 +71,11 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
 // edit. These are edit-wide, so callers gate this to all-tracks (global) ops.
 // Must be enqueued AFTER the clip-shifting commands in the compound op so the
 // remapper snapshot sees clips at their final beats.
-void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleCommand::Mode mode,
-                         double startBeat, double endBeat) {
-    if (auto* eng = dynamic_cast<TracktionEngineWrapper*>(audioEngine))
-        if (auto* ed = eng->getEdit())
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<TempoSequenceRippleCommand>(*ed, mode, startBeat, endBeat));
+void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleMode mode, double startBeat,
+                         double endBeat) {
+    if (audioEngine)
+        if (auto command = audioEngine->createTempoSequenceRippleCommand(mode, startBeat, endBeat))
+            UndoManager::getInstance().executeCommand(std::move(command));
 }
 
 }  // namespace
@@ -1088,8 +1086,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Insert, startBeat, sel.endBeats));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Insert,
-                                    startBeat, sel.endBeats);
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Insert, startBeat,
+                                    sel.endBeats);
             }
             UndoManager::getInstance().endCompoundOperation();
             return true;
@@ -1146,8 +1144,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Duplicate,
-                                    startBeat, endBeat);
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Duplicate, startBeat,
+                                    endBeat);
             }
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1210,8 +1208,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Loop ops are global, so markers and tempo/pitch always ripple.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Duplicate,
-                                startBeat, endBeat);
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Duplicate, startBeat,
+                                endBeat);
 
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1268,8 +1266,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (rippleMarkers) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Delete,
-                                    startBeat, endBeat);
+                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Delete, startBeat,
+                                    endBeat);
                 UndoManager::getInstance().endCompoundOperation();
             }
             // Collapse the selection to the deletion point.
@@ -1310,8 +1308,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 std::make_unique<RippleDeleteRangeCommand>(startBeat, endBeat, allTracks, bpm));
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Delete,
-                                startBeat, endBeat);
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Delete, startBeat,
+                                endBeat);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1348,8 +1346,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Paste ripples all tracks, so markers and tempo/pitch shift too.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Insert, targetBeat, targetBeat + span));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleCommand::Mode::Insert,
-                                targetBeat, targetBeat + span);
+            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Insert, targetBeat,
+                                targetBeat + span);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1544,7 +1542,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
 
         case renderClip: {
-            auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            auto* engine = getAudioEngine();
             if (!engine || selectedClips.empty())
                 return true;
 
@@ -1580,7 +1578,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case renderTimeSelection: {
-            auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+            auto* engine = getAudioEngine();
             if (!engine || !mainView)
                 return true;
 

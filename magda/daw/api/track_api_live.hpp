@@ -44,8 +44,6 @@ class TrackApiLive : public TrackApi {
     void setChainName(TrackId trackId, RackId rackId, ChainId chainId,
                       const juce::String& name) override;
     const DeviceInfo* getPrimaryInstrument(TrackId trackId) const override;
-
-    AudioEngine* getAudioEngine() const override;
 };
 
 }  // namespace magda

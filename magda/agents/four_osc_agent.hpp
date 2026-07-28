@@ -36,9 +36,9 @@ class FourOscAgent {
         // left at the device's current value when applied.
         std::map<std::string, float> params;
         // Per-oscillator wave shape (osc number 1..4 → name). Stored
-        // separately because wave shape is a ValueTree property on
-        // te::FourOscPlugin, not an AutomatableParameter, so it goes
-        // through a different write path than `params`. Allowed values:
+        // separately because wave shape is device state rather than an
+        // automatable parameter, so it goes through a different write path
+        // than `params`. Allowed values:
         //   "none" "sine" "triangle" "saw_up" "saw_down" "square" "noise"
         std::map<int, std::string> waves;
         // Filter type (also a ValueTree property, not a parameter). One of

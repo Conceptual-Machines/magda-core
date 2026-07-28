@@ -330,6 +330,13 @@ bool TracktionEngineWrapper::isLooping() const {
     return false;
 }
 
+std::pair<double, double> TracktionEngineWrapper::getLoopRegionSeconds() const {
+    if (!currentEdit_)
+        return {};
+    const auto range = currentEdit_->getTransport().getLoopRange();
+    return {range.getStart().inSeconds(), range.getEnd().inSeconds()};
+}
+
 bool TracktionEngineWrapper::justStarted() const {
     return justStarted_;
 }

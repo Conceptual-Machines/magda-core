@@ -4,8 +4,10 @@
 #include "automation_api_live.hpp"
 #include "clip_api_live.hpp"
 #include "focused_api_live.hpp"
+#include "groove_api_live.hpp"
 #include "magda_api.hpp"
 #include "midi_api_live.hpp"
+#include "plugin_api_live.hpp"
 #include "project_api_live.hpp"
 #include "selection_api_live.hpp"
 #include "session_api_live.hpp"
@@ -52,6 +54,12 @@ class MagdaApiLive : public MagdaApi {
     }
     FocusedApi& focused() override {
         return focused_;
+    }
+    PluginApi& plugins() override {
+        return plugins_;
+    }
+    GrooveApi& grooves() override {
+        return grooves_;
     }
 
     /** Wire the MidiBridge into the live MidiApi. Owned externally by the
@@ -104,6 +112,8 @@ class MagdaApiLive : public MagdaApi {
     MidiApiLive midi_;
     TransportApiLive transport_;
     FocusedApiLive focused_;
+    PluginApiLive plugins_;
+    GrooveApiLive grooves_;
 };
 
 }  // namespace magda

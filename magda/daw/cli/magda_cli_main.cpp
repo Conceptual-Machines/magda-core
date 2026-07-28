@@ -2,10 +2,6 @@
 #include <juce_events/juce_events.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
-// clang-format off
-#include <tracktion_engine/tracktion_engine.h>
-// clang-format on
-
 #include <atomic>
 #include <cmath>
 #include <functional>
@@ -22,15 +18,13 @@
 #include "api/track_api.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/OfflineRenderHelper.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectInfo.hpp"
 #include "project/ProjectManager.hpp"
 #include "version.hpp"
 
 namespace {
-
-namespace te = tracktion;
 
 void printUsage(std::ostream& out);
 
@@ -49,8 +43,9 @@ juce::File defaultOutputFor(const juce::File& input) {
 class HeadlessEngineSession {
   public:
     bool initialize() {
-        engine_ = std::make_unique<magda::TracktionEngineWrapper>();
-        engine_->setForceHeadless(true);
+        auto engine = std::make_unique<magda::TracktionEngineWrapper>();
+        engine->setForceHeadless(true);
+        engine_ = std::move(engine);
         if (!engine_->initialize()) {
             error_ = "Failed to initialize MAGDA engine";
             engine_.reset();
@@ -59,7 +54,7 @@ class HeadlessEngineSession {
         return true;
     }
 
-    magda::TracktionEngineWrapper& engine() {
+    magda::AudioEngine& engine() {
         return *engine_;
     }
 
@@ -68,11 +63,11 @@ class HeadlessEngineSession {
     }
 
   private:
-    std::unique_ptr<magda::TracktionEngineWrapper> engine_;
+    std::unique_ptr<magda::AudioEngine> engine_;
     juce::String error_;
 };
 
-bool restoreProjectTiming(magda::TracktionEngineWrapper& engine, const magda::ProjectInfo& info) {
+bool restoreProjectTiming(magda::AudioEngine& engine, const magda::ProjectInfo& info) {
     engine.setTempo(info.tempo);
     engine.setTimeSignature(info.timeSignatureNumerator, info.timeSignatureDenominator);
     return true;
@@ -161,7 +156,7 @@ struct CommandResult {
 
 class CommandDispatcher {
   public:
-    explicit CommandDispatcher(magda::TracktionEngineWrapper& engine) : engine_(engine) {}
+    explicit CommandDispatcher(magda::AudioEngine& engine) : engine_(engine) {}
 
     struct CommandSpec {
         const char* name;
@@ -593,7 +588,7 @@ class CommandDispatcher {
         return {false, error};
     }
 
-    magda::TracktionEngineWrapper& engine_;
+    magda::AudioEngine& engine_;
     juce::String lastParseError_;
 };
 
@@ -677,8 +672,8 @@ std::optional<double> parseRenderTime(const juce::String& text, const magda::Pro
     return parseDouble(token);
 }
 
-double defaultRenderEndSeconds(te::Edit& edit, const magda::ProjectInfo& info) {
-    const auto editLength = edit.getLength().inSeconds();
+double defaultRenderEndSeconds(magda::AudioEngine& engine, const magda::ProjectInfo& info) {
+    const auto editLength = engine.getEditLengthSeconds();
     if (editLength > 0.0)
         return editLength;
 
@@ -702,9 +697,8 @@ bool prepareOutputFile(const juce::File& file) {
     return true;
 }
 
-bool renderWav(magda::TracktionEngineWrapper& engine, const RenderOptions& options) {
-    auto* edit = engine.getEdit();
-    if (edit == nullptr) {
+bool renderWav(magda::AudioEngine& engine, const RenderOptions& options) {
+    if (!engine.hasActiveEdit()) {
         std::cerr << "No edit is loaded for rendering\n";
         return false;
     }
@@ -715,60 +709,34 @@ bool renderWav(magda::TracktionEngineWrapper& engine, const RenderOptions& optio
     const auto& projectInfo = magda::ProjectManager::getInstance().getCurrentProjectInfo();
     const double startSeconds = options.fromSeconds.value_or(0.0);
     const double endSeconds =
-        options.toSeconds.value_or(defaultRenderEndSeconds(*edit, projectInfo));
+        options.toSeconds.value_or(defaultRenderEndSeconds(engine, projectInfo));
     if (startSeconds < 0.0 || endSeconds <= startSeconds) {
         std::cerr << "Render range must have --to greater than --from\n";
         return false;
     }
 
-    auto& transport = edit->getTransport();
-    te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
-    magda::prepareEditForOfflineRender(*edit);
-    magda::preparePluginsForOfflineRender(engine);
-
-    struct RenderGuard {
-        magda::TracktionEngineWrapper& engine;
-        te::Edit& edit;
-        ~RenderGuard() {
-            magda::restorePluginsAfterOfflineRender(engine);
-            edit.getTransport().ensureContextAllocated();
-            engine.setOfflineRenderActive(false);
-        }
-    } guard{engine, *edit};
-
-    engine.setOfflineRenderActive(true);
-
-    auto params = magda::makeOfflineRenderParameters(
-        *edit, {.destFile = options.wavOutput,
-                .audioFormat = engine.getEngine()->getAudioFileFormatManager().getWavFormat(),
-                .bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth),
-                .sampleRate = options.sampleRate.value_or(projectInfo.sampleRate),
-                .blockSize = 512,
-                .shouldNormalise = false,
-                .useMasterPlugins = true,
-                .usePlugins = true,
-                .checkNodesForAudio = false,
-                .realTimeRender = false,
-                .time = te::TimeRange(te::TimePosition::fromSeconds(startSeconds),
-                                      te::TimePosition::fromSeconds(endSeconds))});
-
-    std::atomic<float> progress{0.0f};
-    te::Renderer::RenderTask task("MAGDA CLI Render", params, &progress, nullptr);
-    for (;;) {
-        const auto status = task.runJob();
-        if (status == juce::ThreadPoolJob::jobHasFinished)
-            break;
-        if (status == juce::ThreadPoolJob::jobNeedsRunningAgain) {
-            juce::Thread::sleep(1);
-            continue;
-        }
-
-        std::cerr << "Render failed\n";
+    auto task = engine.createOfflineRenderTask({
+        .destination = options.wavOutput,
+        .format = magda::OfflineRenderFormat::Wav,
+        .bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth),
+        .sampleRate = options.sampleRate.value_or(projectInfo.sampleRate),
+        .blockSize = 512,
+        .shouldNormalise = false,
+        .useMasterPlugins = true,
+        .usePlugins = true,
+        .checkNodesForAudio = false,
+        .realTimeRender = false,
+        .startSeconds = startSeconds,
+        .endSeconds = endSeconds,
+    });
+    if (task == nullptr) {
+        std::cerr << "Audio engine does not support offline rendering\n";
         return false;
     }
 
-    if (task.errorMessage.isNotEmpty()) {
-        std::cerr << "Render failed: " << task.errorMessage << "\n";
+    const auto result = task->run();
+    if (!result.success) {
+        std::cerr << "Render failed: " << result.error << "\n";
         return false;
     }
     if (!options.wavOutput.existsAsFile() || options.wavOutput.getSize() <= 0) {

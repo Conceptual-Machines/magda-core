@@ -25,7 +25,6 @@
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "modulation/DeviceLinkCallbacks.hpp"

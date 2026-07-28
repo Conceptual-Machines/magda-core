@@ -215,7 +215,7 @@ class ProjectManager : private juce::Timer {
 
     /**
      * @brief Callback invoked before saving to capture live state (e.g., plugin native state)
-     * Set by AudioBridge or TracktionEngineWrapper at initialization.
+     * Set by AudioBridge or the audio engine at initialization.
      */
     std::function<void()> onBeforeSave;
 

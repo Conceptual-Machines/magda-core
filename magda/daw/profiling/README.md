@@ -148,7 +148,7 @@ void MyClass::processAudio() {
 ## Integration Points
 
 ### Audio Callback
-In `TracktionEngineWrapper::audioCallback()`:
+In the concrete engine backend's audio callback:
 ```cpp
 void audioCallback(const juce::AudioSourceChannelInfo& info) override {
     MAGDA_MONITOR_SCOPE("AudioCallback");

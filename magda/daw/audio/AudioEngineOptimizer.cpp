@@ -18,7 +18,7 @@ void AudioEngineOptimizer::viewModeChanged(const ViewMode mode, const AudioEngin
 }
 
 void AudioEngineOptimizer::applyProfile(const AudioEngineProfile& profile) {
-    // TODO: Apply profile to TracktionEngineWrapper
+    // TODO: Apply profile through AudioEngine.
     DBG("Applying audio profile - Buffer: "
         << profile.bufferSize << " samples, Latency: " << profile.latencyMs
         << "ms, Low latency: " << (profile.lowLatencyMode ? "yes" : "no")

@@ -55,7 +55,6 @@
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginMetadataStore.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
 
@@ -1105,8 +1104,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // to owning one if the engine is unreachable so magdaApi_ is never
     // null — every dereference site below ( *safeThis->magdaApi_ etc. )
     // assumes a live api.
-    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-            magda::TrackManager::getInstance().getAudioEngine())) {
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
         magdaApi_ = &engine->getMagdaApi();
     } else {
         ownedApi_ = std::make_unique<magda::MagdaApiLive>();
@@ -2342,18 +2340,13 @@ void AIChatConsoleContent::buildAliasList() {
         allAliases_.push_back({entry.primaryAlias, entry.displayName});
     }
 
-    // External plugins from KnownPluginList
-    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-            magda::TrackManager::getInstance().getAudioEngine())) {
-        auto types = engine->getPreferredPluginTypes();
-        DBG("AIChatConsole: buildAliasList - KnownPluginList has " << types.size() << " plugins");
-        for (const auto& desc : types) {
-            auto alias = PluginBrowserInfo::generateAlias(desc.name);
-            aliasIndex[desc.createIdentifierString()] = allAliases_.size();
-            allAliases_.push_back({alias, desc.name});
-        }
-    } else {
-        DBG("AIChatConsole: buildAliasList - engine not available via TrackManager");
+    // External plugins come through the same MagdaApi boundary used by agents.
+    const auto plugins = magdaApi_->plugins().getExternalPlugins();
+    DBG("AIChatConsole: buildAliasList - plugin catalog has " << plugins.size() << " plugins");
+    for (const auto& plugin : plugins) {
+        auto alias = PluginBrowserInfo::generateAlias(plugin.name);
+        aliasIndex[plugin.uniqueId] = allAliases_.size();
+        allAliases_.push_back({alias, plugin.name});
     }
 
     try {
@@ -3603,7 +3596,8 @@ static juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset)
 // instance and apply there — wasting the LLM's output to "no device
 // focused" was just bad UX. Returns a one-line status string for the
 // chat. Delegates the actual write to magda::applyFourOscPresetToPath.
-static juce::String applyFourOscPresetToFocusedDevice(const magda::FourOscAgent::Preset& preset) {
+static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
+                                                      const magda::FourOscAgent::Preset& preset) {
     auto& sel = magda::SelectionManager::getInstance();
     auto& tm = magda::TrackManager::getInstance();
 
@@ -3648,7 +3642,7 @@ static juce::String applyFourOscPresetToFocusedDevice(const magda::FourOscAgent:
         preamble = "created 4OSC on '" + trackName + "', ";
     }
 
-    return preamble + magda::applyFourOscPresetToPath(preset, path);
+    return preamble + magda::applyFourOscPresetToPath(api.plugins(), preset, path);
 }
 
 void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::String& errorOrPretty,
@@ -3712,7 +3706,7 @@ void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::Stri
     auto header = presetName.isEmpty() ? juce::String("Preset") : presetName;
     juce::String body = juce::String::charToString(0x25C6) + " " + header + "\n";
     body << prettyPrintPreset(preset);
-    body << "\n  " << applyFourOscPresetToFocusedDevice(preset);
+    body << "\n  " << applyFourOscPresetToFocusedDevice(*magdaApi_, preset);
     body << "\n  starting point - tweak by ear, then save from the device header";
     appendToChat(body);
 }
