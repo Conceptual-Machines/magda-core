@@ -247,16 +247,16 @@ juce_add_binary_data(MagdaAssets
     ../../assets/themes/neon_cyberpunk.json
     # Bundled Faust starter DSPs — embedded so users always have something
     # in the loader picker even on a fresh install.
-    audio/faust_dsp/magda_drive.dsp
-    audio/faust_dsp/magda_tremolo.dsp
-    audio/faust_dsp/magda_delay.dsp
-    audio/faust_dsp/magda_granular_delay.dsp
-    audio/faust_dsp/magda_filter_svf.dsp
-    audio/faust_dsp/magda_filter_ladder.dsp
-    audio/faust_dsp/magda_filter_korg35.dsp
-    audio/faust_dsp/magda_filter_oberheim.dsp
-    audio/faust_dsp/magda_filter_sk.dsp
-    audio/faust_dsp/magda_filter_diode.dsp
+    audio/faust_dsp/runtime/distortion/magda_drive.dsp
+    audio/faust_dsp/runtime/modulation/magda_tremolo.dsp
+    audio/faust_dsp/compiled/delay/magda_delay.dsp
+    audio/faust_dsp/compiled/delay/magda_granular_delay.dsp
+    audio/faust_dsp/compiled/filter/magda_filter_svf.dsp
+    audio/faust_dsp/compiled/filter/magda_filter_ladder.dsp
+    audio/faust_dsp/compiled/filter/magda_filter_korg35.dsp
+    audio/faust_dsp/compiled/filter/magda_filter_oberheim.dsp
+    audio/faust_dsp/compiled/filter/magda_filter_sk.dsp
+    audio/faust_dsp/compiled/filter/magda_filter_diode.dsp
 )
 
 # =============================================================================

@@ -1,5 +1,5 @@
-declare name "MagdaLimiter";
-declare description "Lookahead brickwall limiter — Sanfilippo design with peak-holder + tau-smoothed attack/release.";
+declare name "Vintage Limiter";
+declare description "Lookahead brickwall limiter, Sanfilippo design with peak-holder + tau-smoothed attack/release. Runtime effect, distinct from the built-in Limiter device.";
 
 import("stdfaust.lib");
 

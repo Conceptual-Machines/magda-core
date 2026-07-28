@@ -9,207 +9,207 @@
 #   2. invoking magda_compile_faust_dsp() to produce the generated .cpp
 #   3. adding the generated path to target_sources via OBJECT_DEPENDS
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_svf.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_svf.dsp"
     MagdaSVFDsp
     MAGDA_SVF_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_ladder.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_ladder.dsp"
     MagdaLadderDsp
     MAGDA_LADDER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_korg35.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_korg35.dsp"
     MagdaKorg35Dsp
     MAGDA_KORG35_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_oberheim.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_oberheim.dsp"
     MagdaOberheimDsp
     MAGDA_OBERHEIM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_sk.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_sk.dsp"
     MagdaSallenKeyDsp
     MAGDA_SALLEN_KEY_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_filter_diode.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_diode.dsp"
     MagdaDiodeDsp
     MAGDA_DIODE_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_saturator.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/distortion/magda_saturator.dsp"
     MagdaSaturatorDsp
     MAGDA_SATURATOR_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_polysynth.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/synth/magda_polysynth.dsp"
     MagdaPolySynthDsp
     MAGDA_POLYSYNTH_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_fm.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/synth/magda_fm.dsp"
     MagdaFMDsp
     MAGDA_FM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_kick.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/drums/magda_kick.dsp"
     MagdaKickDsp
     MAGDA_KICK_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_snare.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/drums/magda_snare.dsp"
     MagdaSnareDsp
     MAGDA_SNARE_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_clap.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/drums/magda_clap.dsp"
     MagdaClapDsp
     MAGDA_CLAP_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_hat.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/drums/magda_hat.dsp"
     MagdaHatDsp
     MAGDA_HAT_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_tom.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/drums/magda_tom.dsp"
     MagdaTomDsp
     MAGDA_TOM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_marimba.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/synth/magda_marimba.dsp"
     MagdaMarimbaDsp
     MAGDA_MARIMBA_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_djembe.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/drums/magda_djembe.dsp"
     MagdaDjembeDsp
     MAGDA_DJEMBE_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_bell.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/drums/magda_bell.dsp"
     MagdaBellDsp
     MAGDA_BELL_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_delay.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/delay/magda_delay.dsp"
     MagdaDelayDsp
     MAGDA_DELAY_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_granular_delay.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/delay/magda_granular_delay.dsp"
     MagdaGrainDelayDsp
     MAGDA_GRAIN_DELAY_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_grit.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/distortion/magda_grit.dsp"
     MagdaGritDsp
     MAGDA_GRIT_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_multiband.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_multiband.dsp"
     MagdaMultibandDsp
     MAGDA_MULTIBAND_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_phaser.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/modulation/magda_phaser.dsp"
     MagdaPhaserDsp
     MAGDA_PHASER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_compressor.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_compressor.dsp"
     MagdaCompressorDsp
     MAGDA_COMPRESSOR_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_compressor_glue.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_compressor_glue.dsp"
     MagdaCompressorGlueDsp
     MAGDA_COMPRESSOR_GLUE_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_mod.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/modulation/magda_mod.dsp"
     MagdaModDsp
     MAGDA_MOD_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_chorus.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/modulation/magda_chorus.dsp"
     MagdaChorusDsp
     MAGDA_CHORUS_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_flanger.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/modulation/magda_flanger.dsp"
     MagdaFlangerDsp
     MAGDA_FLANGER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_ring_mod.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/modulation/magda_ring_mod.dsp"
     MagdaRingModDsp
     MAGDA_RING_MOD_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_freq_shift.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/modulation/magda_freq_shift.dsp"
     MagdaFreqShiftDsp
     MAGDA_FREQ_SHIFT_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_gate_expander.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/dynamics/magda_gate_expander.dsp"
     MagdaGateExpanderDsp
     MAGDA_GATE_EXPANDER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_clipper.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/distortion/magda_clipper.dsp"
     MagdaClipperDsp
     MAGDA_CLIPPER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_reverb_plate.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/reverb/magda_reverb_plate.dsp"
     MagdaReverbPlateDsp
     MAGDA_REVERB_PLATE_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_reverb_hall.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/reverb/magda_reverb_hall.dsp"
     MagdaReverbHallDsp
     MAGDA_REVERB_HALL_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_reverb_room.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/reverb/magda_reverb_room.dsp"
     MagdaReverbRoomDsp
     MAGDA_REVERB_ROOM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_dim.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/stereo/magda_dimension_dim.dsp"
     MagdaDimensionDimDsp
     MAGDA_DIMENSION_DIM_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_haas.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/stereo/magda_dimension_haas.dsp"
     MagdaDimensionHaasDsp
     MAGDA_DIMENSION_HAAS_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_dimension_ms.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/stereo/magda_dimension_ms.dsp"
     MagdaDimensionMSDsp
     MAGDA_DIMENSION_MS_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_pitch_shifter.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/pitch/magda_pitch_shifter.dsp"
     MagdaPitchShifterDsp
     MAGDA_PITCH_SHIFTER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_pitch_detuner.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/pitch/magda_pitch_detuner.dsp"
     MagdaPitchDetunerDsp
     MAGDA_PITCH_DETUNER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_pitch_harmonizer.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/pitch/magda_pitch_harmonizer.dsp"
     MagdaPitchHarmonizerDsp
     MAGDA_PITCH_HARMONIZER_GENERATED_CPP
 )
 magda_compile_faust_dsp(
-    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/magda_bitcrusher.dsp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/distortion/magda_bitcrusher.dsp"
     MagdaBitcrusherDsp
     MAGDA_BITCRUSHER_GENERATED_CPP
 )

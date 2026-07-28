@@ -4,7 +4,7 @@ declare author "mikobuntu";
 declare license "GPL-3.0";
 declare version "1.0";
 
-import("stdfaust.lib"); 
+import("stdfaust.lib");
 
 // --- 5 Interlocking Radio Buttons ---
 b1 = checkbox("1. E-mu SP-1200 [1987: 26.04 kHz + Ringing]");
@@ -59,8 +59,8 @@ with {
 
     // 5. Unified Master Clock Trigger Generator
     clockTrigger = select2(mode == 0,
-                    select2(mode == 1, 
-                        countDown == 0, 
+                    select2(mode == 1,
+                        countDown == 0,
                         sp1200Trigger
                     ),
                  1.0);
@@ -75,8 +75,8 @@ with {
     quantizationLevels = select2(mode == 5,
                             select2(mode == 4,
                                 select2(mode == 3,
-                                    select2(mode == 2, 
-                                        select2(mode == 1, 1.0, 4095.0), 
+                                    select2(mode == 2,
+                                        select2(mode == 1, 1.0, 4095.0),
                                     1023.0),
                                 4095.0),
                             1023.0),
@@ -107,4 +107,3 @@ with {
     outL = select2(clipToggle, finalL, hardClip(finalL));
     outR = select2(clipToggle, finalR, hardClip(finalR));
 };
-

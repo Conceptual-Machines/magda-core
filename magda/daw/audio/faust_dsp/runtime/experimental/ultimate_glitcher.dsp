@@ -19,8 +19,8 @@ stChance    = hslider("2. Stutter-Freeze: Probability [%]", 35.0, 0.0, 100.0, 1.
 bcChance    = hslider("3. Bitcrusher: Probability [%]", 30.0, 0.0, 100.0, 1.0) / 100.0;
 bcBits      = hslider("3. Bitcrusher: Bit Depth [Bits]", 8.0, 2.0, 16.0, 0.5);
 
-rmChance    = hslider("4. Ring Mod: Probability [%]", 20.0, 0.0, 100.0, 1.0) / 100.0; 
-rmFreq      = hslider("4. Ring Mod: Carrier Freq [Hz]", 350.0, 50.0, 1200.0, 1.0);  
+rmChance    = hslider("4. Ring Mod: Probability [%]", 20.0, 0.0, 100.0, 1.0) / 100.0;
+rmFreq      = hslider("4. Ring Mod: Carrier Freq [Hz]", 350.0, 50.0, 1200.0, 1.0);
 
 phChance    = hslider("5. Phaser: Probability [%]", 2.0, 0.0, 100.0, 1.0) / 100.0;
 flChance    = hslider("6. Flanger: Probability [%]", 2.0, 0.0, 100.0, 1.0) / 100.0;
@@ -37,13 +37,13 @@ with {
     // ========================================================================
     // 1. PARALLEL POLYRHYTHMIC TRIGGER CLOCKS
     // ========================================================================
-    trigGlitch   = os.lf_triangle(masterRate * (1.0)) > 0.88;          
-    trigStutter  = os.lf_triangle(masterRate * (15.0 / 16.0)) > 0.88; 
-    trigCrusher  = os.lf_triangle(masterRate * (5.0 / 16.0)) > 0.88;  
-    trigRingMod  = os.lf_triangle(masterRate * (13.0 / 16.0)) > 0.88;   
-    trigPhaser   = os.lf_triangle(masterRate * (7.0 / 16.0)) > 0.88;    
-    trigFlanger  = os.lf_triangle(masterRate * (9.0 / 16.0)) > 0.88;    
-    trigTapeStop = os.lf_triangle(masterRate * (11.0 / 16.0)) > 0.88;   
+    trigGlitch   = os.lf_triangle(masterRate * (1.0)) > 0.88;
+    trigStutter  = os.lf_triangle(masterRate * (15.0 / 16.0)) > 0.88;
+    trigCrusher  = os.lf_triangle(masterRate * (5.0 / 16.0)) > 0.88;
+    trigRingMod  = os.lf_triangle(masterRate * (13.0 / 16.0)) > 0.88;
+    trigPhaser   = os.lf_triangle(masterRate * (7.0 / 16.0)) > 0.88;
+    trigFlanger  = os.lf_triangle(masterRate * (9.0 / 16.0)) > 0.88;
+    trigTapeStop = os.lf_triangle(masterRate * (11.0 / 16.0)) > 0.88;
 
     // Independent Dice Rolls
     runGlitch    = select2(((no.noise : ba.latch(trigGlitch)) + 1.0) / 2.0 < gChance, 0.0, 1.0);
@@ -57,29 +57,29 @@ with {
     // ========================================================================
     // 2. PARALLEL DSP EFFECT CHANNELS
     // ========================================================================
-    
+
     // --- LANE 1: REVERSER + PITCH SHIFTER ---
     revEngine(isRightChan, sig) = finalAudio
     with {
         maxBuffer = 262144;
-        channelOffset = select2(isRightChan * stereoWide, 0, 4800); 
+        channelOffset = select2(isRightChan * stereoWide, 0, 4800);
         writePointer = int((globalClock + channelOffset) % maxBuffer);
-        
+
         captureAnchor = ba.latch(trigGlitch, globalClock);
         localSamplesElapsed = globalClock - captureAnchor;
 
         shouldReverse = (no.noise : ba.latch(trigGlitch @ 50) > 0.0);
-        semitoneShift = int((no.noise : ba.latch(trigGlitch @ 100)) * pitchRange); 
+        semitoneShift = int((no.noise : ba.latch(trigGlitch @ 100)) * pitchRange);
         pitchRatio = ba.semi2ratio(semitoneShift);
 
         playbackDelta = select2(shouldReverse, localSamplesElapsed * pitchRatio, (localSamplesElapsed * pitchRatio) * -1.0);
         readPointer = max(0, min(maxBuffer - 1, int((captureAnchor + playbackDelta + channelOffset) % maxBuffer)));
 
-        fadeSamples = 0.005 * ma.SR; 
+        fadeSamples = 0.005 * ma.SR;
         windowEnvelope = max(0.0, min(1.0, localSamplesElapsed / fadeSamples));
 
         rawAudio = rwtable(maxBuffer, 0.0, writePointer, sig, readPointer);
-        finalAudio = rawAudio * windowEnvelope * 0.9; 
+        finalAudio = rawAudio * windowEnvelope * 0.9;
     };
 
     // --- LANE 2: RECALIBRATED STUTTER-FREEZE ENGINE ---
@@ -102,7 +102,7 @@ with {
         localRamp = localSamplesElapsed % loopWindow;
         readPointer = max(0, min(maxBuffer - 1, int((captureAnchor + localRamp) % maxBuffer)));
 
-        fadeSamples = min(48.0, loopWindow * 0.1); 
+        fadeSamples = min(48.0, loopWindow * 0.1);
         fadeIn = max(0.0, min(1.0, localRamp / fadeSamples));
         fadeOut = max(0.0, min(1.0, (loopWindow - localRamp) / fadeSamples));
         windowEnvelope = fadeIn * fadeOut;
@@ -125,7 +125,7 @@ with {
     phaserEngine(sig) = (sig + sweptDelay) * 0.5
     with {
         maxDel = 1024;
-        sweepOsc = (os.lf_triangle(0.2) + 1.0) * 0.5; 
+        sweepOsc = (os.lf_triangle(0.2) + 1.0) * 0.5;
         delaySamples = int(10.0 + (sweepOsc * 120.0));
         sweptDelay = de.delay(maxDel, delaySamples, sig);
     };
@@ -134,8 +134,8 @@ with {
     flangerEngine(sig) = (sig + (feedback * modulatedDelay)) * 0.5
     with {
         maxDel = 2048;
-        feedback = 0.45; 
-        sweepOsc = (os.lf_triangle(0.5) + 1.0) * 0.5; 
+        feedback = 0.45;
+        sweepOsc = (os.lf_triangle(0.5) + 1.0) * 0.5;
         delaySamples = int(15.0 + (sweepOsc * 160.0));
         modulatedDelay = de.delay(maxDel, delaySamples, sig);
     };
@@ -161,7 +161,7 @@ with {
 
         activeCount = runGlitch + runStutter + runCrusher + runRingMod + runPhaser + runFlanger;
         anyGlitchActive = activeCount > 0.0;
-        
+
         activeGlitches = (out1 + out2 + out3 + out4 + out5 + out6) / max(1.0, activeCount);
     };
 
@@ -173,26 +173,26 @@ with {
     with {
         maxBuffer = 131072;
         writePointer = int(globalClock % maxBuffer);
-        
+
         oneShotTrigger = ba.impulsify(trigTapeStop);
-        
+
         stopSamples = tsTime * ma.SR;
         timeSinceTrigger = globalClock - ba.latch(oneShotTrigger, globalClock);
         inStopWindow = timeSinceTrigger < stopSamples;
-        
+
         runTapeStop = (tsDiceRoll == 1.0) & inStopWindow;
 
         captureAnchor = ba.latch(oneShotTrigger, globalClock);
         localSamplesElapsed = globalClock - captureAnchor;
 
         progress = max(0.0, min(1.0, float(localSamplesElapsed) / stopSamples));
-        tapeSpeed = (1.0 - progress) * (1.0 - progress); 
+        tapeSpeed = (1.0 - progress) * (1.0 - progress);
 
         readPointer = max(0, min(maxBuffer - 1, int((captureAnchor + ((tapeSpeed : (+ ~ _)) * -1.0)) % maxBuffer)));
 
         rawAudio = rwtable(maxBuffer, 0.0, writePointer, sig, readPointer);
         gateEnvelope = select2(progress >= 1.0, 1.0, 0.0);
-        
+
         finalAudio = select2(runTapeStop == 1.0, sig, rawAudio * gateEnvelope);
     };
 

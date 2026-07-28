@@ -2,7 +2,7 @@ declare name "8 Stage Morphable Wavefolder";
 declare description "Ultra-Aggressive 8-Frame Chaotic Morphing Wavetable Wavefolder Stereo Audio Effect under Faust 2.70.3. Instructions: Use the Morph controls to sweep through 8 distinct harmonic frames, and drive the Wavefolder block to generate biting distortion textures.";
 declare author "mikobuntu";
 declare license "GPL-3.0";
-declare version "1.0";;
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -20,7 +20,7 @@ with {
 // ========================================================================
 morphingFxCore(manualMorph, envTracking, randTrigger, sig) = finalMorphedStream
 with {
-    envFollow = abs(sig) : max ~ (*(exp(-1.0 / (0.05 * ma.SR)))); 
+    envFollow = abs(sig) : max ~ (*(exp(-1.0 / (0.05 * ma.SR))));
     totalMorph = max(0.0, min(7.0, manualMorph + (envFollow * envTracking)));
 
     h1_1 = chaosGen(7)   : ba.latch(randTrigger); h1_2 = chaosGen(13)  : ba.latch(randTrigger); h1_5 = chaosGen(61)  : ba.latch(randTrigger);
@@ -60,31 +60,31 @@ with {
 // ========================================================================
 // UNIFIED MASTER GRAPHICAL USER INTERFACE BLOCK
 // ========================================================================
-// Wrapping the entire parameter layout tree in one parent vertical group 
+// Wrapping the entire parameter layout tree in one parent vertical group
 // explicitly forces the host DAW to render them sequentially from 1 to 9.
 uiLayout(leftIn, rightIn) = finalL, finalR
 with {
     masterMix    = hslider("1. Master Mix [%]", 25.0, 0.0, 100.0, 1.0) / 100.0;
     masterGain   = hslider("2. Master Volume [dB]", 5.0, -12.0, 12.0, 0.1) : ba.db2linear;
-    
+
     randTrigger  = button("3. Re-Roll Chaos Seeds");
     manualMorph  = hslider("4. Base Frame Morph [0-7]", 0.0, 0.0, 7.0, 0.01);
     envTracking  = hslider("5. Dynamic Input Morph Depth", 2.0, 0.0, 3.0, 0.01);
-    
+
     foldDrive    = hslider("6. Wavefolder Drive [dB]", 0.0, 0.0, 36.0, 0.1);
     foldSymmetry = hslider("7. Folding DC Symmetry", 0.0, -0.5, 0.5, 0.01);
-    
+
     cutoff       = hslider("8. Resonant Cutoff [Hz]", 18000, 50, 18000, 1);
     res          = hslider("9. Resonance Value", 0.02, 0.0, 0.95, 0.01);
     safeRes      = max(0.01, res);
 
     // Operational signal routing paths
-    wetL = leftIn  : morphingFxCore(manualMorph, envTracking, randTrigger) 
-                   : wavefolderSection(foldDrive, foldSymmetry) 
+    wetL = leftIn  : morphingFxCore(manualMorph, envTracking, randTrigger)
+                   : wavefolderSection(foldDrive, foldSymmetry)
                    : fi.resonlp(cutoff, safeRes, 1);
-                   
-    wetR = rightIn : morphingFxCore(manualMorph, envTracking, randTrigger) 
-                   : wavefolderSection(foldDrive, foldSymmetry) 
+
+    wetR = rightIn : morphingFxCore(manualMorph, envTracking, randTrigger)
+                   : wavefolderSection(foldDrive, foldSymmetry)
                    : fi.resonlp(cutoff, safeRes, 1);
 
     mixL = (leftIn  * (1.0 - masterMix)) + (wetL * masterMix);
@@ -99,4 +99,3 @@ with {
 // MAIN ROUTING PROCESS
 // ========================================================================
 process = vgroup("8 Stage Morphable Wavefolder", uiLayout);
-
