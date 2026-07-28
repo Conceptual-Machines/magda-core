@@ -8,7 +8,7 @@ updates:
     # full CI matrix (incl. the self-hosted macOS/Windows jobs); targeting dev
     # keeps bumps off that path and in line with the normal contribution flow.
     # Update this each release cycle when the active dev branch rolls over.
-    target-branch: "dev/0.17.0"
+    target-branch: "dev/0.18.0"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -21,13 +21,18 @@ updates:
       # Tracktion Engine is a fork we control and bump deliberately (it carries
       # MAGDA patches), so Dependabot must never open PRs for it.
       - dependency-name: "third_party/tracktion_engine"
+      # Same for Faust: our fork carries the wasmtime embedding patches
+      # (WASMTIME_LIB/WASMTIME_INCLUDE_DIR + the raw calling convention for the
+      # math imports). A Dependabot bump would move the pointer to an upstream
+      # commit that lacks them and the build would stop configuring.
+      - dependency-name: "third_party/faust"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     # See the gitsubmodule note above: base on the active dev branch so bumps
     # don't trip the pull_request-into-main CI. Bump each release cycle.
-    target-branch: "dev/0.17.0"
+    target-branch: "dev/0.18.0"
     schedule:
       interval: "weekly"
       day: "monday"
