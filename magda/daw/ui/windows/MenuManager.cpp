@@ -42,6 +42,12 @@ bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
     std::function<void()>* callback = nullptr;
 
     switch (commandID) {
+        case CommandIDs::newProject:
+            callback = &callbacks_.onNewProject;
+            break;
+        case CommandIDs::openProject:
+            callback = &callbacks_.onOpenProject;
+            break;
         case CommandIDs::saveProject:
             callback = &callbacks_.onSaveProject;
             break;
@@ -50,6 +56,24 @@ bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
             break;
         case CommandIDs::exportAudio:
             callback = &callbacks_.onExportAudio;
+            break;
+        case CommandIDs::closeProject:
+            callback = &callbacks_.onCloseProject;
+            break;
+        case CommandIDs::projectSettings:
+            callback = &callbacks_.onProjectSettings;
+            break;
+        case CommandIDs::collectFiles:
+            callback = &callbacks_.onCollectFiles;
+            break;
+        case CommandIDs::exportMidi:
+            callback = &callbacks_.onExportMidi;
+            break;
+        case CommandIDs::importDawProject:
+            callback = &callbacks_.onImportDawProject;
+            break;
+        case CommandIDs::exportDawProject:
+            callback = &callbacks_.onExportDawProject;
             break;
         default:
             return false;
@@ -93,9 +117,12 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
     switch (topLevelMenuIndex) {
         case 0:  // File
         {
-            menu.addItem(NewProject, tr("menu.file.new_project"), true, false);
+            menu.addItem(NewProject, tr("menu.file.new_project") + keyHint(CommandIDs::newProject),
+                         true, false);
             menu.addSeparator();
-            menu.addItem(OpenProject, trEllipsis("menu.file.open_project"), true, false);
+            menu.addItem(OpenProject,
+                         trEllipsis("menu.file.open_project") + keyHint(CommandIDs::openProject),
+                         true, false);
 
             // Open Recent submenu
             {
@@ -123,7 +150,9 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                 menu.addSubMenu(tr("menu.file.open_recent"), recentMenu);
             }
 
-            menu.addItem(CloseProject, tr("menu.file.close_project"), true, false);
+            menu.addItem(CloseProject,
+                         tr("menu.file.close_project") + keyHint(CommandIDs::closeProject), true,
+                         false);
             menu.addSeparator();
             menu.addItem(SaveProject,
                          tr("menu.file.save_project") + keyHint(CommandIDs::saveProject), true,
@@ -133,27 +162,36 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                              keyHint(CommandIDs::saveProjectAs),
                          true, false);
             menu.addSeparator();
-            menu.addItem(ProjectSettings, trEllipsis("menu.file.project_settings"), true, false);
-            menu.addItem(CollectFiles, trEllipsis("menu.file.collect_files"), true, false);
+            menu.addItem(ProjectSettings,
+                         trEllipsis("menu.file.project_settings") +
+                             keyHint(CommandIDs::projectSettings),
+                         true, false);
+            menu.addItem(CollectFiles,
+                         trEllipsis("menu.file.collect_files") + keyHint(CommandIDs::collectFiles),
+                         true, false);
             menu.addSeparator();
             menu.addItem(ExportAudio,
                          trEllipsis("menu.file.export_audio") + keyHint(CommandIDs::exportAudio),
                          true, false);
-            menu.addItem(ExportMidi,
-                         trEllipsis("action.export")
-                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
-                         true, false);
-            menu.addSeparator();
             menu.addItem(
-                ImportDawProject,
-                trEllipsis("action.import")
-                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
-                true, false);
-            menu.addItem(
-                ExportDawProject,
+                ExportMidi,
                 trEllipsis("action.export")
-                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::DawProject)),
+                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)) +
+                    keyHint(CommandIDs::exportMidi),
                 true, false);
+            menu.addSeparator();
+            menu.addItem(ImportDawProject,
+                         trEllipsis("action.import")
+                                 .replace("{0}", magda::technicalText(
+                                                     magda::TechnicalTextToken::DawProject)) +
+                             keyHint(CommandIDs::importDawProject),
+                         true, false);
+            menu.addItem(ExportDawProject,
+                         trEllipsis("action.export")
+                                 .replace("{0}", magda::technicalText(
+                                                     magda::TechnicalTextToken::DawProject)) +
+                             keyHint(CommandIDs::exportDawProject),
+                         true, false);
 
 #if !JUCE_MAC
             menu.addSeparator();
@@ -391,16 +429,13 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
     switch (menuItemID) {
         // File menu
         case NewProject:
-            if (callbacks_.onNewProject)
-                callbacks_.onNewProject();
+            invokeApplicationCommand(CommandIDs::newProject);
             break;
         case OpenProject:
-            if (callbacks_.onOpenProject)
-                callbacks_.onOpenProject();
+            invokeApplicationCommand(CommandIDs::openProject);
             break;
         case CloseProject:
-            if (callbacks_.onCloseProject)
-                callbacks_.onCloseProject();
+            invokeApplicationCommand(CommandIDs::closeProject);
             break;
         case SaveProject:
             invokeApplicationCommand(CommandIDs::saveProject);
@@ -409,27 +444,22 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             invokeApplicationCommand(CommandIDs::saveProjectAs);
             break;
         case ProjectSettings:
-            if (callbacks_.onProjectSettings)
-                callbacks_.onProjectSettings();
+            invokeApplicationCommand(CommandIDs::projectSettings);
             break;
         case CollectFiles:
-            if (callbacks_.onCollectFiles)
-                callbacks_.onCollectFiles();
+            invokeApplicationCommand(CommandIDs::collectFiles);
             break;
         case ExportAudio:
             invokeApplicationCommand(CommandIDs::exportAudio);
             break;
         case ExportMidi:
-            if (callbacks_.onExportMidi)
-                callbacks_.onExportMidi();
+            invokeApplicationCommand(CommandIDs::exportMidi);
             break;
         case ImportDawProject:
-            if (callbacks_.onImportDawProject)
-                callbacks_.onImportDawProject();
+            invokeApplicationCommand(CommandIDs::importDawProject);
             break;
         case ExportDawProject:
-            if (callbacks_.onExportDawProject)
-                callbacks_.onExportDawProject();
+            invokeApplicationCommand(CommandIDs::exportDawProject);
             break;
         case Quit:
             if (callbacks_.onQuit)
