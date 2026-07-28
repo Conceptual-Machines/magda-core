@@ -327,9 +327,7 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Edit-Wide Tempo Sequences =====
     virtual std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(
-        TempoSequenceRippleMode /*mode*/, double /*startBeat*/, double /*endBeat*/) {
-        return nullptr;
-    }
+        TempoSequenceRippleMode mode, double startBeat, double endBeat);
 
     // ===== MIDI Preview =====
     /**
