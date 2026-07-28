@@ -25,7 +25,7 @@ class MenuCallbacksGuard {
 TEST_CASE("MenuManager dispatches registered application commands to menu callbacks",
           "[commands][menu]") {
     auto& menuManager = magda::MenuManager::getInstance();
-    std::array<int, 10> calls{};
+    std::array<int, 8> calls{};
     MenuCallbacksGuard guard(menuManager);
 
     magda::MenuManager::MenuCallbacks callbacks;
@@ -36,29 +36,23 @@ TEST_CASE("MenuManager dispatches registered application commands to menu callba
     callbacks.onExportAudio = [&] { ++calls[4]; };
     callbacks.onDeleteTrack = [&] { ++calls[5]; };
     callbacks.onToggleArrangeSession = [&] { ++calls[6]; };
-    callbacks.onZoom = [&] { ++calls[7]; };
-    callbacks.onShowHelp = [&] { ++calls[8]; };
-    callbacks.onAbout = [&] { ++calls[9]; };
+    callbacks.onAbout = [&] { ++calls[7]; };
     menuManager.initialize(callbacks);
 
     const std::array commandIDs{
-        magda::CommandIDs::newProject,
-        magda::CommandIDs::openProject,
-        magda::CommandIDs::saveProject,
-        magda::CommandIDs::saveProjectAs,
-        magda::CommandIDs::exportAudio,
-        magda::CommandIDs::deleteTrack,
-        magda::CommandIDs::toggleArrangeSession,
-        magda::CommandIDs::zoom,
-        magda::CommandIDs::showHelp,
-        magda::CommandIDs::about,
+        magda::CommandIDs::newProject,           magda::CommandIDs::openProject,
+        magda::CommandIDs::saveProject,          magda::CommandIDs::saveProjectAs,
+        magda::CommandIDs::exportAudio,          magda::CommandIDs::deleteTrack,
+        magda::CommandIDs::toggleArrangeSession, magda::CommandIDs::about,
     };
 
     for (const auto commandID : commandIDs)
         REQUIRE(menuManager.invokeApplicationCommand(commandID));
 
-    for (const auto callCount : calls)
-        CHECK(callCount == 1);
+    for (size_t i = 0; i < calls.size(); ++i) {
+        CAPTURE(i, commandIDs[i]);
+        CHECK(calls[i] == 1);
+    }
 }
 
 TEST_CASE("MenuManager rejects commands outside its application callback dispatcher",
@@ -68,4 +62,6 @@ TEST_CASE("MenuManager rejects commands outside its application callback dispatc
     menuManager.initialize({});
 
     CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::undo));
+    CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::zoom));
+    CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::showHelp));
 }

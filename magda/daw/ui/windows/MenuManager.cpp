@@ -63,12 +63,6 @@ bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
         case CommandIDs::toggleArrangeSession:
             callback = &callbacks_.onToggleArrangeSession;
             break;
-        case CommandIDs::zoom:
-            callback = &callbacks_.onZoom;
-            break;
-        case CommandIDs::showHelp:
-            callback = &callbacks_.onShowHelp;
-            break;
         case CommandIDs::about:
             callback = &callbacks_.onAbout;
             break;
