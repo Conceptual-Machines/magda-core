@@ -1,8 +1,87 @@
 #include "DeviceMeteringManager.hpp"
 
+#include <tracktion_graph/tracktion_graph.h>
+
+// TE's internal node headers require the graph module definitions first.
+#include <tracktion_engine/playback/graph/tracktion_EditNodeBuilder.h>
+#include <tracktion_engine/playback/graph/tracktion_LevelMeasuringNode.h>
+
+#include <mutex>
+
 #include "plugin_manager/PluginManager.hpp"
 
 namespace magda {
+
+namespace {
+
+class DeviceGainNode final : public te::graph::Node {
+  public:
+    DeviceGainNode(std::unique_ptr<te::graph::Node> inputNode, std::atomic<float>& gainAtomic)
+        : input_(std::move(inputNode)), gain_(gainAtomic) {
+        setOptimisations({te::graph::ClearBuffers::no, te::graph::AllocateAudioBuffer::yes});
+    }
+
+    te::graph::NodeProperties getNodeProperties() override {
+        auto props = input_->getNodeProperties();
+        if (props.nodeID != 0)
+            tracktion::hash_combine(props.nodeID, static_cast<size_t>(7364928150483726199));
+        return props;
+    }
+
+    std::vector<te::graph::Node*> getDirectInputNodes() override {
+        return {input_.get()};
+    }
+
+    bool isReadyToProcess() override {
+        return input_->hasProcessed();
+    }
+
+    void process(te::graph::Node::ProcessContext& pc) override {
+        auto sourceBuffers = input_->getProcessedOutput();
+        auto destAudio = pc.buffers.audio;
+        jassert(sourceBuffers.audio.getSize() == destAudio.getSize());
+
+        te::graph::copyIfNotAliased(destAudio, sourceBuffers.audio);
+
+        if (input_->numOutputNodes == 1)
+            pc.buffers.midi.swapWith(sourceBuffers.midi);
+        else
+            pc.buffers.midi.copyFrom(sourceBuffers.midi);
+
+        const auto gain = gain_.load(std::memory_order_relaxed);
+        if (gain != 1.0f)
+            te::graph::toAudioBuffer(destAudio).applyGain(gain);
+    }
+
+  private:
+    std::unique_ptr<te::graph::Node> input_;
+    std::atomic<float>& gain_;
+};
+
+std::unique_ptr<te::graph::Node> addDeviceMeteringTap(te::Plugin& plugin,
+                                                      std::unique_ptr<te::graph::Node> node) {
+    auto* manager = DeviceMeteringManager::getInstanceForEdit(plugin.edit);
+    if (!manager)
+        return node;
+
+    const auto devicePath = manager->getDevicePathForPlugin(&plugin);
+    if (!devicePath.isValid())
+        return node;
+
+    auto& measurer = manager->getOrCreateMeasurer(devicePath);
+    if (auto* gain = manager->getGainAtomic(devicePath))
+        node = std::make_unique<DeviceGainNode>(std::move(node), *gain);
+
+    return std::make_unique<te::LevelMeasuringNode>(std::move(node), measurer);
+}
+
+void installDeviceMeteringTap() {
+    static std::once_flag flag;
+    std::call_once(flag,
+                   [] { te::EditNodeBuilder::insertOptionalPluginTapNode = addDeviceMeteringTap; });
+}
+
+}  // namespace
 
 std::map<te::Edit*, DeviceMeteringManager*> DeviceMeteringManager::editMap_;
 juce::CriticalSection DeviceMeteringManager::editMapLock_;
@@ -216,6 +295,7 @@ DeviceMeteringManager* DeviceMeteringManager::getInstanceForEdit(te::Edit& edit)
 }
 
 void DeviceMeteringManager::registerForEdit(te::Edit& edit, DeviceMeteringManager* manager) {
+    installDeviceMeteringTap();
     juce::ScopedLock lock(editMapLock_);
     editMap_[&edit] = manager;
 }
