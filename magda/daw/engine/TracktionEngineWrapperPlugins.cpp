@@ -11,6 +11,7 @@
 #endif
 
 #include "../core/AppPaths.hpp"
+#include "PluginMetadataStore.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "TracktionEngineWrapper.hpp"
 #include "core/Config.hpp"
@@ -310,9 +311,9 @@ juce::Array<juce::PluginDescription> TracktionEngineWrapper::getPreferredPluginT
 }
 
 juce::File TracktionEngineWrapper::getPluginListFile() const {
-    // Routed via paths::pluginListFile() — respects MAGDA_DATA_DIR /
+    // Routed via paths::pluginMetadataFile() — respects MAGDA_DATA_DIR /
     // Config::getDataDir() override. Defaults to userApplicationDataDirectory.
-    auto file = magda::paths::pluginListFile();
+    auto file = magda::paths::pluginMetadataFile();
     file.getParentDirectory().createDirectory();
     return file;
 }
@@ -322,18 +323,19 @@ void TracktionEngineWrapper::savePluginList() {
         DBG("Cannot save plugin list: engine not initialized");
         return;
     }
+    if (!pluginMetadataLoaded_) {
+        DBG("Skipping plugin metadata save because the last load failed");
+        return;
+    }
 
     auto& knownPlugins = engine_->getPluginManager().knownPluginList;
-    auto pluginListFile = getPluginListFile();
-
-    // Create XML representation of the plugin list
-    if (auto xml = knownPlugins.createXml()) {
-        if (xml->writeTo(pluginListFile)) {
-            DBG("Saved plugin list (" << knownPlugins.getNumTypes()
-                                      << " plugins) to: " << pluginListFile.getFullPathName());
-        } else {
-            DBG("Failed to write plugin list to: " << pluginListFile.getFullPathName());
-        }
+    try {
+        auto& store = PluginMetadataStore::defaultForCurrentThread();
+        store.saveKnownPlugins(knownPlugins);
+        DBG("Saved plugin metadata (" << knownPlugins.getNumTypes()
+                                      << " plugins) to: " << store.file().getFullPathName());
+    } catch (const std::exception& e) {
+        DBG("Failed to save plugin metadata: " << e.what());
     }
 }
 
@@ -344,21 +346,15 @@ void TracktionEngineWrapper::loadPluginList() {
     }
 
     auto& knownPlugins = engine_->getPluginManager().knownPluginList;
-    auto pluginListFile = getPluginListFile();
-
-    if (pluginListFile.existsAsFile()) {
-        if (auto xml = juce::XmlDocument::parse(pluginListFile)) {
-            knownPlugins.recreateFromXml(*xml);
-            DBG("Loaded plugin list (" << knownPlugins.getNumTypes()
-                                       << " plugins) from: " << pluginListFile.getFullPathName());
-        } else {
-            DBG("Failed to parse plugin list from: " << pluginListFile.getFullPathName());
-            knownPlugins.clear();
-        }
-    } else {
-        DBG("No saved plugin list found at: " << pluginListFile.getFullPathName());
-        DBG("Plugins will need to be scanned manually via the Plugin Browser");
-        knownPlugins.clear();
+    pluginMetadataLoaded_ = false;
+    try {
+        auto& store = PluginMetadataStore::defaultForCurrentThread();
+        store.loadKnownPlugins(knownPlugins);
+        pluginMetadataLoaded_ = true;
+        DBG("Loaded plugin metadata (" << knownPlugins.getNumTypes()
+                                       << " plugins) from: " << store.file().getFullPathName());
+    } catch (const std::exception& e) {
+        DBG("Failed to load plugin metadata: " << e.what());
     }
 }
 
@@ -440,11 +436,13 @@ void TracktionEngineWrapper::clearPluginList() {
     auto& knownPlugins = engine_->getPluginManager().knownPluginList;
     knownPlugins.clear();
 
-    // Delete the saved file
-    auto pluginListFile = getPluginListFile();
-    if (pluginListFile.existsAsFile()) {
-        pluginListFile.deleteFile();
-        DBG("Deleted plugin list file: " << pluginListFile.getFullPathName());
+    try {
+        auto& store = PluginMetadataStore::defaultForCurrentThread();
+        store.clearKnownPlugins();
+        pluginMetadataLoaded_ = true;
+        DBG("Cleared scanned plugins from: " << store.file().getFullPathName());
+    } catch (const std::exception& e) {
+        DBG("Failed to clear plugin metadata: " << e.what());
     }
 
     DBG("Plugin list cleared. Use 'Scan' to rediscover plugins.");

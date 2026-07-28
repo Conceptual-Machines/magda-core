@@ -1,6 +1,7 @@
 #include "PluginScanner.hpp"
 
 #include "../core/AppPaths.hpp"
+#include "PluginMetadataStore.hpp"
 
 namespace magda {
 
@@ -180,17 +181,27 @@ void PluginScanner::excludePlugin(const juce::String& pluginPath, const juce::St
     saveExclusions();
 }
 
-juce::File PluginScanner::getExclusionFile() const {
-    return magda::paths::pluginExclusionsFile();
-}
-
 void PluginScanner::loadExclusions() {
-    excludedPlugins_ = loadExclusionList(getExclusionFile());
+    exclusionsLoaded_ = false;
+    try {
+        excludedPlugins_ = PluginMetadataStore::defaultForCurrentThread().loadExclusions();
+        exclusionsLoaded_ = true;
+    } catch (const std::exception& e) {
+        DBG("Failed to load plugin exclusions: " << e.what());
+    }
     DBG("Loaded " << excludedPlugins_.size() << " excluded plugins");
 }
 
 void PluginScanner::saveExclusions() {
-    saveExclusionList(getExclusionFile(), excludedPlugins_);
+    if (!exclusionsLoaded_) {
+        DBG("Skipping plugin exclusion save because the last load failed");
+        return;
+    }
+    try {
+        PluginMetadataStore::defaultForCurrentThread().saveExclusions(excludedPlugins_);
+    } catch (const std::exception& e) {
+        DBG("Failed to save plugin exclusions: " << e.what());
+    }
 }
 
 }  // namespace magda
