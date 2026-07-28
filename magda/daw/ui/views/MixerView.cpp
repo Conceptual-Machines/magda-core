@@ -10,7 +10,6 @@
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/PluginWindowManager.hpp"
-#include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/mixer/LevelMeter.hpp"
@@ -1827,8 +1826,8 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Keep the mini-chain "open editor" icons in sync with the actual plugin
     // window state. PluginWindowManager fires this on open AND on close (incl.
     // the window's own X), so the icon un-engages when the window is closed.
-    if (auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_)) {
-        if (auto* pwm = teWrapper->getPluginWindowManager()) {
+    if (audioEngine_) {
+        if (auto* pwm = audioEngine_->getPluginWindowManager()) {
             juce::Component::SafePointer<MixerView> safeThis(this);
             pwm->onWindowStateChanged = [safeThis](DeviceId deviceId, bool isOpen) {
                 auto* self = safeThis.getComponent();
@@ -1915,8 +1914,8 @@ void MixerView::midiDeviceListChanged() {
 }
 
 MixerView::~MixerView() {
-    if (auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_)) {
-        if (auto* pwm = teWrapper->getPluginWindowManager())
+    if (audioEngine_) {
+        if (auto* pwm = audioEngine_->getPluginWindowManager())
             pwm->onWindowStateChanged = nullptr;
     }
     if (audioEngine_) {
@@ -2627,11 +2626,7 @@ void MixerView::timerCallback() {
     if (!audioEngine_)
         return;
 
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(audioEngine_);
-    if (!teWrapper)
-        return;
-
-    auto* bridge = teWrapper->getAudioBridge();
+    auto* bridge = audioEngine_->getAudioBridge();
     if (!bridge)
         return;
 

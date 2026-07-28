@@ -23,8 +23,8 @@
 #include "core/PluginAlias.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/PluginMetadataStore.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
 
@@ -497,8 +497,7 @@ void PluginBrowserContent::resized() {
 void PluginBrowserContent::onActivated() {
     // Get engine from TrackManager if not already set
     if (!engine_) {
-        if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-                TrackManager::getInstance().getAudioEngine())) {
+        if (auto* engine = TrackManager::getInstance().getAudioEngine()) {
             setEngine(engine);
         }
     }
@@ -572,17 +571,17 @@ void PluginBrowserContent::loadExternalPlugins() {
     DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList fallback");
 }
 
-void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
+void PluginBrowserContent::setEngine(magda::AudioEngine* engine) {
     // Unregister from old engine's KnownPluginList
     if (engine_) {
-        engine_->getKnownPluginList().removeChangeListener(this);
+        engine_->removePluginListChangeListener(this);
     }
 
     engine_ = engine;
 
     // Register as change listener so we auto-refresh after plugin scans
     if (engine_) {
-        engine_->getKnownPluginList().addChangeListener(this);
+        engine_->addPluginListChangeListener(this);
     }
 
     refreshPluginList();
@@ -591,7 +590,7 @@ void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
 PluginBrowserContent::~PluginBrowserContent() {
     magda::PluginPreferences::getInstance().removeListener(this);
     if (engine_) {
-        engine_->getKnownPluginList().removeChangeListener(this);
+        engine_->removePluginListChangeListener(this);
     }
     // Clear root item before TreeView destructor runs
     pluginTree_.setRootItem(nullptr);

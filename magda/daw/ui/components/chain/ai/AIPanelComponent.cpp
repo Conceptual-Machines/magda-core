@@ -10,6 +10,7 @@
 #include "../../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
 
@@ -393,8 +394,10 @@ void AIPanelComponent::submitPrompt() {
     appendOutput(juce::String::charToString(0x25CF) + " " + prompt);
     input_.clear();
 
-    auto agent =
-        device != nullptr ? createDeviceAIAgentFor(*device) : createDeviceAIAgentFor(pluginId_);
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* api = engine != nullptr ? &engine->getMagdaApi() : nullptr;
+    auto agent = device != nullptr ? createDeviceAIAgentFor(*device, api)
+                                   : createDeviceAIAgentFor(pluginId_, api);
     if (!agent) {
         appendOutput("no agent for " + pluginId_);
         return;

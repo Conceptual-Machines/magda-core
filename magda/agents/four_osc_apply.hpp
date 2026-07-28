@@ -7,6 +7,8 @@
 
 namespace magda {
 
+class PluginApi;
+
 /**
  * @brief Apply a parsed FourOsc preset to a specific device path.
  *
@@ -19,7 +21,7 @@ namespace magda {
  * suitable for display in chat or panel output. If `path` doesn't
  * resolve to a 4OSC device, returns an error string starting with "(".
  */
-juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
+juce::String applyFourOscPresetToPath(PluginApi& plugins, const FourOscAgent::Preset& preset,
                                       const ChainNodePath& path);
 
 }  // namespace magda

@@ -735,7 +735,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /**
      * @brief Update transport state for LFO trigger sync
      *
-     * Called from TracktionEngineWrapper's timer callback with the current
+     * Called from the audio engine's timer callback with the current
      * transport state. The next updateAllMods() tick will use these values.
      */
     void updateTransportState(bool playing, double bpm, bool justStarted, bool justLooped);

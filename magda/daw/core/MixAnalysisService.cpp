@@ -1,7 +1,7 @@
 #include "MixAnalysisService.hpp"
 
 #include "../audio/analysis/OfflineMixAnalysis.hpp"
-#include "../engine/TracktionEngineWrapper.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "../project/ProjectManager.hpp"
 #include "SelectionManager.hpp"
 #include "TrackManager.hpp"
@@ -74,9 +74,8 @@ void MixAnalysisService::runOffline() {
     if (busy_ || capturing_)
         return;
 
-    auto* engine =
-        dynamic_cast<TracktionEngineWrapper*>(TrackManager::getInstance().getAudioEngine());
-    if (engine == nullptr || engine->getEdit() == nullptr) {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine == nullptr || !engine->hasActiveEdit()) {
         lastError_ = "No active edit to analyse.";
         listeners_.call(&Listener::mixAnalysisChanged);
         return;
@@ -245,8 +244,7 @@ juce::String MixAnalysisService::scopeDescription() const {
 }
 
 juce::String MixAnalysisService::rangeDescription() const {
-    auto* engine =
-        dynamic_cast<TracktionEngineWrapper*>(TrackManager::getInstance().getAudioEngine());
+    auto* engine = TrackManager::getInstance().getAudioEngine();
     return (engine != nullptr && engine->isLooping()) ? "loop region" : "whole song";
 }
 

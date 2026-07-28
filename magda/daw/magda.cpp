@@ -53,7 +53,7 @@ void magda_shutdown() {
     }
 }
 
-// Access to the global engine instance for MCP server
-magda::TracktionEngineWrapper* magda_get_engine() {
+// Access to the global engine interface for API consumers
+magda::AudioEngine* magda_get_engine() {
     return g_engine.get();
 }

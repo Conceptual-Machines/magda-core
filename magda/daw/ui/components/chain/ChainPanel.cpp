@@ -13,7 +13,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -777,8 +777,7 @@ void ChainPanel::onAddDeviceClicked() {
 
     // --- External plugins from KnownPluginList ---
     juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-            magda::TrackManager::getInstance().getAudioEngine())) {
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
         externalPlugins = engine->getPreferredPluginTypes();
     }
 

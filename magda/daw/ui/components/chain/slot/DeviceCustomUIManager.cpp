@@ -69,7 +69,6 @@
 #include "custom_ui/ToneGeneratorUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "media_db/ClapAudioEncoder.hpp"
 #include "media_db/ClapTextEncoder.hpp"
 #include "media_db/MediaDbContext.hpp"
@@ -1441,12 +1440,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             if (!audioEngine)
                 return;
 
-            auto* teWrapper = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
-            if (!teWrapper)
-                return;
-
-            auto& knownPlugins = teWrapper->getKnownPluginList();
-            for (const auto& desc : knownPlugins.getTypes()) {
+            for (const auto& desc : audioEngine->getKnownPluginTypes()) {
                 if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
                     if (desc.isInstrument) {
                         dg->loadPluginToPad(padIndex, desc);
@@ -1657,12 +1651,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
         if (!audioEngine)
             return;
-        auto* teWrapper = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
-        if (!teWrapper)
-            return;
-
-        auto& knownPlugins = teWrapper->getKnownPluginList();
-        for (const auto& desc : knownPlugins.getTypes()) {
+        for (const auto& desc : audioEngine->getKnownPluginTypes()) {
             if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
                 if (isMidiFxPlugin(desc))
                     return;
@@ -1765,8 +1754,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
         // External plugins from KnownPluginList
         juce::Array<juce::PluginDescription> externalPlugins;
-        if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-                magda::TrackManager::getInstance().getAudioEngine())) {
+        if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
             externalPlugins = engine->getPreferredPluginTypes();
         }
 

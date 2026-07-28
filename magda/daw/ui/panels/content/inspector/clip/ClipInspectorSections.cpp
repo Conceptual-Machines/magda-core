@@ -25,7 +25,6 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
@@ -1613,10 +1612,8 @@ void ClipInspector::showGroovePicker() {
     }
 
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* teWrapper = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
-    if (teWrapper && teWrapper->getEngine()) {
-        auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
-        auto names = gtm.getTemplateNames();
+    if (audioEngine) {
+        auto names = audioEngine->getGrooveTemplateNames();
 
         struct GroupDef {
             juce::String heading;

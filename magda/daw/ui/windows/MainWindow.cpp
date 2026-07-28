@@ -6,7 +6,7 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
-#include "../../engine/TracktionEngineWrapper.hpp"
+#include "../../engine/AudioEngine.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
@@ -49,7 +49,6 @@
 #include "engine/AudioEngine.hpp"
 #include "engine/MagdaUIBehaviour.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 #include "stem_separation/StemSeparationService.hpp"
 
@@ -566,7 +565,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     } else {
         // Create audio engine FIRST (before creating views that need it)
         juce::Logger::writeToLog("[MainComponent] Creating internal audio engine...");
-        audioEngine_ = std::make_unique<TracktionEngineWrapper>();
+        audioEngine_ = createDefaultAudioEngine();
         if (!audioEngine_->initialize()) {
             juce::Logger::writeToLog("[MainComponent] WARNING: Failed to initialize audio engine");
         }
@@ -769,9 +768,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Wire clip render callback (handles both single and multi-clip render)
     mainView->onClipRenderRequested = [this](ClipId clipId) {
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+        auto* engine = getAudioEngine();
         if (!engine) {
-            DBG("RenderClip: no TracktionEngineWrapper available");
+            DBG("RenderClip: no audio engine available");
             return;
         }
 
@@ -884,9 +883,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Wire bounce callbacks
     mainView->onBounceInPlaceRequested = [this, getBounceRange](ClipId clipId) {
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+        auto* engine = getAudioEngine();
         if (!engine) {
-            DBG("BounceInPlace: no TracktionEngineWrapper available");
+            DBG("BounceInPlace: no audio engine available");
             return;
         }
         auto cmd = std::make_unique<BounceInPlaceCommand>(clipId, engine, getBounceRange());
@@ -899,16 +898,16 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
 
     mainView->onBounceToNewTrackRequested = [this, getBounceRange](ClipId clipId) {
-        auto* engine = dynamic_cast<TracktionEngineWrapper*>(getAudioEngine());
+        auto* engine = getAudioEngine();
         if (!engine) {
-            DBG("BounceToNewTrack: no TracktionEngineWrapper available");
+            DBG("BounceToNewTrack: no audio engine available");
             return;
         }
 
         // Runs one bounce and returns its error message (empty on success).
         // executeCommand retains the command, so the raw pointer stays valid.
         const auto bounceRange = getBounceRange();
-        auto runBounce = [bounceRange](ClipId cid, TracktionEngineWrapper* eng) -> juce::String {
+        auto runBounce = [bounceRange](ClipId cid, AudioEngine* eng) -> juce::String {
             auto cmd = std::make_unique<BounceToNewTrackCommand>(cid, eng, bounceRange);
             auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
@@ -1113,20 +1112,18 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // playhead (issue: script play resumed from Tracktion's stop position
     // instead of editPosition because it bypassed the TimelineController
     // -> locate -> play sequence).
-    if (auto* tew = dynamic_cast<TracktionEngineWrapper*>(engine)) {
-        if (auto* live = dynamic_cast<magda::MagdaApiLive*>(&tew->getMagdaApi())) {
-            live->setTransportPlayDispatcher(
-                [this]() { mainView->getTimelineController().dispatch(StartPlaybackEvent{}); });
-            live->setTransportStopDispatcher(
-                [this]() { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); });
-            live->setTransportLoopDispatcher([this](bool enabled) {
-                // Route straight to the controller event — bypasses
-                // MainView::setLoopEnabled's UI-only selection-promotion behavior so
-                // a scripted toggle never silently overwrites the saved loop region
-                // just because the user happens to have a time selection active.
-                mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
-            });
-        }
+    if (auto* live = dynamic_cast<magda::MagdaApiLive*>(&engine->getMagdaApi())) {
+        live->setTransportPlayDispatcher(
+            [this]() { mainView->getTimelineController().dispatch(StartPlaybackEvent{}); });
+        live->setTransportStopDispatcher(
+            [this]() { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); });
+        live->setTransportLoopDispatcher([this](bool enabled) {
+            // Route straight to the controller event — bypasses
+            // MainView::setLoopEnabled's UI-only selection-promotion behavior so
+            // a scripted toggle never silently overwrites the saved loop region
+            // just because the user happens to have a time selection active.
+            mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
+        });
     }
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine
@@ -1249,11 +1246,9 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
 
     // Get audio engine (either external or internal)
     auto* engine = getAudioEngine();
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
-
-    if (teWrapper) {
+    if (engine) {
         // Show notification and disable transport if devices are still loading
-        if (teWrapper->isDevicesLoading()) {
+        if (engine->isDevicesLoading()) {
             loadingOverlay_->setMessage(
                 trEllipsis("main_window.loading.scanning_devices")
                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
@@ -1267,7 +1262,7 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
         }
 
         // Wire up callback to update/hide notification when devices finish loading
-        teWrapper->onDevicesLoadingChanged = [this](bool loading, const juce::String& message) {
+        engine->setDevicesLoadingCallback([this](bool loading, const juce::String& message) {
             juce::MessageManager::callAsync([this, loading, message]() {
                 // Enable/disable transport based on loading state
                 if (transportPanel) {
@@ -1291,7 +1286,7 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
                     }
                 }
             });
-        };
+        });
     } else {
         // No Tracktion Engine wrapper, don't show notification
         loadingOverlay_->setVisible(false);

@@ -9,16 +9,9 @@
 
 namespace magda {
 
-class AudioEngine;
-
 /**
  * Abstract view onto TrackManager — the track-level surface the agent
  * layer needs.
- *
- * NOTE: getAudioEngine() returns te::Engine*-equivalent and leaks the
- * engine into the API surface. Acceptable for now (executors need it
- * for groove/bpm + plugin scanning), but flagged: a future
- * MagdaApiPlugin variant probably won't return a real engine here.
  */
 class TrackApi {
   public:
@@ -73,8 +66,6 @@ class TrackApi {
     // if the track has none. Used by the drummer executor to resolve role
     // tokens to the per-instance kit.
     virtual const DeviceInfo* getPrimaryInstrument(TrackId trackId) const = 0;
-
-    virtual AudioEngine* getAudioEngine() const = 0;
 };
 
 }  // namespace magda

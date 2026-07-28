@@ -10,6 +10,8 @@
     #include <sys/mount.h>
 #endif
 
+#include "../audio/plugins/InternalPluginRegistry.hpp"
+#include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../core/AppPaths.hpp"
 #include "PluginMetadataStore.hpp"
 #include "PluginScanCoordinator.hpp"
@@ -297,12 +299,30 @@ PluginScanCoordinator* TracktionEngineWrapper::getPluginScanCoordinator() {
     return pluginScanCoordinator_.get();
 }
 
+const PluginScanCoordinator* TracktionEngineWrapper::getPluginScanCoordinator() const {
+    if (!pluginScanCoordinator_)
+        pluginScanCoordinator_ = std::make_unique<PluginScanCoordinator>();
+    return pluginScanCoordinator_.get();
+}
+
 juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() {
     return engine_->getPluginManager().knownPluginList;
 }
 
 const juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() const {
     return engine_->getPluginManager().knownPluginList;
+}
+
+juce::Array<juce::PluginDescription> TracktionEngineWrapper::getKnownPluginTypes() const {
+    return getKnownPluginList().getTypes();
+}
+
+void TracktionEngineWrapper::addPluginListChangeListener(juce::ChangeListener* listener) {
+    getKnownPluginList().addChangeListener(listener);
+}
+
+void TracktionEngineWrapper::removePluginListChangeListener(juce::ChangeListener* listener) {
+    getKnownPluginList().removeChangeListener(listener);
 }
 
 juce::Array<juce::PluginDescription> TracktionEngineWrapper::getPreferredPluginTypes() const {
@@ -449,7 +469,7 @@ void TracktionEngineWrapper::clearPluginList() {
 }
 
 void TracktionEngineWrapper::detectNewPlugins(
-    std::function<void(IncrementalScanPhase, const juce::String&)> statusCallback,
+    std::function<void(PluginScanPhase, const juce::String&)> statusCallback,
     std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) {
     if (!engine_) {
         DBG("[AutoDetect] Engine not initialized");
@@ -458,7 +478,7 @@ void TracktionEngineWrapper::detectNewPlugins(
 
     juce::Logger::writeToLog("[AutoDetect] Checking for new plugins...");
     if (statusCallback)
-        statusCallback(IncrementalScanPhase::Discovering, {});
+        statusCallback(PluginScanPhase::Discovering, {});
 
     // Snapshot all data needed by the background thread while on the message thread
     auto& pluginManager = engine_->getPluginManager();
@@ -520,7 +540,7 @@ void TracktionEngineWrapper::detectNewPlugins(
                 juce::Logger::writeToLog("[AutoDetect] Plugins up to date (" +
                                          juce::String(kp.getNumTypes()) + " loaded)");
                 if (statusCallback)
-                    statusCallback(IncrementalScanPhase::UpToDate, {});
+                    statusCallback(PluginScanPhase::UpToDate, {});
                 if (completionCallback)
                     completionCallback(true, 0, kp.getNumTypes(), {});
                 return;
@@ -536,7 +556,7 @@ void TracktionEngineWrapper::detectNewPlugins(
                 fm, newPlugins,
                 [statusCallback](float, const juce::String& currentPlugin) {
                     if (statusCallback)
-                        statusCallback(IncrementalScanPhase::Scanning, currentPlugin);
+                        statusCallback(PluginScanPhase::Scanning, currentPlugin);
                 },
                 [weakThis, alive, completionCallback](
                     bool success, const juce::Array<juce::PluginDescription>& plugins,
@@ -564,6 +584,228 @@ void TracktionEngineWrapper::detectNewPlugins(
                 });
         });
     });
+}
+
+bool TracktionEngineWrapper::isPluginScanRunning() const {
+    return isScanning_ || (pluginScanCoordinator_ && pluginScanCoordinator_->isScanning());
+}
+
+std::vector<ExcludedPlugin> TracktionEngineWrapper::getExcludedPlugins() const {
+    return getPluginScanCoordinator()->getExcludedPlugins();
+}
+
+void TracktionEngineWrapper::setExcludedPlugins(
+    const std::vector<ExcludedPlugin>& excludedPlugins) {
+    auto* coordinator = getPluginScanCoordinator();
+    coordinator->clearExclusions();
+    for (const auto& entry : excludedPlugins)
+        coordinator->excludePlugin(entry.path, entry.reason);
+}
+
+juce::File TracktionEngineWrapper::getPluginScanReportFile() const {
+    return getPluginScanCoordinator()->getScanReportFile();
+}
+
+std::vector<std::string> TracktionEngineWrapper::getSystemPluginSearchPaths() const {
+    std::vector<std::string> paths;
+    if (!engine_)
+        return paths;
+
+    auto& formatManager = engine_->getPluginManager().pluginFormatManager;
+    for (int i = 0; i < formatManager.getNumFormats(); ++i) {
+        auto* format = formatManager.getFormat(i);
+        if (format == nullptr)
+            continue;
+        const auto formatName = format->getName();
+        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit"))
+            continue;
+        const auto searchPaths = format->getDefaultLocationsToSearch();
+        for (int j = 0; j < searchPaths.getNumPaths(); ++j) {
+            auto path = searchPaths[j].getFullPathName().toStdString();
+            if (std::find(paths.begin(), paths.end(), path) == paths.end())
+                paths.push_back(std::move(path));
+        }
+    }
+    return paths;
+}
+
+std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters(
+    const juce::String& pluginId, bool internalPlugin) {
+    std::vector<ScannedPluginParameter> result;
+    if (!engine_ || !currentEdit_)
+        return result;
+
+    constexpr std::array<float, 5> samplePoints{0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+
+    if (internalPlugin) {
+        namespace te = tracktion::engine;
+        te::Plugin::Ptr plugin;
+        if (const auto* spec = daw::audio::findInternalPluginSpec(pluginId)) {
+            plugin = daw::audio::createInternalPluginFromSpec(*spec, *currentEdit_);
+        } else {
+            juce::ValueTree state(te::IDs::PLUGIN);
+            state.setProperty(te::IDs::type, pluginId, nullptr);
+            plugin = currentEdit_->getPluginCache().createNewPlugin(state);
+        }
+        if (plugin == nullptr)
+            return result;
+
+        const auto parameters = plugin->getAutomatableParameters();
+        for (int i = 0; i < parameters.size(); ++i) {
+            auto* parameter = parameters[i];
+            if (parameter == nullptr || parameter->getParameterName().isEmpty())
+                continue;
+
+            const auto range = parameter->getValueRange();
+            const int numStates = parameter->getNumberOfStates();
+            ScannedPluginParameter info;
+            info.name = parameter->getParameterName();
+            info.defaultValue = parameter->getDefaultValue().value_or(range.getStart());
+            info.unit = "%";
+            info.rangeMin = range.getStart();
+            info.rangeMax = range.getEnd();
+            info.rangeCenter = (info.rangeMin + info.rangeMax) * 0.5f;
+            info.scale = numStates == 2
+                             ? ParameterScale::Boolean
+                             : (numStates > 0 && numStates <= 12 ? ParameterScale::Discrete
+                                                                 : ParameterScale::Linear);
+            info.scanInput.paramIndex = i;
+            info.scanInput.name = info.name;
+            info.scanInput.label = parameter->getLabel();
+            info.scanInput.rangeMin = info.rangeMin;
+            info.scanInput.rangeMax = info.rangeMax;
+            info.scanInput.stateCount = (numStates > 1 && numStates <= 1000) ? numStates : 0;
+            for (const auto sample : samplePoints) {
+                const float raw = info.rangeMin + (info.rangeMax - info.rangeMin) * sample;
+                info.scanInput.displayTexts.push_back(parameter->valueToString(raw));
+            }
+            if (info.scale == ParameterScale::Discrete || info.scale == ParameterScale::Boolean)
+                info.valueTable = info.scanInput.displayTexts;
+            result.push_back(std::move(info));
+        }
+        return result;
+    }
+
+    juce::PluginDescription description;
+    bool found = false;
+    for (const auto& candidate : getKnownPluginTypes()) {
+        if (candidate.createIdentifierString() == pluginId) {
+            description = candidate;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return result;
+
+    juce::String error;
+    auto& formatManager = engine_->getPluginManager().pluginFormatManager;
+    auto instance = formatManager.createPluginInstance(description, 44100.0, 512, error);
+    if (instance == nullptr)
+        return result;
+
+    const auto parameters = instance->getParameters();
+    for (int i = 0; i < parameters.size(); ++i) {
+        auto* parameter = parameters[i];
+        if (parameter == nullptr || !parameter->isAutomatable())
+            continue;
+
+        ScannedPluginParameter info;
+        info.name = parameter->getName(128);
+        if (info.name.isEmpty())
+            continue;
+        info.defaultValue = parameter->getDefaultValue();
+        const auto rawLabel = parameter->getLabel().trim();
+        info.unit = rawLabel.length() <= 6 && !rawLabel.contains("[") && !rawLabel.contains("(")
+                        ? (rawLabel.isEmpty() ? juce::String("%") : rawLabel)
+                        : juce::String("%");
+        info.scanInput.paramIndex = i;
+        info.scanInput.name = info.name;
+        info.scanInput.label = rawLabel;
+
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter)) {
+            const auto range = ranged->getNormalisableRange();
+            info.rangeMin = range.start;
+            info.rangeMax = range.end;
+        }
+        info.rangeCenter = (info.rangeMin + info.rangeMax) * 0.5f;
+        info.scanInput.rangeMin = info.rangeMin;
+        info.scanInput.rangeMax = info.rangeMax;
+        info.scanInput.stateCount = parameter->getNumSteps();
+        if (info.scanInput.stateCount > 1000)
+            info.scanInput.stateCount = 0;
+
+        if (info.scanInput.stateCount > 0) {
+            for (int state = 0; state < info.scanInput.stateCount; ++state) {
+                const float normalized =
+                    info.scanInput.stateCount == 1
+                        ? 0.0f
+                        : static_cast<float>(state) /
+                              static_cast<float>(info.scanInput.stateCount - 1);
+                info.scanInput.displayTexts.push_back(parameter->getText(normalized, 128));
+            }
+            info.valueTable = info.scanInput.displayTexts;
+        } else {
+            for (const auto sample : samplePoints)
+                info.scanInput.displayTexts.push_back(parameter->getText(sample, 128));
+
+            bool allLabels = true;
+            for (const auto& text : info.scanInput.displayTexts) {
+                const auto trimmed = text.trim();
+                if (trimmed.isEmpty() || !juce::CharacterFunctions::isLetter(trimmed[0])) {
+                    allLabels = false;
+                    break;
+                }
+            }
+            if (allLabels) {
+                info.scanInput.displayTexts.clear();
+                for (int state = 0; state <= 1000; ++state) {
+                    const auto text = parameter->getText(static_cast<float>(state) / 1000.0f, 128);
+                    if (info.scanInput.displayTexts.empty() ||
+                        info.scanInput.displayTexts.back() != text)
+                        info.scanInput.displayTexts.push_back(text);
+                }
+                info.valueTable = info.scanInput.displayTexts;
+            } else {
+                info.valueTable.reserve(1001);
+                for (int state = 0; state <= 1000; ++state)
+                    info.valueTable.push_back(
+                        parameter->getText(static_cast<float>(state) / 1000.0f, 128));
+            }
+        }
+        result.push_back(std::move(info));
+    }
+    return result;
+}
+
+bool TracktionEngineWrapper::upsertGrooveTemplate(const GrooveTemplateData& data) {
+    if (!engine_ || data.name.isEmpty() || data.latenessProportions.empty())
+        return false;
+
+    tracktion::GrooveTemplate groove;
+    groove.setName(data.name);
+    groove.setNumberOfNotes(static_cast<int>(data.latenessProportions.size()));
+    groove.setNotesPerBeat(data.notesPerBeat);
+    groove.setParameterized(data.parameterized);
+    for (int i = 0; i < static_cast<int>(data.latenessProportions.size()); ++i)
+        groove.setLatenessProportion(i, data.latenessProportions[static_cast<size_t>(i)], 1.0f);
+
+    auto& manager = engine_->getGrooveTemplateManager();
+    manager.useParameterizedGrooves(true);
+    int existingIndex = -1;
+    for (int i = 0; i < manager.getNumTemplates(); ++i) {
+        if (manager.getTemplateName(i) == data.name) {
+            existingIndex = i;
+            break;
+        }
+    }
+    manager.updateTemplate(existingIndex, groove);
+    return true;
+}
+
+juce::StringArray TracktionEngineWrapper::getGrooveTemplateNames() const {
+    return engine_ != nullptr ? engine_->getGrooveTemplateManager().getTemplateNames()
+                              : juce::StringArray{};
 }
 
 }  // namespace magda

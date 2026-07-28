@@ -6,7 +6,7 @@
 #include <array>
 #include <limits>
 
-#include "../engine/TracktionEngineWrapper.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
 #include "audio/AudioBridge.hpp"
@@ -94,33 +94,18 @@ double timelineSecondsForBeat(double beat, const TempoMap* tempoMap) {
  */
 class RenderProgressWindow : public juce::ThreadWithProgressWindow {
   public:
-    RenderProgressWindow(const juce::String& title, const te::Renderer::Parameters& params)
-        : ThreadWithProgressWindow(title, true, true), params_(params) {
+    RenderProgressWindow(const juce::String& title, std::unique_ptr<OfflineRenderTask> task)
+        : ThreadWithProgressWindow(title, true, true), task_(std::move(task)) {
         setStatusMessage("Preparing to render...");
     }
 
     void run() override {
-        std::atomic<float> progress{0.0f};
-        auto renderTask =
-            std::make_unique<te::Renderer::RenderTask>("Render", params_, &progress, nullptr);
-
         setStatusMessage("Rendering...");
-
-        while (!threadShouldExit()) {
-            auto status = renderTask->runJob();
-            setProgress(static_cast<double>(progress.load()));
-
-            if (status == juce::ThreadPoolJob::jobHasFinished) {
-                success_ = params_.destFile.existsAsFile() && params_.destFile.getSize() > 0;
-                setProgress(1.0);
-                break;
-            }
-
-            if (status != juce::ThreadPoolJob::jobNeedsRunningAgain)
-                break;
-
-            juce::Thread::sleep(1);
-        }
+        if (!task_)
+            return;
+        result_ = task_->run([this]() { return threadShouldExit(); },
+                             [this](float progress) { setProgress(progress); });
+        success_ = result_.success;
     }
 
     bool wasSuccessful() const {
@@ -128,7 +113,8 @@ class RenderProgressWindow : public juce::ThreadWithProgressWindow {
     }
 
   private:
-    te::Renderer::Parameters params_;
+    std::unique_ptr<OfflineRenderTask> task_;
+    OfflineRenderResult result_;
     bool success_ = false;
 };
 
@@ -153,7 +139,7 @@ bool trackNeedsInsertCapture(te::Track& track) {
 // capture failed; on success (true with a service), call
 // cleanupAfterRender() once the render is done - InsertCaptureScope below
 // does it on scope exit.
-bool runInsertCapturePass(TracktionEngineWrapper& engine, double startSec, double endSec,
+bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
                           double renderSampleRate) {
     auto* service = engine.getInsertRenderCaptureService();
     if (service == nullptr)
@@ -211,6 +197,22 @@ struct InsertCaptureScope {
         if (service != nullptr)
             service->cleanupAfterRender();
     }
+};
+
+struct PlaybackResumeScope {
+    explicit PlaybackResumeScope(AudioEngine& engine)
+        : engine(engine), resumeWhenDone(engine.isPlaying()) {
+        if (resumeWhenDone)
+            engine.stop();
+    }
+
+    ~PlaybackResumeScope() {
+        if (resumeWhenDone)
+            engine.play();
+    }
+
+    AudioEngine& engine;
+    bool resumeWhenDone = false;
 };
 
 }  // namespace
@@ -1199,7 +1201,7 @@ void SetVolumeCommand::undo() {
 // RenderClipCommand
 // ============================================================================
 
-RenderClipCommand::RenderClipCommand(ClipId clipId, TracktionEngineWrapper* engine)
+RenderClipCommand::RenderClipCommand(ClipId clipId, AudioEngine* engine)
     : clipId_(clipId), engine_(engine) {}
 
 void RenderClipCommand::execute() {
@@ -1213,10 +1215,9 @@ void RenderClipCommand::execute() {
     // Snapshot original clip for undo
     originalClipSnapshot_ = *clip;
 
-    auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
-    if (!edit || !bridge) {
-        DBG("RenderClipCommand: no edit or bridge");
+    if (!engine_->hasActiveEdit() || !bridge) {
+        DBG("RenderClipCommand: no active edit or bridge");
         return;
     }
 
@@ -1240,70 +1241,25 @@ void RenderClipCommand::execute() {
         clip->name.isNotEmpty() ? clip->name : sourceFile.getFileNameWithoutExtension();
     renderedFile_ = rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
 
-    // Stop transport and free playback context for offline rendering
-    auto& transport = edit->getTransport();
-    bool wasPlaying = transport.isPlaying();
-    if (wasPlaying) {
-        transport.stop(false, false);
-    }
-    te::freePlaybackContextIfNotRecording(transport);
-    // Restore playback after render if it was playing
-    auto restoreTransport = [wasPlaying, &transport]() {
-        if (wasPlaying)
-            transport.play(false);
-    };
-
-    // Find track index in getAllTracks for tracksToDo bitset
-    auto* teTrack = teClip->getTrack();
-    if (!teTrack) {
-        DBG("RenderClipCommand: clip has no track");
-        restoreTransport();
-        return;
-    }
-
-    auto allTracks = te::getAllTracks(*edit);
-    int trackIndex = -1;
-    for (int i = 0; i < allTracks.size(); ++i) {
-        if (allTracks[i] == teTrack) {
-            trackIndex = i;
-            break;
-        }
-    }
-
-    if (trackIndex < 0) {
-        DBG("RenderClipCommand: track not found in edit");
-        restoreTransport();
-        return;
-    }
-
-    // Build Renderer::Parameters
-    te::Renderer::Parameters params(*edit);
-    params.destFile = renderedFile_;
-
-    auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
-    params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().renderBitDepth;
-    params.sampleRateForAudio = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
-    params.blockSizeForAudio = 512;
-    params.usePlugins = false;
-    params.useMasterPlugins = false;
-    params.checkNodesForAudio = false;
-
     const double projectBPM = currentProjectBpm();
     const double renderStart = clip->getTimelineStart(projectBPM);
     const double renderEnd = clip->getTimelineEnd(projectBPM);
 
-    params.time = te::TimeRange(te::TimePosition::fromSeconds(renderStart),
-                                te::TimePosition::fromSeconds(renderEnd));
-
-    // Set track and clip filters
-    juce::BigInteger trackBits;
-    trackBits.setBit(trackIndex);
-    params.tracksToDo = trackBits;
-    params.allowedClips.add(teClip);
+    const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
+    OfflineRenderRequest request;
+    request.destination = renderedFile_;
+    request.bitDepth = project.renderBitDepth;
+    request.sampleRate = project.sampleRate;
+    request.usePlugins = false;
+    request.useMasterPlugins = false;
+    request.range = {{renderStart}, {renderEnd}, {}};
+    request.trackIds = {clip->trackId};
+    request.clipIds = {clipId_};
 
     // Run render on background thread with progress UI
-    RenderProgressWindow progressWindow("Rendering Clip...", params);
+    auto renderSession = engine_->createOfflineRenderSession(engine_->isPlaying());
+    RenderProgressWindow progressWindow(
+        "Rendering Clip...", renderSession ? renderSession->createTask(request) : nullptr);
     bool userCancelled = !progressWindow.runThread();
 
     if (userCancelled || !progressWindow.wasSuccessful()) {
@@ -1311,7 +1267,6 @@ void RenderClipCommand::execute() {
             DBG("RenderClipCommand: render failed, no output file");
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
-        restoreTransport();
         return;
     }
 
@@ -1341,7 +1296,6 @@ void RenderClipCommand::execute() {
         SelectionManager::getInstance().selectClip(newClipId_);
     }
 
-    restoreTransport();
     success_ = true;
 }
 
@@ -1374,7 +1328,7 @@ void RenderClipCommand::undo() {
 
 RenderTimeSelectionCommand::RenderTimeSelectionCommand(double startTime, double endTime,
                                                        const std::vector<TrackId>& trackIds,
-                                                       TracktionEngineWrapper* engine)
+                                                       AudioEngine* engine)
     : startTime_(startTime), endTime_(endTime), trackIds_(trackIds), engine_(engine) {}
 
 void RenderTimeSelectionCommand::execute() {
@@ -1383,27 +1337,21 @@ void RenderTimeSelectionCommand::execute() {
         return;
     }
 
-    auto* edit = engine_->getEdit();
-    auto* bridge = engine_->getAudioBridge();
-    if (!edit || !bridge) {
-        DBG("RenderTimeSelectionCommand: no edit or bridge");
+    if (!engine_->hasActiveEdit()) {
+        DBG("RenderTimeSelectionCommand: no active edit");
         return;
     }
 
     auto& clipManager = ClipManager::getInstance();
 
-    // Stop transport and free playback context for offline rendering
-    auto& transport = edit->getTransport();
-    bool wasPlaying = transport.isPlaying();
-    if (wasPlaying) {
-        transport.stop(false, false);
-    }
-    te::freePlaybackContextIfNotRecording(transport);
-
-    auto allTracks = te::getAllTracks(*edit);
-
     trackStates_.clear();
     newClipIds_.clear();
+
+    auto renderSession = engine_->createOfflineRenderSession(engine_->isPlaying());
+    if (!renderSession) {
+        DBG("RenderTimeSelectionCommand: could not create render session");
+        return;
+    }
 
     int trackIndex_ = 0;
     for (auto trackId : trackIds_) {
@@ -1449,50 +1397,21 @@ void RenderTimeSelectionCommand::execute() {
         trackState.renderedFile =
             rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
 
-        // Resolve TE track index
-        auto* teTrack = bridge->getAudioTrack(trackId);
-        if (!teTrack) {
-            DBG("RenderTimeSelectionCommand: TE track not found for trackId " << trackId);
-            continue;
-        }
-
-        int trackIndex = -1;
-        for (int i = 0; i < allTracks.size(); ++i) {
-            if (allTracks[i] == teTrack) {
-                trackIndex = i;
-                break;
-            }
-        }
-        if (trackIndex < 0)
-            continue;
-
-        // Build Renderer::Parameters
-        te::Renderer::Parameters params(*edit);
-        params.destFile = trackState.renderedFile;
-
-        auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
-        params.audioFormat = formatManager.getWavFormat();
-        params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().renderBitDepth;
-        params.sampleRateForAudio =
-            ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
-        params.blockSizeForAudio = 512;
-        params.usePlugins = false;
-        params.useMasterPlugins = false;
-        params.checkNodesForAudio = false;
-
-        params.time = te::TimeRange(te::TimePosition::fromSeconds(startTime_),
-                                    te::TimePosition::fromSeconds(endTime_));
-
-        juce::BigInteger trackBits;
-        trackBits.setBit(trackIndex);
-        params.tracksToDo = trackBits;
-        // allowedClips empty = all clips on track in range
+        const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
+        OfflineRenderRequest request;
+        request.destination = trackState.renderedFile;
+        request.bitDepth = project.renderBitDepth;
+        request.sampleRate = project.sampleRate;
+        request.usePlugins = false;
+        request.useMasterPlugins = false;
+        request.range = {{startTime_}, {endTime_}, {}};
+        request.trackIds = {trackId};
 
         // Run render on background thread with progress UI
         int trackTotal = static_cast<int>(trackIds_.size());
         juce::String title = "Rendering track " + juce::String(trackIndex_) + " of " +
                              juce::String(trackTotal) + "...";
-        RenderProgressWindow progressWindow(title, params);
+        RenderProgressWindow progressWindow(title, renderSession->createTask(request));
         bool userCancelled = !progressWindow.runThread();
 
         if (userCancelled || !progressWindow.wasSuccessful()) {
@@ -1530,9 +1449,6 @@ void RenderTimeSelectionCommand::execute() {
         clipManager.forceNotifyClipsChanged();
         success_ = true;
     }
-
-    if (wasPlaying)
-        transport.play(false);
 }
 
 void RenderTimeSelectionCommand::undo() {
@@ -2100,8 +2016,7 @@ void RippleDeleteRangeCommand::undo() {
 // BounceInPlaceCommand
 // ============================================================================
 
-BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine,
-                                           BounceRange range)
+BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, AudioEngine* engine, BounceRange range)
     : clipId_(clipId), engine_(engine), range_(range) {}
 
 void BounceInPlaceCommand::execute() {
@@ -2131,10 +2046,9 @@ void BounceInPlaceCommand::execute() {
     const auto bounceRange =
         resolveBounceRenderRange(replacement_.getOriginalClip(), range_, tempoMap, true);
 
-    auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
-    if (!edit || !bridge) {
-        DBG("BounceInPlaceCommand: no edit or bridge");
+    if (!engine_->hasActiveEdit() || !bridge) {
+        DBG("BounceInPlaceCommand: no active edit or bridge");
         return;
     }
 
@@ -2153,7 +2067,7 @@ void BounceInPlaceCommand::execute() {
     // project (e.g. on the Desktop) where the project can't track it.
     auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
     if (bouncesDir == juce::File())
-        bouncesDir = edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
+        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
@@ -2173,24 +2087,14 @@ void BounceInPlaceCommand::execute() {
         renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
     }
 
-    // Stop transport and free playback context
-    auto& transport = edit->getTransport();
-    bool wasPlaying = transport.isPlaying();
-    if (wasPlaying) {
-        transport.stop(false, false);
-    }
-    te::freePlaybackContextIfNotRecording(transport);
-
-    auto restoreTransport = [wasPlaying, &transport]() {
-        if (wasPlaying)
-            transport.play(false);
-    };
+    // Match the original bounce lifecycle: stop before capture or FX bypass,
+    // and resume once after every render/capture cleanup has completed.
+    PlaybackResumeScope playbackScope(*engine_);
 
     // Find TE track
     auto* teTrack = teClip->getTrack();
     if (!teTrack) {
         DBG("BounceInPlaceCommand: clip has no track");
-        restoreTransport();
         return;
     }
 
@@ -2211,7 +2115,6 @@ void BounceInPlaceCommand::execute() {
                 errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
                 juce::Logger::writeToLog(errorMessage_);
             }
-            restoreTransport();
             return;
         }
         captureScope.service = engine_->getInsertRenderCaptureService();
@@ -2224,7 +2127,6 @@ void BounceInPlaceCommand::execute() {
         if (clip == nullptr || teClip == nullptr || teTrack == nullptr) {
             errorMessage_ = "Bounce failed: the clip disappeared during the capture pass.";
             juce::Logger::writeToLog(errorMessage_);
-            restoreTransport();
             return;
         }
     }
@@ -2248,59 +2150,34 @@ void BounceInPlaceCommand::execute() {
         plugin->setEnabled(false);
     }
 
-    // Find track index for tracksToDo bitset
-    auto allTracks = te::getAllTracks(*edit);
-    int trackIndex = -1;
-    for (int i = 0; i < allTracks.size(); ++i) {
-        if (allTracks[i] == teTrack) {
-            trackIndex = i;
-            break;
-        }
-    }
-
-    if (trackIndex < 0) {
-        DBG("BounceInPlaceCommand: track not found in edit");
-        // Restore bypassed plugins
-        for (auto& state : savedStates) {
-            state.plugin->setEnabled(state.wasEnabled);
-        }
-        restoreTransport();
-        return;
-    }
-
-    // Build Renderer::Parameters
-    te::Renderer::Parameters params(*edit);
-    params.destFile = renderedFile_;
-    auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
-    params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().bounceBitDepth;
-    params.sampleRateForAudio = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
-    params.blockSizeForAudio = 512;
-    params.usePlugins = true;  // Synth is active, FX are bypassed
-    params.useMasterPlugins = false;
-    params.checkNodesForAudio = false;  // MIDI→synth generates audio
-
-    // Renderer accepts seconds, but the selection stays in beats until this
-    // boundary so tempo changes within the range are respected.
-    params.time =
-        te::TimeRange(te::TimePosition::fromSeconds(bounceRange.startSeconds),
-                      te::TimePosition::fromSeconds(bounceRange.endSeconds + bounceTailSeconds));
-
-    juce::BigInteger trackBits;
-    trackBits.setBit(trackIndex);
-    params.tracksToDo = trackBits;
-    params.allowedClips.add(teClip);
+    const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
+    OfflineRenderRequest request;
+    request.destination = renderedFile_;
+    request.bitDepth = project.bounceBitDepth;
+    request.sampleRate = project.sampleRate;
+    request.usePlugins = true;
+    request.useMasterPlugins = false;
+    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
+    request.trackIds = {clip->trackId};
+    request.clipIds = {clipId_};
 
     // Render
-    RenderProgressWindow progressWindow("Bouncing In Place...", params);
-    bool userCancelled = !progressWindow.runThread();
+    bool userCancelled = false;
+    bool renderSucceeded = false;
+    {
+        auto renderSession = engine_->createOfflineRenderSession(false);
+        RenderProgressWindow progressWindow(
+            "Bouncing In Place...", renderSession ? renderSession->createTask(request) : nullptr);
+        userCancelled = !progressWindow.runThread();
+        renderSucceeded = progressWindow.wasSuccessful();
+    }
 
     // Restore FX plugins regardless of render outcome
     for (auto& state : savedStates) {
         state.plugin->setEnabled(state.wasEnabled);
     }
 
-    if (userCancelled || !progressWindow.wasSuccessful()) {
+    if (userCancelled || !renderSucceeded) {
         if (!userCancelled) {
             errorMessage_ = "Bounce failed: couldn't write the audio file "
                             "(the disk may be full or unwritable):\n" +
@@ -2309,7 +2186,6 @@ void BounceInPlaceCommand::execute() {
         }
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
-        restoreTransport();
         return;
     }
 
@@ -2319,7 +2195,6 @@ void BounceInPlaceCommand::execute() {
                               projectBPM)) {
         renderedFile_.deleteFile();
         errorMessage_ = "Bounce failed: couldn't replace the source clip with bounced audio.";
-        restoreTransport();
         return;
     }
 
@@ -2332,7 +2207,6 @@ void BounceInPlaceCommand::execute() {
         clipManager.forceNotifyClipsChanged();
     }
 
-    restoreTransport();
     success_ = true;
 }
 
@@ -2356,7 +2230,7 @@ void BounceInPlaceCommand::undo() {
 // BounceToNewTrackCommand
 // ============================================================================
 
-BounceToNewTrackCommand::BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine,
+BounceToNewTrackCommand::BounceToNewTrackCommand(ClipId clipId, AudioEngine* engine,
                                                  BounceRange range)
     : clipId_(clipId), engine_(engine), range_(range) {}
 
@@ -2374,10 +2248,9 @@ void BounceToNewTrackCommand::execute() {
         return;
     }
 
-    auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
-    if (!edit || !bridge) {
-        DBG("BounceToNewTrackCommand: no edit or bridge");
+    if (!engine_->hasActiveEdit() || !bridge) {
+        DBG("BounceToNewTrackCommand: no active edit or bridge");
         return;
     }
 
@@ -2404,7 +2277,7 @@ void BounceToNewTrackCommand::execute() {
     // project (e.g. on the Desktop) where the project can't track it.
     auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
     if (bouncesDir == juce::File())
-        bouncesDir = edit->editFileRetriever().getParentDirectory().getChildFile("bounces");
+        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
@@ -2424,88 +2297,57 @@ void BounceToNewTrackCommand::execute() {
         renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
     }
 
-    // Stop transport and free playback context
-    auto& transport = edit->getTransport();
-    bool wasPlaying = transport.isPlaying();
-    if (wasPlaying) {
-        transport.stop(false, false);
-    }
-    te::freePlaybackContextIfNotRecording(transport);
-
-    auto restoreTransport = [wasPlaying, &transport]() {
-        if (wasPlaying)
-            transport.play(false);
-    };
+    PlaybackResumeScope playbackScope(*engine_);
 
     // Find TE track
     auto* teTrack = teClip->getTrack();
     if (!teTrack) {
         DBG("BounceToNewTrackCommand: clip has no track");
-        restoreTransport();
         return;
     }
-
-    // Find track index
-    auto allTracks = te::getAllTracks(*edit);
-    int trackIndex = -1;
-    for (int i = 0; i < allTracks.size(); ++i) {
-        if (allTracks[i] == teTrack) {
-            trackIndex = i;
-            break;
-        }
-    }
-
-    if (trackIndex < 0) {
-        DBG("BounceToNewTrackCommand: track not found in edit");
-        restoreTransport();
-        return;
-    }
-
-    // Build Renderer::Parameters (full chain)
-    te::Renderer::Parameters params(*edit);
-    params.destFile = renderedFile_;
-    auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
-    params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = ProjectManager::getInstance().getCurrentProjectInfo().bounceBitDepth;
-    params.sampleRateForAudio = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
-    params.blockSizeForAudio = 512;
-    params.usePlugins = true;  // Full signal chain
-    params.useMasterPlugins = false;
-    params.checkNodesForAudio = false;
 
     const double bounceTailSeconds = 2.0;
-    params.time =
-        te::TimeRange(te::TimePosition::fromSeconds(bounceRange.startSeconds),
-                      te::TimePosition::fromSeconds(bounceRange.endSeconds + bounceTailSeconds));
+    const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
 
     // External insert returns only exist live — capture them first (#1623).
     InsertCaptureScope captureScope;
     if (trackNeedsInsertCapture(*teTrack)) {
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
-                                  bounceRange.endSeconds + bounceTailSeconds,
-                                  params.sampleRateForAudio)) {
+                                  bounceRange.endSeconds + bounceTailSeconds, project.sampleRate)) {
             auto* service = engine_->getInsertRenderCaptureService();
             if (service != nullptr &&
                 service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
                 errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
                 juce::Logger::writeToLog(errorMessage_);
             }
-            restoreTransport();
             return;
         }
         captureScope.service = engine_->getInsertRenderCaptureService();
     }
 
-    juce::BigInteger trackBits;
-    trackBits.setBit(trackIndex);
-    params.tracksToDo = trackBits;
-    params.allowedClips.add(teClip);
+    OfflineRenderRequest request;
+    request.destination = renderedFile_;
+    request.bitDepth = project.bounceBitDepth;
+    request.sampleRate = project.sampleRate;
+    request.usePlugins = true;
+    request.useMasterPlugins = false;
+    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
+    request.trackIds = {clip->trackId};
+    request.clipIds = {clipId_};
 
     // Render
-    RenderProgressWindow progressWindow("Bouncing To New Track...", params);
-    bool userCancelled = !progressWindow.runThread();
+    bool userCancelled = false;
+    bool renderSucceeded = false;
+    {
+        auto renderSession = engine_->createOfflineRenderSession(false);
+        RenderProgressWindow progressWindow("Bouncing To New Track...",
+                                            renderSession ? renderSession->createTask(request)
+                                                          : nullptr);
+        userCancelled = !progressWindow.runThread();
+        renderSucceeded = progressWindow.wasSuccessful();
+    }
 
-    if (userCancelled || !progressWindow.wasSuccessful()) {
+    if (userCancelled || !renderSucceeded) {
         if (!userCancelled) {
             errorMessage_ = "Bounce failed: couldn't write the audio file "
                             "(the disk may be full or unwritable):\n" +
@@ -2514,7 +2356,6 @@ void BounceToNewTrackCommand::execute() {
         }
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
-        restoreTransport();
         return;
     }
 
@@ -2542,7 +2383,6 @@ void BounceToNewTrackCommand::execute() {
         clipManager.forceNotifyClipsChanged();
     }
 
-    restoreTransport();
     success_ = true;
 }
 

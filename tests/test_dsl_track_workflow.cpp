@@ -91,6 +91,37 @@ TEST_CASE("DSL missing track error uses readable ASCII punctuation", "[dsl][trac
           "(for example, \"add @filter to Bass\").");
 }
 
+TEST_CASE("DSL external plugin format hints use normalized exact formats",
+          "[dsl][plugins][format]") {
+    test::MockMagdaApi api;
+    addTrack(api, 10, "Audio");
+
+    DeviceInfo vst3;
+    vst3.name = "Shared Plugin";
+    vst3.pluginId = "vst3.shared";
+    vst3.format = PluginFormat::VST3;
+
+    DeviceInfo vst = vst3;
+    vst.pluginId = "vst.shared";
+    vst.format = PluginFormat::VST;
+
+    DeviceInfo au;
+    au.name = "Test AU";
+    au.pluginId = "au.test";
+    au.format = PluginFormat::AU;
+
+    api.plugins_.all = {vst3, vst, au};
+    dsl::Interpreter interp(api);
+
+    REQUIRE(interp.execute("track(id=1).fx.add(name=\"Test AU\", format=\"AudioUnit\")"));
+    REQUIRE(api.tracks_.deviceWrites.size() == 1);
+    CHECK(api.tracks_.deviceWrites.back().device.format == PluginFormat::AU);
+
+    REQUIRE(interp.execute("track(id=1).fx.add(name=\"Shared Plugin\", format=\"VST\")"));
+    REQUIRE(api.tracks_.deviceWrites.size() == 2);
+    CHECK(api.tracks_.deviceWrites.back().device.format == PluginFormat::VST);
+}
+
 TEST_CASE("DSL groups explicit track ids and chains colour onto the group",
           "[dsl][tracks][group]") {
     auto& tm = TrackManager::getInstance();

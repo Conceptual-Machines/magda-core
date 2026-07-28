@@ -9,7 +9,9 @@
 #include <sstream>
 
 #include "../daw/api/clip_api.hpp"
+#include "../daw/api/groove_api.hpp"
 #include "../daw/api/magda_api.hpp"
+#include "../daw/api/plugin_api.hpp"
 #include "../daw/api/project_api.hpp"
 #include "../daw/api/selection_api.hpp"
 #include "../daw/api/track_api.hpp"
@@ -24,8 +26,6 @@
 #include "../daw/core/TrackManager.hpp"
 #include "../daw/core/TrackPropertyCommands.hpp"
 #include "../daw/core/UndoManager.hpp"
-#include "../daw/engine/AudioEngine.hpp"
-#include "../daw/engine/TracktionEngineWrapper.hpp"
 #include "../daw/project/ProjectManager.hpp"
 #include "internal_plugins.hpp"
 #include "music_helpers.hpp"
@@ -1343,23 +1343,11 @@ bool Interpreter::executeAddFx(const Params& params) {
     DBG("MAGDA DSL fx.add: '" + fxName +
         "' not found in internal registry; trying scanned plugins");
 
-    // --- External plugin lookup via KnownPluginList ---
-    auto* engine = api_.tracks().getAudioEngine();
-    if (!engine) {
-        ctx_.setError("Audio engine not available");
-        return false;
-    }
-
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
-    if (!teWrapper) {
-        ctx_.setError("Engine does not support plugin scanning");
-        return false;
-    }
-
-    const auto& knownPlugins = teWrapper->getKnownPluginList();
-    const auto pluginTypes =
-        formatHint.isNotEmpty() ? knownPlugins.getTypes() : teWrapper->getPreferredPluginTypes();
-    const juce::PluginDescription* bestMatch = nullptr;
+    const auto pluginTypes = formatHint.isNotEmpty() ? api_.plugins().getAllExternalPlugins()
+                                                     : api_.plugins().getExternalPlugins();
+    const auto requestedFormat =
+        formatHint.isNotEmpty() ? maybePluginFormatFromName(formatHint) : std::nullopt;
+    const DeviceInfo* bestMatch = nullptr;
 
     DBG("DSL executeAddFx: looking for plugin fxName=\"" + fxName + "\"");
     for (const auto& desc : pluginTypes) {
@@ -1370,11 +1358,8 @@ bool Interpreter::executeAddFx(const Params& params) {
             "\" match=" + juce::String(nameMatch ? "YES" : "no"));
         if (nameMatch) {
             // Filter by format hint if provided
-            if (formatHint.isNotEmpty()) {
-                auto descFormat = desc.pluginFormatName.toLowerCase();
-                if (!descFormat.contains(formatHint.toLowerCase()))
-                    continue;
-            }
+            if (formatHint.isNotEmpty() && (!requestedFormat || desc.format != *requestedFormat))
+                continue;
             bestMatch = &desc;
             break;
         }
@@ -1385,30 +1370,10 @@ bool Interpreter::executeAddFx(const Params& params) {
         return false;
     }
 
-    // Copy fields before addDeviceToTrack — loading the plugin can mutate the
-    // KnownPluginList, invalidating the bestMatch pointer.
-    DeviceInfo device;
-    device.name = bestMatch->name;
-    device.pluginId = bestMatch->createIdentifierString();
-    device.manufacturer = bestMatch->manufacturerName;
-    device.uniqueId = bestMatch->createIdentifierString();
-    device.fileOrIdentifier = bestMatch->fileOrIdentifier;
-    device.isInstrument = bestMatch->isInstrument;
-
-    juce::String matchedFormat = bestMatch->pluginFormatName;
+    DeviceInfo device = *bestMatch;
+    juce::String matchedFormat = bestMatch->getFormatString();
     juce::String matchedName = bestMatch->name;
-    juce::String matchedManufacturer = bestMatch->manufacturerName;
-
-    if (matchedFormat == "VST3")
-        device.format = PluginFormat::VST3;
-    else if (matchedFormat == "AudioUnit" || matchedFormat == "AU")
-        device.format = PluginFormat::AU;
-    else if (matchedFormat == "VST")
-        device.format = PluginFormat::VST;
-    else
-        device.format = PluginFormat::VST3;
-
-    bestMatch = nullptr;  // no longer safe to dereference
+    juce::String matchedManufacturer = bestMatch->manufacturer;
 
     auto deviceId = placeDevice(device);
     if (deviceId == INVALID_DEVICE_ID) {
@@ -1892,10 +1857,9 @@ int Interpreter::trackIndexToId(int oneBasedIndex) const {
 
 double Interpreter::barsToTime(double bar) const {
     // Convert 1-based bar number to seconds
-    double bpm = 120.0;  // fallback
-    auto* engine = api_.tracks().getAudioEngine();
-    if (engine)
-        bpm = engine->getTempo();
+    double bpm = api_.project().getCurrentProjectInfo().tempo;
+    if (!isValidBpm(bpm))
+        bpm = 120.0;
 
     const double beatsPerBar = barsToBeats(1.0);
     return (bar - 1.0) * beatsPerBar * 60.0 / bpm;
@@ -2536,10 +2500,9 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
     } else if (fill) {
         auto* clip = api_.clips().getClip(clipId);
         if (clip) {
-            double bpm = 120.0;
-            auto* engine = api_.tracks().getAudioEngine();
-            if (engine)
-                bpm = engine->getTempo();
+            double bpm = api_.project().getCurrentProjectInfo().tempo;
+            if (!isValidBpm(bpm))
+                bpm = 120.0;
             fillBeats = clip->length * bpm / 60.0;
         }
     }
@@ -2844,45 +2807,21 @@ bool Interpreter::executeGrooveNew(const Params& params) {
         return false;
     }
 
-    // Get TE engine
-    auto* engine = api_.tracks().getAudioEngine();
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
-    if (!teWrapper || !teWrapper->getEngine()) {
-        ctx_.setError("Audio engine not available");
+    const juce::String grooveName(name);
+    std::vector<float> lateness;
+    lateness.reserve(static_cast<size_t>(shiftTokens.size()));
+    for (const auto& token : shiftTokens)
+        lateness.push_back(token.trim().getFloatValue());
+
+    const bool existed = api_.grooves().getTemplateNames().contains(grooveName);
+    if (!api_.grooves().upsertTemplate(grooveName, notesPerBeat, parameterized, lateness)) {
+        ctx_.setError("Failed to save groove template");
         return false;
     }
 
-    // Build GrooveTemplate
-    tracktion::GrooveTemplate groove;
-    groove.setName(juce::String(name));
-    groove.setNumberOfNotes(shiftTokens.size());
-    groove.setNotesPerBeat(notesPerBeat);
-    groove.setParameterized(parameterized);
-
-    for (int i = 0; i < shiftTokens.size(); ++i) {
-        float lateness = shiftTokens[i].trim().getFloatValue();
-        groove.setLatenessProportion(i, lateness, 1.0f);
-    }
-
-    // Register with TE's GrooveTemplateManager
-    auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
-    gtm.useParameterizedGrooves(true);
-
-    // Check if template with this name already exists and update it
-    int existingIndex = -1;
-    for (int i = 0; i < gtm.getNumTemplates(); ++i) {
-        if (gtm.getTemplateName(i) == juce::String(name)) {
-            existingIndex = i;
-            break;
-        }
-    }
-
-    if (existingIndex >= 0) {
-        gtm.updateTemplate(existingIndex, groove);
+    if (existed) {
         ctx_.addResult("Updated groove template: " + juce::String(name));
     } else {
-        // Add as new template (use index -1 to append)
-        gtm.updateTemplate(-1, groove);
         ctx_.addResult("Created groove template: " + juce::String(name) + " (" +
                        juce::String(shiftTokens.size()) + " steps, " + juce::String(notesPerBeat) +
                        " per beat)");
@@ -2992,28 +2931,11 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     int stepsPerBar = notesPerBeat * beatsPerBar;
     int patternLength = (numSteps >= stepsPerBar) ? stepsPerBar : numSteps;
 
-    // Build GrooveTemplate
-    auto* engine = api_.tracks().getAudioEngine();
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
-    if (!teWrapper || !teWrapper->getEngine()) {
-        ctx_.setError("Audio engine not available");
+    const std::vector<float> grooveLateness(latenesses.begin(), latenesses.begin() + patternLength);
+    if (!api_.grooves().upsertTemplate(juce::String(name), notesPerBeat, true, grooveLateness)) {
+        ctx_.setError("Failed to save extracted groove");
         return false;
     }
-
-    tracktion::GrooveTemplate groove;
-    groove.setName(juce::String(name));
-    groove.setNumberOfNotes(patternLength);
-    groove.setNotesPerBeat(notesPerBeat);
-    groove.setParameterized(true);
-
-    for (int i = 0; i < patternLength; ++i) {
-        groove.setLatenessProportion(i, latenesses[static_cast<size_t>(i)], 1.0f);
-    }
-
-    // Register
-    auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
-    gtm.useParameterizedGrooves(true);
-    gtm.updateTemplate(-1, groove);
 
     // Build result summary
     int transientCount = 0;
@@ -3072,15 +2994,7 @@ bool Interpreter::executeGrooveSet(const Params& params) {
 
 // groove.list() — show all available groove templates
 bool Interpreter::executeGrooveList() {
-    auto* engine = api_.tracks().getAudioEngine();
-    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
-    if (!teWrapper || !teWrapper->getEngine()) {
-        ctx_.setError("Audio engine not available");
-        return false;
-    }
-
-    auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
-    auto names = gtm.getTemplateNames();
+    auto names = api_.grooves().getTemplateNames();
 
     if (names.isEmpty()) {
         ctx_.addResult("No groove templates available");

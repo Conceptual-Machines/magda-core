@@ -7,8 +7,8 @@
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/PluginScanCoordinator.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -96,37 +96,19 @@ juce::Component* PluginSettingsDialog::ExcludedTableModel::refreshComponentForCe
 // PluginSettingsDialog
 // =============================================================================
 
-PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
+PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     : scanProgressBar_(scanProgress_), engine_(engine) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
 
     if (engine_) {
-        auto* coordinator = engine_->getPluginScanCoordinator();
-        if (coordinator)
-            excludedPlugins_ = coordinator->getExcludedPlugins();
+        excludedPlugins_ = engine_->getExcludedPlugins();
     }
 
     // Populate system plugin directories from format manager
-    if (engine_ && engine_->getEngine()) {
-        auto& formatManager = engine_->getEngine()->getPluginManager().pluginFormatManager;
-        for (int i = 0; i < formatManager.getNumFormats(); ++i) {
-            auto* format = formatManager.getFormat(i);
-            if (!format)
-                continue;
-            juce::String formatName = format->getName();
-            if (!formatName.containsIgnoreCase("VST3") &&
-                !formatName.containsIgnoreCase("AudioUnit"))
-                continue;
-            auto searchPaths = format->getDefaultLocationsToSearch();
-            for (int j = 0; j < searchPaths.getNumPaths(); ++j) {
-                auto path = searchPaths[j].getFullPathName().toStdString();
-                if (std::find(systemPaths_.begin(), systemPaths_.end(), path) == systemPaths_.end())
-                    systemPaths_.push_back(path);
-            }
-        }
-    }
+    if (engine_)
+        systemPaths_ = engine_->getSystemPluginSearchPaths();
 
     // Wire up models
     systemDirListModel_.paths = &systemPaths_;
@@ -212,46 +194,44 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
             });
         });
 
-        engine_->onPluginScanComplete = [safeThis](bool success, int numPlugins,
-                                                   const juce::StringArray& failedPlugins) {
-            juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
-                if (safeThis == nullptr)
-                    return;
-                safeThis->setScanningUIEnabled(true);
-                safeThis->scanProgress_ = -1.0;
-                safeThis->scanProgressBar_.setVisible(false);
-                if (!success) {
-                    juce::String message = tr("plugin_settings.status.failed");
-                    if (numPlugins > 0)
-                        message += " (" + juce::String(numPlugins) + " " +
-                                   tr("plugin_settings.status.found_before_error") + ")";
-                    if (failedPlugins.size() > 0)
-                        message += ", " + juce::String(failedPlugins.size()) + " " +
-                                   tr("plugin_settings.status.plugins_failed");
-                    safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
-                } else {
-                    safeThis->scanStatusLabel_.setText(
-                        tr("plugin_settings.status.found") + " " + juce::String(numPlugins) + " " +
-                            tr("plugin_settings.status.plugins") +
-                            (failedPlugins.size() > 0
-                                 ? ", " + juce::String(failedPlugins.size()) + " " +
-                                       tr("plugin_settings.status.failed_short")
-                                 : ""),
-                        juce::dontSendNotification);
-                }
+        engine_->setPluginScanCompletionCallback(
+            [safeThis](bool success, int numPlugins, const juce::StringArray& failedPlugins) {
+                juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
+                    if (safeThis == nullptr)
+                        return;
+                    safeThis->setScanningUIEnabled(true);
+                    safeThis->scanProgress_ = -1.0;
+                    safeThis->scanProgressBar_.setVisible(false);
+                    if (!success) {
+                        juce::String message = tr("plugin_settings.status.failed");
+                        if (numPlugins > 0)
+                            message += " (" + juce::String(numPlugins) + " " +
+                                       tr("plugin_settings.status.found_before_error") + ")";
+                        if (failedPlugins.size() > 0)
+                            message += ", " + juce::String(failedPlugins.size()) + " " +
+                                       tr("plugin_settings.status.plugins_failed");
+                        safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
+                    } else {
+                        safeThis->scanStatusLabel_.setText(
+                            tr("plugin_settings.status.found") + " " + juce::String(numPlugins) +
+                                " " + tr("plugin_settings.status.plugins") +
+                                (failedPlugins.size() > 0
+                                     ? ", " + juce::String(failedPlugins.size()) + " " +
+                                           tr("plugin_settings.status.failed_short")
+                                     : ""),
+                            juce::dontSendNotification);
+                    }
 
-                safeThis->updatePluginCountLabel();
+                    safeThis->updatePluginCountLabel();
 
-                // Refresh excluded plugins list
-                if (safeThis->engine_) {
-                    auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
-                    if (coordinator)
-                        safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
-                    safeThis->excludedTable_.updateContent();
-                    safeThis->excludedTable_.repaint();
-                }
+                    // Refresh excluded plugins list
+                    if (safeThis->engine_) {
+                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
+                        safeThis->excludedTable_.updateContent();
+                        safeThis->excludedTable_.repaint();
+                    }
+                });
             });
-        };
     };
     addAndMakeVisible(scanButton_);
 
@@ -271,12 +251,11 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
         auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
 
         engine_->detectNewPlugins(
-            [safeThis](TracktionEngineWrapper::IncrementalScanPhase phase,
-                       const juce::String& currentPlugin) {
+            [safeThis](PluginScanPhase phase, const juce::String& currentPlugin) {
                 juce::MessageManager::callAsync([safeThis, phase, currentPlugin]() {
                     if (safeThis == nullptr)
                         return;
-                    using Phase = TracktionEngineWrapper::IncrementalScanPhase;
+                    using Phase = PluginScanPhase;
                     switch (phase) {
                         case Phase::Discovering:
                             safeThis->scanStatusLabel_.setText(
@@ -333,9 +312,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                     safeThis->updatePluginCountLabel();
 
                     if (safeThis->engine_) {
-                        auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
-                        if (coordinator)
-                            safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
+                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
                         safeThis->excludedTable_.updateContent();
                         safeThis->excludedTable_.repaint();
                     }
@@ -347,12 +324,9 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     viewReportButton_.setButtonText(tr("plugin_settings.button.view_report"));
     viewReportButton_.onClick = [this]() {
         if (engine_) {
-            auto* coordinator = engine_->getPluginScanCoordinator();
-            if (coordinator) {
-                auto reportFile = coordinator->getScanReportFile();
-                if (reportFile.existsAsFile())
-                    reportFile.startAsProcess();
-            }
+            auto reportFile = engine_->getPluginScanReportFile();
+            if (reportFile.existsAsFile())
+                reportFile.startAsProcess();
         }
     };
     addAndMakeVisible(viewReportButton_);
@@ -591,20 +565,12 @@ void PluginSettingsDialog::applySettings() {
 #endif
 
     if (engine_) {
-        auto* coordinator = engine_->getPluginScanCoordinator();
-        if (coordinator) {
-            coordinator->clearExclusions();
-            for (const auto& entry : excludedPlugins_)
-                coordinator->excludePlugin(entry.path, entry.reason);
-        }
+        engine_->setExcludedPlugins(excludedPlugins_);
     }
 }
 
 bool PluginSettingsDialog::isScanRunning() const {
-    if (!engine_)
-        return false;
-    auto* coordinator = engine_->getPluginScanCoordinator();
-    return coordinator && coordinator->isScanning();
+    return engine_ && engine_->isPluginScanRunning();
 }
 
 // DialogWindow subclass that prevents closing while a scan is in progress
@@ -624,7 +590,7 @@ class PluginSettingsDialogWindow : public juce::DialogWindow {
     PluginSettingsDialog* content_;
 };
 
-void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Component* /*parent*/) {
+void PluginSettingsDialog::showDialog(AudioEngine* engine, juce::Component* /*parent*/) {
     auto* dialog = new PluginSettingsDialog(engine);
     auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
 

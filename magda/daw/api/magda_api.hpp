@@ -13,6 +13,8 @@ class UndoApi;
 class MidiApi;
 class TransportApi;
 class FocusedApi;
+class GrooveApi;
+class PluginApi;
 
 /**
  * Programmatic facade for MAGDA's DAW state.
@@ -41,6 +43,8 @@ class MagdaApi {
     virtual MidiApi& midi() = 0;
     virtual TransportApi& transport() = 0;
     virtual FocusedApi& focused() = 0;
+    virtual PluginApi& plugins() = 0;
+    virtual GrooveApi& grooves() = 0;
 };
 
 }  // namespace magda

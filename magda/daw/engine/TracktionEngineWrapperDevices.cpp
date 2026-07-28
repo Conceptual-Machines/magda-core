@@ -171,4 +171,68 @@ juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {
     return nullptr;
 }
 
+juce::BigInteger TracktionEngineWrapper::getEnabledWaveChannels(bool input) const {
+    juce::BigInteger channels;
+    if (engine_ == nullptr)
+        return channels;
+
+    const auto addEnabledChannels = [&channels](auto devices) {
+        for (auto* device : devices) {
+            if (device == nullptr || !device->isEnabled())
+                continue;
+            for (const auto& channel : device->getChannels())
+                channels.setBit(channel.indexInDevice);
+        }
+    };
+    if (input)
+        addEnabledChannels(engine_->getDeviceManager().getWaveInputDevices());
+    else
+        addEnabledChannels(engine_->getDeviceManager().getWaveOutputDevices());
+    return channels;
+}
+
+void TracktionEngineWrapper::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
+    if (engine_ == nullptr)
+        return;
+
+    const auto applyChannels = [&channels](auto devices) {
+        for (auto* device : devices) {
+            if (device == nullptr)
+                continue;
+            bool shouldEnable = false;
+            for (const auto& channel : device->getChannels()) {
+                if (channels[channel.indexInDevice]) {
+                    shouldEnable = true;
+                    break;
+                }
+            }
+            if (device->isEnabled() != shouldEnable)
+                device->setEnabled(shouldEnable);
+        }
+    };
+    if (input)
+        applyChannels(engine_->getDeviceManager().getWaveInputDevices());
+    else
+        applyChannels(engine_->getDeviceManager().getWaveOutputDevices());
+}
+
+void TracktionEngineWrapper::rescanWaveDevices(bool enableInputs, bool enableOutputs) {
+    if (engine_ == nullptr)
+        return;
+
+    auto& deviceManager = engine_->getDeviceManager();
+    deviceManager.rescanWaveDeviceList();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+    if (enableInputs) {
+        for (auto* device : deviceManager.getWaveInputDevices())
+            if (device != nullptr && !device->isEnabled())
+                device->setEnabled(true);
+    }
+    if (enableOutputs) {
+        for (auto* device : deviceManager.getWaveOutputDevices())
+            if (device != nullptr && !device->isEnabled())
+                device->setEnabled(true);
+    }
+}
+
 }  // namespace magda

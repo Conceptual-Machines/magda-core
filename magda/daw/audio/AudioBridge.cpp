@@ -205,7 +205,7 @@ AudioBridge::~AudioBridge() {
         // Note: ClipManager listener removed by ClipSynchronizer destructor
 
         // NOTE: Plugin windows are now closed by PluginWindowManager BEFORE AudioBridge
-        // is destroyed (in TracktionEngineWrapper::shutdown()). No window cleanup needed here.
+        // is destroyed during audio-engine shutdown. No window cleanup needed here.
 
         // Unregister per-device metering from Edit
         DeviceMeteringManager::unregisterForEdit(edit_);

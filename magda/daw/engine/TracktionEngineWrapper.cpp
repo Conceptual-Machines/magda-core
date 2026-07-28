@@ -1,6 +1,8 @@
 #include "TracktionEngineWrapper.hpp"
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/plugins/DrumGridPlugin.hpp"
+#include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/session/SessionClipAudioMonitor.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
 
@@ -94,6 +96,33 @@ double TracktionEngineWrapper::getAudioThreadTransportSeconds() const {
 void TracktionEngineWrapper::deactivateAllSessionClips() {
     if (sessionScheduler_)
         sessionScheduler_->deactivateAllSessionClips();
+}
+
+std::vector<SamplerMediaReference> TracktionEngineWrapper::getSamplerMediaReferences() {
+    std::vector<SamplerMediaReference> references;
+    if (!currentEdit_)
+        return references;
+
+    auto addSampler = [&references](tracktion::Plugin* plugin) {
+        auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin);
+        if (sampler == nullptr)
+            return;
+        tracktion::Plugin::Ptr keepAlive(sampler);
+        references.push_back(
+            {sampler->getSampleFile(), [keepAlive](const juce::File& replacement) {
+                 if (auto* live = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(keepAlive.get()))
+                     live->loadSample(replacement);
+             }});
+    };
+
+    for (auto plugin : tracktion::getAllPlugins(*currentEdit_, true)) {
+        addSampler(plugin);
+        if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+            for (const auto& chain : drumGrid->getChains())
+                for (const auto& nested : chain->plugins)
+                    addSampler(nested.get());
+    }
+    return references;
 }
 
 // =============================================================================

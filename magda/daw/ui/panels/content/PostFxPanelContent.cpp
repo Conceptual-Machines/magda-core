@@ -4,7 +4,7 @@
 
 #include "PluginBrowserContent.hpp"
 #include "core/ChainNodePath.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -363,8 +363,7 @@ void PostFxPanelContent::showAddDeviceMenu() {
     menu.addSubMenu("Internal", internalMenu);
 
     juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
-            magda::TrackManager::getInstance().getAudioEngine())) {
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
         externalPlugins = engine->getPreferredPluginTypes();
     }
     if (!externalPlugins.isEmpty()) {

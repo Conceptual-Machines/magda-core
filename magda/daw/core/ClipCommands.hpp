@@ -9,20 +9,13 @@
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
 #include "CommandPattern.hpp"
+#include "TimeTypes.hpp"
 
 namespace magda {
 
 // Forward declarations
-class TracktionEngineWrapper;
+class AudioEngine;
 class TempoMap;
-
-struct BeatPosition {
-    double value = 0.0;
-};
-
-struct BeatDuration {
-    double value = 0.0;
-};
 
 /**
  * @brief Inclusive-start, exclusive-end arrangement range in musical beats.
@@ -552,7 +545,7 @@ class SetVolumeCommand : public UndoableCommand {
  */
 class RenderClipCommand : public UndoableCommand {
   public:
-    RenderClipCommand(ClipId clipId, TracktionEngineWrapper* engine);
+    RenderClipCommand(ClipId clipId, AudioEngine* engine);
 
     juce::String getDescription() const override {
         return "Render Clip";
@@ -571,7 +564,7 @@ class RenderClipCommand : public UndoableCommand {
 
   private:
     ClipId clipId_;
-    TracktionEngineWrapper* engine_;
+    AudioEngine* engine_;
     ClipInfo originalClipSnapshot_;
     ClipId newClipId_ = INVALID_CLIP_ID;
     juce::File renderedFile_;
@@ -598,8 +591,7 @@ struct RenderTrackState {
 class RenderTimeSelectionCommand : public UndoableCommand {
   public:
     RenderTimeSelectionCommand(double startTime, double endTime,
-                               const std::vector<TrackId>& trackIds,
-                               TracktionEngineWrapper* engine);
+                               const std::vector<TrackId>& trackIds, AudioEngine* engine);
 
     juce::String getDescription() const override {
         return "Render Time Selection";
@@ -620,7 +612,7 @@ class RenderTimeSelectionCommand : public UndoableCommand {
     double startTime_;
     double endTime_;
     std::vector<TrackId> trackIds_;
-    TracktionEngineWrapper* engine_;
+    AudioEngine* engine_;
     std::vector<RenderTrackState> trackStates_;
     std::vector<ClipId> newClipIds_;
     bool success_ = false;
@@ -755,7 +747,7 @@ class RippleDeleteRangeCommand : public UndoableCommand {
  */
 class BounceInPlaceCommand : public UndoableCommand {
   public:
-    BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper* engine, BounceRange range = {});
+    BounceInPlaceCommand(ClipId clipId, AudioEngine* engine, BounceRange range = {});
 
     juce::String getDescription() const override {
         return "Bounce In Place";
@@ -774,7 +766,7 @@ class BounceInPlaceCommand : public UndoableCommand {
 
   private:
     ClipId clipId_;
-    TracktionEngineWrapper* engine_;
+    AudioEngine* engine_;
     BounceRange range_;
     BounceInPlaceReplacement replacement_;
     juce::File renderedFile_;
@@ -799,7 +791,7 @@ class BounceInPlaceCommand : public UndoableCommand {
  */
 class BounceToNewTrackCommand : public UndoableCommand {
   public:
-    BounceToNewTrackCommand(ClipId clipId, TracktionEngineWrapper* engine, BounceRange range = {});
+    BounceToNewTrackCommand(ClipId clipId, AudioEngine* engine, BounceRange range = {});
 
     juce::String getDescription() const override {
         return "Bounce To New Track";
@@ -818,7 +810,7 @@ class BounceToNewTrackCommand : public UndoableCommand {
 
   private:
     ClipId clipId_;
-    TracktionEngineWrapper* engine_;
+    AudioEngine* engine_;
     BounceRange range_;
     ClipId newClipId_ = INVALID_CLIP_ID;
     TrackId newTrackId_ = INVALID_TRACK_ID;
