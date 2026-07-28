@@ -89,6 +89,13 @@ vc_redist_ok:
     File /r "${__FILEDIR__}\faustlibraries\*"
     SetOutPath $INSTDIR
 
+    ; Runtime Faust effects - FaustResources scans <exe>/faust_dsp to build the
+    ; loader picker. These are discovered, not embedded, so without this the
+    ; installed build shows an empty starter list.
+    SetOutPath "$INSTDIR\faust_dsp"
+    File /r "${__FILEDIR__}\faust_dsp\*"
+    SetOutPath $INSTDIR
+
     ; Stock drumkit templates - DrumkitManager reads <exe>/drumkits to seed the
     ; user's Drumkits folder on first launch.
     SetOutPath "$INSTDIR\drumkits"
@@ -152,6 +159,7 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\lang"
     RMDir /r "$INSTDIR\controllers"
     RMDir /r "$INSTDIR\faustlibraries"
+    RMDir /r "$INSTDIR\faust_dsp"
     RMDir /r "$INSTDIR\drumkits"
     RMDir /r "$INSTDIR\dawproject"
     RMDir /r "$INSTDIR\models"

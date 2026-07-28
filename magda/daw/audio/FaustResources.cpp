@@ -73,8 +73,12 @@ std::vector<StarterDsp> getBundledStarterDsps() {
         dsp.filename = file.getFileName();
         dsp.source = source;
         dsp.viewKind = viewKindFromName(readDeclare(source, "magda_view"));
-        // The directory the file sits in, e.g. runtime/texture -> "texture".
-        dsp.category = file.getParentDirectory().getFileName();
+        // The subfolder the file sits in, e.g. <root>/texture -> "texture".
+        // A file at the root has no category of its own; comparing against the
+        // root itself keeps that independent of what the staged folder is
+        // called on disk.
+        const auto parent = file.getParentDirectory();
+        dsp.category = parent == root ? juce::String() : parent.getFileName();
         out.push_back(std::move(dsp));
     }
 

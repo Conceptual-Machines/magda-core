@@ -181,9 +181,9 @@ void FaustUI::showLoadMenu() {
         }
     };
     for (const auto& s : starters) {
-        // A .dsp sitting at the root of the staged folder has no category of
-        // its own; list it at the top level rather than under "Runtime".
-        const auto category = s.category == "runtime" ? juce::String() : s.category;
+        // A .dsp sitting at the root of the staged folder has no category and
+        // is listed at the top level rather than under a submenu.
+        const auto& category = s.category;
         if (category != currentCategory) {
             flushCategory();
             currentCategory = category;
