@@ -288,7 +288,8 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
         sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
         sampler->levelValue.get(), sampler->sampleStartValue.get(), sampler->sampleEndValue.get(),
         sampler->loopEnabledValue.get(), sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-        sampler->velAmountValue.get(), sampleName, sampler->getRootNote());
+        sampler->velAmountValue.get(), sampleName, sampler->getRootNote(),
+        sampler->voiceModeValue.get(), sampler->glideValue.get());
 
     samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                 sampler->getSampleLengthSeconds());
