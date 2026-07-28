@@ -3,7 +3,6 @@
 # parent CMakeLists; everything else is library code linked into magda_daw.
 
 target_sources(magda_daw PRIVATE
-    AudioEngine.cpp
     TempoLaneBridge.cpp
     TempoLaneSync.cpp
     TempoSequenceRippleCommand.cpp

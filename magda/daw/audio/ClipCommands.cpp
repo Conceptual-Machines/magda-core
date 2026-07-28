@@ -199,6 +199,22 @@ struct InsertCaptureScope {
     }
 };
 
+struct PlaybackResumeScope {
+    explicit PlaybackResumeScope(AudioEngine& engine)
+        : engine(engine), resumeWhenDone(engine.isPlaying()) {
+        if (resumeWhenDone)
+            engine.stop();
+    }
+
+    ~PlaybackResumeScope() {
+        if (resumeWhenDone)
+            engine.play();
+    }
+
+    AudioEngine& engine;
+    bool resumeWhenDone = false;
+};
+
 }  // namespace
 
 BounceRange resolveBounceSelectionRange(const BounceRange& timeSelection,
@@ -1236,15 +1252,14 @@ void RenderClipCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = false;
     request.useMasterPlugins = false;
-    request.startSeconds = renderStart;
-    request.endSeconds = renderEnd;
+    request.range = {{renderStart}, {renderEnd}, {}};
     request.trackIds = {clip->trackId};
     request.clipIds = {clipId_};
-    request.resumePlaybackAfterRender = true;
 
     // Run render on background thread with progress UI
-    RenderProgressWindow progressWindow("Rendering Clip...",
-                                        engine_->createOfflineRenderTask(request));
+    auto renderSession = engine_->createOfflineRenderSession(engine_->isPlaying());
+    RenderProgressWindow progressWindow(
+        "Rendering Clip...", renderSession ? renderSession->createTask(request) : nullptr);
     bool userCancelled = !progressWindow.runThread();
 
     if (userCancelled || !progressWindow.wasSuccessful()) {
@@ -1332,6 +1347,12 @@ void RenderTimeSelectionCommand::execute() {
     trackStates_.clear();
     newClipIds_.clear();
 
+    auto renderSession = engine_->createOfflineRenderSession(engine_->isPlaying());
+    if (!renderSession) {
+        DBG("RenderTimeSelectionCommand: could not create render session");
+        return;
+    }
+
     int trackIndex_ = 0;
     for (auto trackId : trackIds_) {
         ++trackIndex_;
@@ -1383,16 +1404,14 @@ void RenderTimeSelectionCommand::execute() {
         request.sampleRate = project.sampleRate;
         request.usePlugins = false;
         request.useMasterPlugins = false;
-        request.startSeconds = startTime_;
-        request.endSeconds = endTime_;
+        request.range = {{startTime_}, {endTime_}, {}};
         request.trackIds = {trackId};
-        request.resumePlaybackAfterRender = true;
 
         // Run render on background thread with progress UI
         int trackTotal = static_cast<int>(trackIds_.size());
         juce::String title = "Rendering track " + juce::String(trackIndex_) + " of " +
                              juce::String(trackTotal) + "...";
-        RenderProgressWindow progressWindow(title, engine_->createOfflineRenderTask(request));
+        RenderProgressWindow progressWindow(title, renderSession->createTask(request));
         bool userCancelled = !progressWindow.runThread();
 
         if (userCancelled || !progressWindow.wasSuccessful()) {
@@ -2048,9 +2067,7 @@ void BounceInPlaceCommand::execute() {
     // project (e.g. on the Desktop) where the project can't track it.
     auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
     if (bouncesDir == juce::File())
-        bouncesDir =
-            ProjectManager::getInstance().getCurrentProjectFile().getParentDirectory().getChildFile(
-                "bounces");
+        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
@@ -2069,6 +2086,10 @@ void BounceInPlaceCommand::execute() {
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
         renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
     }
+
+    // Match the original bounce lifecycle: stop before capture or FX bypass,
+    // and resume once after every render/capture cleanup has completed.
+    PlaybackResumeScope playbackScope(*engine_);
 
     // Find TE track
     auto* teTrack = teClip->getTrack();
@@ -2136,23 +2157,27 @@ void BounceInPlaceCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = true;
     request.useMasterPlugins = false;
-    request.startSeconds = bounceRange.startSeconds;
-    request.endSeconds = bounceRange.endSeconds + bounceTailSeconds;
+    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
     request.trackIds = {clip->trackId};
     request.clipIds = {clipId_};
-    request.resumePlaybackAfterRender = true;
 
     // Render
-    RenderProgressWindow progressWindow("Bouncing In Place...",
-                                        engine_->createOfflineRenderTask(request));
-    bool userCancelled = !progressWindow.runThread();
+    bool userCancelled = false;
+    bool renderSucceeded = false;
+    {
+        auto renderSession = engine_->createOfflineRenderSession(false);
+        RenderProgressWindow progressWindow(
+            "Bouncing In Place...", renderSession ? renderSession->createTask(request) : nullptr);
+        userCancelled = !progressWindow.runThread();
+        renderSucceeded = progressWindow.wasSuccessful();
+    }
 
     // Restore FX plugins regardless of render outcome
     for (auto& state : savedStates) {
         state.plugin->setEnabled(state.wasEnabled);
     }
 
-    if (userCancelled || !progressWindow.wasSuccessful()) {
+    if (userCancelled || !renderSucceeded) {
         if (!userCancelled) {
             errorMessage_ = "Bounce failed: couldn't write the audio file "
                             "(the disk may be full or unwritable):\n" +
@@ -2252,9 +2277,7 @@ void BounceToNewTrackCommand::execute() {
     // project (e.g. on the Desktop) where the project can't track it.
     auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
     if (bouncesDir == juce::File())
-        bouncesDir =
-            ProjectManager::getInstance().getCurrentProjectFile().getParentDirectory().getChildFile(
-                "bounces");
+        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
@@ -2273,6 +2296,8 @@ void BounceToNewTrackCommand::execute() {
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
         renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
     }
+
+    PlaybackResumeScope playbackScope(*engine_);
 
     // Find TE track
     auto* teTrack = teClip->getTrack();
@@ -2306,18 +2331,23 @@ void BounceToNewTrackCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = true;
     request.useMasterPlugins = false;
-    request.startSeconds = bounceRange.startSeconds;
-    request.endSeconds = bounceRange.endSeconds + bounceTailSeconds;
+    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
     request.trackIds = {clip->trackId};
     request.clipIds = {clipId_};
-    request.resumePlaybackAfterRender = true;
 
     // Render
-    RenderProgressWindow progressWindow("Bouncing To New Track...",
-                                        engine_->createOfflineRenderTask(request));
-    bool userCancelled = !progressWindow.runThread();
+    bool userCancelled = false;
+    bool renderSucceeded = false;
+    {
+        auto renderSession = engine_->createOfflineRenderSession(false);
+        RenderProgressWindow progressWindow("Bouncing To New Track...",
+                                            renderSession ? renderSession->createTask(request)
+                                                          : nullptr);
+        userCancelled = !progressWindow.runThread();
+        renderSucceeded = progressWindow.wasSuccessful();
+    }
 
-    if (userCancelled || !progressWindow.wasSuccessful()) {
+    if (userCancelled || !renderSucceeded) {
         if (!userCancelled) {
             errorMessage_ = "Bounce failed: couldn't write the audio file "
                             "(the disk may be full or unwritable):\n" +

@@ -43,43 +43,91 @@ bool runOnMessageThreadBlocking(std::function<void()> operation) {
         return true;
     }
 
-    juce::WaitableEvent completed;
-    if (!juce::MessageManager::callAsync([&operation, &completed]() {
-            operation();
-            completed.signal();
+    enum class State { Queued, Running, Cancelled, Finished };
+    struct SharedOperation {
+        explicit SharedOperation(std::function<void()> op) : operation(std::move(op)) {}
+        std::function<void()> operation;
+        std::atomic<State> state{State::Queued};
+        juce::WaitableEvent completed;
+    };
+
+    auto shared = std::make_shared<SharedOperation>(std::move(operation));
+    if (!juce::MessageManager::callAsync([shared]() {
+            auto expected = State::Queued;
+            if (!shared->state.compare_exchange_strong(expected, State::Running)) {
+                shared->completed.signal();
+                return;
+            }
+            shared->operation();
+            shared->state.store(State::Finished);
+            shared->completed.signal();
         }))
         return false;
 
-    completed.wait();
-    return true;
+    constexpr int kMessageThreadTimeoutMs = 5000;
+    if (shared->completed.wait(kMessageThreadTimeoutMs))
+        return shared->state.load() == State::Finished;
+
+    auto expected = State::Queued;
+    if (shared->state.compare_exchange_strong(expected, State::Cancelled))
+        return false;
+
+    // The callback started before the queue timeout. Its operations are limited
+    // to render-session/task construction or destruction, so let that bounded
+    // critical section finish to keep its captured objects alive. The shutdown
+    // deadlock case is the Queued state handled above.
+    shared->completed.wait();
+    return shared->state.load() == State::Finished;
 }
 
-// Run one offline render pass to outFile, blocking until done. tracksToDo empty
-// => all tracks (the RenderTask path treats an empty bitset as "no track filter").
-// onProgress is called with the pass's 0..1 render progress. Returns false on
-// failure or cancellation.
-bool renderPass(AudioEngine& engine, OfflineRenderRequest request, const juce::File& outFile,
-                std::optional<TrackId> trackId, bool useMasterPlugins, std::atomic<bool>& cancel,
-                const std::function<void(float)>& onProgress) {
+class MessageThreadRenderSession {
+  public:
+    explicit MessageThreadRenderSession(AudioEngine& engine) : engine_(engine) {}
+
+    ~MessageThreadRenderSession() {
+        close();
+    }
+
+    bool open() {
+        return runOnMessageThreadBlocking(
+                   [this]() { session_ = engine_.createOfflineRenderSession(false); }) &&
+               session_ != nullptr;
+    }
+
+    std::unique_ptr<OfflineRenderTask> createTask(const OfflineRenderRequest& request) {
+        std::unique_ptr<OfflineRenderTask> task;
+        if (!runOnMessageThreadBlocking(
+                [this, &request, &task]() { task = session_->createTask(request); }))
+            return nullptr;
+        return task;
+    }
+
+    void close() {
+        if (!session_)
+            return;
+        if (!runOnMessageThreadBlocking([this]() { session_.reset(); }))
+            session_.reset();
+    }
+
+  private:
+    AudioEngine& engine_;
+    std::unique_ptr<OfflineRenderSession> session_;
+};
+
+// Run one offline render pass to outFile, blocking until done.
+bool renderPass(MessageThreadRenderSession& session, OfflineRenderRequest request,
+                const juce::File& outFile, std::optional<TrackId> trackId, bool useMasterPlugins,
+                std::atomic<bool>& cancel, const std::function<void(float)>& onProgress) {
     request.destination = outFile;
     request.useMasterPlugins = useMasterPlugins;
     if (trackId)
         request.trackIds = {*trackId};
 
-    // Creating and destroying a render task changes transport/plugin state, so
-    // keep those lifecycle operations on the message thread. Only the actual
-    // render loop runs on this analysis worker.
-    std::unique_ptr<OfflineRenderTask> task;
-    if (!runOnMessageThreadBlocking(
-            [&task, &engine, &request]() { task = engine.createOfflineRenderTask(request); }))
-        return false;
+    auto task = session.createTask(request);
     if (!task)
         return false;
 
-    const bool success = task->run([&cancel]() { return cancel.load(); }, onProgress).success;
-    if (!runOnMessageThreadBlocking([&task]() { task.reset(); }))
-        task.reset();
-    return success;
+    return task->run([&cancel]() { return cancel.load(); }, onProgress).success;
 }
 
 // Background driver: owns itself, deletes on completion. Setup runs in the ctor
@@ -138,24 +186,35 @@ class AnalysisJob : public juce::Thread {
         constexpr double kAnalysisSampleRate = 22050.0;
         const double sampleRate = kAnalysisSampleRate;
 
-        // Resolve the render range.
-        double rangeStart = 0.0;
-        double rangeEnd = engine_.getEditLengthSeconds();
+        const auto* tempoMap = engine_.tempoMap();
+        if (tempoMap == nullptr) {
+            err.hasError = true;
+            err.error = "The audio engine does not provide a tempo map.";
+            return err;
+        }
+
+        // Resolve the musical range first; convert only at the render boundary.
+        BeatRange musicalRange{{0.0}, {engine_.getEditLengthBeats().value}};
         if (request_.range == OfflineMixAnalysis::RangeMode::LoopRange) {
-            const auto loop = engine_.getLoopRegionSeconds();
-            if (loop.second > loop.first) {
-                rangeStart = loop.first;
-                rangeEnd = loop.second;
-            }
+            const auto loop = engine_.getLoopRegionBeats();
+            if (loop.isValid())
+                musicalRange = loop;
         }
 
         OfflineRenderRequest base;
         base.bitDepth = 24;
         base.sampleRate = sampleRate;
         base.usePlugins = true;
-        base.startSeconds = rangeStart;
-        base.endSeconds = rangeEnd;
-        base.endAllowanceSeconds = 2.0;
+        base.range = {{tempoMap->beatToTime(musicalRange.start.value)},
+                      {tempoMap->beatToTime(musicalRange.end.value)},
+                      {2.0}};
+
+        MessageThreadRenderSession renderSession(engine_);
+        if (!renderSession.open()) {
+            err.hasError = true;
+            err.error = "Could not prepare the edit for offline analysis.";
+            return err;
+        }
 
         const auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
 
@@ -171,7 +230,7 @@ class AnalysisJob : public juce::Thread {
         if (deep) {
             if (request_.trackSet.empty()) {
                 for (const auto& track : TrackManager::getInstance().getTracks())
-                    if (track.type == TrackType::Audio)
+                    if (track.type != TrackType::Chord)
                         trackIds.push_back(track.id);
             } else {
                 for (auto id : request_.trackSet)
@@ -215,7 +274,8 @@ class AnalysisJob : public juce::Thread {
         phaseLabel = deep ? "Rendering mix (master)..." : "Rendering mix...";
         postProgress(phaseLabel);
         auto masterFile = tempDir.getNonexistentChildFile("magda_mix_master", ".wav");
-        if (!renderPass(engine_, base, masterFile, std::nullopt, true, *cancel_, reportProgress)) {
+        if (!renderPass(renderSession, base, masterFile, std::nullopt, true, *cancel_,
+                        reportProgress)) {
             masterFile.deleteFile();
             err.hasError = true;
             err.error = cancel_->load() ? "Cancelled." : "Mix render failed.";
@@ -274,7 +334,7 @@ class AnalysisJob : public juce::Thread {
 
                 auto stemFile = tempDir.getNonexistentChildFile("magda_mix_stem", ".wav");
                 // Stems are pre-master (useMasterPlugins=false) so each is comparable.
-                if (!renderPass(engine_, base, stemFile, trackId, false, *cancel_,
+                if (!renderPass(renderSession, base, stemFile, trackId, false, *cancel_,
                                 reportProgress)) {
                     stemFile.deleteFile();
                     ++skipped;

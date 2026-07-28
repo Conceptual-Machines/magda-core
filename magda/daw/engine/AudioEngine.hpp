@@ -6,17 +6,16 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/ParameterDetector.hpp"
 #include "../core/TempoMap.hpp"
-#include "../ui/state/TransportStateListener.hpp"
+#include "../core/TimeTypes.hpp"
+#include "AudioEngineListener.hpp"
 #include "PluginExclusions.hpp"
 
 namespace juce {
@@ -80,10 +79,7 @@ struct OfflineRenderRequest {
     bool usePlugins = true;
     bool checkNodesForAudio = false;
     bool realTimeRender = false;
-    bool resumePlaybackAfterRender = false;
-    double startSeconds = 0.0;
-    double endSeconds = 0.0;
-    double endAllowanceSeconds = 0.0;
+    RenderTimeRange range;
     std::vector<TrackId> trackIds;
     std::vector<TrackId> excludedTrackIds;
     std::vector<ClipId> clipIds;
@@ -107,6 +103,21 @@ class OfflineRenderTask {
 };
 
 /**
+ * Owns transport, playback-context, and plugin preparation for one logical
+ * offline-render run. Multi-pass consumers create all their tasks from the
+ * same session so state is restored only after the final pass.
+ */
+class OfflineRenderSession {
+  public:
+    virtual ~OfflineRenderSession() = default;
+    virtual std::unique_ptr<OfflineRenderTask> createTask(const OfflineRenderRequest& request) = 0;
+};
+
+struct AudioEngineOptions {
+    bool headless = false;
+};
+
+/**
  * @brief Abstract audio engine interface
  *
  * This provides a clean abstraction over the actual audio engine implementation.
@@ -122,12 +133,9 @@ class AudioEngine : public AudioEngineListener {
     // ===== Lifecycle =====
     virtual bool initialize() = 0;
     virtual void shutdown() = 0;
-    virtual bool hasActiveEdit() const {
-        return false;
-    }
-    virtual double getEditLengthSeconds() const {
-        return 0.0;
-    }
+    virtual bool hasActiveEdit() const = 0;
+    virtual BeatDuration getEditLengthBeats() const = 0;
+    virtual juce::File getEditFile() const = 0;
 
     // ===== Transport =====
     virtual void play() = 0;
@@ -189,27 +197,17 @@ class AudioEngine : public AudioEngineListener {
     virtual void setTempo(double bpm) = 0;
     virtual double getTempo() const = 0;
     virtual void setTimeSignature(int numerator, int denominator) = 0;
-    virtual void getTimeSignature(int& numerator, int& denominator) const {
-        numerator = 4;
-        denominator = 4;
-    }
+    virtual void getTimeSignature(int& numerator, int& denominator) const = 0;
 
     /** Position-aware beats<->seconds facade backed by the engine's tempo
-        sequence (the single source of truth). The UI injects this into
-        TimelineController so every conversion walks the tempo curve. The
-        returned pointer is owned by the engine and valid for its lifetime.
-        Defaults to null for engines/mocks that don't provide one. */
-    virtual const TempoMap* tempoMap() const {
-        return nullptr;
-    }
+        sequence (the single source of truth). */
+    virtual const TempoMap* tempoMap() const = 0;
 
     // ===== Loop =====
     virtual void setLooping(bool enabled) = 0;
-    virtual void setLoopRegion(double startSeconds, double endSeconds) = 0;
+    virtual void setLoopRegionBeats(BeatRange range) = 0;
     virtual bool isLooping() const = 0;
-    virtual std::pair<double, double> getLoopRegionSeconds() const {
-        return {0.0, 0.0};
-    }
+    virtual BeatRange getLoopRegionBeats() const = 0;
 
     // ===== Metronome =====
     virtual void setMetronomeEnabled(bool enabled) = 0;
@@ -227,21 +225,12 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Device Management =====
     virtual juce::AudioDeviceManager* getDeviceManager() = 0;
-    virtual juce::BigInteger getEnabledWaveChannels(bool input) const {
-        juce::ignoreUnused(input);
-        return {};
-    }
-    virtual void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
-        juce::ignoreUnused(input, channels);
-    }
-    virtual void rescanWaveDevices(bool enableInputs, bool enableOutputs) {
-        juce::ignoreUnused(enableInputs, enableOutputs);
-    }
-    virtual bool isDevicesLoading() const {
-        return false;
-    }
+    virtual juce::BigInteger getEnabledWaveChannels(bool input) const = 0;
+    virtual void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) = 0;
+    virtual void rescanWaveDevices(bool enableInputs, bool enableOutputs) = 0;
+    virtual bool isDevicesLoading() const = 0;
     virtual void setDevicesLoadingCallback(
-        std::function<void(bool, const juce::String&)> /*callback*/) {}
+        std::function<void(bool, const juce::String&)> callback) = 0;
 
     // ===== Audio Management =====
     virtual AudioBridge* getAudioBridge() = 0;
@@ -252,82 +241,49 @@ class AudioEngine : public AudioEngineListener {
     virtual const MidiBridge* getMidiBridge() const = 0;
 
     // ===== Application Services =====
-    virtual MagdaApi& getMagdaApi() {
-        throw std::logic_error("MagdaApi is unavailable for this audio engine");
-    }
-    virtual PluginWindowManager* getPluginWindowManager() {
-        return nullptr;
-    }
-    virtual const PluginWindowManager* getPluginWindowManager() const {
-        return nullptr;
-    }
-    virtual InsertRenderCaptureService* getInsertRenderCaptureService() {
-        return nullptr;
-    }
+    virtual MagdaApi& getMagdaApi() = 0;
+    virtual PluginWindowManager* getPluginWindowManager() = 0;
+    virtual const PluginWindowManager* getPluginWindowManager() const = 0;
+    virtual InsertRenderCaptureService* getInsertRenderCaptureService() = 0;
 
     // ===== Plugin Discovery =====
-    virtual juce::Array<juce::PluginDescription> getKnownPluginTypes() const {
-        return {};
-    }
-    virtual juce::Array<juce::PluginDescription> getPreferredPluginTypes() const {
-        return {};
-    }
-    virtual void addPluginListChangeListener(juce::ChangeListener* /*listener*/) {}
-    virtual void removePluginListChangeListener(juce::ChangeListener* /*listener*/) {}
+    virtual juce::Array<juce::PluginDescription> getKnownPluginTypes() const = 0;
+    virtual juce::Array<juce::PluginDescription> getPreferredPluginTypes() const = 0;
+    virtual void addPluginListChangeListener(juce::ChangeListener* listener) = 0;
+    virtual void removePluginListChangeListener(juce::ChangeListener* listener) = 0;
     virtual void startPluginScan(
-        std::function<void(float, const juce::String&)> /*progressCallback*/ = nullptr) {}
-    virtual void abortPluginScan() {}
+        std::function<void(float, const juce::String&)> progressCallback = nullptr) = 0;
+    virtual void abortPluginScan() = 0;
     virtual void detectNewPlugins(
-        std::function<void(PluginScanPhase, const juce::String&)> /*statusCallback*/ = nullptr,
+        std::function<void(PluginScanPhase, const juce::String&)> statusCallback = nullptr,
         std::function<void(bool, int, int, const juce::StringArray&)> completionCallback =
-            nullptr) {
-        if (completionCallback)
-            completionCallback(true, 0, 0, {});
-    }
+            nullptr) = 0;
     virtual void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)> /*callback*/) {}
-    virtual bool isPluginScanRunning() const {
-        return false;
-    }
-    virtual std::vector<ExcludedPlugin> getExcludedPlugins() const {
-        return {};
-    }
-    virtual void setExcludedPlugins(const std::vector<ExcludedPlugin>& /*excludedPlugins*/) {}
-    virtual juce::File getPluginScanReportFile() const {
-        return {};
-    }
-    virtual std::vector<std::string> getSystemPluginSearchPaths() const {
-        return {};
-    }
+        std::function<void(bool, int, const juce::StringArray&)> callback) = 0;
+    virtual bool isPluginScanRunning() const = 0;
+    virtual std::vector<ExcludedPlugin> getExcludedPlugins() const = 0;
+    virtual void setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) = 0;
+    virtual juce::File getPluginScanReportFile() const = 0;
+    virtual std::vector<std::string> getSystemPluginSearchPaths() const = 0;
 
     // ===== Plugin Parameter Discovery =====
-    virtual std::vector<ScannedPluginParameter> scanPluginParameters(
-        const juce::String& /*pluginId*/, bool /*internalPlugin*/) {
-        return {};
-    }
+    virtual std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
+                                                                     bool internalPlugin) = 0;
 
     // ===== Groove Templates =====
-    virtual bool upsertGrooveTemplate(const GrooveTemplateData& /*groove*/) {
-        return false;
-    }
-    virtual juce::StringArray getGrooveTemplateNames() const {
-        return {};
-    }
+    virtual bool upsertGrooveTemplate(const GrooveTemplateData& groove) = 0;
+    virtual juce::StringArray getGrooveTemplateNames() const = 0;
 
     // ===== Offline Rendering =====
-    virtual std::unique_ptr<OfflineRenderTask> createOfflineRenderTask(
-        const OfflineRenderRequest& /*request*/) {
-        return nullptr;
-    }
+    virtual std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
+        bool resumePlaybackWhenFinished) = 0;
 
     // ===== Project Media =====
-    virtual std::vector<SamplerMediaReference> getSamplerMediaReferences() {
-        return {};
-    }
+    virtual std::vector<SamplerMediaReference> getSamplerMediaReferences() = 0;
 
     // ===== Edit-Wide Tempo Sequences =====
     virtual std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(
-        TempoSequenceRippleMode mode, double startBeat, double endBeat);
+        TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) = 0;
 
     // ===== MIDI Preview =====
     /**
@@ -353,6 +309,6 @@ class AudioEngine : public AudioEngineListener {
 };
 
 /** Construct the production audio-engine backend without exposing its concrete type. */
-std::unique_ptr<AudioEngine> createDefaultAudioEngine();
+std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options = {});
 
 }  // namespace magda

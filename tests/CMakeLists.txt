@@ -9,6 +9,7 @@ set(TEST_SOURCES
     test_clip_bpm_invariant.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp
+    test_offline_render_contract.cpp
     test_audio_to_midi.cpp
     test_command.cpp
     test_command_model.cpp

@@ -19,7 +19,6 @@
 #include "audio/AudioBridge.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectInfo.hpp"
 #include "project/ProjectManager.hpp"
 #include "version.hpp"
@@ -43,9 +42,7 @@ juce::File defaultOutputFor(const juce::File& input) {
 class HeadlessEngineSession {
   public:
     bool initialize() {
-        auto engine = std::make_unique<magda::TracktionEngineWrapper>();
-        engine->setForceHeadless(true);
-        engine_ = std::move(engine);
+        engine_ = magda::createDefaultAudioEngine({.headless = true});
         if (!engine_->initialize()) {
             error_ = "Failed to initialize MAGDA engine";
             engine_.reset();
@@ -673,9 +670,10 @@ std::optional<double> parseRenderTime(const juce::String& text, const magda::Pro
 }
 
 double defaultRenderEndSeconds(magda::AudioEngine& engine, const magda::ProjectInfo& info) {
-    const auto editLength = engine.getEditLengthSeconds();
-    if (editLength > 0.0)
-        return editLength;
+    const auto editLength = engine.getEditLengthBeats();
+    if (editLength.value > 0.0)
+        if (const auto* tempoMap = engine.tempoMap())
+            return tempoMap->beatToTime(editLength.value);
 
     const double beats = static_cast<double>(info.timelineLengthBars) * info.timeSignatureNumerator;
     const double seconds = beats * 60.0 / info.tempo;
@@ -715,20 +713,21 @@ bool renderWav(magda::AudioEngine& engine, const RenderOptions& options) {
         return false;
     }
 
-    auto task = engine.createOfflineRenderTask({
-        .destination = options.wavOutput,
-        .format = magda::OfflineRenderFormat::Wav,
-        .bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth),
-        .sampleRate = options.sampleRate.value_or(projectInfo.sampleRate),
-        .blockSize = 512,
-        .shouldNormalise = false,
-        .useMasterPlugins = true,
-        .usePlugins = true,
-        .checkNodesForAudio = false,
-        .realTimeRender = false,
-        .startSeconds = startSeconds,
-        .endSeconds = endSeconds,
-    });
+    auto session = engine.createOfflineRenderSession(false);
+    auto task = session ? session->createTask({
+                              .destination = options.wavOutput,
+                              .format = magda::OfflineRenderFormat::Wav,
+                              .bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth),
+                              .sampleRate = options.sampleRate.value_or(projectInfo.sampleRate),
+                              .blockSize = 512,
+                              .shouldNormalise = false,
+                              .useMasterPlugins = true,
+                              .usePlugins = true,
+                              .checkNodesForAudio = false,
+                              .realTimeRender = false,
+                              .range = {{startSeconds}, {endSeconds}, {}},
+                          })
+                        : nullptr;
     if (task == nullptr) {
         std::cerr << "Audio engine does not support offline rendering\n";
         return false;

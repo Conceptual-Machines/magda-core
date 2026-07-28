@@ -117,7 +117,7 @@ juce::String TempoSequenceRippleCommand::getDescription() const {
 }
 
 std::unique_ptr<UndoableCommand> TracktionEngineWrapper::createTempoSequenceRippleCommand(
-    TempoSequenceRippleMode mode, double startBeat, double endBeat) {
+    TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) {
     if (!currentEdit_)
         return nullptr;
     TempoSequenceRippleCommand::Mode commandMode;
@@ -132,8 +132,8 @@ std::unique_ptr<UndoableCommand> TracktionEngineWrapper::createTempoSequenceRipp
             commandMode = TempoSequenceRippleCommand::Mode::Duplicate;
             break;
     }
-    return std::make_unique<TempoSequenceRippleCommand>(*currentEdit_, commandMode, startBeat,
-                                                        endBeat);
+    return std::make_unique<TempoSequenceRippleCommand>(*currentEdit_, commandMode, start.value,
+                                                        end.value);
 }
 
 }  // namespace magda

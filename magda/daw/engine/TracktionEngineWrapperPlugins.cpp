@@ -299,6 +299,12 @@ PluginScanCoordinator* TracktionEngineWrapper::getPluginScanCoordinator() {
     return pluginScanCoordinator_.get();
 }
 
+const PluginScanCoordinator* TracktionEngineWrapper::getPluginScanCoordinator() const {
+    if (!pluginScanCoordinator_)
+        pluginScanCoordinator_ = std::make_unique<PluginScanCoordinator>();
+    return pluginScanCoordinator_.get();
+}
+
 juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() {
     return engine_->getPluginManager().knownPluginList;
 }
@@ -585,8 +591,7 @@ bool TracktionEngineWrapper::isPluginScanRunning() const {
 }
 
 std::vector<ExcludedPlugin> TracktionEngineWrapper::getExcludedPlugins() const {
-    auto* self = const_cast<TracktionEngineWrapper*>(this);
-    return self->getPluginScanCoordinator()->getExcludedPlugins();
+    return getPluginScanCoordinator()->getExcludedPlugins();
 }
 
 void TracktionEngineWrapper::setExcludedPlugins(
@@ -598,8 +603,7 @@ void TracktionEngineWrapper::setExcludedPlugins(
 }
 
 juce::File TracktionEngineWrapper::getPluginScanReportFile() const {
-    auto* self = const_cast<TracktionEngineWrapper*>(this);
-    return self->getPluginScanCoordinator()->getScanReportFile();
+    return getPluginScanCoordinator()->getScanReportFile();
 }
 
 std::vector<std::string> TracktionEngineWrapper::getSystemPluginSearchPaths() const {

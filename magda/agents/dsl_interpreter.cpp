@@ -1345,6 +1345,8 @@ bool Interpreter::executeAddFx(const Params& params) {
 
     const auto pluginTypes = formatHint.isNotEmpty() ? api_.plugins().getAllExternalPlugins()
                                                      : api_.plugins().getExternalPlugins();
+    const auto requestedFormat =
+        formatHint.isNotEmpty() ? maybePluginFormatFromName(formatHint) : std::nullopt;
     const DeviceInfo* bestMatch = nullptr;
 
     DBG("DSL executeAddFx: looking for plugin fxName=\"" + fxName + "\"");
@@ -1356,10 +1358,8 @@ bool Interpreter::executeAddFx(const Params& params) {
             "\" match=" + juce::String(nameMatch ? "YES" : "no"));
         if (nameMatch) {
             // Filter by format hint if provided
-            if (formatHint.isNotEmpty()) {
-                if (!desc.getFormatString().containsIgnoreCase(formatHint))
-                    continue;
-            }
+            if (formatHint.isNotEmpty() && (!requestedFormat || desc.format != *requestedFormat))
+                continue;
             bestMatch = &desc;
             break;
         }

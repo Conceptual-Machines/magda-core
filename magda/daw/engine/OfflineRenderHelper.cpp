@@ -14,8 +14,42 @@ void prepareEditForOfflineRender(tracktion::Edit& edit) {
 
     // Nothing here may touch plugin enablement (#1880). Every engine plugin's
     // enabled flag already mirrors TrackManager::isDeviceEffectivelyEnabled,
-    // so powered-off devices must stay off through the render and stay off
-    // afterwards.
+    // so powered-off devices must stay off through the render and afterwards.
+}
+
+std::optional<juce::BigInteger> resolveOfflineRenderTrackFilter(
+    const OfflineRenderRequest& request, int numTracks,
+    const std::function<int(TrackId)>& indexForTrack) {
+    juce::BigInteger result;
+
+    if (!request.trackIds.empty()) {
+        for (const auto trackId : request.trackIds) {
+            const int index = indexForTrack(trackId);
+            if (index >= 0 && index < numTracks)
+                result.setBit(index);
+        }
+        if (result.isZero())
+            return std::nullopt;
+        return result;
+    }
+
+    if (!request.excludedTrackIds.empty()) {
+        for (int index = 0; index < numTracks; ++index)
+            result.setBit(index);
+
+        int resolvedExclusions = 0;
+        for (const auto trackId : request.excludedTrackIds) {
+            const int index = indexForTrack(trackId);
+            if (index >= 0 && index < numTracks) {
+                result.clearBit(index);
+                ++resolvedExclusions;
+            }
+        }
+        if (resolvedExclusions == 0 || result.isZero())
+            return std::nullopt;
+    }
+
+    return result;
 }
 
 namespace {
@@ -32,20 +66,12 @@ void restorePluginsAfterOfflineRender(TracktionEngineWrapper& engine) {
 
 class TracktionOfflineRenderTask final : public OfflineRenderTask {
   public:
-    TracktionOfflineRenderTask(TracktionEngineWrapper& engine, const OfflineRenderRequest& request)
-        : engine_(engine),
-          edit_(*engine.getEdit()),
-          request_(request),
-          params_(edit_),
-          inhibitor_(edit_.getTransport()) {
-        auto& transport = edit_.getTransport();
-        wasPlaying_ = transport.isPlaying();
-        prepareEditForOfflineRender(edit_);
-        preparePluginsForOfflineRender(engine_);
-        engine_.setOfflineRenderActive(true);
-
+    TracktionOfflineRenderTask(TracktionEngineWrapper& engine, tracktion::Edit& edit,
+                               const OfflineRenderRequest& request,
+                               const juce::BigInteger& tracksToDo)
+        : request_(request), params_(edit) {
         params_.destFile = request_.destination;
-        auto& formats = engine_.getEngine()->getAudioFileFormatManager();
+        auto& formats = engine.getEngine()->getAudioFileFormatManager();
         params_.audioFormat = request_.format == OfflineRenderFormat::Flac ? formats.getFlacFormat()
                                                                            : formats.getWavFormat();
         params_.bitDepth = request_.bitDepth;
@@ -58,49 +84,16 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
         params_.checkNodesForAudio = request_.checkNodesForAudio;
         params_.realTimeRender = request_.realTimeRender;
         params_.time =
-            tracktion::TimeRange(tracktion::TimePosition::fromSeconds(request_.startSeconds),
-                                 tracktion::TimePosition::fromSeconds(request_.endSeconds));
-        params_.endAllowance = tracktion::TimeDuration::fromSeconds(request_.endAllowanceSeconds);
+            tracktion::TimeRange(tracktion::TimePosition::fromSeconds(request_.range.start.seconds),
+                                 tracktion::TimePosition::fromSeconds(request_.range.end.seconds));
+        params_.endAllowance =
+            tracktion::TimeDuration::fromSeconds(request_.range.endAllowance.seconds);
+        params_.tracksToDo = tracksToDo;
 
-        const auto allTracks = tracktion::getAllTracks(edit_);
-        auto* bridge = engine_.getAudioBridge();
-        if (!request_.trackIds.empty()) {
-            for (const auto trackId : request_.trackIds) {
-                if (bridge == nullptr)
-                    break;
-                if (auto* track = bridge->getAudioTrack(trackId)) {
-                    const int index = allTracks.indexOf(track);
-                    if (index >= 0)
-                        params_.tracksToDo.setBit(index);
-                }
-            }
-        } else if (!request_.excludedTrackIds.empty()) {
-            for (int index = 0; index < allTracks.size(); ++index)
-                params_.tracksToDo.setBit(index);
-            if (bridge != nullptr) {
-                for (const auto trackId : request_.excludedTrackIds) {
-                    if (auto* track = bridge->getAudioTrack(trackId)) {
-                        const int index = allTracks.indexOf(track);
-                        if (index >= 0)
-                            params_.tracksToDo.clearBit(index);
-                    }
-                }
-            }
-        }
-
-        if (bridge != nullptr) {
+        if (auto* bridge = engine.getAudioBridge())
             for (const auto clipId : request_.clipIds)
                 if (auto* clip = bridge->getArrangementTeClip(clipId))
                     params_.allowedClips.add(clip);
-        }
-    }
-
-    ~TracktionOfflineRenderTask() override {
-        restorePluginsAfterOfflineRender(engine_);
-        edit_.getTransport().ensureContextAllocated();
-        engine_.setOfflineRenderActive(false);
-        if (request_.resumePlaybackAfterRender && wasPlaying_)
-            edit_.getTransport().play(false);
     }
 
     OfflineRenderResult run(const std::function<bool()>& shouldCancel,
@@ -133,22 +126,73 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
     }
 
   private:
-    TracktionEngineWrapper& engine_;
-    tracktion::Edit& edit_;
     OfflineRenderRequest request_;
     tracktion::Renderer::Parameters params_;
+};
+
+class TracktionOfflineRenderSession final : public OfflineRenderSession {
+  public:
+    TracktionOfflineRenderSession(TracktionEngineWrapper& engine, bool resumePlaybackWhenFinished)
+        : engine_(engine),
+          edit_(*engine.getEdit()),
+          resumePlaybackWhenFinished_(resumePlaybackWhenFinished),
+          inhibitor_(edit_.getTransport()) {
+        prepareEditForOfflineRender(edit_);
+        preparePluginsForOfflineRender(engine_);
+        engine_.setOfflineRenderActive(true);
+    }
+
+    ~TracktionOfflineRenderSession() override {
+        restorePluginsAfterOfflineRender(engine_);
+        edit_.getTransport().ensureContextAllocated();
+        engine_.setOfflineRenderActive(false);
+        if (resumePlaybackWhenFinished_)
+            edit_.getTransport().play(false);
+    }
+
+    std::unique_ptr<OfflineRenderTask> createTask(const OfflineRenderRequest& request) override {
+        if (request.destination == juce::File() || !request.range.isValid())
+            return nullptr;
+
+        const auto allTracks = tracktion::getAllTracks(edit_);
+        auto* bridge = engine_.getAudioBridge();
+        const auto tracksToDo = resolveOfflineRenderTrackFilter(
+            request, allTracks.size(), [bridge, &allTracks](TrackId trackId) {
+                if (bridge == nullptr)
+                    return -1;
+                auto* track = bridge->getAudioTrack(trackId);
+                return track != nullptr ? allTracks.indexOf(track) : -1;
+            });
+        if (!tracksToDo)
+            return nullptr;
+
+        if (!request.clipIds.empty()) {
+            if (bridge == nullptr)
+                return nullptr;
+            bool resolvedClip = false;
+            for (const auto clipId : request.clipIds)
+                resolvedClip = resolvedClip || bridge->getArrangementTeClip(clipId) != nullptr;
+            if (!resolvedClip)
+                return nullptr;
+        }
+
+        return std::make_unique<TracktionOfflineRenderTask>(engine_, edit_, request, *tracksToDo);
+    }
+
+  private:
+    TracktionEngineWrapper& engine_;
+    tracktion::Edit& edit_;
+    bool resumePlaybackWhenFinished_ = false;
     tracktion::TransportControl::ReallocationInhibitor inhibitor_;
-    bool wasPlaying_ = false;
 };
 
 }  // namespace
 
-std::unique_ptr<OfflineRenderTask> TracktionEngineWrapper::createOfflineRenderTask(
-    const OfflineRenderRequest& request) {
-    if (!currentEdit_ || !engine_ || request.destination == juce::File() ||
-        request.endSeconds <= request.startSeconds)
+std::unique_ptr<OfflineRenderSession> TracktionEngineWrapper::createOfflineRenderSession(
+    bool resumePlaybackWhenFinished) {
+    if (!currentEdit_ || !engine_)
         return nullptr;
-    return std::make_unique<TracktionOfflineRenderTask>(*this, request);
+    return std::make_unique<TracktionOfflineRenderSession>(*this, resumePlaybackWhenFinished);
 }
 
 }  // namespace magda

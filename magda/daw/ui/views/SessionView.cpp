@@ -3668,18 +3668,16 @@ void SessionView::timerCallback() {
         bool transportPlaying = false;
         if (audioEngine_->isPlaying()) {
             transportPlaying = true;
-            const double bpm = audioEngine_->getTempo();
             // Prefer the audio-thread sampled transport position so the
             // beat indicator stays phase-locked with what's actually
             // being played. Falls back to the message-thread read if the
             // audio thread hasn't ticked yet.
             const double atPos = audioEngine_->getAudioThreadTransportSeconds();
             const double pos = (atPos >= 0.0) ? atPos : audioEngine_->getCurrentPosition();
-            const double projectBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
-            const double beatDuration = 60.0 / projectBpm;
-            const double beatPhase = std::fmod(pos, beatDuration) / beatDuration;
+            const auto* tempoMap = audioEngine_->tempoMap();
+            posBeats = tempoMap != nullptr ? tempoMap->timeToBeat(pos) : 0.0;
+            const double beatPhase = posBeats - std::floor(posBeats);
             newBlinkOn = (beatPhase < 0.5);
-            posBeats = pos * projectBpm / 60.0;
         }
 
         // Per-track beat phases for the indicator band. Each track's segment

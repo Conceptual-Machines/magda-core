@@ -9,20 +9,13 @@
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
 #include "CommandPattern.hpp"
+#include "TimeTypes.hpp"
 
 namespace magda {
 
 // Forward declarations
 class AudioEngine;
 class TempoMap;
-
-struct BeatPosition {
-    double value = 0.0;
-};
-
-struct BeatDuration {
-    double value = 0.0;
-};
 
 /**
  * @brief Inclusive-start, exclusive-end arrangement range in musical beats.

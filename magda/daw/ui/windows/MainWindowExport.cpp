@@ -35,11 +35,13 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
  */
 class ExportProgressWindow : public juce::ThreadWithProgressWindow {
   public:
-    ExportProgressWindow(std::unique_ptr<OfflineRenderTask> renderTask,
-                         const juce::File& outputFile, std::function<void()> onComplete,
-                         double prerollSeconds = 0.0, double leadInSilence = 0.0)
+    ExportProgressWindow(std::unique_ptr<OfflineRenderSession> renderSession,
+                         const OfflineRenderRequest& request, const juce::File& outputFile,
+                         std::function<void()> onComplete, double prerollSeconds = 0.0,
+                         double leadInSilence = 0.0)
         : ThreadWithProgressWindow(trEllipsis("export.progress.exporting_audio"), true, true),
-          renderTask_(std::move(renderTask)),
+          renderSession_(std::move(renderSession)),
+          renderTask_(renderSession_ ? renderSession_->createTask(request) : nullptr),
           outputFile_(outputFile),
           onComplete_(std::move(onComplete)),
           prerollSeconds_(prerollSeconds),
@@ -182,6 +184,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
         return tempFile.moveFileTo(outputFile_);
     }
 
+    std::unique_ptr<OfflineRenderSession> renderSession_;
     std::unique_ptr<OfflineRenderTask> renderTask_;
     juce::File outputFile_;
     std::function<void()> onComplete_;
@@ -303,9 +306,8 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 file = file.withFileExtension(extension);
             }
 
-            // Export range — also the capture window for external inserts.
-            double requestedStart = 0.0;
-            double requestedEnd = engine->getEditLengthSeconds();
+            // Export range stays musical until the renderer/capture boundary.
+            BeatRange requestedRange{{0.0}, {engine->getEditLengthBeats().value}};
             using ExportRange = ExportAudioDialog::ExportRange;
             switch (settings.exportRange) {
                 case ExportRange::TimeSelection:
@@ -313,9 +315,9 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                     break;
 
                 case ExportRange::LoopRegion: {
-                    const auto loop = engine->getLoopRegionSeconds();
-                    requestedStart = loop.first;
-                    requestedEnd = loop.second;
+                    const auto loop = engine->getLoopRegionBeats();
+                    if (loop.isValid())
+                        requestedRange = loop;
                     break;
                 }
 
@@ -324,9 +326,22 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                     break;
             }
 
+            const auto* tempoMap = engine->tempoMap();
+            if (tempoMap == nullptr) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       tr("dialogs.export_audio"),
+                                                       tr("export.error.render_failed"));
+                fileChooser_.reset();
+                return;
+            }
+            const double requestedStart = tempoMap->beatToTime(requestedRange.start.value);
+            const double requestedEnd = tempoMap->beatToTime(requestedRange.end.value);
+            const bool resumePlaybackAfterRender = engine->isPlaying();
+
             // The offline render itself, launched directly or after the capture
             // pass below has recorded the external inserts' returns.
-            auto launchRender = [this, settings, engine, file, requestedStart, requestedEnd]() {
+            auto launchRender = [this, settings, engine, file, requestedStart, requestedEnd,
+                                 resumePlaybackAfterRender]() {
                 OfflineRenderRequest request;
                 request.destination = file;
                 request.format = settings.format == "FLAC" ? OfflineRenderFormat::Flac
@@ -337,8 +352,7 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 request.useMasterPlugins = true;
                 request.usePlugins = true;
                 request.realTimeRender = settings.realTimeRender;
-                request.startSeconds = requestedStart;
-                request.endSeconds = requestedEnd;
+                request.range = {{requestedStart}, {requestedEnd}, {}};
 
                 // The chord track is monitor-only: exclude it from the bounce so its
                 // notes never reach the master render.
@@ -353,14 +367,14 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 double actualPreroll = 0.0;
                 if (!settings.realTimeRender) {
                     actualPreroll = prerollSeconds;
-                    request.startSeconds -= actualPreroll;
+                    request.range.start.seconds -= actualPreroll;
                 }
 
                 // Launch progress window with background rendering (non-blocking)
                 // The window will delete itself via threadComplete() callback.
                 auto* captureService = engine->getInsertRenderCaptureService();
                 auto* progressWindow = new ExportProgressWindow(
-                    engine->createOfflineRenderTask(request), file,
+                    engine->createOfflineRenderSession(resumePlaybackAfterRender), request, file,
                     [captureService]() {
                         // Remove the hidden capture taps + temp files (no-op when
                         // no capture pass ran).
@@ -483,9 +497,9 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     if (settings.exportRange == ExportMidiDialog::ExportRange::LoopRegion) {
         auto* engine = mainComponent->getAudioEngine();
         if (engine && engine->hasActiveEdit()) {
-            const auto loopRange = engine->getLoopRegionSeconds();
-            rangeStartBeats = loopRange.first * projectTempo / 60.0;
-            rangeEndBeats = loopRange.second * projectTempo / 60.0;
+            const auto loopRange = engine->getLoopRegionBeats();
+            rangeStartBeats = loopRange.start.value;
+            rangeEndBeats = loopRange.end.value;
         }
     }
 

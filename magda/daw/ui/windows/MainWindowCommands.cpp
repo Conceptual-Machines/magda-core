@@ -74,7 +74,8 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
 void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleMode mode, double startBeat,
                          double endBeat) {
     if (audioEngine)
-        if (auto command = audioEngine->createTempoSequenceRippleCommand(mode, startBeat, endBeat))
+        if (auto command = audioEngine->createTempoSequenceRippleCommand(
+                mode, BeatPosition{startBeat}, BeatPosition{endBeat}))
             UndoManager::getInstance().executeCommand(std::move(command));
 }
 

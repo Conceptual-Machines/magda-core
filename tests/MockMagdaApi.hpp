@@ -250,6 +250,10 @@ class MockTrackApi : public TrackApi {
         TrackId id;
         int position;
     };
+    struct DeviceWrite {
+        TrackId trackId;
+        DeviceInfo device;
+    };
 
     std::vector<TrackInfo> created;
     std::vector<TrackId> deleted;
@@ -261,8 +265,10 @@ class MockTrackApi : public TrackApi {
     std::vector<PanWrite> panWrites;
     std::vector<MuteWrite> muteWrites;
     std::vector<SoloWrite> soloWrites;
+    std::vector<DeviceWrite> deviceWrites;
 
     TrackId nextId = 1;
+    DeviceId nextDeviceId = 1;
 
     TrackId createTrack(const juce::String& name, TrackType type) override {
         TrackInfo t;
@@ -325,8 +331,9 @@ class MockTrackApi : public TrackApi {
     void setTrackSoloed(TrackId id, bool v) override {
         soloWrites.push_back({id, v});
     }
-    DeviceId addDeviceToTrack(TrackId, const DeviceInfo&) override {
-        return INVALID_DEVICE_ID;
+    DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device) override {
+        deviceWrites.push_back({trackId, device});
+        return nextDeviceId++;
     }
     DeviceId addDeviceToChain(TrackId, RackId, ChainId, const DeviceInfo&) override {
         return INVALID_DEVICE_ID;

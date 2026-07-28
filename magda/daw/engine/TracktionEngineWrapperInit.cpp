@@ -32,8 +32,10 @@ TracktionEngineWrapper::~TracktionEngineWrapper() {
     shutdown();
 }
 
-std::unique_ptr<AudioEngine> createDefaultAudioEngine() {
-    return std::make_unique<TracktionEngineWrapper>();
+std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options) {
+    auto engine = std::make_unique<TracktionEngineWrapper>();
+    engine->setForceHeadless(options.headless);
+    return engine;
 }
 
 bool TracktionEngineWrapper::isHeadlessRuntime() const {
