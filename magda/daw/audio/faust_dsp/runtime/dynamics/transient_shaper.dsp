@@ -7,15 +7,15 @@ declare version "1.0";
 import("stdfaust.lib");
 
 // --- User Calibration Controls ---
-attackGain  = hslider("1. Attack Boost/Cut [dB]", 0.0, -12.0, 12.0, 0.1);
-attackSpeed = hslider("2. Attack Speed [ms]", 2.0, 0.5, 20.0, 0.1);
+attackGain  = vgroup("Attack", hslider("Boost/Cut[idx:0][unit:dB]", 0.0, -12.0, 12.0, 0.1));
+attackSpeed = vgroup("Attack", hslider("Speed[idx:1][unit:ms]", 2.0, 0.5, 20.0, 0.1));
 
-sustainGain = hslider("3. Sustain Boost/Cut [dB]", 0.0, -12.0, 12.0, 0.1);
-sustainSpeed= hslider("4. Sustain Release [ms]", 50.0, 10.0, 300.0, 1.0);
+sustainGain = vgroup("Sustain", hslider("Boost/Cut[idx:2][unit:dB]", 0.0, -12.0, 12.0, 0.1));
+sustainSpeed= vgroup("Sustain", hslider("Release[idx:3][unit:ms]", 50.0, 10.0, 300.0, 1.0));
 
 // Master utility controls
-outputGain  = hslider("5. Output Trim [dB]", 0.0, -12.0, 12.0, 0.1);
-outputMix   = hslider("6. Master Mix [%]", 100.0, 0.0, 100.0, 1.0) / 100.0;
+outputGain  = vgroup("Output", hslider("Trim[idx:4][unit:dB]", 0.0, -12.0, 12.0, 0.1));
+outputMix   = vgroup("Output", hslider("Master Mix[idx:5][unit:%]", 100.0, 0.0, 100.0, 1.0)) / 100.0;
 
 process(left, right) = clipL, clipR
 with {

@@ -7,9 +7,9 @@ declare version "1.0";
 //import("maths.lib");
 import("stdfaust.lib");
 // --- UI Controls ---
-vinylNoiseOn = checkbox("1. Engage 45 RPM Vinyl Mode [Off/On]");
-wowDepth     = hslider("2. Turntable Warp Depth [%]", 25.0, 0.0, 100.0, 1.0) / 100.0;
-crackleGain  = hslider("3. Vinyl Crackle Volume [dB]", 0.0, -24.0, 12.0, 0.1);
+vinylNoiseOn = vgroup("Transport", checkbox("Engage 45 RPM[idx:0]"));
+wowDepth     = vgroup("Transport", hslider("Warp Depth[idx:1][unit:%]", 25.0, 0.0, 100.0, 1.0)) / 100.0;
+crackleGain  = vgroup("Texture", hslider("Crackle Volume[idx:2][unit:dB]", 0.0, -24.0, 12.0, 0.1));
 
 process(left, right) = wetL, wetR
 with {

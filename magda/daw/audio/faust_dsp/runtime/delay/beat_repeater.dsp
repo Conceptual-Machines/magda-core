@@ -7,41 +7,27 @@ declare version "1.0";
 import("stdfaust.lib");
 
 // --- Host Sync Controls ---
-hostBPM = hslider("BPM [bpm:on]", 120.0, 10.0, 360.0, 1.0);
+// The DSP is described as host-synchronised, so the host writes the live
+// project tempo into this zone every block rather than the player dialling
+// it in by hand. Hidden so it does not take a cell in the param grid.
+hostBPM = hslider("BPM[idx:3][unit:bpm][role:projecttempo][hidden:1]", 120.0, 10.0, 360.0, 1.0);
 
-// --- 8 Interlocking Performance Timing Checkboxes ---
-t1_128 = checkbox("1. Stutter Roll: 1/128 Bar");
-t1_64  = checkbox("2. Stutter Roll: 1/64 Bar");
-t1_32  = checkbox("3. Stutter Roll: 1/32 Bar");
-t1_16  = checkbox("4. Stutter Roll: 1/16 Bar");
-t1_8   = checkbox("5. Stutter Roll: 1/8 Bar");
-t1_4   = checkbox("6. Stutter Roll: 1/4 Bar");
-t1_2   = checkbox("7. Stutter Roll: 1/2 Bar");
-t1_1   = checkbox("8. Stutter Roll: 1/1 Bar [Full Bar]");
-outputMix = hslider("9. Dry/Wet Mix [%]", 100.0, 0.0, 100.0, 1.0) / 100.0;
+// --- Roll ---
+// Was eight interlocking checkboxes resolved by a priority encoder.
+engage    = vgroup("Roll", checkbox("Engage[idx:0][tooltip: Runs the stutter roll engine.]"));
+division  = vgroup("Roll", nentry("Division[idx:1][style:radio{'1/128':0;'1/64':1;'1/32':2;'1/16':3;'1/8':4;'1/4':5;'1/2':6;'1 Bar':7}]", 0, 0, 7, 1));
+outputMix = vgroup("Mix", hslider("Dry/Wet[idx:2][unit:%]", 100.0, 0.0, 100.0, 1.0)) / 100.0;
 
 process(left, right) = wetL, wetR
 with {
     // --- 1. PERFORMANCE DETECTOR ---
-    engineActive = (t1_128 + t1_64 + t1_32 + t1_16 + t1_8 + t1_4 + t1_2 + t1_1) > 0.0;
+    engineActive = engage > 0.0;
 
     // Master background sample clock
     masterClock = (+ (1) ~ _);
 
-    // --- 2. 8-STAGE RHYTHMIC PRIORITY ENCODER ---
-    mode = select2(t1_1 == 1.0,
-            select2(t1_2 == 1.0,
-                select2(t1_4 == 1.0,
-                    select2(t1_8 == 1.0,
-                        select2(t1_16 == 1.0,
-                            select2(t1_32 == 1.0,
-                                select2(t1_64 == 1.0, 0, 1),
-                            2),
-                        3),
-                    4),
-                5),
-            6),
-         7);
+    // --- 2. RHYTHMIC DIVISION ---
+    mode = division;
 
     // --- 3. ACCURATE BAR DIVISION MATHEMATICS ---
     samplesPerBar = (240.0 / max(1.0, hostBPM)) * ma.SR;

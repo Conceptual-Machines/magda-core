@@ -64,18 +64,18 @@ with {
 // explicitly forces the host DAW to render them sequentially from 1 to 9.
 uiLayout(leftIn, rightIn) = finalL, finalR
 with {
-    masterMix    = hslider("1. Master Mix [%]", 25.0, 0.0, 100.0, 1.0) / 100.0;
-    masterGain   = hslider("2. Master Volume [dB]", 5.0, -12.0, 12.0, 0.1) : ba.db2linear;
+    masterMix    = vgroup("Output", hslider("Master Mix[idx:0][unit:%]", 25.0, 0.0, 100.0, 1.0)) / 100.0;
+    masterGain   = vgroup("Output", hslider("Master Volume[idx:1][unit:dB]", 5.0, -12.0, 12.0, 0.1)) : ba.db2linear;
 
-    randTrigger  = button("3. Re-Roll Chaos Seeds");
-    manualMorph  = hslider("4. Base Frame Morph [0-7]", 0.0, 0.0, 7.0, 0.01);
-    envTracking  = hslider("5. Dynamic Input Morph Depth", 2.0, 0.0, 3.0, 0.01);
+    randTrigger  = vgroup("Morph", button("Re-Roll Chaos Seeds[idx:2]"));
+    manualMorph  = vgroup("Morph", hslider("Base Frame[idx:3]", 0.0, 0.0, 7.0, 0.01));
+    envTracking  = vgroup("Morph", hslider("Input Morph Depth[idx:4]", 2.0, 0.0, 3.0, 0.01));
 
-    foldDrive    = hslider("6. Wavefolder Drive [dB]", 0.0, 0.0, 36.0, 0.1);
-    foldSymmetry = hslider("7. Folding DC Symmetry", 0.0, -0.5, 0.5, 0.01);
+    foldDrive    = vgroup("Fold", hslider("Drive[idx:5][unit:dB]", 0.0, 0.0, 36.0, 0.1));
+    foldSymmetry = vgroup("Fold", hslider("DC Symmetry[idx:6]", 0.0, -0.5, 0.5, 0.01));
 
-    cutoff       = hslider("8. Resonant Cutoff [Hz]", 18000, 50, 18000, 1);
-    res          = hslider("9. Resonance Value", 0.02, 0.0, 0.95, 0.01);
+    cutoff       = vgroup("Filter", hslider("Cutoff[idx:7][unit:Hz][scale:log][scaleAnchor:1000]", 18000, 50, 18000, 1));
+    res          = vgroup("Filter", hslider("Resonance[idx:8]", 0.02, 0.0, 0.95, 0.01));
     safeRes      = max(0.01, res);
 
     // Operational signal routing paths

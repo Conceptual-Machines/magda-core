@@ -6,22 +6,20 @@ declare version "1.0";
 
 import("stdfaust.lib");
 
-// --- 4 Interlocking Timing Checkbox Buttons ---
-t1_8Bar   = checkbox("1. Engage 1/8-Bar Reverse [tooltip: Triggers rapid backward glitch repeats.]");
-t1_4Bar   = checkbox("2. Engage 1/4-Bar Reverse [tooltip: Triggers a fast rhythmic reverse skip.]");
-t1_2Bar   = checkbox("3. Engage 1/2-Bar Reverse [tooltip: Triggers a classic pumping trap reverse phrase.]");
-t1Bar     = checkbox("4. Engage 1-Bar Reverse [tooltip: Triggers standard 1-bar phrase reversal.]");
+// --- Engine ---
+// Was four interlocking checkboxes resolved by nested ba.if; the window
+// is one exclusive choice, and engaging the engine is a separate toggle.
+engage   = vgroup("Engine", checkbox("Engage[idx:0][tooltip: Runs the incoming signal through the reverse buffer.]"));
+window   = vgroup("Engine", nentry("Window[idx:1][style:radio{'1/8':0;'1/4':1;'1/2':2;'1 Bar':3}][tooltip: Reverse window size, from rapid backward glitch repeats to a standard one-bar phrase reversal.]", 0, 0, 3, 1));
 
 // Request Profile: Runs 100% wet by default
-outputMix = hslider("5. Dry/Wet Mix [%] [tooltip: Blends your original clean signal back into the 100% wet reversed texture.]", 100.0, 0.0, 100.0, 1.0) / 100.0;
+outputMix = vgroup("Mix", hslider("Dry/Wet[idx:2][unit:%][tooltip: Blends your original clean signal back into the 100% wet reversed texture.]", 100.0, 0.0, 100.0, 1.0)) / 100.0;
 
 process(left, right) = wetL, wetR
 with {
-    engineActive = (t1_8Bar + t1_4Bar + t1_2Bar + t1Bar) > 0.0;
+    engineActive = engage > 0.0;
 
-    mode = ba.if(t1Bar == 1.0, 3, ba.if(t1_2Bar == 1.0, 2, ba.if(t1_4Bar == 1.0, 1, 0)));
-
-    loopWindow = ba.selectn(4, mode, 12000, 24000, 48000, 96000);
+    loopWindow = ba.selectn(4, window, 12000, 24000, 48000, 96000);
 
     maxBuffer = 400000;
     globalClock  = (+ (1) ~ _);
