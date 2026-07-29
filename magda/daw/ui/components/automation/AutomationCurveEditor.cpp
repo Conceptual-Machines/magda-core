@@ -627,6 +627,15 @@ void AutomationCurveEditor::onPointAdded(double x, double y, CurveType curveType
     AutomationCurveType autoCurveType = toAutomationCurveType(curveType);
     y = applyValueSnap(y);
 
+    // A switch cannot ramp — any intermediate value resolves to off/on
+    // downstream, so honouring the editor's Linear/Bezier mode here would
+    // draw a slope the parameter never performs.
+    if (const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+        lane != nullptr && targetWantsSteppedAutomation(lane->target)) {
+        autoCurveType = AutomationCurveType::Step;
+        y = y >= 0.5 ? 1.0 : 0.0;
+    }
+
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
         UndoManager::getInstance().executeCommand(std::make_unique<AddAutomationPointCommand>(
             laneId_, clipId_, x - clipOffset_, y, autoCurveType));

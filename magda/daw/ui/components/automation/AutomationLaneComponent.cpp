@@ -702,6 +702,11 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
         drawLabelAtRealValue(1.0, "R");
         drawLabelAtRealValue(0.0, "C");
         drawLabelAtRealValue(-1.0, "L");
+    } else if (paramInfo.scale == ParameterScale::Boolean) {
+        // Same reasoning as AutomationLaneHeader: a switch has two
+        // positions, not a continuous range to sample.
+        drawLabelAtRealValue(1.0, "On");
+        drawLabelAtRealValue(0.0, "Off");
     } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
         if (!paramInfo.labelTicks.empty()) {
             // Curated subset — use the parameter's hand-picked tick set so a

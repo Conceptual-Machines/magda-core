@@ -142,6 +142,10 @@ juce::String getModParameterDisplayName(const ModInfo& mod, int modParamIndex) {
     return getModDisplayName(mod) + " " + getModParamDisplayName(modParamIndex);
 }
 
+bool targetWantsSteppedAutomation(const AutomationTarget& target) {
+    return getParameterInfoForTarget(target).scale == ParameterScale::Boolean;
+}
+
 ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
     switch (target.kind) {
         case ControlTarget::Kind::TrackVolume:
