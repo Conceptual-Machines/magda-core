@@ -1030,7 +1030,8 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
                 pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
 
-        if (dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get()) == nullptr)
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
+                pluginPtr.get()) == nullptr)
             pluginPtr = nullptr;
 
         if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
@@ -1052,7 +1053,8 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
                 pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
 
-        if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get()) == nullptr)
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
+                pluginPtr.get()) == nullptr)
             pluginPtr = nullptr;
 
         if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {

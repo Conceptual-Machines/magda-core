@@ -1,16 +1,13 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <limits>
 #include <string>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "plugins/DeviceParameterHandle.hpp"
 
 namespace magda::daw::audio::compiled {
-
-namespace te = tracktion::engine;
 
 /**
  * @brief Cross-plugin slot description. Shared between every compiled-Faust
@@ -55,7 +52,7 @@ class ICompiledFaustPlugin {
 
     virtual int hostSlotCount() const = 0;
     virtual const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const = 0;
-    virtual te::AutomatableParameter* hostSlotParameter(int slotIndex) const = 0;
+    virtual DeviceParameterHandle hostSlotParameter(int slotIndex) const = 0;
     virtual float displayToNormalized(int slotIndex, float displayValue) const = 0;
     virtual float normalizedToDisplay(int slotIndex, float normalizedValue) const = 0;
 

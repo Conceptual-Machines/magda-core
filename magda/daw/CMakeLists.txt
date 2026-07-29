@@ -299,7 +299,7 @@ add_library(magda_base_devices STATIC)
 add_library(magda::base_devices ALIAS magda_base_devices)
 set_target_properties(magda_devices PROPERTIES
     PUBLIC_HEADER
-    "audio/plugins/DeviceServices.hpp;audio/plugins/FaustCustomViewKind.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/processors/base/DeviceProcessor.hpp;audio/processors/DeviceProcessorFactory.hpp"
+    "audio/plugins/DeviceParameterHandle.hpp;audio/plugins/DevicePluginHandle.hpp;audio/plugins/DeviceServices.hpp;audio/plugins/DeviceSessionKey.hpp;audio/plugins/FaustCustomViewKind.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/plugins/MagdaDevice.hpp"
 )
 
 # JUCE GUI app — sources contributed below via add_subdirectory().
@@ -502,7 +502,6 @@ set(MAGDA_DEVICE_JUCE_STACK
     juce::juce_audio_formats
     juce::juce_audio_processors
     juce::juce_dsp
-    tracktion::tracktion_engine
 )
 target_link_libraries(magda_daw
     PUBLIC
@@ -578,6 +577,7 @@ target_include_directories(magda_base_devices PRIVATE
 target_link_libraries(magda_base_devices
     PRIVATE
     magda_device_sdk
+    tracktion::tracktion_engine
     MagdaAssets
     magda::mutable
     faust::libfaust

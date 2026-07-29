@@ -8,6 +8,7 @@
 #include "magda/daw/audio/plugins/MidiReceivePlugin.hpp"
 #include "magda/daw/audio/plugins/OscilloscopePlugin.hpp"
 #include "magda/daw/audio/plugins/SpectrumAnalyzerPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 namespace {
@@ -74,7 +75,7 @@ class DeviceServicesInjectionTest final : public juce::UnitTest {
         services.defaults.spectrum.smoothing = 0.75f;
         services.defaults.midiReceive.sourceTrackId = 42;
         services.defaults.midiReceive.replaceExistingMidi = true;
-        audio::registerDeviceServices(*edit, services);
+        audio::registerDeviceServices(audio::DeviceSessionKey::fromAddress(edit.get()), services);
 
         {
             auto drumPlugin = createCustomPlugin(*edit, audio::DrumGridPlugin::xmlTypeName);
@@ -89,14 +90,18 @@ class DeviceServicesInjectionTest final : public juce::UnitTest {
             }
 
             auto oscPlugin = createCustomPlugin(*edit, audio::OscilloscopePlugin::xmlTypeName);
-            auto* oscilloscope = dynamic_cast<audio::OscilloscopePlugin*>(oscPlugin.get());
+            auto* oscilloscope =
+                audio::tracktion_adapter::deviceFromPlugin<audio::OscilloscopePlugin>(
+                    oscPlugin.get());
             expect(oscilloscope != nullptr);
             if (oscilloscope != nullptr)
                 expectWithinAbsoluteError(oscilloscope->getTimebaseMs(), 321.0f, 0.001f);
 
             auto spectrumPlugin =
                 createCustomPlugin(*edit, audio::SpectrumAnalyzerPlugin::xmlTypeName);
-            auto* spectrum = dynamic_cast<audio::SpectrumAnalyzerPlugin*>(spectrumPlugin.get());
+            auto* spectrum =
+                audio::tracktion_adapter::deviceFromPlugin<audio::SpectrumAnalyzerPlugin>(
+                    spectrumPlugin.get());
             expect(spectrum != nullptr);
             if (spectrum != nullptr) {
                 expectEquals(spectrum->getFftOrder(), 12);
@@ -128,7 +133,7 @@ class DeviceServicesInjectionTest final : public juce::UnitTest {
 #endif
         }
 
-        audio::unregisterDeviceServices(*edit);
+        audio::unregisterDeviceServices(audio::DeviceSessionKey::fromAddress(edit.get()));
     }
 };
 

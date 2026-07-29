@@ -3,6 +3,7 @@
 
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../project/ProjectManager.hpp"
 
 namespace magda {
@@ -69,7 +70,7 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
     }
 
     tracktion::Plugin::Ptr createCustomPlugin(tracktion::PluginCreationInfo info) override {
-        if (auto plugin = daw::audio::createRegisteredCustomPlugin(info))
+        if (auto plugin = daw::audio::tracktion_adapter::createRegisteredPlugin(info))
             return plugin;
 
         const auto type = info.state[tracktion::IDs::type].toString();

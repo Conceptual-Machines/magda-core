@@ -215,7 +215,15 @@ endfunction()
 # Callers pass the pack's complete source list, making this check usable by
 # in-tree, submodule, and private packs alike.
 function(magda_validate_device_pack_sources PACK_NAME)
-    foreach(_magda_pack_source IN LISTS ARGN)
+    set(_magda_pack_sources ${ARGN})
+    set(_magda_enforce_engine_neutral FALSE)
+    list(FIND _magda_pack_sources "ENGINE_NEUTRAL" _magda_engine_neutral_index)
+    if(NOT _magda_engine_neutral_index EQUAL -1)
+        set(_magda_enforce_engine_neutral TRUE)
+        list(REMOVE_AT _magda_pack_sources ${_magda_engine_neutral_index})
+    endif()
+
+    foreach(_magda_pack_source IN LISTS _magda_pack_sources)
         if(NOT IS_ABSOLUTE "${_magda_pack_source}")
             set(_magda_pack_source "${CMAKE_CURRENT_SOURCE_DIR}/${_magda_pack_source}")
         endif()
@@ -225,6 +233,16 @@ function(magda_validate_device_pack_sources PACK_NAME)
         endif()
 
         file(READ "${_magda_pack_source}" _magda_pack_source_text)
+        if(_magda_enforce_engine_neutral
+           AND (_magda_pack_source_text MATCHES
+                "#[ \t]*include[ \t]*[<\"][^>\"]*tracktion[^>\"]*[>\"]"
+                OR _magda_pack_source_text MATCHES
+                "(^|[^A-Za-z0-9_])(tracktion::|te::)"))
+            message(FATAL_ERROR
+                "${PACK_NAME} names Tracktion instead of the MagdaDevice contract: "
+                "${_magda_pack_source}")
+        endif()
+
         if(_magda_pack_source_text MATCHES "(TrackManager|Config)::getInstance[ \t]*\\(")
             message(FATAL_ERROR
                 "${PACK_NAME} calls a DAW singleton instead of DeviceServices: "

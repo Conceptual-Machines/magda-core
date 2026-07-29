@@ -270,16 +270,28 @@ file(GLOB_RECURSE _magda_device_pack_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/processors/*.hpp"
 )
 set(_magda_device_sdk_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceParameterHandle.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DevicePluginHandle.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceSessionKey.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustCustomViewKind.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/IFaustEditorModel.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/processors/base/DeviceProcessor.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/processors/base/DeviceProcessor.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
 )
 list(REMOVE_ITEM _magda_device_pack_sources ${_magda_device_sdk_sources})
+
+set(_magda_tracktion_device_adapter_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceAdapters.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionMagdaDevicePlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+)
+list(REMOVE_ITEM _magda_device_pack_sources ${_magda_tracktion_device_adapter_sources})
 
 set(_magda_base_device_support_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.cpp"
@@ -353,6 +365,7 @@ target_sources(magda_daw PRIVATE
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp
     plugin_manager/PluginManagerMeasurement.cpp
+    ${_magda_tracktion_device_adapter_sources}
     racks/InstrumentRackManager.cpp
     racks/RackSyncManager.cpp
     modifiers/ModifierSync.cpp

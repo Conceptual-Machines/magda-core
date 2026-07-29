@@ -64,8 +64,8 @@ void CompiledFaustProcessor::populateParameters(DeviceInfo& info) const {
         // Base value, NOT getCurrentValue(): the current value includes live
         // modifier output, so repopulating while an LFO runs would snapshot a
         // random sweep sample into the model as if it were the knob position.
-        if (auto* param = host->hostSlotParameter(i))
-            paramInfo.currentValue = host->normalizedToDisplay(i, param->getCurrentBaseValue());
+        if (const auto param = host->hostSlotParameter(i))
+            paramInfo.currentValue = host->normalizedToDisplay(i, param.currentBaseValue());
         info.parameters.push_back(std::move(paramInfo));
     }
 }
@@ -76,9 +76,9 @@ void CompiledFaustProcessor::setParameterByIndex(int paramIndex, float value) {
 
     auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
     if (host != nullptr) {
-        if (auto* param = host->hostSlotParameter(paramIndex)) {
+        if (const auto param = host->hostSlotParameter(paramIndex)) {
             const float targetNative = host->displayToNormalized(paramIndex, value);
-            param->setParameterFromHost(targetNative, juce::sendNotificationSync);
+            param.setValueFromHost(targetNative);
         }
     }
 }
@@ -89,8 +89,8 @@ float CompiledFaustProcessor::getParameterByIndex(int paramIndex) const {
 
     auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
     if (host != nullptr) {
-        if (auto* param = host->hostSlotParameter(paramIndex))
-            return host->normalizedToDisplay(paramIndex, param->getCurrentValue());
+        if (const auto param = host->hostSlotParameter(paramIndex))
+            return host->normalizedToDisplay(paramIndex, param.currentValue());
     }
     return 0.0f;
 }

@@ -1,12 +1,11 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <memory>
 #include <span>
 #include <vector>
 
 #include "core/TypeIds.hpp"
+#include "plugins/DevicePluginHandle.hpp"
 
 namespace magda {
 class DeviceProcessor;
@@ -14,7 +13,7 @@ class DeviceProcessor;
 
 namespace magda::daw::audio {
 
-namespace te = tracktion::engine;
+class MagdaDevice;
 
 enum class InternalPluginCreateMode {
     Unsupported,
@@ -33,16 +32,18 @@ struct InternalPluginSpec {
     bool canCreateOnTrack = true;
     const char* const* loadAliases = nullptr;
     int loadAliasCount = 0;
-    bool (*matchesPlugin)(te::Plugin*) = nullptr;
-    std::unique_ptr<DeviceProcessor> (*createProcessor)(DeviceId, te::Plugin::Ptr) = nullptr;
+    bool (*matchesPlugin)(DevicePluginRef) = nullptr;
+    std::unique_ptr<DeviceProcessor> (*createProcessor)(DeviceId, DevicePluginPtr) = nullptr;
     bool showInBrowser = false;         // listed in the plugin browser (single source of truth)
     bool isInstrument = false;          // browser hint: synth/sampler vs effect
     const char* const* tags = nullptr;  // extensible behavioural classifications
     int tagCount = 0;
     int defaultModulationParamIndex = -1;
-    te::Plugin::Ptr (*createInEdit)(const InternalPluginSpec&, te::Edit&,
-                                    const juce::String& savedPluginState) = nullptr;
-    te::Plugin::Ptr (*createCustomPlugin)(const te::PluginCreationInfo&) = nullptr;
+    DevicePluginPtr (*createInSession)(const InternalPluginSpec&, DeviceSessionKey,
+                                       const juce::String& savedPluginState) = nullptr;
+    std::unique_ptr<MagdaDevice> (*createDevice)(const DevicePluginCreationContext&) = nullptr;
+    // Transitional hook for host-native plugins that have not moved to MagdaDevice yet.
+    DevicePluginPtr (*createPlugin)(const DevicePluginCreationContext&) = nullptr;
 };
 
 struct InternalParameterAliasSpec {
@@ -102,12 +103,14 @@ bool isInternalAnalysisPlugin(const juce::String& pluginId);
 bool isInternalMidiGeneratorPlugin(const juce::String& pluginId);
 int internalPostFxAnalysisOrder(const juce::String& pluginId);
 
-te::Plugin::Ptr createInternalPluginFromSpec(const InternalPluginSpec& spec, te::Edit& edit,
+DevicePluginPtr createInternalPluginFromSpec(const InternalPluginSpec& spec,
+                                             DeviceSessionKey sessionKey,
                                              const juce::String& savedPluginState = {});
-te::Plugin::Ptr createRegisteredCustomPlugin(const te::PluginCreationInfo& info);
+std::unique_ptr<MagdaDevice> createRegisteredDevice(const DevicePluginCreationContext& context);
+DevicePluginPtr createRegisteredPlugin(const DevicePluginCreationContext& context);
 
 std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPluginSpec& spec,
                                                                DeviceId deviceId,
-                                                               te::Plugin::Ptr plugin);
+                                                               DevicePluginPtr plugin);
 
 }  // namespace magda::daw::audio
