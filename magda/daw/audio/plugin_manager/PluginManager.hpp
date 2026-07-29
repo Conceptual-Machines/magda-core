@@ -599,6 +599,14 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     void detachRackRuntimeForChainMove(RackId rackId);
     void removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath);
 
+    // True when the path addresses a plugin inside a DrumGrid pad chain. Those
+    // entries are registered by syncDrumGridPadPlugins and have no counterpart
+    // in the track's chain model, so the orphan sweeps must leave them alone:
+    // deleting one calls deleteFromParent(), which strips the pad plugin from
+    // the DrumGrid's state tree and empties the pad on reload (#1920).
+    // Callers must hold pluginLock_.
+    bool isDrumGridPadPathLocked(const ChainNodePath& devicePath) const;
+
     // Poll for async plugin load completion (TE's background thread instantiation)
     void pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
 
