@@ -294,6 +294,8 @@ set(_magda_tracktion_device_adapter_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionMagdaDevicePlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/DeviceProcessorFactory.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/processors/DeviceProcessorFactory.hpp"
 )
 list(REMOVE_ITEM _magda_device_pack_sources ${_magda_tracktion_device_adapter_sources})
 
