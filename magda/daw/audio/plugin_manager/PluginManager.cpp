@@ -522,6 +522,14 @@ void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGrid
     drumGridPadDevices_.erase(padIt);
 }
 
+bool PluginManager::isDrumGridPadPathLocked(const ChainNodePath& devicePath) const {
+    for (const auto& entry : drumGridPadDevices_) {
+        if (entry.second.find(devicePath) != entry.second.end())
+            return true;
+    }
+    return false;
+}
+
 void PluginManager::detachDeviceRuntimeForChainMove(const ChainNodePath& devicePath) {
     const auto deviceId = devicePath.getDeviceId();
     te::Plugin::Ptr plugin;
