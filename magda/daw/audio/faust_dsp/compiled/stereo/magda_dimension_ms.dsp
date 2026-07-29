@@ -1,5 +1,7 @@
 declare name "MagdaDimensionMS";
 declare description "Mid-side stereo widener — scales the side channel directly, no time smear or modulation.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

@@ -1,5 +1,7 @@
 declare name "MagdaOberheim";
 declare description "Virtual analog Oberheim SEM filter — LP/BP/HP/Notch from the same shared core.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

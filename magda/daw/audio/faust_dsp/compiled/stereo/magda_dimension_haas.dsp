@@ -1,5 +1,7 @@
 declare name "MagdaDimensionHaas";
 declare description "Haas-effect stereo widener — short fixed delay on one channel produces a psychoacoustic stereo cue.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

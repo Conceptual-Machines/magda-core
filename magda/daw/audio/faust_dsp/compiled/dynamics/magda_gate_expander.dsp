@@ -1,5 +1,7 @@
 declare name "MagdaGate";
 declare description "Stereo gate/downward expander with linked detector, range, parallel mix, and output trim.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

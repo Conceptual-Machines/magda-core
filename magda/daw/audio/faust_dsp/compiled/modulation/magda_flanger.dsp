@@ -1,5 +1,7 @@
 declare name "MagdaFlanger";
 declare description "Stereo flanger — short modulated delay with feedback, sync- or free-rate.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

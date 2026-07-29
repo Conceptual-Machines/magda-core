@@ -1,5 +1,7 @@
 declare name "MagdaSnare";
 declare description "Synthetic snare in three layers: a Transient (a pitched sine sweep with a super-sharp pitch env and very short decay, plus a high-passed noise crack), a tuned two-partial Body with a fast pitch snap, and a band-passed + resonant-high-passed noise Rattle/tail with drive. The body auto-ducks under the transient. Knob-tuned; the played MIDI note only gates the voice.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

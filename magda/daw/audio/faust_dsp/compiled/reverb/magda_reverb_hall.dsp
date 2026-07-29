@@ -1,5 +1,7 @@
 declare name "MagdaReverbHall";
 declare description "Zita FDN hall reverb — 8-tap feedback delay network for smooth large-space tails.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

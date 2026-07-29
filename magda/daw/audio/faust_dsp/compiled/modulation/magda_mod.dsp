@@ -1,5 +1,7 @@
 declare name "MagdaMod";
 declare description "Modulation: tremolo / vibrato / auto-pan with shared LFO, free or tempo-synced.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

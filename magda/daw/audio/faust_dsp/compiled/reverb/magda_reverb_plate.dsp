@@ -1,5 +1,7 @@
 declare name "MagdaReverbPlate";
 declare description "Dattorro plate reverb — dense diffusion network for studio-plate ambience.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

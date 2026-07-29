@@ -1,5 +1,7 @@
 declare name "MagdaGranularDelay";
 declare description "Stereo granular delay — feedback delay line read through a 4-voice windowed grain bank with pitch shift and position jitter.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

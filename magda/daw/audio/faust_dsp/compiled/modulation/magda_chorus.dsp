@@ -1,5 +1,7 @@
 declare name "MagdaChorus";
 declare description "Stereo chorus — 1 to 3 modulated voices per side, sync- or free-rate.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

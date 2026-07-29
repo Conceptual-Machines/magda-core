@@ -1,5 +1,7 @@
 declare name "MagdaLadder";
 declare description "Moog ladder filter — classic 4-pole low-pass with resonance and drive.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

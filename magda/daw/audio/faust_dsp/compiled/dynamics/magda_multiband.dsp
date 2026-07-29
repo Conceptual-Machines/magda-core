@@ -1,5 +1,7 @@
 declare name "MagdaMultiband";
 declare description "OTT-style 3-band compressor: LR4 split, two OTT stages in series per band, symmetric expander, per-band brickwall limiter.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

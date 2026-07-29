@@ -1,5 +1,7 @@
 declare name "MagdaBell";
 declare description "Struck modal bell: a church-bell physical model (pm.churchBellModel) driven by a strike exciter. Fixed-pitch model with no frequency input, so the played note only triggers it. The high-level pm.churchBell wrapper hardcodes a ~30s ring; this builds the model explicitly to expose a Decay (ring time) knob.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

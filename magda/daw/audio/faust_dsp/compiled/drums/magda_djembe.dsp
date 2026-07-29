@@ -1,5 +1,7 @@
 declare name "MagdaDjembe";
 declare description "Struck modal djembe: a hand-drum membrane physical model driven by a strike exciter. Follows the played note. The pm.djembe model computes its mode frequencies as freq + spacing*i, so this exposes Decay (ring time), mode Spacing and Inharmonicity in addition to the strike controls.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

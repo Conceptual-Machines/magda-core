@@ -1,5 +1,7 @@
 declare name "MagdaPhaser";
 declare description "Stereo phaser — sweeping notch comb with switchable stage count and feedback.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

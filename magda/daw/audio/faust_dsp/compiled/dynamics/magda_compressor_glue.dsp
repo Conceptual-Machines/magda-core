@@ -1,5 +1,7 @@
 declare name "MagdaCompressorGlue";
 declare description "Brouns FBFF compressor with exposed character controls (Detector, Style, FBFF).";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

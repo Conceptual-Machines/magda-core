@@ -1,5 +1,7 @@
 declare name "MagdaSaturator";
 declare description "Multi-mode saturator: drive into nonlinearity with bias / tone tilt / wet-dry mix and output trim.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

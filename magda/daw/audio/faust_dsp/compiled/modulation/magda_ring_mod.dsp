@@ -1,5 +1,7 @@
 declare name "MagdaRingMod";
 declare description "Stereo ring modulator — multiply by an internal oscillator or a sidechain carrier.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

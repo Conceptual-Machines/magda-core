@@ -1,5 +1,7 @@
 declare name "MagdaDimensionDim";
 declare description "Roland Dimension D-style stereo widener — anti-phase LFO modulated delay lines with cross-channel mixing.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

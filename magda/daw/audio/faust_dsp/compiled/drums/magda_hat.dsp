@@ -1,5 +1,7 @@
 declare name "MagdaHat";
 declare description "Synthetic hi-hat in two layers with independent controls: a metallic Ring (inharmonic additive partials with a Spread/dissonance control and a decay Curve) and a high-passed Noise sizzle (with its own decay Curve), each with its own level and decay. Short decays = closed hat, long = open. Knob-tuned; the played MIDI note only gates the voice.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

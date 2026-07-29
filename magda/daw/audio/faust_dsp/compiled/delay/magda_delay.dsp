@@ -1,5 +1,7 @@
 declare name "MagdaDelay";
 declare description "Stereo digital delay with tempo sync, feedback tone, and ping-pong cross-feedback.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

@@ -1,5 +1,7 @@
 declare name "MagdaGrit";
 declare description "Bandpass-filtered noise / sine modulator: ring-modulates the input with a tone or filtered-noise carrier for Erosion-style texture.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

@@ -1,5 +1,7 @@
 declare name "MagdaReverbRoom";
 declare description "Freeverb-style room reverb — Schroeder-Moorer comb/allpass network for small-space ambience.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

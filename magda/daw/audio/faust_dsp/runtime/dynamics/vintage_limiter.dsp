@@ -1,5 +1,7 @@
 declare name "Vintage Limiter";
 declare description "Lookahead brickwall limiter, Sanfilippo design with peak-holder + tau-smoothed attack/release. Runtime effect, distinct from the built-in Limiter device.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

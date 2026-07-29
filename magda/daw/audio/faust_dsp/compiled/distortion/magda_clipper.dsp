@@ -1,5 +1,7 @@
 declare name "MagdaClipper";
 declare description "Multi-mode antialiased clipper. Five static nonlinearity shapes from the aa.* ADAA library.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

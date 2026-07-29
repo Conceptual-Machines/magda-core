@@ -1,5 +1,7 @@
 declare name "MagdaClap";
 declare description "Synthetic clap: one band-passed noise source shaped by a fast three-triangle amplitude envelope (the hand-clap flam), then a diffuse tail. Knob-tuned; the played MIDI note only gates the voice. Tone/Spread/Decay/Tail are host macros.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

@@ -1,5 +1,7 @@
 declare name "MagdaKorg35";
 declare description "Virtual analog Korg 35 filter — LP and HP variants of the MS-10/MS-20 character.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

@@ -1,5 +1,7 @@
 declare name "MagdaFreqShift";
 declare description "Stereo single-sideband frequency shifter — shifts the spectrum by a fixed Hz offset.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
