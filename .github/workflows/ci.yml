@@ -620,7 +620,11 @@ jobs:
 
   build-and-test-windows:
     needs: pick-windows-runner
-    runs-on: ${{ fromJSON(needs.pick-windows-runner.outputs.labels) }}
+    # TEMP diagnostic for the windows-latest test hang: pinned to windows-latest
+    # so the hang reproduces regardless of magda-luca being idle. Revert to the
+    # picker output once the hang is fixed.
+    # runs-on: ${{ fromJSON(needs.pick-windows-runner.outputs.labels) }}
+    runs-on: windows-latest
     if: |
       github.event_name != 'workflow_dispatch' ||
       github.event.inputs.skip-cpp-build != 'true'
@@ -799,15 +803,46 @@ jobs:
       run: ccache -s
 
     - name: Run tests
-      timeout-minutes: 5
+      timeout-minutes: 8
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
-        if ($testExe) {
-          & $testExe.FullName --abort
-        } else {
+        if (-not $testExe) {
           Write-Error "Tests executable not found"
           exit 1
         }
+        # TEMP diagnostic for the windows-latest hang: run with per-test
+        # durations so the log names every completed test (the hanging test is
+        # the one after the last line, in declaration order). If the suite
+        # stalls, capture a minidump of the hung process for stack analysis,
+        # then fail. Revert to a plain `& $testExe.FullName --abort` once fixed.
+        $out = "magda-tests-output.log"
+        $proc = Start-Process -FilePath $testExe.FullName `
+          -ArgumentList '--abort','--durations','yes' `
+          -RedirectStandardOutput $out -RedirectStandardError magda-tests-err.log `
+          -PassThru -NoNewWindow
+        if ($proc.WaitForExit(240000)) {
+          Get-Content $out
+          exit $proc.ExitCode
+        }
+        Write-Output "=== magda_tests produced no exit for 240s; capturing minidump ==="
+        Invoke-WebRequest -Uri 'https://download.sysinternals.com/files/Procdump.zip' -OutFile procdump.zip
+        Expand-Archive procdump.zip -DestinationPath procdump
+        & .\procdump\procdump64.exe -accepteula -mm $proc.Id magda_tests_hang.dmp
+        Stop-Process -Id $proc.Id -Force
+        Write-Output "=== Last 40 lines of test output before the stall ==="
+        Get-Content $out -Tail 40
+        exit 1
+
+    - name: Upload hang diagnostics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-test-hang-diagnostics
+        path: |
+          magda-tests-output.log
+          magda-tests-err.log
+          magda_tests_hang.dmp
+        if-no-files-found: ignore
 
     # Release configure/build/verify only run on push to main, and only on the
     # self-hosted runner (magda-luca). Feature-branch pushes get Debug coverage;
