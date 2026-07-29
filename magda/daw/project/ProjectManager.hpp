@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
+#include <cstdint>
 #include <functional>
 #include <thread>
 #include <vector>
@@ -314,7 +315,27 @@ class ProjectManager : private juce::Timer {
      */
     static void cleanupStaleTempDirectories();
 
+    /**
+     * @brief Brackets an undoable command while it runs.
+     *
+     * markDirty() calls made from inside a command are redundant: the undo
+     * history already tracks that mutation, and routing them to externalDirty_
+     * would make the dirty flag unclearable by undo. This scope suppresses
+     * them, and unwinds on exceptions so a throwing command cannot leave the
+     * suppression permanently latched.
+     */
+    class UndoableMutationScope {
+      public:
+        UndoableMutationScope();
+        ~UndoableMutationScope();
+
+        UndoableMutationScope(const UndoableMutationScope&) = delete;
+        UndoableMutationScope& operator=(const UndoableMutationScope&) = delete;
+    };
+
   private:
+    friend class UndoManager;
+
     ProjectManager();
     ~ProjectManager();
 
@@ -327,14 +348,22 @@ class ProjectManager : private juce::Timer {
     juce::File currentFile_;
     juce::File mediaDirectory_;
     bool isDirty_ = false;
+    bool externalDirty_ = false;
+    bool undoHistoryDirty_ = false;
     bool isProjectOpen_ = false;
     bool autoSaveEnabled_ = true;
+    int undoableMutationDepth_ = 0;
+    std::uint64_t mutationRevision_ = 0;
 
     std::vector<ProjectManagerListener*> listeners_;
     juce::String lastError_;
     std::thread loadThread_;
 
     void clearDirty();
+    void beginUndoableMutation();
+    void endUndoableMutation();
+    void setUndoHistoryDirty(bool dirty);
+    void refreshDirtyState();
     void notifyProjectOpened();
     void notifyProjectSaved();
     void notifyProjectClosed();

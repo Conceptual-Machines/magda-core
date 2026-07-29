@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <vector>
@@ -132,6 +133,11 @@ class UndoManager {
     void clearHistory();
 
     /**
+     * Record the current history state as matching the project on disk.
+     */
+    void markCurrentStateSaved();
+
+    /**
      * Begin a compound operation (groups multiple commands as one undo step).
      * All commands executed until endCompoundOperation() are grouped.
      */
@@ -169,21 +175,35 @@ class UndoManager {
     void removeListener(UndoManagerListener* listener);
 
   private:
+    struct HistoryEntry {
+        std::unique_ptr<UndoableCommand> command;
+        std::uint64_t beforeStateId = 0;
+        std::uint64_t afterStateId = 0;
+    };
+
     UndoManager();
     ~UndoManager() = default;
 
     void notifyListeners();
     void trimUndoStack();
+    void updateProjectDirtyState();
 
-    std::deque<std::unique_ptr<UndoableCommand>> undoStack_;
-    std::deque<std::unique_ptr<UndoableCommand>> redoStack_;
+    std::deque<HistoryEntry> undoStack_;
+    std::deque<HistoryEntry> redoStack_;
 
     // Compound operation support
     int compoundDepth_ = 0;
     juce::String compoundDescription_;
     std::vector<std::unique_ptr<UndoableCommand>> compoundCommands_;
+    std::uint64_t compoundBeforeStateId_ = 0;
 
     size_t maxUndoSteps_ = 100;
+
+    // Stable state identities let undo/redo recognise the exact state that was
+    // last saved, including after branching or command merging.
+    std::uint64_t currentStateId_ = 0;
+    std::uint64_t savedStateId_ = 0;
+    std::uint64_t nextStateId_ = 1;
 
     std::vector<UndoManagerListener*> listeners_;
 };

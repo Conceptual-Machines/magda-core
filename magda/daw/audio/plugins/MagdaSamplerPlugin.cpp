@@ -623,7 +623,7 @@ void MagdaSamplerPlugin::syncCachedValueFromParam(int paramIndex) {
     if (paramIndex < 0 || paramIndex >= params.size())
         return;
 
-    float value = params[paramIndex]->getCurrentValue();
+    float value = params[paramIndex]->getCurrentBaseValue();
 
     // Map param index to the corresponding CachedValue
     // Order: attack(0), decay(1), sustain(2), release(3), pitch(4), fine(5), level(6),

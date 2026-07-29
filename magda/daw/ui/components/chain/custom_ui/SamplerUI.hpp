@@ -46,8 +46,8 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     void updateParameters(float attack, float decay, float sustain, float release, float pitch,
                           float fine, float level, float sampleStart, float sampleEnd,
                           bool loopEnabled, float loopStart, float loopEnd, float velAmount,
-                          const juce::String& sampleName, int rootNote = 60, float voiceMode = 0.0f,
-                          float glide = 0.0f);
+                          const juce::String& sampleName, int rootNote, float voiceMode,
+                          float glide);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)

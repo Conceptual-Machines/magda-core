@@ -10,6 +10,12 @@ enum {
     saveProject = 0x0003,
     saveProjectAs = 0x0004,
     exportAudio = 0x0005,
+    closeProject = 0x0006,
+    projectSettings = 0x0007,
+    collectFiles = 0x0008,
+    exportMidi = 0x0009,
+    importDawProject = 0x000A,
+    exportDawProject = 0x000B,
 
     // Edit menu
     undo = 0x1000,

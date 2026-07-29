@@ -1874,7 +1874,8 @@ juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& c
             sampler->levelValue.get(), sampler->sampleStartValue.get(),
             sampler->sampleEndValue.get(), sampler->loopEnabledValue.get(),
             sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-            sampler->velAmountValue.get(), file.getFileNameWithoutExtension());
+            sampler->velAmountValue.get(), file.getFileNameWithoutExtension(),
+            sampler->getRootNote(), sampler->voiceModeValue.get(), sampler->glideValue.get());
         samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                     sampler->getSampleLengthSeconds());
     }

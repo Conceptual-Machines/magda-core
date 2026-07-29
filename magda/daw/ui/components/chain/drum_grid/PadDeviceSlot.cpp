@@ -250,7 +250,7 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
     samplerUI_->onParameterChanged = [sampler](int paramIndex, float value) {
         auto params = sampler->getAutomatableParameters();
         if (paramIndex >= 0 && paramIndex < params.size()) {
-            params[paramIndex]->setParameter(value, juce::sendNotification);
+            params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
             // Sync CachedValue for persistence (param and CachedValue are independent)
             sampler->syncCachedValueFromParam(paramIndex);
         }
@@ -288,7 +288,8 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
         sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
         sampler->levelValue.get(), sampler->sampleStartValue.get(), sampler->sampleEndValue.get(),
         sampler->loopEnabledValue.get(), sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-        sampler->velAmountValue.get(), sampleName, sampler->getRootNote());
+        sampler->velAmountValue.get(), sampleName, sampler->getRootNote(),
+        sampler->voiceModeValue.get(), sampler->glideValue.get());
 
     samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                 sampler->getSampleLengthSeconds());
