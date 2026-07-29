@@ -1137,7 +1137,14 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                             .tracktionLogo = tracktionLogo_.get(),
                             .stepRecording = stepRecording},
                            stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT,
-                           PAGINATION_HEIGHT, FaustUI::kHeaderHeight);
+                           PAGINATION_HEIGHT, faustHeaderHeight());
+}
+
+int DeviceSlotComponent::faustHeaderHeight() const {
+    // FaustUI grows a credit strip for patches that declare metadata, so the
+    // carve is not a constant. Falls back to the bare header when there is no
+    // Faust UI (the painter runs for non-Faust devices too).
+    return faustUI_ != nullptr ? faustUI_->getDesiredHeight() : FaustUI::kHeaderHeight;
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
@@ -1194,7 +1201,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .drumGridUI = customUI_.getDrumGridUI(),
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
-        FaustUI::kHeaderHeight);
+        faustHeaderHeight());
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
