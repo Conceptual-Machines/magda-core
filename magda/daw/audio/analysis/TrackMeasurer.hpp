@@ -69,7 +69,6 @@ class TrackMeasurer {
             buildOversampler();
         blockSamples_ = juce::jmax(1, static_cast<int>(std::lround(sampleRate_ * 0.1)));  // 100 ms
         scratchL_.assign(static_cast<size_t>(juce::jmax(1, maxBlockSize)), 0.0f);
-        scratchR_.assign(static_cast<size_t>(juce::jmax(1, maxBlockSize)), 0.0f);
         reset();
     }
 
@@ -108,12 +107,14 @@ class TrackMeasurer {
             return;
         const float* l = channels[0];
         const float* r = numChannels > 1 ? channels[1] : channels[0];
-        if (numSamples > static_cast<int>(scratchL_.size()))
-            return;  // block exceeds prepared size; skip (signal still passes through upstream)
 
         double sumMidSq = 0.0, sumSideSq = 0.0, sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
         float samplePeak = 0.0f;
-        const bool capture = captureSpectrum_.load(std::memory_order_acquire);
+        // Hosts can deliver blocks larger than the size reported during prepare().
+        // Feed spectrum capture through the fixed scratch buffer in chunks so
+        // those blocks remain continuous without allocating on the audio thread.
+        const bool capture = captureSpectrum_.load(std::memory_order_acquire) && !scratchL_.empty();
+        size_t scratchFill = 0;
 
         for (int i = 0; i < numSamples; ++i) {
             const float xl = l[i];
@@ -138,11 +139,16 @@ class TrackMeasurer {
             sumLL += static_cast<double>(xl) * xl;
             sumRR += static_cast<double>(xr) * xr;
 
-            if (capture)
-                scratchL_[static_cast<size_t>(i)] = static_cast<float>(mid);  // mono for band FFT
+            if (capture) {
+                scratchL_[scratchFill++] = static_cast<float>(mid);  // mono for band FFT
+                if (scratchFill == scratchL_.size()) {
+                    spectrumRing_.write(scratchL_.data(), static_cast<int>(scratchFill));
+                    scratchFill = 0;
+                }
+            }
         }
-        if (capture)
-            spectrumRing_.write(scratchL_.data(), numSamples);
+        if (scratchFill > 0)
+            spectrumRing_.write(scratchL_.data(), static_cast<int>(scratchFill));
 
         // Sample peak -> dBFS.
         if (samplePeak > 0.0f)
@@ -437,7 +443,7 @@ class TrackMeasurer {
 
     double sampleRate_ = 48000.0;
     bool enableTruePeak_ = false;
-    std::vector<float> scratchL_, scratchR_;
+    std::vector<float> scratchL_;
     float corrSmoothed_ = 1.0f, widthSmoothed_ = 0.0f;
 
     std::atomic<float> momentary_{kSilenceLufs};
