@@ -18,12 +18,12 @@ class TracktionMidiBufferView final : public DeviceMidiBuffer {
         return midi_.size();
     }
 
-    DeviceMidiEvent event(int index) const override {
-        const auto& event = midi_[index];
-        return {
-            .message = event,
-            .sourceId = static_cast<std::uint32_t>(event.mpeSourceID),
-        };
+    const juce::MidiMessage& message(int index) const override {
+        return midi_[index];
+    }
+
+    std::uint32_t sourceId(int index) const override {
+        return static_cast<std::uint32_t>(midi_[index].mpeSourceID);
     }
 
     void setEvent(int index, DeviceMidiEvent event) override {
@@ -60,30 +60,16 @@ class TracktionMidiBufferView final : public DeviceMidiBuffer {
     te::MidiMessageArray& midi_;
 };
 
-class TracktionTempoMapView final : public DeviceTempoMap {
-  public:
-    explicit TracktionTempoMapView(te::TempoSequence& tempoSequence)
-        : tempoSequence_(tempoSequence) {}
-
-    double beatsAtSeconds(double seconds) const override {
-        return tempoSequence_.toBeats(tracktion::TimePosition::fromSeconds(seconds)).inBeats();
-    }
-
-    double bpmAtSeconds(double seconds) const override {
-        return tempoSequence_.getBpmAt(tracktion::TimePosition::fromSeconds(seconds));
-    }
-
-  private:
-    te::TempoSequence& tempoSequence_;
-};
-
 }  // namespace
 
 TracktionMagdaDevicePlugin::TracktionMagdaDevicePlugin(const te::PluginCreationInfo& info,
                                                        std::unique_ptr<MagdaDevice> device)
-    : te::Plugin(info), device_(std::move(device)) {
+    : te::Plugin(info),
+      device_(std::move(device)),
+      properties_(device_ != nullptr ? device_->properties() : DeviceProperties{}) {
     jassert(device_ != nullptr);
     buildParameters();
+    device_->restoreState(state);
 }
 
 TracktionMagdaDevicePlugin::~TracktionMagdaDevicePlugin() {
@@ -94,16 +80,15 @@ TracktionMagdaDevicePlugin::~TracktionMagdaDevicePlugin() {
 }
 
 juce::String TracktionMagdaDevicePlugin::getName() const {
-    return device_->properties().name;
+    return properties_.name;
 }
 
 juce::String TracktionMagdaDevicePlugin::getPluginType() {
-    return device_->properties().pluginId;
+    return properties_.pluginId;
 }
 
 juce::String TracktionMagdaDevicePlugin::getShortName(int) {
-    const auto properties = device_->properties();
-    return properties.shortName.isEmpty() ? properties.name : properties.shortName;
+    return properties_.shortName.isEmpty() ? properties_.name : properties_.shortName;
 }
 
 juce::String TracktionMagdaDevicePlugin::getSelectableDescription() {
@@ -128,7 +113,6 @@ void TracktionMagdaDevicePlugin::reset() {
 void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& context) {
     syncParametersToDevice();
 
-    TracktionTempoMapView tempoMap(edit.tempoSequence);
     std::optional<TracktionMidiBufferView> midi;
     if (context.bufferForMidiMessages != nullptr)
         midi.emplace(*context.bufferForMidiMessages);
@@ -136,7 +120,10 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
     DeviceProcessContext deviceContext{
         .audio = context.destBuffer,
         .midi = midi ? &*midi : nullptr,
-        .tempoMap = &tempoMap,
+        // TempoSequence queries are not guaranteed real-time safe. Leave the
+        // optional map absent until the adapter can supply an immutable
+        // message-thread snapshot.
+        .tempoMap = nullptr,
         .startSample = context.bufferStartSample,
         .numSamples = context.bufferNumSamples,
         .midiTimeOffsetSeconds = context.midiBufferOffset,
@@ -150,31 +137,37 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
 }
 
 bool TracktionMagdaDevicePlugin::takesMidiInput() {
-    return device_->properties().takesMidiInput;
+    return properties_.takesMidiInput;
 }
 
 bool TracktionMagdaDevicePlugin::takesAudioInput() {
-    return device_->properties().takesAudioInput;
+    return properties_.takesAudioInput;
 }
 
 bool TracktionMagdaDevicePlugin::isSynth() {
-    return device_->properties().isSynth;
+    return properties_.isSynth;
 }
 
 bool TracktionMagdaDevicePlugin::producesAudioWhenNoAudioInput() {
-    return device_->properties().producesAudioWithoutInput;
+    return properties_.producesAudioWithoutInput;
 }
 
 bool TracktionMagdaDevicePlugin::canSidechain() {
-    return device_->properties().canSidechain;
+    return properties_.canSidechain;
 }
 
 double TracktionMagdaDevicePlugin::getLatencySeconds() {
-    return device_->properties().latencySeconds;
+    return properties_.latencySeconds;
 }
 
 double TracktionMagdaDevicePlugin::getTailLength() const {
-    return device_->properties().tailLengthSeconds;
+    return properties_.tailLengthSeconds;
+}
+
+te::AutomatableParameter* TracktionMagdaDevicePlugin::parameterForDeviceSlot(int slotIndex) const {
+    if (slotIndex < 0 || slotIndex >= static_cast<int>(parameters_.size()))
+        return nullptr;
+    return parameters_[static_cast<std::size_t>(slotIndex)].get();
 }
 
 void TracktionMagdaDevicePlugin::flushPluginStateToValueTree() {

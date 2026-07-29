@@ -151,8 +151,11 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
         int size() const override {
             return static_cast<int>(events.size());
         }
-        audio::DeviceMidiEvent event(int index) const override {
-            return events[static_cast<std::size_t>(index)];
+        const juce::MidiMessage& message(int index) const override {
+            return events[static_cast<std::size_t>(index)].message;
+        }
+        std::uint32_t sourceId(int index) const override {
+            return events[static_cast<std::size_t>(index)].sourceId;
         }
         void setEvent(int index, audio::DeviceMidiEvent event) override {
             events[static_cast<std::size_t>(index)] = std::move(event);
@@ -268,7 +271,7 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
 
     CHECK(audioBuffer.getSample(0, 0) == 0.5f);
     REQUIRE(midiBuffer.size() == 1);
-    CHECK(midiBuffer.event(0).message.isNoteOn());
+    CHECK(midiBuffer.message(0).isNoteOn());
 
     juce::ValueTree state("device");
     device.deviceOwnedState = 17;

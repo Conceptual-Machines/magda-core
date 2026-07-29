@@ -8,6 +8,10 @@
 
 namespace magda::daw::audio::tracktion_adapter {
 
+std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPluginSpec& spec,
+                                                               DeviceId deviceId,
+                                                               DevicePluginPtr plugin);
+
 inline te::Plugin::Ptr createInternalPlugin(const InternalPluginSpec& spec, te::Edit& edit,
                                             const juce::String& savedPluginState = {}) {
     if (spec.createInSession != nullptr)

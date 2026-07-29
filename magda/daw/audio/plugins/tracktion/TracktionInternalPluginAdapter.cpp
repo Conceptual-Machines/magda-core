@@ -3,7 +3,7 @@
 #include "plugins/InternalPluginRegistry.hpp"
 #include "processors/base/DeviceProcessor.hpp"
 
-namespace magda::daw::audio {
+namespace magda::daw::audio::tracktion_adapter {
 
 std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPluginSpec& spec,
                                                                DeviceId deviceId,
@@ -17,4 +17,4 @@ std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPlu
     return spec.createProcessor(deviceId, std::move(plugin));
 }
 
-}  // namespace magda::daw::audio
+}  // namespace magda::daw::audio::tracktion_adapter

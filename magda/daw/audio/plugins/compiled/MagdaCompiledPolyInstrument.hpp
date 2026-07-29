@@ -211,7 +211,9 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
 
     std::vector<HostSlotInfo> voiceSlotInfos_;  // cached from the hook
     std::vector<HostSlotInfo> hostSlotInfo_;    // voice macros + Gain
-    std::vector<CompiledParameterValue> hostParams_;
+    // Individually allocated so every DeviceParameterHandle remains stable
+    // even if the slot container is extended in a future migration.
+    std::vector<std::unique_ptr<CompiledParameterValue>> hostParams_;
 
     float limEnv_ = 0.0f;  // output limiter peak envelope
 

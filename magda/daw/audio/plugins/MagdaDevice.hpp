@@ -68,7 +68,8 @@ class DeviceMidiBuffer {
     virtual ~DeviceMidiBuffer() = default;
 
     virtual int size() const = 0;
-    virtual DeviceMidiEvent event(int index) const = 0;
+    virtual const juce::MidiMessage& message(int index) const = 0;
+    virtual std::uint32_t sourceId(int index) const = 0;
     virtual void setEvent(int index, DeviceMidiEvent event) = 0;
     virtual void removeEvent(int index) = 0;
     virtual void addEvent(DeviceMidiEvent event) = 0;

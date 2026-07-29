@@ -197,7 +197,7 @@ magda::ParameterInfo MagdaCompiledPolyInstrument::infoForSlot(int slotIndex) con
 float MagdaCompiledPolyInstrument::slotRealValue(int slotIndex) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return 0.0f;
-    const float norm = hostParams_[static_cast<size_t>(slotIndex)].getCurrentValue();
+    const float norm = hostParams_[static_cast<size_t>(slotIndex)]->getCurrentValue();
     return magda::ParameterUtils::normalizedToReal(norm, infoForSlot(slotIndex));
 }
 
@@ -222,12 +222,13 @@ void MagdaCompiledPolyInstrument::buildHostParameters() {
             .defaultValue = 0.0f,
             .choices = {"Poly", "Mono", "Legato"}};
 
-    hostParams_.resize(static_cast<size_t>(hostSlotCountValue()));
+    hostParams_.clear();
+    hostParams_.reserve(static_cast<size_t>(hostSlotCountValue()));
     for (int i = 0; i < hostSlotCountValue(); ++i) {
         const auto& slot = hostSlotInfo_[static_cast<size_t>(i)];
         const auto info = infoForSlot(i);
-        hostParams_[static_cast<size_t>(i)].setCurrentValue(
-            magda::ParameterUtils::realToNormalized(slot.defaultValue, info));
+        hostParams_.push_back(std::make_unique<CompiledParameterValue>(
+            magda::ParameterUtils::realToNormalized(slot.defaultValue, info)));
     }
 }
 
@@ -403,7 +404,7 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
     int cursor = 0;
     if (context.midi != nullptr) {
         for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
-            const auto m = context.midi->event(eventIndex).message;
+            const auto& m = context.midi->message(eventIndex);
             int evSample = juce::roundToInt(m.getTimeStamp() * sampleRate_);
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);
@@ -457,7 +458,7 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
 DeviceParameterHandle MagdaCompiledPolyInstrument::getSlotParameter(int slotIndex) const {
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return {};
-    return hostParams_[static_cast<size_t>(slotIndex)].handle();
+    return hostParams_[static_cast<size_t>(slotIndex)]->handle();
 }
 
 const MagdaCompiledPolyInstrument::HostSlotInfo& MagdaCompiledPolyInstrument::getSlotInfo(

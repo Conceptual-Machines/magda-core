@@ -32,6 +32,8 @@ struct InternalPluginSpec {
     bool canCreateOnTrack = true;
     const char* const* loadAliases = nullptr;
     int loadAliasCount = 0;
+    // Host-owned compatibility callbacks. Engine-neutral packs must leave
+    // these null and use createDevice below.
     bool (*matchesPlugin)(DevicePluginRef) = nullptr;
     std::unique_ptr<DeviceProcessor> (*createProcessor)(DeviceId, DevicePluginPtr) = nullptr;
     bool showInBrowser = false;         // listed in the plugin browser (single source of truth)
@@ -108,9 +110,5 @@ DevicePluginPtr createInternalPluginFromSpec(const InternalPluginSpec& spec,
                                              const juce::String& savedPluginState = {});
 std::unique_ptr<MagdaDevice> createRegisteredDevice(const DevicePluginCreationContext& context);
 DevicePluginPtr createRegisteredPlugin(const DevicePluginCreationContext& context);
-
-std::unique_ptr<DeviceProcessor> createInternalPluginProcessor(const InternalPluginSpec& spec,
-                                                               DeviceId deviceId,
-                                                               DevicePluginPtr plugin);
 
 }  // namespace magda::daw::audio

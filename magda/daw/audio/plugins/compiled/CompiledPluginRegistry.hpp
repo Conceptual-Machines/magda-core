@@ -27,7 +27,7 @@ struct AliasSpec {
  *
  * The audio-side spec is data-only: no UI types, no juce::Component
  * references. Each compiled plugin exposes its spec via a named
- * accessor (e.g. `getMagdaDelaySpec()`); the aggregator below
+ * accessor (e.g. `getMagdaDelaySpec()`); the host-owned aggregator
  * explicitly lists those accessors. Static self-registration was
  * deliberately avoided — explicit aggregation makes the link order
  * deterministic and trivial to unit-test.
@@ -46,7 +46,9 @@ struct CompiledPluginSpec {
     bool isInstrument = false;  // synth/MIDI instrument vs effect (browser + placement)
 };
 
-/// All compiled-plugin specs known to MAGDA, in stable iteration order.
+/// All compiled-plugin specs known to the current host, in stable iteration order.
+/// Implemented by the host compatibility target while legacy compiled devices
+/// remain Tracktion-native; the neutral base-device archive does not depend on it.
 std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs();
 
 /// Returns null if `pluginId` doesn't match any compiled plugin id or load alias.

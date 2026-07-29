@@ -5,9 +5,8 @@
 #include "../../core/ParameterUtils.hpp"
 #include "TrackController.hpp"
 #include "plugin_manager/PluginManager.hpp"
-#include "plugins/compiled/CompiledFaustInterface.hpp"
+#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
 #include "plugins/tracktion/TracktionDeviceAdapters.hpp"
-#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 
 namespace magda {
 
@@ -57,10 +56,9 @@ te::AutomatableParameter* ControlTargetResolver::resolve(const ControlTarget& ta
             auto plugin = pluginManager_.getPlugin(target.devicePath);
             if (!plugin)
                 return nullptr;
-            if (auto* compiled = daw::audio::tracktion_adapter::deviceFromPlugin<
-                    daw::audio::compiled::ICompiledFaustPlugin>(plugin.get()))
-                return daw::audio::tracktion_adapter::parameterFromHandle(
-                    compiled->hostSlotParameter(target.paramIndex));
+            if (auto* compiledParameter = daw::audio::compiled::tracktionParameterForSlot(
+                    plugin.get(), target.paramIndex))
+                return compiledParameter;
             auto params = plugin->getAutomatableParameters();
             if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
                 return params[static_cast<size_t>(target.paramIndex)];

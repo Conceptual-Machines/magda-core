@@ -37,11 +37,20 @@ time.
 `InternalPluginSpec::createDevice` is the normal factory hook. The
 `createPlugin` and `createInSession` opaque-handle hooks exist only while
 legacy host-native devices are migrated; new packs should not use them.
+`matchesPlugin` and `createProcessor` are likewise host-owned compatibility
+metadata for MAGDA's built-in legacy catalog. Engine-neutral packs leave all
+four compatibility callbacks null. Processor dispatch itself is implemented
+by the active host adapter and is not part of the device SDK.
 Packs pass `ENGINE_NEUTRAL` to `magda_validate_device_pack_sources()` so
 configure fails if a source includes or names Tracktion. MAGDA's base pack is
 validated this way in full. Existing TE-native compatibility devices are
 compiled in a host-owned compatibility target, outside the SDK pack, until
 their DSP implementations are migrated to `MagdaDevice`.
+
+The transitional all-compiled-device catalog is also host-owned while it
+references both neutral and TE-native specs. The `magda_base_devices` archive
+contains only neutral device implementations and therefore has no unresolved
+references to compatibility-device spec accessors.
 
 ## Optional private pack
 

@@ -23,6 +23,7 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     const MagdaDevice& device() const {
         return *device_;
     }
+    te::AutomatableParameter* parameterForDeviceSlot(int slotIndex) const;
 
     juce::String getName() const override;
     juce::String getPluginType() override;
@@ -50,6 +51,7 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     void syncParametersToDevice();
 
     std::unique_ptr<MagdaDevice> device_;
+    const DeviceProperties properties_;
     std::vector<std::unique_ptr<juce::CachedValue<float>>> parameterValues_;
     std::vector<te::AutomatableParameter::Ptr> parameters_;
 };

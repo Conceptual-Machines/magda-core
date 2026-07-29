@@ -328,7 +328,6 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledFaustInterface.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledPluginRegistry.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledPluginRegistry.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
@@ -341,10 +340,12 @@ foreach(_magda_neutral_instrument IN ITEMS
     )
 endforeach()
 
-# TE-native devices remain host compatibility code until their DSP classes are
-# migrated to MagdaDevice. Keeping them out of the SDK pack makes the build
-# boundary honest: magda_base_devices can be compiled with no Tracktion usage,
-# while magda_daw owns every current-engine lifecycle adapter.
+# TE-native devices and the host's all-device registry aggregation remain host
+# compatibility code until their DSP classes are migrated to MagdaDevice.
+# Keeping them out of the SDK pack makes the build boundary honest:
+# magda_base_devices can be compiled and linked without references to
+# compatibility-device symbols, while magda_daw owns every current-engine
+# lifecycle adapter and the transitional combined catalog.
 set(_magda_legacy_tracktion_device_sources
     ${_magda_device_pack_sources}
     ${_magda_base_device_support_sources}

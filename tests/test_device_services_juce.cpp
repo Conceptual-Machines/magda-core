@@ -8,7 +8,10 @@
 #include "magda/daw/audio/plugins/MidiReceivePlugin.hpp"
 #include "magda/daw/audio/plugins/OscilloscopePlugin.hpp"
 #include "magda/daw/audio/plugins/SpectrumAnalyzerPlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/CompiledFaustInterface.hpp"
+#include "magda/daw/audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "magda/daw/audio/processors/CompiledFaustProcessor.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 namespace {
@@ -19,6 +22,10 @@ namespace te = tracktion::engine;
 te::Plugin::Ptr createCustomPlugin(te::Edit& edit, const juce::String& type) {
     juce::ValueTree state(te::IDs::PLUGIN);
     state.setProperty(te::IDs::type, type, nullptr);
+    return edit.getPluginCache().createNewPlugin(state);
+}
+
+te::Plugin::Ptr createCustomPlugin(te::Edit& edit, juce::ValueTree state) {
     return edit.getPluginCache().createNewPlugin(state);
 }
 
@@ -107,6 +114,79 @@ class DeviceServicesInjectionTest final : public juce::UnitTest {
                 expectEquals(spectrum->getFftOrder(), 12);
                 expectWithinAbsoluteError(spectrum->getSlopeDbPerOct(), 2.25f, 0.001f);
                 expectWithinAbsoluteError(spectrum->getSmoothing(), 0.75f, 0.001f);
+            }
+
+            juce::ValueTree savedScopeState(te::IDs::PLUGIN);
+            savedScopeState.setProperty(te::IDs::type, audio::OscilloscopePlugin::xmlTypeName,
+                                        nullptr);
+            savedScopeState.setProperty("traceColour", 6, nullptr);
+            savedScopeState.setProperty("timebaseMs", 987.0f, nullptr);
+            auto restoredScopePlugin = createCustomPlugin(*edit, savedScopeState);
+            auto* restoredScope =
+                audio::tracktion_adapter::deviceFromPlugin<audio::OscilloscopePlugin>(
+                    restoredScopePlugin.get());
+            expect(restoredScope != nullptr);
+            if (restoredScope != nullptr) {
+                expectEquals(restoredScope->getTraceColourIndex(), 6);
+                expectWithinAbsoluteError(restoredScope->getTimebaseMs(), 987.0f, 0.001f);
+            }
+
+            juce::ValueTree savedSpectrumState(te::IDs::PLUGIN);
+            savedSpectrumState.setProperty(te::IDs::type,
+                                           audio::SpectrumAnalyzerPlugin::xmlTypeName, nullptr);
+            savedSpectrumState.setProperty("traceColour", 4, nullptr);
+            savedSpectrumState.setProperty("fftOrder", 11, nullptr);
+            savedSpectrumState.setProperty("slopeDbPerOct", 1.5f, nullptr);
+            savedSpectrumState.setProperty("smoothing", 0.25f, nullptr);
+            auto restoredSpectrumPlugin = createCustomPlugin(*edit, savedSpectrumState);
+            auto* restoredSpectrum =
+                audio::tracktion_adapter::deviceFromPlugin<audio::SpectrumAnalyzerPlugin>(
+                    restoredSpectrumPlugin.get());
+            expect(restoredSpectrum != nullptr);
+            if (restoredSpectrum != nullptr) {
+                expectEquals(restoredSpectrum->getTraceColourIndex(), 4);
+                expectEquals(restoredSpectrum->getFftOrder(), 11);
+                expectWithinAbsoluteError(restoredSpectrum->getSlopeDbPerOct(), 1.5f, 0.001f);
+                expectWithinAbsoluteError(restoredSpectrum->getSmoothing(), 0.25f, 0.001f);
+            }
+
+            auto compiledPlugin = createCustomPlugin(*edit, "magda_kick");
+            auto* compiled =
+                audio::tracktion_adapter::deviceFromPlugin<audio::compiled::ICompiledFaustPlugin>(
+                    compiledPlugin.get());
+            auto* compiledAdapter =
+                dynamic_cast<audio::tracktion_adapter::TracktionMagdaDevicePlugin*>(
+                    compiledPlugin.get());
+            expect(compiled != nullptr);
+            expect(compiledAdapter != nullptr);
+            if (compiled != nullptr && compiledAdapter != nullptr) {
+                auto* hostParameter =
+                    audio::compiled::tracktionParameterForSlot(compiledPlugin.get(), 0);
+                expect(hostParameter != nullptr);
+                expect(hostParameter == compiledAdapter->parameterForDeviceSlot(0));
+
+                magda::CompiledFaustProcessor processor(701, compiledPlugin);
+                constexpr float targetNormalized = 0.73f;
+                const float targetDisplay = compiled->normalizedToDisplay(0, targetNormalized);
+                processor.setParameterByIndex(0, targetDisplay);
+                expectWithinAbsoluteError(hostParameter->getCurrentBaseValue(), targetNormalized,
+                                          0.0001f);
+
+                // Corrupt the device-side mirror, then run the adapter's
+                // start-of-block sync. The Tracktion parameter must remain
+                // authoritative and restore the mirror, not snap back.
+                compiled->hostSlotParameter(0).setValueFromHost(0.11f);
+                te::PluginRenderContext renderContext(
+                    nullptr, {}, 0, 0, nullptr, 0.0,
+                    tracktion::TimeRange(tracktion::TimePosition::fromSeconds(0.0),
+                                         tracktion::TimePosition::fromSeconds(0.0)),
+                    false, false, false, false);
+                compiledAdapter->applyToBuffer(renderContext);
+                expectWithinAbsoluteError(hostParameter->getCurrentBaseValue(), targetNormalized,
+                                          0.0001f);
+                expectWithinAbsoluteError(compiled->hostSlotParameter(0).currentValue(),
+                                          targetNormalized, 0.0001f);
+                expectWithinAbsoluteError(processor.getParameterByIndex(0), targetDisplay, 0.0001f);
             }
 
             auto midiReceivePlugin =

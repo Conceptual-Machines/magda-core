@@ -20,6 +20,22 @@ te::Plugin::Ptr createTracktionPlugin(const CompiledPluginSpec& spec,
     return {};
 }
 
+te::AutomatableParameter* tracktionParameterForSlot(te::Plugin* plugin, int slotIndex) {
+    if (plugin == nullptr || slotIndex < 0)
+        return nullptr;
+
+    if (auto* adapter = dynamic_cast<tracktion_adapter::TracktionMagdaDevicePlugin*>(plugin))
+        return adapter->parameterForDeviceSlot(slotIndex);
+
+    // Only legacy Tracktion-native compiled devices reach this branch. Their
+    // opaque handle payload is a real te::AutomatableParameter. Never perform
+    // this conversion on a neutral device's CompiledParameterValue handle.
+    if (auto* compiled = dynamic_cast<ICompiledFaustPlugin*>(plugin))
+        return tracktion_adapter::parameterFromHandle(compiled->hostSlotParameter(slotIndex));
+
+    return nullptr;
+}
+
 std::unique_ptr<magda::DeviceProcessor> createTracktionProcessor(const CompiledPluginSpec& spec,
                                                                  DeviceId deviceId,
                                                                  te::Plugin::Ptr plugin) {
