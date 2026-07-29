@@ -36,6 +36,12 @@ AutomationTarget targetForParamWithScale(ParameterScale scale) {
 
     DeviceInfo device;
     device.name = "Faust";
+    // DeviceInfo defaults to PluginFormat::VST3. Leaving it there sends
+    // getParameterInfoForTarget down the external-plugin branch, which builds
+    // a DisplayTextProvider that reaches for a live plugin this test never
+    // creates. A Faust device is Internal, which is both what we mean to test
+    // and what keeps the lookup off that path.
+    device.format = PluginFormat::Internal;
     device.parameters.push_back(param);
     const auto deviceId = tm.addDeviceToTrack(trackId, device);
     REQUIRE(deviceId != INVALID_DEVICE_ID);
