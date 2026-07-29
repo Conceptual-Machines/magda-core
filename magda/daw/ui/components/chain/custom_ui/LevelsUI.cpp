@@ -44,6 +44,9 @@ LevelsUI::~LevelsUI() {
 }
 
 void LevelsUI::setTelemetrySource(std::shared_ptr<LevelsTelemetrySource> telemetry) {
+    if (telemetry_ == telemetry)
+        return;
+
     if (telemetry_ != nullptr)
         telemetry_->setActive(false);
     telemetry_ = std::move(telemetry);
