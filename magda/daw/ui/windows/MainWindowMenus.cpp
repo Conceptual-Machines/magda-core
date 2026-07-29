@@ -99,10 +99,6 @@ void MainWindow::openProjectFile(const juce::File& file) {
     if (mainComponent)
         mainComponent->showLoadingMessage(trEllipsis("dialogs.loading_project"));
 
-    SelectionManager::getInstance().clearSelection();
-    if (mainComponent && mainComponent->mainView)
-        mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
-
     auto& projectManager = ProjectManager::getInstance();
     auto safeThis = juce::Component::SafePointer<MainWindow>(this);
     projectManager.loadProjectAsync(
@@ -123,9 +119,19 @@ void MainWindow::openProjectFile(const juce::File& file) {
                 safeThis->mainComponent->hideLoadingMessage();
 
             if (!success) {
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                       tr("dialogs.open_project"), error);
+                // Empty error = user cancelled the unsaved-changes prompt;
+                // nothing went wrong, so stay silent.
+                if (error.isNotEmpty()) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           tr("dialogs.open_project"), error);
+                }
             } else {
+                SelectionManager::getInstance().clearSelection();
+                if (safeThis->mainComponent && safeThis->mainComponent->mainView) {
+                    safeThis->mainComponent->mainView->getTimelineController().dispatch(
+                        ClearTimeSelectionEvent{});
+                }
+
                 auto& config = Config::getInstance();
                 config.addRecentProject(file.getFullPathName().toStdString());
                 config.save();
@@ -138,31 +144,35 @@ void MainWindow::importDawProjectFile(const juce::File& file) {
     if (!file.existsAsFile())
         return;
 
-    SelectionManager::getInstance().clearSelection();
-    if (mainComponent && mainComponent->mainView)
-        mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
-
     auto& projectManager = ProjectManager::getInstance();
+    auto safeThis = juce::Component::SafePointer<MainWindow>(this);
     projectManager.importDawProjectAsync(
         file,
-        [this](const ProjectInfo& info) {
-            if (!mainComponent || !mainComponent->mainView)
+        [safeThis](const ProjectInfo& info) {
+            if (!safeThis || !safeThis->mainComponent || !safeThis->mainComponent->mainView)
                 return;
-            auto& tc = mainComponent->mainView->getTimelineController();
+            auto& tc = safeThis->mainComponent->mainView->getTimelineController();
             tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
                                    info.timeSignatureDenominator, info.loopEnabled,
                                    info.loopStartBeats, info.loopEndBeats, info.markers,
                                    info.timelineLengthBars);
         },
-        [](bool ok, const juce::String& error) {
+        [safeThis](bool ok, const juce::String& error) {
             // Empty error = user cancelled the unsaved-changes prompt; stay silent.
-            if (!ok && error.isNotEmpty())
+            if (!ok && error.isNotEmpty()) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon,
                     tr("action.import")
                         .replace("{0}",
                                  magda::technicalText(magda::TechnicalTextToken::DawProject)),
                     error);
+            } else if (ok && safeThis) {
+                SelectionManager::getInstance().clearSelection();
+                if (safeThis->mainComponent && safeThis->mainComponent->mainView) {
+                    safeThis->mainComponent->mainView->getTimelineController().dispatch(
+                        ClearTimeSelectionEvent{});
+                }
+            }
         });
 }
 
