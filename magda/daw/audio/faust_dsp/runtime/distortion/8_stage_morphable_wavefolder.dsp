@@ -75,8 +75,16 @@ with {
     foldSymmetry = vgroup("Fold", hslider("DC Symmetry[idx:6]", 0.0, -0.5, 0.5, 0.01));
 
     cutoff       = vgroup("Filter", hslider("Cutoff[idx:7][unit:Hz][scale:log][scaleAnchor:1000]", 18000, 50, 18000, 1));
-    res          = vgroup("Filter", hslider("Resonance[idx:8]", 0.02, 0.0, 0.95, 0.01));
-    safeRes      = max(0.01, res);
+    res          = vgroup("Filter", hslider("Resonance[idx:8]", 0.0, 0.0, 1.0, 0.01));
+
+    // `res` is a normalized resonance amount, but fi.resonlp's second
+    // argument is Q. Feeding the raw slider in meant Q never exceeded 0.95,
+    // i.e. below the 0.707 Butterworth point for most of the range, so the
+    // filter was overdamped and attenuated the whole spectrum rather than
+    // shaping it. At the old 0.02 default a 100 Hz tone came through 14 dB
+    // down, which is why Cutoff behaved like a volume control. Map onto a
+    // musical Q range: flat at 0, strongly resonant at 1.
+    safeRes      = 0.707 * pow(28.0, res);
 
     // Operational signal routing paths.
     //

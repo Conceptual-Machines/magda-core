@@ -21,19 +21,23 @@ with {
 
     loopWindow = ba.selectn(4, window, 12000, 24000, 48000, 96000);
 
-    maxBuffer = 400000;
-    globalClock  = (+ (1) ~ _);
-    writePointer = globalClock % maxBuffer;
+    globalClock = (+ (1) ~ _);
 
     reverseEngine(sig) = select2(engineActive == 0.0, reversedAudio, sig)
     with {
-        tapeMemory = sig : delay(maxBuffer, writePointer);
         intRamp = globalClock % loopWindow;
 
-        readOffset = loopWindow - 1 - intRamp;
-        readPointer = max(0, min(maxBuffer - 1, int(writePointer - 500 - readOffset)));
-
-        reversedAudio = sig @ readPointer;
+        // Reverse playback means reading progressively further back on each
+        // sample, so the delay has to grow across the window and reset at
+        // the boundary.
+        //
+        // The original built the delay from writePointer (globalClock %
+        // 400000), treating a buffer index as a delay amount. That made the
+        // delay grow without bound, so the engine read seconds into the
+        // past instead of the last window: silence at the start of a take,
+        // and a jump every time the clock wrapped. Its `tapeMemory` write
+        // was dead code, never read by anything.
+        reversedAudio = sig @ (500 + intRamp);
     };
 
     spLeft  = reverseEngine(left);
