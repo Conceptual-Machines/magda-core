@@ -1,5 +1,8 @@
 # Test sources
 set(TEST_SOURCES
+    # Must be in both test targets: a debug-CRT dialog blocks a headless run
+    # until the CI job times out, hiding the diagnostic that caused it.
+    windows_no_dialogs.cpp
     test_audio_bridge.cpp
     test_vst3_preset.cpp
     test_audiobridge_track_limit_bug.cpp
@@ -277,6 +280,7 @@ juce_add_console_app(magda_juce_tests
 # Add JUCE test sources
 target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
+    windows_no_dialogs.cpp
     test_zoom_simple.cpp
     test_export_transport_stop_juce.cpp
     test_offline_render_device_power_juce.cpp
