@@ -10,18 +10,21 @@ import("stdfaust.lib");
 // The DSP is described as host-synchronised, so the host writes the live
 // project tempo into this zone every block rather than the player dialling
 // it in by hand. Hidden so it does not take a cell in the param grid.
-hostBPM = hslider("BPM[idx:3][unit:bpm][role:projecttempo][hidden:1]", 120.0, 10.0, 360.0, 1.0);
+hostBPM = hslider("BPM[idx:4][unit:bpm][role:projecttempo][hidden:1]", 120.0, 10.0, 360.0, 1.0);
 
 // --- Roll ---
 // Was eight interlocking checkboxes resolved by a priority encoder.
-engage    = vgroup("Roll", checkbox("Engage[idx:0][tooltip: Runs the stutter roll engine.]"));
-division  = vgroup("Roll", nentry("Division[idx:1][style:radio{'1/128':0;'1/64':1;'1/32':2;'1/16':3;'1/8':4;'1/4':5;'1/2':6;'1 Bar':7}]", 0, 0, 7, 1));
-outputMix = vgroup("Mix", hslider("Dry/Wet[idx:2][unit:%]", 100.0, 0.0, 100.0, 1.0)) / 100.0;
+// Engage latches the roll on; Punch is momentary, for playing the effect
+// in by hand over a bar without leaving it latched.
+engage    = vgroup("Roll", checkbox("Engage[idx:0][tooltip: Latches the stutter roll engine on.]"));
+punch     = vgroup("Roll", button("Punch[idx:1][tooltip: Runs the stutter roll for as long as it is held.]"));
+division  = vgroup("Roll", nentry("Division[idx:2][style:radio{'1/128':0;'1/64':1;'1/32':2;'1/16':3;'1/8':4;'1/4':5;'1/2':6;'1 Bar':7}]", 0, 0, 7, 1));
+outputMix = vgroup("Mix", hslider("Dry/Wet[idx:3][unit:%]", 100.0, 0.0, 100.0, 1.0)) / 100.0;
 
 process(left, right) = wetL, wetR
 with {
     // --- 1. PERFORMANCE DETECTOR ---
-    engineActive = engage > 0.0;
+    engineActive = (engage + punch) > 0.0;
 
     // Master background sample clock
     masterClock = (+ (1) ~ _);
