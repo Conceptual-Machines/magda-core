@@ -1,3 +1,4 @@
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/ui/windows/CommandIDs.hpp"
@@ -10,6 +11,8 @@ class MenuCallbacksGuard {
     explicit MenuCallbacksGuard(magda::MenuManager& menuManager) : menuManager_(menuManager) {}
 
     ~MenuCallbacksGuard() {
+        // This test target has no application-owned callbacks to restore, so
+        // return the process-wide singleton to its known empty baseline.
         menuManager_.initialize({});
     }
 
@@ -19,67 +22,56 @@ class MenuCallbacksGuard {
 
 }  // namespace
 
-TEST_CASE("MenuManager dispatches File application commands to menu callbacks",
+TEST_CASE("MenuManager dispatches registered application commands to menu callbacks",
           "[commands][menu]") {
     auto& menuManager = magda::MenuManager::getInstance();
+    std::array<int, 14> calls{};
     MenuCallbacksGuard guard(menuManager);
 
-    int newProjectCalls = 0;
-    int openProjectCalls = 0;
-    int saveProjectCalls = 0;
-    int saveProjectAsCalls = 0;
-    int exportAudioCalls = 0;
-    int closeProjectCalls = 0;
-    int projectSettingsCalls = 0;
-    int collectFilesCalls = 0;
-    int exportMidiCalls = 0;
-    int importDawProjectCalls = 0;
-    int exportDawProjectCalls = 0;
-
     magda::MenuManager::MenuCallbacks callbacks;
-    callbacks.onNewProject = [&] { ++newProjectCalls; };
-    callbacks.onOpenProject = [&] { ++openProjectCalls; };
-    callbacks.onSaveProject = [&] { ++saveProjectCalls; };
-    callbacks.onSaveProjectAs = [&] { ++saveProjectAsCalls; };
-    callbacks.onExportAudio = [&] { ++exportAudioCalls; };
-    callbacks.onCloseProject = [&] { ++closeProjectCalls; };
-    callbacks.onProjectSettings = [&] { ++projectSettingsCalls; };
-    callbacks.onCollectFiles = [&] { ++collectFilesCalls; };
-    callbacks.onExportMidi = [&] { ++exportMidiCalls; };
-    callbacks.onImportDawProject = [&] { ++importDawProjectCalls; };
-    callbacks.onExportDawProject = [&] { ++exportDawProjectCalls; };
+    callbacks.onNewProject = [&] { ++calls[0]; };
+    callbacks.onOpenProject = [&] { ++calls[1]; };
+    callbacks.onSaveProject = [&] { ++calls[2]; };
+    callbacks.onSaveProjectAs = [&] { ++calls[3]; };
+    callbacks.onExportAudio = [&] { ++calls[4]; };
+    callbacks.onCloseProject = [&] { ++calls[5]; };
+    callbacks.onProjectSettings = [&] { ++calls[6]; };
+    callbacks.onCollectFiles = [&] { ++calls[7]; };
+    callbacks.onExportMidi = [&] { ++calls[8]; };
+    callbacks.onImportDawProject = [&] { ++calls[9]; };
+    callbacks.onExportDawProject = [&] { ++calls[10]; };
+    callbacks.onDeleteTrack = [&] { ++calls[11]; };
+    callbacks.onToggleArrangeSession = [&] { ++calls[12]; };
+    callbacks.onAbout = [&] { ++calls[13]; };
     menuManager.initialize(callbacks);
 
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::newProject));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::openProject));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::saveProject));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::saveProjectAs));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::exportAudio));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::closeProject));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::projectSettings));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::collectFiles));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::exportMidi));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::importDawProject));
-    REQUIRE(menuManager.invokeApplicationCommand(magda::CommandIDs::exportDawProject));
+    const std::array commandIDs{
+        magda::CommandIDs::newProject,           magda::CommandIDs::openProject,
+        magda::CommandIDs::saveProject,          magda::CommandIDs::saveProjectAs,
+        magda::CommandIDs::exportAudio,          magda::CommandIDs::closeProject,
+        magda::CommandIDs::projectSettings,      magda::CommandIDs::collectFiles,
+        magda::CommandIDs::exportMidi,           magda::CommandIDs::importDawProject,
+        magda::CommandIDs::exportDawProject,     magda::CommandIDs::deleteTrack,
+        magda::CommandIDs::toggleArrangeSession, magda::CommandIDs::about,
+    };
+    static_assert(calls.size() == commandIDs.size());
 
-    CHECK(newProjectCalls == 1);
-    CHECK(openProjectCalls == 1);
-    CHECK(saveProjectCalls == 1);
-    CHECK(saveProjectAsCalls == 1);
-    CHECK(exportAudioCalls == 1);
-    CHECK(closeProjectCalls == 1);
-    CHECK(projectSettingsCalls == 1);
-    CHECK(collectFilesCalls == 1);
-    CHECK(exportMidiCalls == 1);
-    CHECK(importDawProjectCalls == 1);
-    CHECK(exportDawProjectCalls == 1);
+    for (const auto commandID : commandIDs)
+        REQUIRE(menuManager.invokeApplicationCommand(commandID));
+
+    for (size_t i = 0; i < calls.size(); ++i) {
+        CAPTURE(i, commandIDs[i]);
+        CHECK(calls[i] == 1);
+    }
 }
 
-TEST_CASE("MenuManager rejects commands without a configured File callback", "[commands][menu]") {
+TEST_CASE("MenuManager rejects commands outside its application callback dispatcher",
+          "[commands][menu]") {
     auto& menuManager = magda::MenuManager::getInstance();
     MenuCallbacksGuard guard(menuManager);
     menuManager.initialize({});
 
-    CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::saveProject));
     CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::undo));
+    CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::zoom));
+    CHECK_FALSE(menuManager.invokeApplicationCommand(magda::CommandIDs::showHelp));
 }

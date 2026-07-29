@@ -75,12 +75,23 @@ bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
         case CommandIDs::exportDawProject:
             callback = &callbacks_.onExportDawProject;
             break;
+        case CommandIDs::deleteTrack:
+            callback = &callbacks_.onDeleteTrack;
+            break;
+        case CommandIDs::toggleArrangeSession:
+            callback = &callbacks_.onToggleArrangeSession;
+            break;
+        case CommandIDs::about:
+            callback = &callbacks_.onAbout;
+            break;
         default:
             return false;
     }
 
-    if (!*callback)
+    if (!*callback) {
+        jassertfalse;
         return false;
+    }
 
     (*callback)();
     return true;
@@ -462,6 +473,8 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             invokeApplicationCommand(CommandIDs::exportDawProject);
             break;
         case Quit:
+            // Quit stays on the application-owned path so the macOS app menu
+            // remains its single command source.
             if (callbacks_.onQuit)
                 callbacks_.onQuit();
             break;

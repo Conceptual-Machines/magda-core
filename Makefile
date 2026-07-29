@@ -406,22 +406,27 @@ lint-fix:
 		echo "❌ compile_commands.json not found. Run 'make debug' first."; \
 		exit 1; \
 	fi
-	@echo "⚠️  This will modify your source files!"
-	@read -p "Continue? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		find magda/daw -name "*.cpp" -type f -exec \
-			$(CLANG_TIDY) \
-			{} \
-			--config-file=.clang-tidy \
-			--format-style=file \
-			-p=$(BUILD_DIR) \
-			--fix \
-			--fix-errors \;; \
-		echo "✅ Fixes applied"; \
-	else \
-		echo "❌ Cancelled"; \
+	@if [ -z "$(CLANG_TIDY)" ]; then \
+		echo "❌ clang-tidy not found on PATH or at /opt/homebrew/opt/llvm/bin"; \
+		exit 1; \
 	fi
+	@echo "⚠️  This will modify your source files!"
+	@printf "Continue? [y/N] "; \
+	read REPLY; \
+	case "$$REPLY" in \
+		[Yy]*) \
+			find magda/daw -name "*.cpp" -type f -exec \
+				$(CLANG_TIDY) \
+				{} \
+				--config-file=.clang-tidy \
+				--format-style=file \
+				-p=$(BUILD_DIR) \
+				--fix \
+				--fix-errors \;; \
+			echo "✅ Fixes applied" ;; \
+		*) \
+			echo "❌ Cancelled" ;; \
+	esac
 
 # Lint specific file
 .PHONY: lint-file

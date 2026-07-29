@@ -89,6 +89,9 @@ void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleCommand::M
 void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& commands) {
     using namespace CommandIDs;
 
+    // `zoom` describes a group of View-menu controls, not one action, and
+    // `showHelp` is still a placeholder. Do not expose either as a bindable
+    // command until each has a concrete action to perform.
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, duplicateClipWithAutomation,
@@ -107,10 +110,10 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
         // View
-        zoom, toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
+        toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
         togglePianoRollFullscreen,
         // Help
-        showHelp, about};
+        about};
 
     commands.addArray(allCommands, juce::numElementsInArray(allCommands));
 }
@@ -312,11 +315,9 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         // File menu
         case newProject:
             result.setInfo("New Project", "Create a new project", "File", 0);
-            result.addDefaultKeypress('n', juce::ModifierKeys::commandModifier);
             break;
         case openProject:
             result.setInfo("Open Project", "Open an existing project", "File", 0);
-            result.addDefaultKeypress('o', juce::ModifierKeys::commandModifier);
             break;
         case closeProject:
             result.setInfo("Close Project", "Close the current project", "File", 0);
@@ -444,9 +445,6 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             break;
 
         // View
-        case zoom:
-            result.setInfo("Zoom", "Zoom controls", "View", 0);
-            break;
         case toggleArrangeSession:
             result.setInfo("Toggle Arrange/Session", "Switch between arrange and session view",
                            "View", 0);
@@ -480,9 +478,6 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             break;
 
         // Help
-        case showHelp:
-            result.setInfo("Help", "Show help documentation", "Help", 0);
-            break;
         case about:
             result.setInfo("About", "About this application", "Help", 0);
             break;
@@ -586,19 +581,6 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
     };
 
     switch (info.commandID) {
-        case newProject:
-        case openProject:
-        case saveProject:
-        case saveProjectAs:
-        case exportAudio:
-        case closeProject:
-        case projectSettings:
-        case collectFiles:
-        case exportMidi:
-        case importDawProject:
-        case exportDawProject:
-            return MenuManager::getInstance().invokeApplicationCommand(info.commandID);
-
         case undo:
             UndoManager::getInstance().undo();
             return true;
@@ -1919,7 +1901,10 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
 
         default:
-            return false;
+            // Command-backed application/menu actions share the same callback
+            // path as menu clicks. Using this only as the switch fallback
+            // prevents a future overlap from shadowing a local command case.
+            return MenuManager::getInstance().invokeApplicationCommand(info.commandID);
     }
 }
 

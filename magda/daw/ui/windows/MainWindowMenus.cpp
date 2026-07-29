@@ -24,6 +24,7 @@
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "core/ViewModeController.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/MediaCollector.hpp"
 #include "project/ProjectManager.hpp"
@@ -174,9 +175,6 @@ void MainWindow::setupMenuCallbacks() {
 
     // File menu callbacks
     callbacks.onNewProject = [this]() {
-        SelectionManager::getInstance().clearSelection();
-        if (mainComponent && mainComponent->mainView)
-            mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.newProject()) {
             const auto lastError = projectManager.getLastError();
@@ -188,6 +186,11 @@ void MainWindow::setupMenuCallbacks() {
                                                        tr("dialogs.new_project"), message);
             }
         } else {
+            SelectionManager::getInstance().clearSelection();
+            if (mainComponent && mainComponent->mainView)
+                mainComponent->mainView->getTimelineController().dispatch(
+                    ClearTimeSelectionEvent{});
+
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
                 const auto& info = ProjectManager::getInstance().getCurrentProjectInfo();
@@ -238,9 +241,6 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onCloseProject = [this]() {
-        SelectionManager::getInstance().clearSelection();
-        if (mainComponent && mainComponent->mainView)
-            mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.closeProject()) {
             const auto lastError = projectManager.getLastError();
@@ -251,6 +251,11 @@ void MainWindow::setupMenuCallbacks() {
                     tr("dialogs.error.close_failed") + " " + lastError);
             }
         } else {
+            SelectionManager::getInstance().clearSelection();
+            if (mainComponent && mainComponent->mainView)
+                mainComponent->mainView->getTimelineController().dispatch(
+                    ClearTimeSelectionEvent{});
+
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
                 ProjectInfo defaults;
@@ -729,6 +734,13 @@ void MainWindow::setupMenuCallbacks() {
                 tc.dispatch(ZoomToFitBeatsEvent{sel.startBeats, sel.endBeats});
             }
         }
+    };
+
+    callbacks.onToggleArrangeSession = []() {
+        auto& viewModeController = ViewModeController::getInstance();
+        viewModeController.setViewMode(viewModeController.getViewMode() == ViewMode::Live
+                                           ? ViewMode::Arrange
+                                           : ViewMode::Live);
     };
 
     callbacks.onToggleFullscreen = [this]() { setFullScreen(!isFullScreen()); };
