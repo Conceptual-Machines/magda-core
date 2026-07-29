@@ -104,6 +104,7 @@ class MagdaDevice {
   public:
     virtual ~MagdaDevice() = default;
 
+    // Properties are constant for the lifetime of the device.
     virtual DeviceProperties properties() const = 0;
 
     virtual void prepare(const DevicePrepareContext&) {}

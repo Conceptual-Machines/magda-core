@@ -7,6 +7,7 @@
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
+#include "../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/PluginWindowManager.hpp"

@@ -10,6 +10,11 @@ namespace magda::daw::audio::tracktion_adapter {
 
 namespace {
 
+DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>& device) {
+    jassert(device != nullptr);
+    return device->properties();
+}
+
 class TracktionMidiBufferView final : public DeviceMidiBuffer {
   public:
     explicit TracktionMidiBufferView(te::MidiMessageArray& midi) : midi_(midi) {}
@@ -66,8 +71,7 @@ TracktionMagdaDevicePlugin::TracktionMagdaDevicePlugin(const te::PluginCreationI
                                                        std::unique_ptr<MagdaDevice> device)
     : te::Plugin(info),
       device_(std::move(device)),
-      properties_(device_ != nullptr ? device_->properties() : DeviceProperties{}) {
-    jassert(device_ != nullptr);
+      properties_(propertiesForRequiredDevice(device_)) {
     buildParameters();
     device_->restoreState(state);
 }

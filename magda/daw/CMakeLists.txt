@@ -542,14 +542,6 @@ foreach(_magda_device_module IN LISTS MAGDA_DEVICE_JUCE_STACK)
     target_compile_definitions(magda_device_sdk INTERFACE
         $<TARGET_PROPERTY:${_magda_device_module},INTERFACE_COMPILE_DEFINITIONS>)
 endforeach()
-target_compile_definitions(magda_device_sdk INTERFACE
-    JUCE_PLUGINHOST_VST3=1
-    JUCE_PLUGINHOST_AU=1
-    JUCE_MODAL_LOOPS_PERMITTED=1
-    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
-    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
-    $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
-)
 target_link_libraries(magda_device_sdk
     INTERFACE
     magda_types

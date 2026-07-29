@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "../../../audio/AudioBridge.hpp"
+#include "../../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
