@@ -38,6 +38,47 @@ void MenuManager::initialize(const MenuCallbacks& callbacks) {
     callbacks_ = callbacks;
 }
 
+bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
+    std::function<void()>* callback = nullptr;
+
+    switch (commandID) {
+        case CommandIDs::newProject:
+            callback = &callbacks_.onNewProject;
+            break;
+        case CommandIDs::openProject:
+            callback = &callbacks_.onOpenProject;
+            break;
+        case CommandIDs::saveProject:
+            callback = &callbacks_.onSaveProject;
+            break;
+        case CommandIDs::saveProjectAs:
+            callback = &callbacks_.onSaveProjectAs;
+            break;
+        case CommandIDs::exportAudio:
+            callback = &callbacks_.onExportAudio;
+            break;
+        case CommandIDs::deleteTrack:
+            callback = &callbacks_.onDeleteTrack;
+            break;
+        case CommandIDs::toggleArrangeSession:
+            callback = &callbacks_.onToggleArrangeSession;
+            break;
+        case CommandIDs::about:
+            callback = &callbacks_.onAbout;
+            break;
+        default:
+            return false;
+    }
+
+    if (!*callback) {
+        jassertfalse;
+        return false;
+    }
+
+    (*callback)();
+    return true;
+}
+
 void MenuManager::updateMenuStates(bool canUndo, bool canRedo, bool hasSelection,
                                    bool hasEditCursor, bool leftPanelVisible,
                                    bool rightPanelVisible, bool bottomPanelVisible, bool isPlaying,
@@ -101,13 +142,20 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
 
             menu.addItem(CloseProject, tr("menu.file.close_project"), true, false);
             menu.addSeparator();
-            menu.addItem(SaveProject, tr("menu.file.save_project"), true, false);
-            menu.addItem(SaveProjectAs, trEllipsis("menu.file.save_project_as"), true, false);
+            menu.addItem(SaveProject,
+                         tr("menu.file.save_project") + keyHint(CommandIDs::saveProject), true,
+                         false);
+            menu.addItem(SaveProjectAs,
+                         trEllipsis("menu.file.save_project_as") +
+                             keyHint(CommandIDs::saveProjectAs),
+                         true, false);
             menu.addSeparator();
             menu.addItem(ProjectSettings, trEllipsis("menu.file.project_settings"), true, false);
             menu.addItem(CollectFiles, trEllipsis("menu.file.collect_files"), true, false);
             menu.addSeparator();
-            menu.addItem(ExportAudio, trEllipsis("menu.file.export_audio"), true, false);
+            menu.addItem(ExportAudio,
+                         trEllipsis("menu.file.export_audio") + keyHint(CommandIDs::exportAudio),
+                         true, false);
             menu.addItem(ExportMidi,
                          trEllipsis("action.export")
                              .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
@@ -372,12 +420,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
                 callbacks_.onCloseProject();
             break;
         case SaveProject:
-            if (callbacks_.onSaveProject)
-                callbacks_.onSaveProject();
+            invokeApplicationCommand(CommandIDs::saveProject);
             break;
         case SaveProjectAs:
-            if (callbacks_.onSaveProjectAs)
-                callbacks_.onSaveProjectAs();
+            invokeApplicationCommand(CommandIDs::saveProjectAs);
             break;
         case ProjectSettings:
             if (callbacks_.onProjectSettings)
@@ -388,8 +434,7 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
                 callbacks_.onCollectFiles();
             break;
         case ExportAudio:
-            if (callbacks_.onExportAudio)
-                callbacks_.onExportAudio();
+            invokeApplicationCommand(CommandIDs::exportAudio);
             break;
         case ExportMidi:
             if (callbacks_.onExportMidi)
