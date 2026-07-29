@@ -35,6 +35,38 @@ juce::String capturePluginStateXml(te::Plugin& plugin) {
     return {};
 }
 
+// Short sine burst on disk, so a sampler pad has a real file to point at.
+std::unique_ptr<juce::TemporaryFile> createTestWavFile() {
+    constexpr double sampleRate = 44100.0;
+    constexpr int numSamples = 4410;
+    juce::AudioBuffer<float> buffer(1, numSamples);
+    const auto phaseInc =
+        static_cast<float>(440.0 * juce::MathConstants<double>::twoPi / sampleRate);
+    float phase = 0.0f;
+    for (int i = 0; i < numSamples; ++i) {
+        buffer.setSample(0, i, 0.5f * std::sin(phase));
+        phase += phaseInc;
+    }
+
+    auto scratchDir =
+        juce::File(juce::SystemStats::getEnvironmentVariable(
+                       "TMPDIR",
+                       juce::File::getSpecialLocation(juce::File::tempDirectory).getFullPathName()))
+            .getChildFile("magda_juce_tests");
+    scratchDir.createDirectory();
+    auto temporaryFile = std::make_unique<juce::TemporaryFile>(
+        scratchDir.getNonexistentChildFile("drum_grid_pad_sample", ".wav"));
+
+    juce::WavAudioFormat wavFormat;
+    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
+        new juce::FileOutputStream(temporaryFile->getFile()), sampleRate, 1, 16, {}, 0));
+    if (writer == nullptr)
+        return nullptr;
+    writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
+    writer.reset();
+    return temporaryFile;
+}
+
 }  // namespace
 
 class DrumGridPadChainSerializationTest final : public juce::UnitTest {
@@ -49,6 +81,8 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testModelReloadRestoresCompiledDrumPads(); });
         magda::test::runWithCleanJuceState(
             [this] { testProjectFileReloadRestoresCompiledDrumPads(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testTrackMoveKeepsSamplerPadsThroughProjectReload(); });
     }
 
   private:
@@ -491,6 +525,135 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
                     expectWithinAbsoluteError(restoredValue, 0.85f, 1.0e-4f,
                                               "Tweaked kick parameter must survive the reload");
                 }
+            }
+        }
+
+        cm.clearAllClips();
+        tm.clearAllTracks();
+        tm.setAudioEngine(nullptr);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+    }
+
+    // #1920: pad plugins live inside the DrumGrid's own state, not in the track's
+    // chain model, so a track-level plugin resync (fired by anything that moves or
+    // adds a track) must not treat them as orphans and strip them from the state.
+    // The runtime chain keeps playing either way, so the loss only shows on reload.
+    void testTrackMoveKeepsSamplerPadsThroughProjectReload() {
+        beginTest("Track move keeps DrumGrid sampler pads through a project reload");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "Audio bridge must be available");
+        if (bridge == nullptr)
+            return;
+
+        auto sampleFile = createTestWavFile();
+        expect(sampleFile != nullptr, "Test sample must be written to disk");
+        if (sampleFile == nullptr)
+            return;
+        const auto samplePath = sampleFile->getFile().getFullPathName();
+
+        auto& tm = magda::TrackManager::getInstance();
+        auto& cm = magda::ClipManager::getInstance();
+        cm.clearAllClips();
+        tm.clearAllTracks();
+        tm.setAudioEngine(&wrapper);
+
+        const auto trackId = tm.createTrack("Drums");
+        tm.createTrack("Other");
+
+        magda::DeviceInfo dgDevice;
+        dgDevice.name = "Drum Grid";
+        dgDevice.format = magda::PluginFormat::Internal;
+        dgDevice.pluginId = DrumGridPlugin::xmlTypeName;
+        dgDevice.isInstrument = true;
+        dgDevice.deviceType = magda::DeviceType::Instrument;
+        dgDevice.canReceiveMidi = true;
+
+        const auto deviceId = tm.addDeviceToTrack(trackId, dgDevice);
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, deviceId);
+        bridge->syncTrackPlugins(trackId);
+
+        auto plugin = bridge->getPlugin(devicePath);
+        auto* drumGrid = dynamic_cast<DrumGridPlugin*>(plugin.get());
+        expect(drumGrid != nullptr, "Drum Grid runtime plugin must be created");
+        if (drumGrid == nullptr) {
+            cm.clearAllClips();
+            tm.clearAllTracks();
+            tm.setAudioEngine(nullptr);
+            return;
+        }
+
+        constexpr int padIndex = 0;
+        const int midiNote = DrumGridPlugin::baseNote + padIndex;
+        drumGrid->loadSampleToPad(padIndex, sampleFile->getFile());
+        // Let drumGridChainsChanged register the pad plugin in the sync maps.
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+        // Reorder the track: what the user does before saving. It fires
+        // tracksChanged -> syncAll -> per-track plugin sync.
+        tm.moveTrack(trackId, 1);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+        auto* postMoveChain = drumGrid->getChainForNote(midiNote);
+        expect(postMoveChain != nullptr, "Sampler pad chain must survive the track move");
+        if (postMoveChain != nullptr)
+            expectEquals(static_cast<int>(postMoveChain->plugins.size()), 1,
+                         "Sampler pad chain must still hold its sampler after the track move");
+
+        // Save the way ProjectManager does: capture states, then serialize.
+        bridge->captureAllPluginStates();
+
+        auto scratchDir =
+            juce::File(
+                juce::SystemStats::getEnvironmentVariable(
+                    "TMPDIR",
+                    juce::File::getSpecialLocation(juce::File::tempDirectory).getFullPathName()))
+                .getChildFile("magda_juce_tests");
+        scratchDir.createDirectory();
+        auto target = scratchDir.getNonexistentChildFile("drum_grid_moved_track", ".mgd");
+        juce::TemporaryFile projectFile(target);
+
+        const auto& info = magda::ProjectManager::getInstance().getCurrentProjectInfo();
+        expect(magda::ProjectSerializer::saveToFile(projectFile.getFile(), info),
+               "Project must save to file");
+
+        cm.clearAllClips();
+        tm.clearAllTracks();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+        magda::StagedProjectData staged;
+        expect(magda::ProjectSerializer::loadAndStage(projectFile.getFile(), staged),
+               "Project must load and stage");
+        magda::ProjectSerializer::commitStaged(staged);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+        DrumGridPlugin* reloaded = nullptr;
+        if (auto* reloadedTrack = tm.getTrack(trackId)) {
+            for (const auto& element : reloadedTrack->chain.fxChainElements) {
+                if (!magda::isDevice(element))
+                    continue;
+                auto p = bridge->getPlugin(magda::ChainNodePath::topLevelDevice(
+                    reloadedTrack->id, magda::getDevice(element).id));
+                reloaded = dynamic_cast<DrumGridPlugin*>(p.get());
+                if (reloaded != nullptr)
+                    break;
+            }
+        }
+
+        expect(reloaded != nullptr, "Reloaded Drum Grid runtime plugin must exist");
+        if (reloaded != nullptr) {
+            auto* reloadedChain = reloaded->getChainForNote(midiNote);
+            expect(reloadedChain != nullptr, "Reloaded Drum Grid must have the sampler pad chain");
+            if (reloadedChain != nullptr && !reloadedChain->plugins.empty()) {
+                auto* sampler = dynamic_cast<magda::daw::audio::MagdaSamplerPlugin*>(
+                    reloadedChain->plugins[0].get());
+                expect(sampler != nullptr, "Reloaded pad plugin must be the sampler");
+                if (sampler != nullptr)
+                    expectEquals(sampler->getSampleFile().getFullPathName(), samplePath,
+                                 "Reloaded pad must still point at its sample file");
+            } else {
+                expect(false, "Reloaded pad chain must still hold its sampler");
             }
         }
 
