@@ -24,6 +24,7 @@
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "core/ViewModeController.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/MediaCollector.hpp"
 #include "project/ProjectManager.hpp"
@@ -743,6 +744,13 @@ void MainWindow::setupMenuCallbacks() {
                 tc.dispatch(ZoomToFitBeatsEvent{sel.startBeats, sel.endBeats});
             }
         }
+    };
+
+    callbacks.onToggleArrangeSession = []() {
+        auto& viewModeController = ViewModeController::getInstance();
+        viewModeController.setViewMode(viewModeController.getViewMode() == ViewMode::Live
+                                           ? ViewMode::Arrange
+                                           : ViewMode::Live);
     };
 
     callbacks.onToggleFullscreen = [this]() { setFullScreen(!isFullScreen()); };

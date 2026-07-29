@@ -72,6 +72,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onZoomToFit;
         std::function<void()> onZoomLoopToFit;
         std::function<void()> onZoomSelectionToFit;
+        std::function<void()> onToggleArrangeSession;
         std::function<void()> onToggleFullscreen;
         std::function<void()> onToggleScrollbarPosition;
 
@@ -117,6 +118,11 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
 
     // Set up the menu bar
     void initialize(const MenuCallbacks& callbacks);
+
+    // Invoke a command-backed menu action through the same callback used by a
+    // menu click. Returns false when the command is not handled. A missing
+    // callback for a known command is a programming error.
+    bool invokeApplicationCommand(juce::CommandID commandID);
 
     // Source of truth for menu shortcut hints (#1352). When set, menu items
     // render the command's current key from the mapping set instead of a
