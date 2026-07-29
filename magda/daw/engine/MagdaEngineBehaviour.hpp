@@ -3,6 +3,7 @@
 
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../project/ProjectManager.hpp"
 
@@ -75,7 +76,7 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
 
         const auto type = info.state[tracktion::IDs::type].toString();
         if (auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
-            return spec->createPlugin(info);
+            return daw::audio::compiled::createTracktionPlugin(*spec, info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};

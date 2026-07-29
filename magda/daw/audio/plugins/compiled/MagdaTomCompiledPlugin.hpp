@@ -22,12 +22,14 @@ class MagdaTomCompiledPlugin : public MagdaCompiledPolyInstrument {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaTomCompiledPlugin(const te::PluginCreationInfo& info);
+    MagdaTomCompiledPlugin();
 
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Tom";
+    }
 
   protected:
     ::dsp* createVoiceDsp() const override;

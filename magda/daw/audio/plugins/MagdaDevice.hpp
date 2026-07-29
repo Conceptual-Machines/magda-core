@@ -11,9 +11,9 @@
 namespace magda::daw::audio {
 
 struct DeviceProperties {
-    std::string_view pluginId;
-    std::string_view name;
-    std::string_view shortName;
+    juce::String pluginId;
+    juce::String name;
+    juce::String shortName;
     bool takesMidiInput = false;
     bool takesAudioInput = true;
     bool isSynth = false;
@@ -31,6 +31,30 @@ struct DevicePrepareContext {
 struct DeviceMidiEvent {
     juce::MidiMessage message;
     std::uint32_t sourceId = 0;
+};
+
+/**
+ * Read-only musical time supplied for the duration of a process call.
+ */
+class DeviceTempoMap {
+  public:
+    virtual ~DeviceTempoMap() = default;
+
+    virtual double beatsAtSeconds(double seconds) const = 0;
+    virtual double bpmAtSeconds(double seconds) const = 0;
+};
+
+/**
+ * Base for device-owned, engine-neutral telemetry surfaces.
+ *
+ * Concrete devices may expose typed subclasses. The returned telemetry object
+ * is owned by the device and has the same lifetime.
+ */
+class DeviceTelemetry {
+  public:
+    virtual ~DeviceTelemetry() = default;
+
+    virtual std::string_view telemetryKey() const = 0;
 };
 
 /**
@@ -57,6 +81,7 @@ class DeviceMidiBuffer {
 struct DeviceProcessContext {
     juce::AudioBuffer<float>* audio = nullptr;
     DeviceMidiBuffer* midi = nullptr;
+    const DeviceTempoMap* tempoMap = nullptr;
     int startSample = 0;
     int numSamples = 0;
     double midiTimeOffsetSeconds = 0.0;
@@ -102,6 +127,13 @@ class MagdaDevice {
 
     virtual void flushState(juce::ValueTree&) {}
     virtual void restoreState(const juce::ValueTree&) {}
+
+    virtual DeviceTelemetry* telemetry(std::string_view) {
+        return nullptr;
+    }
+    virtual const DeviceTelemetry* telemetry(std::string_view) const {
+        return nullptr;
+    }
 };
 
 }  // namespace magda::daw::audio

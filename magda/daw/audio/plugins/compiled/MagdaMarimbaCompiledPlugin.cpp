@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaMarimbaCompiledPlugin::xmlTypeName = "magda_marimba";
 
-MagdaMarimbaCompiledPlugin::MagdaMarimbaCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaMarimbaCompiledPlugin::MagdaMarimbaCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaMarimbaCompiledPlugin::getName() const {
-    return "Marimba";
-}
-juce::String MagdaMarimbaCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaMarimbaCompiledPlugin::getShortName(int) {
-    return "Marimba";
-}
-juce::String MagdaMarimbaCompiledPlugin::getSelectableDescription() {
-    return "Marimba";
 }
 
 ::dsp* MagdaMarimbaCompiledPlugin::createVoiceDsp() const {
@@ -70,8 +56,8 @@ const CompiledPluginSpec& getMagdaMarimbaSpec() {
         .description = "Struck modal marimba: a tuned tone-bar-and-tube physical model driven by a "
                        "strike exciter (Position / Tone / Sharpness). Follows the played note; "
                        "modal decay is intrinsic to the model, so there is no damping knob.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaMarimbaCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaMarimbaCompiledPlugin>();
         },
         .isInstrument = true,
     };

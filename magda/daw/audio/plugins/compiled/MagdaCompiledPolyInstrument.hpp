@@ -1,16 +1,12 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
 #include <atomic>
-#include <deque>
 #include <memory>
 #include <vector>
 
-#include "../FaustParamPool.hpp"
 #include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/CompiledFaustInterface.hpp"
 
 // mydsp_poly (Faust's polyphonic voice allocator) and the single-voice dsp are
 // forward-declared via their Faust base so the header doesn't pull in the Faust
@@ -42,31 +38,26 @@ namespace magda::daw::audio::compiled {
  * standalone Strum MIDI effect (MidiStrumPlugin), which can drive this or any
  * other instrument.
  */
-class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
   public:
-    explicit MagdaCompiledPolyInstrument(const te::PluginCreationInfo& info);
+    MagdaCompiledPolyInstrument();
     ~MagdaCompiledPolyInstrument() override;
 
-    // te::Plugin (shared across the family).
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
+    void release() override;
     void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
+    void process(DeviceProcessContext& context) override;
 
-    bool takesMidiInput() override {
-        return true;
-    }
-    bool takesAudioInput() override {
-        return false;
-    }
-    bool isSynth() override {
-        return true;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return true;
-    }
-    double getTailLength() const override {
-        return 0.0;
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = devicePluginId(),
+            .name = deviceName(),
+            .shortName = deviceShortName(),
+            .takesMidiInput = true,
+            .takesAudioInput = false,
+            .isSynth = true,
+            .producesAudioWithoutInput = true,
+        };
     }
 
     using HostSlotInfo = CompiledHostSlotInfo;
@@ -91,7 +82,7 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
         return voiceSlotCount() + controlSlotCount();
     }
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
+    DeviceParameterHandle getSlotParameter(int slotIndex) const;
     float displayValueToNativeValue(int slotIndex, float displayValue) const;
     float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
     const HostSlotInfo& getSlotInfo(int slotIndex) const;
@@ -110,7 +101,13 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
         return getSlotInfo(slotIndex);
     }
     DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
+        return getSlotParameter(slotIndex);
+    }
+    juce::String hostSlotId(int slotIndex) const override {
+        if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
+            return {};
+        return juce::String(slotIdPrefix()) +
+               hostSlotInfo_[static_cast<size_t>(slotIndex)].name.toLowerCase().replace(" ", "_");
     }
     float displayToNormalized(int slotIndex, float displayValue) const override {
         return displayValueToNativeValue(slotIndex, displayValue);
@@ -129,6 +126,11 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
     virtual std::vector<HostSlotInfo> voiceSlotInfos() const = 0;
     // Parameter-id prefix, e.g. "magda_kick_". Must be stable (it keys state).
     virtual const char* slotIdPrefix() const = 0;
+    virtual juce::String devicePluginId() const = 0;
+    virtual juce::String deviceName() const = 0;
+    virtual juce::String deviceShortName() const {
+        return deviceName();
+    }
     // Voice-allocator size.
     virtual int numVoices() const {
         return 32;
@@ -181,10 +183,10 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
 
     // Mono voice's reserved freq/gain/gate zones + its copy of each voice-macro
     // zone (so glide etc. can be driven on it independently of the poly voices).
-    FAUSTFLOAT* monoFreqZone_ = nullptr;
-    FAUSTFLOAT* monoGainZone_ = nullptr;
-    FAUSTFLOAT* monoGateZone_ = nullptr;
-    std::vector<FAUSTFLOAT*> monoZonesBySlot_;
+    float* monoFreqZone_ = nullptr;
+    float* monoGainZone_ = nullptr;
+    float* monoGateZone_ = nullptr;
+    std::vector<float*> monoZonesBySlot_;
     struct HeldNote {
         int note = 0;
         float gain = 0.0f;
@@ -205,15 +207,11 @@ class MagdaCompiledPolyInstrument : public te::Plugin, public ICompiledFaustPlug
 
     // Voice macros only (0 .. voiceSlotCount-1): that control's zone in EVERY
     // voice (group=false), so a single host value fans out to all voices.
-    std::vector<std::vector<FAUSTFLOAT*>> voiceZonesBySlot_;
+    std::vector<std::vector<float*>> voiceZonesBySlot_;
 
     std::vector<HostSlotInfo> voiceSlotInfos_;  // cached from the hook
     std::vector<HostSlotInfo> hostSlotInfo_;    // voice macros + Gain
-    std::vector<te::AutomatableParameter::Ptr> hostParams_;
-    // juce::CachedValue is non-movable, so a vector (which moves on growth) can't
-    // hold it. deque is node-based: resize default-constructs in place without
-    // ever moving existing elements, and it stays indexable.
-    std::deque<juce::CachedValue<float>> hostCached_;
+    std::vector<CompiledParameterValue> hostParams_;
 
     float limEnv_ = 0.0f;  // output limiter peak envelope
 

@@ -12,6 +12,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -453,8 +454,9 @@ const CompiledPluginSpec& getMagdaGrainDelaySpec() {
             "Pitch shifts via per-grain read-offset drift; Spray jitters the per-grain position. "
             "Time spans the base delay, locking to musical Division when Sync is on. "
             "Feedback recirculates through the grain bank; Mix blends wet against dry.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaGrainDelayCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaGrainDelayCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

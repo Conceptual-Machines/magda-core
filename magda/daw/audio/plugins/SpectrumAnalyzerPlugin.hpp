@@ -9,7 +9,7 @@ namespace magda::daw::audio {
  * @brief Spectrum Analyzer analysis device. Transparent passthrough that taps
  *        the signal into an AudioTapBuffer; SpectrumAnalyzerUI runs the FFT.
  */
-class SpectrumAnalyzerPlugin : public AnalysisTapPlugin {
+class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public DeviceTelemetry {
   public:
     explicit SpectrumAnalyzerPlugin(const DevicePluginDefaults::Spectrum& defaults)
         : AnalysisTapPlugin(8192),
@@ -21,6 +21,7 @@ class SpectrumAnalyzerPlugin : public AnalysisTapPlugin {
         return "Spectrum Analyzer";
     }
     static const char* xmlTypeName;
+    static constexpr std::string_view telemetryKeyValue = "spectrum";
 
     // Display settings (message thread). FFT order is 11 (2048) or 12 (4096);
     // slope is the display tilt in dB/octave; smoothing is the response speed (0..1).
@@ -66,6 +67,18 @@ class SpectrumAnalyzerPlugin : public AnalysisTapPlugin {
             .name = getPluginName(),
             .shortName = "Spectrum",
         };
+    }
+
+    std::string_view telemetryKey() const override {
+        return telemetryKeyValue;
+    }
+
+    DeviceTelemetry* telemetry(std::string_view key) override {
+        return key == telemetryKeyValue ? this : nullptr;
+    }
+
+    const DeviceTelemetry* telemetry(std::string_view key) const override {
+        return key == telemetryKeyValue ? this : nullptr;
     }
 
   private:

@@ -5,6 +5,7 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/compiled/CompiledFaustInterface.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -59,8 +60,8 @@ bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
         if (auto* bridge = audioEngine->getAudioBridge()) {
             auto plugin = bridge->getPlugin(devicePath);
-            daw::audio::compiled::ICompiledFaustPlugin* compiled = nullptr;
-            compiled = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin.get());
+            auto* compiled = daw::audio::tracktion_adapter::deviceFromPlugin<
+                daw::audio::compiled::ICompiledFaustPlugin>(plugin.get());
             if (compiled != nullptr)
                 modeSlot = compiled->engineAwareModeSlot();
 

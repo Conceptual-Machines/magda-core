@@ -1,19 +1,20 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <memory>
 #include <span>
 
 #include "core/TypeIds.hpp"
+#include "plugins/DevicePluginHandle.hpp"
 
 namespace magda {
 class DeviceProcessor;
 }
 
-namespace magda::daw::audio::compiled {
+namespace magda::daw::audio {
+class MagdaDevice;
+}
 
-namespace te = tracktion::engine;
+namespace magda::daw::audio::compiled {
 
 struct AliasSpec {
     const char* alias;
@@ -36,7 +37,9 @@ struct CompiledPluginSpec {
     const char* displayName;      // user-facing name in browser / chain
     const char* browserCategory;  // "Modulation" / "Delay" / ...
     const char* description;      // tooltip / catalog blurb
-    te::Plugin::Ptr (*createPlugin)(const te::PluginCreationInfo& info);
+    std::unique_ptr<MagdaDevice> (*createDevice)(const DevicePluginCreationContext&) = nullptr;
+    // Transitional hook for compiled devices not yet migrated to MagdaDevice.
+    DevicePluginPtr (*createPlugin)(const DevicePluginCreationContext&) = nullptr;
     const char* aliasKey = nullptr;  // defaults to pluginId when null
     const AliasSpec* aliases = nullptr;
     int aliasCount = 0;
@@ -48,9 +51,5 @@ std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs();
 
 /// Returns null if `pluginId` doesn't match any compiled plugin id or load alias.
 const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId);
-
-/// Creates the runtime processor for a compiled plugin instance.
-std::unique_ptr<magda::DeviceProcessor> createCompiledPluginProcessor(
-    const CompiledPluginSpec& spec, DeviceId deviceId, te::Plugin::Ptr plugin);
 
 }  // namespace magda::daw::audio::compiled

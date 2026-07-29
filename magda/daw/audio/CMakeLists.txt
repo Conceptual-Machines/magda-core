@@ -261,7 +261,10 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_BITCRUSHER_GENERATED_CPP}"
 )
 add_dependencies(magda_base_devices magda_compiled_dsps)
+add_dependencies(magda_tracktion_compat_devices magda_compiled_dsps)
 target_include_directories(magda_base_devices PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
+target_include_directories(magda_tracktion_compat_devices
+    PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
 
 file(GLOB_RECURSE _magda_device_pack_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.cpp"
@@ -284,6 +287,7 @@ set(_magda_device_sdk_sources
 list(REMOVE_ITEM _magda_device_pack_sources ${_magda_device_sdk_sources})
 
 set(_magda_tracktion_device_adapter_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceAdapters.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.cpp"
@@ -313,14 +317,52 @@ file(GLOB _magda_device_dsp_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/*.dsp")
 set_source_files_properties(${_magda_device_dsp_sources} PROPERTIES HEADER_FILE_ONLY TRUE)
 
+set(_magda_neutral_base_device_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/AnalysisTapPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/OscilloscopePlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/OscilloscopePlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledFaustInterface.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledPluginRegistry.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledPluginRegistry.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
+)
+foreach(_magda_neutral_instrument IN ITEMS
+        Bell Clap Djembe FM Hat Kick Marimba Snare Tom)
+    list(APPEND _magda_neutral_base_device_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_instrument}CompiledPlugin.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_instrument}CompiledPlugin.hpp"
+    )
+endforeach()
+
+# TE-native devices remain host compatibility code until their DSP classes are
+# migrated to MagdaDevice. Keeping them out of the SDK pack makes the build
+# boundary honest: magda_base_devices can be compiled with no Tracktion usage,
+# while magda_daw owns every current-engine lifecycle adapter.
+set(_magda_legacy_tracktion_device_sources
+    ${_magda_device_pack_sources}
+    ${_magda_base_device_support_sources}
+)
+list(REMOVE_ITEM _magda_legacy_tracktion_device_sources
+    ${_magda_neutral_base_device_sources})
+
 target_sources(magda_devices PRIVATE
     ${_magda_device_sdk_sources}
 )
 
 target_sources(magda_base_devices PRIVATE
-    ${_magda_device_pack_sources}
+    ${_magda_neutral_base_device_sources}
     ${_magda_device_dsp_sources}
-    ${_magda_base_device_support_sources}
+)
+
+target_sources(magda_tracktion_compat_devices PRIVATE
+    ${_magda_legacy_tracktion_device_sources}
 )
 
 target_sources(magda_daw PRIVATE
@@ -412,17 +454,15 @@ target_sources(magda_daw PRIVATE
     analysis/AudioTapBuffer.hpp
 )
 
-# The base pack is compiled separately against magda::device_sdk. Keep its
-# sources movable by rejecting includes into host-owned DAW/application layers.
-set(_magda_device_boundary_sources
-    ${_magda_device_pack_sources}
-    ${_magda_base_device_support_sources}
-)
+# The base pack is compiled separately against magda::device_sdk. Enforce both
+# the movable SDK include boundary and complete independence from Tracktion.
 magda_validate_device_pack_sources(
     "MAGDA base device pack"
-    ${_magda_device_boundary_sources}
+    ENGINE_NEUTRAL
+    ${_magda_neutral_base_device_sources}
 )
-unset(_magda_device_boundary_sources)
+unset(_magda_neutral_base_device_sources)
+unset(_magda_legacy_tracktion_device_sources)
 
 target_sources(magda_daw_app PRIVATE
     AudioEngineOptimizer.cpp

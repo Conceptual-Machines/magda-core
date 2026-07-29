@@ -2081,7 +2081,8 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
     if (struckUI_ != nullptr) {
         daw::audio::compiled::MagdaCompiledPolyInstrument* inst = nullptr;
         if (auto plugin = getLivePlugin())
-            inst = dynamic_cast<daw::audio::compiled::MagdaCompiledPolyInstrument*>(plugin.get());
+            inst = daw::audio::tracktion_adapter::deviceFromPlugin<
+                daw::audio::compiled::MagdaCompiledPolyInstrument>(plugin.get());
         struckUI_->setLivePlugin(inst);
     }
 }

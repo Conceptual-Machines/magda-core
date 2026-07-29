@@ -55,11 +55,17 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
 };
 
 template <typename DeviceType> DeviceType* deviceFromPlugin(te::Plugin* plugin) {
+    if (auto* device = dynamic_cast<DeviceType*>(plugin))
+        return device;
+
     auto* adapter = dynamic_cast<TracktionMagdaDevicePlugin*>(plugin);
     return adapter != nullptr ? dynamic_cast<DeviceType*>(&adapter->device()) : nullptr;
 }
 
 template <typename DeviceType> const DeviceType* deviceFromPlugin(const te::Plugin* plugin) {
+    if (auto* device = dynamic_cast<const DeviceType*>(plugin))
+        return device;
+
     auto* adapter = dynamic_cast<const TracktionMagdaDevicePlugin*>(plugin);
     return adapter != nullptr ? dynamic_cast<const DeviceType*>(&adapter->device()) : nullptr;
 }

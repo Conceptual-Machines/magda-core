@@ -22,12 +22,14 @@ class MagdaMarimbaCompiledPlugin : public MagdaCompiledPolyInstrument {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaMarimbaCompiledPlugin(const te::PluginCreationInfo& info);
+    MagdaMarimbaCompiledPlugin();
 
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Marimba";
+    }
 
   protected:
     ::dsp* createVoiceDsp() const override;

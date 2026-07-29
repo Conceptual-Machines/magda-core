@@ -4,19 +4,29 @@
 #include <utility>
 
 #include "plugins/compiled/CompiledFaustInterface.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 
 namespace magda {
+
+namespace {
+
+auto* compiledDevice(te::Plugin* plugin) {
+    return daw::audio::tracktion_adapter::deviceFromPlugin<
+        daw::audio::compiled::ICompiledFaustPlugin>(plugin);
+}
+
+}  // namespace
 
 CompiledFaustProcessor::CompiledFaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : DeviceProcessor(deviceId, plugin) {}
 
 int CompiledFaustProcessor::getParameterCount() const {
-    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    const auto* host = compiledDevice(plugin_.get());
     return host != nullptr ? host->hostSlotCount() : 0;
 }
 
 ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
-    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    const auto* host = compiledDevice(plugin_.get());
     if (host == nullptr || index < 0 || index >= host->hostSlotCount())
         return {};
 
@@ -55,7 +65,7 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
 
 void CompiledFaustProcessor::populateParameters(DeviceInfo& info) const {
     info.parameters.clear();
-    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    const auto* host = compiledDevice(plugin_.get());
     if (host == nullptr)
         return;
 
@@ -74,7 +84,7 @@ void CompiledFaustProcessor::setParameterByIndex(int paramIndex, float value) {
     if (!plugin_)
         return;
 
-    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    auto* host = compiledDevice(plugin_.get());
     if (host != nullptr) {
         if (const auto param = host->hostSlotParameter(paramIndex)) {
             const float targetNative = host->displayToNormalized(paramIndex, value);
@@ -87,7 +97,7 @@ float CompiledFaustProcessor::getParameterByIndex(int paramIndex) const {
     if (!plugin_)
         return 0.0f;
 
-    auto* host = dynamic_cast<daw::audio::compiled::ICompiledFaustPlugin*>(plugin_.get());
+    const auto* host = compiledDevice(plugin_.get());
     if (host != nullptr) {
         if (const auto param = host->hostSlotParameter(paramIndex))
             return host->normalizedToDisplay(paramIndex, param.currentValue());

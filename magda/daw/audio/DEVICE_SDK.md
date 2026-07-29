@@ -8,6 +8,9 @@ linking. This is a C++ source/build contract, not a stable dynamic ABI.
 Concrete devices implement the engine-neutral `MagdaDevice` contract. The
 active audio engine owns the adapter that presents that device to its host
 lifecycle; a device pack does not subclass an engine plugin class.
+`DeviceProcessContext` carries audio, MIDI, transport, and a read-only tempo
+map. Device-owned telemetry is exposed through typed `DeviceTelemetry`
+subclasses, while host/editor lifetime remains outside the device.
 
 ## Public surface
 
@@ -34,10 +37,11 @@ time.
 `InternalPluginSpec::createDevice` is the normal factory hook. The
 `createPlugin` and `createInSession` opaque-handle hooks exist only while
 legacy host-native devices are migrated; new packs should not use them.
-New packs pass `ENGINE_NEUTRAL` to `magda_validate_device_pack_sources()` so
-configure fails if a source includes or names Tracktion. The base pack will
-enable the same strict mode once its transitional device families are fully
-migrated.
+Packs pass `ENGINE_NEUTRAL` to `magda_validate_device_pack_sources()` so
+configure fails if a source includes or names Tracktion. MAGDA's base pack is
+validated this way in full. Existing TE-native compatibility devices are
+compiled in a host-owned compatibility target, outside the SDK pack, until
+their DSP implementations are migrated to `MagdaDevice`.
 
 ## Optional private pack
 

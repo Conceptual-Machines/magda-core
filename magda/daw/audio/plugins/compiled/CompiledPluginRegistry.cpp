@@ -1,38 +1,6 @@
 #include "CompiledPluginRegistry.hpp"
 
-#include "MagdaBellCompiledPlugin.hpp"
-#include "MagdaBitcrusherCompiledPlugin.hpp"
-#include "MagdaChorusCompiledPlugin.hpp"
-#include "MagdaClapCompiledPlugin.hpp"
-#include "MagdaClipperCompiledPlugin.hpp"
-#include "MagdaCompressorCompiledPlugin.hpp"
-#include "MagdaDelayCompiledPlugin.hpp"
-#include "MagdaDimensionCompiledPlugin.hpp"
-#include "MagdaDjembeCompiledPlugin.hpp"
-#include "MagdaEqCompiledPlugin.hpp"
-#include "MagdaFilterCompiledPlugin.hpp"
-#include "MagdaFlangerCompiledPlugin.hpp"
-#include "MagdaFreqShiftCompiledPlugin.hpp"
-#include "MagdaGateExpanderCompiledPlugin.hpp"
-#include "MagdaGrainDelayCompiledPlugin.hpp"
-#include "MagdaGritCompiledPlugin.hpp"
-#include "MagdaHatCompiledPlugin.hpp"
-#include "MagdaKickCompiledPlugin.hpp"
-#include "MagdaLimiterCompiledPlugin.hpp"
-#include "MagdaMarimbaCompiledPlugin.hpp"
-#include "MagdaModCompiledPlugin.hpp"
-#include "MagdaMultibandCompiledPlugin.hpp"
-#include "MagdaPhaserCompiledPlugin.hpp"
-#include "MagdaPitchCompiledPlugin.hpp"
-#include "MagdaPolySynthCompiledPlugin.hpp"
-#include "MagdaReverbCompiledPlugin.hpp"
-#include "MagdaRingModCompiledPlugin.hpp"
-#include "MagdaSaturatorCompiledPlugin.hpp"
-#include "MagdaSnareCompiledPlugin.hpp"
-#include "MagdaTomCompiledPlugin.hpp"
-#include "MagdaUtilityCompiledPlugin.hpp"
-#include "plugins/compiled/CompiledFaustInterface.hpp"
-#include "processors/CompiledFaustProcessor.hpp"
+#include <iterator>
 
 namespace magda::daw::audio::compiled {
 
@@ -105,16 +73,6 @@ const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
             return spec;
     }
     return nullptr;
-}
-
-std::unique_ptr<magda::DeviceProcessor> createCompiledPluginProcessor(
-    const CompiledPluginSpec& spec, DeviceId deviceId, te::Plugin::Ptr plugin) {
-    juce::ignoreUnused(spec);
-
-    if (dynamic_cast<ICompiledFaustPlugin*>(plugin.get()) == nullptr)
-        return nullptr;
-
-    return std::make_unique<magda::CompiledFaustProcessor>(deviceId, plugin);
 }
 
 }  // namespace magda::daw::audio::compiled

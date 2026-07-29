@@ -13,6 +13,7 @@
 #include "magda_polysynth.generated.cpp"
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 // NOTE: Faust's GUI base statics (GUI::fGuiList / gTimedZoneMap), required by
 // poly-dsp.h, are defined once in FaustPolyGuiStatics.cpp — see that file.
@@ -719,8 +720,9 @@ const CompiledPluginSpec& getMagdaPolySynthSpec() {
         .description = "Compiled Faust polyphonic synth: four detunable oscillators "
                        "(sine/saw/square/triangle) into a multimode filter with its own "
                        "envelope, plus an ADSR amp envelope. 16-voice, MIDI-driven.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaPolySynthCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaPolySynthCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .isInstrument = true,
     };

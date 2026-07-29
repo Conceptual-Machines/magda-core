@@ -60,9 +60,22 @@ class TracktionMidiBufferView final : public DeviceMidiBuffer {
     te::MidiMessageArray& midi_;
 };
 
-juce::String asJuceString(std::string_view text) {
-    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
-}
+class TracktionTempoMapView final : public DeviceTempoMap {
+  public:
+    explicit TracktionTempoMapView(te::TempoSequence& tempoSequence)
+        : tempoSequence_(tempoSequence) {}
+
+    double beatsAtSeconds(double seconds) const override {
+        return tempoSequence_.toBeats(tracktion::TimePosition::fromSeconds(seconds)).inBeats();
+    }
+
+    double bpmAtSeconds(double seconds) const override {
+        return tempoSequence_.getBpmAt(tracktion::TimePosition::fromSeconds(seconds));
+    }
+
+  private:
+    te::TempoSequence& tempoSequence_;
+};
 
 }  // namespace
 
@@ -81,16 +94,16 @@ TracktionMagdaDevicePlugin::~TracktionMagdaDevicePlugin() {
 }
 
 juce::String TracktionMagdaDevicePlugin::getName() const {
-    return asJuceString(device_->properties().name);
+    return device_->properties().name;
 }
 
 juce::String TracktionMagdaDevicePlugin::getPluginType() {
-    return asJuceString(device_->properties().pluginId);
+    return device_->properties().pluginId;
 }
 
 juce::String TracktionMagdaDevicePlugin::getShortName(int) {
     const auto properties = device_->properties();
-    return asJuceString(properties.shortName.empty() ? properties.name : properties.shortName);
+    return properties.shortName.isEmpty() ? properties.name : properties.shortName;
 }
 
 juce::String TracktionMagdaDevicePlugin::getSelectableDescription() {
@@ -115,6 +128,7 @@ void TracktionMagdaDevicePlugin::reset() {
 void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& context) {
     syncParametersToDevice();
 
+    TracktionTempoMapView tempoMap(edit.tempoSequence);
     std::optional<TracktionMidiBufferView> midi;
     if (context.bufferForMidiMessages != nullptr)
         midi.emplace(*context.bufferForMidiMessages);
@@ -122,6 +136,7 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
     DeviceProcessContext deviceContext{
         .audio = context.destBuffer,
         .midi = midi ? &*midi : nullptr,
+        .tempoMap = &tempoMap,
         .startSample = context.bufferStartSample,
         .numSamples = context.bufferNumSamples,
         .midiTimeOffsetSeconds = context.midiBufferOffset,
@@ -183,7 +198,9 @@ void TracktionMagdaDevicePlugin::buildParameters() {
     for (int index = 0; index < count; ++index) {
         auto info = device_->parameterInfo(index);
         const int stableIndex = info.paramIndex >= 0 ? info.paramIndex : index;
-        const auto id = getPluginType() + "_param_" + juce::String(stableIndex);
+        const auto id = info.stableId.isNotEmpty()
+                            ? info.stableId
+                            : getPluginType() + "_param_" + juce::String(stableIndex);
         const float defaultValue = ParameterUtils::realToNormalized(info.defaultValue, info);
 
         auto cachedValue = std::make_unique<juce::CachedValue<float>>();

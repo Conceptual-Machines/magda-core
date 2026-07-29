@@ -9,7 +9,7 @@ namespace magda::daw::audio {
  * @brief Oscilloscope analysis device. Transparent passthrough that taps the
  *        signal into an AudioTapBuffer; OscilloscopeUI renders the waveform.
  */
-class OscilloscopePlugin : public AnalysisTapPlugin {
+class OscilloscopePlugin : public AnalysisTapPlugin, public DeviceTelemetry {
   public:
     explicit OscilloscopePlugin(const DevicePluginDefaults::Oscilloscope& defaults)
         : AnalysisTapPlugin(262144), timebaseMs_(defaults.timebaseMs) {}  // ~5.4 s at 48k
@@ -18,6 +18,7 @@ class OscilloscopePlugin : public AnalysisTapPlugin {
         return "Oscilloscope";
     }
     static const char* xmlTypeName;
+    static constexpr std::string_view telemetryKeyValue = "oscilloscope";
 
     // Display setting (message thread): visible window length in milliseconds.
     float getTimebaseMs() const {
@@ -44,6 +45,18 @@ class OscilloscopePlugin : public AnalysisTapPlugin {
             .name = getPluginName(),
             .shortName = "Scope",
         };
+    }
+
+    std::string_view telemetryKey() const override {
+        return telemetryKeyValue;
+    }
+
+    DeviceTelemetry* telemetry(std::string_view key) override {
+        return key == telemetryKeyValue ? this : nullptr;
+    }
+
+    const DeviceTelemetry* telemetry(std::string_view key) const override {
+        return key == telemetryKeyValue ? this : nullptr;
     }
 
   private:

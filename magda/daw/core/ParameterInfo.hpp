@@ -64,9 +64,10 @@ enum class WrapperRole {
  * and real parameter values (Hz, ms, dB, etc.), as well as display formatting.
  */
 struct ParameterInfo {
-    int paramIndex = -1;  // Index within device
-    juce::String name;    // "Cutoff", "Resonance", etc.
-    juce::String unit;    // "Hz", "ms", "%", "dB", ""
+    int paramIndex = -1;    // Index within device
+    juce::String stableId;  // Persistent host/state identifier; empty lets the adapter derive one
+    juce::String name;      // "Cutoff", "Resonance", etc.
+    juce::String unit;      // "Hz", "ms", "%", "dB", ""
 
     // Value range — ALL stored in REAL parameter units (Hz, dB, %, …).
     // Consumers never see normalized values here; the normalized↔real

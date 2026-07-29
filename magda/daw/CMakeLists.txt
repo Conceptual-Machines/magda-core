@@ -297,6 +297,7 @@ add_library(magda_devices STATIC)
 add_library(magda::devices ALIAS magda_devices)
 add_library(magda_base_devices STATIC)
 add_library(magda::base_devices ALIAS magda_base_devices)
+add_library(magda_tracktion_compat_devices STATIC)
 set_target_properties(magda_devices PROPERTIES
     PUBLIC_HEADER
     "audio/plugins/DeviceParameterHandle.hpp;audio/plugins/DevicePluginHandle.hpp;audio/plugins/DeviceServices.hpp;audio/plugins/DeviceSessionKey.hpp;audio/plugins/FaustCustomViewKind.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/plugins/MagdaDevice.hpp"
@@ -508,7 +509,10 @@ target_link_libraries(magda_daw
     magda_types  # leaf value-type library (#1831); its types appear in magda_daw's public headers
     magda_music  # leaf music-theory library (#1833)
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_devices>"  # SDK runtime
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # self-registering external-style pack
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # engine-neutral base pack
+    # Host-owned legacy devices retain registration anchors while their DSP
+    # implementations migrate to MagdaDevice.
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_tracktion_compat_devices>"
     MagdaAssets
     PRIVATE
     ${MAGDA_JUCE_STACK}
@@ -577,7 +581,21 @@ target_include_directories(magda_base_devices PRIVATE
 target_link_libraries(magda_base_devices
     PRIVATE
     magda_device_sdk
-    tracktion::tracktion_engine
+    MagdaAssets
+    faust::libfaust
+)
+target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_20)
+target_include_directories(magda_tracktion_compat_devices PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
+    $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(magda_tracktion_compat_devices PRIVATE
+    $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_COMPILE_DEFINITIONS>
+)
+target_link_libraries(magda_tracktion_compat_devices
+    PRIVATE
+    magda_device_sdk
     MagdaAssets
     magda::mutable
     faust::libfaust
@@ -587,6 +605,7 @@ target_link_libraries(magda_base_devices
 # contains, so FaustBackend.hpp resolves to the backend that is really linked.
 target_link_libraries(magda_devices PRIVATE magda_faust_backend)
 target_link_libraries(magda_base_devices PRIVATE magda_faust_backend)
+target_link_libraries(magda_tracktion_compat_devices PRIVATE magda_faust_backend)
 
 if(MAGDA_PRO_DEVICES)
     if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
