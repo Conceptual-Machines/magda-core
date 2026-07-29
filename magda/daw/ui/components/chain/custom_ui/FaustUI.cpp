@@ -89,12 +89,43 @@ void FaustUI::setPlugin(magda::daw::audio::IFaustEditorModel* plugin) {
     refreshNameLabel();
 }
 
+namespace {
+
+// Compose the patch's declared metadata into the name box's tooltip.
+// Returns the bare name when the patch declares none of it, so a patch
+// without metadata reads exactly as it did before.
+juce::String describePatch(const juce::String& name,
+                           const magda::daw::audio::FaustPatchInfo& info) {
+    juce::String title = name;
+    if (info.version.isNotEmpty())
+        title << " " << info.version;
+    if (info.isEmpty())
+        return title;
+
+    juce::StringArray lines;
+    lines.add(title);
+    if (info.author.isNotEmpty())
+        lines.add("by " + info.author);
+    if (info.license.isNotEmpty())
+        lines.add(info.license);
+    if (info.description.isNotEmpty()) {
+        lines.add({});
+        lines.add(info.description);
+    }
+    return lines.joinIntoString("\n");
+}
+
+}  // namespace
+
 void FaustUI::refreshNameLabel() {
     if (plugin_ == nullptr) {
         nameLabel_.setText({}, juce::dontSendNotification);
+        nameLabel_.setTooltip({});
         return;
     }
-    nameLabel_.setText(plugin_->getDspName(), juce::dontSendNotification);
+    const auto name = plugin_->getDspName();
+    nameLabel_.setText(name, juce::dontSendNotification);
+    nameLabel_.setTooltip(describePatch(name, plugin_->getPatchInfo()));
 }
 
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,

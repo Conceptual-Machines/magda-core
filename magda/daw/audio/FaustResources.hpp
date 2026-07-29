@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "plugins/FaustCustomViewKind.hpp"
+#include "plugins/FaustPatchInfo.hpp"
 
 namespace magda::daw::audio {
 

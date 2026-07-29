@@ -30,6 +30,15 @@ FaustCustomViewKind viewKindFromName(const juce::String& name) {
 
 }  // namespace
 
+FaustPatchInfo readPatchInfo(const juce::String& source) {
+    FaustPatchInfo info;
+    info.author = readDeclare(source, "author");
+    info.version = readDeclare(source, "version");
+    info.license = readDeclare(source, "license");
+    info.description = readDeclare(source, "description");
+    return info;
+}
+
 juce::File getFaustLibrariesPath() {
     auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 #if JUCE_MAC
