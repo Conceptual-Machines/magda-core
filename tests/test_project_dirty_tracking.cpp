@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <stdexcept>
 
 #include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -50,6 +51,22 @@ class MergeableValueCommand : public magda::UndoableCommand {
     int& value_;
     int oldValue_;
     int newValue_;
+};
+
+// Throws out of execute() so the mutation scope has to unwind. If it does not,
+// markDirty() stays suppressed for the rest of the process and the project
+// silently never reports unsaved changes again.
+class ThrowingCommand : public magda::UndoableCommand {
+  public:
+    void execute() override {
+        throw std::runtime_error("command failed");
+    }
+
+    void undo() override {}
+
+    juce::String getDescription() const override {
+        return "Throwing";
+    }
 };
 
 class TempProject {
@@ -155,6 +172,13 @@ TEST_CASE("Undoable commands mark the project dirty", "[project][undo]") {
         undoManager.executeCommand(std::make_unique<NoOpCommand>());
 
         REQUIRE(undoManager.undo());
+        CHECK(projectManager.isDirty());
+    }
+
+    SECTION("a throwing command leaves later external edits still detectable") {
+        REQUIRE_THROWS(undoManager.executeCommand(std::make_unique<ThrowingCommand>()));
+
+        projectManager.markDirty();
         CHECK(projectManager.isDirty());
     }
 

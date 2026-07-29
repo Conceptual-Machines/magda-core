@@ -315,6 +315,24 @@ class ProjectManager : private juce::Timer {
      */
     static void cleanupStaleTempDirectories();
 
+    /**
+     * @brief Brackets an undoable command while it runs.
+     *
+     * markDirty() calls made from inside a command are redundant: the undo
+     * history already tracks that mutation, and routing them to externalDirty_
+     * would make the dirty flag unclearable by undo. This scope suppresses
+     * them, and unwinds on exceptions so a throwing command cannot leave the
+     * suppression permanently latched.
+     */
+    class UndoableMutationScope {
+      public:
+        UndoableMutationScope();
+        ~UndoableMutationScope();
+
+        UndoableMutationScope(const UndoableMutationScope&) = delete;
+        UndoableMutationScope& operator=(const UndoableMutationScope&) = delete;
+    };
+
   private:
     friend class UndoManager;
 

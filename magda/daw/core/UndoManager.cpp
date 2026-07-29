@@ -22,10 +22,10 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
     }
 
     const auto beforeStateId = currentStateId_;
-    auto& projectManager = ProjectManager::getInstance();
-    projectManager.beginUndoableMutation();
-    command->execute();
-    projectManager.endUndoableMutation();
+    {
+        ProjectManager::UndoableMutationScope mutationScope;
+        command->execute();
+    }
     currentStateId_ = nextStateId_++;
 
     // If in compound operation, collect commands instead of pushing to stack
@@ -66,10 +66,10 @@ bool UndoManager::undo() {
 
     DBG("📝 UNDO: Undoing '" << entry.command->getDescription() << "'");
 
-    auto& projectManager = ProjectManager::getInstance();
-    projectManager.beginUndoableMutation();
-    entry.command->undo();
-    projectManager.endUndoableMutation();
+    {
+        ProjectManager::UndoableMutationScope mutationScope;
+        entry.command->undo();
+    }
     currentStateId_ = entry.beforeStateId;
 
     // Push to redo stack
@@ -92,10 +92,10 @@ bool UndoManager::redo() {
 
     DBG("📝 UNDO: Redoing '" << entry.command->getDescription() << "'");
 
-    auto& projectManager = ProjectManager::getInstance();
-    projectManager.beginUndoableMutation();
-    entry.command->execute();
-    projectManager.endUndoableMutation();
+    {
+        ProjectManager::UndoableMutationScope mutationScope;
+        entry.command->execute();
+    }
     currentStateId_ = entry.afterStateId;
 
     // Push to undo stack
@@ -122,6 +122,10 @@ juce::String UndoManager::getRedoDescription() const {
 }
 
 void UndoManager::clearHistory() {
+    // The state ids deliberately survive this. Dropping the stacks removes the
+    // route back to the saved state but not the fact that current state differs
+    // from it, so undoHistoryDirty_ stays correct and a later save still clears
+    // it through markCurrentStateSaved().
     undoStack_.clear();
     redoStack_.clear();
     compoundCommands_.clear();

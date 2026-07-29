@@ -576,12 +576,28 @@ void ProjectManager::endUndoableMutation() {
     jassert(undoableMutationDepth_ > 0);
     if (undoableMutationDepth_ > 0)
         --undoableMutationDepth_;
+
+    // A command just changed project state. Most commands never call
+    // markDirty() themselves, so the revision has to move here or an in-flight
+    // background load would not notice edits made while it was parsing.
+    ++mutationRevision_;
 }
 
 void ProjectManager::setUndoHistoryDirty(bool dirty) {
-    ++mutationRevision_;
+    // Deliberately no revision bump. This runs from the dirty-state
+    // bookkeeping, which clearDirty() drives on every save, so counting it as a
+    // mutation would make saving during a background load abandon that load
+    // and report that the project changed underneath it.
     undoHistoryDirty_ = dirty;
     refreshDirtyState();
+}
+
+ProjectManager::UndoableMutationScope::UndoableMutationScope() {
+    ProjectManager::getInstance().beginUndoableMutation();
+}
+
+ProjectManager::UndoableMutationScope::~UndoableMutationScope() {
+    ProjectManager::getInstance().endUndoableMutation();
 }
 
 void ProjectManager::refreshDirtyState() {
