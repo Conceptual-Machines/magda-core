@@ -90,6 +90,21 @@ TEST_CASE("TrackMeasurer - sample peak reflects amplitude", "[measurer]") {
     REQUIRE(m.read().samplePeakDb == Catch::Approx(-6.02f).margin(0.2f));
 }
 
+TEST_CASE("TrackMeasurer - live blocks larger than prepared scratch are still measured",
+          "[measurer]") {
+    TrackMeasurer m;
+    m.prepare(kSr, 64, false);
+
+    feedSine(m, 1000.0, 0.5f, 0.5f, 1.0);
+
+    const auto s = m.read();
+    REQUIRE(s.valid);
+    REQUIRE(s.momentaryLufs > kSilenceLufs);
+    REQUIRE(s.shortTermLufs > kSilenceLufs);
+    REQUIRE(s.integratedLufs > kSilenceLufs);
+    REQUIRE(s.samplePeakDb == Catch::Approx(-6.02f).margin(0.2f));
+}
+
 TEST_CASE("TrackMeasurer - correlation: mono=+1, inverted=-1", "[measurer]") {
     TrackMeasurer mono, inv;
     mono.prepare(kSr, kBlock, false);

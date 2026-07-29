@@ -108,12 +108,14 @@ class TrackMeasurer {
             return;
         const float* l = channels[0];
         const float* r = numChannels > 1 ? channels[1] : channels[0];
-        if (numSamples > static_cast<int>(scratchL_.size()))
-            return;  // block exceeds prepared size; skip (signal still passes through upstream)
 
         double sumMidSq = 0.0, sumSideSq = 0.0, sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
         float samplePeak = 0.0f;
-        const bool capture = captureSpectrum_.load(std::memory_order_acquire);
+        // The scratch buffer is only used for optional spectrum capture. Hosts
+        // can deliver blocks larger than the size reported during prepare();
+        // keep measuring loudness and peaks even when that capture must be skipped.
+        const bool capture = captureSpectrum_.load(std::memory_order_acquire) &&
+                             numSamples <= static_cast<int>(scratchL_.size());
 
         for (int i = 0; i < numSamples; ++i) {
             const float xl = l[i];
