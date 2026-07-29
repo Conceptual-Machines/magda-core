@@ -93,7 +93,8 @@ TEST_CASE("TrackMeasurer - sample peak reflects amplitude", "[measurer]") {
 TEST_CASE("TrackMeasurer - live blocks larger than prepared scratch are still measured",
           "[measurer]") {
     TrackMeasurer m;
-    m.prepare(kSr, 64, false);
+    m.prepare(kSr, 64, true);
+    m.setSpectrumCaptureEnabled(true);
 
     feedSine(m, 1000.0, 0.5f, 0.5f, 1.0);
 
@@ -103,6 +104,9 @@ TEST_CASE("TrackMeasurer - live blocks larger than prepared scratch are still me
     REQUIRE(s.shortTermLufs > kSilenceLufs);
     REQUIRE(s.integratedLufs > kSilenceLufs);
     REQUIRE(s.samplePeakDb == Catch::Approx(-6.02f).margin(0.2f));
+    REQUIRE(s.truePeakValid);
+    REQUIRE(s.truePeakDb > kSilenceLufs);
+    REQUIRE(m.getSpectrumRing().writePosition() == static_cast<size_t>(kSr));
 }
 
 TEST_CASE("TrackMeasurer - correlation: mono=+1, inverted=-1", "[measurer]") {
