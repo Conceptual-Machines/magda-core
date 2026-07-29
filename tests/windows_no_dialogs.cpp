@@ -69,6 +69,22 @@ struct DialogSuppressor {
             _CrtSetReportFile(reportType, _CRTDBG_FILE_STDERR);
         }
         _CrtSetReportHook2(_CRT_RPTHOOK_INSTALL, crtReportHook);
+
+        // Opt-in heap forensics. By default the debug heap only inspects a
+        // block's guard bytes when that block is freed, so a stray write is
+        // reported wherever the victim happens to be released -- which is why
+        // the corruption above surfaced inside an unrelated Faust test and only
+        // on some machines. This walks the whole heap on every allocation and
+        // free, which pins the report to the first allocation after the bad
+        // write. Far too slow for the full suite; run it over a subset.
+        if (const char* checkHeap = std::getenv("MAGDA_TEST_HEAP_CHECK");
+            checkHeap != nullptr && checkHeap[0] == '1') {
+            _CrtSetDbgFlag(_CrtSetDbgFlag(_CRTDBG_REPORT_FLAG) | _CRTDBG_ALLOC_MEM_DF |
+                           _CRTDBG_CHECK_ALWAYS_DF);
+            std::fputs("magda tests: MAGDA_TEST_HEAP_CHECK=1, checking the heap on every "
+                       "alloc/free\n",
+                       stderr);
+        }
     #endif
     }
 };
