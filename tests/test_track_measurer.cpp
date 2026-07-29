@@ -105,7 +105,7 @@ TEST_CASE("TrackMeasurer - live blocks larger than prepared scratch are still me
     REQUIRE(s.integratedLufs > kSilenceLufs);
     REQUIRE(s.samplePeakDb == Catch::Approx(-6.02f).margin(0.2f));
     REQUIRE(s.truePeakValid);
-    REQUIRE(s.truePeakDb > kSilenceLufs);
+    REQUIRE(s.truePeakDb >= s.samplePeakDb - 0.05f);
     REQUIRE(m.getSpectrumRing().writePosition() == static_cast<size_t>(kSr));
 }
 
