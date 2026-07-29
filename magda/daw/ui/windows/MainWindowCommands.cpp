@@ -101,7 +101,8 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         splitAllTracksAtCursor, copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange,
         cutLoopRange, deleteLoopRange, pasteRipple,
         // File menu
-        newProject, openProject, saveProject, saveProjectAs, exportAudio,
+        newProject, openProject, saveProject, saveProjectAs, exportAudio, closeProject,
+        projectSettings, collectFiles, exportMidi, importDawProject, exportDawProject,
         // Transport
         play, stop, record, goToStart, goToEnd, addMarker, goToPreviousMarker, goToNextMarker,
         goToLoopStart, goToLoopEnd, goToSelectionStart, goToSelectionEnd,
@@ -318,6 +319,9 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case openProject:
             result.setInfo("Open Project", "Open an existing project", "File", 0);
             break;
+        case closeProject:
+            result.setInfo("Close Project", "Close the current project", "File", 0);
+            break;
         case saveProject:
             result.setInfo("Save Project", "Save the current project", "File", 0);
             result.addDefaultKeypress('s', juce::ModifierKeys::commandModifier);
@@ -329,6 +333,23 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             break;
         case exportAudio:
             result.setInfo("Export Audio", "Export project to audio file", "File", 0);
+            break;
+        case exportMidi:
+            result.setInfo("Export MIDI", "Export project to a MIDI file", "File", 0);
+            break;
+        case projectSettings:
+            result.setInfo("Project Settings", "Open the project settings dialog", "File", 0);
+            break;
+        case collectFiles:
+            result.setInfo("Collect Files", "Copy external media into the project folder", "File",
+                           0);
+            break;
+        case importDawProject:
+            result.setInfo("Import DAWproject", "Import a DAWproject exchange file", "File", 0);
+            break;
+        case exportDawProject:
+            result.setInfo("Export DAWproject", "Export the project as a DAWproject exchange file",
+                           "File", 0);
             break;
 
         // Transport

@@ -175,9 +175,6 @@ void MainWindow::setupMenuCallbacks() {
 
     // File menu callbacks
     callbacks.onNewProject = [this]() {
-        SelectionManager::getInstance().clearSelection();
-        if (mainComponent && mainComponent->mainView)
-            mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.newProject()) {
             const auto lastError = projectManager.getLastError();
@@ -189,6 +186,11 @@ void MainWindow::setupMenuCallbacks() {
                                                        tr("dialogs.new_project"), message);
             }
         } else {
+            SelectionManager::getInstance().clearSelection();
+            if (mainComponent && mainComponent->mainView)
+                mainComponent->mainView->getTimelineController().dispatch(
+                    ClearTimeSelectionEvent{});
+
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
                 const auto& info = ProjectManager::getInstance().getCurrentProjectInfo();
@@ -239,9 +241,6 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onCloseProject = [this]() {
-        SelectionManager::getInstance().clearSelection();
-        if (mainComponent && mainComponent->mainView)
-            mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.closeProject()) {
             const auto lastError = projectManager.getLastError();
@@ -252,6 +251,11 @@ void MainWindow::setupMenuCallbacks() {
                     tr("dialogs.error.close_failed") + " " + lastError);
             }
         } else {
+            SelectionManager::getInstance().clearSelection();
+            if (mainComponent && mainComponent->mainView)
+                mainComponent->mainView->getTimelineController().dispatch(
+                    ClearTimeSelectionEvent{});
+
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
                 ProjectInfo defaults;
