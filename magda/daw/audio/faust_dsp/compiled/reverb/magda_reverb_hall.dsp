@@ -1,5 +1,5 @@
 declare name "MagdaReverbHall";
-declare description "Zita FDN hall reverb — 8-tap feedback delay network for smooth large-space tails.";
+declare description "Zita FDN hall reverb: 8-tap feedback delay network for smooth large-space tails.";
 declare license "GPL-3.0";
 declare version "1.0";
 
@@ -8,7 +8,7 @@ import("stdfaust.lib");
 re = library("reverbs.lib");
 
 // ============================================================================
-// User controls — [idx:N] mirrors the host wrapper's slot layout.
+// User controls - [idx:N] mirrors the host wrapper's slot layout.
 // ============================================================================
 
 mix         = hslider("Mix [idx:1]", 0.3, 0.0, 1.0, 0.001)
@@ -44,10 +44,10 @@ t60dc = t60m * 1.2;
 // Damping 0..100 → mid/high crossover 14k..1k Hz (more damping = lower f2,
 // faster HF rolloff in the tail).
 f2 = 14000.0 - damping * 130.0;
-// Low/mid crossover — fixed at zita-rev1 default.
+// Low/mid crossover - fixed at zita-rev1 default.
 F1 = 200.0;
 
-// fsmax must be a literal compile-time constant — allocates the worst-case
+// fsmax must be a literal compile-time constant - allocates the worst-case
 // internal delay lines. 96 kHz covers all supported MAGDA sample rates.
 FSMAX = 96000;
 

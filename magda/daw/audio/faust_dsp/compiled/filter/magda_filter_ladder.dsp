@@ -1,5 +1,5 @@
 declare name "MagdaLadder";
-declare description "Moog ladder filter — classic 4-pole low-pass with resonance and drive.";
+declare description "Moog ladder filter: classic 4-pole low-pass with resonance and drive.";
 declare license "GPL-3.0";
 declare version "1.0";
 
@@ -15,7 +15,7 @@ res    = hslider("Resonance [idx:1]", 0.0, 0.0, 1.0, 0.001)
 drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001)
        : si.smooth(ba.tau2pole(0.02));
 
-// Capped just under 1.0 — the protected normalised-ladder biquad
+// Capped just under 1.0 - the protected normalised-ladder biquad
 // (`moog_vcf_2bn`) is stable across the full audible range, but staying
 // short of unity prevents the self-oscillation runaway state at extremes.
 q = res * 0.99;

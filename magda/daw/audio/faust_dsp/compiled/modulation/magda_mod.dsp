@@ -6,7 +6,7 @@ declare version "1.0";
 import("stdfaust.lib");
 
 // ============================================================================
-// User controls — pinned to [idx:N] for stable host-slot ordering.
+// User controls - pinned to [idx:N] for stable host-slot ordering.
 // ============================================================================
 
 mode      = nentry("Mode [idx:0] [style:menu{'Tremolo':0;'Vibrato':1;'Autopan':2}]",
@@ -80,12 +80,12 @@ lfoUni    = 0.5 + 0.5 * lfoBi;
 // Mode bodies (each takes stereo in → stereo out)
 // ============================================================================
 
-// Tremolo — amplitude modulation. Depth scales the floor: depth=0 → bypass,
+// Tremolo - amplitude modulation. Depth scales the floor: depth=0 → bypass,
 // depth=1 → fully gated by the LFO.
 tremGain  = (1.0 - depth) + depth * lfoUni;
 trem(L, R) = L * tremGain, R * tremGain;
 
-// Vibrato — short modulated delay line per channel. Centered so depth=0 is
+// Vibrato - short modulated delay line per channel. Centered so depth=0 is
 // a clean passthrough (no delay applied).
 MAX_VIB_MS = 5.0;
 vibCenter  = MAX_VIB_MS * 0.5 * ma.SR / 1000.0;
@@ -94,7 +94,7 @@ vibLine(x) = x : de.fdelay(512, vibCenter + vibMod);
 vib(L, R)  = L * (1.0 - depth) + vibLine(L) * depth,
              R * (1.0 - depth) + vibLine(R) * depth;
 
-// Autopan — equal-power pan. depth controls modulation amount; depth=0 keeps
+// Autopan - equal-power pan. depth controls modulation amount; depth=0 keeps
 // the signal centered (each channel multiplied by cos(π/4) ≈ 0.707).
 panPos    = 0.5 + 0.5 * lfoBi * depth;
 panL      = cos(panPos * ma.PI * 0.5);
@@ -106,7 +106,7 @@ pan(L, R) = L * panL, R * panR;
 // ============================================================================
 
 // Run all three modes in parallel then pick the active one. Same idiom the
-// phaser uses for its 4-stage parallel selectn — CPU is small for LFO/utility
+// phaser uses for its 4-stage parallel selectn - CPU is small for LFO/utility
 // effects.
 process = _, _
         <: (trem, vib, pan)

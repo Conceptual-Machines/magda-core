@@ -1,5 +1,5 @@
 declare name "Beat Repeater";
-declare description "Stable Host-Synchronized Real-Time Beat Repeater — Auto-adjusting micro-fades based on absolute loop window scale to protect high-speed modes from audio loss.";
+declare description "Stable Host-Synchronized Real-Time Beat Repeater: Auto-adjusting micro-fades based on absolute loop window scale to protect high-speed modes from audio loss.";
 declare author "mikobuntu";
 declare license "GPL-3.0";
 declare version "1.0";

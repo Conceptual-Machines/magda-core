@@ -1,5 +1,5 @@
 declare name "MagdaDimensionMS";
-declare description "Mid-side stereo widener — scales the side channel directly, no time smear or modulation.";
+declare description "Mid-side stereo widener: scales the side channel directly, no time smear or modulation.";
 declare license "GPL-3.0";
 declare version "1.0";
 
@@ -14,7 +14,7 @@ outDb   = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : si.smooth
 // Amount maps to side gain: 0 → 0.5× (image partly collapsed), 1 → 2×
 // (image roughly doubled in side energy). Combined with the surface
 // Width slot (a separate M/S scale) this gives fine control over apparent
-// stereo image. Pure mono input stays mono — there's no side to scale.
+// stereo image. Pure mono input stays mono - there's no side to scale.
 sideGain = 0.5 + amount * 1.5;
 
 applyWidth(L, R) = M + S * width, M - S * width

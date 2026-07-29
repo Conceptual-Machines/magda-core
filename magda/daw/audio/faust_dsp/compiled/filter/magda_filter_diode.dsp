@@ -1,5 +1,5 @@
 declare name "MagdaDiode";
-declare description "Virtual analog diode ladder filter — resonant 4-pole low-pass with input drive.";
+declare description "Virtual analog diode ladder filter: resonant 4-pole low-pass with input drive.";
 declare license "GPL-3.0";
 declare version "1.0";
 

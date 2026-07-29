@@ -28,7 +28,7 @@ autogain    = nentry("Autogain [idx:6] [style:menu{'Off':0;'On':1}]",
 // ============================================================================
 
 // Lookahead is compile-time in the Faust lib (the delay line is allocated
-// statically). 5 ms is a standard mastering-style value — long enough to
+// statically). 5 ms is a standard mastering-style value - long enough to
 // catch incoming peaks, short enough that the latency doesn't disturb
 // monitoring. Exposing this as a user-runtime knob would require multiple
 // compiled DSPs (one per LD value) and is deferred.
@@ -43,7 +43,7 @@ db2lin(db) = pow(10.0, db / 20.0);
 // Autogain reinterprets Threshold as a "drive amount" instead of a
 // passive ceiling: input gets pushed up by -thresholdDb, the ceiling is
 // fixed at 0 dBFS, and the limiter always tries to normalise output to
-// 0 dB. With Autogain off, the limiter is a passive brickwall — peaks
+// 0 dB. With Autogain off, the limiter is a passive brickwall - peaks
 // above thresholdDb get pulled down, signal below is untouched.
 preGainLin   = db2lin(autogain * (-thresholdDb));
 userCeiling  = pow(10.0, thresholdDb / 20.0);

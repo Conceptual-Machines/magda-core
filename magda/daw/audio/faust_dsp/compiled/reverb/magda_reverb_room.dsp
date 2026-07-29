@@ -1,5 +1,5 @@
 declare name "MagdaReverbRoom";
-declare description "Freeverb-style room reverb — Schroeder-Moorer comb/allpass network for small-space ambience.";
+declare description "Freeverb-style room reverb: Schroeder-Moorer comb/allpass network for small-space ambience.";
 declare license "GPL-3.0";
 declare version "1.0";
 
@@ -8,7 +8,7 @@ import("stdfaust.lib");
 re = library("reverbs.lib");
 
 // ============================================================================
-// User controls — [idx:N] mirrors the host wrapper's slot layout.
+// User controls - [idx:N] mirrors the host wrapper's slot layout.
 // ============================================================================
 
 mix         = hslider("Mix [idx:1]", 0.3, 0.0, 1.0, 0.001)

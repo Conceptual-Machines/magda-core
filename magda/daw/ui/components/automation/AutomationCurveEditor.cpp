@@ -627,7 +627,7 @@ void AutomationCurveEditor::onPointAdded(double x, double y, CurveType curveType
     AutomationCurveType autoCurveType = toAutomationCurveType(curveType);
     y = applyValueSnap(y);
 
-    // A switch cannot ramp — any intermediate value resolves to off/on
+    // A switch cannot ramp - any intermediate value resolves to off/on
     // downstream, so honouring the editor's Linear/Bezier mode here would
     // draw a slope the parameter never performs.
     if (const auto* lane = AutomationManager::getInstance().getLane(laneId_);

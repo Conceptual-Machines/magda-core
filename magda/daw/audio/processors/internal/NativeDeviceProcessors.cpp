@@ -129,8 +129,8 @@ void FaustProcessor::populateParameters(DeviceInfo& info) const {
     // index in `paramIndex`, so links / automation / MIDI Learn still
     // bind to the stable pool slot; display order is not slot identity.
     //
-    // `[hidden:1]` slots are active — the host still writes their zone every
-    // block (that is the whole point of [role:projecttempo]) — they just get
+    // `[hidden:1]` slots are active - the host still writes their zone every
+    // block (that is the whole point of [role:projecttempo]) - they just get
     // no cell. Filtering here rather than in paramInfoFromSlot keeps "which
     // params are displayed" a display decision.
     int active = 0;

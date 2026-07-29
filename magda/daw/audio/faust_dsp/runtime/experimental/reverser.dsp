@@ -1,5 +1,5 @@
 declare name "Reverser";
-declare description "Real-Time Musical Phrase Reverser — Captures live audio blocks into a rolling buffer and reads them backwards across 4 button-activated sync grids. Instructions: Click any of the 4 checkboxes to change the reverse window size. Use the Mix fader to blend your dry audio back in.";
+declare description "Real-Time Musical Phrase Reverser: Captures live audio blocks into a rolling buffer and reads them backwards across 4 button-activated sync grids. Instructions: Click any of the 4 checkboxes to change the reverse window size. Use the Mix fader to blend your dry audio back in.";
 declare author "mikobuntu";
 declare license "GPL-3.0";
 declare version "1.0";

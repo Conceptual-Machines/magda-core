@@ -1,5 +1,5 @@
 declare name "Transient Shaper";
-declare description "True Independent Velocity-Based Transient Designer — Zero cross-talk between attack and sustain loops.";
+declare description "True Independent Velocity-Based Transient Designer: Zero cross-talk between attack and sustain loops.";
 declare author "mikobuntu";
 declare license "GPL-3.0";
 declare version "1.0";

@@ -1,5 +1,5 @@
 declare name "MagdaKorg35";
-declare description "Virtual analog Korg 35 filter — LP and HP variants of the MS-10/MS-20 character.";
+declare description "Virtual analog Korg 35 filter: LP and HP variants of the MS-10/MS-20 character.";
 declare license "GPL-3.0";
 declare version "1.0";
 
@@ -18,7 +18,7 @@ drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001)
 mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'HP':1}]", 0, 0, 1, 1);
 
 // `ve.korg35*` take a 0..1 control that the library remaps internally as
-// `freq = 2 * 10^(3*normFreq + 1)` — invert that so the cutoff knob's Hz
+// `freq = 2 * 10^(3*normFreq + 1)` - invert that so the cutoff knob's Hz
 // value drives the filter as expected.
 nf = log(cutoff / 20.0) / log(1000.0);
 

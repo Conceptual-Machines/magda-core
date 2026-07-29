@@ -116,7 +116,7 @@ juce::String describePatch(const juce::String& name,
 }
 
 // One-line credit for the info strip. Description is deliberately left out
-// — it is prose and belongs in the tooltip, not a 16px row.
+// It is prose and belongs in the tooltip, not a 16px row.
 juce::String creditLine(const magda::daw::audio::FaustPatchInfo& info) {
     juce::StringArray parts;
     if (info.author.isNotEmpty())

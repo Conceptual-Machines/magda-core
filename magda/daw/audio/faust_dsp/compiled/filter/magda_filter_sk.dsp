@@ -1,5 +1,5 @@
 declare name "MagdaSallenKey";
-declare description "Sallen-Key 2nd-order filter — LP/BP/HP, smooth analog character.";
+declare description "Sallen-Key 2nd-order filter: LP/BP/HP, smooth analog character.";
 declare license "GPL-3.0";
 declare version "1.0";
 

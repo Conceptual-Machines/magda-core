@@ -101,7 +101,7 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
         return dspSource_;
     }
 
-    // See FaustPlugin::getPatchInfo — scanned on demand, never cached.
+    // See FaustPlugin::getPatchInfo - scanned on demand, never cached.
     FaustPatchInfo getPatchInfo() const override {
         return readPatchInfo(dspSource_);
     }

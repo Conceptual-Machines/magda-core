@@ -27,7 +27,7 @@ amount = hslider("Amount [idx:2]", 0.0, 0.0, 1.0, 0.001)
 // Carrier source.
 // - Noise: shared mono band-passed noise on both channels
 // - Wide Noise: decorrelated noise per channel (stereo width)
-// - Sine: tonal carrier at `freq` — more pitched / metallic artefact
+// - Sine: tonal carrier at `freq` - more pitched / metallic artefact
 mode = nentry("Mode [idx:3] [style:menu{
                 'Noise':0;
                 'Wide Noise':1;
@@ -48,7 +48,7 @@ noise_mono = no.noise;
 noise_l    = no.multinoise(2) : _, !;
 noise_r    = no.multinoise(2) : !, _;
 
-// Resonant bandpass at the carrier centre. fi.resonbp(fc, q, gain) — gain=1
+// Resonant bandpass at the carrier centre. fi.resonbp(fc, q, gain) - gain=1
 // keeps unity at resonance; the broadband level drops as Q rises, which
 // Amount compensates for in practice.
 bpf(x) = x : fi.resonbp(freq, q, 1.0);
@@ -67,7 +67,7 @@ carrier_r = ba.selectn(3, int(mode),
 
 // Ring-modulate, scale by Amount, sum back into dry. Equivalent to
 //   out = dry * (1 + amount² * carrier)
-// Squaring `amount` gives the knob a perceptual taper — near zero you
+// Squaring `amount` gives the knob a perceptual taper - near zero you
 // get a tiny grit smear (amount = 0.1 → 0.01 wet), and the effect
 // ramps into the audible range only as the knob crosses ~0.3. Without
 // the taper the bottom 10% of travel is already "too much" because

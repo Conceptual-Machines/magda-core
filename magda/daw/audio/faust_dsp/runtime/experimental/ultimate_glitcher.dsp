@@ -1,5 +1,5 @@
 declare name "Ultimate Glitcher";
-declare description "True Parallel Polyrhythmic Glitch Matrix — Inspired by dblue Glitch 2 architecture. Features weighted stutter-freezing, a low-profile bitcrusher, parallel routing, and a protective master hard clipper.";
+declare description "True Parallel Polyrhythmic Glitch Matrix: Inspired by dblue Glitch 2 architecture. Features weighted stutter-freezing, a low-profile bitcrusher, parallel routing, and a protective master hard clipper.";
 declare author "mikobuntu";
 declare license "GPL-3.0";
 declare version "1.0";
