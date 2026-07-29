@@ -117,12 +117,14 @@ set(TEST_SOURCES
     test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp
+    test_automation_stepped_targets.cpp
     test_automation_singleton.cpp
     test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
     test_faust_param_pool.cpp
     test_faust_param_info.cpp
+    test_faust_patch_info.cpp
     # Runtime execution backend (interp / wasm+wasmtime), issue #1382
     test_faust_backend.cpp
     # Parameter alias system tests (PR 1)
