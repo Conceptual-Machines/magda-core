@@ -27,17 +27,22 @@ with {
     with {
         intRamp = globalClock % loopWindow;
 
-        // Reverse playback means reading progressively further back on each
-        // sample, so the delay has to grow across the window and reset at
-        // the boundary.
+        // Reverse playback: the read position must walk BACKWARDS at one
+        // sample per sample while the write position walks forwards, so the
+        // gap between them grows by two per sample.
         //
-        // The original built the delay from writePointer (globalClock %
-        // 400000), treating a buffer index as a delay amount. That made the
-        // delay grow without bound, so the engine read seconds into the
-        // past instead of the last window: silence at the start of a take,
-        // and a jump every time the clock wrapped. Its `tapeMemory` write
-        // was dead code, never read by anything.
-        reversedAudio = sig @ (500 + intRamp);
+        // Writing t = k*W + r, a delay of (500 + 2r) reads
+        //   x(t - 500 - 2r) = x(k*W - r - 500)
+        // so as r runs 0..W-1 the read index descends through the previous
+        // window. A delay of (500 + r) would instead give x(k*W - 500) for
+        // every r: the read position stands still and the window plays as
+        // one held sample.
+        //
+        // The original derived the delay from writePointer (globalClock %
+        // 400000), treating a buffer index as a delay amount, so the delay
+        // grew without bound and read seconds into the past rather than the
+        // last window. Its `tapeMemory` write was dead code.
+        reversedAudio = sig @ (500 + 2 * intRamp);
     };
 
     spLeft  = reverseEngine(left);
