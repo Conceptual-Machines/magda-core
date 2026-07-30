@@ -158,16 +158,14 @@ void FaustUI::refreshNameLabel() {
     repaint();
 }
 
-bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,
-                      magda::daw::audio::FaustCustomViewKind viewKind) {
-    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length()
-                                   << " viewKind=" << static_cast<int>(viewKind));
+bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
+    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length());
     if (plugin_ == nullptr) {
         DBG("[FaustUI] tryLoad: plugin_ is NULL — bailing");
         return false;
     }
     juce::String err;
-    if (!plugin_->loadDspSource(name, source, err, viewKind)) {
+    if (!plugin_->loadDspSource(name, source, err)) {
         DBG("[FaustUI] tryLoad: loadDspSource FAILED: " << err);
         errorLabel_.setText(err, juce::dontSendNotification);
         return false;
@@ -285,7 +283,7 @@ void FaustUI::showLoadMenu() {
                                const int idx = result - 1;
                                if (idx >= 0 && idx < static_cast<int>(starters.size())) {
                                    const auto& s = starters[static_cast<size_t>(idx)];
-                                   tryLoad(s.name, s.source, s.viewKind);
+                                   tryLoad(s.name, s.source);
                                }
                                return;
                            }
@@ -294,8 +292,7 @@ void FaustUI::showLoadMenu() {
                                const auto file = savedFiles[idx];
                                if (file.existsAsFile())
                                    tryLoad(file.getFileNameWithoutExtension(),
-                                           file.loadFileAsString(),
-                                           magda::daw::audio::FaustCustomViewKind::None);
+                                           file.loadFileAsString());
                            }
                        });
 }
@@ -309,8 +306,7 @@ void FaustUI::loadFromFile() {
             auto file = fc.getResult();
             if (!file.existsAsFile() || plugin_ == nullptr)
                 return;
-            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString(),
-                    magda::daw::audio::FaustCustomViewKind::None);
+            tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString());
         });
 }
 
@@ -362,12 +358,10 @@ void FaustUI::showCodeEditor() {
             auto editedName = plugin_->getDspName();
             if (editedName.isEmpty())
                 editedName = "Custom";
-            // Preserve the existing custom-view kind across in-place
-            // edits — a user tweaking the bundled MagdaDrive source
-            // shouldn't lose its bespoke view because the code editor
-            // re-saved the same DSP.
-            const auto preservedKind = plugin_->getCustomViewKind();
-            if (!plugin_->loadDspSource(editedName, src, err, preservedKind))
+            // No need to preserve the view across an in-place edit: it is read
+            // back out of the edited source, so it survives as long as the
+            // `declare magda_view` line does.
+            if (!plugin_->loadDspSource(editedName, src, err))
                 return false;
             errorLabel_.setText({}, juce::dontSendNotification);
             refreshNameLabel();

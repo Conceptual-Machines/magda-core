@@ -24,8 +24,7 @@ A pack may use:
 - `plugins/InternalPluginRegistry.hpp` for pack registration
 - opaque `DevicePluginHandle`, `DeviceParameterHandle`, and `DeviceSessionKey`
   values at transitional host boundaries
-- `plugins/IFaustEditorModel.hpp` and
-  `plugins/FaustCustomViewKind.hpp`
+- `plugins/IFaustEditorModel.hpp`
 - `magda_compile_faust_dsp()` plus the Faust and Mutable toolchains supplied by
   the host build
 

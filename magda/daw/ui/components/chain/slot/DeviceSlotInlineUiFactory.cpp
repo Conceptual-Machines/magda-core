@@ -177,7 +177,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
             if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get())) {
                 storage.faustUI->setPlugin(faustModel);
                 storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(
-                    faustModel->getCustomViewKind(), *faustModel);
+                    faustModel->getCustomViewName(), *faustModel);
                 if (storage.faustCustomView != nullptr)
                     parent.addAndMakeVisible(*storage.faustCustomView);
             }

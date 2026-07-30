@@ -300,7 +300,7 @@ add_library(magda::base_devices ALIAS magda_base_devices)
 add_library(magda_tracktion_compat_devices STATIC)
 set_target_properties(magda_devices PROPERTIES
     PUBLIC_HEADER
-    "audio/plugins/DeviceParameterHandle.hpp;audio/plugins/DevicePluginHandle.hpp;audio/plugins/DeviceServices.hpp;audio/plugins/DeviceSessionKey.hpp;audio/plugins/FaustCustomViewKind.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/plugins/MagdaDevice.hpp"
+    "audio/plugins/DeviceParameterHandle.hpp;audio/plugins/DevicePluginHandle.hpp;audio/plugins/DeviceServices.hpp;audio/plugins/DeviceSessionKey.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/plugins/MagdaDevice.hpp"
 )
 
 # JUCE GUI app — sources contributed below via add_subdirectory().

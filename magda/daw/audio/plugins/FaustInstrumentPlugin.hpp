@@ -7,7 +7,6 @@
 #include <memory>
 #include <vector>
 
-#include "FaustCustomViewKind.hpp"
 #include "FaustParamPool.hpp"
 #include "IFaustEditorModel.hpp"
 
@@ -83,8 +82,7 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     // and persist source+name to plugin state. Returns true on success; on
     // failure `errorOut` carries the libfaust message and the previously
     // loaded DSP is left in place. Message thread only — the swap is atomic.
-    bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut,
-                       FaustCustomViewKind viewKind = FaustCustomViewKind::None) override;
+    bool loadDspSource(const juce::String& name, const juce::String& source, juce::String& errorOut) override;
 
     void stageSourceForEditing(const juce::String& name, const juce::String& source) override;
 
@@ -106,8 +104,8 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
         return readPatchInfo(dspSource_);
     }
 
-    FaustCustomViewKind getCustomViewKind() const override {
-        return viewKind_;
+    juce::String getCustomViewName() const override {
+        return viewName_;
     }
 
     const std::vector<juce::String>& getLastRebindDiagnostics() const override {
@@ -174,7 +172,8 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
 
     juce::String dspName_;
     juce::String dspSource_;
-    FaustCustomViewKind viewKind_ = FaustCustomViewKind::None;
+    // Read from the loaded source's `declare magda_view`; empty for most patches.
+    juce::String viewName_;
     std::vector<juce::String> lastDiagnostics_;
 
     int currentSampleRate_ = 44100;

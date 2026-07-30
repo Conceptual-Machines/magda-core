@@ -313,8 +313,6 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
 
     const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
     const auto savedName = state.getProperty("dspName", juce::String()).toString();
-    const auto savedViewKindRaw = static_cast<int>(
-        state.getProperty("dspViewKind", static_cast<int>(FaustCustomViewKind::None)));
 
     juce::String err;
     auto compiled = compileAndRebind(
@@ -326,13 +324,13 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
 
     dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
     dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Passthrough");
-    viewKind_ = static_cast<FaustCustomViewKind>(savedViewKindRaw);
+    // Derived, not restored: the source is the only thing that has to persist.
+    viewName_ = readCustomViewName(dspSource_);
 
     std::atomic_store(&active_, compiled);
 
     state.setProperty("dspSource", dspSource_, nullptr);
     state.setProperty("dspName", dspName_, nullptr);
-    state.setProperty("dspViewKind", static_cast<int>(viewKind_), nullptr);
 
     retireTimer_.startTimer(100);
 
@@ -376,7 +374,7 @@ void FaustPlugin::drainRetired() {
 }
 
 bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& source,
-                                juce::String& errorOut, FaustCustomViewKind viewKind) {
+                                juce::String& errorOut) {
     auto compiled = compileAndRebind(source, errorOut);
     if (!compiled)
         return false;
@@ -391,10 +389,9 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
 
     dspName_ = name;
     dspSource_ = source;
-    viewKind_ = viewKind;
+    viewName_ = readCustomViewName(source);
     state.setProperty("dspName", dspName_, getUndoManager());
     state.setProperty("dspSource", dspSource_, getUndoManager());
-    state.setProperty("dspViewKind", static_cast<int>(viewKind_), getUndoManager());
 
     DBG("FaustPlugin::loadDspSource ok name=" << name << " in=" << compiled->dspIn
                                               << " out=" << compiled->dspOut
