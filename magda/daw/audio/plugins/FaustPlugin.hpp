@@ -103,6 +103,13 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
         return pool_;
     }
 
+    // False when a saved source failed to compile and the live DSP is only
+    // the fallback. Used during project load to preserve routing that may be
+    // valid again once the missing library/source problem is repaired.
+    bool activeDspMatchesSource() const {
+        return activeDspMatchesSource_;
+    }
+
     // Per-DSP display name (caller-supplied to `loadDspSource`). Used
     // for the inspector label only — the FaustUI custom-view registry
     // keys on `getCustomViewKind()` instead.
@@ -208,6 +215,7 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     juce::String dspSource_;
     FaustCustomViewKind viewKind_ = FaustCustomViewKind::None;
     std::vector<juce::String> lastDiagnostics_;
+    bool activeDspMatchesSource_ = false;
 
     // Sample rate captured from initialise(); used when recompiling at
     // runtime (constructor uses 44100 as a provisional value).

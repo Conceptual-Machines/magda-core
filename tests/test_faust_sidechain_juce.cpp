@@ -39,17 +39,22 @@ constexpr const char* kNineInputDsp = R"FAUST(
 process(a, b, c, d, e, f, g, h, i) = a, b;
 )FAUST";
 
+constexpr const char* kInvalidDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+process = deliberatelyUndefinedProcessor;
+)FAUST";
+
 te::Plugin::Ptr createFaustEffect(te::Edit& edit) {
     juce::ValueTree state(te::IDs::PLUGIN);
     state.setProperty(te::IDs::type, audio::FaustPlugin::xmlTypeName, nullptr);
     return edit.getPluginCache().createNewPlugin(state);
 }
 
-magda::DeviceInfo makeSavedStereoFaust(magda::TrackId sourceTrackId) {
+magda::DeviceInfo makeSavedFaust(magda::TrackId sourceTrackId, const juce::String& source) {
     juce::ValueTree state(te::IDs::PLUGIN);
     state.setProperty(te::IDs::type, audio::FaustPlugin::xmlTypeName, nullptr);
-    state.setProperty("dspSource", kStereoDsp, nullptr);
-    state.setProperty("dspName", "Saved stereo test", nullptr);
+    state.setProperty("dspSource", source, nullptr);
+    state.setProperty("dspName", "Saved test", nullptr);
 
     magda::DeviceInfo device;
     device.name = "Faust";
@@ -146,6 +151,11 @@ class FaustSidechainTest final : public juce::UnitTest {
         inputs.clear();
         faust->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 9);
+        const auto& diagnostics = faust->getLastRebindDiagnostics();
+        expect(!diagnostics.empty(), "Wide runtime patch should report its scratch requirement");
+        if (!diagnostics.empty())
+            expect(diagnostics.front().containsIgnoreCase("reload"),
+                   "Wide runtime patch diagnostic should explain how to activate it");
         const float beforeWideRender = buffer.getSample(0, 0);
         faust->applyToBuffer(context);
         expectWithinAbsoluteError(buffer.getSample(0, 0), beforeWideRender, 0.0001f,
@@ -188,8 +198,8 @@ class FaustSidechainTest final : public juce::UnitTest {
 
         const auto sourceTrackId = trackManager.createTrack("Saved sidechain source");
         const auto destinationTrackId = trackManager.createTrack("Saved sidechain destination");
-        const auto deviceId =
-            trackManager.addDeviceToTrack(destinationTrackId, makeSavedStereoFaust(sourceTrackId));
+        const auto deviceId = trackManager.addDeviceToTrack(
+            destinationTrackId, makeSavedFaust(sourceTrackId, kStereoDsp));
         expect(deviceId != magda::INVALID_DEVICE_ID, "Saved Faust device should be added");
 
         if (deviceId != magda::INVALID_DEVICE_ID) {
@@ -224,6 +234,38 @@ class FaustSidechainTest final : public juce::UnitTest {
             }
             expect(!hasAudioMonitor,
                    "Cleared project route should not retain an audio sidechain monitor");
+        }
+
+        trackManager.clearAllTracks();
+
+        beginTest("Project load preserves a sidechain when the saved Faust source fails");
+
+        const auto failedSourceTrackId = trackManager.createTrack("Failed sidechain source");
+        const auto failedDestinationTrackId =
+            trackManager.createTrack("Failed sidechain destination");
+        const auto failedDeviceId = trackManager.addDeviceToTrack(
+            failedDestinationTrackId, makeSavedFaust(failedSourceTrackId, kInvalidDsp));
+        expect(failedDeviceId != magda::INVALID_DEVICE_ID,
+               "Faust device with an invalid saved source should still be added");
+
+        if (failedDeviceId != magda::INVALID_DEVICE_ID) {
+            const auto failedPath =
+                magda::ChainNodePath::topLevelDevice(failedDestinationTrackId, failedDeviceId);
+            bridge->syncTrackPlugins(failedSourceTrackId);
+            bridge->syncTrackPlugins(failedDestinationTrackId);
+
+            auto failedPlugin = bridge->getPlugin(failedPath);
+            auto* failedFaust = dynamic_cast<audio::FaustPlugin*>(failedPlugin.get());
+            expect(failedFaust != nullptr, "Failed saved source should retain its Faust plugin");
+            if (failedFaust)
+                expect(!failedFaust->activeDspMatchesSource(),
+                       "Fallback DSP should not be treated as the saved source");
+
+            auto* failedDevice = trackManager.getDeviceInChainByPath(failedPath);
+            expect(failedDevice != nullptr, "Failed-source DeviceInfo should resolve");
+            if (failedDevice)
+                expect(failedDevice->sidechain.isActive(),
+                       "Compile failure should preserve the serialized sidechain");
         }
 
         trackManager.clearAllTracks();

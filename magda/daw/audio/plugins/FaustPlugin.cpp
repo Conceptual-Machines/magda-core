@@ -259,6 +259,14 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
     auto report = pool_.rebindFromHarvest(harvested);
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
+    if (scratchIn_.getNumSamples() > 0 && state->dspIn > scratchIn_.getNumChannels()) {
+        lastDiagnostics_.insert(
+            lastDiagnostics_.begin(),
+            "DSP needs " + juce::String(state->dspIn) +
+                " input channels, but the current audio graph has capacity for " +
+                juce::String(scratchIn_.getNumChannels()) +
+                "; reload the device or project to activate this patch");
+    }
     initialiseUnsetPoolValues(state->activeBindings, previousSlots);
 
     DBG("[FaustPlugin] compileAndRebind: pool active="
@@ -319,6 +327,7 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
     juce::String err;
     auto compiled = compileAndRebind(
         savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
+    activeDspMatchesSource_ = compiled != nullptr;
     if (!compiled) {
         DBG("FaustPlugin: failed to compile saved source: " << err << " — using default");
         compiled = compileAndRebind(kDefaultDspSource, err);
@@ -383,6 +392,7 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
 
     auto previous = std::atomic_load(&active_);
     std::atomic_store(&active_, compiled);
+    activeDspMatchesSource_ = true;
 
     // A stereo-only replacement can no longer consume TE's appended source
     // channels. Drop the live routing immediately; refreshDeviceParameters()
@@ -412,6 +422,7 @@ void FaustPlugin::stageSourceForEditing(const juce::String& name, const juce::St
     // Editable state only — no compileAndRebind, no active_ swap. The live DSP
     // and the param pool stay as they are; the editor reads dspSource/dspName
     // from state, so the user sees the staged code and compiles it when ready.
+    activeDspMatchesSource_ = false;
     dspName_ = name;
     dspSource_ = source;
     state.setProperty("dspName", dspName_, getUndoManager());
