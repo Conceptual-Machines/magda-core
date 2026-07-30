@@ -132,10 +132,10 @@ void MagdaDriveCurveView::paint(juce::Graphics& g) {
 void registerBuiltInFaustCustomViews() {
     auto& registry = FaustCustomUIRegistry::getInstance();
 
-    registry.registerView(FaustCustomViewKind::MagdaDrive,
-                          [](magda::daw::audio::IFaustEditorModel& plugin) {
-                              return std::make_unique<MagdaDriveCurveView>(plugin);
-                          });
+    // The name here is the string a .dsp writes in `declare magda_view`.
+    registry.registerView("MagdaDrive", [](magda::daw::audio::IFaustEditorModel& plugin) {
+        return std::make_unique<MagdaDriveCurveView>(plugin);
+    });
 }
 
 }  // namespace magda::daw::ui

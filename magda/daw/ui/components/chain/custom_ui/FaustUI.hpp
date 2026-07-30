@@ -4,7 +4,6 @@
 
 #include <memory>
 
-#include "audio/plugins/FaustCustomViewKind.hpp"
 #include "core/ChainNodePath.hpp"
 
 namespace magda::daw::audio {
@@ -77,8 +76,10 @@ class FaustUI : public juce::Component {
     // library separate from MAGDA .mps presets.
     static juce::File userEffectsDir();
     void showCodeEditor();
-    bool tryLoad(const juce::String& name, const juce::String& source,
-                 magda::daw::audio::FaustCustomViewKind viewKind);
+    // The custom view comes from the source's own `declare magda_view`, so
+    // every load path resolves it the same way with nothing to pass in.
+    bool tryLoad(const juce::String& name, const juce::String& source);
+
     void refreshNameLabel();
 
     magda::daw::audio::IFaustEditorModel* plugin_ = nullptr;

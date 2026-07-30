@@ -136,6 +136,7 @@ set(TEST_SOURCES
     test_faust_param_pool.cpp
     test_faust_param_info.cpp
     test_faust_patch_info.cpp
+    test_faust_custom_view.cpp
     # Runtime execution backend (interp / wasm+wasmtime), issue #1382
     test_faust_backend.cpp
     # Parameter alias system tests (PR 1)

@@ -10,15 +10,15 @@ FaustCustomUIRegistry& FaustCustomUIRegistry::getInstance() {
     return instance;
 }
 
-void FaustCustomUIRegistry::registerView(FaustCustomViewKind kind, Factory factory) {
-    factories_[kind] = std::move(factory);
+void FaustCustomUIRegistry::registerView(const juce::String& name, Factory factory) {
+    factories_[name] = std::move(factory);
 }
 
 std::unique_ptr<FaustCustomView> FaustCustomUIRegistry::create(
-    FaustCustomViewKind kind, magda::daw::audio::IFaustEditorModel& plugin) const {
-    if (kind == FaustCustomViewKind::None)
+    const juce::String& name, magda::daw::audio::IFaustEditorModel& plugin) const {
+    if (name.isEmpty())
         return nullptr;
-    auto it = factories_.find(kind);
+    auto it = factories_.find(name);
     if (it == factories_.end() || !it->second)
         return nullptr;
     return it->second(plugin);
