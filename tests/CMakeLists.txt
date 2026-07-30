@@ -126,6 +126,7 @@ set(TEST_SOURCES
     test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
+    test_faust_ui_harvester.cpp
     test_faust_param_pool.cpp
     test_faust_param_info.cpp
     test_faust_patch_info.cpp
