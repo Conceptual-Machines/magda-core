@@ -620,10 +620,7 @@ jobs:
 
   build-and-test-windows:
     needs: pick-windows-runner
-    # TEMP probe for the MSVC 14.51 heap corruption: pinned to windows-latest,
-    # the only toolchain that reproduces it. Revert to the picker output after.
-    # runs-on: ${{ fromJSON(needs.pick-windows-runner.outputs.labels) }}
-    runs-on: windows-latest
+    runs-on: ${{ fromJSON(needs.pick-windows-runner.outputs.labels) }}
     if: |
       github.event_name != 'workflow_dispatch' ||
       github.event.inputs.skip-cpp-build != 'true'
@@ -801,53 +798,16 @@ jobs:
       if: always()
       run: ccache -s
 
-    # TEMP probe for the MSVC 14.51 heap corruption. Splitting the streams keeps
-    # the CRT report (stderr) readable next to the last test that finished
-    # (stdout), which a native exe's block buffering would otherwise interleave
-    # unusably. Revert to `& $testExe.FullName --abort` with a 5 minute timeout.
     - name: Run tests
-      timeout-minutes: 60
-      env:
-        # Validate the whole heap on every alloc/free, so the report lands on the
-        # allocation right after the bad write instead of wherever the victim
-        # block happens to be freed. Slow, hence the raised timeout.
-        MAGDA_TEST_HEAP_CHECK: '1'
+      timeout-minutes: 5
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
-        if (-not $testExe) {
+        if ($testExe) {
+          & $testExe.FullName --abort
+        } else {
           Write-Error "Tests executable not found"
           exit 1
         }
-        function Invoke-Suite($label, $suiteArgs, $tag) {
-          $out = "magda-tests-$tag-stdout.log"
-          $err = "magda-tests-$tag-stderr.log"
-          $proc = Start-Process -FilePath $testExe.FullName -ArgumentList $suiteArgs `
-            -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -NoNewWindow
-          $proc.WaitForExit()
-          Write-Output ""
-          Write-Output "########## $label -> exit $($proc.ExitCode) ##########"
-          Write-Output "--- stderr (CRT diagnostics) ---"
-          if (Test-Path $err) { Get-Content $err }
-          Write-Output "--- stdout tail: last tests to complete ---"
-          if (Test-Path $out) { Get-Content $out -Tail 20 }
-          return $proc.ExitCode
-        }
-
-        # Faust subset first: it is where the report has landed so far, and it
-        # runs in seconds, so a hit here isolates the corruption to that path
-        # instead of leaving the whole suite as the suspect.
-        $faustCode = Invoke-Suite 'Faust subset ([faust])' @('[faust]', '--durations', 'yes') 'faust'
-        $fullCode = Invoke-Suite 'Full suite' @('--durations', 'yes') 'full'
-
-        if ($faustCode -ne 0 -or $fullCode -ne 0) { exit 1 }
-
-    - name: Upload heap probe logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-heap-probe-logs
-        path: magda-tests-*.log
-        if-no-files-found: ignore
 
     # Release configure/build/verify only run on push to main, and only on the
     # self-hosted runner (magda-luca). Feature-branch pushes get Debug coverage;
