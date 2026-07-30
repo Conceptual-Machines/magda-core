@@ -21,6 +21,7 @@
 #include "custom_ui/AnalyzerWindow.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
+#include "custom_ui/FaustMeterPanel.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
@@ -797,8 +798,11 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     // valid, so resolve the live plugin again once the path is known.
     bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(),
                                 [this](std::function<float(int)> source) {
-                                    if (paramGrid_)
-                                        paramGrid_->setMeterSource(std::move(source));
+                                    if (faustMeterPanel_ == nullptr) {
+                                        faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+                                        addChildComponent(*faustMeterPanel_);
+                                    }
+                                    faustMeterPanel_->setMeterSource(std::move(source));
                                 });
 
     // Initial compute for the controller indicator dots — listeners only fire
@@ -1196,6 +1200,11 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .faustCustomView = faustCustomView_.get(),
          .faustCustomViewPreferredHeight =
              faustCustomView_ != nullptr ? faustCustomView_->getPreferredHeight() : 0,
+         .faustMeterPanel = faustMeterPanel_.get(),
+         .faustMeterPanelPreferredHeight =
+             (faustMeterPanel_ != nullptr && !faustMeterPanel_->isEmpty())
+                 ? FaustMeterPanel::kPreferredHeight
+                 : 0,
          .compiledPanel = compiledBodyPanel,
          .compiledPanelPreferredHeight =
              compiledPanel_ != nullptr ? compiledPanel_->preferredHeight() : 0,
@@ -1490,6 +1499,26 @@ void DeviceSlotComponent::updateParameterSlots() {
         device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
         {.reloadParameterSlots = [this]() { updateParameterSlots(); },
          .updateParamModulation = [this]() { updateParamModulation(); }});
+    refreshFaustMeterPanel();
+}
+
+void DeviceSlotComponent::refreshFaustMeterPanel() {
+    if (device_.meters.empty()) {
+        // A patch that declares no bargraph gets no strip, and the grid keeps
+        // the whole body. Recompiling one away therefore gives the space back.
+        if (faustMeterPanel_ != nullptr) {
+            faustMeterPanel_->setMeters({});
+            faustMeterPanel_->setVisible(false);
+        }
+        return;
+    }
+
+    if (faustMeterPanel_ == nullptr) {
+        faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+        addAndMakeVisible(*faustMeterPanel_);
+    }
+    faustMeterPanel_->setMeters(device_.meters);
+    resized();
 }
 
 void DeviceSlotComponent::updateParameterValues() {
@@ -1658,8 +1687,14 @@ void DeviceSlotComponent::createCustomUI() {
         .onShowAutomationLane = [this](int paramIndex) { showAutomationLaneForParam(paramIndex); },
     });
     callbacks.setMeterSource = [this](std::function<float(int)> source) {
-        if (paramGrid_)
-            paramGrid_->setMeterSource(std::move(source));
+        if (faustMeterPanel_ == nullptr) {
+            // The supplier can resolve before the device snapshot has told us
+            // there are any meters, so hold it on a panel built empty rather
+            // than dropping it and waiting for another refresh.
+            faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+            addChildComponent(*faustMeterPanel_);
+        }
+        faustMeterPanel_->setMeterSource(std::move(source));
     };
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,
@@ -1685,8 +1720,8 @@ void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
         faustUI_->setPlugin(nullptr);
     // The meter supplier holds a reference to the plugin so its pool cannot
     // vanish mid-poll; dropping it here is what lets the plugin go.
-    if (paramGrid_)
-        paramGrid_->setMeterSource(nullptr);
+    if (faustMeterPanel_ != nullptr)
+        faustMeterPanel_->setMeterSource(nullptr);
     customUI_.detachFromLivePlugin();
 }
 

@@ -9,24 +9,19 @@ namespace magda::daw::ui {
  *
  * Tells the host component what to draw in one grid cell:
  *   - `Filled`      — bind to a real parameter and render the widget
- *   - `Meter`       - render a read-only readout of `DeviceInfo::meters`
  *   - `Placeholder` — render an inert "empty" cell ("-", disabled)
  *   - `Hidden`      — don't render anything (cell is truly blank)
  *
  * `paramArrayIndex` is the index into `DeviceInfo::parameters`.
- * `meterArrayIndex` is the index into `DeviceInfo::meters`, and is the only
- * field a Meter cell fills in besides `span`: a meter has no parameter
- * identity precisely so that nothing can bind to it.
  * `targetParamIndex` is the identity used for automation / mod / MIDI Learn
  * binding. For most devices these are the same; Faust uses the pool slot
  * index from `[idx:N]` as the binding identity.
  */
 struct ParamCell {
-    enum class Mode { Filled, Meter, Placeholder, Hidden };
+    enum class Mode { Filled, Placeholder, Hidden };
 
     Mode mode = Mode::Hidden;
     int paramArrayIndex = -1;
-    int meterArrayIndex = -1;
     int targetParamIndex = -1;
     bool enabled = true;
     /// How many consecutive cells this one occupies, starting here. Always 1

@@ -48,12 +48,6 @@ std::uint64_t pageLayoutSignature(const magda::DeviceInfo& device) {
         // Width feeds the packing, so a change to it has to invalidate too.
         mix(static_cast<std::uint64_t>(param.widthCells));
     }
-    mix(device.meters.size());
-    for (const auto& meter : device.meters) {
-        mix(static_cast<std::uint64_t>(meter.meterIndex));
-        mix(static_cast<std::uint64_t>(meter.group.hashCode64()));
-        mix(static_cast<std::uint64_t>(meter.widthCells));
-    }
     return signature;
 }
 
@@ -68,31 +62,22 @@ const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
     struct Group {
         juce::String name;
         std::vector<int> paramArrayIndices;
-        std::vector<int> meterArrayIndices;
     };
 
     std::vector<Group> groups;
-    const auto groupFor = [&groups](const juce::String& rawName) -> Group& {
-        const auto name = rawName.isEmpty() ? juce::String("Params") : rawName;
+    for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
+        const auto& param = device.parameters[static_cast<size_t>(i)];
+        const auto name = param.group.isEmpty() ? juce::String("Params") : param.group;
         auto it = std::find_if(groups.begin(), groups.end(),
                                [&name](const Group& group) { return group.name == name; });
-        if (it != groups.end())
-            return *it;
-        groups.push_back({name, {}, {}});
-        return groups.back();
-    };
-
-    for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i)
-        groupFor(device.parameters[static_cast<size_t>(i)].group).paramArrayIndices.push_back(i);
-
-    // Meters join the page their author group names, after that group's
-    // controls. A bargraph declared in a group MAGDA has not seen before opens
-    // its own page, the same as a control would.
-    for (int i = 0; i < static_cast<int>(device.meters.size()); ++i)
-        groupFor(device.meters[static_cast<size_t>(i)].group).meterArrayIndices.push_back(i);
+        if (it == groups.end())
+            groups.push_back({name, {i}});
+        else
+            it->paramArrayIndices.push_back(i);
+    }
 
     if (groups.empty())
-        groups.push_back({"Params", {}, {}});
+        groups.push_back({"Params", {}});
 
     cachedPages_.clear();
     for (const auto& group : groups) {
@@ -111,8 +96,9 @@ const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
             cursor = 0;
         };
 
-        const auto place = [&](PageCell cell, int requestedWidth) {
-            const int span = std::clamp(requestedWidth, 1, kCellsPerRow);
+        for (const int paramArrayIdx : group.paramArrayIndices) {
+            const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
+            const int span = std::clamp(param.widthCells, 1, kCellsPerRow);
 
             // Never straddle a row boundary: jump to the next row instead.
             if ((cursor % kCellsPerRow) + span > kCellsPerRow)
@@ -122,19 +108,8 @@ const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
                 flush();
             }
 
-            cell.span = span;
-            page.cells[static_cast<size_t>(cursor)] = cell;
+            page.cells[static_cast<size_t>(cursor)] = {paramArrayIdx, span};
             cursor += span;
-        };
-
-        for (const int paramArrayIdx : group.paramArrayIndices) {
-            const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
-            place({paramArrayIdx, -1, 1}, param.widthCells);
-        }
-
-        for (const int meterArrayIdx : group.meterArrayIndices) {
-            const auto& meter = device.meters[static_cast<size_t>(meterArrayIdx)];
-            place({-1, meterArrayIdx, 1}, meter.widthCells);
         }
         cachedPages_.push_back(std::move(page));
     }
@@ -184,14 +159,6 @@ ParamCell FaustDeviceLayout::cellFor(const magda::DeviceInfo& device, int cellIn
         return cell;
 
     const auto& pageCell = page.cells[static_cast<size_t>(cellIndex)];
-
-    if (pageCell.meterArrayIndex >= 0) {
-        cell.mode = ParamCell::Mode::Meter;
-        cell.meterArrayIndex = pageCell.meterArrayIndex;
-        cell.span = pageCell.span;
-        return cell;
-    }
-
     // -1 means empty, or absorbed by a wider control starting to the left.
     if (pageCell.paramArrayIndex < 0)
         return cell;

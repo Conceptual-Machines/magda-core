@@ -200,6 +200,19 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             controls.faustCustomView->setVisible(true);
         }
 
+        // Meters sit under the grid and above any custom view, in a region of
+        // their own: a level needs height, which a cell sized for a knob and
+        // its label cannot give it.
+        if (controls.faustMeterPanel != nullptr && controls.faustMeterPanelPreferredHeight > 0) {
+            const int bodyHeight = juce::jmax(0, contentArea.getHeight());
+            const int meterHeight =
+                boundedBottomPanelHeight(controls.faustMeterPanelPreferredHeight, bodyHeight, 1, 2);
+            controls.faustMeterPanel->setBounds(contentArea.removeFromBottom(meterHeight));
+            controls.faustMeterPanel->setVisible(true);
+        } else {
+            setVisibleIfPresent(controls.faustMeterPanel, false);
+        }
+
         layoutParamGrid(controls.paramGrid, contentArea);
         return;
     }

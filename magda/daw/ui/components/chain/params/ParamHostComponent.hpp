@@ -10,7 +10,6 @@
 #include "core/ModInfo.hpp"
 #include "core/TypeIds.hpp"
 #include "layout/DeviceParamLayout.hpp"
-#include "params/MeterCellComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 
 namespace magda::daw::ui {
@@ -45,12 +44,6 @@ class ParamHostComponent : public juce::Component {
     int getSlotCount() const {
         return cellCount_;
     }
-
-    /// Supplies the live reading for `DeviceInfo::meters[i].meterIndex`. Set
-    /// by the device wiring for families that report values back (runtime
-    /// Faust); left null everywhere else, which leaves meter cells inert.
-    /// Must outlive nothing: the host drops it on the next call.
-    void setMeterSource(std::function<float(int meterIndex)> source);
 
     // Parameter data updates.
     void updateParameterSlots(const magda::DeviceInfo& device, int currentPage,
@@ -114,14 +107,6 @@ class ParamHostComponent : public juce::Component {
     // recorded here rather than re-derived.
     std::vector<int> cellSpans_;
     std::unique_ptr<ParamSlotComponent> paramSlots_[kMaxCells];
-    // Parallel to paramSlots_: cell i shows one or the other, never both. A
-    // separate component rather than a mode on ParamSlotComponent, so no
-    // gesture, menu or link path can ever reach a read-only value.
-    std::unique_ptr<MeterCellComponent> meterCells_[kMaxCells];
-    std::function<float(int meterIndex)> meterSource_;
-    // Which of the two components each cell last resolved to, so bulk
-    // visibility changes don't put a param slot back on top of a meter.
-    std::vector<bool> cellIsMeter_;
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
     std::unique_ptr<juce::ArrowButton> nextPageButton_;
     std::unique_ptr<juce::Label> pageLabel_;

@@ -73,20 +73,6 @@ void applyHidden(ParamSlotComponent& slot) {
     slot.onValueChanged = nullptr;
 }
 
-void applyMeter(MeterCellComponent& meterCell, const magda::MeterInfo& meter,
-                const std::function<float(int meterIndex)>& meterSource) {
-    meterCell.setMeterInfo(meter);
-    if (meterSource) {
-        const int index = meter.meterIndex;
-        meterCell.setSource([meterSource, index]() { return meterSource(index); });
-    } else {
-        // No supplier means the device family does not report values back;
-        // the cell then draws its floor rather than a stale reading.
-        meterCell.setSource(nullptr);
-    }
-    meterCell.setVisible(true);
-}
-
 }  // namespace
 
 ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout)
@@ -127,36 +113,18 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
     for (int i = 0; i < cellCount_; ++i) {
         paramSlots_[i] = std::make_unique<ParamSlotComponent>(i);
         addAndMakeVisible(*paramSlots_[i]);
-
-        meterCells_[i] = std::make_unique<MeterCellComponent>();
-        meterCells_[i]->setVisible(false);
-        addChildComponent(*meterCells_[i]);
     }
 }
 
 ParamHostComponent::~ParamHostComponent() = default;
 
-void ParamHostComponent::setMeterSource(std::function<float(int meterIndex)> source) {
-    meterSource_ = std::move(source);
-}
-
 void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
     std::function<void(int paramIndex, double value)> onValueChanged) {
     cellSpans_.assign(static_cast<size_t>(std::max(0, cellCount_)), 1);
-    cellIsMeter_.assign(static_cast<size_t>(std::max(0, cellCount_)), false);
     for (int i = 0; i < cellCount_; ++i) {
         const auto cell = layout_->cellFor(device, i, currentPage);
         cellSpans_[static_cast<size_t>(i)] = std::max(1, cell.span);
-
-        // A cell is a param slot or a meter, never both, so the other one is
-        // always put away first.
-        const bool isMeter = cell.mode == ParamCell::Mode::Meter;
-        cellIsMeter_[static_cast<size_t>(i)] = isMeter;
-        if (!isMeter) {
-            meterCells_[i]->setSource(nullptr);
-            meterCells_[i]->setVisible(false);
-        }
 
         switch (cell.mode) {
             case ParamCell::Mode::Filled: {
@@ -167,17 +135,6 @@ void ParamHostComponent::updateParameterSlots(
                 }
                 const auto& param = device.parameters[static_cast<size_t>(cell.paramArrayIndex)];
                 applyFilled(*paramSlots_[i], param, cell, onValueChanged);
-                break;
-            }
-            case ParamCell::Mode::Meter: {
-                applyHidden(*paramSlots_[i]);
-                if (cell.meterArrayIndex < 0 ||
-                    cell.meterArrayIndex >= static_cast<int>(device.meters.size())) {
-                    meterCells_[i]->setVisible(false);
-                    break;
-                }
-                applyMeter(*meterCells_[i],
-                           device.meters[static_cast<size_t>(cell.meterArrayIndex)], meterSource_);
                 break;
             }
             case ParamCell::Mode::Placeholder:
@@ -247,12 +204,8 @@ void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int
 }
 
 void ParamHostComponent::setGridVisible(bool visible) {
-    for (int i = 0; i < cellCount_; ++i) {
-        const bool isMeter =
-            i < static_cast<int>(cellIsMeter_.size()) && cellIsMeter_[static_cast<size_t>(i)];
-        paramSlots_[i]->setVisible(visible && !isMeter);
-        meterCells_[i]->setVisible(visible && isMeter);
-    }
+    for (int i = 0; i < cellCount_; ++i)
+        paramSlots_[i]->setVisible(visible);
 }
 
 void ParamHostComponent::setPaginationVisible(bool visible) {
@@ -346,10 +299,6 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
 
         paramSlots_[i]->setFonts(labelFont, valueFont);
         paramSlots_[i]->setBounds(x, y, width, cellHeight - 4);
-        // The meter cell shares its cell's geometry so a readout lines up with
-        // the controls around it whichever one the layout picked.
-        meterCells_[i]->setFonts(labelFont, valueFont);
-        meterCells_[i]->setBounds(x, y, width, cellHeight - 4);
         // Visibility is owned by updateParameterSlots() via the layout —
         // don't override it on layout passes.
     }

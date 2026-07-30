@@ -77,8 +77,10 @@ grDb(l, r) = max(grEnvDb(l * preGainLin) - grEnvDb(wetL(l, r)),
              : max(0.0)
              : ba.peakholder(ba.sec2samp(0.25));
 
+// vbargraph rather than hbargraph: a limiter's reduction is read as a level,
+// and MAGDA renders a vertical output as a column with the figure below it.
 grMeter(l, r) = grDb(l, r)
-  : hbargraph("GR [unit:dB] [width:2] [tooltip:Gain reduction the limiter is applying]",
+  : vbargraph("GR [unit:dB] [tooltip:Gain reduction the limiter is applying]",
               0.0, 24.0);
 
 // attach() keeps the meter out of the audio path while still forcing it to be
