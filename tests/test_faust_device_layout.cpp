@@ -87,7 +87,7 @@ TEST_CASE("FaustDeviceLayout names ungrouped and oversized pages", "[faust][layo
     REQUIRE(layout.cellFor(oversized, 0, 1).targetParamIndex == 32);
 }
 
-TEST_CASE("FaustDeviceLayout invalidates cached pages when group metadata changes",
+TEST_CASE("FaustDeviceLayout invalidates cached pages when parameter structure changes",
           "[faust][layout]") {
     FaustDeviceLayout layout;
     DeviceInfo device;
@@ -98,6 +98,14 @@ TEST_CASE("FaustDeviceLayout invalidates cached pages when group metadata change
     REQUIRE(layout.totalPages(device) == 2);
     REQUIRE(layout.pageName(device, 1) == "Envelope");
     REQUIRE(layout.cellFor(device, 0, 1).targetParamIndex == 1);
+
+    device.parameters.push_back(param(2, "Envelope"));
+    REQUIRE(layout.cellFor(device, 1, 1).targetParamIndex == 2);
+
+    device.parameters[2].paramIndex = 17;
+    REQUIRE(layout.cellFor(device, 1, 1).targetParamIndex == 17);
+    REQUIRE(layout.pageForParameter(device, 17) == 1);
+    REQUIRE(layout.pageForParameter(device, 2) == -1);
 }
 
 TEST_CASE("Faust effects and instruments use identical page and parameter mappings",
