@@ -84,8 +84,10 @@ with {
     boostHold = gainDb : max(0.0) : ba.peakholder(holdSamples);
     cutHold = gainDb : min(0.0) : *(-1.0) : ba.peakholder(holdSamples);
 
+    // vbargraph: the reading is a level, and a vertical bar spanning zero
+    // grows up for a boost and down for a cut.
     shaperMeter = ba.if(boostHold >= cutHold, boostHold, 0.0 - cutHold)
       : vgroup("Output",
-               hbargraph("Shaping [unit:dB] [width:2] [tooltip:Gain the shaper is applying]",
+               vbargraph("Shaping [unit:dB] [tooltip:Gain the shaper is applying]",
                          -12.0, 12.0));
 };

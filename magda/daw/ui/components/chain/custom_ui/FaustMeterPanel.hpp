@@ -41,8 +41,6 @@ class MeterWidget final : public juce::Component,
     /// null function when the widget stops showing a meter.
     void setSource(std::function<float()> source);
 
-    void setFonts(const juce::Font& labelFont, const juce::Font& valueFont);
-
     void paint(juce::Graphics& g) override;
     void resized() override;
     void visibilityChanged() override;
@@ -103,8 +101,6 @@ class FaustMeterPanel final : public juce::Component {
     /// Supplies live readings, keyed by `MeterInfo::meterIndex`. Safe to call
     /// before or after setMeters: whichever arrives second binds the widgets.
     void setMeterSource(std::function<float(int meterIndex)> source);
-
-    void setFonts(const juce::Font& labelFont, const juce::Font& valueFont);
 
     bool isEmpty() const {
         return entries_.empty();

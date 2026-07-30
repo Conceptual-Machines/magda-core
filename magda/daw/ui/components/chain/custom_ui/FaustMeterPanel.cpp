@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -27,6 +28,10 @@ int decimalsFor(const magda::MeterInfo& info) {
 MeterWidget::MeterWidget() {
     setInterceptsMouseClicks(false, false);
 
+    // Seeded from the theme rather than left on JUCE's default, so a strip
+    // whose host never calls setFonts still matches the parameter grid.
+    nameLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    valueFont_ = FontManager::getInstance().getUIFont(11.0f);
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     nameLabel_.setInterceptsMouseClicks(false, false);
@@ -53,11 +58,6 @@ void MeterWidget::setSource(std::function<float()> source) {
         value_ = source_();
     updateActiveState();
     repaint();
-}
-
-void MeterWidget::setFonts(const juce::Font& labelFont, const juce::Font& valueFont) {
-    nameLabel_.setFont(labelFont);
-    valueFont_ = valueFont;
 }
 
 void MeterWidget::resized() {
@@ -232,15 +232,10 @@ void FaustMeterPanel::bindSources() {
     }
 }
 
-void FaustMeterPanel::setFonts(const juce::Font& labelFont, const juce::Font& valueFont) {
-    for (auto& entry : entries_)
-        entry.widget->setFonts(labelFont, valueFont);
-}
-
 void FaustMeterPanel::paint(juce::Graphics& g) {
-    // A hairline under the grid, so the strip reads as its own region rather
-    // than as another row of cells.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
+    // Rule between the controls and the readouts, matching the one FaustUI
+    // draws between its header and credit strip, so the body reads as bands.
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
 }
 

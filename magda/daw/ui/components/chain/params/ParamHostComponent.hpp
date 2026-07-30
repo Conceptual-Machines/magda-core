@@ -69,6 +69,26 @@ class ParamHostComponent : public juce::Component {
     void setGridVisible(bool visible);
     void setPaginationVisible(bool visible);
 
+    /// Rows in the full grid, and rows the current page actually fills. A
+    /// caller that wants to put something under the grid needs both: the grid
+    /// occupies its whole bounds regardless of how many rows carry a control,
+    /// so "what is left" is not visible from the outside.
+    int getRowCount() const {
+        return cellsPerRow_ > 0 ? (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_ : 0;
+    }
+    int getUsedRowCount() const {
+        return usedRows_;
+    }
+    /// Height layoutContent() spends on padding and pagination before the
+    /// first row of cells.
+    int getChromeHeight() const;
+
+    /// Pin the row height instead of dividing the bounds by getRowCount().
+    /// Lets a caller hand the grid only the rows it uses while the cells keep
+    /// the size they would have had with the whole body to themselves. 0
+    /// restores the default, which is to divide.
+    void setRowHeight(int rowHeight);
+
     void setSlotFonts(int slotIndex, const juce::Font& labelFont, const juce::Font& valueFont);
 
     void setAllSlotsSelected(bool selected);
@@ -106,6 +126,11 @@ class ParamHostComponent : public juce::Component {
     // layoutContent() has no DeviceInfo of its own, so the widths it needs are
     // recorded here rather than re-derived.
     std::vector<int> cellSpans_;
+    // Rows the last assignment actually filled, and an optional pinned row
+    // height. Both exist so a caller can give the grid less than the whole
+    // body without the cells shrinking to match.
+    int usedRows_ = 0;
+    int rowHeight_ = 0;
     std::unique_ptr<ParamSlotComponent> paramSlots_[kMaxCells];
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
     std::unique_ptr<juce::ArrowButton> nextPageButton_;
