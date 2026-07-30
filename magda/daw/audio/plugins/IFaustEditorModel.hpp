@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "FaustCustomViewKind.hpp"
+#include "FaustPatchInfo.hpp"
 
 namespace magda::daw::audio {
 
@@ -51,6 +52,11 @@ class IFaustEditorModel {
 
     /// The currently loaded .dsp source (what the code editor reads/edits).
     virtual juce::String getDspSource() const = 0;
+
+    /// Authorship metadata the loaded patch declares about itself. Empty
+    /// fields where the patch omits the declare; `isEmpty()` when it
+    /// declares none of them.
+    virtual FaustPatchInfo getPatchInfo() const = 0;
 };
 
 }  // namespace magda::daw::audio

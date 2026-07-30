@@ -1,5 +1,7 @@
 declare name "MagdaSVF";
-declare description "State-Variable Filter — clean LP/BP/HP/Notch, 2-pole, with pre-filter drive saturation.";
+declare description "State-Variable Filter: clean LP/BP/HP/Notch, 2-pole, with pre-filter drive saturation.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

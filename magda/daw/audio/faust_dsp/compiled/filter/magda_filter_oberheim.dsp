@@ -1,5 +1,7 @@
 declare name "MagdaOberheim";
-declare description "Virtual analog Oberheim SEM filter — LP/BP/HP/Notch from the same shared core.";
+declare description "Virtual analog Oberheim SEM filter: LP/BP/HP/Notch from the same shared core.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -16,7 +18,7 @@ drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001)
 mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2;'Notch':3}]",
                 0, 0, 3, 1);
 
-// `ve.oberheim*` take a log-normalised 0..1 control — invert to Hz.
+// `ve.oberheim*` take a log-normalised 0..1 control - invert to Hz.
 nf = log(cutoff / 20.0) / log(1000.0);
 q  = 0.5 + res * 9.5;  // Oberheim SEM Q ~0.5..10
 
@@ -24,8 +26,8 @@ drivenIn(x) = (1.0 - drive) * x
             + drive * (ma.tanh(4.0 * x) / ma.tanh(4.0));
 
 // `ve.oberheim` produces all four modes from one shared filter core
-// (BSF, BPF, HPF, LPF — in that output order). Tapping the right one
-// is essentially free — the four mode wrappers in vaeffects.lib all
+// (BSF, BPF, HPF, LPF - in that output order). Tapping the right one
+// is essentially free - the four mode wrappers in vaeffects.lib all
 // call the same `oberheim` internally.
 oberheim(x) = ((x : ve.oberheimLPF(nf, q)),
                (x : ve.oberheimBPF(nf, q)),

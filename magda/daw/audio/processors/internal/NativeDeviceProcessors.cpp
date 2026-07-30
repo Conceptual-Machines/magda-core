@@ -124,15 +124,20 @@ void FaustProcessor::populateParameters(DeviceInfo& info) const {
         DBG("[FaustProcessor] populateParameters: plugin cast NULL");
         return;
     }
-    // Only push active slots so the standard ParamGridComponent shows
-    // populated cells only. Each ParameterInfo carries its real slot
+    // Only push active, non-hidden slots so the standard ParamGridComponent
+    // shows populated cells only. Each ParameterInfo carries its real slot
     // index in `paramIndex`, so links / automation / MIDI Learn still
     // bind to the stable pool slot; display order is not slot identity.
+    //
+    // `[hidden:1]` slots are active - the host still writes their zone every
+    // block (that is the whole point of [role:projecttempo]) - they just get
+    // no cell. Filtering here rather than in paramInfoFromSlot keeps "which
+    // params are displayed" a display decision.
     int active = 0;
     auto params = plugin_->getAutomatableParameters();
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
         const auto& slot = faust->getPool().slot(i);
-        if (slot.active) {
+        if (slot.active && !slot.hidden) {
             auto paramInfo = daw::audio::paramInfoFromSlot(slot);
             if (i >= 0 && i < params.size() && params[i]) {
                 paramInfo.currentValue =
@@ -195,12 +200,14 @@ void FaustInstrumentProcessor::populateParameters(DeviceInfo& info) const {
     auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
     if (faust == nullptr)
         return;
-    // Only push active slots; each ParameterInfo carries its real slot index in
-    // `paramIndex` so links / automation / MIDI Learn bind to the stable slot.
+    // Only push active, non-hidden slots; each ParameterInfo carries its real
+    // slot index in `paramIndex` so links / automation / MIDI Learn bind to
+    // the stable slot. See the effect processor above for why `[hidden:1]`
+    // is filtered here rather than in paramInfoFromSlot.
     auto params = plugin_->getAutomatableParameters();
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
         const auto& slot = faust->getPool().slot(i);
-        if (slot.active) {
+        if (slot.active && !slot.hidden) {
             auto paramInfo = daw::audio::paramInfoFromSlot(slot);
             if (i >= 0 && i < params.size() && params[i]) {
                 paramInfo.currentValue =

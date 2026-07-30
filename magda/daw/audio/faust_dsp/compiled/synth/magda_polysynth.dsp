@@ -1,5 +1,7 @@
 declare name "MagdaPolySynth";
 declare description "Four-oscillator polyphonic synth: four detunable oscillators (sine / saw / square / triangle) summed into a multimode state-variable filter with its own envelope, plus an ADSR amplitude envelope.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

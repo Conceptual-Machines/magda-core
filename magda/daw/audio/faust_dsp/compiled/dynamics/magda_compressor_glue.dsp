@@ -1,5 +1,7 @@
 declare name "MagdaCompressorGlue";
 declare description "Brouns FBFF compressor with exposed character controls (Detector, Style, FBFF).";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -16,7 +18,7 @@ import("stdfaust.lib");
 // would blind Faust's interval analysis for the slidingRMS buffer inside
 // RMS_FBFFcompressor (the IIR's output isn't statically bounded, so
 // sec2samp(rel)*max(1) is inferred as INT_MAX, which the buffer allocator
-// rejects). Pass the raw slider through — the lib smooths it internally.
+// rejects). Pass the raw slider through - the lib smooths it internally.
 
 thresholdDb = hslider("Threshold [unit:dB] [idx:1]", -18.0, -60.0, 0.0, 0.1);
 ratio       = hslider("Ratio [idx:2]", 4.0, 1.0, 20.0, 0.01);
@@ -97,6 +99,6 @@ channelBlend(dry, wet) =
 wetL(l, r) = compress(l, r) : _, !;
 wetR(l, r) = compress(l, r) : !, _;
 
-// Third input (sc) accepted but unused — Brouns block has no SC hook.
+// Third input (sc) accepted but unused - Brouns block has no SC hook.
 process(l, r, sc) = channelBlend(l, wetL(l, r)),
                     channelBlend(r, wetR(l, r));

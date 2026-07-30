@@ -1,10 +1,12 @@
 declare name "MagdaChorus";
-declare description "Stereo chorus — 1 to 3 modulated voices per side, sync- or free-rate.";
+declare description "Stereo chorus: 1 to 3 modulated voices per side, sync- or free-rate.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
 // ============================================================================
-// User controls — pinned to [idx:N] for stable host-slot ordering.
+// User controls - pinned to [idx:N] for stable host-slot ordering.
 // ============================================================================
 voices = nentry("Voices [idx:0] [style:menu{'1':0;'2':1;'3':2}]", 1, 0, 2, 1);
 voices_n = int(voices) + 1;
@@ -55,7 +57,7 @@ freqHz   = ((1.0 - sync) * rate_hz + sync * syncedHz)
 lfoAt(phaseOffset) = sin((os.lf_sawpos(freqHz) + phaseOffset) * 2.0 * ma.PI);
 
 // ============================================================================
-// Voice topology — three modulated delay lines per channel; only the first
+// Voice topology - three modulated delay lines per channel; only the first
 // `voices_n` are heard. Width spreads voice phases and stereo offset.
 // ============================================================================
 CENTER_MS = 18.0;

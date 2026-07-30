@@ -27,6 +27,16 @@ class MomentaryParamButton : public juce::TextButton {
     }
 
     void mouseDown(const juce::MouseEvent& event) override {
+        // Right-click belongs to the owning param slot's context menu
+        // (automation lane, mod/macro links, MIDI Learn). TextButton would
+        // swallow it, leaving momentary params with no way to reach any of
+        // that, so hand it upwards instead of starting a press gesture.
+        if (event.mods.isPopupMenu()) {
+            if (auto* parent = getParentComponent())
+                parent->mouseDown(event.getEventRelativeTo(parent));
+            return;
+        }
+
         mouseGestureActive_ = event.mods.isLeftButtonDown();
         juce::TextButton::mouseDown(event);
         if (mouseGestureActive_)
@@ -34,6 +44,9 @@ class MomentaryParamButton : public juce::TextButton {
     }
 
     void mouseUp(const juce::MouseEvent& event) override {
+        if (event.mods.isPopupMenu())
+            return;
+
         juce::TextButton::mouseUp(event);
         if (mouseGestureActive_)
             setPressed(false);

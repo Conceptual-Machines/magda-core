@@ -312,7 +312,8 @@ void PluginManager::syncAllPlugins() {
             juce::ScopedLock lock(pluginLock_);
             deferredHolders_.clear();  // Drain previous cycle's deferred holders
             for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
-                if (validDevicePaths.find(it->first) == validDevicePaths.end()) {
+                if (validDevicePaths.find(it->first) == validDevicePaths.end() &&
+                    !isDrumGridPadPathLocked(it->first)) {
                     std::vector<te::Plugin*> scopePlugins;
                     for (const auto& [_deviceId, sd] : syncedDevices_) {
                         if (sd.trackId == it->second.trackId && sd.plugin)
@@ -333,8 +334,13 @@ void PluginManager::syncAllPlugins() {
                     teardownModifierMap(it->second.modifiers, scopePlugins, modifierList);
                     deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                     if (auto* dg =
-                            dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
+                            dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get())) {
                         dg->removeListener(this);
+                        // Pad entries are skipped by this sweep, so drop them with
+                        // their owning DrumGrid. Only other map nodes are erased,
+                        // so `it` stays valid.
+                        removeDrumGridPadDevicesLocked(it->first);
+                    }
                     if (it->second.plugin)
                         pluginToDevice_.erase(it->second.plugin.get());
                     if (it->second.midiReceivePlugin)
@@ -454,6 +460,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [devicePath, sd] : syncedDevices_) {
             if (!sd.plugin || sd.trackId != trackId)
+                continue;
+
+            // Pad plugins live inside the DrumGrid's state, not in the chain
+            // model. syncDrumGridPadPlugins owns their lifetime (#1920).
+            if (isDrumGridPadPathLocked(devicePath))
                 continue;
 
             bool found = std::find(magdaDevices.begin(), magdaDevices.end(), devicePath) !=
@@ -1489,6 +1500,10 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [devicePath, sd] : syncedDevices_) {
             if (!sd.plugin || sd.trackId != trackId)
+                continue;
+
+            // DrumGrid pad plugins are owned by syncDrumGridPadPlugins (#1920).
+            if (isDrumGridPadPathLocked(devicePath))
                 continue;
 
             const bool found = std::find(magdaDevices.begin(), magdaDevices.end(), devicePath) !=

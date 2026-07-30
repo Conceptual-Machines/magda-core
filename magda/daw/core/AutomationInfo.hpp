@@ -93,6 +93,18 @@ using AutomationTarget = ControlTarget;
 ParameterInfo getParameterInfoForTarget(const AutomationTarget& target);
 
 /**
+ * @brief True when the target drives a two-state switch, so its automation
+ *        should step rather than ramp.
+ *
+ * Anything between the two states is rounded to off/on downstream anyway
+ * (see the Boolean case in the Faust denormalize path, and
+ * ParameterUtils), so a Linear or Bezier segment draws a ramp the
+ * parameter never actually performs. Stepping makes the curve match the
+ * audible result.
+ */
+bool targetWantsSteppedAutomation(const AutomationTarget& target);
+
+/**
  * @brief Get a display name for an automation target.
  *
  * Falls back to a kind-based default; the lane's paramName overrides this.

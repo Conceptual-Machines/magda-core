@@ -1,5 +1,7 @@
 declare name "MagdaMarimba";
 declare description "Struck modal marimba: a tuned tone-bar-and-tube physical model (pm.marimbaBarModel + resonator tube) driven by a strike exciter. Follows the played note. The high-level pm.marimba wrapper hardcodes the bar's T60, so this builds the model explicitly to expose a Decay (ring time) knob.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

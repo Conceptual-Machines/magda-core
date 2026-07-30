@@ -64,28 +64,47 @@ with {
 // explicitly forces the host DAW to render them sequentially from 1 to 9.
 uiLayout(leftIn, rightIn) = finalL, finalR
 with {
-    masterMix    = hslider("1. Master Mix [%]", 25.0, 0.0, 100.0, 1.0) / 100.0;
-    masterGain   = hslider("2. Master Volume [dB]", 5.0, -12.0, 12.0, 0.1) : ba.db2linear;
+    masterMix    = vgroup("Output", hslider("Master Mix[idx:0][unit:%]", 25.0, 0.0, 100.0, 1.0)) / 100.0;
+    masterGain   = vgroup("Output", hslider("Master Volume[idx:1][unit:dB]", 5.0, -12.0, 12.0, 0.1)) : ba.db2linear;
 
-    randTrigger  = button("3. Re-Roll Chaos Seeds");
-    manualMorph  = hslider("4. Base Frame Morph [0-7]", 0.0, 0.0, 7.0, 0.01);
-    envTracking  = hslider("5. Dynamic Input Morph Depth", 2.0, 0.0, 3.0, 0.01);
+    randTrigger  = vgroup("Morph", button("Re-Roll Chaos Seeds[idx:2]"));
+    manualMorph  = vgroup("Morph", hslider("Base Frame[idx:3]", 0.0, 0.0, 7.0, 0.01));
+    envTracking  = vgroup("Morph", hslider("Input Morph Depth[idx:4]", 2.0, 0.0, 3.0, 0.01));
 
-    foldDrive    = hslider("6. Wavefolder Drive [dB]", 0.0, 0.0, 36.0, 0.1);
-    foldSymmetry = hslider("7. Folding DC Symmetry", 0.0, -0.5, 0.5, 0.01);
+    foldDrive    = vgroup("Fold", hslider("Drive[idx:5][unit:dB]", 0.0, 0.0, 36.0, 0.1));
+    foldSymmetry = vgroup("Fold", hslider("DC Symmetry[idx:6]", 0.0, -0.5, 0.5, 0.01));
 
-    cutoff       = hslider("8. Resonant Cutoff [Hz]", 18000, 50, 18000, 1);
-    res          = hslider("9. Resonance Value", 0.02, 0.0, 0.95, 0.01);
-    safeRes      = max(0.01, res);
+    cutoff       = vgroup("Filter", hslider("Cutoff[idx:7][unit:Hz][scale:log][scaleAnchor:1000]", 18000, 50, 18000, 1));
+    res          = vgroup("Filter", hslider("Resonance[idx:8]", 0.0, 0.0, 1.0, 0.01));
 
-    // Operational signal routing paths
+    // `res` is a normalized resonance amount, but fi.resonlp's second
+    // argument is Q. Feeding the raw slider in meant Q never exceeded 0.95,
+    // i.e. below the 0.707 Butterworth point for most of the range, so the
+    // filter was overdamped and attenuated the whole spectrum rather than
+    // shaping it. At the old 0.02 default a 100 Hz tone came through 14 dB
+    // down, which is why Cutoff behaved like a volume control. Map onto a
+    // musical Q range: flat at 0, strongly resonant at 1.
+    safeRes      = 0.707 * pow(28.0, res);
+
+    // Operational signal routing paths.
+    //
+    // The wet chain ends in a DC blocker because several of the eight frames
+    // are waveshapers that do not pass through the origin, so they emit a
+    // constant offset even for silence. Frame 1 is the clearest case: at
+    // sig = 0 its rectifier term is abs(0) * 1.5 - 0.5, i.e. a flat -0.5,
+    // which the folder then maps to sin(-0.5 * PI/2) = -0.707. Frames 3, 7
+    // and 8 have the same property (cos at zero, and 7's explicit +/-0.2
+    // floor). Blocking on the wet path only, so the dry signal and the
+    // foldSymmetry bias control are both untouched.
     wetL = leftIn  : morphingFxCore(manualMorph, envTracking, randTrigger)
                    : wavefolderSection(foldDrive, foldSymmetry)
-                   : fi.resonlp(cutoff, safeRes, 1);
+                   : fi.resonlp(cutoff, safeRes, 1)
+                   : fi.dcblocker;
 
     wetR = rightIn : morphingFxCore(manualMorph, envTracking, randTrigger)
                    : wavefolderSection(foldDrive, foldSymmetry)
-                   : fi.resonlp(cutoff, safeRes, 1);
+                   : fi.resonlp(cutoff, safeRes, 1)
+                   : fi.dcblocker;
 
     mixL = (leftIn  * (1.0 - masterMix)) + (wetL * masterMix);
     mixR = (rightIn * (1.0 - masterMix)) + (wetR * masterMix);

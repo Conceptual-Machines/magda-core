@@ -1,5 +1,7 @@
 declare name "MagdaFM";
 declare description "Four-operator FM synth with a full 4x4 modulation matrix: every operator can phase-modulate any operator (the diagonal is self-feedback), so it covers every DX-style algorithm and everything between. Per-op ratio + output level, a shared amp ADSR. The per-voice freq/gain/gate are driven by the poly allocator; all matrix/ratio/level/envelope controls are host macros.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

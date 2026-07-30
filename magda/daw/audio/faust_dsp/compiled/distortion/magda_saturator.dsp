@@ -1,5 +1,7 @@
 declare name "MagdaSaturator";
 declare description "Multi-mode saturator: drive into nonlinearity with bias / tone tilt / wet-dry mix and output trim.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
@@ -13,7 +15,7 @@ drive_db = hslider("Drive [unit:dB] [idx:0]", 0.0, 0.0, 24.0, 0.1)
            : si.smooth(ba.tau2pole(0.02));
 
 // Nonlinearity flavor. Stateless, so every branch can run cheaply per
-// sample — selectn fans out the math but only one waveshape is taken.
+// sample - selectn fans out the math but only one waveshape is taken.
 mode = nentry("Mode [idx:1] [style:menu{
                 'Tanh':0;
                 'Soft':1;
@@ -24,14 +26,14 @@ mode = nentry("Mode [idx:1] [style:menu{
               }]", 0, 0, 5, 1);
 
 // DC offset injected before the nonlinearity. Pushes the signal off-axis
-// so the negative and positive halves saturate asymmetrically — the source
+// so the negative and positive halves saturate asymmetrically - the source
 // of even-order harmonics (tube character). The DC the bias creates is
 // removed downstream by a dcblocker so the user only hears the harmonic
 // colour, not a thump.
 bias = hslider("Bias [idx:2]", 0.0, -1.0, 1.0, 0.001)
        : si.smooth(ba.tau2pole(0.02));
 
-// Post-distortion tilt EQ. Same idiom as magda_delay's Tone — blend a
+// Post-distortion tilt EQ. Same idiom as magda_delay's Tone - blend a
 // 1 kHz LP and HP against the dry. 0 = flat, +1 = bright, -1 = dark.
 tone = hslider("Tone [idx:3]", 0.0, -1.0, 1.0, 0.001);
 
@@ -52,7 +54,7 @@ output_lin = output_db : ba.db2linear;
 
 // --- Nonlinearity flavors -----------------------------------------------
 // Each takes an already-driven sample and returns roughly [-1..1]. None
-// of them have internal state — selectn evaluating all six per sample is
+// of them have internal state - selectn evaluating all six per sample is
 // only ~6× the per-sample arithmetic, which is negligible vs. the filter
 // pack's 6× stateful filters.
 
@@ -64,7 +66,7 @@ soft_nl(x) = select2(ma.fabs(x) < 1.0,
                      ma.signum(x) * (1.0 - exp(0.0 - ma.fabs(x))),
                      x - x*x*x / 3.0);
 
-// Hard clip at ±1. Aliases more than the others — that's the point.
+// Hard clip at ±1. Aliases more than the others - that's the point.
 hard_nl(x) = max(-1.0, min(1.0, x));
 
 // Sine wavefolder. |x|>1 wraps back instead of clipping, which gives the
@@ -118,7 +120,7 @@ channel(x) = ((x * (1.0 - mix) + sat_chain(x) * mix) * output_lin) : soft_limit;
 // above-knee soft-clip branch FIRST (for |x| >= SOFT_KNEE, where the
 // comparison is false) and the passthrough SECOND (|x| < SOFT_KNEE, true).
 // Reversed order silently turns the limiter into a constant-amplitude
-// generator that pushes any small signal up to ±0.7 — heard as a square
+// generator that pushes any small signal up to ±0.7 - heard as a square
 // wave at the input zero-crossings.
 SOFT_KNEE = 0.85;
 soft_limit(x) = select2(ma.fabs(x) < SOFT_KNEE,

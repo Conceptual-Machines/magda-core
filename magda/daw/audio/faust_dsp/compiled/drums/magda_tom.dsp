@@ -1,5 +1,7 @@
 declare name "MagdaTom";
 declare description "Synthetic tom in two layers: a tuned phase-reset sine Body with a downward pitch sweep, and a high-passed Noise stick/skin attack with its own level and decay. Knob-tuned; the played MIDI note only gates the voice.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

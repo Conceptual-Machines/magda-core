@@ -1,5 +1,7 @@
 declare name "MagdaPitchDetuner";
 declare description "Stereo detuner - two ef.transpose voices, +Pitch on L and -Pitch on R, for thick chorus-without-modulation widening.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

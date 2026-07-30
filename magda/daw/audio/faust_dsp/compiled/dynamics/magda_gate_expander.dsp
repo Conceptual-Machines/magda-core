@@ -1,15 +1,17 @@
 declare name "MagdaGate";
 declare description "Stereo gate/downward expander with linked detector, range, parallel mix, and output trim.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
-// Knob-only controls (slots 0-3) — shown in param grid.
+// Knob-only controls (slots 0-3) - shown in param grid.
 attackMs  = hslider("Attack [unit:ms] [scale:log] [scaleAnchor:1] [idx:0]",  1.0,   0.1,  100.0, 0.1) : si.smooth(ba.tau2pole(0.02));
 releaseMs = hslider("Release [unit:ms] [scale:log] [scaleAnchor:100] [idx:1]", 120.0, 5.0, 1000.0, 1.0) : si.smooth(ba.tau2pole(0.02));
 mix       = hslider("Mix [idx:2]",                                              1.0, 0.0,    1.0, 0.001) : si.smooth(ba.tau2pole(0.02));
 outputDb  = hslider("Output [unit:dB] [idx:3]",                                 0.0, -24.0, 24.0, 0.1)  : si.smooth(ba.tau2pole(0.02));
 
-// Curve-editor controls (slots 4-6) — hidden from knob grid.
+// Curve-editor controls (slots 4-6) - hidden from knob grid.
 thresholdDb = hslider("Threshold [unit:dB] [idx:4]", -40.0, -80.0,  0.0, 0.1) : si.smooth(ba.tau2pole(0.02));
 ratio       = hslider("Ratio [scale:log] [scaleAnchor:4] [idx:5]", 4.0, 1.0, 50.0, 0.01) : si.smooth(ba.tau2pole(0.02));
 rangeDb     = hslider("Range [unit:dB] [idx:6]",        60.0,  0.0, 80.0, 0.1)  : si.smooth(ba.tau2pole(0.02));

@@ -1,5 +1,8 @@
 # Test sources
 set(TEST_SOURCES
+    # Must be in both test targets: a debug-CRT dialog blocks a headless run
+    # until the CI job times out, hiding the diagnostic that caused it.
+    windows_no_dialogs.cpp
     test_audio_bridge.cpp
     test_vst3_preset.cpp
     test_audiobridge_track_limit_bug.cpp
@@ -51,6 +54,9 @@ set(TEST_SOURCES
     test_known_plugin_list_duplicates.cpp
     test_device_parameter_pagination.cpp
     test_device_ui_context.cpp
+    test_levels_ui.cpp
+    # LevelsUI builds into magda_daw_app, so magda_tests needs its implementation directly.
+    ../magda/daw/ui/components/chain/custom_ui/LevelsUI.cpp
     test_momentary_param_button.cpp
     test_delta_solo.cpp
     test_waveform_editor_absolute_mode.cpp
@@ -115,12 +121,14 @@ set(TEST_SOURCES
     test_llama_model_manager.cpp
     test_track_reorder.cpp
     test_automation_modes.cpp
+    test_automation_stepped_targets.cpp
     test_automation_singleton.cpp
     test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
     test_faust_param_pool.cpp
     test_faust_param_info.cpp
+    test_faust_patch_info.cpp
     # Runtime execution backend (interp / wasm+wasmtime), issue #1382
     test_faust_backend.cpp
     # Parameter alias system tests (PR 1)
@@ -223,6 +231,7 @@ target_link_libraries(magda_tests
 target_include_directories(magda_tests
     PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/chain
 )
 
 # Paths for the exploratory mix-analysis harness (hidden [.] tests): the repo
@@ -272,6 +281,7 @@ juce_add_console_app(magda_juce_tests
 # Add JUCE test sources
 target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
+    windows_no_dialogs.cpp
     test_zoom_simple.cpp
     test_export_transport_stop_juce.cpp
     test_offline_render_device_power_juce.cpp

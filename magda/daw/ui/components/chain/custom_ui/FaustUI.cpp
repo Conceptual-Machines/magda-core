@@ -89,12 +89,73 @@ void FaustUI::setPlugin(magda::daw::audio::IFaustEditorModel* plugin) {
     refreshNameLabel();
 }
 
+namespace {
+
+// Compose the patch's declared metadata into the name box's tooltip.
+// Returns the bare name when the patch declares none of it, so a patch
+// without metadata reads exactly as it did before.
+juce::String describePatch(const juce::String& name,
+                           const magda::daw::audio::FaustPatchInfo& info) {
+    juce::String title = name;
+    if (info.version.isNotEmpty())
+        title << " " << info.version;
+    if (info.isEmpty())
+        return title;
+
+    juce::StringArray lines;
+    lines.add(title);
+    if (info.author.isNotEmpty())
+        lines.add("by " + info.author);
+    if (info.license.isNotEmpty())
+        lines.add(info.license);
+    if (info.description.isNotEmpty()) {
+        lines.add({});
+        lines.add(info.description);
+    }
+    return lines.joinIntoString("\n");
+}
+
+// One-line credit for the info strip. Description is deliberately left out
+// It is prose and belongs in the tooltip, not a 16px row.
+juce::String creditLine(const magda::daw::audio::FaustPatchInfo& info) {
+    juce::StringArray parts;
+    if (info.author.isNotEmpty())
+        parts.add(info.author);
+    if (info.version.isNotEmpty())
+        parts.add("v" + info.version);
+    if (info.license.isNotEmpty())
+        parts.add(info.license);
+    return parts.joinIntoString("  |  ");
+}
+
+}  // namespace
+
 void FaustUI::refreshNameLabel() {
+    const bool wasShowingStrip = showInfoStrip_;
+
     if (plugin_ == nullptr) {
         nameLabel_.setText({}, juce::dontSendNotification);
-        return;
+        nameLabel_.setTooltip({});
+        showInfoStrip_ = false;
+        infoStripText_ = {};
+    } else {
+        const auto name = plugin_->getDspName();
+        const auto info = plugin_->getPatchInfo();
+        nameLabel_.setText(name, juce::dontSendNotification);
+        nameLabel_.setTooltip(describePatch(name, info));
+        infoStripText_ = creditLine(info);
+        showInfoStrip_ = !info.isEmpty();
     }
-    nameLabel_.setText(plugin_->getDspName(), juce::dontSendNotification);
+
+    // The strip changes this component's desired height, so the parent has
+    // to re-carve. Without this the strip would only appear after some
+    // unrelated resize.
+    if (showInfoStrip_ != wasShowingStrip) {
+        if (auto* parent = getParentComponent())
+            parent->resized();
+    }
+    resized();
+    repaint();
 }
 
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source,
@@ -345,14 +406,32 @@ void FaustUI::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(nameBorderBounds_, 3.0f, 1.0f);
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     const auto bounds = getLocalBounds();
+
+    // Credit strip under the header, present only for patches that declare
+    // metadata. Separated from the header row by its own rule so the two
+    // read as distinct bands rather than one tall header.
+    if (showInfoStrip_ && infoStripText_.isNotEmpty()) {
+        auto strip = bounds.withTop(kHeaderHeight);
+
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.drawHorizontalLine(kHeaderHeight, static_cast<float>(bounds.getX()),
+                             static_cast<float>(bounds.getRight()));
+
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
+        g.drawText(infoStripText_, strip.reduced(8, 0), juce::Justification::centredLeft, true);
+    }
+
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
                          static_cast<float>(bounds.getRight()));
 }
 
 void FaustUI::resized() {
-    auto area = getLocalBounds().reduced(6, 4);
+    // The header row keeps its original geometry regardless of the strip;
+    // the strip is painted, not laid out, so it owns no child components.
+    auto area = getLocalBounds().withHeight(kHeaderHeight).reduced(6, 4);
 
     // Logo on the left.
     logoBounds_ = area.removeFromLeft(72).toFloat();

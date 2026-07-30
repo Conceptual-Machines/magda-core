@@ -256,6 +256,10 @@ class DeviceSlotComponent : public NodeComponent,
     // param that reports a meaningful change and refuse to switch for a short
     // window so the highlight stays on what the user actually touched.
     ParameterLearnHighlightState learnHighlight_;
+    // Height to carve for faustUI_: the bare header, plus its credit strip
+    // when the loaded patch declares metadata.
+    int faustHeaderHeight() const;
+
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
     std::unique_ptr<CompiledDevicePanel> compiledPanel_;

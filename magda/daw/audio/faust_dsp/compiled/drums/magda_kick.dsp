@@ -1,5 +1,7 @@
 declare name "MagdaKick";
 declare description "Synthetic kick in three layers: a Transient (a pitched sine sweep with a super-sharp pitch env and very short decay), a Body (a low phase-reset sine with its own Snap pitch envelope into a saturator), and a noise Click. The body auto-ducks under the transient. Knob-tuned; the played MIDI note only gates the voice.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

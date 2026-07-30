@@ -1,5 +1,7 @@
 declare name "MagdaPitchHarmonizer";
 declare description "Single-interval harmonizer - one ef.transpose voice summed with dry. Pitch sets the interval; Mix governs the harmony level.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 

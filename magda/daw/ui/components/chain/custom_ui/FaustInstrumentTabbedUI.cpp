@@ -204,7 +204,10 @@ void FaustInstrumentTabbedUI::paint(juce::Graphics& g) {
 void FaustInstrumentTabbedUI::resized() {
     auto area = getLocalBounds().reduced(1);
     if (header_)
-        header_->setBounds(area.removeFromTop(FaustUI::kHeaderHeight));
+        // Ask the header how tall it wants to be rather than assuming the
+        // bare constant: it grows a credit strip for patches that declare
+        // metadata, and hardcoding kHeaderHeight clips it.
+        header_->setBounds(area.removeFromTop(header_->getDesiredHeight()));
     if (tabs_)
         tabs_->setBoundsStable(area);
 }

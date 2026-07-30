@@ -137,6 +137,31 @@ TEST_CASE("paramInfoFromSlot - trigger is a momentary boolean", "[faust][paramin
 }
 
 // ============================================================================
+// Hidden
+// ============================================================================
+
+TEST_CASE("paramInfoFromSlot - hidden slot degrades to a placeholder",
+          "[faust][paraminfo][hidden]") {
+    // A `[hidden:1]` slot is still active: the host writes its zone every
+    // block, which is the whole point of [role:projecttempo]. It just carries
+    // no user-facing parameter, so paramInfoFromSlot returns the same inert
+    // placeholder it gives an inactive slot.
+    //
+    // That is exactly why FaustProcessor::populateParameters filters on
+    // `active && !hidden` rather than relying on this: a placeholder still
+    // has a valid paramIndex, so pushing it into DeviceInfo::parameters made
+    // FaustDeviceLayout render it as a visible "(slot N)" cell.
+    auto slot = makeContinuousSlot(3, "BPM", 10.0f, 360.0f);
+    slot.hidden = true;
+
+    auto info = paramInfoFromSlot(slot);
+    CHECK(info.paramIndex == 3);
+    CHECK(info.name != "BPM");
+    CHECK(info.name.contains("slot"));
+    CHECK_FALSE(info.modulatable);
+}
+
+// ============================================================================
 // Discrete
 // ============================================================================
 

@@ -1,12 +1,14 @@
 declare name "MagdaReverbPlate";
-declare description "Dattorro plate reverb — dense diffusion network for studio-plate ambience.";
+declare description "Dattorro plate reverb: dense diffusion network for studio-plate ambience.";
+declare license "GPL-3.0";
+declare version "1.0";
 
 import("stdfaust.lib");
 
 re = library("reverbs.lib");
 
 // ============================================================================
-// User controls — [idx:N] mirrors the host wrapper's slot layout. Slot 0
+// User controls - [idx:N] mirrors the host wrapper's slot layout. Slot 0
 // (Engine) lives only in the wrapper, no DSP zone.
 // ============================================================================
 
@@ -36,7 +38,7 @@ outputDb    = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1)
 // Decay 0..1 → dattorro decay coefficient, clamped just below 1 (>=1 diverges).
 plateDecay = decay * 0.99;
 
-// Canonical Dattorro diffusion coefficients — produce the classic plate sound
+// Canonical Dattorro diffusion coefficients - produce the classic plate sound
 // without exposing extra knobs.
 INPUT_DIFF_1 = 0.75;
 INPUT_DIFF_2 = 0.625;
@@ -49,7 +51,7 @@ reverbCore = re.dattorro_rev(0, 0.9995, INPUT_DIFF_1, INPUT_DIFF_2,
                              plateDecay, DECAY_DIFF_1, DECAY_DIFF_2,
                              damping);
 
-// Predelay — 250 ms cap at 96 kHz = 24000 samples.
+// Predelay - 250 ms cap at 96 kHz = 24000 samples.
 MAX_PREDELAY_SAMPLES = 24000;
 predelaySamples = predelayMs * ma.SR / 1000.0;
 preDelay = de.fdelay(MAX_PREDELAY_SAMPLES,
@@ -58,7 +60,7 @@ preDelay = de.fdelay(MAX_PREDELAY_SAMPLES,
 // Pre-filter applies to the wet send only; dry passes through dryWetMixer.
 preFilter = fi.highpass(2, lowCutHz) : fi.lowpass(2, highCutHz);
 
-// M/S width — 0=mono, 1=stereo as-is, 2=exaggerated.
+// M/S width - 0=mono, 1=stereo as-is, 2=exaggerated.
 applyWidth(L, R) = M + S * width, M - S * width
 with {
     M = (L + R) * 0.5;

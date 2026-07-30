@@ -113,6 +113,13 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
         return dspSource_;
     }
 
+    // Scanned from the live source on demand rather than cached, so it can
+    // never go stale against a recompile. Called when the UI binds or
+    // refreshes, not per frame, so the handful of regexes is cheap enough.
+    FaustPatchInfo getPatchInfo() const override {
+        return readPatchInfo(dspSource_);
+    }
+
     // Identifier for the bespoke FaustUI view registered against this
     // DSP, or `None` if there isn't one. Set on `loadDspSource`;
     // defaults to `None` for the constructor's passthrough DSP and
