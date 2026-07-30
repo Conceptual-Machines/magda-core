@@ -1,16 +1,13 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <algorithm>
 #include <atomic>
 #include <vector>
 
 #include "analysis/AudioTapBuffer.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
-
-namespace te = tracktion::engine;
 
 /**
  * @brief Base for passthrough analysis devices (Oscilloscope, Spectrum Analyzer).
@@ -24,20 +21,10 @@ namespace te = tracktion::engine;
  * These are DeviceType::Analysis devices - they expose no macros or mods (see
  * the macro/mod gating keyed off DeviceType::Analysis).
  */
-class AnalysisTapPlugin : public te::Plugin {
+class AnalysisTapPlugin : public MagdaDevice {
   public:
-    explicit AnalysisTapPlugin(const te::PluginCreationInfo& info, int ringCapacity = 65536,
-                               int defaultTraceColour = 0)
-        : te::Plugin(info), tap_(ringCapacity) {
-        // defaultTraceColour comes from the per-device-kind Config default, so a
-        // fresh device adopts the user's last-used colour; a restored device's
-        // saved property overrides this in copyPropertiesToCachedValues().
-        traceColourValue_.referTo(state, juce::Identifier("traceColour"), getUndoManager(),
-                                  defaultTraceColour);
-    }
-    ~AnalysisTapPlugin() override {
-        notifyListenersOfDeletion();
-    }
+    explicit AnalysisTapPlugin(int ringCapacity = 65536, int defaultTraceColour = 0)
+        : tap_(ringCapacity), traceColour_(defaultTraceColour) {}
 
     /** Message thread. Lock-free read access for the UI analyzer. */
     const AudioTapBuffer& getTapBuffer() const {
@@ -51,38 +38,38 @@ class AnalysisTapPlugin : public te::Plugin {
 
     /** Display trace colour index (into the analyzer palette); persisted setting. */
     int getTraceColourIndex() const {
-        return traceColourValue_.get();
+        return traceColour_.load(std::memory_order_relaxed);
     }
     void setTraceColourIndex(int index) {
-        traceColourValue_ = index;
+        traceColour_.store(index, std::memory_order_relaxed);
     }
 
-    void initialise(const te::PluginInitialisationInfo& info) override {
-        monoScratch_.assign(static_cast<size_t>(juce::jmax(0, info.blockSizeSamples)), 0.0f);
-        sampleRate_.store(info.sampleRate, std::memory_order_relaxed);
+    void prepare(const DevicePrepareContext& context) override {
+        monoScratch_.assign(static_cast<size_t>(juce::jmax(0, context.maximumBlockSize)), 0.0f);
+        sampleRate_.store(context.sampleRate, std::memory_order_relaxed);
     }
-    void deinitialise() override {}
+    void release() override {}
     void reset() override {}
 
-    void applyToBuffer(const te::PluginRenderContext& fc) override {
+    void process(DeviceProcessContext& context) override {
         // Transparent passthrough: read the buffer, never write it.
-        if (!fc.destBuffer || fc.bufferNumSamples <= 0)
+        if (context.audio == nullptr || context.numSamples <= 0)
             return;
         // Don't feed the visualisation during an offline render (export / mix
         // analysis): audio still passes through untouched, but tapping it would
         // make the live scope/spectrum displays twitch to the render's audio.
-        if (fc.isRendering)
+        if (context.isRendering)
             return;
-        const int n = fc.bufferNumSamples;
+        const int n = context.numSamples;
         if (static_cast<int>(monoScratch_.size()) < n)
             return;  // block exceeds initialised size; skip tap (audio still passes through)
-        const int numCh = fc.destBuffer->getNumChannels();
+        const int numCh = context.audio->getNumChannels();
         if (numCh <= 0)
             return;
 
         std::fill_n(monoScratch_.data(), n, 0.0f);
         for (int ch = 0; ch < numCh; ++ch) {
-            const float* src = fc.destBuffer->getReadPointer(ch, fc.bufferStartSample);
+            const float* src = context.audio->getReadPointer(ch, context.startSample);
             for (int i = 0; i < n; ++i)
                 monoScratch_[static_cast<size_t>(i)] += src[i];
         }
@@ -93,35 +80,22 @@ class AnalysisTapPlugin : public te::Plugin {
         tap_.write(monoScratch_.data(), n);
     }
 
-    bool takesMidiInput() override {
-        return false;
+    void flushState(juce::ValueTree& state) override {
+        state.setProperty("traceColour", getTraceColourIndex(), nullptr);
     }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-    // Restore persisted settings (e.g. on preset load, or when a fresh plugin is
-    // created then restored). Subclasses override to also restore their own
-    // CachedValues, calling this base first.
-    void restorePluginStateFromValueTree(const juce::ValueTree& v) override {
-        tracktion::copyPropertiesToCachedValues(v, traceColourValue_);
+
+    void restoreState(const juce::ValueTree& state) override {
+        if (state.hasProperty("traceColour"))
+            setTraceColourIndex(state["traceColour"]);
     }
 
   protected:
     // Sized by each subclass via the ctor: the oscilloscope needs seconds of
     // history for long timebases; the spectrum only needs <= one FFT frame.
     AudioTapBuffer tap_;
-    std::vector<float> monoScratch_;  // audio-thread downmix scratch, sized in initialise()
+    std::vector<float> monoScratch_;  // audio-thread downmix scratch, sized in prepare()
     std::atomic<double> sampleRate_{44100.0};
-    juce::CachedValue<int> traceColourValue_;  // index into the analyzer colour palette
+    std::atomic<int> traceColour_{0};  // index into the analyzer colour palette
 };
 
 }  // namespace magda::daw::audio

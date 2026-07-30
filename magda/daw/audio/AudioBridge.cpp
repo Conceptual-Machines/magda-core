@@ -139,7 +139,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     deviceServices.defaults.spectrum.fftOrder = spectrumDefaults.fftOrder;
     deviceServices.defaults.spectrum.slopeDbPerOct = spectrumDefaults.slopeDbPerOct;
     deviceServices.defaults.spectrum.smoothing = spectrumDefaults.smoothing;
-    daw::audio::registerDeviceServices(edit_, deviceServices);
+    daw::audio::registerDeviceServices(daw::audio::DeviceSessionKey::fromAddress(&edit_),
+                                       deviceServices);
 
     installDeviceParameterDisplayTextProviderFactory();
 
@@ -180,7 +181,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
 
 AudioBridge::~AudioBridge() {
     DBG("AudioBridge::~AudioBridge - starting cleanup");
-    daw::audio::unregisterDeviceServices(edit_);
+    daw::audio::unregisterDeviceServices(daw::audio::DeviceSessionKey::fromAddress(&edit_));
 
     // CRITICAL: Acquire lock BEFORE stopping timer to ensure proper synchronization.
     // This prevents race condition where timerCallback() could be running while

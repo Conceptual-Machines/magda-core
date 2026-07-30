@@ -12,6 +12,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -349,8 +350,9 @@ const CompiledPluginSpec& getMagdaBitcrusherSpec() {
             "Drive shifts the quantization landing point for crunchier or softer attacks. "
             "Tone tames aliasing with a post-crush low-pass. "
             "Mix and Output blend and trim.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaBitcrusherCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaBitcrusherCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

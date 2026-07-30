@@ -31,6 +31,7 @@
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "processors/DeviceProcessor.hpp"
 #include "processors/DeviceProcessorFactory.hpp"
 #include "transport/TransportStateManager.hpp"
@@ -1145,7 +1146,7 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
             track->pluginList.insertPlugin(plugin, -1, nullptr);
     } else if (auto* spec = daw::audio::findInternalPluginSpecForLoadType(type)) {
         if (spec->canCreateOnTrack) {
-            plugin = daw::audio::createInternalPluginFromSpec(*spec, edit_);
+            plugin = daw::audio::tracktion_adapter::createInternalPlugin(*spec, edit_);
             if (plugin)
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
         }
@@ -1953,7 +1954,8 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             plugin = createInternalPlugin(compiledSpec->pluginId, ps);
         } else if (auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
             if (internalSpec->canCreateDetached)
-                plugin = daw::audio::createInternalPluginFromSpec(*internalSpec, edit_, ps);
+                plugin =
+                    daw::audio::tracktion_adapter::createInternalPlugin(*internalSpec, edit_, ps);
 
             // DrumGrid stores its inner chain state in pluginState as XML;
             // rehydrate it for detached/rack creation so pad assignments survive.
@@ -2132,8 +2134,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
         } else if (auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
             if (internalSpec->canCreateOnTrack) {
-                plugin = daw::audio::createInternalPluginFromSpec(*internalSpec, edit_,
-                                                                  device.pluginState);
+                plugin = daw::audio::tracktion_adapter::createInternalPlugin(*internalSpec, edit_,
+                                                                             device.pluginState);
                 if (plugin)
                     track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
             }
@@ -2504,7 +2506,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeName,
                                                     const juce::String& savedPluginState) {
     if (const auto* spec = daw::audio::findInternalPluginSpecForLoadType(xmlTypeName))
-        return daw::audio::createInternalPluginFromSpec(*spec, edit_, savedPluginState);
+        return daw::audio::tracktion_adapter::createInternalPlugin(*spec, edit_, savedPluginState);
 
     if (savedPluginState.isNotEmpty()) {
         if (auto xml = juce::parseXML(savedPluginState)) {

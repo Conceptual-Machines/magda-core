@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaBellCompiledPlugin::xmlTypeName = "magda_bell";
 
-MagdaBellCompiledPlugin::MagdaBellCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaBellCompiledPlugin::MagdaBellCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaBellCompiledPlugin::getName() const {
-    return "Bell";
-}
-juce::String MagdaBellCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaBellCompiledPlugin::getShortName(int) {
-    return "Bell";
-}
-juce::String MagdaBellCompiledPlugin::getSelectableDescription() {
-    return "Bell";
 }
 
 ::dsp* MagdaBellCompiledPlugin::createVoiceDsp() const {
@@ -70,8 +56,8 @@ const CompiledPluginSpec& getMagdaBellSpec() {
                        "(Position / Tone / Sharpness). Fixed-pitch, so the played note only "
                        "triggers it. Modal decay is intrinsic to the model, so there is no "
                        "damping knob.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaBellCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaBellCompiledPlugin>();
         },
         .isInstrument = true,
     };

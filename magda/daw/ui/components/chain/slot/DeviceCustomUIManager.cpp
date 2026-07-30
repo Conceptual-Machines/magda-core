@@ -31,6 +31,7 @@
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
 #include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
@@ -2080,7 +2081,8 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
     if (struckUI_ != nullptr) {
         daw::audio::compiled::MagdaCompiledPolyInstrument* inst = nullptr;
         if (auto plugin = getLivePlugin())
-            inst = dynamic_cast<daw::audio::compiled::MagdaCompiledPolyInstrument*>(plugin.get());
+            inst = daw::audio::tracktion_adapter::deviceFromPlugin<
+                daw::audio::compiled::MagdaCompiledPolyInstrument>(plugin.get());
         struckUI_->setLivePlugin(inst);
     }
 }
@@ -2148,7 +2150,8 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
 
     if (oscilloscopeUI_ != nullptr) {
         std::shared_ptr<OscilloscopeTelemetrySource> source;
-        if (dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin.get()) != nullptr) {
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
+                plugin.get()) != nullptr) {
             if (oscilloscopeTelemetry_ == nullptr)
                 oscilloscopeTelemetry_ =
                     std::make_shared<OscilloscopePluginTelemetrySource>(plugin);
@@ -2161,7 +2164,8 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     }
     if (spectrumAnalyzerUI_ != nullptr) {
         std::shared_ptr<SpectrumTelemetrySource> source;
-        if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin.get()) != nullptr) {
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
+                plugin.get()) != nullptr) {
             if (spectrumTelemetry_ == nullptr)
                 spectrumTelemetry_ = std::make_shared<SpectrumPluginTelemetrySource>(plugin);
             source = spectrumTelemetry_;

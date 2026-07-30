@@ -12,6 +12,7 @@
 
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../core/AppPaths.hpp"
 #include "PluginMetadataStore.hpp"
 #include "PluginScanCoordinator.hpp"
@@ -641,7 +642,7 @@ std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters
         namespace te = tracktion::engine;
         te::Plugin::Ptr plugin;
         if (const auto* spec = daw::audio::findInternalPluginSpec(pluginId)) {
-            plugin = daw::audio::createInternalPluginFromSpec(*spec, *currentEdit_);
+            plugin = daw::audio::tracktion_adapter::createInternalPlugin(*spec, *currentEdit_);
         } else {
             juce::ValueTree state(te::IDs::PLUGIN);
             state.setProperty(te::IDs::type, pluginId, nullptr);

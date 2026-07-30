@@ -7,6 +7,7 @@
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
+#include "../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/PluginWindowManager.hpp"
@@ -1030,7 +1031,8 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
                 pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
 
-        if (dynamic_cast<daw::audio::OscilloscopePlugin*>(pluginPtr.get()) == nullptr)
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
+                pluginPtr.get()) == nullptr)
             pluginPtr = nullptr;
 
         if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
@@ -1052,7 +1054,8 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
                 pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
         }
 
-        if (dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(pluginPtr.get()) == nullptr)
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
+                pluginPtr.get()) == nullptr)
             pluginPtr = nullptr;
 
         if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {

@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "../FaustParamPool.hpp"
-#include "CompiledFaustInterface.hpp"
 #include "core/ParameterInfo.hpp"
+#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
 
 // mydsp_poly (Faust's polyphonic voice allocator) and the single-voice dsp are
 // forward-declared via their Faust base so the header doesn't pull in the Faust
@@ -134,8 +134,8 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
         return getSlotInfo(slotIndex);
     }
-    te::AutomatableParameter* hostSlotParameter(int slotIndex) const override {
-        return getSlotParameter(slotIndex);
+    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
+        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
     }
     float displayToNormalized(int slotIndex, float displayValue) const override {
         return displayValueToNativeValue(slotIndex, displayValue);

@@ -47,7 +47,7 @@ TEST_CASE("Optional pro pack registers its browser device through the SDK hook",
     REQUIRE(spec != nullptr);
     REQUIRE(juce::String(spec->displayName) == "Pro Pack Stub");
     REQUIRE(spec->showInBrowser);
-    REQUIRE(spec->createCustomPlugin != nullptr);
+    REQUIRE(spec->createDevice != nullptr);
 }
 #endif
 

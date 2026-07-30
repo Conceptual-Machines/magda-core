@@ -6,6 +6,7 @@
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "custom_ui/TelemetrySources.hpp"
 
 namespace magda::daw::ui {
@@ -54,7 +55,8 @@ class OscilloscopePluginTelemetrySource final : public OscilloscopeTelemetrySour
 
   private:
     daw::audio::OscilloscopePlugin* plugin() const {
-        return dynamic_cast<daw::audio::OscilloscopePlugin*>(plugin_.get());
+        return daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
+            plugin_.get());
     }
 
     te::Plugin::Ptr plugin_;
@@ -121,7 +123,8 @@ class SpectrumPluginTelemetrySource final : public SpectrumTelemetrySource {
 
   private:
     daw::audio::SpectrumAnalyzerPlugin* plugin() const {
-        return dynamic_cast<daw::audio::SpectrumAnalyzerPlugin*>(plugin_.get());
+        return daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
+            plugin_.get());
     }
 
     te::Plugin::Ptr plugin_;

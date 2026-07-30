@@ -5,17 +5,25 @@ Device packs are build-time static libraries. They compile against
 `registerDevicePack()`, and are retained by the host with whole-archive
 linking. This is a C++ source/build contract, not a stable dynamic ABI.
 
+Concrete devices implement the engine-neutral `MagdaDevice` contract. The
+active audio engine owns the adapter that presents that device to its host
+lifecycle; a device pack does not subclass an engine plugin class.
+`DeviceProcessContext` carries audio, MIDI, transport, and a read-only tempo
+map. Device-owned telemetry is exposed through typed `DeviceTelemetry`
+subclasses, while host/editor lifetime remains outside the device.
+
 ## Public surface
 
 A pack may use:
 
 - `magda_types` value headers under `core/`
 - `magda_music` theory helpers
-- Tracktion Engine's `te::Plugin` contract
+- `plugins/MagdaDevice.hpp` for identity, lifecycle, audio/MIDI processing,
+  parameters, and state
 - `plugins/DeviceServices.hpp` for injected DAW services and defaults
 - `plugins/InternalPluginRegistry.hpp` for pack registration
-- `processors/base/DeviceProcessor.hpp` and
-  `processors/DeviceProcessorFactory.hpp`
+- opaque `DevicePluginHandle`, `DeviceParameterHandle`, and `DeviceSessionKey`
+  values at transitional host boundaries
 - `plugins/IFaustEditorModel.hpp` and
   `plugins/FaustCustomViewKind.hpp`
 - `magda_compile_faust_dsp()` plus the Faust and Mutable toolchains supplied by
@@ -25,6 +33,24 @@ Pack sources must not include host-owned `core/` implementation headers,
 `engine/`, `project/`, `ui/`, `plugin_manager/`, `racks/`, or `modifiers/`.
 `magda_validate_device_pack_sources()` enforces that boundary at configure
 time.
+
+`InternalPluginSpec::createDevice` is the normal factory hook. The
+`createPlugin` and `createInSession` opaque-handle hooks exist only while
+legacy host-native devices are migrated; new packs should not use them.
+`matchesPlugin` and `createProcessor` are likewise host-owned compatibility
+metadata for MAGDA's built-in legacy catalog. Engine-neutral packs leave all
+four compatibility callbacks null. Processor dispatch itself is implemented
+by the active host adapter and is not part of the device SDK.
+Packs pass `ENGINE_NEUTRAL` to `magda_validate_device_pack_sources()` so
+configure fails if a source includes or names Tracktion. MAGDA's base pack is
+validated this way in full. Existing TE-native compatibility devices are
+compiled in a host-owned compatibility target, outside the SDK pack, until
+their DSP implementations are migrated to `MagdaDevice`.
+
+The transitional all-compiled-device catalog is also host-owned while it
+references both neutral and TE-native specs. The `magda_base_devices` archive
+contains only neutral device implementations and therefore has no unresolved
+references to compatibility-device spec accessors.
 
 ## Optional private pack
 

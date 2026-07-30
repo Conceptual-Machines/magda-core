@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaClapCompiledPlugin::xmlTypeName = "magda_clap";
 
-MagdaClapCompiledPlugin::MagdaClapCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaClapCompiledPlugin::MagdaClapCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaClapCompiledPlugin::getName() const {
-    return "Clap";
-}
-juce::String MagdaClapCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaClapCompiledPlugin::getShortName(int) {
-    return "Clap";
-}
-juce::String MagdaClapCompiledPlugin::getSelectableDescription() {
-    return "Clap";
 }
 
 ::dsp* MagdaClapCompiledPlugin::createVoiceDsp() const {
@@ -89,8 +75,8 @@ const CompiledPluginSpec& getMagdaClapSpec() {
         .description = "Synthetic clap: one band-passed noise source shaped by a fast "
                        "three-triangle envelope (the hand-clap flam), over a diffuse tail. "
                        "Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or play it standalone.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaClapCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaClapCompiledPlugin>();
         },
         .isInstrument = true,
     };

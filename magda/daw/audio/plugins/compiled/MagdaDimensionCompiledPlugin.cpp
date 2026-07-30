@@ -11,6 +11,7 @@
 #include "plugins/FaustMetadataParser.hpp"
 #include "plugins/FaustParamInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 // Each engine's generated cpp lives in its own translation unit, so
 // co-locating the three #includes here lets us instantiate one of each
@@ -404,8 +405,9 @@ const CompiledPluginSpec& getMagdaDimensionSpec() {
             "<b>Dimension</b>: Roland Dimension D-style anti-phase modulated delays.\n"
             "<b>Haas</b>: short fixed delay on one channel, classic psychoacoustic cue.\n"
             "<b>M/S</b>: pure mid-side side-channel gain, no time smear.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaDimensionCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaDimensionCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

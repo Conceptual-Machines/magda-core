@@ -5,6 +5,7 @@
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -307,8 +308,9 @@ const CompiledPluginSpec& getMagdaLimiterSpec() {
                        "Threshold drives the signal into a fixed 0 dB ceiling, "
                        "Attack and Release shape gain recovery, and Output is a "
                        "post-limiter trim limited to negative gain.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaLimiterCompiledPlugin(info);
+        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
+            return tracktion_adapter::pluginHandle(
+                new MagdaLimiterCompiledPlugin(tracktion_adapter::creationInfo(context)));
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

@@ -14,6 +14,7 @@ target_link_libraries(magda_pro_devices PRIVATE
 
 magda_validate_device_pack_sources(
     "MAGDA pro stub device pack"
+    ENGINE_NEUTRAL
     "${CMAKE_CURRENT_SOURCE_DIR}/ProDevicePack.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ProStubPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ProStubPlugin.hpp"

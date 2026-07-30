@@ -11,22 +11,8 @@ namespace magda::daw::audio::compiled {
 
 const char* MagdaHatCompiledPlugin::xmlTypeName = "magda_hat";
 
-MagdaHatCompiledPlugin::MagdaHatCompiledPlugin(const te::PluginCreationInfo& info)
-    : MagdaCompiledPolyInstrument(info) {
+MagdaHatCompiledPlugin::MagdaHatCompiledPlugin() {
     initInstrument();
-}
-
-juce::String MagdaHatCompiledPlugin::getName() const {
-    return "Hat";
-}
-juce::String MagdaHatCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaHatCompiledPlugin::getShortName(int) {
-    return "Hat";
-}
-juce::String MagdaHatCompiledPlugin::getSelectableDescription() {
-    return "Hat";
 }
 
 ::dsp* MagdaHatCompiledPlugin::createVoiceDsp() const {
@@ -107,8 +93,8 @@ const CompiledPluginSpec& getMagdaHatSpec() {
                        "partials with a Spread/dissonance control) and a high-passed Noise sizzle, "
                        "each with its own level and decay. Short decays = closed, long = open. "
                        "Knob-tuned, MIDI-gated - drop it on a DrumGrid pad or play it standalone.",
-        .createPlugin = [](const te::PluginCreationInfo& info) -> te::Plugin::Ptr {
-            return new MagdaHatCompiledPlugin(info);
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaHatCompiledPlugin>();
         },
         .isInstrument = true,
     };
