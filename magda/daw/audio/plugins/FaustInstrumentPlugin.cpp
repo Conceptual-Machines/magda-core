@@ -484,6 +484,26 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         }
     }
 
+    // Host-supplied controls. Sample the edit tempo once per block, then fan
+    // the BPM out to the matching zone in every voice. Runtime instruments use
+    // group=false, so unlike the effect host there is no single shared zone.
+    double cachedBpm = -1.0;
+    for (const auto& b : active->activeBindings) {
+        if (b.role != FaustControlRole::ProjectTempo)
+            continue;
+        if (b.slotIndex < 0 || b.slotIndex >= FaustParamPool::kSize)
+            continue;
+        const auto& zones = active->voiceZonesBySlot[static_cast<size_t>(b.slotIndex)];
+        if (zones.empty())
+            continue;
+        if (cachedBpm < 0.0)
+            cachedBpm = edit.tempoSequence.getBpmAt(fc.editTime.getStart());
+        for (FAUSTFLOAT* zone : zones) {
+            if (zone)
+                *zone = static_cast<FAUSTFLOAT>(cachedBpm);
+        }
+    }
+
     // Drive voice allocation from this block's MIDI. Timing offsets within the
     // block are ignored for the POC (all events applied before compute).
     if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {

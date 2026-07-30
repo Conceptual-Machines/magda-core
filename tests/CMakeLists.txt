@@ -315,6 +315,7 @@ target_sources(magda_juce_tests PRIVATE
     test_tempo_map_juce.cpp
     test_tempo_lane_bridge_juce.cpp
     test_tempo_lane_sync_juce.cpp
+    test_faust_instrument_tempo_juce.cpp
     test_runtime_theme_juce.cpp
     test_user_theme_juce.cpp
     test_device_gain_slider.cpp
