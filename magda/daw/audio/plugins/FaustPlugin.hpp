@@ -71,6 +71,8 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     bool producesAudioWhenNoAudioInput() override {
         return false;
     }
+    bool canSidechain() override;
+    void getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) override;
     double getTailLength() const override {
         return 0.0;
     }
@@ -97,6 +99,13 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // message thread.
     const FaustParamPool& getPool() const override {
         return pool_;
+    }
+
+    // False when a saved source failed to compile and the live DSP is only
+    // the fallback. Used during project load to preserve routing that may be
+    // valid again once the missing library/source problem is repaired.
+    bool activeDspMatchesSource() const {
+        return activeDspMatchesSource_;
     }
 
     // Per-DSP display name (caller-supplied to `loadDspSource`). Used
@@ -204,6 +213,7 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     // Read from the loaded source's `declare magda_view`; empty for most patches.
     juce::String viewName_;
     std::vector<juce::String> lastDiagnostics_;
+    bool activeDspMatchesSource_ = false;
 
     // Sample rate captured from initialise(); used when recompiling at
     // runtime (constructor uses 44100 as a provisional value).

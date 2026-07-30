@@ -259,6 +259,14 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
     auto report = pool_.rebindFromHarvest(harvested);
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
+    if (scratchIn_.getNumSamples() > 0 && state->dspIn > scratchIn_.getNumChannels()) {
+        lastDiagnostics_.insert(
+            lastDiagnostics_.begin(),
+            "DSP needs " + juce::String(state->dspIn) +
+                " input channels, but the current audio graph has capacity for " +
+                juce::String(scratchIn_.getNumChannels()) +
+                "; reload the device or project to activate this patch");
+    }
     initialiseUnsetPoolValues(state->activeBindings, previousSlots);
 
     DBG("[FaustPlugin] compileAndRebind: pool active="
@@ -317,6 +325,7 @@ FaustPlugin::FaustPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) 
     juce::String err;
     auto compiled = compileAndRebind(
         savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
+    activeDspMatchesSource_ = compiled != nullptr;
     if (!compiled) {
         DBG("FaustPlugin: failed to compile saved source: " << err << " — using default");
         compiled = compileAndRebind(kDefaultDspSource, err);
@@ -381,6 +390,13 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
 
     auto previous = std::atomic_load(&active_);
     std::atomic_store(&active_, compiled);
+    activeDspMatchesSource_ = true;
+
+    // A stereo-only replacement can no longer consume TE's appended source
+    // channels. Drop the live routing immediately; refreshDeviceParameters()
+    // clears the corresponding DeviceInfo selection after a UI/API compile.
+    if (compiled->dspIn <= 2)
+        setSidechainSourceID({});
 
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
@@ -403,6 +419,7 @@ void FaustPlugin::stageSourceForEditing(const juce::String& name, const juce::St
     // Editable state only — no compileAndRebind, no active_ swap. The live DSP
     // and the param pool stay as they are; the editor reads dspSource/dspName
     // from state, so the user sees the staged code and compiles it when ready.
+    activeDspMatchesSource_ = false;
     dspName_ = name;
     dspSource_ = source;
     state.setProperty("dspName", dspName_, getUndoManager());
@@ -423,6 +440,43 @@ void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {
 
     DBG("FaustPlugin::initialise sr=" << currentSampleRate_
                                       << " blockSize=" << info.blockSizeSamples);
+}
+
+bool FaustPlugin::canSidechain() {
+    const auto active = std::atomic_load(&active_);
+    return active && active->dspIn > 2;
+}
+
+void FaustPlugin::getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) {
+    const auto active = std::atomic_load(&active_);
+    const int inputCount = active ? active->dspIn : 2;
+    const int outputCount = active ? active->dspOut : 2;
+
+    if (inputs) {
+        for (int channel = 0; channel < inputCount; ++channel) {
+            if (channel == 0)
+                inputs->add("Left");
+            else if (channel == 1)
+                inputs->add("Right");
+            else if (channel == 2)
+                inputs->add(inputCount == 3 ? "Sidechain" : "Sidechain Left");
+            else if (channel == 3)
+                inputs->add("Sidechain Right");
+            else
+                inputs->add("Input " + juce::String(channel + 1));
+        }
+    }
+
+    if (outputs) {
+        for (int channel = 0; channel < outputCount; ++channel) {
+            if (channel == 0)
+                outputs->add("Left");
+            else if (channel == 1)
+                outputs->add("Right");
+            else
+                outputs->add("Output " + juce::String(channel + 1));
+        }
+    }
 }
 
 void FaustPlugin::deinitialise() {}
@@ -486,7 +540,7 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (hostChannels <= 0 || active->dspIn <= 0 || active->dspOut <= 0)
         return;
 
-    if (scratchIn_.getNumSamples() < n)
+    if (scratchIn_.getNumSamples() < n || scratchIn_.getNumChannels() < active->dspIn)
         return;
 
     inPtrs_.resize(static_cast<size_t>(active->dspIn));

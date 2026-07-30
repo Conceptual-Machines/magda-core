@@ -131,6 +131,21 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     device.producesMidi = snapshot.hasMidiOutput;
 }
 
+// Faust's processor owns a dynamic canSidechain flag, while the generic
+// capability updater only ever promotes flags to true. Keep the type guard so
+// a stale serialized flag on another plugin cannot erase valid routing.
+// Return the id instead of changing TrackManager inline: its notification path
+// must run after callers are finished with their borrowed DeviceInfo pointer.
+DeviceId clearStaleFaustAudioSidechain(const DeviceInfo& device, te::Plugin* plugin) {
+    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin);
+    if (faust == nullptr || !faust->activeDspMatchesSource() || device.canSidechain ||
+        !device.sidechain.isActive() || device.sidechain.type != SidechainConfig::Type::Audio)
+        return INVALID_DEVICE_ID;
+
+    plugin->setSidechainSourceID({});
+    return device.id;
+}
+
 void removeSourceFromModifierParams(const std::map<ModId, te::Modifier::Ptr>& modifiers,
                                     te::AutomatableParameter::ModifierSource& source) {
     for (const auto& [_modId, modifier] : modifiers) {
@@ -2110,6 +2125,7 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
 
 void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
     DeviceProcessor* processor = nullptr;
+    te::Plugin::Ptr plugin;
     {
         juce::ScopedLock lock(pluginLock_);
         auto it = findSyncedDevice(devicePath);
@@ -2120,11 +2136,17 @@ void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
             return;
         }
         processor = it->second.processor.get();
+        plugin = it->second.plugin;
     }
 
+    DeviceId sidechainToClear = INVALID_DEVICE_ID;
     if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
         processor->populateParameters(*devInfo);
+        sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
     }
+    if (sidechainToClear != INVALID_DEVICE_ID)
+        TrackManager::getInstance().clearSidechain(sidechainToClear);
+
     AutoAliasGenerator::regenerateForDevice(devicePath);
 }
 
@@ -2334,12 +2356,17 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
 
             // Populate processor-owned fields directly into the canonical
             // DeviceInfo (see comment in registerRackPluginProcessor).
+            DeviceId sidechainToClear = INVALID_DEVICE_ID;
             if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
                 processor->populateParameters(*devInfo);
+                sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
             }
-            AutoAliasGenerator::regenerateForDevice(devicePath);
 
             syncedDevices_[devicePath].processor = std::move(processor);
+            if (sidechainToClear != INVALID_DEVICE_ID)
+                TrackManager::getInstance().clearSidechain(sidechainToClear);
+
+            AutoAliasGenerator::regenerateForDevice(devicePath);
         }
 
         // Apply device state (device flag gated by the track chain power)
