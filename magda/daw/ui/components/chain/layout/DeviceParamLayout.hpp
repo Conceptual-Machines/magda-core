@@ -56,9 +56,35 @@ class DeviceParamLayout {
     /// Total number of pages required to show every active param.
     virtual int totalPages(const magda::DeviceInfo& device) const = 0;
 
+    /// Whether pagination should render as a named tab strip instead of the
+    /// generic previous/next arrows.
+    virtual bool wantsPageTabs() const {
+        return false;
+    }
+
+    /// User-facing name for a page. The default keeps generic layouts numeric.
+    virtual juce::String pageName(const magda::DeviceInfo&, int pageIndex) const {
+        return juce::String(pageIndex + 1);
+    }
+
     /// What to render in cell `cellIndex` on the current page.
     virtual ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex,
                               int currentPage) const = 0;
+
+    /// Resolve a stable parameter identity to the page that displays it.
+    /// Generic implementation deliberately asks cellFor(), so custom layouts
+    /// do not need a second mapping implementation.
+    virtual int pageForParameter(const magda::DeviceInfo& device, int paramIndex) const {
+        const int pages = totalPages(device);
+        for (int page = 0; page < pages; ++page) {
+            for (int cellIndex = 0; cellIndex < cellCount(); ++cellIndex) {
+                const auto cell = cellFor(device, cellIndex, page);
+                if (cell.mode == ParamCell::Mode::Filled && cell.targetParamIndex == paramIndex)
+                    return page;
+            }
+        }
+        return -1;
+    }
 };
 
 }  // namespace magda::daw::ui

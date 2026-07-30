@@ -29,7 +29,7 @@ struct HarvestedControl {
     float defaultValue = 0.0f;
     FAUSTFLOAT* zone = nullptr;
     ControlMetadata metadata;
-    // Top-level Faust group label (tab name for the instrument UI). UI-only.
+    // Top-level author group label, shared by effect and instrument UIs.
     juce::String group;
 };
 

@@ -167,10 +167,10 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         return DeviceSlotInlineUiKind::Compiled;
     }
 
-    // The Faust EFFECT uses the inline header + standard param grid here. The
-    // Faust INSTRUMENT instead gets its own wider tabbed UI via the
-    // DeviceCustomUIManager path below (DeviceSlotInlineUiKind::Custom).
-    if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+    // Runtime Faust effects and instruments share the same editor header,
+    // ParamHostComponent renderer, and author-group page layout.
+    if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName) ||
+        device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();
 
         if (auto plugin = resolveLivePlugin(nodePath, callbacks)) {
@@ -200,8 +200,8 @@ void bindDeviceSlotFaustInlineUi(const magda::ChainNodePath& nodePath, FaustUI* 
     faustUI->setDevicePath(nodePath);
 
     if (auto plugin = getLivePlugin(nodePath))
-        if (auto* faustPlugin = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get()))
-            faustUI->setPlugin(faustPlugin);
+        if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get()))
+            faustUI->setPlugin(faustModel);
 }
 
 void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,

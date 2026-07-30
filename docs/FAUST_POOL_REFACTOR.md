@@ -41,8 +41,8 @@ detach. Fixed pool fixes that and gives us:
   encounter order into the next free slot, marking the rest inactive.
   Survives DSP swap because the pool's `AutomatableParameter`s never
   get torn down.
-- **`HarvestedControl` + `UIHarvester`** *(internal to
-  `FaustPlugin.cpp`)* — small Faust `UI` subclass that captures every
+- **`HarvestedControl` + `FaustUIHarvester`** — shared Faust `UI`
+  implementation used by both runtime effects and instruments. It captures every
   `addHorizontalSlider` / `addVerticalSlider` / `addNumEntry` /
   `addCheckButton` / `addButton` along with the preceding `declare()`
   metadata. Tracks group-level vs control-level metadata via a
@@ -65,10 +65,20 @@ detach. Fixed pool fixes that and gives us:
   `pool.rebindFromHarvest`. `applyToBuffer` walks the *active
   binding list on `FaustState`* (see real-time boundary below) and
   writes the AutomatableParameter's denormalized value into the zone.
-- **`FaustUI`** *(refactored)* — keeps the bespoke header (logo / Load
-  / Edit / framed name box) but the body becomes a thin wrapper over
-  `ParamGridComponent`, like generic devices. The bespoke `ParamSlot`
-  vector goes away.
+- **`FaustUI` + `ParamHostComponent`** — both runtime Faust effects and
+  instruments use the same editor header, typed parameter cells, and named
+  pages formed from the outermost Faust author group. This replaces the former
+  bespoke instrument row renderer while retaining `[idx:N]` as the stable
+  automation/modulation identity.
+
+### Group/page authoring convention
+
+Effects and instruments are both group-paged: every outermost
+`vgroup` / `hgroup` / `tgroup` becomes a tab and its parameters are packed into
+the shared grid in pool-slot order. Ungrouped controls appear under `Params`.
+Groups larger than 32 controls continue onto numbered tab chunks. `[idx:N]`
+does not place a control visually; it remains the stable pool identity used by
+automation, modulation, MIDI Learn, and gate references.
 
 ## Real-time boundary
 

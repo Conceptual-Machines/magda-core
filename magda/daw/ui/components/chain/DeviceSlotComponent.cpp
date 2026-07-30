@@ -494,6 +494,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
     paramGrid_->onNextPage = [this]() { goToNextPage(); };
+    paramGrid_->onPageSelected = [this](int pageIndex) {
+        goToDeviceSlotParameterPage(device_, *paramGrid_, pageIndex,
+                                    {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+                                     .updateParamModulation = [this]() { updateParamModulation(); },
+                                     .repaint = [this]() { repaint(); }});
+    };
     addAndMakeVisible(*paramGrid_);
 
     // Wire up mod/macro linking callbacks on each slot
