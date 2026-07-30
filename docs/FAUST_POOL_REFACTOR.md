@@ -80,6 +80,13 @@ Groups larger than 32 controls continue onto numbered tab chunks. `[idx:N]`
 does not place a control visually; it remains the stable pool identity used by
 automation, modulation, MIDI Learn, and gate references.
 
+### Audio sidechain authoring convention
+
+A stereo effect with a stereo sidechain declares
+`process(mainL, mainR, sideL, sideR)`: channels 0/1 are the main input and
+channels 2/3 are the sidechain. When no source is assigned, MAGDA supplies
+silence to the sidechain channels.
+
 ## Real-time boundary
 
 Audio thread MUST NOT walk the pool's slot table directly — that's

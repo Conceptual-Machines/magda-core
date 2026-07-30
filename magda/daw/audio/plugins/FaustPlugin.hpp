@@ -72,6 +72,8 @@ class FaustPlugin : public te::Plugin, public IFaustEditorModel {
     bool producesAudioWhenNoAudioInput() override {
         return false;
     }
+    bool canSidechain() override;
+    void getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) override;
     double getTailLength() const override {
         return 0.0;
     }

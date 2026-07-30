@@ -384,6 +384,12 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
     auto previous = std::atomic_load(&active_);
     std::atomic_store(&active_, compiled);
 
+    // A stereo-only replacement can no longer consume TE's appended source
+    // channels. Drop the live routing immediately; refreshDeviceParameters()
+    // clears the corresponding DeviceInfo selection after a UI/API compile.
+    if (compiled->dspIn <= 2)
+        setSidechainSourceID({});
+
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
         retired_.push_back({previous, juce::Time::getMillisecondCounter()});
@@ -426,6 +432,43 @@ void FaustPlugin::initialise(const te::PluginInitialisationInfo& info) {
 
     DBG("FaustPlugin::initialise sr=" << currentSampleRate_
                                       << " blockSize=" << info.blockSizeSamples);
+}
+
+bool FaustPlugin::canSidechain() {
+    const auto active = std::atomic_load(&active_);
+    return active && active->dspIn > 2;
+}
+
+void FaustPlugin::getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) {
+    const auto active = std::atomic_load(&active_);
+    const int inputCount = active ? active->dspIn : 2;
+    const int outputCount = active ? active->dspOut : 2;
+
+    if (inputs) {
+        for (int channel = 0; channel < inputCount; ++channel) {
+            if (channel == 0)
+                inputs->add("Left");
+            else if (channel == 1)
+                inputs->add("Right");
+            else if (channel == 2)
+                inputs->add(inputCount == 3 ? "Sidechain" : "Sidechain Left");
+            else if (channel == 3)
+                inputs->add("Sidechain Right");
+            else
+                inputs->add("Input " + juce::String(channel + 1));
+        }
+    }
+
+    if (outputs) {
+        for (int channel = 0; channel < outputCount; ++channel) {
+            if (channel == 0)
+                outputs->add("Left");
+            else if (channel == 1)
+                outputs->add("Right");
+            else
+                outputs->add("Output " + juce::String(channel + 1));
+        }
+    }
 }
 
 void FaustPlugin::deinitialise() {}
@@ -489,7 +532,7 @@ void FaustPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (hostChannels <= 0 || active->dspIn <= 0 || active->dspOut <= 0)
         return;
 
-    if (scratchIn_.getNumSamples() < n)
+    if (scratchIn_.getNumSamples() < n || scratchIn_.getNumChannels() < active->dspIn)
         return;
 
     inPtrs_.resize(static_cast<size_t>(active->dspIn));
