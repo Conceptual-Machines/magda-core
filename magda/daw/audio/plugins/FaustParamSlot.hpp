@@ -63,6 +63,14 @@ struct FaustParamSlot {
     // `[style:radio{…}]`. Empty for non-discrete slots.
     std::vector<std::pair<float, juce::String>> choices;
 
+    // Which presentation the author asked for. Menu and Radio are the same
+    // parameter either way; only the widget differs. None for non-discrete
+    // slots. UI-only: the audio path never reads it.
+    FaustChoiceStyle choiceStyle = FaustChoiceStyle::None;
+
+    // Free text from `[tooltip:…]`, shown on hover. UI-only.
+    juce::String tooltip;
+
     // Pointer into the live DSP's zone. Only valid while the matching
     // FaustState is alive. The audio thread must NOT read this directly
     // off a slot — see the class comment.

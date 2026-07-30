@@ -142,4 +142,31 @@ void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& i
                                juce::dontSendNotification);
 }
 
+bool wantsSegmentedChoices(const magda::ParameterInfo& info) {
+    return info.radioChoices && !info.choices.empty() &&
+           static_cast<int>(info.choices.size()) <= kMaxSegmentedChoices;
+}
+
+void applyChoiceButtonColours(juce::TextButton& button) {
+    button.setColour(juce::TextButton::buttonColourId,
+                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+    button.setColour(juce::TextButton::buttonOnColourId,
+                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    button.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+}
+
+void configureChoiceButton(juce::TextButton& button, const juce::String& text, int index, int count,
+                           bool selected) {
+    button.setButtonText(text);
+    button.setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+    // Selection is driven explicitly below, not by click-toggle or a radio
+    // group: JUCE's radio handling leaves the previous segment lit as well.
+    button.setClickingTogglesState(false);
+    button.setConnectedEdges((index > 0 ? juce::Button::ConnectedOnLeft : 0) |
+                             (index < count - 1 ? juce::Button::ConnectedOnRight : 0));
+    applyChoiceButtonColours(button);
+    button.setToggleState(selected, juce::dontSendNotification);
+}
+
 }  // namespace magda::daw::ui

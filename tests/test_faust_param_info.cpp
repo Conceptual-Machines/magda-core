@@ -117,6 +117,37 @@ TEST_CASE("paramInfoFromSlot - author group propagates", "[faust][paraminfo]") {
     REQUIRE(info.group == "Filter");
 }
 
+TEST_CASE("paramInfoFromSlot - tooltip propagates", "[faust][paraminfo]") {
+    auto slot = makeContinuousSlot(3, "Cutoff");
+    slot.tooltip = "Filter corner frequency";
+    REQUIRE(paramInfoFromSlot(slot).tooltip == "Filter corner frequency");
+}
+
+TEST_CASE("paramInfoFromSlot - tooltip survives the hidden-slot path", "[faust][paraminfo]") {
+    // Hidden slots go through placeholderForInactive, which builds a fresh
+    // ParameterInfo and so has to copy the UI-only fields separately.
+    auto slot = makeContinuousSlot(3, "Tempo");
+    slot.hidden = true;
+    slot.tooltip = "Project tempo in BPM";
+    REQUIRE(paramInfoFromSlot(slot).tooltip == "Project tempo in BPM");
+}
+
+TEST_CASE("paramInfoFromSlot - radio style requests segmented choices", "[faust][paraminfo]") {
+    auto slot = makeDiscreteSlot(0, "Voice", {{0.0f, "Mono"}, {1.0f, "Poly"}});
+    slot.choiceStyle = FaustChoiceStyle::Radio;
+    REQUIRE(paramInfoFromSlot(slot).radioChoices);
+}
+
+TEST_CASE("paramInfoFromSlot - menu style stays a dropdown", "[faust][paraminfo]") {
+    auto slot = makeDiscreteSlot(0, "Mode", {{0.0f, "Off"}, {1.0f, "On"}});
+    slot.choiceStyle = FaustChoiceStyle::Menu;
+    auto info = paramInfoFromSlot(slot);
+    REQUIRE_FALSE(info.radioChoices);
+    // Both styles are still the same discrete parameter underneath.
+    REQUIRE(info.scale == ParameterScale::Discrete);
+    REQUIRE(info.choices.size() == 2);
+}
+
 // ============================================================================
 // Boolean
 // ============================================================================

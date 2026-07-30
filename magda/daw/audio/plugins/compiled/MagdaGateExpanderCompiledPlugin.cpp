@@ -80,8 +80,9 @@ class GateHarvester : public ::UI {
             }
         }
 
-        harvest.controls.push_back(
-            {merged.slotIndex, merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind, zone});
+        harvest.controls.push_back({merged.slotIndex,
+                                    merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind,
+                                    zone});
     }
 
     std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;

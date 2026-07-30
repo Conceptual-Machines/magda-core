@@ -198,7 +198,7 @@ TEST_CASE("FaustParamPool - trigger kind preserved", "[faust][pool]") {
 TEST_CASE("FaustParamPool - menu metadata promotes Continuous to Discrete", "[faust][pool]") {
     FaustParamPool pool;
     auto h = makeContinuous("Mode", 0.0f, 2.0f);
-    h.metadata.isMenuStyle = true;
+    h.metadata.choiceStyle = FaustChoiceStyle::Menu;
     h.metadata.menuChoices = {{0.0f, "Off"}, {1.0f, "Low"}, {2.0f, "High"}};
 
     pool.rebindFromHarvest({h});
@@ -260,7 +260,7 @@ TEST_CASE("FaustParamPool - clearActive deactivates everything", "[faust][pool]"
 TEST_CASE("FaustParamPool - discrete descriptor carries sorted real values", "[faust][pool]") {
     FaustParamPool pool;
     auto h = makeContinuous("Mode", 0.0f, 2.0f);
-    h.metadata.isMenuStyle = true;
+    h.metadata.choiceStyle = FaustChoiceStyle::Menu;
     h.metadata.menuChoices = {{2.0f, "High"}, {0.0f, "Off"}, {1.0f, "Low"}};
 
     auto report = pool.rebindFromHarvest({h});

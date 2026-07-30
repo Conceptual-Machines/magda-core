@@ -24,7 +24,13 @@ namespace magda::daw::ui {
  * Shift+double-click and Shift+right-click are retained as legacy edit gestures.
  * Supports dB and pan formatting.
  */
-class TextSlider : public juce::Component, public magda::AutomationManagerListener {
+// SettableTooltipClient so a parameter's own help text can be shown on hover.
+// JUCE's TooltipWindow only queries the component directly under the mouse and
+// does not walk up to parents, so the slider has to be a client in its own
+// right rather than relying on the cell that owns it.
+class TextSlider : public juce::Component,
+                   public juce::SettableTooltipClient,
+                   public magda::AutomationManagerListener {
   public:
     enum class Format { Decimal, Decibels, Pan };
     enum class Orientation { Horizontal, Vertical };

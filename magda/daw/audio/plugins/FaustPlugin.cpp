@@ -253,7 +253,7 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compileAndRebind(const juc
         const auto& h = harvested[i];
         DBG("  [" << static_cast<int>(i) << "] kind=" << (int)h.kind << " label='" << h.label
                   << "' min=" << h.minValue << " max=" << h.maxValue
-                  << " idx=" << h.metadata.slotIndex << " menu=" << (int)h.metadata.isMenuStyle);
+                  << " idx=" << h.metadata.slotIndex << " choice=" << (int)h.metadata.choiceStyle);
     }
 
     auto report = pool_.rebindFromHarvest(harvested);

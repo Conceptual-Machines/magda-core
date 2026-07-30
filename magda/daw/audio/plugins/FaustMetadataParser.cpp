@@ -11,7 +11,8 @@ namespace {
 // label or keep it intact for forward-compatibility.
 bool isKnownKey(const juce::String& key) {
     return key == "idx" || key == "unit" || key == "scale" || key == "style" || key == "role" ||
-           key == "hidden" || key == "gate" || key == "scaleAnchor" || key == "scaleanchor";
+           key == "hidden" || key == "gate" || key == "scaleAnchor" || key == "scaleanchor" ||
+           key == "tooltip";
 }
 
 // `[style:menu{'A':0;'B':1}]` payloads — the value passed to
@@ -102,12 +103,23 @@ bool applyFaustAnnotation(const juce::String& key, const juce::String& value,
         const auto parts = splitStyleValue(value);
         const auto kind = parts.kind.toLowerCase();
         if (kind == "menu" || kind == "radio") {
-            metadata.isMenuStyle = true;
+            metadata.choiceStyle =
+                (kind == "radio") ? FaustChoiceStyle::Radio : FaustChoiceStyle::Menu;
             metadata.menuChoices = parseMenuChoices(parts.braceBody);
         }
         // Other style values (knob / led / numerical) are recognised
         // and stripped from the clean label, but don't surface a flag —
         // they're purely visual hints we don't act on.
+        return true;
+    }
+    if (key == "tooltip") {
+        // Faust's own convention for documenting a control. Kept verbatim
+        // apart from trimming and surrounding quotes, which authors add out
+        // of habit from the `declare` form where they are required.
+        auto v = value.trim();
+        if (v.length() >= 2 && v.startsWithChar('"') && v.endsWithChar('"'))
+            v = v.substring(1, v.length() - 1);
+        metadata.tooltip = v;
         return true;
     }
     if (key == "role") {
@@ -230,10 +242,12 @@ void mergeFaustMetadata(ControlMetadata& parent, const ControlMetadata& child) {
         parent.unit = child.unit;
     if (child.logScale)
         parent.logScale = true;
-    if (child.isMenuStyle) {
-        parent.isMenuStyle = true;
+    if (child.isChoiceStyle()) {
+        parent.choiceStyle = child.choiceStyle;
         parent.menuChoices = child.menuChoices;
     }
+    if (child.tooltip.isNotEmpty())
+        parent.tooltip = child.tooltip;
     // Role/hidden follow the same "non-default child wins" rule as the
     // other tags: a control-level annotation overrides a group-level
     // default. We can't distinguish "child explicitly said User" from

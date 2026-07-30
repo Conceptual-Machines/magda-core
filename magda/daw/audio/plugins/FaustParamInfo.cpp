@@ -68,6 +68,10 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
     info.unit = slot.unit;
     info.scale = magda::ParameterScale::Discrete;
     info.modulatable = false;  // matches ParameterPresets::discrete
+    // `[style:radio{…}]` asks for visible buttons, `[style:menu{…}]` for a
+    // dropdown. Both are the same parameter; only the widget differs, and the
+    // UI is free to ignore the request when the list is too long for a cell.
+    info.radioChoices = (slot.choiceStyle == FaustChoiceStyle::Radio);
 
     // Sort choices by underlying value, then expose just the labels in
     // that order. ParameterInfo::Discrete indexes choices by
@@ -121,6 +125,7 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
     if (!slot.active || slot.hidden) {
         info = placeholderForInactive(slot);
         info.group = slot.group;
+        info.tooltip = slot.tooltip;
         return info;
     }
     switch (slot.kind) {
@@ -138,6 +143,7 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
             break;
     }
     info.group = slot.group;
+    info.tooltip = slot.tooltip;
     return info;
 }
 

@@ -71,6 +71,9 @@ struct ParameterInfo {
     // Optional UI-only page/group name. Runtime Faust devices populate this
     // from the outermost author vgroup/hgroup/tgroup.
     juce::String group;
+    // Optional UI-only hover help. Runtime Faust devices populate this from
+    // `[tooltip:…]`. Never affects value handling.
+    juce::String tooltip;
 
     // Value range — ALL stored in REAL parameter units (Hz, dB, %, …).
     // Consumers never see normalized values here; the normalized↔real
@@ -110,6 +113,13 @@ struct ParameterInfo {
 
     // Discrete values (if scale == Discrete)
     std::vector<juce::String> choices;  // e.g., {"Off", "Low", "High"}
+
+    // Request from the parameter's author that `choices` be shown as a row of
+    // mutually exclusive buttons rather than a dropdown, so a small choice set
+    // is readable without opening a popup. Advisory only: the UI falls back to
+    // a dropdown when the list is too long to fit a cell. Set by Faust
+    // `[style:radio{…}]`; `[style:menu{…}]` leaves it false.
+    bool radioChoices = false;
 
     // Curated tick labels for the automation lane axis. When non-empty (and
     // scale==Discrete), the lane uses these (realValue, label) pairs for tick

@@ -29,6 +29,25 @@ enum class FaustControlRole {
 };
 
 /**
+ * @brief How a choice control asked to be presented.
+ *
+ * Faust distinguishes `[style:menu{…}]` from `[style:radio{…}]`. Both
+ * describe the same underlying discrete parameter, so they share
+ * `menuChoices` and both map to `FaustParamSlot::Kind::Discrete`; only
+ * the presentation differs. The UI layer decides whether it can honour
+ * Radio (a long choice list is better served by a dropdown regardless of
+ * what the author asked for).
+ */
+enum class FaustChoiceStyle {
+    /// Not a choice control.
+    None,
+    /// `[style:menu{…}]` — dropdown.
+    Menu,
+    /// `[style:radio{…}]` — mutually exclusive buttons, all visible.
+    Radio,
+};
+
+/**
  * @brief Parsed output of a Faust label like
  *        "Cutoff [unit:Hz] [scale:log] [idx:7]".
  *
@@ -56,10 +75,20 @@ struct ControlMetadata {
     /// was a menu or radio.
     std::vector<std::pair<float, juce::String>> menuChoices;
 
-    /// Whether the menu/radio style was set (distinguishes "no menu
-    /// declared" from "empty menu" — defensive; Faust shouldn't emit
-    /// the latter).
-    bool isMenuStyle = false;
+    /// Which choice style was declared, if any. None also distinguishes
+    /// "no choice style declared" from "declared but empty choice list"
+    /// (defensive; Faust shouldn't emit the latter).
+    FaustChoiceStyle choiceStyle = FaustChoiceStyle::None;
+
+    /// True iff a menu or radio style was declared, whatever the flavour.
+    bool isChoiceStyle() const {
+        return choiceStyle != FaustChoiceStyle::None;
+    }
+
+    /// Free-text help from `[tooltip:…]`, Faust's own convention for
+    /// documenting a control. Empty if absent. Purely presentational:
+    /// it never affects the kind, range, or automation of a parameter.
+    juce::String tooltip;
 
     /// MAGDA role tag from `[role:<value>]`. Defaults to User.
     FaustControlRole role = FaustControlRole::User;
