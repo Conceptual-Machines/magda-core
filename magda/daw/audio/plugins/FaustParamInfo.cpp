@@ -126,6 +126,7 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
         info = placeholderForInactive(slot);
         info.group = slot.group;
         info.tooltip = slot.tooltip;
+        info.widthCells = slot.widthCells;
         return info;
     }
     switch (slot.kind) {
@@ -144,6 +145,7 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
     }
     info.group = slot.group;
     info.tooltip = slot.tooltip;
+    info.widthCells = slot.widthCells;
     return info;
 }
 

@@ -37,6 +37,7 @@ void fillSlot(FaustParamSlot& slot, int index, const HarvestedControl& h) {
     // would carry over from whatever DSP previously owned this slot.
     slot.choiceStyle = h.metadata.choiceStyle;
     slot.tooltip = h.metadata.tooltip;
+    slot.widthCells = h.metadata.widthCells;
     slot.zone = h.zone;
     slot.role = h.metadata.role;
     slot.hidden = h.metadata.hidden;

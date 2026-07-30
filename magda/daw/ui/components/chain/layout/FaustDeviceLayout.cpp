@@ -45,6 +45,8 @@ std::uint64_t pageLayoutSignature(const magda::DeviceInfo& device) {
     for (const auto& param : device.parameters) {
         mix(static_cast<std::uint64_t>(param.paramIndex));
         mix(static_cast<std::uint64_t>(param.group.hashCode64()));
+        // Width feeds the packing, so a change to it has to invalidate too.
+        mix(static_cast<std::uint64_t>(param.widthCells));
     }
     return signature;
 }
@@ -79,22 +81,51 @@ const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
 
     cachedPages_.clear();
     for (const auto& group : groups) {
-        const int count = static_cast<int>(group.paramArrayIndices.size());
-        const int chunks = std::max(1, (count + kCellCount - 1) / kCellCount);
-        for (int chunk = 0; chunk < chunks; ++chunk) {
-            GroupPage page;
-            page.name = group.name;
-            page.chunkIndex = chunk;
-            page.chunkCount = chunks;
-            const int begin = chunk * kCellCount;
-            const int end = std::min(count, begin + kCellCount);
-            if (begin < end) {
-                page.paramArrayIndices.insert(page.paramArrayIndices.end(),
-                                              group.paramArrayIndices.begin() + begin,
-                                              group.paramArrayIndices.begin() + end);
+        // Pack left to right, wrapping a control to the next row rather than
+        // splitting it, and starting a new page when a row would overflow the
+        // grid. A width wider than a row is clamped: an author asking for more
+        // than the grid can give gets the whole row, not a broken layout.
+        GroupPage page;
+        page.name = group.name;
+        page.cells.assign(kCellCount, PageCell{});
+        int cursor = 0;
+
+        const auto flush = [&]() {
+            cachedPages_.push_back(page);
+            page.cells.assign(kCellCount, PageCell{});
+            cursor = 0;
+        };
+
+        for (const int paramArrayIdx : group.paramArrayIndices) {
+            const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
+            const int span = std::clamp(param.widthCells, 1, kCellsPerRow);
+
+            // Never straddle a row boundary: jump to the next row instead.
+            if ((cursor % kCellsPerRow) + span > kCellsPerRow)
+                cursor += kCellsPerRow - (cursor % kCellsPerRow);
+
+            if (cursor + span > kCellCount) {
+                flush();
             }
-            cachedPages_.push_back(std::move(page));
+
+            page.cells[static_cast<size_t>(cursor)] = {paramArrayIdx, span};
+            cursor += span;
         }
+        cachedPages_.push_back(std::move(page));
+    }
+
+    // Chunk numbering is only meaningful once a group needed more than one
+    // page, so it is applied after packing decided how many that was.
+    for (size_t i = 0; i < cachedPages_.size();) {
+        size_t j = i;
+        while (j < cachedPages_.size() && cachedPages_[j].name == cachedPages_[i].name)
+            ++j;
+        const int chunks = static_cast<int>(j - i);
+        for (size_t k = i; k < j; ++k) {
+            cachedPages_[k].chunkIndex = static_cast<int>(k - i);
+            cachedPages_[k].chunkCount = chunks;
+        }
+        i = j;
     }
 
     cachedSignature_ = signature;
@@ -124,23 +155,31 @@ ParamCell FaustDeviceLayout::cellFor(const magda::DeviceInfo& device, int cellIn
     if (currentPage < 0 || currentPage >= static_cast<int>(pages.size()))
         return cell;
     const auto& page = pages[static_cast<size_t>(currentPage)];
-    if (cellIndex < 0 || cellIndex >= static_cast<int>(page.paramArrayIndices.size()))
+    if (cellIndex < 0 || cellIndex >= static_cast<int>(page.cells.size()))
         return cell;
 
-    const int paramArrayIdx = page.paramArrayIndices[static_cast<size_t>(cellIndex)];
-    const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
+    const auto& pageCell = page.cells[static_cast<size_t>(cellIndex)];
+    // -1 means empty, or absorbed by a wider control starting to the left.
+    if (pageCell.paramArrayIndex < 0)
+        return cell;
+
+    const auto& param = device.parameters[static_cast<size_t>(pageCell.paramArrayIndex)];
     cell.mode = ParamCell::Mode::Filled;
-    cell.paramArrayIndex = paramArrayIdx;
-    cell.targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : paramArrayIdx;
+    cell.paramArrayIndex = pageCell.paramArrayIndex;
+    cell.targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : pageCell.paramArrayIndex;
     cell.enabled = gateEnabled(device, param);
+    cell.span = pageCell.span;
     return cell;
 }
 
 int FaustDeviceLayout::pageForParameter(const magda::DeviceInfo& device, int paramIndex) const {
     const auto& pages = pagesFor(device);
     for (int pageIndex = 0; pageIndex < static_cast<int>(pages.size()); ++pageIndex) {
-        for (const int paramArrayIdx : pages[static_cast<size_t>(pageIndex)].paramArrayIndices) {
-            if (device.parameters[static_cast<size_t>(paramArrayIdx)].paramIndex == paramIndex)
+        for (const auto& pageCell : pages[static_cast<size_t>(pageIndex)].cells) {
+            if (pageCell.paramArrayIndex < 0)
+                continue;
+            if (device.parameters[static_cast<size_t>(pageCell.paramArrayIndex)].paramIndex ==
+                paramIndex)
                 return pageIndex;
         }
     }

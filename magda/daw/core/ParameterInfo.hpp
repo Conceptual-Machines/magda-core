@@ -71,6 +71,9 @@ struct ParameterInfo {
     // Optional UI-only page/group name. Runtime Faust devices populate this
     // from the outermost author vgroup/hgroup/tgroup.
     juce::String group;
+    // How many grid cells this parameter asks to occupy. 1 is the default.
+    // Advisory: the layout clamps it to what a row can hold.
+    int widthCells = 1;
     // Optional UI-only hover help. Runtime Faust devices populate this from
     // `[tooltip:…]`. Never affects value handling.
     juce::String tooltip;

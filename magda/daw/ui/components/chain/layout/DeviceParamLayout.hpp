@@ -24,6 +24,11 @@ struct ParamCell {
     int paramArrayIndex = -1;
     int targetParamIndex = -1;
     bool enabled = true;
+    /// How many consecutive cells this one occupies, starting here. Always 1
+    /// for layouts that do not pack by width. A spanning cell is followed by
+    /// `span - 1` Hidden cells, so the host can keep iterating cell by cell
+    /// and simply draw nothing for the ones that were absorbed.
+    int span = 1;
 };
 
 /**

@@ -71,6 +71,9 @@ struct FaustParamSlot {
     // Free text from `[tooltip:…]`, shown on hover. UI-only.
     juce::String tooltip;
 
+    // Cells this control spans in the param grid, from `[width:N]`. UI-only.
+    int widthCells = 1;
+
     // Pointer into the live DSP's zone. Only valid while the matching
     // FaustState is alive. The audio thread must NOT read this directly
     // off a slot — see the class comment.
