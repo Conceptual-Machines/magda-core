@@ -167,10 +167,8 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         return DeviceSlotInlineUiKind::Compiled;
     }
 
-    // Runtime Faust effects and instruments share the same editor header and
-    // ParamHostComponent renderer. Their FaustDeviceLayout modes differ only
-    // in how pages are formed (pool blocks for effects, author groups for
-    // instruments).
+    // Runtime Faust effects and instruments share the same editor header,
+    // ParamHostComponent renderer, and author-group page layout.
     if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName) ||
         device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();

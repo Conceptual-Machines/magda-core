@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include "layout/DeviceParamLayout.hpp"
 
 namespace magda::daw::ui {
@@ -7,32 +10,19 @@ namespace magda::daw::ui {
 /**
  * @brief Device layout for FaustPlugin devices.
  *
- * Faust DSPs declare each control's grid cell explicitly via `[idx:N]`,
- * which lands in `ParameterInfo::paramIndex` (the pool slot index). This
- * layout honours that mapping directly: cell `i` on page `p` displays
- * the param whose pool index is `p * cellCount + i`. Empty pool slots
- * render as truly hidden cells (no widget at all).
+ * Faust author groups define named pages. Controls are packed into each page
+ * in pool order, while `[idx:N]` remains the stable parameter identity used
+ * for automation, modulation, MIDI Learn, and gate references.
  *
  * Gate references (`[gate:N]` / `[gate:!N]`) target pool slot indices,
- * so this layout looks up the gating param by `paramIndex`, not by
- * array position.
+ * so this layout looks up the gating param by `paramIndex`, not by array
+ * position.
  */
 class FaustDeviceLayout final : public DeviceParamLayout {
   public:
-    enum class PageMode {
-        // Effects preserve the authored [idx:N] position. A group names a page
-        // only when it occupies one complete, non-interleaved 32-slot block.
-        PoolSlots,
-        // Instruments retain their historical group tabs, but each group is
-        // rendered by the shared ParamHostComponent instead of bespoke rows.
-        Groups,
-    };
-
     static constexpr int kCellsPerRow = 8;
     static constexpr int kRows = 4;
     static constexpr int kCellCount = kCellsPerRow * kRows;
-
-    explicit FaustDeviceLayout(PageMode pageMode = PageMode::PoolSlots) : pageMode_(pageMode) {}
 
     int cellCount() const override {
         return kCellCount;
@@ -51,13 +41,21 @@ class FaustDeviceLayout final : public DeviceParamLayout {
     juce::String pageName(const magda::DeviceInfo& device, int pageIndex) const override;
     ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex,
                       int currentPage) const override;
-
-    PageMode pageMode() const {
-        return pageMode_;
-    }
+    int pageForParameter(const magda::DeviceInfo& device, int paramIndex) const override;
 
   private:
-    PageMode pageMode_;
+    struct GroupPage {
+        juce::String name;
+        std::vector<int> paramArrayIndices;
+        int chunkIndex = 0;
+        int chunkCount = 1;
+    };
+
+    const std::vector<GroupPage>& pagesFor(const magda::DeviceInfo& device) const;
+
+    mutable std::uint64_t cachedSignature_ = 0;
+    mutable bool cacheValid_ = false;
+    mutable std::vector<GroupPage> cachedPages_;
 };
 
 }  // namespace magda::daw::ui

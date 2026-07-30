@@ -1,7 +1,7 @@
 #include "layout/FaustDeviceLayout.hpp"
 
 #include <algorithm>
-#include <vector>
+#include <cstdint>
 
 namespace magda::daw::ui {
 
@@ -32,21 +32,31 @@ bool gateEnabled(const magda::DeviceInfo& device, const magda::ParameterInfo& pa
     return param.gateNegated ? !gateTruth : gateTruth;
 }
 
-int maxPoolIndex(const magda::DeviceInfo& device) {
-    int maxIdx = -1;
-    for (const auto& p : device.parameters)
-        maxIdx = std::max(maxIdx, p.paramIndex);
-    return maxIdx;
+std::uint64_t pageLayoutSignature(const magda::DeviceInfo& device) {
+    constexpr std::uint64_t offset = 1469598103934665603ULL;
+    constexpr std::uint64_t prime = 1099511628211ULL;
+    std::uint64_t signature = offset;
+    const auto mix = [&signature](std::uint64_t value) {
+        signature ^= value;
+        signature *= prime;
+    };
+
+    mix(device.parameters.size());
+    for (const auto& param : device.parameters) {
+        mix(static_cast<std::uint64_t>(param.paramIndex));
+        mix(static_cast<std::uint64_t>(param.group.hashCode64()));
+    }
+    return signature;
 }
 
-struct GroupPage {
-    juce::String name;
-    std::vector<int> paramArrayIndices;
-    int chunkIndex = 0;
-    int chunkCount = 1;
-};
+}  // namespace
 
-std::vector<GroupPage> groupedPages(const magda::DeviceInfo& device) {
+const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
+    const magda::DeviceInfo& device) const {
+    const auto signature = pageLayoutSignature(device);
+    if (cacheValid_ && signature == cachedSignature_)
+        return cachedPages_;
+
     struct Group {
         juce::String name;
         std::vector<int> paramArrayIndices;
@@ -58,87 +68,46 @@ std::vector<GroupPage> groupedPages(const magda::DeviceInfo& device) {
         const auto name = param.group.isEmpty() ? juce::String("Params") : param.group;
         auto it = std::find_if(groups.begin(), groups.end(),
                                [&name](const Group& group) { return group.name == name; });
-        if (it == groups.end()) {
+        if (it == groups.end())
             groups.push_back({name, {i}});
-        } else {
+        else
             it->paramArrayIndices.push_back(i);
-        }
     }
 
     if (groups.empty())
         groups.push_back({"Params", {}});
 
-    std::vector<GroupPage> pages;
+    cachedPages_.clear();
     for (const auto& group : groups) {
         const int count = static_cast<int>(group.paramArrayIndices.size());
-        const int chunks = std::max(1, (count + FaustDeviceLayout::kCellCount - 1) /
-                                           FaustDeviceLayout::kCellCount);
+        const int chunks = std::max(1, (count + kCellCount - 1) / kCellCount);
         for (int chunk = 0; chunk < chunks; ++chunk) {
             GroupPage page;
             page.name = group.name;
             page.chunkIndex = chunk;
             page.chunkCount = chunks;
-            const int begin = chunk * FaustDeviceLayout::kCellCount;
-            const int end = std::min(count, begin + FaustDeviceLayout::kCellCount);
+            const int begin = chunk * kCellCount;
+            const int end = std::min(count, begin + kCellCount);
             if (begin < end) {
                 page.paramArrayIndices.insert(page.paramArrayIndices.end(),
                                               group.paramArrayIndices.begin() + begin,
                                               group.paramArrayIndices.begin() + end);
             }
-            pages.push_back(std::move(page));
+            cachedPages_.push_back(std::move(page));
         }
     }
-    return pages;
+
+    cachedSignature_ = signature;
+    cacheValid_ = true;
+    return cachedPages_;
 }
-
-juce::String poolPageName(const magda::DeviceInfo& device, int pageIndex) {
-    const int firstSlot = pageIndex * FaustDeviceLayout::kCellCount;
-    const int lastSlot = firstSlot + FaustDeviceLayout::kCellCount;
-    juce::String candidate;
-    bool foundParam = false;
-
-    for (const auto& param : device.parameters) {
-        if (param.paramIndex < firstSlot || param.paramIndex >= lastSlot)
-            continue;
-        foundParam = true;
-        if (param.group.isEmpty())
-            return juce::String(pageIndex + 1);
-        if (candidate.isEmpty())
-            candidate = param.group;
-        else if (candidate != param.group)
-            return juce::String(pageIndex + 1);
-    }
-
-    if (!foundParam || candidate.isEmpty())
-        return juce::String(pageIndex + 1);
-
-    // The candidate may name this page only if none of its controls straddle
-    // into another 32-slot block.
-    for (const auto& param : device.parameters) {
-        if (param.group == candidate &&
-            (param.paramIndex < firstSlot || param.paramIndex >= lastSlot))
-            return juce::String(pageIndex + 1);
-    }
-    return candidate;
-}
-
-}  // namespace
 
 int FaustDeviceLayout::totalPages(const magda::DeviceInfo& device) const {
-    if (pageMode_ == PageMode::Groups)
-        return static_cast<int>(groupedPages(device).size());
-
-    const int hi = maxPoolIndex(device);
-    if (hi < 0)
-        return 1;
-    return std::max(1, (hi + 1 + kCellCount - 1) / kCellCount);
+    return static_cast<int>(pagesFor(device).size());
 }
 
 juce::String FaustDeviceLayout::pageName(const magda::DeviceInfo& device, int pageIndex) const {
-    if (pageMode_ == PageMode::PoolSlots)
-        return poolPageName(device, pageIndex);
-
-    const auto pages = groupedPages(device);
+    const auto& pages = pagesFor(device);
     if (pageIndex < 0 || pageIndex >= static_cast<int>(pages.size()))
         return juce::String(pageIndex + 1);
     const auto& page = pages[static_cast<size_t>(pageIndex)];
@@ -150,40 +119,32 @@ juce::String FaustDeviceLayout::pageName(const magda::DeviceInfo& device, int pa
 
 ParamCell FaustDeviceLayout::cellFor(const magda::DeviceInfo& device, int cellIndex,
                                      int currentPage) const {
-    if (pageMode_ == PageMode::Groups) {
-        ParamCell cell;
-        const auto pages = groupedPages(device);
-        if (currentPage < 0 || currentPage >= static_cast<int>(pages.size()))
-            return cell;
-        const auto& page = pages[static_cast<size_t>(currentPage)];
-        if (cellIndex < 0 || cellIndex >= static_cast<int>(page.paramArrayIndices.size()))
-            return cell;
-
-        const int paramArrayIdx = page.paramArrayIndices[static_cast<size_t>(cellIndex)];
-        const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
-        cell.mode = ParamCell::Mode::Filled;
-        cell.paramArrayIndex = paramArrayIdx;
-        cell.targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : paramArrayIdx;
-        cell.enabled = gateEnabled(device, param);
-        return cell;
-    }
-
-    const int targetPoolIdx = currentPage * kCellCount + cellIndex;
-    const int paramArrayIdx = findParamArrayIndex(device, targetPoolIdx);
-
     ParamCell cell;
-    if (paramArrayIdx < 0) {
-        // No param at this pool slot — the cell is truly empty.
-        cell.mode = ParamCell::Mode::Hidden;
+    const auto& pages = pagesFor(device);
+    if (currentPage < 0 || currentPage >= static_cast<int>(pages.size()))
         return cell;
-    }
+    const auto& page = pages[static_cast<size_t>(currentPage)];
+    if (cellIndex < 0 || cellIndex >= static_cast<int>(page.paramArrayIndices.size()))
+        return cell;
 
+    const int paramArrayIdx = page.paramArrayIndices[static_cast<size_t>(cellIndex)];
     const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
     cell.mode = ParamCell::Mode::Filled;
     cell.paramArrayIndex = paramArrayIdx;
     cell.targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : paramArrayIdx;
     cell.enabled = gateEnabled(device, param);
     return cell;
+}
+
+int FaustDeviceLayout::pageForParameter(const magda::DeviceInfo& device, int paramIndex) const {
+    const auto& pages = pagesFor(device);
+    for (int pageIndex = 0; pageIndex < static_cast<int>(pages.size()); ++pageIndex) {
+        for (const int paramArrayIdx : pages[static_cast<size_t>(pageIndex)].paramArrayIndices) {
+            if (device.parameters[static_cast<size_t>(paramArrayIdx)].paramIndex == paramIndex)
+                return pageIndex;
+        }
+    }
+    return -1;
 }
 
 }  // namespace magda::daw::ui

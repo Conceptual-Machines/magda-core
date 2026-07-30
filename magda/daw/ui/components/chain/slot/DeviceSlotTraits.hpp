@@ -14,8 +14,8 @@ struct DeviceSlotTraits {
     bool isStrum = false;
     bool isStepSequencer = false;
     bool isPolyStepSequencer = false;
-    bool isFaust = false;            // runtime Faust effect: pool-block pages
-    bool isFaustInstrument = false;  // runtime Faust instrument: author-group pages
+    bool isFaust = false;            // runtime Faust effect
+    bool isFaustInstrument = false;  // runtime Faust instrument
     bool isAnalysis = false;  // oscilloscope / spectrum / levels: passthrough, no gain/macros/mods
     bool hasAnalyzerPopout = false;  // scope/spectrum pop into a floating window; levels does not
     bool isAISupported = false;

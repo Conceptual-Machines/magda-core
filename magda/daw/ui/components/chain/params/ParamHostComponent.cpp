@@ -195,6 +195,7 @@ void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int
                         juce::dontSendNotification);
     prevPageButton_->setEnabled(currentPage_ > 0);
     nextPageButton_->setEnabled(currentPage_ < totalPages_ - 1);
+    setPaginationVisible(true);
 }
 
 void ParamHostComponent::setGridVisible(bool visible) {
@@ -203,7 +204,7 @@ void ParamHostComponent::setGridVisible(bool visible) {
 }
 
 void ParamHostComponent::setPaginationVisible(bool visible) {
-    const bool effective = visible && layout_->wantsPagination();
+    const bool effective = visible && layout_->wantsPagination() && totalPages_ > 1;
     const bool tabs = effective && layout_->wantsPageTabs();
     prevPageButton_->setVisible(effective && !tabs);
     nextPageButton_->setVisible(effective && !tabs);

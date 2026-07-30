@@ -66,23 +66,19 @@ detach. Fixed pool fixes that and gives us:
   binding list on `FaustState`* (see real-time boundary below) and
   writes the AutomatableParameter's denormalized value into the zone.
 - **`FaustUI` + `ParamHostComponent`** — both runtime Faust effects and
-  instruments use the same editor header and typed parameter cells. Effects
-  preserve `[idx:N]` placement in 32-slot pages. Instruments form pages from
-  the outermost Faust author group, replacing the former bespoke instrument
-  row renderer while retaining named tabs.
+  instruments use the same editor header, typed parameter cells, and named
+  pages formed from the outermost Faust author group. This replaces the former
+  bespoke instrument row renderer while retaining `[idx:N]` as the stable
+  automation/modulation identity.
 
 ### Group/page authoring convention
 
-For effects, pool slots 0–31 form the first page and 32–63 form the second. A
-`vgroup` / `hgroup` / `tgroup` label names an effect page only when every
-visible control on that page has the same non-empty group and that group does
-not straddle another page. Interleaved, mixed, or boundary-straddling groups
-fall back to the numeric page name. Use page-aligned `[idx:N]` blocks when a
-named effect tab is required.
-
-Instruments are group-paged: every outermost author group becomes a tab and
-its parameters are packed into the shared grid in pool-slot order. Ungrouped
-instrument controls appear under `Params`.
+Effects and instruments are both group-paged: every outermost
+`vgroup` / `hgroup` / `tgroup` becomes a tab and its parameters are packed into
+the shared grid in pool-slot order. Ungrouped controls appear under `Params`.
+Groups larger than 32 controls continue onto numbered tab chunks. `[idx:N]`
+does not place a control visually; it remains the stable pool identity used by
+automation, modulation, MIDI Learn, and gate references.
 
 ## Real-time boundary
 

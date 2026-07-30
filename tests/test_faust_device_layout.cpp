@@ -19,7 +19,7 @@ ParameterInfo param(int index, const juce::String& group = {}) {
 
 }  // namespace
 
-TEST_CASE("FaustDeviceLayout names aligned effect pages from author groups", "[faust][layout]") {
+TEST_CASE("FaustDeviceLayout packs author groups into named pages", "[faust][layout]") {
     FaustDeviceLayout layout;
     DeviceInfo device;
     device.parameters = {param(0, "Filter"), param(7, "Filter"), param(32, "Modulation")};
@@ -27,27 +27,31 @@ TEST_CASE("FaustDeviceLayout names aligned effect pages from author groups", "[f
     REQUIRE(layout.totalPages(device) == 2);
     REQUIRE(layout.pageName(device, 0) == "Filter");
     REQUIRE(layout.pageName(device, 1) == "Modulation");
-    REQUIRE(layout.cellFor(device, 7, 0).targetParamIndex == 7);
+    REQUIRE(layout.cellFor(device, 0, 0).targetParamIndex == 0);
+    REQUIRE(layout.cellFor(device, 1, 0).targetParamIndex == 7);
     REQUIRE(layout.cellFor(device, 0, 1).targetParamIndex == 32);
 }
 
-TEST_CASE("FaustDeviceLayout falls back to numbers for interleaved or straddled groups",
-          "[faust][layout]") {
+TEST_CASE("FaustDeviceLayout decouples groups from pool-slot page boundaries", "[faust][layout]") {
     FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {
+        param(31, "Filter"),
+        param(1, "Envelope"),
+        param(32, "Filter"),
+    };
 
-    DeviceInfo interleaved;
-    interleaved.parameters = {param(0, "Filter"), param(1, "Envelope")};
-    REQUIRE(layout.pageName(interleaved, 0) == "1");
-
-    DeviceInfo straddled;
-    straddled.parameters = {param(31, "Filter"), param(32, "Filter")};
-    REQUIRE(layout.pageName(straddled, 0) == "1");
-    REQUIRE(layout.pageName(straddled, 1) == "2");
+    REQUIRE(layout.totalPages(device) == 2);
+    REQUIRE(layout.pageName(device, 0) == "Filter");
+    REQUIRE(layout.pageName(device, 1) == "Envelope");
+    REQUIRE(layout.cellFor(device, 0, 0).targetParamIndex == 31);
+    REQUIRE(layout.cellFor(device, 1, 0).targetParamIndex == 32);
+    REQUIRE(layout.cellFor(device, 0, 1).targetParamIndex == 1);
 }
 
-TEST_CASE("FaustDeviceLayout group mode packs instrument groups into named pages",
+TEST_CASE("FaustDeviceLayout resolves stable parameter identities to group pages",
           "[faust][layout]") {
-    FaustDeviceLayout layout(FaustDeviceLayout::PageMode::Groups);
+    FaustDeviceLayout layout;
     DeviceInfo device;
     device.parameters = {
         param(0, "Filter"),
@@ -67,8 +71,8 @@ TEST_CASE("FaustDeviceLayout group mode packs instrument groups into named pages
     REQUIRE(layout.pageForParameter(device, 4) == 2);
 }
 
-TEST_CASE("FaustDeviceLayout group mode names ungrouped and oversized pages", "[faust][layout]") {
-    FaustDeviceLayout layout(FaustDeviceLayout::PageMode::Groups);
+TEST_CASE("FaustDeviceLayout names ungrouped and oversized pages", "[faust][layout]") {
+    FaustDeviceLayout layout;
 
     DeviceInfo ungrouped;
     ungrouped.parameters = {param(0), param(1)};
@@ -83,12 +87,47 @@ TEST_CASE("FaustDeviceLayout group mode names ungrouped and oversized pages", "[
     REQUIRE(layout.cellFor(oversized, 0, 1).targetParamIndex == 32);
 }
 
-TEST_CASE("Faust instrument slots select the shared grouped layout", "[faust][layout]") {
-    DeviceSlotTraits traits;
-    traits.isFaustInstrument = true;
+TEST_CASE("FaustDeviceLayout invalidates cached pages when group metadata changes",
+          "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {param(0, "Filter"), param(1, "Filter")};
 
-    auto layout = createDeviceSlotParamLayout(traits);
-    auto* faustLayout = dynamic_cast<FaustDeviceLayout*>(layout.get());
-    REQUIRE(faustLayout != nullptr);
-    REQUIRE(faustLayout->pageMode() == FaustDeviceLayout::PageMode::Groups);
+    REQUIRE(layout.totalPages(device) == 1);
+    device.parameters[1].group = "Envelope";
+    REQUIRE(layout.totalPages(device) == 2);
+    REQUIRE(layout.pageName(device, 1) == "Envelope");
+    REQUIRE(layout.cellFor(device, 0, 1).targetParamIndex == 1);
+}
+
+TEST_CASE("Faust effects and instruments use identical page and parameter mappings",
+          "[faust][layout]") {
+    DeviceSlotTraits effectTraits;
+    effectTraits.isFaust = true;
+    DeviceSlotTraits instrumentTraits;
+    instrumentTraits.isFaustInstrument = true;
+
+    auto effectLayout = createDeviceSlotParamLayout(effectTraits);
+    auto instrumentLayout = createDeviceSlotParamLayout(instrumentTraits);
+    REQUIRE(dynamic_cast<FaustDeviceLayout*>(effectLayout.get()) != nullptr);
+    REQUIRE(dynamic_cast<FaustDeviceLayout*>(instrumentLayout.get()) != nullptr);
+
+    DeviceInfo device;
+    device.parameters = {
+        param(2, "Oscillator"),
+        param(40, "Filter"),
+        param(7, "Oscillator"),
+        param(63, "Envelope"),
+    };
+
+    REQUIRE(effectLayout->totalPages(device) == instrumentLayout->totalPages(device));
+    for (int page = 0; page < effectLayout->totalPages(device); ++page) {
+        REQUIRE(effectLayout->pageName(device, page) == instrumentLayout->pageName(device, page));
+        for (int cell = 0; cell < effectLayout->cellCount(); ++cell) {
+            const auto effectCell = effectLayout->cellFor(device, cell, page);
+            const auto instrumentCell = instrumentLayout->cellFor(device, cell, page);
+            REQUIRE(effectCell.mode == instrumentCell.mode);
+            REQUIRE(effectCell.targetParamIndex == instrumentCell.targetParamIndex);
+        }
+    }
 }

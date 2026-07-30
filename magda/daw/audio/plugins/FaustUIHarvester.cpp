@@ -64,6 +64,9 @@ void FaustUIHarvester::emitControl(FaustParamSlot::Kind kind, const char* rawLab
                                    FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
                                    FAUSTFLOAT max, FAUSTFLOAT step) {
     auto parsed = parseFaustLabel(fromUtf8OrEmpty(rawLabel));
+    // This consumes and erases any pending declare() metadata for the zone.
+    // Keep it before the poly-proxy early return so metadata from a skipped
+    // proxy control cannot leak onto the next harvested control.
     auto merged = mergedMetadataFor(zone);
     mergeFaustMetadata(merged, parsed.metadata);
 
