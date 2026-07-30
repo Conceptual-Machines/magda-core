@@ -9,11 +9,12 @@ using namespace magda::daw::ui;
 
 namespace {
 
-ParameterInfo param(int index, const juce::String& group = {}) {
+ParameterInfo param(int index, const juce::String& group = {}, int widthCells = 1) {
     ParameterInfo info;
     info.paramIndex = index;
     info.name = "Param " + juce::String(index);
     info.group = group;
+    info.widthCells = widthCells;
     return info;
 }
 
@@ -138,4 +139,82 @@ TEST_CASE("Faust effects and instruments use identical page and parameter mappin
             REQUIRE(effectCell.targetParamIndex == instrumentCell.targetParamIndex);
         }
     }
+}
+
+// `[width:N]` lets a control claim more than one grid cell, so a segmented
+// choice row or a long readout is legible instead of being squeezed into an
+// eighth of a row. The layout owns the packing; the annotation is a request.
+
+TEST_CASE("FaustDeviceLayout gives a wide param its extra cells", "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {param(0, "Engine", 3), param(1, "Engine")};
+
+    const auto wide = layout.cellFor(device, 0, 0);
+    REQUIRE(wide.mode == ParamCell::Mode::Filled);
+    REQUIRE(wide.targetParamIndex == 0);
+    REQUIRE(wide.span == 3);
+
+    // The two cells it swallowed render nothing at all.
+    REQUIRE(layout.cellFor(device, 1, 0).mode == ParamCell::Mode::Hidden);
+    REQUIRE(layout.cellFor(device, 2, 0).mode == ParamCell::Mode::Hidden);
+
+    // The next param resumes after the span, not after one cell.
+    const auto next = layout.cellFor(device, 3, 0);
+    REQUIRE(next.mode == ParamCell::Mode::Filled);
+    REQUIRE(next.targetParamIndex == 1);
+    REQUIRE(next.span == 1);
+}
+
+TEST_CASE("FaustDeviceLayout defaults to a single cell", "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {param(0, "Engine"), param(1, "Engine")};
+    REQUIRE(layout.cellFor(device, 0, 0).span == 1);
+    REQUIRE(layout.cellFor(device, 1, 0).targetParamIndex == 1);
+}
+
+TEST_CASE("FaustDeviceLayout never splits a control across rows", "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    // Six single cells fill most of row one; a 3-wide control cannot fit in the
+    // two that remain, so it starts row two rather than wrapping mid-widget.
+    for (int i = 0; i < 6; ++i)
+        device.parameters.push_back(param(i, "Engine"));
+    device.parameters.push_back(param(6, "Engine", 3));
+
+    REQUIRE(layout.cellFor(device, 6, 0).mode == ParamCell::Mode::Hidden);
+    REQUIRE(layout.cellFor(device, 7, 0).mode == ParamCell::Mode::Hidden);
+    const auto wrapped = layout.cellFor(device, 8, 0);
+    REQUIRE(wrapped.mode == ParamCell::Mode::Filled);
+    REQUIRE(wrapped.targetParamIndex == 6);
+    REQUIRE(wrapped.span == 3);
+}
+
+TEST_CASE("FaustDeviceLayout clamps a width wider than a row", "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {param(0, "Engine", 99)};
+    const auto cell = layout.cellFor(device, 0, 0);
+    REQUIRE(cell.span == FaustDeviceLayout::kCellsPerRow);
+    REQUIRE(layout.totalPages(device) == 1);
+}
+
+TEST_CASE("FaustDeviceLayout finds a wide param's page", "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {param(0, "Engine", 4), param(7, "Mix")};
+    REQUIRE(layout.pageForParameter(device, 0) == 0);
+    REQUIRE(layout.pageForParameter(device, 7) == 1);
+}
+
+TEST_CASE("FaustDeviceLayout invalidates cached pages when a width changes", "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {param(0, "Engine"), param(1, "Engine")};
+    REQUIRE(layout.cellFor(device, 1, 0).targetParamIndex == 1);
+
+    device.parameters[0].widthCells = 3;
+    REQUIRE(layout.cellFor(device, 1, 0).mode == ParamCell::Mode::Hidden);
+    REQUIRE(layout.cellFor(device, 3, 0).targetParamIndex == 1);
 }

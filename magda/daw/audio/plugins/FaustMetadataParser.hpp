@@ -85,6 +85,13 @@ struct ControlMetadata {
         return choiceStyle != FaustChoiceStyle::None;
     }
 
+    /// Cells this control spans in the param grid, from `[width:N]`. 1 is the
+    /// default and the historical behaviour. Lets an author give a control with
+    /// several visible choices, or a long value readout, the room it needs
+    /// instead of being squeezed into one eighth of a row. Clamped to a row's
+    /// worth of cells by the layout; a control never wraps mid-widget.
+    int widthCells = 1;
+
     /// Free-text help from `[tooltip:…]`, Faust's own convention for
     /// documenting a control. Empty if absent. Purely presentational:
     /// it never affects the kind, range, or automation of a parameter.

@@ -1,5 +1,7 @@
 #include "params/ParamHostComponent.hpp"
 
+#include <algorithm>
+
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -119,8 +121,10 @@ ParamHostComponent::~ParamHostComponent() = default;
 void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
     std::function<void(int paramIndex, double value)> onValueChanged) {
+    cellSpans_.assign(static_cast<size_t>(std::max(0, cellCount_)), 1);
     for (int i = 0; i < cellCount_; ++i) {
         const auto cell = layout_->cellFor(device, i, currentPage);
+        cellSpans_[static_cast<size_t>(i)] = std::max(1, cell.span);
         switch (cell.mode) {
             case ParamCell::Mode::Filled: {
                 if (cell.paramArrayIndex < 0 ||
@@ -284,8 +288,16 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
         const int x = area.getX() + col * cellWidth + 2;
         const int y = area.getY() + row * cellHeight + 2;
 
+        // A spanning cell keeps the gutters of a single one, so a wide control
+        // lines up with its narrow neighbours instead of gaining extra padding
+        // per cell it swallowed.
+        const int span = i < static_cast<int>(cellSpans_.size())
+                             ? std::max(1, cellSpans_[static_cast<size_t>(i)])
+                             : 1;
+        const int width = span * cellWidth - 4;
+
         paramSlots_[i]->setFonts(labelFont, valueFont);
-        paramSlots_[i]->setBounds(x, y, cellWidth - 4, cellHeight - 4);
+        paramSlots_[i]->setBounds(x, y, width, cellHeight - 4);
         // Visibility is owned by updateParameterSlots() via the layout —
         // don't override it on layout passes.
     }

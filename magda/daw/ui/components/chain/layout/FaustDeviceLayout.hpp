@@ -44,9 +44,17 @@ class FaustDeviceLayout final : public DeviceParamLayout {
     int pageForParameter(const magda::DeviceInfo& device, int paramIndex) const override;
 
   private:
+    // One cell's worth of a page. `paramArrayIndex` is -1 for a cell that is
+    // empty, or that was absorbed by a wider neighbour to its left.
+    struct PageCell {
+        int paramArrayIndex = -1;
+        int span = 1;
+    };
+
     struct GroupPage {
         juce::String name;
-        std::vector<int> paramArrayIndices;
+        // Exactly kCellCount entries, so a cell index maps straight to a slot.
+        std::vector<PageCell> cells;
         int chunkIndex = 0;
         int chunkCount = 1;
     };

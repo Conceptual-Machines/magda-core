@@ -10,7 +10,7 @@ import("stdfaust.lib");
 // Was four interlocking checkboxes resolved by nested ba.if; the window
 // is one exclusive choice, and engaging the engine is a separate toggle.
 engage   = vgroup("Engine", button("Engage[idx:0][tooltip: Runs the incoming signal through the reverse buffer for as long as it is held.]"));
-window   = vgroup("Engine", nentry("Window[idx:1][style:radio{'1/8':0;'1/4':1;'1/2':2;'1 Bar':3}][tooltip: Reverse window size, from rapid backward glitch repeats to a standard one-bar phrase reversal.]", 0, 0, 3, 1));
+window   = vgroup("Engine", nentry("Window[idx:1][width:3][style:radio{'1/8':0;'1/4':1;'1/2':2;'1 Bar':3}][tooltip: Reverse window size, from rapid backward glitch repeats to a standard one-bar phrase reversal.]", 0, 0, 3, 1));
 
 // Request Profile: Runs 100% wet by default
 outputMix = vgroup("Mix", hslider("Dry/Wet[idx:2][unit:%][tooltip: Blends your original clean signal back into the 100% wet reversed texture.]", 100.0, 0.0, 100.0, 1.0)) / 100.0;

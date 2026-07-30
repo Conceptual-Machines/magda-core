@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
@@ -101,6 +102,10 @@ class ParamHostComponent : public juce::Component {
     std::unique_ptr<DeviceParamLayout> layout_;
     int cellCount_ = 0;
     int cellsPerRow_ = 0;
+    // Cells each slot spans, captured when the layout last assigned slots.
+    // layoutContent() has no DeviceInfo of its own, so the widths it needs are
+    // recorded here rather than re-derived.
+    std::vector<int> cellSpans_;
     std::unique_ptr<ParamSlotComponent> paramSlots_[kMaxCells];
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
     std::unique_ptr<juce::ArrowButton> nextPageButton_;

@@ -12,7 +12,7 @@ namespace {
 bool isKnownKey(const juce::String& key) {
     return key == "idx" || key == "unit" || key == "scale" || key == "style" || key == "role" ||
            key == "hidden" || key == "gate" || key == "scaleAnchor" || key == "scaleanchor" ||
-           key == "tooltip";
+           key == "tooltip" || key == "width";
 }
 
 // `[style:menu{'A':0;'B':1}]` payloads — the value passed to
@@ -110,6 +110,15 @@ bool applyFaustAnnotation(const juce::String& key, const juce::String& value,
         // Other style values (knob / led / numerical) are recognised
         // and stripped from the clean label, but don't surface a flag —
         // they're purely visual hints we don't act on.
+        return true;
+    }
+    if (key == "width") {
+        // Cells, not pixels: the grid is the unit an author can reason about
+        // without knowing the device's pixel size. Values below 1 are ignored
+        // rather than clamped silently to a degenerate zero-width cell.
+        const int n = value.trim().getIntValue();
+        if (n >= 1)
+            metadata.widthCells = n;
         return true;
     }
     if (key == "tooltip") {
@@ -248,6 +257,8 @@ void mergeFaustMetadata(ControlMetadata& parent, const ControlMetadata& child) {
     }
     if (child.tooltip.isNotEmpty())
         parent.tooltip = child.tooltip;
+    if (child.widthCells > 1)
+        parent.widthCells = child.widthCells;
     // Role/hidden follow the same "non-default child wins" rule as the
     // other tags: a control-level annotation overrides a group-level
     // default. We can't distinguish "child explicitly said User" from
