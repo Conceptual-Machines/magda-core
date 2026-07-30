@@ -86,7 +86,7 @@ TEST_CASE("FaustUIHarvester maps active widgets to shared control kinds", "[faus
     REQUIRE(harvester.controls()[0].kind == FaustParamSlot::Kind::Trigger);
     REQUIRE(harvester.controls()[1].kind == FaustParamSlot::Kind::Boolean);
     REQUIRE(harvester.controls()[2].kind == FaustParamSlot::Kind::Continuous);
-    REQUIRE(harvester.controls()[2].metadata.isMenuStyle);
+    REQUIRE(harvester.controls()[2].metadata.isChoiceStyle());
 
     FaustParamPool pool;
     pool.rebindFromHarvest(harvester.controls());

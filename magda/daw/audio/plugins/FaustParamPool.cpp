@@ -25,13 +25,18 @@ void fillSlot(FaustParamSlot& slot, int index, const HarvestedControl& h) {
     // Style menu/radio overrides the kind even if the harvester
     // reported Continuous — Faust users do `hslider("Mode
     // [style:menu{…}]", …)` and expect a dropdown.
-    slot.kind = h.metadata.isMenuStyle ? FaustParamSlot::Kind::Discrete : h.kind;
+    slot.kind = h.metadata.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : h.kind;
     slot.minValue = h.minValue;
     slot.maxValue = h.maxValue;
     slot.stepValue = h.stepValue;
     slot.defaultValue = h.defaultValue;
     slot.logScale = h.metadata.logScale;
     slot.choices = h.metadata.menuChoices;
+    // Set unconditionally: resetSlot deliberately keeps descriptive fields
+    // across a deactivate/reactivate cycle, so anything left conditional here
+    // would carry over from whatever DSP previously owned this slot.
+    slot.choiceStyle = h.metadata.choiceStyle;
+    slot.tooltip = h.metadata.tooltip;
     slot.zone = h.zone;
     slot.role = h.metadata.role;
     slot.hidden = h.metadata.hidden;

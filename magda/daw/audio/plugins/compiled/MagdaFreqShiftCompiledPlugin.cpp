@@ -82,7 +82,7 @@ class FreqShiftHarvester : public ::UI {
 
         FreqShiftHarvest::Control c;
         c.idx = merged.slotIndex;
-        c.kind = merged.isMenuStyle ? FaustParamSlot::Kind::Discrete : kind;
+        c.kind = merged.isChoiceStyle() ? FaustParamSlot::Kind::Discrete : kind;
         c.zone = zone;
         harvest.controls.push_back(std::move(c));
     }
