@@ -39,7 +39,12 @@ int crtReportHook(int reportType, char* message, int* returnValue) {
 
     if (reportType == _CRT_ERROR || reportType == _CRT_ASSERT) {
         std::fputs("\nmagda tests: fatal CRT diagnostic (see above), exiting 3\n", stderr);
-        std::fflush(stderr);
+        // Flush every stream, not just stderr. _Exit below skips the CRT's own
+        // flushing, and the test runner's stdout is block-buffered whenever it
+        // is redirected to a file or a CI log -- without this, the report
+        // arrives with no record of which tests had run, which is most of what
+        // makes it actionable.
+        std::fflush(nullptr);
         // _Exit, not abort(): abort() in a debug build routes back through the
         // CRT's own fault reporting, and static destructors would run over
         // whatever state just tripped the diagnostic.

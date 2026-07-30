@@ -818,28 +818,35 @@ jobs:
           Write-Error "Tests executable not found"
           exit 1
         }
-        $out = "magda-tests-stdout.log"
-        $err = "magda-tests-stderr.log"
-        $proc = Start-Process -FilePath $testExe.FullName `
-          -ArgumentList '--durations','yes' `
-          -RedirectStandardOutput $out -RedirectStandardError $err `
-          -PassThru -NoNewWindow
-        $proc.WaitForExit()
-        Write-Output "=== magda_tests exit code: $($proc.ExitCode) ==="
-        Write-Output "=== stderr (CRT diagnostics) ==="
-        if (Test-Path $err) { Get-Content $err }
-        Write-Output "=== stdout tail: last tests to complete ==="
-        if (Test-Path $out) { Get-Content $out -Tail 25 }
-        exit $proc.ExitCode
+        function Invoke-Suite($label, $suiteArgs, $tag) {
+          $out = "magda-tests-$tag-stdout.log"
+          $err = "magda-tests-$tag-stderr.log"
+          $proc = Start-Process -FilePath $testExe.FullName -ArgumentList $suiteArgs `
+            -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -NoNewWindow
+          $proc.WaitForExit()
+          Write-Output ""
+          Write-Output "########## $label -> exit $($proc.ExitCode) ##########"
+          Write-Output "--- stderr (CRT diagnostics) ---"
+          if (Test-Path $err) { Get-Content $err }
+          Write-Output "--- stdout tail: last tests to complete ---"
+          if (Test-Path $out) { Get-Content $out -Tail 20 }
+          return $proc.ExitCode
+        }
+
+        # Faust subset first: it is where the report has landed so far, and it
+        # runs in seconds, so a hit here isolates the corruption to that path
+        # instead of leaving the whole suite as the suspect.
+        $faustCode = Invoke-Suite 'Faust subset ([faust])' @('[faust]', '--durations', 'yes') 'faust'
+        $fullCode = Invoke-Suite 'Full suite' @('--durations', 'yes') 'full'
+
+        if ($faustCode -ne 0 -or $fullCode -ne 0) { exit 1 }
 
     - name: Upload heap probe logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: windows-heap-probe-logs
-        path: |
-          magda-tests-stdout.log
-          magda-tests-stderr.log
+        path: magda-tests-*.log
         if-no-files-found: ignore
 
     # Release configure/build/verify only run on push to main, and only on the
