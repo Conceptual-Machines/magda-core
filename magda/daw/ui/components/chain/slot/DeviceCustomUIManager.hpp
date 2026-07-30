@@ -32,8 +32,6 @@ class DelayUI;
 class DrumGridUI;
 class EqualiserUI;
 class ExternalInsertUI;
-class FaustUI;
-class FaustInstrumentTabbedUI;
 class FilterUI;
 class FourOscUI;
 class ImpulseResponseUI;
@@ -237,9 +235,6 @@ class DeviceCustomUIManager {
     FourOscUI* getFourOscUI() const {
         return fourOscUI_.get();
     }
-    FaustInstrumentTabbedUI* getFaustInstrumentUI() const {
-        return faustInstrumentUI_.get();
-    }
     ChordPanelContent* getChordEngineUI() const {
         return chordEngineUI_.get();
     }
@@ -303,7 +298,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
     std::unique_ptr<FourOscUI> fourOscUI_;
-    std::unique_ptr<FaustInstrumentTabbedUI> faustInstrumentUI_;
     std::unique_ptr<PolySynthUI> polySynthUI_;
     std::unique_ptr<FMUI> fmUI_;
     std::unique_ptr<MateriaUI> materiaUI_;
@@ -321,7 +315,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<SidechainUI> sidechainUI_;
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
-    std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StrumUI> strumUI_;

@@ -8,8 +8,11 @@
 namespace magda::daw::ui {
 
 std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotTraits& traits) {
-    if (traits.isFaust)
-        return std::make_unique<FaustDeviceLayout>();
+    if (traits.isFaust || traits.isFaustInstrument) {
+        const auto pageMode = traits.isFaustInstrument ? FaustDeviceLayout::PageMode::Groups
+                                                       : FaustDeviceLayout::PageMode::PoolSlots;
+        return std::make_unique<FaustDeviceLayout>(pageMode);
+    }
 
     if (traits.compiledPresentation != nullptr) {
         return std::make_unique<CompiledFaustDeviceLayout>(

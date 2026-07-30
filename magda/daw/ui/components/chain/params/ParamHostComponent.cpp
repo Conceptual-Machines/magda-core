@@ -6,6 +6,34 @@
 
 namespace magda::daw::ui {
 
+class ParamPageTabBar final : public juce::TabbedButtonBar {
+  public:
+    ParamPageTabBar() : juce::TabbedButtonBar(juce::TabbedButtonBar::TabsAtTop) {
+        setMinimumTabScaleFactor(0.5);
+    }
+
+    void setPages(const DeviceParamLayout& layout, const magda::DeviceInfo& device, int totalPages,
+                  int currentPage) {
+        suppressCallback_ = true;
+        clearTabs();
+        const auto tabColour = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
+        for (int page = 0; page < totalPages; ++page)
+            addTab(layout.pageName(device, page), tabColour, -1);
+        setCurrentTabIndex(currentPage, false);
+        suppressCallback_ = false;
+    }
+
+    std::function<void(int)> onPageSelected;
+
+    void currentTabChanged(int newCurrentTabIndex, const juce::String&) override {
+        if (!suppressCallback_ && onPageSelected)
+            onPageSelected(newCurrentTabIndex);
+    }
+
+  private:
+    bool suppressCallback_ = false;
+};
+
 namespace {
 
 void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, const ParamCell& cell,
@@ -72,6 +100,13 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
     pageLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     pageLabel_->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*pageLabel_);
+
+    pageTabBar_ = std::make_unique<ParamPageTabBar>();
+    pageTabBar_->onPageSelected = [this](int pageIndex) {
+        if (onPageSelected)
+            onPageSelected(pageIndex);
+    };
+    addAndMakeVisible(*pageTabBar_);
 
     for (int i = 0; i < cellCount_; ++i) {
         paramSlots_[i] = std::make_unique<ParamSlotComponent>(i);
@@ -150,9 +185,12 @@ void ParamHostComponent::updateParamModulation(
     }
 }
 
-void ParamHostComponent::updatePageControls(int currentPage, int totalPages) {
+void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int currentPage,
+                                            int totalPages) {
     currentPage_ = currentPage;
     totalPages_ = totalPages;
+    if (layout_->wantsPageTabs())
+        pageTabBar_->setPages(*layout_, device, totalPages_, currentPage_);
     pageLabel_->setText(juce::String(currentPage_ + 1) + "/" + juce::String(totalPages_),
                         juce::dontSendNotification);
     prevPageButton_->setEnabled(currentPage_ > 0);
@@ -166,9 +204,11 @@ void ParamHostComponent::setGridVisible(bool visible) {
 
 void ParamHostComponent::setPaginationVisible(bool visible) {
     const bool effective = visible && layout_->wantsPagination();
-    prevPageButton_->setVisible(effective);
-    nextPageButton_->setVisible(effective);
-    pageLabel_->setVisible(effective);
+    const bool tabs = effective && layout_->wantsPageTabs();
+    prevPageButton_->setVisible(effective && !tabs);
+    nextPageButton_->setVisible(effective && !tabs);
+    pageLabel_->setVisible(effective && !tabs);
+    pageTabBar_->setVisible(tabs);
 }
 
 void ParamHostComponent::setLearnMode(bool active) {
@@ -223,9 +263,13 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     }
 
     if (layout_->wantsPagination()) {
-        placeNavArrow(*prevPageButton_, paginationArea, true);
-        placeNavArrow(*nextPageButton_, paginationArea, false);
-        pageLabel_->setBounds(paginationArea);
+        if (layout_->wantsPageTabs()) {
+            pageTabBar_->setBounds(paginationArea);
+        } else {
+            placeNavArrow(*prevPageButton_, paginationArea, true);
+            placeNavArrow(*nextPageButton_, paginationArea, false);
+            pageLabel_->setBounds(paginationArea);
+        }
     }
 
     area = area.reduced(2, 0);

@@ -20,7 +20,7 @@ namespace magda::daw::ui {
 class FaustCustomView;
 
 /**
- * @brief Bespoke header strip for FaustPlugin.
+ * @brief Bespoke header strip shared by runtime Faust effects and instruments.
  *
  * This component renders the Faust-specific header — logo, DSP name
  * box, Load DSP icon, Edit code icon — and *only* that strip. The

@@ -68,6 +68,9 @@ struct ParameterInfo {
     juce::String stableId;  // Persistent host/state identifier; empty lets the adapter derive one
     juce::String name;      // "Cutoff", "Resonance", etc.
     juce::String unit;      // "Hz", "ms", "%", "dB", ""
+    // Optional UI-only page/group name. Runtime Faust devices populate this
+    // from the outermost author vgroup/hgroup/tgroup.
+    juce::String group;
 
     // Value range — ALL stored in REAL parameter units (Hz, dB, %, …).
     // Consumers never see normalized values here; the normalized↔real

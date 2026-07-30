@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 
 #include "core/MacroInfo.hpp"
@@ -11,6 +12,8 @@
 #include "params/ParamSlotComponent.hpp"
 
 namespace magda::daw::ui {
+
+class ParamPageTabBar;
 
 /**
  * @brief Dumb composer of parameter slots.
@@ -54,7 +57,7 @@ class ParamHostComponent : public juce::Component {
                                int selectedMacroIndex);
 
     // Pagination state — owned here, but the layout decides shape.
-    void updatePageControls(int currentPage, int totalPages);
+    void updatePageControls(const magda::DeviceInfo& device, int currentPage, int totalPages);
     int getCurrentPage() const {
         return currentPage_;
     }
@@ -74,6 +77,7 @@ class ParamHostComponent : public juce::Component {
 
     std::function<void()> onPrevPage;
     std::function<void()> onNextPage;
+    std::function<void(int pageIndex)> onPageSelected;
 
     // Re-evaluate gates and apply enabled state on the current page.
     void refreshEnabledStates(const magda::DeviceInfo& device, int currentPage);
@@ -101,6 +105,7 @@ class ParamHostComponent : public juce::Component {
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
     std::unique_ptr<juce::ArrowButton> nextPageButton_;
     std::unique_ptr<juce::Label> pageLabel_;
+    std::unique_ptr<ParamPageTabBar> pageTabBar_;
     int currentPage_ = 0;
     int totalPages_ = 1;
     bool learnMode_ = false;

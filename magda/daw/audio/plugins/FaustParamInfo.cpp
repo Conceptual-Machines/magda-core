@@ -117,20 +117,28 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
     // inspector. Funnel them through the inactive-placeholder path so
     // the slot index stays addressable for automation lookups while
     // the param grid filters them out by empty name.
-    if (!slot.active || slot.hidden)
-        return placeholderForInactive(slot);
-
+    magda::ParameterInfo info;
+    if (!slot.active || slot.hidden) {
+        info = placeholderForInactive(slot);
+        info.group = slot.group;
+        return info;
+    }
     switch (slot.kind) {
         case FaustParamSlot::Kind::Continuous:
-            return continuousInfo(slot);
+            info = continuousInfo(slot);
+            break;
         case FaustParamSlot::Kind::Boolean:
-            return booleanInfo(slot);
+            info = booleanInfo(slot);
+            break;
         case FaustParamSlot::Kind::Trigger:
-            return triggerInfo(slot);
+            info = triggerInfo(slot);
+            break;
         case FaustParamSlot::Kind::Discrete:
-            return discreteInfo(slot);
+            info = discreteInfo(slot);
+            break;
     }
-    return placeholderForInactive(slot);
+    info.group = slot.group;
+    return info;
 }
 
 }  // namespace magda::daw::audio

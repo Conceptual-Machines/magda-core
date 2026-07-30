@@ -187,7 +187,8 @@ bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
 void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceSlotTraits& traits,
                                  bool internalDevice, bool hasCustomUI,
                                  DeviceSlotContentBodyControls controls, int faustHeaderHeight) {
-    if (traits.isFaust && controls.faustHeader != nullptr) {
+    const bool runtimeFaust = traits.isFaust || traits.isFaustInstrument;
+    if (runtimeFaust && controls.faustHeader != nullptr) {
         controls.faustHeader->setBounds(contentArea.removeFromTop(faustHeaderHeight));
         controls.faustHeader->setVisible(true);
 

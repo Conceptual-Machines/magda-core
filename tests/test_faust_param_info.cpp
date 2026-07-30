@@ -110,6 +110,13 @@ TEST_CASE("paramInfoFromSlot - paramIndex preserved", "[faust][paraminfo]") {
     REQUIRE(info.paramIndex == 42);
 }
 
+TEST_CASE("paramInfoFromSlot - author group propagates", "[faust][paraminfo]") {
+    auto slot = makeContinuousSlot(3, "Cutoff");
+    slot.group = "Filter";
+    auto info = paramInfoFromSlot(slot);
+    REQUIRE(info.group == "Filter");
+}
+
 // ============================================================================
 // Boolean
 // ============================================================================

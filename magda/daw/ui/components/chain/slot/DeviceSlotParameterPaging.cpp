@@ -114,7 +114,7 @@ void updateDeviceSlotParameterPagination(const magda::DeviceInfo& device,
         currentPage = totalPages - 1;
     if (currentPage < 0)
         currentPage = 0;
-    paramGrid->updatePageControls(currentPage, totalPages);
+    paramGrid->updatePageControls(device, currentPage, totalPages);
 }
 
 void goToPreviousDeviceSlotParameterPage(magda::DeviceInfo& device, ParamHostComponent& paramGrid,
@@ -125,7 +125,7 @@ void goToPreviousDeviceSlotParameterPage(magda::DeviceInfo& device, ParamHostCom
 
     const int newPage = currentPage - 1;
     device.currentParameterPage = newPage;
-    paramGrid.updatePageControls(newPage, paramGrid.getTotalPages());
+    paramGrid.updatePageControls(device, newPage, paramGrid.getTotalPages());
     reloadPage(std::move(callbacks));
 }
 
@@ -138,7 +138,18 @@ void goToNextDeviceSlotParameterPage(magda::DeviceInfo& device, ParamHostCompone
 
     const int newPage = currentPage + 1;
     device.currentParameterPage = newPage;
-    paramGrid.updatePageControls(newPage, totalPages);
+    paramGrid.updatePageControls(device, newPage, totalPages);
+    reloadPage(std::move(callbacks));
+}
+
+void goToDeviceSlotParameterPage(magda::DeviceInfo& device, ParamHostComponent& paramGrid,
+                                 int pageIndex, DeviceSlotParameterPagingCallbacks callbacks) {
+    const int totalPages = paramGrid.getTotalPages();
+    if (pageIndex < 0 || pageIndex >= totalPages || pageIndex == paramGrid.getCurrentPage())
+        return;
+
+    device.currentParameterPage = pageIndex;
+    paramGrid.updatePageControls(device, pageIndex, totalPages);
     reloadPage(std::move(callbacks));
 }
 

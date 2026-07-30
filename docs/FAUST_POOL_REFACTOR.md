@@ -41,8 +41,8 @@ detach. Fixed pool fixes that and gives us:
   encounter order into the next free slot, marking the rest inactive.
   Survives DSP swap because the pool's `AutomatableParameter`s never
   get torn down.
-- **`HarvestedControl` + `UIHarvester`** *(internal to
-  `FaustPlugin.cpp`)* — small Faust `UI` subclass that captures every
+- **`HarvestedControl` + `FaustUIHarvester`** — shared Faust `UI`
+  implementation used by both runtime effects and instruments. It captures every
   `addHorizontalSlider` / `addVerticalSlider` / `addNumEntry` /
   `addCheckButton` / `addButton` along with the preceding `declare()`
   metadata. Tracks group-level vs control-level metadata via a
@@ -65,10 +65,24 @@ detach. Fixed pool fixes that and gives us:
   `pool.rebindFromHarvest`. `applyToBuffer` walks the *active
   binding list on `FaustState`* (see real-time boundary below) and
   writes the AutomatableParameter's denormalized value into the zone.
-- **`FaustUI`** *(refactored)* — keeps the bespoke header (logo / Load
-  / Edit / framed name box) but the body becomes a thin wrapper over
-  `ParamGridComponent`, like generic devices. The bespoke `ParamSlot`
-  vector goes away.
+- **`FaustUI` + `ParamHostComponent`** — both runtime Faust effects and
+  instruments use the same editor header and typed parameter cells. Effects
+  preserve `[idx:N]` placement in 32-slot pages. Instruments form pages from
+  the outermost Faust author group, replacing the former bespoke instrument
+  row renderer while retaining named tabs.
+
+### Group/page authoring convention
+
+For effects, pool slots 0–31 form the first page and 32–63 form the second. A
+`vgroup` / `hgroup` / `tgroup` label names an effect page only when every
+visible control on that page has the same non-empty group and that group does
+not straddle another page. Interleaved, mixed, or boundary-straddling groups
+fall back to the numeric page name. Use page-aligned `[idx:N]` blocks when a
+named effect tab is required.
+
+Instruments are group-paged: every outermost author group becomes a tab and
+its parameters are packed into the shared grid in pool-slot order. Ungrouped
+instrument controls appear under `Params`.
 
 ## Real-time boundary
 
