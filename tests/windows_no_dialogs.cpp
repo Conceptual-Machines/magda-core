@@ -7,9 +7,10 @@
 // "timed out after 5 minutes" and the actual message is never printed, because
 // it went to a window instead of stderr.
 //
-// That is how the Windows CI hang presented: the suite went silent after the
-// Faust patch-metadata tests and a minidump of the stuck process contained
-// "HEAP CORRUPTION DETECTED ... wrote to memory before start of heap buffer".
+// That is how the Windows CI hang of July 2026 presented: the suite went silent
+// partway through and a minidump of the stuck process contained "HEAP
+// CORRUPTION DETECTED ... wrote to memory before start of heap buffer" -- a
+// buffer underrun in faust's pathToContent, reached only on the wasm backend.
 //
 // So: route every CRT report to stderr, and make the fatal ones exit instead of
 // returning into a corrupt program. Static init runs before any test, and the
@@ -136,11 +137,10 @@ struct DialogSuppressor {
 
         // Opt-in heap forensics. By default the debug heap only inspects a
         // block's guard bytes when that block is freed, so a stray write is
-        // reported wherever the victim happens to be released -- which is why
-        // the corruption above surfaced inside an unrelated Faust test and only
-        // on some machines. This walks the whole heap on every allocation and
-        // free, which pins the report to the first allocation after the bad
-        // write. Far too slow for the full suite; run it over a subset.
+        // reported wherever the victim happens to be released, which can be far
+        // from the code at fault. This walks the whole heap on every allocation
+        // and free, pinning the report to the first allocation after the bad
+        // write. Slow: prefer running it over a subset of the suite.
         if (const char* checkHeap = std::getenv("MAGDA_TEST_HEAP_CHECK");
             checkHeap != nullptr && checkHeap[0] == '1') {
             _CrtSetDbgFlag(_CrtSetDbgFlag(_CRTDBG_REPORT_FLAG) | _CRTDBG_ALLOC_MEM_DF |
