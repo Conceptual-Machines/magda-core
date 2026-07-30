@@ -24,6 +24,10 @@ namespace {
 // before bundled libraries are wired into the search path.
 constexpr const char* kDefaultDspSource = R"FAUST(
 declare name "Passthrough";
+declare description "Stereo passthrough. Replace this with your own DSP.";
+declare author "MAGDA";
+declare license "GPL-3.0";
+declare version "1.0";
 process = _, _;
 )FAUST";
 

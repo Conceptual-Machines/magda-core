@@ -41,6 +41,10 @@ bool isReservedVoiceControl(const juce::String& cleanLabel) {
 constexpr const char* kDefaultDspSource = R"FAUST(
 import("stdfaust.lib");
 declare name "Faust Poly Synth";
+declare description "Detuned saw pair through a resonant lowpass. Replace this with your own DSP.";
+declare author "MAGDA";
+declare license "GPL-3.0";
+declare version "1.0";
 
 freq = hslider("freq", 440, 20, 20000, 0.01);
 gain = hslider("gain", 0.5, 0, 1, 0.01);
