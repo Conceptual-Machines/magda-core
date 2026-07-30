@@ -87,6 +87,43 @@ struct SidechainConfig {
 enum class DeviceLoadState { Loaded, Loading, Failed };
 
 /**
+ * @brief How a read-only meter asks to be drawn in a grid cell.
+ */
+enum class MeterStyle {
+    Bar,        // filled bar across the cell
+    Numerical,  // value as text, no bar
+    Led,        // lamp whose brightness tracks the value
+};
+
+/**
+ * @brief A read-only value a device reports back to the host.
+ *
+ * Deliberately not a ParameterInfo. A meter is written by the device and read
+ * by the UI, so it can never be automated, modulated, macro-linked or MIDI
+ * learned, and keeping it out of `DeviceInfo::parameters` is what guarantees
+ * that, since every binding surface walks that list. This struct describes the
+ * meter; the live reading is polled by the cell, not carried here.
+ *
+ * Runtime Faust devices populate this from `hbargraph` / `vbargraph`.
+ */
+struct MeterInfo {
+    /// Index into the device's own output pool, passed back to the device
+    /// when the cell polls for a reading.
+    int meterIndex = -1;
+    juce::String name;
+    juce::String unit;
+    juce::String group;    // page/tab name, same rule as ParameterInfo::group
+    juce::String tooltip;  // hover help
+    float minValue = 0.0f;
+    float maxValue = 1.0f;
+    int widthCells = 1;
+    MeterStyle style = MeterStyle::Bar;
+    /// Declared as a vertical bargraph. A run of these in one group can be
+    /// banked side by side rather than each taking a cell of its own.
+    bool vertical = false;
+};
+
+/**
  * @brief Device/plugin information stored on a track
  */
 struct DeviceInfo {
@@ -152,6 +189,11 @@ struct DeviceInfo {
     // parameter grid. `paramIndex` still addresses the underlying TE slot so
     // host writes, automation and aliases work the same as for plugin params.
     std::vector<ParameterInfo> wrapperParameters;
+
+    // Read-only values the device reports back (Faust bargraphs). Kept out of
+    // `parameters` on purpose; see MeterInfo. The grid gives each one a cell
+    // and polls the device for its reading.
+    std::vector<MeterInfo> meters;
 
     // User-selected visible parameters (indices into plugin parameter list)
     // If empty, show first N parameters; otherwise show these specific indices

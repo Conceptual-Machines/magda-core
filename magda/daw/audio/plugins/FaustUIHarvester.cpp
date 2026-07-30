@@ -86,6 +86,38 @@ void FaustUIHarvester::emitControl(FaustParamSlot::Kind kind, const char* rawLab
     controls_.push_back(std::move(control));
 }
 
+void FaustUIHarvester::emitOutput(bool vertical, const char* rawLabel, FAUSTFLOAT* zone,
+                                  FAUSTFLOAT min, FAUSTFLOAT max) {
+    auto parsed = parseFaustLabel(fromUtf8OrEmpty(rawLabel));
+    // Same ordering as emitControl: consume the pending declares before the
+    // poly-proxy early return, so metadata cannot leak onto the next widget.
+    auto merged = mergedMetadataFor(zone);
+    mergeFaustMetadata(merged, parsed.metadata);
+
+    if (layout_ == Layout::PolyphonicVoices && isInsidePolyProxyGroup())
+        return;
+
+    HarvestedOutput output;
+    output.label = std::move(parsed.cleanLabel);
+    output.minValue = static_cast<float>(min);
+    output.maxValue = static_cast<float>(max);
+    output.vertical = vertical;
+    output.zones.push_back(zone);
+    output.metadata = std::move(merged);
+    output.group = controlGroup();
+    outputs_.push_back(std::move(output));
+}
+
+void FaustUIHarvester::addHorizontalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT min,
+                                             FAUSTFLOAT max) {
+    emitOutput(false, label, zone, min, max);
+}
+
+void FaustUIHarvester::addVerticalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT min,
+                                           FAUSTFLOAT max) {
+    emitOutput(true, label, zone, min, max);
+}
+
 void FaustUIHarvester::openTabBox(const char* label) {
     pushGroup(label);
 }

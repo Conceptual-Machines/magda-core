@@ -44,10 +44,14 @@ class FaustDeviceLayout final : public DeviceParamLayout {
     int pageForParameter(const magda::DeviceInfo& device, int paramIndex) const override;
 
   private:
-    // One cell's worth of a page. `paramArrayIndex` is -1 for a cell that is
-    // empty, or that was absorbed by a wider neighbour to its left.
+    // One cell's worth of a page. Both indices are -1 for a cell that is
+    // empty, or that was absorbed by a wider neighbour to its left; exactly
+    // one of them is set otherwise. Meters index DeviceInfo::meters, which is
+    // a different list from DeviceInfo::parameters, so they cannot share a
+    // field without the host having to guess which list to look in.
     struct PageCell {
         int paramArrayIndex = -1;
+        int meterArrayIndex = -1;
         int span = 1;
     };
 

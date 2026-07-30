@@ -2,6 +2,7 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/FaustInstrumentPlugin.hpp"
+#include "audio/plugins/FaustParamPool.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/IFaustEditorModel.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
@@ -180,6 +181,17 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
                     faustModel->getCustomViewName(), *faustModel);
                 if (storage.faustCustomView != nullptr)
                     parent.addAndMakeVisible(*storage.faustCustomView);
+
+                if (callbacks.setMeterSource) {
+                    // The lambda keeps the plugin alive so `faustModel` cannot
+                    // dangle: the grid drops the supplier when the slot is
+                    // rebuilt, which is the same moment the rest of this
+                    // inline UI goes away. The pool is looked up per call
+                    // because a recompile replaces every zone it holds.
+                    callbacks.setMeterSource([plugin, faustModel](int meterIndex) {
+                        return faustModel->getPool().readOutput(meterIndex);
+                    });
+                }
             }
         }
 
@@ -193,15 +205,24 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
     return DeviceSlotInlineUiKind::Custom;
 }
 
-void bindDeviceSlotFaustInlineUi(const magda::ChainNodePath& nodePath, FaustUI* faustUI) {
+void bindDeviceSlotFaustInlineUi(
+    const magda::ChainNodePath& nodePath, FaustUI* faustUI,
+    const std::function<void(std::function<float(int meterIndex)>)>& setMeterSource) {
     if (faustUI == nullptr)
         return;
 
     faustUI->setDevicePath(nodePath);
 
-    if (auto plugin = getLivePlugin(nodePath))
-        if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get()))
+    if (auto plugin = getLivePlugin(nodePath)) {
+        if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get())) {
             faustUI->setPlugin(faustModel);
+            if (setMeterSource) {
+                setMeterSource([plugin, faustModel](int meterIndex) {
+                    return faustModel->getPool().readOutput(meterIndex);
+                });
+            }
+        }
+    }
 }
 
 void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,

@@ -795,7 +795,11 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     }
     // Same story for FaustUI: createCustomUI ran before nodePath_ was
     // valid, so resolve the live plugin again once the path is known.
-    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get());
+    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(),
+                                [this](std::function<float(int)> source) {
+                                    if (paramGrid_)
+                                        paramGrid_->setMeterSource(std::move(source));
+                                });
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
@@ -1653,6 +1657,10 @@ void DeviceSlotComponent::createCustomUI() {
             },
         .onShowAutomationLane = [this](int paramIndex) { showAutomationLaneForParam(paramIndex); },
     });
+    callbacks.setMeterSource = [this](std::function<float(int)> source) {
+        if (paramGrid_)
+            paramGrid_->setMeterSource(std::move(source));
+    };
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, nodePath_, *this,
                                                       {.compiledPanel = compiledPanel_,
@@ -1675,6 +1683,10 @@ void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
         compiledPanel_->bindPlugin(nullptr);
     if (faustUI_ != nullptr)
         faustUI_->setPlugin(nullptr);
+    // The meter supplier holds a reference to the plugin so its pool cannot
+    // vanish mid-poll; dropping it here is what lets the plugin go.
+    if (paramGrid_)
+        paramGrid_->setMeterSource(nullptr);
     customUI_.detachFromLivePlugin();
 }
 

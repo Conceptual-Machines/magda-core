@@ -35,6 +35,7 @@ target_sources(magda_daw_app PRIVATE
     drum_grid/PadDeviceSlot.cpp
     drum_grid/PadChainRangeRowComponent.cpp
     drum_grid/PadChainRowComponent.cpp
+    params/MeterCellComponent.cpp
     params/ParamHostComponent.cpp
     params/ParamSlotComponent.cpp
     params/ParamLinkResolver.cpp

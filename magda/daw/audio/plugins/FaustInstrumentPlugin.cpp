@@ -277,7 +277,24 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
                                        << " voice controls -> " << static_cast<int>(reps.size())
                                        << " user params (excl. freq/gain/gate)");
 
-    auto report = pool_.rebindFromHarvest(reps);
+    // Bargraphs are per-voice too. Merge the occurrences of one author
+    // bargraph into a single output carrying every voice zone, so the meter
+    // reads the whole instrument rather than whichever voice Faust emitted
+    // first.
+    std::vector<HarvestedOutput> mergedOutputs;
+    std::map<juce::String, size_t> outputByLabel;
+    for (const auto& o : harvester.outputs()) {
+        auto it = outputByLabel.find(o.label);
+        if (it == outputByLabel.end()) {
+            outputByLabel.emplace(o.label, mergedOutputs.size());
+            mergedOutputs.push_back(o);
+        } else {
+            auto& target = mergedOutputs[it->second];
+            target.zones.insert(target.zones.end(), o.zones.begin(), o.zones.end());
+        }
+    }
+
+    auto report = pool_.rebindFromHarvest(reps, mergedOutputs);
     state->activeBindings = std::move(report.activeBindings);
     lastDiagnostics_ = std::move(report.diagnostics);
 
